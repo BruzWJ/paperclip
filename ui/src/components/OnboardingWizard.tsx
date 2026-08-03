@@ -33,11 +33,9 @@ import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plan
 import {
   companySkillChannelSchema,
   companySkillPinSchema,
-  normalizeIssueAttentionMask,
   parseCompanySkillPins,
   type CompanySkillChannel,
   type CompanySkillPin,
-  type IssueAttentionMask,
 } from "@paperclipai/shared";
 import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
 import {
@@ -50,7 +48,6 @@ import { resolveSkillSummaryText } from "../lib/company-skill-summary";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
 import { AgentCapsule } from "./AgentCapsule";
-import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
 import { Badge } from "@/components/ui/badge";
 import {
   Building2,
@@ -287,16 +284,6 @@ export function OnboardingWizard() {
   const [initialTaskRequest, setInitialTaskRequest] = useState(
     (saved?.initialTaskRequest as string) ?? "",
   );
-  const [initialIssueAttentionMask, setInitialIssueAttentionMask] =
-    useState<IssueAttentionMask | null>(() => {
-      try {
-        return normalizeIssueAttentionMask(
-          saved?.initialIssueAttentionMask ?? null,
-        );
-      } catch {
-        return null;
-      }
-    });
   const [agentCreateIdempotencyKey, setAgentCreateIdempotencyKey] = useState(
     () =>
       (typeof saved?.agentCreateIdempotencyKey === "string"
@@ -370,7 +357,6 @@ export function OnboardingWizard() {
       step, companyName, companyGoal, missionPath, missionConfirmed,
       q1, q2, q3, q4, agentName, agentTitle, agentCapabilities,
       runtimeAccess, companySkillPins, skillChannel, initialTaskTitle, initialTaskRequest,
-      initialIssueAttentionMask,
       agentCreateIdempotencyKey, adapterType,
       adapterConfigValues: configValues,
       createdCompanyId, createdCompanyPrefix, createdAgentId,
@@ -382,7 +368,6 @@ export function OnboardingWizard() {
     effectiveOnboardingOpen, step, companyName, companyGoal, missionPath, missionConfirmed,
     q1, q2, q3, q4, agentName, agentTitle, agentCapabilities,
     runtimeAccess, companySkillPins, skillChannel, initialTaskTitle, initialTaskRequest,
-    initialIssueAttentionMask,
     agentCreateIdempotencyKey, adapterType, configValues,
     createdCompanyId, createdCompanyPrefix, createdAgentId,
     createdCompanyGoalId, createdProjectId, createdIssueRef,
@@ -459,7 +444,6 @@ export function OnboardingWizard() {
     setSkillChannel("isolated_skills_home");
     setInitialTaskTitle("");
     setInitialTaskRequest("");
-    setInitialIssueAttentionMask(null);
     setAgentCreateIdempotencyKey(crypto.randomUUID());
     setConfigValues({ ...defaultCreateValues });
     setCreatedCompanyId(null);
@@ -527,7 +511,6 @@ export function OnboardingWizard() {
             ownerAgentId: createdAgentId,
             projectId,
             goalId,
-            attentionMask: initialIssueAttentionMask,
           })
         );
         setCreatedIssueRef(issue.identifier ?? issue.id);
@@ -1482,26 +1465,6 @@ export function OnboardingWizard() {
                         setInitialTaskRequest(event.target.value)
                       }
                     />
-                    <div className="space-y-2 border-t border-border pt-3">
-                      <div>
-                        <h4 className="text-xs font-medium">
-                          Narrow this issue&apos;s attention
-                        </h4>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Optional. This can only remove context granted on the
-                          agent; it cannot grant additional access.
-                        </p>
-                      </div>
-                      <IssueAttentionMaskMatrix
-                        value={initialIssueAttentionMask}
-                        onChange={
-                          createdIssueRef
-                            ? undefined
-                            : setInitialIssueAttentionMask
-                        }
-                        readOnly={Boolean(createdIssueRef)}
-                      />
-                    </div>
                   </div>
                 </div>
               )}

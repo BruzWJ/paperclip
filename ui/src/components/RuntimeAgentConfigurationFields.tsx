@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
+import { AttentionMatrix } from "./AttentionMatrix";
 
 export type RuntimeAgentConfigurationValues = {
   contextGrants: Record<AgentContextGrantKey, boolean>;
@@ -26,49 +27,6 @@ type AttentionPreset =
   | "supervisor"
   | "investigator"
   | "situational";
-
-const CONTEXT_LABELS: Record<
-  AgentContextGrantKey,
-  { label: string; description: string }
-> = {
-  carry_context: {
-    label: "Carry current-issue session",
-    description:
-      "Resume this issue's provider session across requests in the same ownership epoch.",
-  },
-  read_issue_comments: {
-    label: "Current issue · comments",
-    description: "Read and compose this issue's chronological thread.",
-  },
-  read_issue_agent_run: {
-    label: "Current issue · agent runs",
-    description: "Inspect structured run turns referenced by this issue.",
-  },
-  list_sub_issues: {
-    label: "Sub-issues · list and content",
-    description: "Descend through issues beneath the active issue.",
-  },
-  read_sub_issue_comments: {
-    label: "Sub-issues · comments",
-    description: "Read comments for descendants in reach.",
-  },
-  read_sub_issue_agent_run: {
-    label: "Sub-issues · agent runs",
-    description: "Inspect structured run turns for descendants in reach.",
-  },
-  list_company_issues: {
-    label: "Company · list and content",
-    description: "List top-level company issues and descend their trees.",
-  },
-  read_company_issue_comments: {
-    label: "Company · comments",
-    description: "Read comments for same-company issues.",
-  },
-  read_company_issue_agent_run: {
-    label: "Company · agent runs",
-    description: "Inspect structured run turns for same-company issues.",
-  },
-};
 
 const ACTION_LABELS: Record<
   PaperclipActionKey,
@@ -276,8 +234,8 @@ export function RuntimeAgentConfigurationFields({
       <div>
         <h3 className="text-sm font-medium">Runtime access</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Context controls what this agent can see; actions control what it can
-          do. Every cell is explicit and independently editable.
+          Attention controls what this agent can see; actions control what it
+          can do. The two dials are independent.
         </p>
       </div>
 
@@ -285,7 +243,7 @@ export function RuntimeAgentConfigurationFields({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Context dial
+              Attention
             </h4>
             <p className="mt-1 text-xs text-muted-foreground">
               Presets stamp concrete cells once; later edits do not stay linked.
@@ -315,23 +273,23 @@ export function RuntimeAgentConfigurationFields({
             ))}
           </select>
         </div>
-        {AGENT_CONTEXT_GRANT_KEYS.map((key) => (
-          <ConfigurationRow
-            key={key}
-            {...CONTEXT_LABELS[key]}
-            checked={value.contextGrants[key]}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              onChange({
-                ...value,
-                contextGrants: {
-                  ...value.contextGrants,
-                  [key]: checked,
-                },
-              })
-            }
-          />
-        ))}
+        <AttentionMatrix
+          value={value.contextGrants}
+          disabled={disabled}
+          enabledLabel="allowed"
+          disabledLabel="blocked"
+          description="Checked cells grant this agent that level of attention. Unchecked cells remain unavailable."
+          testId="agent-attention-matrix"
+          onCellChange={(key, enabled) =>
+            onChange({
+              ...value,
+              contextGrants: {
+                ...value.contextGrants,
+                [key]: enabled,
+              },
+            })
+          }
+        />
       </div>
 
       <div className="rounded-lg border border-border p-4">

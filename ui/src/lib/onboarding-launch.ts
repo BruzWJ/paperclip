@@ -1,9 +1,4 @@
-import {
-  normalizeIssueAttentionMask,
-  type Goal,
-  type Project,
-  type RawIssueAttentionMask,
-} from "@paperclipai/shared";
+import { type Goal, type Project } from "@paperclipai/shared";
 
 export const ONBOARDING_PROJECT_NAME = "Onboarding";
 
@@ -55,21 +50,17 @@ export function buildOnboardingIssuePayload(input: {
   ownerAgentId: string;
   projectId: string;
   goalId: string | null;
-  attentionMask?: RawIssueAttentionMask | null;
 }) {
   const title = input.title.trim();
   if (input.request.trim().length === 0) {
     throw new Error("The first issue request must contain non-whitespace text");
   }
-  const attentionMask = normalizeIssueAttentionMask(input.attentionMask);
-
   return {
     ...(title ? { title } : {}),
     request: input.request,
     ownerAgentId: input.ownerAgentId,
     idempotencyKey: `onboarding:${input.projectId}:${input.ownerAgentId}`,
     projectId: input.projectId,
-    ...(attentionMask ? { attentionMask } : {}),
     ...(input.goalId ? { goalId: input.goalId } : {}),
   };
 }

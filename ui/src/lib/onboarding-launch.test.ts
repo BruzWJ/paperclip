@@ -185,31 +185,15 @@ describe("onboarding launch payloads", () => {
     expect(retry.title).toBe("Changed display title");
   });
 
-  it("canonicalizes the first issue attention mask to sparse false-only cells", () => {
-    expect(
-      buildOnboardingIssuePayload({
-        title: "Start with focused context",
-        request: "Execute the focused onboarding issue",
-        ownerAgentId: "agent-1",
-        projectId: "project-1",
-        goalId: null,
-        attentionMask: {
-          carry_context: true,
-          read_issue_comments: false,
-          list_company_issues: true,
-          read_company_issue_agent_run: false,
-        },
-      }),
-    ).toEqual({
-      title: "Start with focused context",
-      request: "Execute the focused onboarding issue",
+  it("lets the first issue inherit the configured agent attention unchanged", () => {
+    const payload = buildOnboardingIssuePayload({
+      title: "Start",
+      request: "Begin the first assignment",
       ownerAgentId: "agent-1",
-      idempotencyKey: "onboarding:project-1:agent-1",
       projectId: "project-1",
-      attentionMask: {
-        read_issue_comments: false,
-        read_company_issue_agent_run: false,
-      },
+      goalId: null,
     });
+
+    expect(payload).not.toHaveProperty("attentionMask");
   });
 });

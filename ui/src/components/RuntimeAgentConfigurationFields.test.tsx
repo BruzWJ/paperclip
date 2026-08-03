@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RuntimeAgentConfigurationFields,
   createEmptyRuntimeAgentConfigurationValues,
+  type RuntimeAgentConfigurationValues,
 } from "./RuntimeAgentConfigurationFields";
 
 const agentsApiMock = vi.hoisted(() => ({
@@ -68,17 +69,26 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
     vi.clearAllMocks();
   });
 
-  function render(agentId?: string) {
+  function render({
+    agentId,
+    value = createEmptyRuntimeAgentConfigurationValues(),
+    onChange = () => undefined,
+  }: {
+    agentId?: string;
+    value?: RuntimeAgentConfigurationValues;
+    onChange?: (value: RuntimeAgentConfigurationValues) => void;
+  } = {}) {
     root.render(
       <QueryClientProvider client={queryClient}>
         <RuntimeAgentConfigurationFields
           companyId="company-1"
           agentId={agentId}
-          value={createEmptyRuntimeAgentConfigurationValues()}
-          onChange={vi.fn()}
+          value={value}
+          onChange={onChange}
         />
       </QueryClientProvider>,
     );
+    return onChange;
   }
 
   it("loads create options from the dedicated company-installed catalog", async () => {
@@ -98,7 +108,7 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
   });
 
   it("loads edit options only from the exact-agent catalog", async () => {
-    await act(async () => render("agent-1"));
+    await act(async () => render({ agentId: "agent-1" }));
     await flushReact();
 
     expect(
@@ -110,5 +120,36 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
     expect(container.textContent).toContain(
       "installed for this exact agent",
     );
+  });
+
+  it("uses one nine-cell attention matrix for the agent context grants", async () => {
+    const value = createEmptyRuntimeAgentConfigurationValues();
+    const onChange = vi.fn();
+    await act(async () => render({ value, onChange }));
+
+    const matrix = container.querySelector(
+      '[data-testid="agent-attention-matrix"]',
+    );
+    expect(matrix).not.toBeNull();
+    expect(matrix!.querySelectorAll('[role="checkbox"]')).toHaveLength(9);
+    expect(matrix!.querySelectorAll('[aria-label$=": blocked"]')).toHaveLength(
+      9,
+    );
+    expect(container.textContent).not.toContain("Carry current-issue session");
+    expect(container.textContent).not.toContain("Current issue · comments");
+
+    const currentContent = matrix!.querySelector<HTMLButtonElement>(
+      '[aria-label="Current issue Content: blocked"]',
+    );
+    expect(currentContent).not.toBeNull();
+    act(() => currentContent!.click());
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...value,
+      contextGrants: {
+        ...value.contextGrants,
+        carry_context: true,
+      },
+    });
   });
 });
