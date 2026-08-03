@@ -63,7 +63,7 @@ A fresh execution lowers:
 
 `[authorized composition?] + [exact committed source messages] + [execution-owned output]`
 
-The optional composition is nothing, the chronological thread, or compacted full structured history according to the current-issue dial cells. It immediately precedes the source without rewriting canonical chronology.
+The optional composition is nothing, the chronological thread, or full structured history according to the current-issue dial cells. It immediately precedes the source without rewriting canonical chronology.
 
 ## Comments and mentions
 
@@ -127,5 +127,3 @@ The outcome translator:
 - routes owner updates to the immutable creator
 - settles consult/counterpart invocations
 - ensures exactly one comment of record where required
-
-Compaction is a separately kinded run, updates only session history/checkpoint projections, and creates no comment.

@@ -6,10 +6,11 @@ Run rows are control-plane audit, accounting, cancellation, and recovery records
 
 ## Run kinds
 
-- `productive` — an owner or isolated consult provider turn
-- `compaction` — Paperclip Session maintenance
+- `productive` — an owner provider turn
+- `consult` — an isolated consult provider turn
 
-Both kinds use the ordinary run ledger, cost events, bounded recovery, and cancellation machinery. Compaction remains separately identifiable and writes no human comment.
+Productive and consult runs use the ordinary run ledger, cost events, bounded
+retry, and cancellation machinery.
 
 ## Causal chain
 
@@ -57,20 +58,17 @@ Adapters publish normalized Paperclip Session events for:
 
 The durable event stream is append-only and secret-redacted before storage. The materialized message/comment projections are projector-owned and rebuildable. Provider-native handles and hidden reasoning are never persisted as visible run output.
 
-## Compaction
-
-Paperclip's production compaction behavior decides overflow using the active
-model limits and company-level five-knob configuration. A compaction run
-persists the canonical request/summary assistant pair, summary chaining, tail
-boundary, costs, and failure state. Successful checkpoints govern later
-lowering; failed overflow checkpoints hide no history and cannot loop
-indefinitely.
-
 ## Cancellation and retry
 
 Cancellation invalidates the matching lease/view/input disposition and signals the adapter. Late callbacks must revalidate their generation and cannot append events, comments, checkpoints, or outcomes after authority is lost.
 
 Transient/process-loss recovery may re-lease only the original valid ref. It preserves the same admitted source and execution view. An invalid or stale ref terminalizes with audit evidence and does not create replacement work.
+
+If a valid native resume reports `target_not_found`, Paperclip invalidates the
+dead correlation and creates an immediate successor attempt for the same run,
+ref, and segment. That attempt starts a fresh ACP session with the exact current
+source text only; Session history is retained for inspection and is not
+injected into the prompt.
 
 ## API surface
 

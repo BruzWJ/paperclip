@@ -98,15 +98,15 @@ and undiscoverable.
 Paperclip records. A false-carry execution is always fresh and receives only
 composition authorized by the two current-issue read cells.
 
-## Issue-session log and compaction
+## Issue-session log
 
 Paperclip owns the Session schema, event store, projector, history, runner,
-lowering, revert, tool-state, and production compaction behavior as first-class
+lowering, revert, and tool-state behavior as first-class
 application architecture. Source-conformance provenance is a development-time
 verification record, never a runtime dependency or connector boundary.
 
 An issue maps to `Session`; a sub-issue maps to a child Session. Typed user,
-synthetic, system, assistant, reasoning, tool, and compaction messages are
+synthetic, system, assistant, reasoning, and tool messages are
 stored as validated, secret-redacted PostgreSQL events and projected into
 materialized messages. The chronological comment thread is the human-facing
 projection, not a second conversation store.
@@ -121,11 +121,10 @@ revision change, board/user fresh execution, false-carry work, and consult work
 cannot reuse it. The opaque handle is never shown in API, UI, CLI, logs, prompt
 text, workspace metadata, or generic adapter context.
 
-Compaction is issue-session infrastructure and a separately kinded run. It uses
-the canonical overflow threshold, prune-first behavior, protected recent tool
-output, summary chaining, verbatim tail selection, overflow recovery, and
-auto-continue behavior. It writes the canonical compaction request/assistant
-message pair and no human comment.
+The Session log remains complete for audit and inspection. Paperclip does not
+summarize, prune, or replay it as provider context when a native session is
+missing. The selected provider CLI may manage its own native history while its
+session remains resumable.
 
 ## Compiled provider interface
 

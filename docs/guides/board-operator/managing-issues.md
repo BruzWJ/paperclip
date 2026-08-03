@@ -51,7 +51,7 @@ the four-state provider contract.
 ## Tracking progress
 
 - **Comments** are the chronological projection of the issue Session.
-- **Runs** show productive issue executions and scoped compaction maintenance.
+- **Runs** show productive owner and consult issue executions.
 - **Activity** records board and server-side control-plane changes.
 - **Workspace bindings** identify the cwd selected for the current ownership
   epoch.

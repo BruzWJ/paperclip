@@ -57,7 +57,10 @@ and cleanup.
 The selected coding CLI owns provider authentication, provider requests,
 native prompts and post-processing, its model/tool loop, native tools, native
 history, and native compaction. Paperclip owns issue execution, request-scoped
-capabilities, canonical Session projection, and missing-target recovery. It has
+capabilities, canonical Session projection, and native-target correlation. If a
+correlated target disappears, Paperclip invalidates it and starts a fresh ACP
+session with only the current source message; it never reconstructs provider
+context from the Session log. It has
 no process/HTTP provider transport, provider SDK client, arbitrary-command
 fallback, or separate remote-machine runtime.
 

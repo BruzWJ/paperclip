@@ -12,8 +12,8 @@ architecture.
 
 Paperclip owns Session contracts/codecs under
 `packages/shared/src/issue-session`, physical tables under `packages/db`, and
-event, admission, projection, history, runner, lowering, revert, and compaction
-services under `server`. They form one first-class Paperclip Session engine.
+event, admission, projection, history, runner, lowering, and revert services
+under `server`. They form one first-class Paperclip Session engine.
 
 ### `packages/db`
 
@@ -31,7 +31,6 @@ The schema owns:
 - execution-workspace bindings
 - context/action/mention grants
 - selected company tools and genuine company skills
-- compaction controls, checkpoints, and effects
 
 Company, issue, run, Session, authority, reference, workspace, and grant
 relations remain company-scoped with database uniqueness and foreign-key
@@ -79,8 +78,6 @@ and noncanonical continuity fields.
   plus issue-execution references atomically.
 - Session input/history/composition services promote inputs and compose scoped
   execution views directly from PostgreSQL.
-- `issue-session-compaction-postgres.ts` owns production compaction
-  persistence.
 - `agent-execution/session-runner/*` owns provider steps, continuations,
   lowering, and productive Session output.
 - `issue-session-lifecycle.ts` coordinates company archive, reactivation, and
@@ -103,6 +100,9 @@ requires byte-equivalent source, Session, prompt, and event arguments.
   attempt, immutable ACP revision, workspace, tools, and native-session
   operation under that lease.
 - `issue-execution-attempt-executor.ts` drives the Session runner and adapter.
+  A missing correlated ACP target is invalidated and retried once as a fresh
+  session using the exact current source; Paperclip never injects Session
+  history into that replacement prompt.
 - `agent-execution/session-runner/output.ts` publishes productive Session
   output.
 - `productive-run-linkage.ts` verifies exact run/reference/source evidence.

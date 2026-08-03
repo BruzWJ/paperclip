@@ -323,7 +323,7 @@ pnpm paperclipai token board revoke <key-id>
 
 `paperclipai run` without a subcommand still bootstraps and starts a local
 Paperclip instance. The subcommands below inspect and control persisted
-issue-execution and compaction runs.
+productive and consult issue-execution runs.
 
 ```sh
 pnpm paperclipai run list --company-id <company-id> [--agent-id <agent-id>] [--limit 50]

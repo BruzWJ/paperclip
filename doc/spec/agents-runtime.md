@@ -34,8 +34,13 @@ The execution workspace is selected only by the persisted issue/epoch binding. T
 
 Adapters normalize stream events into the Paperclip Session event/message vocabulary. The projector derives structured run history, chronological comments, telemetry, and lifecycle effects. Provider-hidden state and credentials never enter the log.
 
-A productive final always yields the canonical assistant turn. The outcome translator applies any authorized zero-tool completion or counterpart routing and writes at most one comment of record. Compaction is a separately kinded run and produces no comment.
+A productive final always yields the canonical assistant turn. The outcome translator applies any authorized zero-tool completion or counterpart routing and writes at most one comment of record.
 
 ## Recovery
 
 Process loss and retry re-lease the original persisted reference and resume its persisted execution view. They never create a replacement wake, prompt, session, or idempotency identity. Stale authority, epoch, revision, lease, input, or source causes terminal rejection.
+
+A missing provider-native target is the narrow exception for transport
+continuity: Paperclip invalidates the dead correlation and starts a fresh ACP
+session for the same persisted prompt identity, sending only the exact current
+source message. It does not replay or summarize the canonical Session log.

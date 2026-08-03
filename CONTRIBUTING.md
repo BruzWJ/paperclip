@@ -162,11 +162,11 @@ Your PR description must follow the [PR template](.github/PULL_REQUEST_TEMPLATE.
 ### Thinking Path Example 1:
 
 > - Paperclip is the open source app people use to manage AI agents for work
-> - There are many types of adapters for each LLM model provider
-> - But LLM's have a context limit and not all agents can automatically compact their context
-> - So we need to have an adapter-specific configuration for which adapters can and cannot automatically compact their context
-> - This pull request adds per-adapter configuration of compaction, either auto or paperclip managed
-> - That way we can get optimal performance from any adapter/provider in Paperclip
+> - Every provider invocation must come from a persisted issue-execution reference
+> - But one retry path could launch after its reference became stale
+> - So the dispatcher must revalidate the reference immediately before launch
+> - This pull request adds that exact lease-time validation
+> - That way retries preserve the same control-plane authority as first attempts
 
 ### Thinking Path Example 2:
 

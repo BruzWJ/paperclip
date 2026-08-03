@@ -118,25 +118,20 @@ is valid.
 ## 4. Issue-session continuity
 
 Paperclip records one canonical Session log per issue. `carry_context` controls
-native continuity and missing-target recovery:
+native continuity:
 
 - **False:** every ordinary request uses `session/new`; its exact source text is
-  the entire prompt and Paperclip performs no history composition or
-  compaction.
+  the entire prompt and Paperclip performs no history composition.
 - **True with an eligible target:** the worker uses stable `session/resume` and
   still sends only the exact new source text.
-- **True with no resumable target:** Paperclip selects only dial-authorized
-  current-issue history. If that selection exceeds the configured input budget,
-  the recovery-only compaction run summarizes it first. A replacement
-  `session/new` receives the deterministic recovery block once, followed by the
-  exact new source text.
+- **True with no resumable target:** the worker uses `session/new` and sends
+  only the exact current source text. The canonical Session log remains
+  available for inspection but is not replayed, summarized, or injected.
 
 The selected CLI owns its native history and native compaction while that ACP
-session remains resumable. Paperclip's recovery-history compactor over the
-PostgreSQL Session log never runs during a successful native continuation and
-never runs when `carry_context` is false. Operators cannot manually reset or
-rotate native continuity; epoch, target, workspace, and authorization
-eligibility decide it automatically.
+session remains resumable. Paperclip has no Session-history compactor.
+Operators cannot manually reset or rotate native continuity; epoch, target,
+workspace, and authorization eligibility decide it automatically.
 
 Provider-native session state stays opaque and provider-owned. Paperclip keeps
 only an encrypted issue/epoch/agent/target-scoped ACP correlation and never
@@ -153,15 +148,15 @@ replacement connection; it never accumulates a prior request's authority.
 The AI CLI keeps its own built-in shell, file, browser, and other native tools.
 Paperclip owns and audits only the dynamically supplied Paperclip/company-tool
 catalog. A tool-free productive prompt still receives an isolated Paperclip MCP
-server whose list is empty. A recovery-compaction prompt receives no Paperclip
-MCP server.
+server whose list is empty.
 
 An authorized reply to an active run-progress comment steers that exact run.
 Paperclip revokes the old capability, sends ACP `session/cancel`, settles and
 reaps the current prompt, then starts a fresh subprocess and resumes the same
 native session with the new exact message. If that target is no longer
-resumable, the selected run follows the ordinary true/false-carry missing-target
-branch without creating another Paperclip run. The UI uses the comment's
+resumable, the selected run invalidates the dead correlation and starts a fresh
+ACP session for the same prompt identity with only the new exact message. It
+does not create another Paperclip run. The UI uses the comment's
 producing run; users never select or see a raw ACP session id.
 
 ## 6. Logs, status, and run history
@@ -236,9 +231,9 @@ unsupported stable resume or MCP replacement, invalid session configuration,
 stale workspace binding, protocol framing failure, or a stop result without the
 required terminal occupancy.
 
-Paperclip never retries a resume error by silently starting another session.
-Only a missing local target or ACP `Resource not found` enters the documented
-missing-target branch; other errors fail the current attempt.
+Paperclip never converts an arbitrary resume error into a fresh session. Only a
+missing local target or ACP `Resource not found` enters the documented
+fresh-session branch; other errors fail the current attempt.
 
 ## 10. Minimal setup checklist
 

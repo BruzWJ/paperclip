@@ -65,7 +65,7 @@ Explain prospective behavior: narrowing a dial changes gateway acceptance immedi
 
 ### Runs
 
-List structured issue-execution and compaction runs. Show status, issue, epoch, adapter revision, model, timing, token/cost data, and structured transcript. Never display a provider-native session handle.
+List structured productive and consult issue-execution runs. Show status, issue, epoch, adapter revision, model, timing, token/cost data, and structured transcript. Never display a provider-native session handle.
 
 ### Skills and tools
 

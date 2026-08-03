@@ -49,7 +49,7 @@ An issue is the canonical unit of work. Its behavioral identity consists of:
   policy.
 
 Every issue owns one Paperclip Session graph. Inputs, assistant turns, tool
-states, costs, and compaction controls are recorded per issue.
+states and costs are recorded per issue.
 Provider-native continuity may be retained only for the same issue, ownership
 epoch, agent, and adapter revision when `carry_context` is enabled. It never
 becomes Paperclip-authored cross-issue memory.

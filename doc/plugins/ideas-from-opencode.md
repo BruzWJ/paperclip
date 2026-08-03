@@ -101,7 +101,6 @@ The hook set is broad. It includes:
 - shell env injection
 - tool execution before/after hooks
 - tool definition mutation
-- compaction prompt customization
 - text completion transforms
 
 The implementation pattern is very simple:

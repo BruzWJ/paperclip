@@ -39,10 +39,12 @@ through the official TypeScript SDK; the selected coding CLI or its pinned
 upstream ACP frontend is the ACP agent.
 
 The CLI owns its provider login, native prompts, model/tool loop, native tools,
-history, and live compaction. Paperclip owns issue admission, request-scoped
+history, and native compaction. Paperclip owns issue admission, request-scoped
 tools, exact prompt delivery, cancellation, structured ACP projection, and
-missing-target recovery. There is no process/HTTP provider adapter, generic API
-polling path, or separately connected remote-machine runtime in this design.
+native-target correlation. A missing target restarts fresh with the exact
+current source; Paperclip does not reconstruct its history. There is no
+process/HTTP provider adapter, generic API polling path, or separately connected
+remote-machine runtime in this design.
 
 ## Core Principle
 

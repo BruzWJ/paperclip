@@ -63,13 +63,15 @@ generic REST issue mutation is not an agent tool.
 ### Issue Sessions and Continuity
 
 Paperclip persists one canonical, PostgreSQL-backed issue Session. Its typed
-source inputs, assistant turns, tool state, cost/tokens, compaction, and derived
+source inputs, assistant turns, tool state, cost/tokens, and derived
 comments are Paperclip-owned, auditable, and secret-redacted before
 persistence.
 
 The canonical log is not ambient provider history. Each issue-execution ref has
 an immutable authorized lowering view. Context from another issue appears only
 through an explicitly enabled, permission-checked composition dial.
+Paperclip does not replay or summarize this log to replace a missing
+provider-native session.
 
 Provider-native continuity is separately correlated to the exact
 `(issue, ownership epoch, agent, adapter revision)` scope. With effective

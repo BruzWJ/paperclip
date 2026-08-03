@@ -653,7 +653,7 @@ Clicking a row navigates to agent detail.
 - Reports to: [clickable agent name]
 - Direct reports: list of agents
 
-**Runs tab:** table of issue-execution and compaction runs — time, typed source, status, duration, and error (if any). Provider invocation is initiated only by a persisted issue-execution source; this view has no arbitrary invoke action.
+**Runs tab:** table of productive and consult issue-execution runs — time, typed source, status, duration, and error (if any). Provider invocation is initiated only by a persisted issue-execution source; this view has no arbitrary invoke action.
 
 **Issues tab:** issues owned by this agent.
 
