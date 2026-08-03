@@ -41,11 +41,6 @@ export {
   type UpdateCompanyBranding,
 } from "./company.js";
 export {
-  sessionCompactionSettingsSchema,
-  updateSessionCompactionSettingsSchema,
-  type UpdateSessionCompactionSettings,
-} from "./session-compaction.js";
-export {
   issueExecutionFinalizationActionSchema,
   issueExecutionPromptOutcomeSchema,
   issueExecutionPromptSettlementSchema,

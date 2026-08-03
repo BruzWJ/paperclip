@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertCanonicalTargetLaneRunLocking,
-  assertIssueGlobalRecoverySelection,
-  assertTrueCarryRecoveryOperation,
+  assertMissingCarryStartsFresh,
   scanCanonicalRunBoundaryFiles,
 } from "./check-issue-execution-run-service-boundary.ts";
 
@@ -201,59 +200,38 @@ test("requires a fresh active-run lock after the exact target-lane hierarchy", (
   );
 });
 
-test("requires missing true-carry mappings to recover and rejects forged session/new", () => {
+test("requires missing true-carry mappings to start a fresh session", () => {
   const dispatcher = [
     "async function selectSessionOperation() {",
     "const eligible = [];",
     "if (eligible.length === 1) return \"resume\";",
-    'return "recovery_new";',
+    'return "new";',
     "}",
     "async function assertRefDispatchable() {}",
   ].join("\n");
   const executor = [
     "const operation = prompt.sessionOperation;",
     "const operationIsValid =",
-    '(operation === "new" && !prompt.carryContext && prompt.storedCorrelation === null);',
+    '(operation === "new" && prompt.storedCorrelation === null);',
     "if (!operationIsValid) {}",
   ].join("\n");
   assert.doesNotThrow(() =>
-    assertTrueCarryRecoveryOperation(dispatcher, executor));
+    assertMissingCarryStartsFresh(dispatcher, executor));
   assert.throws(
-    () => assertTrueCarryRecoveryOperation(
-      dispatcher.replace('return "recovery_new";', 'return "new";'),
+    () => assertMissingCarryStartsFresh(
+      dispatcher.replace('return "new";', 'return "resume";'),
       executor,
     ),
-    /missing true-carry mapping/,
+    /fresh session/,
   );
   assert.throws(
-    () => assertTrueCarryRecoveryOperation(
+    () => assertMissingCarryStartsFresh(
       dispatcher,
-      executor.replace("!prompt.carryContext && ", ""),
-    ),
-    /reject session\/new for true-carry prompts/,
-  );
-});
-
-test("keeps authorized recovery history issue-global within the locked snapshot", () => {
-  const canonical = [
-    "function rowEligibleForRecovery(row, source) {",
-    "return row.seq <= source.sourceHighWaterSeq &&",
-    "row.modelStateSeq <= source.sourceHighWaterSeq &&",
-    "row.seq > source.contextEpochBaselineSeq &&",
-    "isSettledIssueSessionMessage(row);",
-    "}",
-    "async function loadEligibleMessageRows() {}",
-  ].join("\n");
-  assert.doesNotThrow(() => assertIssueGlobalRecoverySelection(canonical));
-  for (const forbidden of ["row.ownershipEpoch", "row.agentId"]) {
-    assert.throws(
-      () => assertIssueGlobalRecoverySelection(
-        canonical.replace(
-          "isSettledIssueSessionMessage(row);",
-          `${forbidden} && isSettledIssueSessionMessage(row);`,
-        ),
+      executor.replace(
+        'operation === "new" && ',
+        'operation === "new" && !prompt.carryContext && ',
       ),
-      /issue-global/,
-    );
-  }
+    ),
+    /regardless of carry_context/,
+  );
 });

@@ -326,20 +326,20 @@ describe("resolveEnvironmentExecutionTarget", () => {
       shellCommand: "bash",
     });
     await target.runner.execute({
-      executionId: "compaction-attempt-1",
+      executionId: "provider-attempt-1",
       command: "provider-cli",
       args: ["--stream"],
     });
     await target.runner.cancelExecution?.({
-      executionId: "compaction-attempt-1",
-      reason: "compaction cancelled",
+      executionId: "provider-attempt-1",
+      reason: "provider run cancelled",
     });
     await target.runner.syncIn?.([]);
     await target.runner.syncOut?.([]);
 
     expect(environmentRuntime.execute).toHaveBeenCalledWith(
       expect.objectContaining({
-        executionId: "compaction-attempt-1",
+        executionId: "provider-attempt-1",
         cwd: "/plugin/workspace",
       }),
     );
@@ -347,8 +347,8 @@ describe("resolveEnvironmentExecutionTarget", () => {
       companyId: "company-1",
       environment,
       lease,
-      executionId: "compaction-attempt-1",
-      reason: "compaction cancelled",
+      executionId: "provider-attempt-1",
+      reason: "provider run cancelled",
     });
     expect(environmentRuntime.syncIn).toHaveBeenCalledOnce();
     expect(environmentRuntime.syncOut).toHaveBeenCalledOnce();

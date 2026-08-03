@@ -11,7 +11,6 @@ import { costEvents } from "../schema/cost_events.js";
 import { financeEvents } from "../schema/finance_events.js";
 import { issueExecutionSessions } from "../schema/issue_execution_capabilities.js";
 import {
-  issueSessionCompactionControls,
   issueSessionEvents,
   issueSessionMessages,
 } from "../schema/issue_sessions.js";
@@ -83,7 +82,6 @@ describe("canonical ACP prompt accounting schema", () => {
       "ref_id",
       "run_ordinal",
       "segment_ordinal",
-      "compaction_control_id",
       "attempt_id",
       "adapter_config_revision_id",
       "selected_model_id",
@@ -115,7 +113,7 @@ describe("canonical ACP prompt accounting schema", () => {
     );
     expect(identity).toContain("= 'base'");
     expect(identity).toContain("= 'steering'");
-    expect(identity).toContain("= 'compaction'");
+    expect(identity).not.toContain("= 'compaction'");
     expect(identity).toContain('"segment_ordinal" is not null');
     expect(identity).toContain('"segment_ordinal" = 0');
     expect(identity).toContain('"segment_ordinal" > 0');
@@ -136,9 +134,7 @@ describe("canonical ACP prompt accounting schema", () => {
         "acp_prompt_accounting_run_revision_fk",
         "acp_prompt_accounting_adapter_revision_fk",
         "acp_prompt_accounting_productive_attempt_fk",
-        "acp_prompt_accounting_compaction_attempt_fk",
         "acp_prompt_accounting_run_ref_fk",
-        "acp_prompt_accounting_compaction_prompt_fk",
       ]),
     );
     expect(
@@ -157,125 +153,8 @@ describe("canonical ACP prompt accounting schema", () => {
     ).toEqual(
       expect.arrayContaining([
         "acp_prompt_accounting_productive_prompt_uq",
-        "acp_prompt_accounting_compaction_prompt_uq",
       ]),
     );
-  });
-
-  it("gives the compaction prompt its own closed settlement row", () => {
-    const controlColumns = columns(issueSessionCompactionControls);
-    expect(controlColumns).toEqual(
-      expect.arrayContaining([
-        "prompt_transmission_phase",
-        "protocol_settlement_state",
-        "prompt_settlement_reference_id",
-        "accounting_id",
-        "cost_event_id",
-        "settlement_version",
-        "settled_at",
-      ]),
-    );
-    const settlement = checkSql(
-      issueSessionCompactionControls,
-      "issue_session_compaction_controls_prompt_settlement_check",
-    );
-    expect(settlement).toContain("= 'recovery-prompt'");
-    expect(settlement).toContain("= 'not_sent'");
-    expect(settlement).toContain("= 'incomplete'");
-    expect(settlement).toContain("= 'settled'");
-    expect(settlement).toContain('"accounting_id" is not null');
-    expect(settlement).toContain('"cost_event_id" is not null');
-
-    const recoveryRun = getTableConfig(issueSessionCompactionControls).indexes.find(
-      (index) =>
-        index.config.name ===
-        "issue_session_compaction_controls_recovery_run_uq",
-    );
-    expect(recoveryRun?.config.unique).toBe(true);
-    expect(
-      recoveryRun?.config.columns.map(
-        (column) => (column as { name: string }).name,
-      ),
-    ).toEqual(["company_id", "issue_id", "compaction_run_id"]);
-    expect(
-      foreignKeyNames(issueSessionCompactionControls),
-    ).toEqual(
-      expect.arrayContaining([
-        "issue_session_compaction_controls_source_run_fk",
-        "issue_session_compaction_controls_source_run_ref_fk",
-        "issue_session_compaction_controls_compaction_run_fk",
-        "issue_session_compaction_controls_accounting_fk",
-        "issue_session_compaction_controls_cost_event_fk",
-      ]),
-    );
-    expect(
-      foreignKeyTargetNames(issueSessionCompactionControls).filter(
-        (name) => name === "issue_execution_runs",
-      ),
-    ).toHaveLength(2);
-    expect(
-      foreignKeyColumns(
-        issueSessionCompactionControls,
-        "issue_session_compaction_controls_source_run_fk",
-      ),
-    ).toEqual({
-      columns: ["company_id", "issue_id", "source_run_id", "source_run_kind"],
-      foreignColumns: ["company_id", "issue_id", "id", "kind"],
-    });
-    expect(
-      foreignKeyColumns(
-        issueSessionCompactionControls,
-        "issue_session_compaction_controls_source_run_ref_fk",
-      ),
-    ).toEqual({
-      columns: [
-        "company_id",
-        "issue_id",
-        "session_id",
-        "source_run_id",
-        "source_ref_ordinal",
-        "source_ref_id",
-      ],
-      foreignColumns: [
-        "company_id",
-        "issue_id",
-        "session_id",
-        "run_id",
-        "ref_ordinal",
-        "ref_id",
-      ],
-    });
-    expect(
-      foreignKeyColumns(
-        issueSessionCompactionControls,
-        "issue_session_compaction_controls_compaction_run_fk",
-      ),
-    ).toEqual({
-      columns: [
-        "company_id",
-        "issue_id",
-        "compaction_run_id",
-        "compaction_run_kind",
-      ],
-      foreignColumns: ["company_id", "issue_id", "id", "kind"],
-    });
-    expect(foreignKeyTargetNames(issueSessionCompactionControls)).toEqual(
-      expect.arrayContaining([
-        "acp_prompt_accounting",
-        "cost_events",
-      ]),
-    );
-    expect(
-      foreignKeyColumns(
-        issueSessionCompactionControls,
-        "issue_session_compaction_controls_accounting_fk",
-      ),
-    ).toMatchObject({
-      columns: expect.arrayContaining(["prompt_settlement_reference_id"]),
-      foreignColumns: expect.arrayContaining([
-        "prompt_settlement_reference_id",
-      ]),
-    });
   });
 
   it("binds canonical Session event and message rows only to canonical runs", () => {
@@ -285,6 +164,12 @@ describe("canonical ACP prompt accounting schema", () => {
     expect(foreignKeyTargetNames(issueSessionMessages)).toContain(
       "issue_execution_runs",
     );
+    expect(
+      checkSql(issueSessionEvents, "issue_session_events_type_check"),
+    ).not.toContain("session.next.compaction");
+    expect(
+      checkSql(issueSessionMessages, "issue_session_messages_type_check"),
+    ).not.toContain("'compaction'");
   });
 });
 
@@ -302,7 +187,6 @@ describe("canonical ACP cost transition schema", () => {
       "ref_id",
       "run_ordinal",
       "segment_ordinal",
-      "compaction_control_id",
       "budget_currency",
       "kind",
       "unavailable_reason",
@@ -342,7 +226,6 @@ describe("canonical ACP cost transition schema", () => {
         "cost_events_accounting_id_acp_prompt_accounting_id_fk",
         "cost_events_company_budget_currency_fk",
         "cost_events_productive_accounting_fk",
-        "cost_events_compaction_accounting_fk",
       ]),
     );
   });
@@ -365,9 +248,6 @@ describe("canonical ACP cost transition schema", () => {
     expect(transition).toContain(
       '= "cost_events"."observed_cumulative_amount" - "cost_events"."cursor_before_amount"',
     );
-    expect(
-      checkSql(costEvents, "cost_events_compaction_cursor_check"),
-    ).toContain("= 'unanchored'");
     const amounts = checkSql(costEvents, "cost_events_amounts_check");
     expect(amounts).toContain("'NaN'::numeric");
     expect(amounts).toContain("'Infinity'::numeric");

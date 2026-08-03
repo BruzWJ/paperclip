@@ -49,7 +49,6 @@ import {
   issueExecutionWorkspaceBindings,
 } from "./issue_execution_runtime.js";
 import {
-  issueSessionCompactionControls,
   issueSessionEvents,
   issueSessionInputs,
   issueSessionMessages,
@@ -57,9 +56,6 @@ import {
 } from "./issue_sessions.js";
 
 export type IssueExecutionMode = "owner" | "consult";
-export type IssueExecutionCompactionScopeKind =
-  | "turns-recovery"
-  | "comments-recovery";
 
 /**
  * The sole issue-provider run envelope. Conversational records, current prompt
@@ -80,7 +76,7 @@ export const issueExecutionRuns = pgTable(
       .notNull()
       .default("queued"),
     ownershipEpoch: integer("ownership_epoch").notNull(),
-    targetAgentId: uuid("target_agent_id"),
+    targetAgentId: uuid("target_agent_id").notNull(),
     adapterConfigRevisionId: uuid("adapter_config_revision_id")
       .notNull()
       .references(() => agentAdapterConfigRevisions.id, {
@@ -89,15 +85,11 @@ export const issueExecutionRuns = pgTable(
     executionWorkspaceBindingId: uuid(
       "execution_workspace_binding_id",
     ).notNull(),
-    executionMode: text("execution_mode").$type<IssueExecutionMode>(),
+    executionMode: text("execution_mode").$type<IssueExecutionMode>().notNull(),
     issueExecutionAuthorityId: uuid("issue_execution_authority_id"),
     consultExecutionId: uuid("consult_execution_id"),
-    compactionScopeKind: text("compaction_scope_kind").$type<
-      IssueExecutionCompactionScopeKind
-    >(),
     parentRunId: uuid("parent_run_id"),
     retryOfRunId: uuid("retry_of_run_id"),
-    triggeredByRunId: uuid("triggered_by_run_id"),
     currentAttemptId: uuid("current_attempt_id").references(
       (): AnyPgColumn => issueExecutionAttempts.id,
       { onDelete: "restrict" },
@@ -132,7 +124,7 @@ export const issueExecutionRuns = pgTable(
   (table): PgTableExtraConfigValue[] => [
     check(
       "issue_execution_runs_kind_check",
-      sql`${table.kind} in ('productive', 'consult', 'compaction')`,
+      sql`${table.kind} in ('productive', 'consult')`,
     ),
     check(
       "issue_execution_runs_status_check",
@@ -153,13 +145,7 @@ export const issueExecutionRuns = pgTable(
     ),
     check(
       "issue_execution_runs_mode_check",
-      sql`${table.executionMode} is null
-        or ${table.executionMode} in ('owner', 'consult')`,
-    ),
-    check(
-      "issue_execution_runs_compaction_scope_kind_check",
-      sql`${table.compactionScopeKind} is null
-        or ${table.compactionScopeKind} in ('turns-recovery', 'comments-recovery')`,
+      sql`${table.executionMode} in ('owner', 'consult')`,
     ),
     check(
       "issue_execution_runs_kind_shape_check",
@@ -169,28 +155,14 @@ export const issueExecutionRuns = pgTable(
         and ${table.executionMode} = 'owner'
         and ${table.issueExecutionAuthorityId} is not null
         and ${table.consultExecutionId} is null
-        and ${table.compactionScopeKind} is null
         and ${table.parentRunId} is null
-        and ${table.triggeredByRunId} is null
       ) or (
         ${table.kind} = 'consult'
         and ${table.targetAgentId} is not null
         and ${table.executionMode} = 'consult'
         and ${table.issueExecutionAuthorityId} is null
         and ${table.consultExecutionId} is not null
-        and ${table.compactionScopeKind} is null
         and ${table.parentRunId} is not null
-        and ${table.triggeredByRunId} is null
-      ) or (
-        ${table.kind} = 'compaction'
-        and ${table.targetAgentId} is null
-        and ${table.executionMode} is null
-        and ${table.issueExecutionAuthorityId} is null
-        and ${table.consultExecutionId} is null
-        and ${table.compactionScopeKind} is not null
-        and ${table.parentRunId} is not null
-        and ${table.triggeredByRunId} is not null
-        and ${table.parentRunId} = ${table.triggeredByRunId}
       )`,
     ),
     check(
@@ -360,11 +332,6 @@ export const issueExecutionRuns = pgTable(
       columns: [table.companyId, table.issueId, table.retryOfRunId],
       foreignColumns: [table.companyId, table.issueId, table.id],
       name: "issue_execution_runs_retry_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.companyId, table.issueId, table.triggeredByRunId],
-      foreignColumns: [table.companyId, table.issueId, table.id],
-      name: "issue_execution_runs_trigger_fk",
     }).onDelete("cascade"),
     unique("issue_execution_runs_company_id_uq").on(table.companyId, table.id),
     unique("issue_execution_runs_company_issue_id_uq").on(
@@ -996,7 +963,6 @@ export const issueExecutionRunControls = pgTable(
 /**
  * One worker attempt owns exactly one canonical prompt identity. Segment zero
  * is the run-ref base branch; positive ordinals are exact steering rows.
- * Compaction instead binds the run's one control row and has no segment.
  */
 export const issueExecutionAttempts = pgTable(
   "issue_execution_attempts",
@@ -1008,7 +974,7 @@ export const issueExecutionAttempts = pgTable(
     runId: uuid("run_id").notNull(),
     runKind: text("run_kind").$type<IssueExecutionRunKind>().notNull(),
     promptKind: text("prompt_kind")
-      .$type<"base" | "steering" | "compaction">()
+      .$type<"base" | "steering">()
       .notNull(),
     sessionOperation: text("session_operation")
       .$type<IssueExecutionSessionOperation>()
@@ -1022,7 +988,6 @@ export const issueExecutionAttempts = pgTable(
      * through the positive steering-segment relation.
      */
     steeringSegmentOrdinal: integer("steering_segment_ordinal"),
-    compactionControlId: uuid("compaction_control_id"),
     attemptGeneration: integer("attempt_generation").notNull(),
     state: text("state")
       .$type<
@@ -1039,19 +1004,14 @@ export const issueExecutionAttempts = pgTable(
   (table) => [
     check(
       "issue_execution_attempts_prompt_kind_check",
-      sql`${table.promptKind} in ('base', 'steering', 'compaction')`,
+      sql`${table.promptKind} in ('base', 'steering')`,
     ),
     check(
       "issue_execution_attempts_session_operation_check",
       sql`${table.sessionOperation} in (
         'new',
         'resume',
-        'recovery_new',
         'steer_resume'
-      )
-      and (
-        ${table.promptKind} <> 'compaction'
-        or ${table.sessionOperation} = 'new'
       )
       and (
         ${table.promptKind} <> 'base'
@@ -1084,7 +1044,6 @@ export const issueExecutionAttempts = pgTable(
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} = 0
         and ${table.steeringSegmentOrdinal} is null
-        and ${table.compactionControlId} is null
       ) or (
         ${table.promptKind} = 'steering'
         and ${table.runKind} in ('productive', 'consult')
@@ -1094,15 +1053,6 @@ export const issueExecutionAttempts = pgTable(
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} > 0
         and ${table.steeringSegmentOrdinal} = ${table.segmentOrdinal}
-        and ${table.compactionControlId} is null
-      ) or (
-        ${table.promptKind} = 'compaction'
-        and ${table.runKind} = 'compaction'
-        and ${table.refId} is null
-        and ${table.refOrdinal} is null
-        and ${table.segmentOrdinal} is null
-        and ${table.steeringSegmentOrdinal} is null
-        and ${table.compactionControlId} is not null
       )`,
     ),
     check(
@@ -1195,21 +1145,6 @@ export const issueExecutionAttempts = pgTable(
       ],
       name: "issue_execution_attempts_steering_segment_fk",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.compactionControlId,
-        table.runId,
-      ],
-      foreignColumns: [
-        issueSessionCompactionControls.companyId,
-        issueSessionCompactionControls.issueId,
-        issueSessionCompactionControls.id,
-        issueSessionCompactionControls.compactionRunId,
-      ],
-      name: "issue_execution_attempts_compaction_control_fk",
-    }).onDelete("cascade"),
     unique("issue_execution_attempts_scope_id_uq").on(
       table.companyId,
       table.issueId,
@@ -1226,15 +1161,6 @@ export const issueExecutionAttempts = pgTable(
       table.refOrdinal,
       table.refId,
       table.segmentOrdinal,
-    ),
-    unique("issue_execution_attempts_accounting_compaction_uq").on(
-      table.companyId,
-      table.issueId,
-      table.runId,
-      table.id,
-      table.runKind,
-      table.promptKind,
-      table.compactionControlId,
     ),
     uniqueIndex("issue_execution_attempts_base_prompt_uq")
       .on(
@@ -1253,13 +1179,6 @@ export const issueExecutionAttempts = pgTable(
         table.attemptGeneration,
       )
       .where(sql`${table.promptKind} = 'steering'`),
-    uniqueIndex("issue_execution_attempts_compaction_prompt_uq")
-      .on(
-        table.runId,
-        table.compactionControlId,
-        table.attemptGeneration,
-      )
-      .where(sql`${table.promptKind} = 'compaction'`),
     uniqueIndex("issue_execution_attempts_live_run_uq")
       .on(table.runId)
       .where(sql`${table.state} in ('pending', 'leased', 'running')`),
@@ -1273,7 +1192,7 @@ export const issueExecutionAttempts = pgTable(
 
 /**
  * Typed owner for a delayed pre-send successor attempt. Retry timing and
- * reason never leak onto the closed run envelope. target_not_found recovery
+ * reason never leak onto the closed run envelope. target_not_found restart
  * is immediate and therefore never creates one of these rows.
  */
 export const issueExecutionAttemptRetrySchedules = pgTable(
@@ -2012,12 +1931,11 @@ export const issueExecutionFinalizationPromptDependencies = pgTable(
     finalizationId: uuid("finalization_id").notNull(),
     dependencyOrdinal: integer("dependency_ordinal").notNull(),
     promptKind: text("prompt_kind")
-      .$type<"base" | "steering" | "compaction">()
+      .$type<"base" | "steering">()
       .notNull(),
     refId: uuid("ref_id"),
     refOrdinal: integer("ref_ordinal"),
     segmentOrdinal: integer("segment_ordinal"),
-    compactionControlId: uuid("compaction_control_id"),
     protocolSettlementState: text("protocol_settlement_state")
       .$type<IssueExecutionProtocolSettlementState>()
       .notNull(),
@@ -2043,7 +1961,6 @@ export const issueExecutionFinalizationPromptDependencies = pgTable(
         and ${table.refOrdinal} is not null
         and ${table.refOrdinal} >= 0
         and ${table.segmentOrdinal} = 0
-        and ${table.compactionControlId} is null
       ) or (
         ${table.promptKind} = 'steering'
         and ${table.refId} is not null
@@ -2051,13 +1968,6 @@ export const issueExecutionFinalizationPromptDependencies = pgTable(
         and ${table.refOrdinal} >= 0
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} > 0
-        and ${table.compactionControlId} is null
-      ) or (
-        ${table.promptKind} = 'compaction'
-        and ${table.refId} is null
-        and ${table.refOrdinal} is null
-        and ${table.segmentOrdinal} is null
-        and ${table.compactionControlId} is not null
       )`,
     ),
     check(
@@ -2102,21 +2012,6 @@ export const issueExecutionFinalizationPromptDependencies = pgTable(
       columns: [
         table.companyId,
         table.issueId,
-        table.compactionControlId,
-        table.runId,
-      ],
-      foreignColumns: [
-        issueSessionCompactionControls.companyId,
-        issueSessionCompactionControls.issueId,
-        issueSessionCompactionControls.id,
-        issueSessionCompactionControls.compactionRunId,
-      ],
-      name: "issue_execution_finalization_prompt_dependencies_compaction_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
         table.runId,
         table.accountingId,
       ],
@@ -2139,9 +2034,6 @@ export const issueExecutionFinalizationPromptDependencies = pgTable(
     uniqueIndex("issue_execution_finalization_prompt_dependencies_steering_uq")
       .on(table.finalizationId, table.refId, table.segmentOrdinal)
       .where(sql`${table.promptKind} = 'steering'`),
-    uniqueIndex("issue_execution_finalization_prompt_dependencies_compaction_uq")
-      .on(table.finalizationId, table.compactionControlId)
-      .where(sql`${table.promptKind} = 'compaction'`),
     index("issue_execution_finalization_prompt_dependencies_run_idx").on(
       table.companyId,
       table.runId,

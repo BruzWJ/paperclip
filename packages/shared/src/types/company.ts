@@ -1,5 +1,4 @@
 import type { CompanyStatus, PauseReason } from "../constants.js";
-import type { SessionCompactionSettings } from "./session-compaction.js";
 import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface Company {
@@ -21,7 +20,6 @@ export interface Company {
   feedbackDataSharingConsentAt: Date | null;
   feedbackDataSharingConsentByUserId: string | null;
   feedbackDataSharingTermsVersion: string | null;
-  sessionCompaction?: SessionCompactionSettings | null;
   brandColor: string | null;
   logoAssetId: string | null;
   logoUrl: string | null;

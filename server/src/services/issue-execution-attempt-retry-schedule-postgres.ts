@@ -4,7 +4,6 @@ import {
   issueExecutionAttemptRetrySchedules,
   issueExecutionPromptSegments,
   issueExecutionRunRefs,
-  issueSessionCompactionControls,
   type Db,
   type IssueExecutionAttempt,
   type IssueExecutionAttemptRetrySchedule,
@@ -233,32 +232,9 @@ async function assertPromptRemainedUnsent(
     return;
   }
 
-  const owner = exactlyOne(
-    await transaction
-      .select({
-        phase: issueSessionCompactionControls.promptTransmissionPhase,
-        settlement: issueSessionCompactionControls.protocolSettlementState,
-      })
-      .from(issueSessionCompactionControls)
-      .where(
-        and(
-          eq(issueSessionCompactionControls.companyId, attempt.companyId),
-          eq(issueSessionCompactionControls.issueId, attempt.issueId),
-          eq(issueSessionCompactionControls.id, attempt.compactionControlId!),
-          eq(issueSessionCompactionControls.compactionRunId, attempt.runId),
-          eq(issueSessionCompactionControls.compactionRunKind, "compaction"),
-          eq(issueSessionCompactionControls.kind, "recovery-prompt"),
-        ),
-      )
-      .limit(2)
-      .for("update"),
-    "retry predecessor lost its exact compaction prompt owner",
+  throw new IssueExecutionAttemptRetryScheduleRejected(
+    "retry predecessor has an unsupported prompt kind",
   );
-  if (owner.phase !== "not_transmitted" || owner.settlement !== null) {
-    throw new IssueExecutionAttemptRetryScheduleRejected(
-      "retry predecessor compaction prompt was transmitted or settled",
-    );
-  }
 }
 
 function assertTerminalRetryablePredecessor(input: {
@@ -402,21 +378,14 @@ export async function claimIssueExecutionAttemptRetryInTransaction(
     );
   }
   await input.revalidate({ transaction, run, predecessor, schedule, at: input.at });
-  if (run.kind !== "compaction") {
-    if (!run.targetAgentId) {
-      throw new IssueExecutionAttemptRetryScheduleRejected(
-        "productive retry lost its materialization target agent",
-      );
-    }
-    await fenceCompanySkillMaterializationReferenceInTransaction(
-      transaction,
-      {
-        companyId: run.companyId,
-        agentId: run.targetAgentId,
-        adapterConfigRevisionId: run.adapterConfigRevisionId,
-      },
-    );
-  }
+  await fenceCompanySkillMaterializationReferenceInTransaction(
+    transaction,
+    {
+      companyId: run.companyId,
+      agentId: run.targetAgentId,
+      adapterConfigRevisionId: run.adapterConfigRevisionId,
+    },
+  );
 
   const successor = exactlyOne(
     await transaction
@@ -434,7 +403,6 @@ export async function claimIssueExecutionAttemptRetryInTransaction(
         refOrdinal: predecessor.refOrdinal,
         segmentOrdinal: predecessor.segmentOrdinal,
         steeringSegmentOrdinal: predecessor.steeringSegmentOrdinal,
-        compactionControlId: predecessor.compactionControlId,
         attemptGeneration: predecessor.attemptGeneration + 1,
         state: "pending",
         startedAt: null,

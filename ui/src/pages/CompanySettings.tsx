@@ -18,7 +18,6 @@ import {
   Field,
   ToggleField,
 } from "../components/agent-config-primitives";
-import { SessionCompactionSettingsCard } from "../components/SessionCompactionSettingsCard";
 
 const BYTES_PER_MIB = 1024 * 1024;
 const DEFAULT_COMPANY_ATTACHMENT_MAX_MIB = DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES / BYTES_PER_MIB;
@@ -351,14 +350,6 @@ export function CompanySettings() {
           )}
         </div>
       )}
-
-      {/* Hiring */}
-      <div className="space-y-4">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Agent session compaction
-        </div>
-        <SessionCompactionSettingsCard companyId={selectedCompany.id} />
-      </div>
 
       {/* Hiring */}
       <div className="space-y-4" data-testid="company-settings-team-section">

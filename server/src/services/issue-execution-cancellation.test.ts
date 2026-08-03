@@ -19,7 +19,6 @@ function fixture() {
       lockActiveRunsForBudgetScopeInTransaction,
     } as never,
     dispatcher: {} as never,
-    compaction: {} as never,
     settlement: {
       fenceRevokedExecutionAuthorityInTransaction,
       releaseBudgetScopeDeliveriesInTransaction,

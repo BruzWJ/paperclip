@@ -258,7 +258,7 @@ describe("environmentRunOrchestrator", () => {
 
   it.each([
     ["productive", "productive-run-1"],
-    ["compaction", "compaction-run-1"],
+    ["consult", "consult-run-1"],
   ])(
     "uses the same acquire-realize-target-release lifecycle for %s work",
     async (_kind, runId) => {

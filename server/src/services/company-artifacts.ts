@@ -534,7 +534,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         );
         const workProductAgentIdByRunId = new Map<string, string>();
         for (const run of workProductRuns) {
-          if (run?.targetAgentId) {
+          if (run) {
             workProductAgentIdByRunId.set(run.runId, run.targetAgentId);
           }
         }

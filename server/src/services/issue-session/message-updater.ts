@@ -334,25 +334,10 @@ export async function applyIssueSessionMessageEvent(
         });
       });
       return;
-    case "session.next.compaction.ended":
-      await store.appendMessage(
-        Message.Compaction.make({
-          id: event.data.messageID,
-          type: "compaction",
-          metadata: event.metadata,
-          reason: event.data.reason,
-          summary: event.data.text,
-          recent: event.data.recent,
-          time: { created: event.data.timestamp },
-        }),
-      );
-      return;
     case "session.next.moved":
     case "session.next.prompt.admitted":
     case "session.next.tool.input.delta":
     case "session.next.retried":
-    case "session.next.compaction.started":
-    case "session.next.compaction.delta":
     case "session.next.revert.staged":
     case "session.next.revert.cleared":
     case "session.next.revert.committed":

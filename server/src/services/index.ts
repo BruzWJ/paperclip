@@ -157,14 +157,12 @@ export {
   type IssueExecutionPromptCycleRepository,
   type IssueExecutionPromptIdentity,
   type IssueExecutionSubprocessObservation,
-  type IssueExecutionTargetNotFoundRecovery,
   type MintedIssueExecutionPromptCapability,
   type ResolvedIssueExecutionPrompt,
 } from "./issue-execution-attempt-executor.js";
 export {
   settleAcpPromptInTransaction,
   AcpPromptSettlementRejected,
-  type AcpCompactionPromptSettlementIdentity,
   type AcpProductivePromptSettlementIdentity,
   type AcpPromptSettlementIdentity,
   type AcpPromptStepEndedPublication,
@@ -284,21 +282,6 @@ export {
   type PostgresIssueSessionCompositionReconciliation,
   type PostgresIssueSessionCompositionRuntime,
 } from "./issue-session-composition-postgres.js";
-export {
-  createPostgresIssueSessionCompactionRuntime,
-  SessionCompactionConflict,
-  SessionCompactionProviderFailure,
-  type PostgresIssueSessionCompactionOptions,
-  type PostgresIssueSessionCompactionRuntime,
-  type IssueSessionCompactionAttemptCancellationSignal,
-  type SessionCompactionModelResolver,
-  type SessionCompactionSummarizer,
-  type SessionCompactionSummaryResult,
-} from "./issue-session-compaction-postgres.js";
-export { lowerCanonicalCompactionMarker } from "./issue-session/compaction-lowering.js";
-export {
-  createPostgresSessionCompactionProvider,
-} from "./issue-session-compaction-provider.js";
 export {
   appendCanonicalControlNotice,
   appendCanonicalUserComment,

@@ -24,7 +24,6 @@ import { changeConsentRoutes } from "./routes/change-consents.js";
 import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
 import { folderRoutes } from "./routes/folders.js";
 import { summarySlotRoutes } from "./routes/summary-slots.js";
-import { sessionCompactionRoutes } from "./routes/session-compactions.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -95,7 +94,6 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import type { OrdinaryIssueRuntime } from "./services/ordinary-issue-runtime.js";
-import type { PostgresIssueSessionCompactionRuntime } from "./services/issue-session-compaction-postgres.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
@@ -212,7 +210,6 @@ export async function createApp(
       | "reconcileRequestedAgentSuspensions"
       | "releaseAgentSuspensionsInTransaction"
     >;
-    issueSessionCompactionRuntime?: PostgresIssueSessionCompactionRuntime;
     adapterReadinessEnvironmentOrchestrator?: Pick<
       EnvironmentRunOrchestrator,
       "acquireExecutionTargetForRun"
@@ -312,9 +309,6 @@ export async function createApp(
   api.use(changeConsentRoutes(db));
   api.use(inboxAgentPolicyRoutes(db));
   api.use(summarySlotRoutes(db, { ordinaryIssues }));
-  if (opts.issueSessionCompactionRuntime) {
-    api.use(sessionCompactionRoutes(db, opts.issueSessionCompactionRuntime));
-  }
   api.use(teamsCatalogRoutes(db, ordinaryIssues));
   api.use(
     agentRoutes(db, {

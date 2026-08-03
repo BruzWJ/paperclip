@@ -37,14 +37,13 @@ export type ProviderSafeRunTracePart =
  * intentionally not part of this DTO.
  */
 export interface ProviderSafeRunTraceTurn {
-  kind: "user" | "synthetic" | "system" | "shell" | "assistant" | "compaction";
+  kind: "user" | "synthetic" | "system" | "shell" | "assistant";
   timestamp: string;
   completedAt?: string;
   text?: string;
   content?: ProviderSafeRunTracePart[];
   finish?: string;
   errorKind?: string;
-  compactionReason?: "auto" | "manual";
 }
 
 export interface ProviderSafeRunOutputCommentReference {
@@ -56,12 +55,12 @@ export interface ProviderSafeRunOutputCommentReference {
  * and plugin worker protocol.
  *
  * The canonical trace remains internal and may contain accounting, lineage,
- * Session identities, model switches, checkpoints, and control-plane links.
+ * Session identities, model switches, and control-plane links.
  * None of those fields are admitted here.
  */
 export interface ProviderSafeRunTrace {
   runId: string;
-  runKind: "productive" | "consult" | "compaction";
+  runKind: "productive" | "consult";
   status: string;
   startedAt: string | null;
   finishedAt: string | null;

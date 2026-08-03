@@ -377,9 +377,6 @@ describe("Issue Session bounded read store", () => {
       store.pageEvents(scope(), { cursor }),
     ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
     await expect(
-      store.pageCompactionControls(scope(), { cursor }),
-    ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
-    await expect(
       store.pageComments(scope(), { cursor }),
     ).rejects.toBeInstanceOf(IssueSessionInvalidCursor);
 

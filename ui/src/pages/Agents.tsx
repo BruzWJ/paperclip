@@ -248,7 +248,6 @@ export function Agents() {
   const liveRunByAgent = useMemo(() => {
     const map = new Map<string, { runId: string; liveCount: number }>();
     for (const r of runPage?.items ?? []) {
-      if (!r.targetAgentId) continue;
       const existing = map.get(r.targetAgentId);
       if (existing) {
         existing.liveCount += 1;

@@ -27,15 +27,7 @@ import { authUsers } from "./auth.js";
 import { executionWorkspaces } from "./execution_workspaces.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
 import { issues } from "./issues.js";
-import {
-  issueSessionMessages,
-  issueSessionSourceUserExecutions,
-  issueSessions,
-} from "./issue_sessions.js";
-
-export type IssueSessionProductiveTurnSettlementKind =
-  | "assistant-finished"
-  | "provider-overflow";
+import { issueSessionMessages, issueSessions } from "./issue_sessions.js";
 
 export const issueExecutionAuthorities = pgTable(
   "issue_execution_authorities",
@@ -621,28 +613,6 @@ export const issueExecutionHistoryViews = pgTable(
     effectiveDialSnapshot: jsonb("effective_dial_snapshot")
       .$type<Record<string, boolean>>(),
     effectiveDialDigest: text("effective_dial_digest"),
-    compactionSettingsSnapshot: jsonb("compaction_settings_snapshot").$type<{
-      auto?: boolean;
-      prune?: boolean;
-      reserved?: number;
-      tail_turns?: number;
-      preserve_recent_tokens?: number;
-      modelRef?: string;
-    }>(),
-    modelSnapshot: jsonb("model_snapshot").$type<{
-      modelRef: string;
-      providerID: string;
-      modelID: string;
-      /** Exact provider-model variant, distinct from the stable model id. */
-      variant?: string | null;
-      contextWindow: number;
-      inputLimit?: number;
-      maxOutputTokens: number;
-      apiID: string;
-      apiNpm: string;
-      /** RuntimeFlags.outputTokenMax, kept distinct from the model limit. */
-      outputTokenMax?: number;
-    }>(),
     selectedRecordIds: jsonb("selected_record_ids").$type<string[]>(),
     lowerOrderSnapshot: jsonb("lower_order_snapshot").$type<
       Array<Record<string, unknown>>
@@ -650,21 +620,6 @@ export const issueExecutionHistoryViews = pgTable(
     compositionPreparationId: uuid("composition_preparation_id"),
     compositionBytes: text("composition_bytes"),
     compositionHash: text("composition_hash"),
-    compositionCheckpointControlId: uuid(
-      "composition_checkpoint_control_id",
-    ),
-    compositionTailStartMessageId: text(
-      "composition_tail_start_message_id",
-    ),
-    activeExecutionCheckpointControlId: uuid(
-      "active_execution_checkpoint_control_id",
-    ),
-    activeExecutionTailStartMessageId: text(
-      "active_execution_tail_start_message_id",
-    ),
-    loweringGeneration: integer("lowering_generation")
-      .notNull()
-      .default(0),
     sourceMessageId: text("source_message_id").notNull(),
     sourceInputId: text("source_input_id"),
     sourceAdmittedSeq: bigint("source_admitted_seq", { mode: "number" }),
@@ -709,8 +664,6 @@ export const issueExecutionHistoryViews = pgTable(
       ) or (
         ${table.effectiveDialSnapshot} is not null
         and ${table.effectiveDialDigest} is not null
-        and ${table.compactionSettingsSnapshot} is not null
-        and ${table.modelSnapshot} is not null
         and ${table.selectedRecordIds} is not null
         and ${table.lowerOrderSnapshot} is not null
       )`,
@@ -733,21 +686,6 @@ export const issueExecutionHistoryViews = pgTable(
           )
         )
       )`,
-    ),
-    check(
-      "issue_execution_history_views_live_checkpoint_check",
-      sql`${table.loweringGeneration} >= 0
-        and (
-          (
-            ${table.activeExecutionCheckpointControlId} is null
-            and ${table.activeExecutionTailStartMessageId} is null
-            and ${table.loweringGeneration} = 0
-          )
-          or (
-            ${table.activeExecutionCheckpointControlId} is not null
-            and ${table.loweringGeneration} > 0
-          )
-        )`,
     ),
     foreignKey({
       columns: [table.companyId, table.issueId, table.sessionId],
@@ -796,11 +734,7 @@ export const issueExecutionHistoryViews = pgTable(
   ],
 );
 
-/**
- * The immutable workspace selection for an ownership epoch. It is declared
- * before productive-turn settlements because a settlement must bind the exact
- * workspace that was active for its automatic-compaction provenance.
- */
+/** The immutable workspace selection for an ownership epoch. */
 export const issueExecutionWorkspaceBindings = pgTable(
   "issue_execution_workspace_bindings",
   {
@@ -868,375 +802,6 @@ export const issueExecutionWorkspaceBindings = pgTable(
   ],
 );
 
-/**
- * Immutable evidence captured at the end of each productive provider turn.
- * Automatic compaction consumes only this settled record: it must never infer
- * an overflow decision from a mutable history view, current company setting,
- * or a later adapter revision.
- */
-export const issueSessionProductiveTurnSettlements = pgTable(
-  "issue_session_productive_turn_settlements",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    companyId: uuid("company_id").notNull(),
-    issueId: uuid("issue_id").notNull(),
-    sessionId: text("session_id").notNull(),
-    productiveRunId: uuid("productive_run_id").notNull(),
-    /** Database discriminator for the productive-run composite FK. */
-    productiveRunKind: text("productive_run_kind")
-      .$type<"productive">()
-      .notNull()
-      .default("productive"),
-    refId: uuid("ref_id").notNull(),
-    historyViewId: uuid("history_view_id").notNull(),
-    ownershipEpoch: integer("ownership_epoch").notNull(),
-    /**
-     * Exact immutable workspace binding used by the settled productive
-     * attempt. Automatic compaction must launch against this binding rather
-     * than resolving whatever workspace is current later.
-     */
-    executionWorkspaceBindingId: uuid("execution_workspace_binding_id").notNull(),
-    contextEpoch: integer("context_epoch").notNull(),
-    executionLineageId: uuid("execution_lineage_id").notNull(),
-    historyScopeKind: text("history_scope_kind")
-      .$type<"execution-lineage">()
-      .notNull()
-      .default("execution-lineage"),
-    historyScopeId: text("history_scope_id").notNull(),
-    compositionAudience: text("composition_audience")
-      .$type<"execution">()
-      .notNull()
-      .default("execution"),
-    sourceHighWaterSeq: bigint("source_high_water_seq", { mode: "number" })
-      .notNull(),
-    /** The canonical user/synthetic source for the settled productive turn. */
-    sourceUserMessageId: text("source_user_message_id").notNull(),
-    /** Exact immutable source-user companion; never re-derived from a view. */
-    sourceUserExecutionId: uuid("source_user_execution_id").notNull(),
-    /** Null only when a provider overflow happens before an assistant exists. */
-    assistantMessageId: text("assistant_message_id"),
-    settlementKind: text("settlement_kind")
-      .$type<IssueSessionProductiveTurnSettlementKind>()
-      .notNull(),
-    providerAttempt: integer("provider_attempt").notNull(),
-    turnOrdinal: integer("turn_ordinal").notNull(),
-    productiveAgentId: uuid("productive_agent_id").notNull(),
-    productiveAdapterConfigRevisionId: uuid(
-      "productive_adapter_config_revision_id",
-    ).notNull(),
-    /** Immutable full active ProviderModel descriptor at the productive turn. */
-    productiveModelRef: text("productive_model_ref").notNull(),
-    productiveProviderId: text("productive_provider_id").notNull(),
-    productiveModelId: text("productive_model_id").notNull(),
-    productiveModelVariant: text("productive_model_variant"),
-    productiveContextWindow: integer("productive_context_window").notNull(),
-    /** Absent when the exact provider descriptor has no separate input cap. */
-    productiveInputLimit: integer("productive_input_limit"),
-    productiveOutputLimit: integer("productive_output_limit").notNull(),
-    productiveApiId: text("productive_api_id").notNull(),
-    productiveApiNpm: text("productive_api_npm").notNull(),
-    /** Exact sparse company setting visible when this productive turn settled. */
-    compactionSettingsSnapshot: jsonb("compaction_settings_snapshot")
-      .$type<{
-        auto?: boolean;
-        prune?: boolean;
-        reserved?: number;
-        tail_turns?: number;
-        preserve_recent_tokens?: number;
-        modelRef?: string;
-      }>()
-      .notNull(),
-    /**
-     * Raw RuntimeFlags snapshot. `{}` means outputTokenMax was absent; an
-     * explicit zero remains `{ outputTokenMax: 0 }` and is never collapsed.
-     */
-    productiveRuntimeFlags: jsonb("productive_runtime_flags")
-      .$type<{ outputTokenMax?: number }>()
-      .notNull()
-      .default({}),
-    sourceTotalTokens: bigint("source_total_tokens", { mode: "number" }),
-    sourceAssistantErrorKind: text("source_assistant_error_kind").$type<
-      "aborted" | "other"
-    >(),
-    settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    check(
-      "issue_session_productive_turn_settlements_kind_check",
-      sql`${table.settlementKind} in ('assistant-finished', 'provider-overflow')
-        and ${table.productiveRunKind} = 'productive'
-        and ${table.historyScopeKind} = 'execution-lineage'
-        and ${table.compositionAudience} = 'execution'`,
-    ),
-    check(
-      "issue_session_productive_turn_settlements_assistant_check",
-      sql`(
-        ${table.settlementKind} = 'assistant-finished'
-        and ${table.assistantMessageId} is not null
-      ) or ${table.settlementKind} = 'provider-overflow'`,
-    ),
-    check(
-      "issue_session_productive_turn_settlements_scope_check",
-      sql`${table.ownershipEpoch} > 0
-        and ${table.contextEpoch} >= 0
-        and ${table.sourceHighWaterSeq} >= 0
-        and ${table.providerAttempt} > 0
-        and ${table.turnOrdinal} >= 0
-        and ${table.historyScopeId} = ${table.executionLineageId}::text`,
-    ),
-    check(
-      "issue_session_productive_turn_settlements_model_check",
-      sql`btrim(${table.productiveModelRef}) <> ''
-        and length(btrim(${table.productiveModelRef})) <= 500
-        and btrim(${table.productiveProviderId}) <> ''
-        and btrim(${table.productiveModelId}) <> ''
-        and (${table.productiveModelVariant} is null or btrim(${table.productiveModelVariant}) <> '')
-        and btrim(${table.productiveApiId}) <> ''
-        and btrim(${table.productiveApiNpm}) <> ''
-        and ${table.productiveContextWindow} >= 0
-        and (${table.productiveInputLimit} is null or ${table.productiveInputLimit} >= 0)
-        and ${table.productiveOutputLimit} >= 0`,
-    ),
-    check(
-      "issue_session_productive_turn_settlements_runtime_flags_check",
-      sql`jsonb_typeof(${table.productiveRuntimeFlags}) = 'object'
-        and ${table.productiveRuntimeFlags} - 'outputTokenMax' = '{}'::jsonb
-        and (
-          not (${table.productiveRuntimeFlags} ? 'outputTokenMax')
-          or (
-            jsonb_typeof(${table.productiveRuntimeFlags} -> 'outputTokenMax') = 'number'
-            and (${table.productiveRuntimeFlags} ->> 'outputTokenMax') ~ '^(0|[1-9][0-9]*)$'
-          )
-        )`,
-    ),
-    check(
-      "issue_session_productive_turn_settlements_settings_snapshot_check",
-      sql`jsonb_typeof(${table.compactionSettingsSnapshot}) = 'object'
-        and ${table.compactionSettingsSnapshot}
-          - 'auto'
-          - 'prune'
-          - 'reserved'
-          - 'tail_turns'
-          - 'preserve_recent_tokens'
-          - 'modelRef' = '{}'::jsonb
-        and (
-          not (${table.compactionSettingsSnapshot} ? 'auto')
-          or jsonb_typeof(${table.compactionSettingsSnapshot} -> 'auto') = 'boolean'
-        )
-        and (
-          not (${table.compactionSettingsSnapshot} ? 'prune')
-          or jsonb_typeof(${table.compactionSettingsSnapshot} -> 'prune') = 'boolean'
-        )
-        and (
-          not (${table.compactionSettingsSnapshot} ? 'reserved')
-          or (
-            jsonb_typeof(${table.compactionSettingsSnapshot} -> 'reserved') = 'number'
-            and (${table.compactionSettingsSnapshot} ->> 'reserved') ~ '^(0|[1-9][0-9]*)$'
-          )
-        )
-        and (
-          not (${table.compactionSettingsSnapshot} ? 'tail_turns')
-          or (
-            jsonb_typeof(${table.compactionSettingsSnapshot} -> 'tail_turns') = 'number'
-            and (${table.compactionSettingsSnapshot} ->> 'tail_turns') ~ '^(0|[1-9][0-9]*)$'
-          )
-        )
-        and (
-          not (${table.compactionSettingsSnapshot} ? 'preserve_recent_tokens')
-          or (
-            jsonb_typeof(${table.compactionSettingsSnapshot} -> 'preserve_recent_tokens') = 'number'
-            and (${table.compactionSettingsSnapshot} ->> 'preserve_recent_tokens') ~ '^(0|[1-9][0-9]*)$'
-          )
-        )
-        and (
-          not (${table.compactionSettingsSnapshot} ? 'modelRef')
-          or (
-            jsonb_typeof(${table.compactionSettingsSnapshot} -> 'modelRef') = 'string'
-            and btrim(${table.compactionSettingsSnapshot} ->> 'modelRef') <> ''
-            and length(btrim(${table.compactionSettingsSnapshot} ->> 'modelRef')) <= 500
-          )
-        )`,
-    ),
-    check(
-      "issue_session_productive_turn_settlements_source_facts_check",
-      sql`(${table.sourceTotalTokens} is null or ${table.sourceTotalTokens} >= 0)
-        and (
-          ${table.sourceAssistantErrorKind} is null
-          or ${table.sourceAssistantErrorKind} in ('aborted', 'other')
-        )`,
-    ),
-    foreignKey({
-      columns: [table.companyId, table.issueId, table.sessionId],
-      foreignColumns: [issueSessions.companyId, issueSessions.issueId, issueSessions.id],
-      name: "issue_session_productive_turn_settlements_scope_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.productiveRunId,
-        table.productiveRunKind,
-      ],
-      foreignColumns: [
-        issueExecutionRuns.companyId,
-        issueExecutionRuns.issueId,
-        issueExecutionRuns.id,
-        issueExecutionRuns.kind,
-      ],
-      name: "issue_session_productive_turn_settlements_productive_run_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.sessionId,
-        table.refId,
-        table.ownershipEpoch,
-      ],
-      foreignColumns: [
-        issueExecutionRefs.companyId,
-        issueExecutionRefs.issueId,
-        issueExecutionRefs.sessionId,
-        issueExecutionRefs.id,
-        issueExecutionRefs.ownershipEpoch,
-      ],
-      name: "issue_session_productive_turn_settlements_ref_epoch_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.sessionId,
-        table.ownershipEpoch,
-        table.executionWorkspaceBindingId,
-      ],
-      foreignColumns: [
-        issueExecutionWorkspaceBindings.companyId,
-        issueExecutionWorkspaceBindings.issueId,
-        issueExecutionWorkspaceBindings.sessionId,
-        issueExecutionWorkspaceBindings.ownershipEpoch,
-        issueExecutionWorkspaceBindings.id,
-      ],
-      name: "issue_session_productive_turn_settlements_workspace_binding_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.sessionId,
-        table.refId,
-        table.historyViewId,
-        table.executionLineageId,
-        table.contextEpoch,
-      ],
-      foreignColumns: [
-        issueExecutionHistoryViews.companyId,
-        issueExecutionHistoryViews.issueId,
-        issueExecutionHistoryViews.sessionId,
-        issueExecutionHistoryViews.refId,
-        issueExecutionHistoryViews.id,
-        issueExecutionHistoryViews.executionLineageId,
-        issueExecutionHistoryViews.contextEpoch,
-      ],
-      name: "issue_session_productive_turn_settlements_view_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.sessionId,
-        table.sourceUserExecutionId,
-        table.sourceUserMessageId,
-      ],
-      foreignColumns: [
-        issueSessionSourceUserExecutions.companyId,
-        issueSessionSourceUserExecutions.issueId,
-        issueSessionSourceUserExecutions.sessionId,
-        issueSessionSourceUserExecutions.id,
-        issueSessionSourceUserExecutions.messageId,
-      ],
-      name: "issue_session_productive_turn_settlements_source_companion_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.sessionId,
-        table.sourceUserMessageId,
-      ],
-      foreignColumns: [
-        issueSessionMessages.companyId,
-        issueSessionMessages.issueId,
-        issueSessionMessages.sessionId,
-        issueSessionMessages.id,
-      ],
-      name: "issue_session_productive_turn_settlements_source_message_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.sessionId,
-        table.assistantMessageId,
-      ],
-      foreignColumns: [
-        issueSessionMessages.companyId,
-        issueSessionMessages.issueId,
-        issueSessionMessages.sessionId,
-        issueSessionMessages.id,
-      ],
-      name: "issue_session_productive_turn_settlements_assistant_message_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [table.companyId, table.productiveAgentId],
-      foreignColumns: [agents.companyId, agents.id],
-      name: "issue_session_productive_turn_settlements_agent_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.productiveAgentId,
-        table.productiveAdapterConfigRevisionId,
-      ],
-      foreignColumns: [
-        agentAdapterConfigRevisions.companyId,
-        agentAdapterConfigRevisions.agentId,
-        agentAdapterConfigRevisions.id,
-      ],
-      name: "issue_session_productive_turn_settlements_adapter_revision_fk",
-    }).onDelete("restrict"),
-    uniqueIndex("issue_session_productive_turn_settlements_turn_uq").on(
-      table.productiveRunId,
-      table.providerAttempt,
-      table.turnOrdinal,
-    ),
-    unique(
-      "issue_session_productive_turn_settlements_scope_id_uq",
-    ).on(
-      table.companyId,
-      table.issueId,
-      table.sessionId,
-      table.id,
-    ),
-    uniqueIndex("issue_session_productive_turn_settlements_assistant_uq")
-      .on(table.assistantMessageId)
-      .where(sql`${table.assistantMessageId} is not null`),
-    index("issue_session_productive_turn_settlements_scope_settled_idx").on(
-      table.companyId,
-      table.issueId,
-      table.sessionId,
-      table.contextEpoch,
-      table.settledAt,
-    ),
-    index("issue_session_productive_turn_settlements_run_idx").on(
-      table.companyId,
-      table.productiveRunId,
-      table.settledAt,
-    ),
-  ],
-);
-
 export const issueExecutionHistoryViewMessages = pgTable(
   "issue_execution_history_view_messages",
   {
@@ -1248,15 +813,7 @@ export const issueExecutionHistoryViewMessages = pgTable(
     messageId: text("message_id").notNull(),
     lowerOrder: integer("lower_order").notNull(),
     membershipKind: text("membership_kind")
-      .$type<
-        | "composition"
-        | "source"
-        | "execution"
-        | "checkpoint-request"
-        | "checkpoint-summary"
-        | "retained-tail"
-        | "post-checkpoint-input"
-      >()
+      .$type<"composition" | "source" | "execution">()
       .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1266,11 +823,7 @@ export const issueExecutionHistoryViewMessages = pgTable(
       sql`${table.membershipKind} in (
         'composition',
         'source',
-        'execution',
-        'checkpoint-request',
-        'checkpoint-summary',
-        'retained-tail',
-        'post-checkpoint-input'
+        'execution'
       )`,
     ),
     check(

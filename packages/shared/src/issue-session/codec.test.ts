@@ -29,7 +29,7 @@ const model = {
 };
 
 describe("issue-session shared contracts", () => {
-  it("owns all eight canonical message kinds and preserves their wire values", () => {
+  it("owns all seven canonical message kinds and preserves their wire values", () => {
     const messages = [
       { ...baseMessage, type: "agent-switched", agent: "agent" },
       { ...baseMessage, type: "model-switched", model },
@@ -55,13 +55,6 @@ describe("issue-session shared contracts", () => {
         model,
         content: [],
       },
-      {
-        ...baseMessage,
-        type: "compaction",
-        reason: "manual",
-        summary: "summary",
-        recent: "tail",
-      },
     ] as const;
 
     expect(
@@ -77,11 +70,25 @@ describe("issue-session shared contracts", () => {
       "system",
       "shell",
       "assistant",
-      "compaction",
     ]);
   });
 
-  it("round-trips completed tool pruning metadata without clearing auditable output", () => {
+  it("rejects retired Paperclip compaction messages and event definitions", () => {
+    expect(() =>
+      decodeIssueSessionMessage({
+        ...baseMessage,
+        type: "compaction",
+        reason: "manual",
+        summary: "summary",
+        recent: "tail",
+      }),
+    ).toThrow();
+    expect(
+      issueSessionEventDefinition("session.next.compaction.started.1"),
+    ).toBeUndefined();
+  });
+
+  it("round-trips completed tool metadata without clearing auditable output", () => {
     const message = {
       ...baseMessage,
       type: "assistant",
@@ -109,7 +116,6 @@ describe("issue-session shared contracts", () => {
             created: 1_700_000_000_000,
             ran: 1_700_000_000_001,
             completed: 1_700_000_000_002,
-            pruned: 1_700_000_000_003,
           },
         },
         {
@@ -126,7 +132,6 @@ describe("issue-session shared contracts", () => {
           time: {
             created: 1_700_000_000_004,
             completed: 1_700_000_000_005,
-            pruned: 1_700_000_000_006,
           },
         },
       ],

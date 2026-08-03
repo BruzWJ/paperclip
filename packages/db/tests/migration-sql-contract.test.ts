@@ -104,4 +104,34 @@ describe("generated PostgreSQL migration contract", () => {
       .join("\n--> statement-breakpoint\n");
     expect(referencedKeysUnavailableAtForeignKeyCreation(source)).toEqual([]);
   });
+
+  it("normalizes retained attempts before narrowing away compaction storage", () => {
+    const source = migrationSql("0002_amused_warbird.sql");
+    const normalizeRecovery = source.indexOf(
+      `SET "session_operation" = 'new'`,
+    );
+    const deleteCompactionRuns = source.indexOf(
+      `DELETE FROM "issue_execution_runs" WHERE "kind" = 'compaction'`,
+    );
+    const narrowRunKind = source.indexOf(
+      `ADD CONSTRAINT "issue_execution_runs_kind_check"`,
+    );
+    const requireRunAgent = source.indexOf(
+      `ALTER COLUMN "target_agent_id" SET NOT NULL`,
+    );
+
+    expect(normalizeRecovery).toBeGreaterThanOrEqual(0);
+    expect(deleteCompactionRuns).toBeGreaterThan(normalizeRecovery);
+    expect(narrowRunKind).toBeGreaterThan(deleteCompactionRuns);
+    expect(requireRunAgent).toBeGreaterThan(deleteCompactionRuns);
+    expect(source).toContain(
+      `DELETE FROM "issue_session_events"\nWHERE "type" IN (`,
+    );
+    expect(source).toContain(
+      `DELETE FROM "issue_session_messages"\nWHERE "type" = 'compaction'`,
+    );
+    expect(source).not.toContain(
+      `DROP TABLE "issue_session_source_user_executions"`,
+    );
+  });
 });

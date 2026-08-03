@@ -127,7 +127,7 @@ function fixtureRoot(): string {
       "  async markRetryable(input: any) {",
       "    await options.database.transaction(async (transaction: any) => {",
       "      await releaseAttempt(transaction);",
-      '      if (input.reason === "target_not_found_recovery") {',
+      '      if (input.reason === "target_not_found_new_session") {',
       "        await createTargetNotFoundSuccessorAttempt(transaction);",
       "      } else {",
       "        await scheduleIssueExecutionAttemptRetryInTransaction(transaction);",
@@ -546,8 +546,8 @@ test("rejects collection before retry branch state changes", () => {
       return source
         .replace(collection, "")
         .replace(
-          '      if (input.reason === "target_not_found_recovery") {\n',
-          `${collection}      if (input.reason === "target_not_found_recovery") {\n`,
+          '      if (input.reason === "target_not_found_new_session") {\n',
+          `${collection}      if (input.reason === "target_not_found_new_session") {\n`,
         );
     },
     "transaction-tail materialization collection",

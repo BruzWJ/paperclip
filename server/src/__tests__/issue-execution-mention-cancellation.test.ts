@@ -681,7 +681,7 @@ describe("nested mention cancellation", () => {
       attemptNumber: 3,
       refOrdinal: 0,
       segmentOrdinal: 0,
-      sessionOperation: "recovery_new",
+      sessionOperation: "resume",
       batch: [{
         ref: firstLease.ref,
         leaseGeneration: 8,

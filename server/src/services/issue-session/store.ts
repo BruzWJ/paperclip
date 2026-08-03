@@ -1,7 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   issueComments,
-  issueSessionCompactionControls,
   issueSessionEvents,
   issueSessionMessages,
   type Db,
@@ -21,7 +20,6 @@ import {
   desc,
   eq,
   gt,
-  isNotNull,
   lt,
   or,
 } from "drizzle-orm";
@@ -31,7 +29,6 @@ export const ISSUE_SESSION_MAX_PAGE_SIZE = 500;
 
 export type IssueSessionReadProjection =
   | "composition"
-  | "compaction"
   | "execution-history"
   | "rebuild"
   | "run-trace"
@@ -41,7 +38,6 @@ export type IssueSessionReadProjection =
 
 const ISSUE_SESSION_READ_PROJECTIONS: ReadonlySet<string> = new Set([
   "composition",
-  "compaction",
   "execution-history",
   "rebuild",
   "run-trace",
@@ -92,10 +88,6 @@ export interface IssueSessionStore {
     scope: IssueSessionPageScope,
     request?: IssueSessionPageRequest,
   ): Promise<IssueSessionPage<DecodedIssueSessionMessage>>;
-  pageCompactionControls(
-    scope: IssueSessionPageScope,
-    request?: IssueSessionPageRequest,
-  ): Promise<IssueSessionPage<StoredIssueSessionCompactionControl>>;
   pageComments(
     scope: IssueSessionPageScope,
     request?: IssueSessionPageRequest,
@@ -109,7 +101,7 @@ export interface IssueSessionStore {
 
 interface IssueSessionCursorEnvelope {
   v: 1;
-  rowKind: "event" | "message" | "comment" | "compaction-control";
+  rowKind: "event" | "message" | "comment";
   companyId: string;
   issueId: string;
   sessionId: string;
@@ -129,8 +121,6 @@ export class IssueSessionInvalidCursor extends Error {
   }
 }
 
-export type StoredIssueSessionCompactionControl =
-  typeof issueSessionCompactionControls.$inferSelect;
 export type StoredIssueSessionComment =
   typeof issueComments.$inferSelect;
 
@@ -463,18 +453,9 @@ function assertSequencedPage<Row extends {
   }
 }
 
-function requiredSequence(value: number | null, rowKind: string): number {
-  if (value === null || !Number.isSafeInteger(value) || value < 0) {
-    throw new IssueSessionLifecycleConflict(
-      `${rowKind} is missing its canonical Session sequence`,
-    );
-  }
-  return value;
-}
-
 /**
  * The sole bounded read authority for canonical Session events, messages,
- * compaction controls, and projected comments. Every cursor is authenticated
+ * and projected comments. Every cursor is authenticated
  * and bound to company, issue, Session, optional run, direction, row kind,
  * and a closed projection purpose.
  */
@@ -643,97 +624,6 @@ export function createIssueSessionStore(
             ? encodeCursor(options.cursorSecret, {
                 ...base,
                 seq: finalRow.seq,
-                id: finalRow.id,
-              })
-            : null,
-      };
-    },
-
-    async pageCompactionControls(
-      scope: IssueSessionPageScope,
-      request: IssueSessionPageRequest = {},
-    ): Promise<IssueSessionPage<StoredIssueSessionCompactionControl>> {
-      const base = cursorBase("compaction-control", scope);
-      const after = decodeCursor(
-        options.cursorSecret,
-        request.cursor,
-        base,
-      );
-      const limit = boundedPageSize(request.limit);
-      const forward = base.direction === "asc";
-      const rows = await db
-        .select()
-        .from(issueSessionCompactionControls)
-        .where(
-          and(
-            eq(issueSessionCompactionControls.companyId, base.companyId),
-            eq(issueSessionCompactionControls.issueId, base.issueId),
-            eq(issueSessionCompactionControls.sessionId, base.sessionId),
-            // Recovery-prompt is a nonsequenced control-plane settlement
-            // owner. This bounded Session reader pages sequenced effects.
-            isNotNull(issueSessionCompactionControls.seq),
-            ...(base.runId
-              ? [
-                  eq(
-                    issueSessionCompactionControls.compactionRunId,
-                    base.runId,
-                  ),
-                ]
-              : []),
-            ...(after
-              ? [
-                  or(
-                    forward
-                      ? gt(issueSessionCompactionControls.seq, after.seq)
-                      : lt(issueSessionCompactionControls.seq, after.seq),
-                    and(
-                      eq(
-                        issueSessionCompactionControls.seq,
-                        after.seq,
-                      ),
-                      forward
-                        ? gt(
-                            issueSessionCompactionControls.id,
-                            after.id,
-                          )
-                        : lt(
-                            issueSessionCompactionControls.id,
-                            after.id,
-                          ),
-                    ),
-                  ),
-                ]
-              : []),
-          ),
-        )
-        .orderBy(
-          forward
-            ? asc(issueSessionCompactionControls.seq)
-            : desc(issueSessionCompactionControls.seq),
-          forward
-            ? asc(issueSessionCompactionControls.id)
-            : desc(issueSessionCompactionControls.id),
-        )
-        .limit(limit + 1);
-      assertSequencedPage(
-        rows,
-        base,
-        after,
-        (row) => requiredSequence(row.seq, "compaction control"),
-        (row) => row.compactionRunId,
-      );
-      const pageRows = rows.slice(0, limit);
-      const finalRow = pageRows.at(-1);
-      return {
-        items: pageRows,
-        nextCursor:
-          rows.length > limit && finalRow
-            ? encodeCursor(options.cursorSecret, {
-                ...base,
-                seq: requiredSequence(
-                  finalRow.seq,
-                  "compaction control",
-                ),
                 id: finalRow.id,
               })
             : null,

@@ -1307,7 +1307,6 @@ async function lockLivenessFollowupRun(
     run.ownershipEpoch !== input.reconciliation.ownershipEpoch ||
     run.targetAgentId !== input.reconciliation.staleTargetAgentId ||
     run.executionMode !== input.reconciliation.sourceMode ||
-    !["productive", "consult"].includes(run.kind) ||
     binding.member.companyId !== run.companyId ||
     binding.member.issueId !== run.issueId ||
     binding.member.sessionId !== run.sessionId ||
@@ -1347,9 +1346,7 @@ function assertPreSendLivenessRetryLink(
     to.run.executionMode === from.run.executionMode &&
     to.run.issueExecutionAuthorityId === from.run.issueExecutionAuthorityId &&
     to.run.consultExecutionId === from.run.consultExecutionId &&
-    to.run.compactionScopeKind === from.run.compactionScopeKind &&
     to.run.parentRunId === from.run.parentRunId &&
-    to.run.triggeredByRunId === from.run.triggeredByRunId &&
     to.member.refId === from.member.refId &&
     to.member.admissionOrder === from.member.admissionOrder &&
     to.member.inputId === from.member.inputId &&
@@ -1950,11 +1947,8 @@ export function createIssueLivenessReconciliationService(
       "Liveness outbox lost its finalization",
     );
     if (
-      !["productive", "consult"].includes(run.kind) ||
       run.ownershipEpoch !== input.ownershipEpoch ||
       run.terminalFinalizationId !== finalization.id ||
-      run.targetAgentId === null ||
-      run.executionMode === null ||
       finalization.progressCommentId === null
     ) {
       reject("Liveness outbox references a non-agent or incomplete finalization");

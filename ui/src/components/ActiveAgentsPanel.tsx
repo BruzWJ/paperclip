@@ -123,7 +123,7 @@ export function ActiveAgentsPanel({
             <AgentRunCard
               key={run.id}
               run={run}
-              agent={run.targetAgentId ? agentById.get(run.targetAgentId) : undefined}
+              agent={agentById.get(run.targetAgentId)}
               issue={issueById.get(run.issueId)}
               className={cardClassName}
             />
@@ -153,7 +153,7 @@ const AgentRunCard = memo(function AgentRunCard({
   className?: string;
 }) {
   const agentRef = agent?.urlKey ?? run.targetAgentId;
-  const agentName = agent?.name ?? run.targetAgentId?.slice(0, 8) ?? "Paperclip";
+  const agentName = agent?.name ?? run.targetAgentId.slice(0, 8);
   return (
     <div className={cn(
       "flex min-h-52 flex-col overflow-hidden rounded-xl border border-blue-500/25 bg-blue-500/[0.04] shadow-sm",

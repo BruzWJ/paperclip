@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultIssueRunLedgerRunId,
   IssueRunLedgerContent,
-  projectIssueRunLedgerGroups,
 } from "./IssueRunLedger";
 
 vi.mock("@/lib/router", () => ({
@@ -37,10 +36,8 @@ function run(
     executionMode: "owner",
     issueExecutionAuthorityId: null,
     consultExecutionId: null,
-    compactionScopeKind: null,
     parentRunId: null,
     retryOfRunId: null,
-    triggeredByRunId: null,
     currentAttemptId: "attempt-1",
     currentLeaseId: "lease-1",
     cancellationIntentId: null,
@@ -117,121 +114,42 @@ describe("IssueRunLedgerContent", () => {
     });
   });
 
-  it("groups compactions only by triggeredByRunId and keeps orphans explicit", () => {
-    const parentA = run({
-      id: "parent-a-12345678",
+  it("selects the newest ordinary run by run timestamp", () => {
+    const older = run({
+      id: "older-run-12345678",
       startedAt: "2026-07-31T10:00:00.000Z",
       createdAt: "2026-07-31T10:00:00.000Z",
     });
-    const parentB = run({
-      id: "parent-b-12345678",
+    const newer = run({
+      id: "newer-run-12345678",
       kind: "consult",
       executionMode: "consult",
       startedAt: "2026-07-31T11:00:00.000Z",
       createdAt: "2026-07-31T11:00:00.000Z",
     });
-    const olderCompaction = run({
-      id: "compact-old-12345678",
-      kind: "compaction",
-      triggeredByRunId: parentA.id,
-      parentRunId: parentB.id,
-      retryOfRunId: parentB.id,
-      targetAgentId: null,
-      executionMode: null,
-      compactionScopeKind: "turns-recovery",
-      startedAt: "2026-07-31T12:00:00.000Z",
-      createdAt: "2026-07-31T12:00:00.000Z",
-    });
-    const newerCompaction = run({
-      id: "compact-new-12345678",
-      kind: "compaction",
-      triggeredByRunId: parentA.id,
-      parentRunId: parentB.id,
-      retryOfRunId: parentB.id,
-      targetAgentId: null,
-      executionMode: null,
-      compactionScopeKind: "comments-recovery",
-      startedAt: "2026-07-31T13:00:00.000Z",
-      createdAt: "2026-07-31T13:00:00.000Z",
-    });
-    const orphan = run({
-      id: "compact-orphan-12345678",
-      kind: "compaction",
-      triggeredByRunId: "missing-trigger-12345678",
-      parentRunId: parentB.id,
-      retryOfRunId: parentB.id,
-      targetAgentId: null,
-      executionMode: null,
-      compactionScopeKind: "turns-recovery",
-      startedAt: "2026-07-31T12:30:00.000Z",
-      createdAt: "2026-07-31T12:30:00.000Z",
-    });
 
-    const groups = projectIssueRunLedgerGroups([
-      orphan,
-      parentB,
-      olderCompaction,
-      parentA,
-      newerCompaction,
-    ]);
-    const parentAGroup = groups.find((group) => group.id === parentA.id);
-    expect(parentAGroup?.compactions.map((item) => item.id)).toEqual([
-      newerCompaction.id,
-      olderCompaction.id,
-    ]);
-    expect(groups[0]?.id).toBe(parentA.id);
-    expect(groups.find((group) => group.id === orphan.id)).toMatchObject({
-      orphanedCompaction: true,
-      compactions: [],
-    });
-    expect(groups.find((group) => group.id === parentB.id)?.compactions).toEqual([]);
-    expect(
-      groups.flatMap((group) => [
-        group.parent.id,
-        ...group.compactions.map((item) => item.id),
-      ]),
-    ).toHaveLength(5);
-    expect(defaultIssueRunLedgerRunId([
-      orphan,
-      parentB,
-      olderCompaction,
-      parentA,
-      newerCompaction,
-    ])).toBe(parentA.id);
+    expect(defaultIssueRunLedgerRunId([older, newer])).toBe(newer.id);
   });
 
-  it("renders nested compactions as selectable detail rows and labels an orphan", () => {
+  it("renders ordinary runs as individually selectable detail rows", () => {
     const onSelectRun = vi.fn();
-    const parent = run({
-      id: "parent-run-12345678",
+    const productive = run({
+      id: "productive-run-12345678",
       startedAt: "2026-07-31T10:00:00.000Z",
       createdAt: "2026-07-31T10:00:00.000Z",
     });
-    const child = run({
-      id: "compact-child-12345678",
-      kind: "compaction",
-      triggeredByRunId: parent.id,
-      targetAgentId: null,
-      executionMode: null,
-      compactionScopeKind: "turns-recovery",
+    const consult = run({
+      id: "consult-run-12345678",
+      kind: "consult",
+      executionMode: "consult",
       startedAt: "2026-07-31T12:00:00.000Z",
       createdAt: "2026-07-31T12:00:00.000Z",
-    });
-    const orphan = run({
-      id: "compact-orphan-12345678",
-      kind: "compaction",
-      triggeredByRunId: "missing-run-12345678",
-      targetAgentId: null,
-      executionMode: null,
-      compactionScopeKind: "comments-recovery",
-      startedAt: "2026-07-31T13:00:00.000Z",
-      createdAt: "2026-07-31T13:00:00.000Z",
     });
     act(() => {
       root.render(
         <IssueRunLedgerContent
-          runs={[orphan, child, parent]}
-          selectedRunId={parent.id}
+          runs={[consult, productive]}
+          selectedRunId={productive.id}
           onSelectRun={onSelectRun}
           issueStatus="in_progress"
           childIssues={[]}
@@ -242,38 +160,27 @@ describe("IssueRunLedgerContent", () => {
 
     expect(container.textContent).toContain("Running now by Builder");
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
-      `/agents/agent-1/runs/${parent.id}`,
+      `/agents/agent-1/runs/${consult.id}`,
     );
-    expect(container.textContent).toContain("triggering run unavailable");
-    const childButton = container.querySelector(
-      `[data-run-id="${child.id}"] button`,
+    const consultButton = container.querySelector(
+      `[data-run-id="${consult.id}"] button`,
     );
-    act(() => (childButton as HTMLButtonElement | null)?.click());
-    expect(onSelectRun).toHaveBeenCalledWith(child.id);
-    expect(container.querySelectorAll(`[data-run-id="${child.id}"]`)).toHaveLength(1);
+    act(() => (consultButton as HTMLButtonElement | null)?.click());
+    expect(onSelectRun).toHaveBeenCalledWith(consult.id);
+    expect(container.querySelectorAll("[data-run-id]")).toHaveLength(2);
   });
 
-  it("applies the feed limit to top-level groups without dropping attached compactions", () => {
-    const parents = Array.from({ length: 20 }, (_, index) =>
+  it("applies the feed limit to ordinary run records", () => {
+    const runs = Array.from({ length: 21 }, (_, index) =>
       run({
-        id: `parent-${String(index).padStart(2, "0")}-12345678`,
+        id: `run-${String(index).padStart(2, "0")}-12345678`,
         startedAt: `2026-07-30T${String(index).padStart(2, "0")}:00:00.000Z`,
         createdAt: `2026-07-30T${String(index).padStart(2, "0")}:00:00.000Z`,
       }));
-    const compaction = run({
-      id: "compact-attached-12345678",
-      kind: "compaction",
-      triggeredByRunId: parents[0]!.id,
-      targetAgentId: null,
-      executionMode: null,
-      compactionScopeKind: "turns-recovery",
-      startedAt: "2026-07-31T23:00:00.000Z",
-      createdAt: "2026-07-31T23:00:00.000Z",
-    });
     act(() => {
       root.render(
         <IssueRunLedgerContent
-          runs={[...parents, compaction]}
+          runs={runs}
           issueStatus="in_progress"
           childIssues={[]}
           agentMap={new Map([["agent-1", { name: "Builder" }]])}
@@ -281,6 +188,6 @@ describe("IssueRunLedgerContent", () => {
       );
     });
 
-    expect(container.querySelectorAll("[data-run-id]")).toHaveLength(21);
+    expect(container.querySelectorAll("[data-run-id]")).toHaveLength(20);
   });
 });

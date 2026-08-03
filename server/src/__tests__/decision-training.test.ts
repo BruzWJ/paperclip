@@ -109,7 +109,6 @@ function runRow(overrides: Record<string, unknown> = {}) {
     executionMode: "owner",
     parentRunId: null,
     retryOfRunId: null,
-    triggeredByRunId: null,
     startedAt: new Date("2026-07-16T11:00:00.000Z"),
     finishedAt: new Date("2026-07-16T11:30:00.000Z"),
     terminalClassification: "success",

@@ -213,15 +213,8 @@ vi.mock("../services/index.js", () => ({
       reconcilePending: vi.fn(async () => []),
       drainRunningRunsForShutdown: vi.fn(async () => undefined),
     },
-    compaction: {},
     executor: {},
   })),
-  createPostgresIssueSessionCompactionRuntime: vi.fn(() => ({
-    drainQueued: vi.fn(async () => []),
-    resumeCompletedPreparations: vi.fn(async () => []),
-    recoverInterruptedRuns: vi.fn(async () => []),
-  })),
-  createPostgresSessionCompactionProvider: vi.fn(() => ({})),
   createPostgresIssueSessionCompositionRuntime: vi.fn(() => ({
     prepareAndNotifyPersistedRef: vi.fn(async () => undefined),
     preparePersistedRef: vi.fn(async () => undefined),

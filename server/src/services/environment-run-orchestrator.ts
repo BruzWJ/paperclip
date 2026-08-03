@@ -342,7 +342,7 @@ export function environmentRunOrchestrator(
 
   /**
    * Acquire the exact persisted environment lease and resolve the adapter
-   * execution target used by productive and compaction provider work.
+   * execution target used by productive and consult provider work.
    */
   async function acquireExecutionTargetForRun(input: {
     companyId: string;

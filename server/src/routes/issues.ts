@@ -1610,7 +1610,7 @@ export function issueRoutes(
     const identity = await resolveIssueExecutionRunIdentityById(db, runId);
     if (!identity) return null;
     const run = await readIssueExecutionRun(db, identity);
-    if (!run?.targetAgentId) return null;
+    if (!run) return null;
     const agent = await db
       .select({ companyId: agents.companyId })
       .from(agents)

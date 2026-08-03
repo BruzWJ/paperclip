@@ -58,8 +58,6 @@ const DISPATCHER_POSTGRES_PATH =
   "server/src/services/issue-execution-dispatcher-postgres.ts";
 const ATTEMPT_EXECUTOR_PATH =
   "server/src/services/issue-execution-attempt-executor.ts";
-const SESSION_RECOVERY_PATH =
-  "server/src/services/issue-session-recovery-postgres.ts";
 const RUN_FINALIZER_PATH =
   "server/src/services/issue-execution-finalization-postgres.ts";
 const RUN_SCHEMA_PATH =
@@ -126,10 +124,8 @@ const RUN_ENVELOPE_COLUMNS = [
   "executionMode",
   "issueExecutionAuthorityId",
   "consultExecutionId",
-  "compactionScopeKind",
   "parentRunId",
   "retryOfRunId",
-  "triggeredByRunId",
   "currentAttemptId",
   "currentLeaseId",
   "cancellationIntentId",
@@ -551,12 +547,9 @@ function assertCanonicalConsumers(repositoryRoot: string): void {
     runServiceSource,
     dispatcherPostgresSource,
   );
-  assertTrueCarryRecoveryOperation(
+  assertMissingCarryStartsFresh(
     dispatcherPostgresSource,
     readFileSync(resolve(repositoryRoot, ATTEMPT_EXECUTOR_PATH), "utf8"),
-  );
-  assertIssueGlobalRecoverySelection(
-    readFileSync(resolve(repositoryRoot, SESSION_RECOVERY_PATH), "utf8"),
   );
 
   const routeSource = readFileSync(resolve(repositoryRoot, RUN_ROUTE_PATH), "utf8");
@@ -679,7 +672,7 @@ export function assertCanonicalTargetLaneRunLocking(
   }
 }
 
-export function assertTrueCarryRecoveryOperation(
+export function assertMissingCarryStartsFresh(
   dispatcherPostgresSource: string,
   attemptExecutorSource: string,
 ): void {
@@ -701,12 +694,12 @@ export function assertTrueCarryRecoveryOperation(
     ? ownerSource.slice(trueCarryStart)
     : "";
   if (
-    !trueCarrySource.includes('return "recovery_new";') ||
-    /return\s+["']new["']/.test(trueCarrySource) ||
+    !trueCarrySource.includes('return "new";') ||
+    trueCarrySource.includes("recovery_new") ||
     trueCarrySource.includes("historical")
   ) {
     throw new Error(
-      `${DISPATCHER_POSTGRES_PATH} must resolve every missing true-carry mapping to recovery_new`,
+      `${DISPATCHER_POSTGRES_PATH} must start a fresh session for every missing true-carry mapping`,
     );
   }
 
@@ -721,48 +714,13 @@ export function assertTrueCarryRecoveryOperation(
     ? attemptExecutorSource.slice(validationStart, validationEnd)
     : "";
   if (
-    !/\(operation\s*===\s*["']new["']\s*&&\s*!prompt\.carryContext\s*&&\s*prompt\.storedCorrelation\s*===\s*null\)/.test(
+    !/\(operation\s*===\s*["']new["']\s*&&\s*prompt\.storedCorrelation\s*===\s*null\)/.test(
       validationSource,
-    )
+    ) || validationSource.includes("!prompt.carryContext")
   ) {
     throw new Error(
-      `${ATTEMPT_EXECUTOR_PATH} must reject session/new for true-carry prompts`,
+      `${ATTEMPT_EXECUTOR_PATH} must allow session/new without a stored correlation regardless of carry_context`,
     );
-  }
-}
-
-export function assertIssueGlobalRecoverySelection(
-  recoverySource: string,
-): void {
-  const ownerStart = recoverySource.indexOf("function rowEligibleForRecovery(");
-  const ownerEnd = recoverySource.indexOf(
-    "async function loadEligibleMessageRows(",
-    ownerStart + 1,
-  );
-  if (ownerStart < 0 || ownerEnd < 0) {
-    throw new Error(
-      `${SESSION_RECOVERY_PATH} is missing canonical recovery-row selection`,
-    );
-  }
-  const ownerSource = recoverySource.slice(ownerStart, ownerEnd);
-  for (const required of [
-    "row.seq <= source.sourceHighWaterSeq",
-    "row.modelStateSeq <= source.sourceHighWaterSeq",
-    "row.seq > source.contextEpochBaselineSeq",
-    "isSettledIssueSessionMessage(row)",
-  ]) {
-    if (!ownerSource.includes(required)) {
-      throw new Error(
-        `${SESSION_RECOVERY_PATH} recovery selection is missing ${required}`,
-      );
-    }
-  }
-  for (const forbidden of ["row.ownershipEpoch", "row.agentId"]) {
-    if (ownerSource.includes(forbidden)) {
-      throw new Error(
-        `${SESSION_RECOVERY_PATH} must keep recovery history issue-global, not filter by ${forbidden}`,
-      );
-    }
   }
 }
 

@@ -68,15 +68,13 @@ export function LiveRunWidget({ issueId }: LiveRunWidgetProps) {
               <span>Session <span className="font-mono">{run.sessionId.slice(0, 8)}</span></span>
               <span>Ownership epoch {run.ownershipEpoch}</span>
             </div>
-            {run.targetAgentId ? (
-              <Link
-                to={"/agents/" + run.targetAgentId + "/runs/" + run.id}
-                className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-(length:--text-micro) font-medium text-blue-700 transition-colors hover:border-blue-500/30 hover:text-blue-600 dark:text-blue-300"
-              >
-                Open run
-                <ExternalLink className="h-3 w-3" />
-              </Link>
-            ) : null}
+            <Link
+              to={"/agents/" + run.targetAgentId + "/runs/" + run.id}
+              className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-(length:--text-micro) font-medium text-blue-700 transition-colors hover:border-blue-500/30 hover:text-blue-600 dark:text-blue-300"
+            >
+              Open run
+              <ExternalLink className="h-3 w-3" />
+            </Link>
           </section>
         ))}
       </div>

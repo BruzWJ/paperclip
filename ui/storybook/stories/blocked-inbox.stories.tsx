@@ -83,7 +83,7 @@ const fixtureIssues: Issue[] = [
     ...baseIssue,
     id: "issue-stalled-high",
     identifier: "PAP-412",
-    title: "Run nightly compaction",
+    title: "Run nightly maintenance",
     boardPresentationStatus: "blocked",
     blockedInboxAttention: attention({
       reason: "blocked_chain_stalled",

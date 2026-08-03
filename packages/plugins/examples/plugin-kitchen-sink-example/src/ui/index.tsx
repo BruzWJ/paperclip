@@ -41,11 +41,11 @@ type AgentRecord = { id: string; name: string; status: string };
 type HostIssueExecutionRunRecord = {
   id: string;
   status: string;
-  kind: "productive" | "consult" | "compaction";
+  kind: "productive" | "consult";
   createdAt?: string;
   startedAt?: string | null;
   finishedAt?: string | null;
-  targetAgentId?: string | null;
+  targetAgentId: string;
 };
 type HostRunPage = {
   items: HostIssueExecutionRunRecord[];
@@ -1100,11 +1100,9 @@ function KitchenSinkHostIntegrationDemo({ context }: { context: PluginPageProps[
                       <Pill label={run.kind} />
                     </div>
                     <div>{run.id}</div>
-                    {run.targetAgentId ? (
-                      <a {...hostNavigation.linkProps(`/agents/${run.targetAgentId}/runs/${run.id}`)}>
-                        Open run
-                      </a>
-                    ) : null}
+                    <a {...hostNavigation.linkProps(`/agents/${run.targetAgentId}/runs/${run.id}`)}>
+                      Open run
+                    </a>
                   </div>
                 );
               }}

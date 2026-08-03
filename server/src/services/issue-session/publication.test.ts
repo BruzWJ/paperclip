@@ -5,7 +5,6 @@ import {
   issueSessionEventsAsNdjson,
   publishIssueSessionEventInTx,
   publishIssueSessionFinalCommentInTx,
-  publishIssueSessionToolPrunedEffectInTx,
   redactIssueSessionPublicationValue,
 } from "./publication.js";
 
@@ -111,7 +110,7 @@ describe("Issue Session durable publication boundary", () => {
         error: { message: `error ${secret}` },
         chunks: [`chunk ${secret}`],
         metadata: { trace: `metadata ${secret}` },
-        compaction: { summary: `summary ${secret}` },
+        summary: { text: `summary ${secret}` },
         credentialEnvelope: { value: secret },
       },
       {
@@ -130,7 +129,7 @@ describe("Issue Session durable publication boundary", () => {
       error: { message: "error ***REDACTED***" },
       chunks: ["chunk ***REDACTED***"],
       metadata: { trace: "metadata ***REDACTED***" },
-      compaction: { summary: "summary ***REDACTED***" },
+      summary: { text: "summary ***REDACTED***" },
       credentialEnvelope: "***REDACTED***",
     });
   });
@@ -146,8 +145,6 @@ describe("Issue Session durable publication boundary", () => {
         },
         maxOutputTokens: 1_000,
         outputTokenMax: 900,
-        preserve_recent_tokens: 2_000,
-        sourceTotalTokens: 40,
         accessToken: "must-not-survive",
         password: 1234,
       }),
@@ -160,8 +157,6 @@ describe("Issue Session durable publication boundary", () => {
       },
       maxOutputTokens: 1_000,
       outputTokenMax: 900,
-      preserve_recent_tokens: 2_000,
-      sourceTotalTokens: 40,
       accessToken: "***REDACTED***",
       password: "***REDACTED***",
     });
@@ -223,26 +218,26 @@ describe("Issue Session durable publication boundary", () => {
       publishIssueSessionEventInTx(noTransaction, {
         ...input,
         companions: {
-          toolSource: {
-            kind: "completed",
-            assistantMessageId: "msg_assistant",
-            toolId: "tool",
-            sourceOutputText: "safe",
-            normalizationCodecVersion: "",
+          sourceUserExecution: {
+            messageId: "msg_publication_boundary_test",
+            sourceAgentId: "agent-1",
+            providerId: "",
+            modelId: "model-1",
+            variant: null,
           },
         },
       }),
     ).rejects.toThrow(
-      "Session tool-source normalization codec version must be a non-empty string",
+      "Session source-user provider id must be a non-empty string",
     );
 
     await expect(
       publishIssueSessionEventInTx(noTransaction, {
         ...input,
-        companions: { toolSource: null } as never,
+        companions: { sourceUserExecution: null } as never,
       }),
     ).rejects.toThrow(
-      "Session tool-source companion must be a plain object",
+      "Session source-user companion must be a plain object",
     );
   });
 
@@ -336,160 +331,6 @@ describe("Issue Session durable publication boundary", () => {
               threadRootCommentId: null,
               threadRootProjectedEventSeq: null,
             },
-          },
-        },
-      }),
-    ).rejects.toThrow("database reached");
-  });
-
-  it("accepts the complete typed tool-prune provenance shape before entering PostgreSQL", async () => {
-    const databaseReached = new Proxy(
-      {},
-      {
-        get() {
-          throw new Error("database reached");
-        },
-      },
-    ) as IssueSessionDbTransaction;
-    await expect(
-      publishIssueSessionToolPrunedEffectInTx(databaseReached, {
-        id: "44444444-4444-4444-8444-444444444444",
-        companyId: "11111111-1111-4111-8111-111111111111",
-        issueId: "22222222-2222-4222-8222-222222222222",
-        sessionId: "ses_publication_boundary_test",
-        seq: 1,
-        kind: "tool-pruned",
-        disposition: "active",
-        invalidatedAt: null,
-        invalidatedByRevertEventId: null,
-        invalidatedBoundaryMessageId: null,
-        invalidatedBoundarySeq: null,
-        historyScopeKind: "turns-recovery",
-        historyScopeId: "lineage",
-        audience: "turns",
-        contextEpoch: 1,
-        executionLineageId: "33333333-3333-4333-8333-333333333330",
-        sourceHighWaterSeq: 1,
-        latestFinishedAssistantMessageId: null,
-        sourceRunId: "33333333-3333-4333-8333-333333333333",
-        sourceRunKind: "productive",
-        sourceRefId: "33333333-3333-4333-8333-333333333334",
-        sourceRefOrdinal: 0,
-        sourceSegmentOrdinal: 0,
-        recoveryIdentityDigest: null,
-        compactionRequestMessageId: null,
-        summaryAssistantMessageId: null,
-        failedAssistantMessageId: null,
-        failedAssistantErrorKind: null,
-        assistantMessageId: "assistant",
-        toolId: "tool",
-        prunedAt: new Date(1),
-        tailStartMessageId: null,
-        replayMessageId: null,
-        continuationMessageId: null,
-        postCheckpointAction: "none",
-        compactionRunId: null,
-        compactionRunKind: "compaction",
-        promptTransmissionPhase: null,
-        protocolSettlementState: null,
-        promptSettlementReferenceId: null,
-        accountingId: null,
-        costEventId: null,
-        settlementVersion: 0,
-        settledAt: null,
-        compactionFailureKind: null,
-        structuralPositions: null,
-        settingsSnapshot: null,
-        modelSnapshot: null,
-        triggerModelSnapshot: null,
-        createdAt: new Date(1),
-      }),
-    ).rejects.toThrow("database reached");
-  });
-
-  it("accepts a recovery checkpoint companion without prompt-owner snapshots", async () => {
-    const input = candidate();
-    const databaseReached = new Proxy(
-      {},
-      {
-        get() {
-          throw new Error("database reached");
-        },
-      },
-    ) as IssueSessionDbTransaction;
-    await expect(
-      publishIssueSessionEventInTx(databaseReached, {
-        event: {
-          ...input.event,
-          type: "session.next.compaction.ended",
-          data: {
-            sessionID: input.event.sessionId,
-            messageID: "msg_summary",
-            timestamp: 1,
-            reason: "auto",
-            text: "summary",
-            recent: "",
-          },
-        },
-        envelope: {
-          ...input.envelope,
-          runId: "55555555-5555-4555-8555-555555555555",
-          agentId: "66666666-6666-4666-8666-666666666666",
-        },
-        projection: {
-          compactionControl: {
-            id: "77777777-7777-4777-8777-777777777777",
-            kind: "checkpoint",
-            disposition: "active",
-            invalidatedAt: null,
-            invalidatedByRevertEventId: null,
-            invalidatedBoundaryMessageId: null,
-            invalidatedBoundarySeq: null,
-            historyScopeKind: "turns-recovery",
-            historyScopeId: "lineage",
-            audience: "turns",
-            contextEpoch: 1,
-            executionLineageId:
-              "33333333-3333-4333-8333-333333333330",
-            sourceHighWaterSeq: 1,
-            latestFinishedAssistantMessageId: null,
-            sourceRunId:
-              "33333333-3333-4333-8333-333333333333",
-            sourceRunKind: "productive",
-            sourceRefId:
-              "33333333-3333-4333-8333-333333333334",
-            sourceRefOrdinal: 0,
-            sourceSegmentOrdinal: 0,
-            recoveryIdentityDigest: null,
-            compactionRequestMessageId: "msg_request",
-            summaryAssistantMessageId: "msg_summary",
-            failedAssistantMessageId: null,
-            failedAssistantErrorKind: null,
-            assistantMessageId: null,
-            toolId: null,
-            prunedAt: null,
-            tailStartMessageId: null,
-            replayMessageId: null,
-            continuationMessageId: null,
-            postCheckpointAction: "none",
-            compactionRunId:
-              "55555555-5555-4555-8555-555555555555",
-            compactionRunKind: "compaction",
-            promptTransmissionPhase: null,
-            protocolSettlementState: null,
-            promptSettlementReferenceId: null,
-            accountingId: null,
-            costEventId: null,
-            settlementVersion: 0,
-            settledAt: null,
-            compactionFailureKind: null,
-            structuralPositions: [
-              { messageId: "msg_request", index: 0 },
-            ],
-            settingsSnapshot: null,
-            modelSnapshot: null,
-            triggerModelSnapshot: null,
-            createdAt: new Date(1),
           },
         },
       }),

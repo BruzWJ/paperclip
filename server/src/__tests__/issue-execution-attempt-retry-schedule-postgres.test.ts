@@ -6,7 +6,6 @@ import {
   issueExecutionPromptSegments,
   issueExecutionRunRefs,
   issueExecutionRuns,
-  issueSessionCompactionControls,
   type IssueExecutionAttempt,
   type IssueExecutionAttemptRetrySchedule,
   type IssueExecutionRun,
@@ -39,10 +38,8 @@ function runRow(
     executionMode: "owner",
     issueExecutionAuthorityId: "authority-1",
     consultExecutionId: null,
-    compactionScopeKind: null,
     parentRunId: null,
     retryOfRunId: null,
-    triggeredByRunId: null,
     currentAttemptId: null,
     currentLeaseId: null,
     cancellationIntentId: null,
@@ -74,7 +71,6 @@ function attemptRow(
     refId: "ref-1",
     refOrdinal: 0,
     segmentOrdinal: 0,
-    compactionControlId: null,
     attemptGeneration: 3,
     state: "failed",
     startedAt: createdAt,
@@ -196,8 +192,7 @@ function createTransaction(input: {
           }
           if (
             table === issueExecutionRunRefs ||
-            table === issueExecutionPromptSegments ||
-            table === issueSessionCompactionControls
+            table === issueExecutionPromptSegments
           ) {
             return [state.promptOwner];
           }

@@ -1,7 +1,6 @@
 export const ISSUE_EXECUTION_RUN_KINDS = [
   "productive",
   "consult",
-  "compaction",
 ] as const;
 
 export type IssueExecutionRunKind =
@@ -10,7 +9,6 @@ export type IssueExecutionRunKind =
 export const ISSUE_EXECUTION_SESSION_OPERATIONS = [
   "new",
   "resume",
-  "recovery_new",
   "steer_resume",
 ] as const;
 
@@ -66,16 +64,14 @@ export interface IssueExecutionRunEnvelopeRecord {
   kind: IssueExecutionRunKind;
   status: IssueExecutionRunStatus;
   ownershipEpoch: number;
-  targetAgentId: string | null;
+  targetAgentId: string;
   adapterConfigRevisionId: string;
   executionWorkspaceBindingId: string;
-  executionMode: "owner" | "consult" | null;
+  executionMode: "owner" | "consult";
   issueExecutionAuthorityId: string | null;
   consultExecutionId: string | null;
-  compactionScopeKind: "turns-recovery" | "comments-recovery" | null;
   parentRunId: string | null;
   retryOfRunId: string | null;
-  triggeredByRunId: string | null;
   currentAttemptId: string | null;
   currentLeaseId: string | null;
   cancellationIntentId: string | null;

@@ -103,7 +103,7 @@ function resolvedPrompt(input: {
       : input.carryContext
       ? stored
         ? "resume"
-        : "recovery_new"
+        : "new"
       : "new");
   return {
     identity: {
@@ -340,7 +340,7 @@ function createHarness(input: {
             kind: "dispatch",
             result: {
               kind: "retry",
-              reason: "target_not_found_recovery",
+              reason: "target_not_found_new_session",
               retryAt: new Date("2026-01-01T00:00:00.000Z"),
             },
           }
@@ -378,15 +378,9 @@ function createHarness(input: {
     },
   });
 
-  const recovery = {
-    prepareReplacementPrompt: vi.fn(async () =>
-      `PAPERCLIP_RECOVERY_V1\n${input.prompt.sourceText}`),
-  };
-
   const executor = createIssueExecutionAttemptExecutor({
     repository,
     sessionCorrelations,
-    recovery,
     events: {
       async publish({ prompt, capability, event }) {
         eventBoundaries.push({ prompt, capability });
@@ -609,7 +603,6 @@ function createHarness(input: {
     terminateCalls,
     disposeCalls,
     executionStarted: executionStarted.promise,
-    recovery,
   };
 }
 
@@ -668,7 +661,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(JSON.stringify(harness.launches[0]!.mcpServers)).not.toContain(
       process.execPath,
     );
-    expect(harness.recovery.prepareReplacementPrompt).not.toHaveBeenCalled();
     expect(harness.protectedValues).toHaveLength(1);
     expect(prompt.activationCorrelationScope.purpose).toBe(
       "active_run_steering",
@@ -772,7 +764,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
       { kind: "resume", sessionId: "opaque-resume-session" },
     ]);
     expect(harness.messages).toEqual([prompt.sourceText]);
-    expect(harness.recovery.prepareReplacementPrompt).not.toHaveBeenCalled();
     expect(prompt.activationCorrelationScope.purpose).toBe("carry");
   });
 
@@ -799,7 +790,6 @@ describe("canonical productive/consult ACP attempt executor", () => {
         { kind: "resume", sessionId: "opaque-resume-session" },
       ]);
       expect(harness.messages).toEqual([prompt.sourceText]);
-      expect(harness.recovery.prepareReplacementPrompt).not.toHaveBeenCalled();
       expect(prompt.activationCorrelationScope.purpose).toBe(destinationPurpose);
     },
   );
@@ -826,34 +816,15 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.order).toEqual([]);
   });
 
-  it("treats a missing local true-carry mapping as recovery before one new process", async () => {
+  it("starts a new session with the exact source when a true-carry mapping is missing", async () => {
     const prompt = resolvedPrompt({ carryContext: true, stored: null });
     const harness = createHarness({ prompt });
 
     await executeAttempt(harness, prompt);
 
     expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([
-      `PAPERCLIP_RECOVERY_V1\n${prompt.sourceText}`,
-    ]);
-    expect(harness.recovery.prepareReplacementPrompt).toHaveBeenCalledTimes(1);
+    expect(harness.messages).toEqual([prompt.sourceText]);
     expect(harness.invocationFileSets).toHaveLength(1);
-  });
-
-  it("rejects a forged true-carry session/new before capability or provider work", async () => {
-    const prompt = resolvedPrompt({
-      carryContext: true,
-      stored: null,
-      sessionOperation: "new",
-    });
-    const harness = createHarness({ prompt });
-
-    await expect(executeAttempt(harness, prompt)).rejects.toThrow(
-      "ACP session operation crossed carry policy or stored correlation",
-    );
-    expect(harness.order).toEqual([]);
-    expect(harness.starts).toEqual([]);
-    expect(harness.recovery.prepareReplacementPrompt).not.toHaveBeenCalled();
   });
 
   it("closes a -32002 resume as one attempt and requests an immediate successor", async () => {
@@ -870,7 +841,7 @@ describe("canonical productive/consult ACP attempt executor", () => {
       executeAttempt(harness, prompt),
     ).resolves.toEqual({
       kind: "retry",
-      reason: "target_not_found_recovery",
+      reason: "target_not_found_new_session",
       retryAt: new Date("2026-01-01T00:00:00.000Z"),
     });
 
@@ -882,28 +853,24 @@ describe("canonical productive/consult ACP attempt executor", () => {
     expect(harness.order).toContain("close:target_not_found:1");
     expect(harness.order).not.toContain("mint:2");
     expect(harness.order.at(-1)).toBe("release:false");
-    expect(harness.recovery.prepareReplacementPrompt).not.toHaveBeenCalled();
   });
 
-  it("runs the successor recovery_new attempt in exactly one new ACP lifecycle", async () => {
+  it("runs the target-not-found successor in exactly one new ACP lifecycle", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
       stored: null,
-      sessionOperation: "recovery_new",
+      sessionOperation: "new",
     });
     const harness = createHarness({ prompt });
 
     await executeAttempt(harness, prompt);
 
     expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([
-      `PAPERCLIP_RECOVERY_V1\n${prompt.sourceText}`,
-    ]);
+    expect(harness.messages).toEqual([prompt.sourceText]);
     expect(harness.invocationFileSets).toHaveLength(1);
-    expect(harness.recovery.prepareReplacementPrompt).toHaveBeenCalledTimes(1);
   });
 
-  it("uses exact-new without recovery when false-carry steering lost its active target", async () => {
+  it("uses exact-new when false-carry steering lost its active target", async () => {
     const prompt = resolvedPrompt({
       carryContext: false,
       promptKind: "steering",
@@ -915,10 +882,9 @@ describe("canonical productive/consult ACP attempt executor", () => {
 
     expect(harness.starts).toEqual([{ kind: "new" }]);
     expect(harness.messages).toEqual([prompt.sourceText]);
-    expect(harness.recovery.prepareReplacementPrompt).not.toHaveBeenCalled();
   });
 
-  it("uses recovery-new when true-carry steering lost its pinned source", async () => {
+  it("uses exact-new when true-carry steering lost its pinned source", async () => {
     const prompt = resolvedPrompt({
       carryContext: true,
       promptKind: "steering",
@@ -928,12 +894,9 @@ describe("canonical productive/consult ACP attempt executor", () => {
 
     await executeAttempt(harness, prompt);
 
-    expect(prompt.sessionOperation).toBe("recovery_new");
+    expect(prompt.sessionOperation).toBe("new");
     expect(harness.starts).toEqual([{ kind: "new" }]);
-    expect(harness.messages).toEqual([
-      `PAPERCLIP_RECOVERY_V1\n${prompt.sourceText}`,
-    ]);
-    expect(harness.recovery.prepareReplacementPrompt).toHaveBeenCalledOnce();
+    expect(harness.messages).toEqual([prompt.sourceText]);
   });
 
   it("rejects a terminal occupancy size that differs from the immutable revision", async () => {

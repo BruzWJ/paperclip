@@ -872,7 +872,7 @@ for (const path of [
 }
 
 for (const path of [
-  "server/src/services/issue-session-compaction-postgres.ts",
+  "server/src/services/issue-execution-postgres.ts",
   "server/src/services/unrelated-finalization-caller.ts",
 ] as const) {
   test(`rejects a per-run stale-check consumer in ${path}`, () => {

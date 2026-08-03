@@ -45,7 +45,6 @@ export const costEvents = pgTable(
     refId: uuid("ref_id"),
     runOrdinal: integer("run_ordinal"),
     segmentOrdinal: integer("segment_ordinal"),
-    compactionControlId: uuid("compaction_control_id"),
     budgetCurrency: budgetCurrencyColumn("budget_currency").notNull(),
     kind: text("kind").$type<AcpPromptCostKind>().notNull(),
     unavailableReason: text("unavailable_reason").$type<
@@ -82,7 +81,6 @@ export const costEvents = pgTable(
         and ${table.runOrdinal} >= 0
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} = 0
-        and ${table.compactionControlId} is null
       ) or (
         ${table.promptKind} = 'steering'
         and ${table.runKind} in ('productive', 'consult')
@@ -91,14 +89,6 @@ export const costEvents = pgTable(
         and ${table.runOrdinal} >= 0
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} > 0
-        and ${table.compactionControlId} is null
-      ) or (
-        ${table.promptKind} = 'compaction'
-        and ${table.runKind} = 'compaction'
-        and ${table.refId} is null
-        and ${table.runOrdinal} is null
-        and ${table.segmentOrdinal} is null
-        and ${table.compactionControlId} is not null
       )`,
     ),
     check(
@@ -216,11 +206,6 @@ export const costEvents = pgTable(
         )
       )`,
     ),
-    check(
-      "cost_events_compaction_cursor_check",
-      sql`${table.runKind} <> 'compaction'
-        or ${table.cursorBeforeState} = 'unanchored'`,
-    ),
     foreignKey({
       columns: [table.companyId, table.budgetCurrency],
       foreignColumns: [companies.id, companies.budgetCurrency],
@@ -251,36 +236,7 @@ export const costEvents = pgTable(
       ],
       name: "cost_events_productive_accounting_fk",
     }).onDelete("restrict"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.agentId,
-        table.runId,
-        table.runKind,
-        table.compactionControlId,
-        table.accountingId,
-      ],
-      foreignColumns: [
-        acpPromptAccounting.companyId,
-        acpPromptAccounting.issueId,
-        acpPromptAccounting.agentId,
-        acpPromptAccounting.runId,
-        acpPromptAccounting.runKind,
-        acpPromptAccounting.compactionControlId,
-        acpPromptAccounting.id,
-      ],
-      name: "cost_events_compaction_accounting_fk",
-    }).onDelete("restrict"),
     unique("cost_events_accounting_uq").on(table.accountingId),
-    unique("cost_events_compaction_settlement_owner_uq").on(
-      table.companyId,
-      table.issueId,
-      table.runId,
-      table.compactionControlId,
-      table.accountingId,
-      table.id,
-    ),
     index("cost_events_company_occurred_idx").on(
       table.companyId,
       table.occurredAt,

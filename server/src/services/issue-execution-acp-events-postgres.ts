@@ -37,8 +37,6 @@ import {
   type IssueSessionPublicationRedactor,
 } from "./issue-session/publication.js";
 
-const TOOL_OUTPUT_CODEC_VERSION = "paperclip.acp-tool-output/v1";
-
 export class PostgresIssueExecutionAcpEventRejected extends Error {
   readonly code = "postgres_issue_execution_acp_event_rejected";
 
@@ -674,16 +672,6 @@ async function publishToolEvent(
           : { result: redactedRawOutput }),
         provider: { executed: true },
       },
-      {
-        toolSource: {
-          kind: "completed",
-          assistantMessageId: publication.assistantMessageId,
-          toolId: event.toolCallId,
-          sourceOutputText,
-          normalizationCodecVersion: TOOL_OUTPUT_CODEC_VERSION,
-          createdAt: publication.timestamp,
-        },
-      },
     );
     return;
   }
@@ -708,16 +696,6 @@ async function publishToolEvent(
           ? {}
           : { result: redactedRawOutput }),
         provider: { executed: true },
-      },
-      {
-        toolSource: {
-          kind: "error",
-          assistantMessageId: publication.assistantMessageId,
-          toolId: event.toolCallId,
-          interrupted: false,
-          interruptedOutputText: null,
-          createdAt: publication.timestamp,
-        },
       },
     );
     return;

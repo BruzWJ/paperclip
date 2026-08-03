@@ -705,7 +705,7 @@ export function getLatestFailedRunsByAgent(
   const latestByAgent = new Map<string, IssueExecutionRunEnvelopeRecord>();
 
   for (const run of sorted) {
-    const agentKey = run.targetAgentId ?? "paperclip-compaction";
+    const agentKey = run.targetAgentId;
     if (!latestByAgent.has(agentKey)) {
       latestByAgent.set(agentKey, run);
     }

@@ -80,7 +80,6 @@ function repository(): ContextRetrievalRepository {
       return {
         runId,
         runKind: "productive",
-        triggeredByRunId: null,
         issueId: "child",
         status: "succeeded",
         startedAt: "2026-07-25T00:00:00.000Z",
@@ -91,7 +90,6 @@ function repository(): ContextRetrievalRepository {
           outputTokens: 0,
           knownDeltaAmount: "0",
         },
-        checkpoint: null,
         turns: [
           {
             seq: 0,
@@ -368,7 +366,6 @@ describe("context retrieval", () => {
     repo.readCanonicalRunTrace = async () => ({
       runId: "run-child",
       runKind: "productive",
-      triggeredByRunId: "must-not-leak-parent-run",
       issueId: "child",
       status: "succeeded",
       startedAt: "2026-07-25T00:00:00.000Z",
@@ -379,7 +376,6 @@ describe("context retrieval", () => {
         outputTokens: 0,
         knownDeltaAmount: "0",
       },
-      checkpoint: null,
       turns: [
         {
           seq: 0,
@@ -494,15 +490,6 @@ describe("context retrieval", () => {
           command: "printf safe",
           output: "safe shell output",
         },
-        {
-          seq: 5,
-          id: "compaction-message-id",
-          kind: "compaction",
-          timestamp: "2026-07-25T00:00:05.000Z",
-          text: "Safe compacted summary",
-          recent: "must-not-leak-checkpoint-tail",
-          compactionReason: "auto",
-        },
       ],
       outcome: "succeeded",
       comments: [
@@ -589,12 +576,6 @@ describe("context retrieval", () => {
             },
           ],
         },
-        {
-          kind: "compaction",
-          timestamp: "2026-07-25T00:00:05.000Z",
-          text: "Safe compacted summary",
-          compactionReason: "auto",
-        },
       ],
       outputComments: [
         { commentId: "comment-update" },
@@ -604,9 +585,7 @@ describe("context retrieval", () => {
     expect(JSON.stringify(trace)).not.toContain("must-not-leak");
     expect(trace).not.toHaveProperty("events");
     expect(trace).not.toHaveProperty("usage");
-    expect(trace).not.toHaveProperty("checkpoint");
     expect(trace).not.toHaveProperty("issueId");
-    expect(trace).not.toHaveProperty("triggeredByRunId");
   });
 
   it("uses signed scope-bound keyset cursors", async () => {

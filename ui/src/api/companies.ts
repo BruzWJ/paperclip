@@ -7,8 +7,6 @@ import type {
   CompanyPortabilityImportResult,
   CompanyPortabilityPreviewRequest,
   CompanyPortabilityPreviewResult,
-  SessionCompactionSettings,
-  UpdateSessionCompactionSettings,
   UpdateCompanyBranding,
   BudgetCurrency,
   MoneyAmount,
@@ -46,18 +44,6 @@ export const companiesApi = {
   ) => api.patch<Company>(`/companies/${companyId}`, data),
   updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
     api.patch<Company>(`/companies/${companyId}/branding`, data),
-  getSessionCompactionSettings: (companyId: string) =>
-    api.get<SessionCompactionSettings>(
-      `/companies/${companyId}/session-compaction-settings`,
-    ),
-  updateSessionCompactionSettings: (
-    companyId: string,
-    data: UpdateSessionCompactionSettings,
-  ) =>
-    api.patch<SessionCompactionSettings>(
-      `/companies/${companyId}/session-compaction-settings`,
-      data,
-    ),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (

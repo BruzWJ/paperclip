@@ -50,16 +50,8 @@ type IssueRunLedgerContentProps = {
 };
 
 type LedgerFeedItem =
-  | { kind: "run-group"; id: string; timestamp: string; group: IssueRunLedgerGroup }
+  | { kind: "run"; id: string; timestamp: string; run: IssueExecutionRunEnvelopeRecord }
   | { kind: "activity"; id: string; timestamp: string; event: ActivityEvent };
-
-export type IssueRunLedgerGroup = {
-  id: string;
-  parent: IssueExecutionRunEnvelopeRecord;
-  compactions: IssueExecutionRunEnvelopeRecord[];
-  timestamp: string;
-  orphanedCompaction: boolean;
-};
 
 const TERMINAL_CHILD_STATUSES = new Set<Issue["boardPresentationStatus"]>([
   "done",
@@ -117,67 +109,10 @@ function compareRunsNewestFirst(
     right.id.localeCompare(left.id);
 }
 
-export function projectIssueRunLedgerGroups(
-  runs: readonly IssueExecutionRunEnvelopeRecord[],
-): IssueRunLedgerGroup[] {
-  const productiveParents = new Map<
-    string,
-    {
-      parent: IssueExecutionRunEnvelopeRecord;
-      compactions: IssueExecutionRunEnvelopeRecord[];
-    }
-  >();
-  for (const run of runs) {
-    if (run.kind !== "compaction" && !productiveParents.has(run.id)) {
-      productiveParents.set(run.id, { parent: run, compactions: [] });
-    }
-  }
-
-  const orphanedCompactions: IssueExecutionRunEnvelopeRecord[] = [];
-  for (const run of runs) {
-    if (run.kind !== "compaction") continue;
-    const parent = run.triggeredByRunId
-      ? productiveParents.get(run.triggeredByRunId)
-      : undefined;
-    if (parent) {
-      parent.compactions.push(run);
-    } else {
-      orphanedCompactions.push(run);
-    }
-  }
-
-  const groups: IssueRunLedgerGroup[] = [];
-  for (const { parent, compactions } of productiveParents.values()) {
-    compactions.sort(compareRunsNewestFirst);
-    const newest = [parent, ...compactions].sort(compareRunsNewestFirst)[0]!;
-    groups.push({
-      id: parent.id,
-      parent,
-      compactions,
-      timestamp: runTimestamp(newest),
-      orphanedCompaction: false,
-    });
-  }
-  for (const compaction of orphanedCompactions.sort(compareRunsNewestFirst)) {
-    groups.push({
-      id: compaction.id,
-      parent: compaction,
-      compactions: [],
-      timestamp: runTimestamp(compaction),
-      orphanedCompaction: true,
-    });
-  }
-  return groups.sort((left, right) =>
-    timestampValue(right.timestamp) - timestampValue(left.timestamp) ||
-    right.id.localeCompare(left.id));
-}
-
 export function defaultIssueRunLedgerRunId(
   runs: readonly IssueExecutionRunEnvelopeRecord[],
 ): string | null {
-  return projectIssueRunLedgerGroups(runs).find(
-    (group) => !group.orphanedCompaction,
-  )?.parent.id ?? null;
+  return [...runs].sort(compareRunsNewestFirst)[0]?.id ?? null;
 }
 
 function formatDuration(start: string | null, end: string | null) {
@@ -203,7 +138,6 @@ function runAgentName(
   run: IssueExecutionRunEnvelopeRecord,
   agentMap: ReadonlyMap<string, Pick<Agent, "name">>,
 ) {
-  if (!run.targetAgentId) return "Paperclip compaction";
   return agentMap.get(run.targetAgentId)?.name ?? run.targetAgentId.slice(0, 8);
 }
 
@@ -348,17 +282,18 @@ export function IssueRunLedgerContent({
   watchdogDecisionError,
   onWatchdogDecision,
 }: IssueRunLedgerContentProps) {
-  const runGroups = useMemo(() => projectIssueRunLedgerGroups(runs), [runs]);
-  const latestRun = runGroups.find(
-    (group) => !group.orphanedCompaction,
-  )?.parent ?? null;
+  const orderedRuns = useMemo(
+    () => [...runs].sort(compareRunsNewestFirst),
+    [runs],
+  );
+  const latestRun = orderedRuns[0] ?? null;
   const children = childIssueSummary(childIssues);
   const feedItems = useMemo<LedgerFeedItem[]>(() => {
-    const items: LedgerFeedItem[] = runGroups.map((group) => ({
-      kind: "run-group",
-      id: group.id,
-      timestamp: group.timestamp,
-      group,
+    const items: LedgerFeedItem[] = orderedRuns.map((run) => ({
+      kind: "run",
+      id: run.id,
+      timestamp: runTimestamp(run),
+      run,
     }));
     if (renderActivityEvent) {
       for (const event of activityEvents ?? []) {
@@ -378,20 +313,14 @@ export function IssueRunLedgerContent({
         new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime();
       return difference || right.id.localeCompare(left.id);
     });
-  }, [activityEvents, renderActivityEvent, runGroups]);
+  }, [activityEvents, orderedRuns, renderActivityEvent]);
   const selectedLiveness =
     selectedDetail?.run.id === selectedRunId
       ? selectedDetail?.finalization?.liveness ?? null
       : null;
   const selectedRetry = selectedDetail?.retrySchedules.items.at(-1) ?? null;
   const selectedDecisions = selectedDetail?.watchdogDecisions.items ?? [];
-  const renderRunCard = (
-    run: IssueExecutionRunEnvelopeRecord,
-    options: {
-      nested?: boolean;
-      orphanedCompaction?: boolean;
-    } = {},
-  ) => {
+  const renderRunCard = (run: IssueExecutionRunEnvelopeRecord) => {
     const isSelected = run.id === selectedRunId;
     const liveness = isSelected && selectedLiveness
       ? LIVENESS_COPY[selectedLiveness.livenessState]
@@ -403,7 +332,6 @@ export function IssueRunLedgerContent({
         data-run-kind={run.kind}
         className={cn(
           "space-y-1.5 rounded-lg border px-3 py-2 text-xs text-muted-foreground",
-          options.nested && "ml-4 border-violet-500/20 bg-violet-500/5",
           isSelected ? "border-foreground/30 bg-accent/20" : "border-border/60",
         )}
       >
@@ -418,16 +346,6 @@ export function IssueRunLedgerContent({
           <span className="rounded-md border border-border px-1.5 py-0.5 text-(length:--text-micro) capitalize">
             {statusLabel(run.status)}
           </span>
-          {run.kind === "compaction" ? (
-            <span className="rounded-md border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-(length:--text-micro) text-violet-700 dark:text-violet-300">
-              recovery compaction
-            </span>
-          ) : null}
-          {options.orphanedCompaction ? (
-            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-(length:--text-micro) text-amber-700 dark:text-amber-300">
-              triggering run unavailable
-            </span>
-          ) : null}
           {liveness ? (
             <span className={cn("rounded-md border px-1.5 py-0.5 text-(length:--text-micro)", liveness.tone)}>
               {liveness.label}
@@ -437,7 +355,7 @@ export function IssueRunLedgerContent({
         </button>
         <div className="grid gap-2 sm:grid-cols-3">
           <div><span className="text-foreground">Elapsed</span> {formatDuration(run.startedAt, run.finishedAt) ?? "not started"}</div>
-          <div><span className="text-foreground">Mode</span> {run.executionMode ?? run.compactionScopeKind ?? "—"}</div>
+          <div><span className="text-foreground">Mode</span> {run.executionMode}</div>
           <div><span className="text-foreground">Terminal reason</span> {run.terminalReasonCode ?? "—"}</div>
         </div>
         {isSelected && selectedLiveness ? (
@@ -522,7 +440,7 @@ export function IssueRunLedgerContent({
                 : "No runs linked yet."}
           </p>
         </div>
-        {latestRun?.targetAgentId ? (
+        {latestRun ? (
           <Link
             to={`/agents/${latestRun.targetAgentId}/runs/${latestRun.id}`}
             className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
@@ -555,30 +473,7 @@ export function IssueRunLedgerContent({
             if (item.kind === "activity") {
               return <div key={`activity:${item.id}`}>{renderActivityEvent?.(item.event)}</div>;
             }
-            const group = item.group;
-            if (group.orphanedCompaction) {
-              return renderRunCard(group.parent, {
-                orphanedCompaction: true,
-              });
-            }
-            return (
-              <div
-                key={`run-group:${group.id}`}
-                data-run-group-id={group.id}
-                className="space-y-1.5"
-              >
-                {renderRunCard(group.parent)}
-                {group.compactions.length > 0 ? (
-                  <div
-                    className="space-y-1"
-                    aria-label={`Recovery compactions for run ${group.parent.id}`}
-                  >
-                    {group.compactions.map((compaction) =>
-                      renderRunCard(compaction, { nested: true }))}
-                  </div>
-                ) : null}
-              </div>
-            );
+            return renderRunCard(item.run);
           })}
         </div>
       )}

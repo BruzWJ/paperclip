@@ -50,7 +50,6 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
       createPaperclipRunToolsMcpServer();
       resolveApprovedAcpLaunch();
       sessionCorrelations.resolveStart();
-      recovery.prepareReplacementPrompt();
       type Prompt = { promptKind: "base" | "steering" };
       repository.recordSubprocessTeardown();
       executeAcpSubprocessPrompt();
@@ -72,7 +71,6 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
     "server/src/index.ts": `
       environmentRuntimeService();
       environmentRunOrchestrator();
-      createPostgresSessionCompactionProvider();
       createPostgresIssueExecutionProductionRuntime();
     `,
     "packages/adapter-utils/package.json": JSON.stringify({

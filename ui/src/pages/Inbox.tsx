@@ -384,9 +384,7 @@ export function FailedRunInboxRow({
           </span>
         ) : null}
         <Link
-          to={run.targetAgentId
-            ? `/agents/${run.targetAgentId}/runs/${run.id}`
-            : `/issues/${run.issueId}`}
+          to={`/agents/${run.targetAgentId}/runs/${run.id}`}
           className={cn(
             "flex min-w-0 flex-1 items-start gap-2 no-underline text-inherit transition-colors",
             selected ? "hover:bg-transparent" : "hover:bg-accent/50",
@@ -1476,7 +1474,7 @@ export function Inbox() {
       }
       if (item.kind === "failed_run") {
         const run = item.run;
-        const name = run.targetAgentId ? agentById.get(run.targetAgentId) : null;
+        const name = agentById.get(run.targetAgentId);
         if (name?.toLowerCase().includes(q)) return true;
         const msg = runFailureMessage(run);
         if (msg.toLowerCase().includes(q)) return true;
@@ -2460,9 +2458,7 @@ export function Inbox() {
             } else if (item.kind === "approval") {
               act.navigate(`/approvals/${item.approval.id}`);
             } else if (item.kind === "failed_run") {
-              act.navigate(item.run.targetAgentId
-                ? `/agents/${item.run.targetAgentId}/runs/${item.run.id}`
-                : `/issues/${item.run.issueId}`);
+              act.navigate(`/agents/${item.run.targetAgentId}/runs/${item.run.id}`);
             }
           }
           break;
@@ -3444,7 +3440,7 @@ export function Inbox() {
                           run={item.run}
                           selected={isSelected}
                           issueById={issueById}
-                          agentName={item.run.targetAgentId ? agentName(item.run.targetAgentId) : "Paperclip"}
+                          agentName={agentName(item.run.targetAgentId)}
                           issueLinkState={issueLinkState}
                           onDismiss={() => dismissInboxItem(runKey)}
                           unreadState={nonIssueUnreadState(runKey)}

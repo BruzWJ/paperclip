@@ -20,7 +20,6 @@ import {
   issueExecutionSessions,
   issueExecutionWorkspaceBindings,
   issueSessions,
-  issueSessionCompactionControls,
   issueSessionEvents,
   issueSessionInputDispositions,
   issueSessionMessages,
@@ -82,12 +81,6 @@ import {
 import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { issueSessionMessageFromRow } from "./issue-session/projector.js";
-import type {
-  SessionCompactionBlockedPromptFailureOwner,
-} from "./issue-session-compaction-postgres.js";
-import type {
-  IssueSessionRecoveryCandidate,
-} from "./issue-session-recovery-postgres.js";
 import type { PostgresPromptCapabilityCompiler } from "./runtime-interface-compiler-db.js";
 import {
   isIssueExecutionRefDeliveryEligible,
@@ -309,11 +302,11 @@ export function classifyExpiredPromptClosure(input: {
         (attempt.sessionOperation !== "resume" &&
           attempt.sessionOperation !== "steer_resume")
       ) {
-        reject("target-not-found recovery crossed its frozen resume prompt");
+        reject("target-not-found restart crossed its frozen resume prompt");
       }
       return {
         kind: "retry",
-        reason: "target_not_found_recovery",
+        reason: "target_not_found_new_session",
         retryAt: capability.revokedAt,
       };
     case "pre_send_retry":
@@ -500,7 +493,6 @@ function consultRunProjection(
     run.runId !== lease.runId ||
     run.kind !== "consult" ||
     run.executionMode !== "consult" ||
-    run.targetAgentId === null ||
     run.issueExecutionAuthorityId !== null ||
     run.consultExecutionId === null ||
     run.parentRunId === null ||
@@ -847,9 +839,6 @@ async function compileCarryContext(
   readonly exposureDigest: string;
   readonly carrySourceExposureDigest: string;
 }> {
-  if (!run.targetAgentId || !run.executionMode) {
-    reject("productive run lost its target or execution mode");
-  }
   const compiled = await compiler.resolve({
     companyId: run.companyId,
     issueId: run.issueId,
@@ -884,9 +873,6 @@ async function selectSessionOperation(
   },
 ): Promise<IssueExecutionSessionOperation> {
   const run = input.run;
-  if (!run.targetAgentId || !run.executionMode) {
-    reject("productive run lost its session-selection scope");
-  }
   const {
     carryContext,
     exposureDigest,
@@ -962,7 +948,7 @@ async function selectSessionOperation(
       source.currentSegmentOrdinal === input.segmentOrdinal - 1 &&
       source.authorizedContextExposureDigest === null;
     if (exactCarrySource || exactActiveRunSource) return "steer_resume";
-    return carryContext ? "recovery_new" : "new";
+    return "new";
   }
   if (!carryContext) return "new";
   const eligible = await transaction
@@ -986,7 +972,7 @@ async function selectSessionOperation(
   if (eligible.length === 1) {
     return "resume";
   }
-  return "recovery_new";
+  return "new";
 }
 
 async function assertRefDispatchable(
@@ -1107,9 +1093,6 @@ async function createRunningLease(
   },
 ): Promise<LeasedIssueExecutionRef> {
   const first = exactlyOne(input.refs.slice(0, 1), "run has no current ref");
-  if (!input.run.targetAgentId) {
-    reject("productive run lost its materialization target agent");
-  }
   await fenceCompanySkillMaterializationReferenceInTransaction(
     transaction,
     {
@@ -1212,7 +1195,6 @@ async function createRunningLease(
             segmentOrdinal: control.currentSegmentOrdinal,
             steeringSegmentOrdinal:
               promptKind === "steering" ? control.currentSegmentOrdinal : null,
-            compactionControlId: null,
             attemptGeneration: (generationRows[0]?.generation ?? 0) + 1,
             state: "running",
             startedAt: input.at,
@@ -1492,7 +1474,6 @@ async function createRunForRef(
           refOrdinal: 0,
           segmentOrdinal: 0,
           steeringSegmentOrdinal: null,
-          compactionControlId: null,
           attemptGeneration: 1,
           state: "pending",
           startedAt: null,
@@ -1891,7 +1872,6 @@ async function completeTerminalPromptInTransaction(
 
 async function createTargetNotFoundSuccessorAttempt(
   transaction: IssueSessionDbTransaction,
-  options: PostgresIssueExecutionDispatcherRepositoryOptions,
   input: {
     readonly run: RunRow;
     readonly predecessor: AttemptRow;
@@ -1899,13 +1879,6 @@ async function createTargetNotFoundSuccessorAttempt(
     readonly idFactory: () => string;
   },
 ): Promise<void> {
-  const compiled = await compileCarryContext(options.compiler, {
-    ...input.run,
-    id: input.run.runId,
-  } as RunRow);
-  if (!input.run.targetAgentId) {
-    reject("target-not-found retry lost its materialization target agent");
-  }
   await fenceCompanySkillMaterializationReferenceInTransaction(transaction, {
     companyId: input.run.companyId,
     agentId: input.run.targetAgentId,
@@ -1922,12 +1895,11 @@ async function createTargetNotFoundSuccessorAttempt(
         runId: input.predecessor.runId,
         runKind: input.predecessor.runKind,
         promptKind: input.predecessor.promptKind,
-        sessionOperation: compiled.carryContext ? "recovery_new" : "new",
+        sessionOperation: "new",
         refId: input.predecessor.refId,
         refOrdinal: input.predecessor.refOrdinal,
         segmentOrdinal: input.predecessor.segmentOrdinal,
         steeringSegmentOrdinal: input.predecessor.steeringSegmentOrdinal,
-        compactionControlId: null,
         attemptGeneration: input.predecessor.attemptGeneration + 1,
         state: "pending",
         startedAt: null,
@@ -2005,7 +1977,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
       readonly at: Date;
     },
   ) => Promise<readonly string[]>;
-} & SessionCompactionBlockedPromptFailureOwner {
+} {
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? randomUUID;
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
@@ -2143,8 +2115,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       return { kind: "current", run };
     }
     if (
-      (run.kind !== "productive" && run.kind !== "consult") ||
-      (run.executionMode !== "owner" && run.executionMode !== "consult") ||
       (scope === "owner_lane" && run.executionMode !== "owner") ||
       (scope === "synchronous_consult" &&
         run.executionMode !== "consult") ||
@@ -2506,8 +2476,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
           terminal,
         };
       }
-      if (closureDecision.reason === "target_not_found_recovery") {
-        await createTargetNotFoundSuccessorAttempt(transaction, options, {
+      if (closureDecision.reason === "target_not_found_new_session") {
+        await createTargetNotFoundSuccessorAttempt(transaction, {
           run,
           predecessor: attempt,
           at,
@@ -2584,9 +2554,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
 
     const promptTransmitted =
       (segment ?? member.row).promptTransmissionPhase === "transmitted";
-    const supersedeActivatedCorrelation = promptTransmitted ||
-      attempt.sessionOperation === "new" ||
-      attempt.sessionOperation === "recovery_new";
+    const supersedeActivatedCorrelation =
+      promptTransmitted || attempt.sessionOperation === "new";
     if (correlationIds.length > 0 && supersedeActivatedCorrelation) {
       const superseded = await transaction
         .update(issueExecutionSessions)
@@ -2688,7 +2657,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
             refOrdinal: attempt.refOrdinal,
             segmentOrdinal: attempt.segmentOrdinal,
             steeringSegmentOrdinal: attempt.steeringSegmentOrdinal,
-            compactionControlId: null,
             attemptGeneration: (generationRows[0]?.generation ?? 0) + 1,
             state: "pending",
             startedAt: null,
@@ -4368,7 +4336,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
         }
         await assertLeaseLaneClaim(transaction, input.lease, at);
         await releaseAttempt(transaction, options, input.lease, "failed", at, true);
-        if (input.reason === "target_not_found_recovery") {
+        if (input.reason === "target_not_found_new_session") {
           const predecessor = exactlyOne(
             await transaction
               .select()
@@ -4378,7 +4346,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
               .for("update"),
             "target-not-found retry lost its predecessor",
           );
-          await createTargetNotFoundSuccessorAttempt(transaction, options, {
+          await createTargetNotFoundSuccessorAttempt(transaction, {
             run,
             predecessor,
             at,
@@ -4705,342 +4673,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       };
     },
 
-    async failBlockedPromptInTransaction(
-      transaction: IssueSessionDbTransaction,
-      input: {
-        readonly candidate: IssueSessionRecoveryCandidate;
-        readonly compactionRunId: string;
-        readonly compactionControlId: string;
-        readonly reason:
-          | "recovery_compaction_budget_hard_stop"
-          | "recovery_compaction_failed";
-        readonly at: Date;
-      },
-    ) {
-      const at = validDate(input.at, "blocked prompt failure time");
-      const prompt = input.candidate.prompt.identity;
-      if (
-        input.candidate.identity.sourceRunId !== prompt.runId ||
-        input.candidate.identity.sourceRefId !== prompt.refId ||
-        input.candidate.identity.sourceRefOrdinal !== prompt.refOrdinal ||
-        input.candidate.identity.sourceSegmentOrdinal !== prompt.segmentOrdinal ||
-        input.candidate.identity.companyId !== prompt.companyId ||
-        input.candidate.identity.issueId !== prompt.issueId ||
-        input.candidate.identity.sessionId !== prompt.sessionId
-      ) {
-        reject("recovery compaction crossed its blocked prompt identity");
-      }
-      const laneRef = exactlyOne(
-        await transaction
-          .select()
-          .from(issueExecutionRefs)
-          .where(eq(issueExecutionRefs.id, prompt.refId))
-          .limit(2),
-        "blocked prompt lost its execution lane identity",
-      );
-      await lockLaneParents(transaction, laneRef);
-      await lockLane(transaction, laneRef);
-      const [compactionRun, compactionControls] = await Promise.all([
-        options.runService.lockRun(transaction, {
-          companyId: prompt.companyId,
-          issueId: prompt.issueId,
-          runId: input.compactionRunId,
-        }),
-        transaction
-          .select()
-          .from(issueSessionCompactionControls)
-          .where(
-            and(
-              eq(issueSessionCompactionControls.id, input.compactionControlId),
-              eq(
-                issueSessionCompactionControls.compactionRunId,
-                input.compactionRunId,
-              ),
-            ),
-          )
-          .limit(2)
-          .for("update"),
-      ]);
-      const compactionControl = exactlyOne(
-        compactionControls,
-        "blocked prompt lost its compaction control",
-      );
-      if (
-        compactionRun.kind !== "compaction" ||
-        compactionRun.triggeredByRunId !== prompt.runId ||
-        compactionRun.parentRunId !== prompt.runId ||
-        compactionControl.kind !== "recovery-prompt" ||
-        compactionControl.sourceRunId !== prompt.runId ||
-        compactionControl.sourceRefId !== prompt.refId ||
-        compactionControl.sourceRefOrdinal !== prompt.refOrdinal ||
-        compactionControl.sourceSegmentOrdinal !== prompt.segmentOrdinal
-      ) {
-        reject("compaction run/control is not the blocked prompt's exact child");
-      }
-
-      const run = await options.runService.lockRun(transaction, prompt);
-      if (
-        run.kind !== prompt.runKind ||
-        run.status !== "running" ||
-        run.sessionId !== prompt.sessionId ||
-        run.executionScopeId !== prompt.executionScopeId ||
-        run.ownershipEpoch !== prompt.ownershipEpoch ||
-        run.currentAttemptId !== prompt.attemptId ||
-        run.currentLeaseId !== prompt.leaseId
-      ) {
-        reject("recovery compaction no longer blocks one exact active prompt");
-      }
-      // A durable authority/lifecycle cancellation already owns this source
-      // attempt's terminal settlement. The compaction control may settle, but
-      // it must not race that exact cancellation by failing the source again.
-      if (run.cancellationIntentId !== null) return;
-      const [attemptRows, leaseRows, controlRows, refRows] = await Promise.all([
-        transaction
-          .select()
-          .from(issueExecutionAttempts)
-          .where(eq(issueExecutionAttempts.id, prompt.attemptId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionLeases)
-          .where(eq(issueExecutionLeases.id, prompt.leaseId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionRunControls)
-          .where(eq(issueExecutionRunControls.runId, prompt.runId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionRefs)
-          .where(eq(issueExecutionRefs.id, prompt.refId))
-          .limit(2)
-          .for("update"),
-      ]);
-      const attempt = exactlyOne(attemptRows, "blocked prompt lost its attempt");
-      const lease = exactlyOne(leaseRows, "blocked prompt lost its lease");
-      const control = exactlyOne(controlRows, "blocked prompt lost its control");
-      const ref = exactlyOne(refRows, "blocked prompt lost its execution ref");
-      if (
-        attempt.state !== "running" ||
-        attempt.runId !== prompt.runId ||
-        attempt.refId !== prompt.refId ||
-        attempt.refOrdinal !== prompt.refOrdinal ||
-        attempt.segmentOrdinal !== prompt.segmentOrdinal ||
-        lease.state !== "active" ||
-        lease.attemptId !== prompt.attemptId ||
-        lease.leaseGeneration !== prompt.leaseGeneration ||
-        control.currentRefId !== prompt.refId ||
-        control.currentOrdinal !== prompt.refOrdinal ||
-        control.currentSegmentOrdinal !== prompt.segmentOrdinal ||
-        ref.disposition !== "active"
-      ) {
-        reject("blocked prompt attempt, lease, control, or ref is no longer current");
-      }
-
-      const unsettledMembers = await transaction
-        .select({
-          refId: issueExecutionRunRefs.refId,
-          refOrdinal: issueExecutionRunRefs.refOrdinal,
-          promptTransmissionPhase:
-            issueExecutionRunRefs.promptTransmissionPhase,
-        })
-        .from(issueExecutionRunRefs)
-        .where(
-          and(
-            eq(issueExecutionRunRefs.runId, prompt.runId),
-            isNull(issueExecutionRunRefs.protocolSettlementState),
-          ),
-        )
-        .orderBy(asc(issueExecutionRunRefs.refOrdinal))
-        .for("update");
-      const unsettledSegments = await transaction
-        .select({
-          refOrdinal: issueExecutionPromptSegments.refOrdinal,
-          segmentOrdinal: issueExecutionPromptSegments.segmentOrdinal,
-          promptTransmissionPhase:
-            issueExecutionPromptSegments.promptTransmissionPhase,
-        })
-        .from(issueExecutionPromptSegments)
-        .where(
-          and(
-            eq(issueExecutionPromptSegments.runId, prompt.runId),
-            isNull(issueExecutionPromptSegments.protocolSettlementState),
-          ),
-        )
-        .orderBy(
-          asc(issueExecutionPromptSegments.refOrdinal),
-          asc(issueExecutionPromptSegments.segmentOrdinal),
-        )
-        .for("update");
-      if (
-        unsettledMembers.some(
-          (member) => member.promptTransmissionPhase !== "not_transmitted",
-        ) ||
-        unsettledSegments.some(
-          (segment) => segment.promptTransmissionPhase !== "not_transmitted",
-        )
-      ) {
-        reject("blocked recovery failure cannot release a transmitted prompt");
-      }
-      for (const member of unsettledMembers) {
-        exactlyOne(
-          await transaction
-            .update(issueExecutionRunRefs)
-            .set({
-              outcome: "released_unsent",
-              outcomeReferenceId: idFactory(),
-              protocolSettlementState: "not_sent",
-              settlementVersion: 1,
-              settledAt: at,
-            })
-            .where(
-              and(
-                eq(issueExecutionRunRefs.runId, prompt.runId),
-                eq(issueExecutionRunRefs.refOrdinal, member.refOrdinal),
-                isNull(issueExecutionRunRefs.protocolSettlementState),
-              ),
-            )
-            .returning({ runId: issueExecutionRunRefs.runId }),
-          "blocked recovery failure lost an unsettled run member",
-        );
-      }
-      for (const segment of unsettledSegments) {
-        exactlyOne(
-          await transaction
-            .update(issueExecutionPromptSegments)
-            .set({
-              steeringState: "protocol_settled",
-              outcome: "released_unsent",
-              outcomeReferenceId: idFactory(),
-              protocolSettlementState: "not_sent",
-              settlementVersion: 1,
-              settledAt: at,
-            })
-            .where(
-              and(
-                eq(issueExecutionPromptSegments.runId, prompt.runId),
-                eq(
-                  issueExecutionPromptSegments.refOrdinal,
-                  segment.refOrdinal,
-                ),
-                eq(
-                  issueExecutionPromptSegments.segmentOrdinal,
-                  segment.segmentOrdinal,
-                ),
-                isNull(issueExecutionPromptSegments.protocolSettlementState),
-              ),
-            )
-            .returning({ runId: issueExecutionPromptSegments.runId }),
-          "blocked recovery failure lost an unsettled steering segment",
-        );
-      }
-      await transaction
-        .update(issueExecutionPromptCapabilities)
-        .set({
-          state: "revoked",
-          revocationReason: input.reason,
-          revokedAt: at,
-        })
-        .where(
-          and(
-            eq(issueExecutionPromptCapabilities.runId, prompt.runId),
-            inArray(issueExecutionPromptCapabilities.state, [
-              "pending_setup",
-              "active",
-            ]),
-          ),
-        );
-      await transaction
-        .update(issueExecutionRefs)
-        .set({ disposition: "terminal", updatedAt: at })
-        .where(
-          and(
-            inArray(
-              issueExecutionRefs.id,
-              unsettledMembers.map((member) => member.refId),
-            ),
-            eq(issueExecutionRefs.disposition, "active"),
-          ),
-        );
-      await transaction
-        .update(issueExecutionHistoryViews)
-        .set({ state: "terminal", finalizedAt: at, updatedAt: at })
-        .where(
-          and(
-            inArray(
-              issueExecutionHistoryViews.refId,
-              unsettledMembers.map((member) => member.refId),
-            ),
-            inArray(issueExecutionHistoryViews.state, ["empty", "current"]),
-          ),
-        );
-      exactlyOne(
-        await transaction
-          .update(issueExecutionAttempts)
-          .set({ state: "failed", finishedAt: at })
-          .where(
-            and(
-              eq(issueExecutionAttempts.id, prompt.attemptId),
-              eq(issueExecutionAttempts.state, "running"),
-            ),
-          )
-          .returning({ id: issueExecutionAttempts.id }),
-        "blocked recovery failure lost its current attempt",
-      );
-      exactlyOne(
-        await transaction
-          .update(issueExecutionLeases)
-          .set({ state: "released", releasedAt: at })
-          .where(
-            and(
-              eq(issueExecutionLeases.id, prompt.leaseId),
-              eq(issueExecutionLeases.state, "active"),
-            ),
-          )
-          .returning({ id: issueExecutionLeases.id }),
-        "blocked recovery failure lost its current lease",
-      );
-      await options.runService.detachAttempt(transaction, {
-        companyId: prompt.companyId,
-        issueId: prompt.issueId,
-        runId: prompt.runId,
-        expectedAttemptId: prompt.attemptId,
-        expectedLeaseId: prompt.leaseId,
-        at,
-      });
-      exactlyOne(
-        await transaction
-          .update(issueExecutionRunControls)
-          .set({
-            currentRefId: null,
-            currentOrdinal: null,
-            currentSegmentOrdinal: null,
-          })
-          .where(eq(issueExecutionRunControls.runId, prompt.runId))
-          .returning({ runId: issueExecutionRunControls.runId }),
-        "blocked recovery failure could not clear its run control",
-      );
-      await options.finalizer.finalizeInTransaction(transaction, {
-        companyId: prompt.companyId,
-        issueId: prompt.issueId,
-        runId: prompt.runId,
-        status: "failed",
-        terminalReasonCode: input.reason,
-        finishedAt: at,
-      });
-      await clearExactLaneClaim(transaction, {
-        ref,
-        laneOrdinal: ref.laneOrdinal,
-        leaseGeneration: prompt.leaseGeneration,
-        leaseId: prompt.leaseId,
-        at,
-      });
-    },
-
     async terminalizeCancelledRun(input: {
       companyId: string;
       issueId: string;
@@ -5124,7 +4756,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
         at: Date;
       },
     ): Promise<readonly string[]>;
-  } & SessionCompactionBlockedPromptFailureOwner;
+  };
   return repository;
 }
 

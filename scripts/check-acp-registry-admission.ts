@@ -1254,7 +1254,7 @@ function scanExecutionTargetBoundary(
     ],
     [
       "Object.keys(launch.environment).length !== 0",
-      "productive and compaction launch environment must remain empty",
+      "productive launch environment must remain empty",
     ],
     [
       "verifyTargetFrontendArtifact",

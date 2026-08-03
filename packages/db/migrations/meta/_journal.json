@@ -15,6 +15,13 @@
       "when": 1785744538403,
       "tag": "0001_ordinary_galactus",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785793647264,
+      "tag": "0002_amused_warbird",
+      "breakpoints": true
     }
   ]
 }

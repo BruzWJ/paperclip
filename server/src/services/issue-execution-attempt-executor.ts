@@ -103,7 +103,7 @@ export interface ResolvedIssueExecutionPrompt {
   readonly sessionOperation: IssueExecutionSessionOperation;
   readonly sourceText: string;
   readonly carryContext: boolean;
-  /** Null is a typed local target_not_found, never an implicit new session. */
+  /** Null only for a frozen new operation; every resume pins one exact target. */
   readonly storedCorrelation: StoredAcpSessionCorrelation | null;
   /** Exact next append-only generation installed at prompt activation. */
   readonly activationCorrelationScope: AcpCorrelationScope;
@@ -140,7 +140,7 @@ export type IssueExecutionDispatchResult =
         | "process_loss"
         | "transport_transient"
         | "provider_quota"
-        | "target_not_found_recovery";
+        | "target_not_found_new_session";
       readonly retryAt: Date;
     }
   | {
@@ -242,17 +242,6 @@ export interface IssueExecutionAcpEventSink {
     readonly redactor: IssueExecutionRuntimeRedactor;
     readonly event: Exclude<NormalizedAcpSessionEvent, { kind: "user_message_echo" }>;
   }): Promise<void>;
-}
-
-export interface IssueExecutionTargetNotFoundRecovery {
-  /**
-   * Persists the authorized true-carry recovery selection, runs compaction
-   * only when that selection requires it, and returns the one complete text
-   * block for the replacement session. It is never called for false carry.
-   */
-  prepareReplacementPrompt(
-    prompt: ResolvedIssueExecutionPrompt,
-  ): Promise<string>;
 }
 
 export interface IssueExecutionAttemptExecutor {
@@ -570,14 +559,10 @@ function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
   const operation = prompt.sessionOperation;
   const operationIsValid =
     (operation === "new" &&
-      !prompt.carryContext &&
       prompt.storedCorrelation === null) ||
     (operation === "resume" &&
       prompt.carryContext &&
       prompt.storedCorrelation?.scope.purpose === "carry") ||
-    (operation === "recovery_new" &&
-      prompt.carryContext &&
-      prompt.storedCorrelation === null) ||
     (operation === "steer_resume" &&
       identity.promptKind === "steering" &&
       prompt.storedCorrelation !== null);
@@ -857,21 +842,6 @@ function requireCompleteEcho(observed: string, expected: string): void {
   }
 }
 
-function assertRecoveryText(
-  prompt: ResolvedIssueExecutionPrompt,
-  value: string,
-): string {
-  if (
-    value.length === 0 ||
-    !value.endsWith(prompt.sourceText)
-  ) {
-    throw new IssueExecutionAttemptRejected(
-      "true-carry recovery did not preserve the exact source message suffix",
-    );
-  }
-  return value;
-}
-
 function assertTargetMatchesPrompt(
   prompt: ResolvedIssueExecutionPrompt,
   target: AcquiredIssueExecutionTarget,
@@ -904,7 +874,6 @@ export function createIssueExecutionAttemptExecutor(options: {
     NativeCorrelationService,
     "resolveStart" | "protectSession"
   >;
-  readonly recovery: IssueExecutionTargetNotFoundRecovery;
   readonly events: IssueExecutionAcpEventSink;
   readonly executePrompt?: ExecutePrompt;
   readonly prepareTarget?: PrepareTarget;
@@ -1414,18 +1383,9 @@ export function createIssueExecutionAttemptExecutor(options: {
             | { readonly kind: "new" }
             | { readonly kind: "resume"; readonly sessionId: string };
           let message: string;
-          if (
-            prompt.sessionOperation === "new" ||
-            prompt.sessionOperation === "recovery_new"
-          ) {
+          if (prompt.sessionOperation === "new") {
             start = { kind: "new" };
-            message =
-              prompt.sessionOperation === "recovery_new" && prompt.carryContext
-              ? assertRecoveryText(
-                  prompt,
-                  await options.recovery.prepareReplacementPrompt(prompt),
-                )
-              : prompt.sourceText;
+            message = prompt.sourceText;
           } else {
             const resolvedStart = await options.sessionCorrelations.resolveStart({
               promptKind: prompt.identity.promptKind,
@@ -1455,7 +1415,7 @@ export function createIssueExecutionAttemptExecutor(options: {
               (prompt.sessionOperation !== "resume" &&
                 prompt.sessionOperation !== "steer_resume") ||
               cycle.decision.result.kind !== "retry" ||
-              cycle.decision.result.reason !== "target_not_found_recovery"
+              cycle.decision.result.reason !== "target_not_found_new_session"
             ) {
               throw new IssueExecutionAttemptRejected(
                 "ACP target_not_found did not close as an exact successor-attempt transition",
@@ -1471,10 +1431,10 @@ export function createIssueExecutionAttemptExecutor(options: {
           } else {
             if (
               cycle.decision.result.kind === "retry" &&
-              cycle.decision.result.reason === "target_not_found_recovery"
+              cycle.decision.result.reason === "target_not_found_new_session"
             ) {
               throw new IssueExecutionAttemptRejected(
-                "target_not_found recovery was requested without exact ACP target_not_found",
+                "target_not_found restart was requested without exact ACP target_not_found",
               );
             }
             const failed =

@@ -14,7 +14,6 @@ const DURABLE_FUNCTIONS = new Set([
   "makeDurableIssueSessionEvent",
   "projectIssueSessionEventInTx",
   "projectIssueSessionFinalCommentInTx",
-  "projectIssueSessionToolPrunedEffectInTx",
   "insertOrAssertIssueSessionSourceUserExecution",
 ]);
 
@@ -23,9 +22,6 @@ const DURABLE_TABLES = new Set([
   "issueSessionMessages",
   "issueComments",
   "issueSessionSourceUserExecutions",
-  "issueSessionCompletedToolSources",
-  "issueSessionErrorToolSources",
-  "issueSessionAssistantSources",
 ]);
 
 const PUBLICATION_FILE =
@@ -77,7 +73,6 @@ function isAllowedDurableFunction(
     file === PROJECTOR_FILE &&
     (symbol === "projectIssueSessionEventInTx" ||
       symbol === "projectIssueSessionFinalCommentInTx" ||
-      symbol === "projectIssueSessionToolPrunedEffectInTx" ||
       symbol === "insertOrAssertIssueSessionSourceUserExecution")
   ) {
     return true;
@@ -99,21 +94,10 @@ function isAllowedTableMutation(
   }
   if (
     file === PROJECTOR_FILE &&
-    (table === "issueSessionMessages" ||
-      table === "issueComments" ||
-      table === "issueSessionAssistantSources") &&
+    (table === "issueSessionMessages" || table === "issueComments") &&
     (operation === "insert" ||
       operation === "update" ||
       operation === "delete")
-  ) {
-    return true;
-  }
-  if (
-    file === PUBLICATION_FILE &&
-    (table === "issueSessionCompletedToolSources" ||
-      table === "issueSessionErrorToolSources" ||
-      table === "issueSessionAssistantSources") &&
-    operation === "insert"
   ) {
     return true;
   }
@@ -333,7 +317,7 @@ export function scanIssueSessionDurableWriterSource(
           : node.getText(source)
       ).toLowerCase();
       const match =
-        /\b(insert\s+into|update|delete\s+from)\s+(?:(?:"?[a-z0-9_]+"?)\.)?"?(issue_session_events|issue_session_messages|issue_comments|issue_session_source_user_executions|issue_session_completed_tool_sources|issue_session_error_tool_sources|issue_session_assistant_sources)"?\b/.exec(
+        /\b(insert\s+into|update|delete\s+from)\s+(?:(?:"?[a-z0-9_]+"?)\.)?"?(issue_session_events|issue_session_messages|issue_comments|issue_session_source_user_executions)"?\b/.exec(
           sqlText,
         );
       if (match) {
@@ -349,16 +333,7 @@ export function scanIssueSessionDurableWriterSource(
               ? "issueSessionMessages"
               : match[2] === "issue_comments"
                 ? "issueComments"
-                : match[2] ===
-                    "issue_session_source_user_executions"
-                  ? "issueSessionSourceUserExecutions"
-                  : match[2] ===
-                      "issue_session_completed_tool_sources"
-                    ? "issueSessionCompletedToolSources"
-                    : match[2] ===
-                        "issue_session_error_tool_sources"
-                      ? "issueSessionErrorToolSources"
-                      : "issueSessionAssistantSources";
+                : "issueSessionSourceUserExecutions";
         if (
           !isAllowedTableMutation(relativeFile, table, operation)
         ) {

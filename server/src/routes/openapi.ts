@@ -35,7 +35,6 @@ import {
   restoreIssueDocumentRevisionSchema,
   upsertIssueFeedbackVoteSchema,
   upsertIssueWatchdogSchema,
-  updateSessionCompactionSettingsSchema,
   // Project
   createProjectSchema,
   updateProjectSchema,
@@ -607,7 +606,6 @@ const publicAgentAdapterRevisionCreateResponseSchema = z.object({
 const issueExecutionRunKindSchema = z.enum([
   "productive",
   "consult",
-  "compaction",
 ]);
 
 const issueExecutionWatchdogDecisionRecordSchema = z
@@ -649,18 +647,14 @@ const issueExecutionRunEnvelopeRecordSchema = z
       "timed_out",
     ]),
     ownershipEpoch: z.number().int().positive(),
-    targetAgentId: z.string().uuid().nullable(),
+    targetAgentId: z.string().uuid(),
     adapterConfigRevisionId: z.string().uuid(),
     executionWorkspaceBindingId: z.string().uuid(),
-    executionMode: z.enum(["owner", "consult"]).nullable(),
+    executionMode: z.enum(["owner", "consult"]),
     issueExecutionAuthorityId: z.string().uuid().nullable(),
     consultExecutionId: z.string().uuid().nullable(),
-    compactionScopeKind: z
-      .enum(["turns-recovery", "comments-recovery"])
-      .nullable(),
     parentRunId: z.string().uuid().nullable(),
     retryOfRunId: z.string().uuid().nullable(),
-    triggeredByRunId: z.string().uuid().nullable(),
     currentAttemptId: z.string().uuid().nullable(),
     currentLeaseId: z.string().uuid().nullable(),
     cancellationIntentId: z.string().uuid().nullable(),
@@ -3055,11 +3049,10 @@ const canonicalCostEventResponseSchema = z.object({
   agentId: z.string().uuid(),
   runId: z.string().uuid(),
   runKind: z.enum(ISSUE_EXECUTION_RUN_KINDS),
-  promptKind: z.enum(["base", "steering", "compaction"]),
+  promptKind: z.enum(["base", "steering"]),
   refId: z.string().uuid().nullable(),
   runOrdinal: z.number().int().nonnegative().nullable(),
   segmentOrdinal: z.number().int().nonnegative().nullable(),
-  compactionControlId: z.string().uuid().nullable(),
   budgetCurrency: budgetCurrencySchema,
   kind: z.enum(["known", "unavailable"]),
   unavailableReason: z.enum(ACP_COST_UNAVAILABLE_REASONS).nullable(),
@@ -3664,21 +3657,6 @@ registerCurrentRoute({
     decision: z.enum(["accepted", "rejected"]),
     reason: z.string().trim().max(4_000).nullable().optional(),
   }).strict(),
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/companies/{companyId}/session-compaction-settings",
-  tags: ["instance"],
-  summary: "Get company issue-session compaction settings",
-});
-
-registerCurrentRoute({
-  method: "patch",
-  path: "/api/companies/{companyId}/session-compaction-settings",
-  tags: ["instance"],
-  summary: "Update company issue-session compaction settings",
-  body: updateSessionCompactionSettingsSchema,
 });
 
 // ─── Access / invites / members ───────────────────────────────────────────────

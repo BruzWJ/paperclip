@@ -336,7 +336,6 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
   const liveCountByAgent = useMemo(() => {
     const counts = new Map<string, number>();
     for (const run of activeRunPage?.items ?? []) {
-      if (!run.targetAgentId) continue;
       counts.set(run.targetAgentId, (counts.get(run.targetAgentId) ?? 0) + 1);
     }
     return counts;

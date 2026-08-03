@@ -872,7 +872,7 @@ async function buildFeedbackTraceBundleFromRow(
     const run = runIdentity?.companyId === row.companyId && runService
       ? await runService.readRun(runIdentity)
       : null;
-    const sourceAgent = run?.targetAgentId
+    const sourceAgent = run
       ? await db
       .select({
         adapterType: agents.adapterType,

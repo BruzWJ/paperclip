@@ -399,42 +399,6 @@ export const Retried = EventDefinition.define({
 })
 export type Retried = typeof Retried.Type
 
-export namespace Compaction {
-  export const Started = EventDefinition.define({
-    type: "session.next.compaction.started",
-    ...options,
-    schema: {
-      ...Base,
-      messageID: SessionMessage.ID,
-      reason: Schema.Union([Schema.Literal("auto"), Schema.Literal("manual")]),
-    },
-  })
-  export type Started = typeof Started.Type
-
-  export const Delta = EventDefinition.define({
-    type: "session.next.compaction.delta",
-    schema: {
-      ...Base,
-      messageID: SessionMessage.ID,
-      text: Schema.String,
-    },
-  })
-  export type Delta = typeof Delta.Type
-
-  export const Ended = EventDefinition.define({
-    type: "session.next.compaction.ended",
-    ...options,
-    schema: {
-      ...Base,
-      messageID: SessionMessage.ID,
-      reason: Started.data.fields.reason,
-      text: Schema.String,
-      recent: Schema.String,
-    },
-  })
-  export type Ended = typeof Ended.Type
-}
-
 export namespace RevertEvent {
   export const Staged = EventDefinition.define({
     type: "session.next.revert.staged",
@@ -473,8 +437,6 @@ export const DurableDefinitions = EventDefinition.inventory(
   Reasoning.Started,
   Reasoning.Ended,
   Retried,
-  Compaction.Started,
-  Compaction.Ended,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
@@ -507,9 +469,6 @@ export const Definitions = EventDefinition.inventory(
   Tool.Success,
   Tool.Failed,
   Retried,
-  Compaction.Started,
-  Compaction.Delta,
-  Compaction.Ended,
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,

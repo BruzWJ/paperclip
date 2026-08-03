@@ -17,7 +17,6 @@ import {
   issueExecutionRunControls,
   issueExecutionRunLivenessFacts,
   issueExecutionRunRefs,
-  issueSessionCompactionControls,
   issueSessionEvents,
   issueSessionMessages,
   issueUpdates,
@@ -126,63 +125,6 @@ function activeRunStatus(
   );
 }
 
-async function lockCompactionPromptFrontier(
-  transaction: IssueExecutionDbTransaction,
-  input: { companyId: string; issueId: string; runId: string },
-): Promise<{
-  expected: IssueExecutionFinalizationPromptIdentity[];
-  dependencies: IssueExecutionFinalizationPromptDependency[];
-}> {
-  const controls = await transaction
-    .select()
-    .from(issueSessionCompactionControls)
-    .where(
-      and(
-        eq(issueSessionCompactionControls.companyId, input.companyId),
-        eq(issueSessionCompactionControls.issueId, input.issueId),
-        eq(issueSessionCompactionControls.compactionRunId, input.runId),
-        eq(issueSessionCompactionControls.compactionRunKind, "compaction"),
-        eq(issueSessionCompactionControls.kind, "recovery-prompt"),
-      ),
-    )
-    .limit(2)
-    .for("update");
-  const control = exactlyOne(
-    controls,
-    "Compaction finalization requires one exact recovery-prompt control",
-  );
-  if (
-    control.protocolSettlementState === null ||
-    control.settlementVersion < 1 ||
-    control.promptSettlementReferenceId === null ||
-    control.settledAt === null ||
-    (control.protocolSettlementState === "settled"
-      ? control.accountingId === null || control.costEventId === null
-      : control.accountingId !== null || control.costEventId !== null)
-  ) {
-    throw new PostgresIssueExecutionFinalizationRejected(
-      "Compaction finalization encountered an incomplete settlement frontier",
-    );
-  }
-  const identity = {
-    kind: "compaction" as const,
-    refId: null,
-    refOrdinal: null,
-    segmentOrdinal: null,
-    compactionControlId: control.id,
-  };
-  return {
-    expected: [identity],
-    dependencies: [{
-      ...identity,
-      protocolSettlementState: control.protocolSettlementState,
-      settlementVersion: control.settlementVersion,
-      accountingId: control.accountingId,
-      costEventId: control.costEventId,
-    }],
-  };
-}
-
 async function lockPromptFrontier(
   transaction: IssueExecutionDbTransaction,
   input: { companyId: string; issueId: string; runId: string },
@@ -249,7 +191,6 @@ async function lockPromptFrontier(
       refId: ref.refId,
       refOrdinal: ref.refOrdinal,
       segmentOrdinal: 0 as const,
-      compactionControlId: null,
     };
     expected.push(base);
     dependencies.push({
@@ -276,7 +217,6 @@ async function lockPromptFrontier(
         refId: segment.refId,
         refOrdinal: segment.refOrdinal,
         segmentOrdinal: segment.segmentOrdinal,
-        compactionControlId: null,
       };
       expected.push(steering);
       dependencies.push({
@@ -579,9 +519,7 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
               "Finalization retry changed immutable terminal input",
             );
           }
-          const livenessOutbox = run.kind === "compaction"
-            ? null
-            : exactlyOne(
+          const livenessOutbox = exactlyOne(
                 await transaction
                   .select()
                   .from(issueExecutionFinalizationStaleCheckOutbox)
@@ -632,93 +570,6 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
           throw new PostgresIssueExecutionFinalizationRejected(
             "Only an active run can be finalized",
           );
-        }
-        if (run.kind === "compaction") {
-          if (
-            run.currentAttemptId !== null ||
-            run.currentLeaseId !== null ||
-            run.cancellationIntentId !== null
-          ) {
-            throw new PostgresIssueExecutionFinalizationRejected(
-              "Compaction cannot finalize while an attempt or cancellation is current",
-            );
-          }
-          const frontier = await lockCompactionPromptFrontier(
-            transaction,
-            input,
-          );
-          const finalizationId = randomUUID();
-          const plan = buildIssueExecutionFinalizationPlan({
-            companyId: input.companyId,
-            issueId: input.issueId,
-            runId: input.runId,
-            runKind: "compaction",
-            action: "no_conversational_output",
-            expectedPromptIdentities: frontier.expected,
-            promptDependencies: frontier.dependencies,
-            terminalSessionEventId: null,
-            terminalSessionMessageId: null,
-            progressCommentId: null,
-            runLivenessFactId: null,
-            gatewayRevocationRequired: false,
-            gatewayRevocation: null,
-            updates: [],
-          });
-          await transaction.insert(issueExecutionFinalizations).values({
-            id: finalizationId,
-            companyId: input.companyId,
-            runId: input.runId,
-            finalizationIdentityDigest: plan.finalizationIdentityDigest,
-            action: "no_conversational_output",
-            terminalSessionEventId: null,
-            terminalSessionMessageId: null,
-            progressCommentId: null,
-            gatewayCapabilityConnectionId: null,
-            gatewayCapabilityGeneration: null,
-            runLivenessFactId: null,
-            finalizedAt: input.finishedAt,
-            createdAt: input.finishedAt,
-          });
-          await transaction
-            .insert(issueExecutionFinalizationPromptDependencies)
-            .values(
-              plan.promptDependencies.map((dependency) => ({
-                companyId: input.companyId,
-                issueId: input.issueId,
-                runId: input.runId,
-                finalizationId,
-                dependencyOrdinal: dependency.dependencyOrdinal,
-                promptKind: dependency.kind,
-                refId: dependency.refId,
-                refOrdinal: dependency.refOrdinal,
-                segmentOrdinal: dependency.segmentOrdinal,
-                compactionControlId: dependency.compactionControlId,
-                protocolSettlementState:
-                  dependency.protocolSettlementState,
-                settlementVersion: dependency.settlementVersion,
-                accountingId: dependency.accountingId,
-                costEventId: dependency.costEventId,
-              })),
-            );
-          await options.runService.attachFinalization(transaction, {
-            companyId: input.companyId,
-            issueId: input.issueId,
-            runId: input.runId,
-            expectedStatus: run.status,
-            finalizationId,
-            status: input.status,
-            terminalReasonCode: input.terminalReasonCode,
-            finishedAt: input.finishedAt,
-            processExitCode: null,
-            processSignal: null,
-            at: input.finishedAt,
-          });
-          return {
-            finalizationId,
-            status: input.status,
-            retried: false,
-            livenessOutbox: null,
-          };
         }
         const control = exactlyOne(
           await transaction
@@ -961,7 +812,6 @@ export function createPostgresIssueExecutionFinalizationWriter(options: {
               refId: dependency.refId,
               refOrdinal: dependency.refOrdinal,
               segmentOrdinal: dependency.segmentOrdinal,
-              compactionControlId: dependency.compactionControlId,
               protocolSettlementState: dependency.protocolSettlementState,
               settlementVersion: dependency.settlementVersion,
               accountingId: dependency.accountingId,

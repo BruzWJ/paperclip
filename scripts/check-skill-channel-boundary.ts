@@ -319,7 +319,7 @@ function settlementCollectionViolations(
       "releaseAttempt",
     );
     const branch = retryBody.statements.find((statement) =>
-      conditionIncludes(file, statement, "target_not_found_recovery")
+      conditionIncludes(file, statement, "target_not_found_new_session")
     );
     if (
       collectionCalls.length !== 1 ||

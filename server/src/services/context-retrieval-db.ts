@@ -486,16 +486,6 @@ export function sanitizeCanonicalMessage(
         errorKind: wireString(error.type),
       };
     }
-    case "compaction":
-      return {
-        ...base,
-        text: redactSensitiveText(String(wire.summary ?? "")),
-        recent: redactSensitiveText(String(wire.recent ?? "")),
-        compactionReason:
-          wire.reason === "auto" || wire.reason === "manual"
-            ? wire.reason
-            : null,
-      };
   }
 }
 
@@ -692,17 +682,14 @@ export function createContextRetrievalDbRepository(
                 },
           }
         : null;
-      const checkpoint = detail.compactionCheckpoint;
       return {
         runId,
         runKind: run.kind,
-        triggeredByRunId: run.triggeredByRunId,
         issueId: run.issueId,
         status: run.status,
         startedAt: run.startedAt ? iso(run.startedAt) : null,
         finishedAt: run.finishedAt ? iso(run.finishedAt) : null,
         accounting,
-        checkpoint,
         turns,
         outcome:
           run.status === "succeeded"

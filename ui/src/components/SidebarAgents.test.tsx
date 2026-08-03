@@ -106,10 +106,7 @@ vi.mock("../api/runs", async () => {
         const value = await mockRunsApi.listForCompany(...args);
         if (!Array.isArray(value)) return value;
         return {
-          items: value.map((run) => ({
-            ...run,
-            targetAgentId: run.targetAgentId ?? run.agentId ?? null,
-          })),
+          items: value,
           nextCursor: null,
         };
       },
@@ -663,7 +660,7 @@ describe("SidebarAgents", () => {
       makeAgent({ id: "agent-c", name: "Charlie", urlKey: "charlie" }),
     ]);
     mockRunsApi.listForCompany.mockResolvedValue([
-      { id: "run-1", agentId: "agent-b", status: "running" },
+      { id: "run-1", targetAgentId: "agent-b", status: "running" },
     ]);
 
     await renderSidebarAgents();
@@ -685,7 +682,7 @@ describe("SidebarAgents", () => {
       makeAgent({ id: "agent-d", name: "Delta", urlKey: "delta" }),
     ]);
     mockRunsApi.listForCompany.mockResolvedValue([
-      { id: "run-1", agentId: "agent-a", status: "running" },
+      { id: "run-1", targetAgentId: "agent-a", status: "running" },
     ]);
 
     await renderSidebarAgentsWithFakeTimers();
@@ -732,7 +729,7 @@ describe("SidebarAgents", () => {
       makeAgent({ id: "agent-d", name: "Delta", urlKey: "delta" }),
     ]);
     mockRunsApi.listForCompany.mockResolvedValue([
-      { id: "run-1", agentId: "agent-a", status: "running" },
+      { id: "run-1", targetAgentId: "agent-a", status: "running" },
     ]);
 
     await renderSidebarAgentsWithFakeTimers();
@@ -752,7 +749,7 @@ describe("SidebarAgents", () => {
     expect(agentLinkLabels(container)).toEqual(["Alpha"]);
 
     mockRunsApi.listForCompany.mockResolvedValue([
-      { id: "run-2", agentId: "agent-b", status: "running" },
+      { id: "run-2", targetAgentId: "agent-b", status: "running" },
     ]);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
@@ -821,7 +818,7 @@ describe("SidebarAgents", () => {
       makeAgent({ id: "agent-c", name: "Charlie", urlKey: "charlie" }),
     ]);
     mockRunsApi.listForCompany.mockResolvedValue([
-      { id: "run-1", agentId: "agent-b", status: "running" },
+      { id: "run-1", targetAgentId: "agent-b", status: "running" },
     ]);
 
     await renderSidebarAgents(false);

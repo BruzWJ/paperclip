@@ -20,12 +20,9 @@ import {
   issueExecutionRunRefs,
   issueExecutionRuns,
 } from "./issue_execution_runs.js";
-import {
-  issueSessionCompactionControls,
-  issueSessions,
-} from "./issue_sessions.js";
+import { issueSessions } from "./issue_sessions.js";
 
-export type AcpPromptAccountingKind = "base" | "steering" | "compaction";
+export type AcpPromptAccountingKind = "base" | "steering";
 
 /**
  * The only stable ACP usage observation. Detailed provider token breakdowns
@@ -45,7 +42,6 @@ export const acpPromptAccounting = pgTable(
     refId: uuid("ref_id"),
     runOrdinal: integer("run_ordinal"),
     segmentOrdinal: integer("segment_ordinal"),
-    compactionControlId: uuid("compaction_control_id"),
     attemptId: uuid("attempt_id").notNull(),
     adapterConfigRevisionId: uuid("adapter_config_revision_id").notNull(),
     selectedModelId: text("selected_model_id").notNull(),
@@ -75,7 +71,6 @@ export const acpPromptAccounting = pgTable(
         and ${table.runOrdinal} >= 0
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} = 0
-        and ${table.compactionControlId} is null
       ) or (
         ${table.promptKind} = 'steering'
         and ${table.runKind} in ('productive', 'consult')
@@ -84,14 +79,6 @@ export const acpPromptAccounting = pgTable(
         and ${table.runOrdinal} >= 0
         and ${table.segmentOrdinal} is not null
         and ${table.segmentOrdinal} > 0
-        and ${table.compactionControlId} is null
-      ) or (
-        ${table.promptKind} = 'compaction'
-        and ${table.runKind} = 'compaction'
-        and ${table.refId} is null
-        and ${table.runOrdinal} is null
-        and ${table.segmentOrdinal} is null
-        and ${table.compactionControlId} is not null
       )`,
     ),
     check(
@@ -181,27 +168,6 @@ export const acpPromptAccounting = pgTable(
       columns: [
         table.companyId,
         table.issueId,
-        table.runId,
-        table.attemptId,
-        table.runKind,
-        table.promptKind,
-        table.compactionControlId,
-      ],
-      foreignColumns: [
-        issueExecutionAttempts.companyId,
-        issueExecutionAttempts.issueId,
-        issueExecutionAttempts.runId,
-        issueExecutionAttempts.id,
-        issueExecutionAttempts.runKind,
-        issueExecutionAttempts.promptKind,
-        issueExecutionAttempts.compactionControlId,
-      ],
-      name: "acp_prompt_accounting_compaction_attempt_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
         table.sessionId,
         table.runId,
         table.runOrdinal,
@@ -217,21 +183,6 @@ export const acpPromptAccounting = pgTable(
       ],
       name: "acp_prompt_accounting_run_ref_fk",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [
-        table.companyId,
-        table.issueId,
-        table.compactionControlId,
-        table.runId,
-      ],
-      foreignColumns: [
-        issueSessionCompactionControls.companyId,
-        issueSessionCompactionControls.issueId,
-        issueSessionCompactionControls.id,
-        issueSessionCompactionControls.compactionRunId,
-      ],
-      name: "acp_prompt_accounting_compaction_prompt_fk",
-    }).onDelete("restrict"),
     unique("acp_prompt_accounting_scope_id_uq").on(
       table.companyId,
       table.issueId,
@@ -259,27 +210,6 @@ export const acpPromptAccounting = pgTable(
       table.segmentOrdinal,
       table.id,
     ),
-    unique(
-      "acp_prompt_accounting_compaction_cost_attribution_uq",
-    ).on(
-      table.companyId,
-      table.issueId,
-      table.agentId,
-      table.runId,
-      table.runKind,
-      table.compactionControlId,
-      table.id,
-    ),
-    unique(
-      "acp_prompt_accounting_compaction_settlement_owner_uq",
-    ).on(
-      table.companyId,
-      table.issueId,
-      table.runId,
-      table.compactionControlId,
-      table.promptSettlementReferenceId,
-      table.id,
-    ),
     uniqueIndex("acp_prompt_accounting_productive_prompt_uq")
       .on(
         table.runId,
@@ -288,9 +218,6 @@ export const acpPromptAccounting = pgTable(
         table.segmentOrdinal,
       )
       .where(sql`${table.promptKind} in ('base', 'steering')`),
-    uniqueIndex("acp_prompt_accounting_compaction_prompt_uq")
-      .on(table.runId, table.compactionControlId)
-      .where(sql`${table.promptKind} = 'compaction'`),
     index("acp_prompt_accounting_agent_settled_idx").on(
       table.companyId,
       table.agentId,

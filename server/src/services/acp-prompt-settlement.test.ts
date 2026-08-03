@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import {
   AcpPromptSettlementRejected,
-  resolveAcpPromptSettlementModel,
   settleAcpPromptInTransaction,
   type SettleAcpPromptInTransactionInput,
 } from "./acp-prompt-settlement.js";
@@ -45,26 +44,6 @@ function validInput(): SettleAcpPromptInTransactionInput {
 }
 
 describe("canonical ACP prompt settlement boundary", () => {
-  it("attributes compaction to its locked override snapshot, not the productive revision model", () => {
-    expect(
-      resolveAcpPromptSettlementModel({
-        promptKind: "compaction",
-        revisionModelId: "productive-model",
-        revisionContextTokenLimit: 32_000,
-        compactionModelSnapshot: {
-          modelRef: "summary-model",
-          targetModelId: "summary-model",
-          targetModelValue: "summary-model-value",
-          contextTokenLimit: 128_000,
-          outputTokenLimit: 8_000,
-        },
-      }),
-    ).toEqual({
-      selectedModelId: "summary-model",
-      contextTokenLimit: 128_000,
-    });
-  });
-
   it("rejects malformed terminal occupancy before reaching persistence", async () => {
     const input = validInput();
     await expect(

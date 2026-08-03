@@ -43,11 +43,7 @@ import {
   issueInboxArchives,
   issueReadStates,
   issues,
-  issueSessionCompactionControls,
   issueSessionInputDispositions,
-  issueSessionProductiveTurnSettlements,
-  issueSessionRecoverySelectionMembers,
-  issueSessionRecoverySelections,
   issueSessions,
   issueUpdates,
   joinRequests,
@@ -556,20 +552,6 @@ async function fenceCompanySessionGraphInTx(
         isNull(issueExecutionRunRefs.protocolSettlementState),
       ),
     );
-  const openCompactionRuns = await tx
-    .select({
-      companyId: issueSessionCompactionControls.companyId,
-      issueId: issueSessionCompactionControls.issueId,
-      runId: issueSessionCompactionControls.compactionRunId,
-    })
-    .from(issueSessionCompactionControls)
-    .where(
-      and(
-        eq(issueSessionCompactionControls.companyId, input.companyId),
-        isNotNull(issueSessionCompactionControls.compactionRunId),
-        isNull(issueSessionCompactionControls.protocolSettlementState),
-      ),
-    );
   const candidateRunIdentities = new Map<
     string,
     CompanySessionLifecycleRun
@@ -581,9 +563,6 @@ async function fenceCompanySessionGraphInTx(
       runId: attempt.runId,
     })),
     ...openRunRefs,
-    ...openCompactionRuns.flatMap((identity) =>
-      identity.runId ? [{ ...identity, runId: identity.runId }] : [],
-    ),
   ]) {
     candidateRunIdentities.set(identity.runId, identity);
   }
@@ -1676,22 +1655,6 @@ export async function purgeCompanySessionGraphInTx(
   await tx
     .delete(issueExecutionAttempts)
     .where(eq(issueExecutionAttempts.companyId, input.companyId));
-  await tx
-    .delete(issueSessionRecoverySelectionMembers)
-    .where(
-      eq(issueSessionRecoverySelectionMembers.companyId, input.companyId),
-    );
-  await tx
-    .delete(issueSessionRecoverySelections)
-    .where(eq(issueSessionRecoverySelections.companyId, input.companyId));
-  await tx
-    .delete(issueSessionProductiveTurnSettlements)
-    .where(
-      eq(issueSessionProductiveTurnSettlements.companyId, input.companyId),
-    );
-  await tx
-    .delete(issueSessionCompactionControls)
-    .where(eq(issueSessionCompactionControls.companyId, input.companyId));
   await tx
     .delete(issueCommentProjectionSources)
     .where(eq(issueCommentProjectionSources.companyId, input.companyId));

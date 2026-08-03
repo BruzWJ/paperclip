@@ -11,21 +11,12 @@ export type IssueExecutionFinalizationPromptIdentity =
       readonly refId: string;
       readonly refOrdinal: number;
       readonly segmentOrdinal: 0;
-      readonly compactionControlId: null;
     }
   | {
       readonly kind: "steering";
       readonly refId: string;
       readonly refOrdinal: number;
       readonly segmentOrdinal: number;
-      readonly compactionControlId: null;
-    }
-  | {
-      readonly kind: "compaction";
-      readonly refId: null;
-      readonly refOrdinal: null;
-      readonly segmentOrdinal: null;
-      readonly compactionControlId: string;
     };
 
 export type IssueExecutionFinalizationPromptDependency =
@@ -122,8 +113,7 @@ function promptIdentityKey(
       if (
         !Number.isSafeInteger(value.refOrdinal) ||
         value.refOrdinal < 0 ||
-        value.segmentOrdinal !== 0 ||
-        value.compactionControlId !== null
+        value.segmentOrdinal !== 0
       ) {
         throw new IssueExecutionFinalizationRejected(
           "Base finalization dependency has an invalid identity",
@@ -137,8 +127,7 @@ function promptIdentityKey(
         !Number.isSafeInteger(value.refOrdinal) ||
         value.refOrdinal < 0 ||
         !Number.isSafeInteger(value.segmentOrdinal) ||
-        value.segmentOrdinal <= 0 ||
-        value.compactionControlId !== null
+        value.segmentOrdinal <= 0
       ) {
         throw new IssueExecutionFinalizationRejected(
           "Steering finalization dependency has an invalid identity",
@@ -147,19 +136,6 @@ function promptIdentityKey(
       }
       exactIdentity(value.refId, "steering ref id");
       return `steering:${value.refOrdinal}:${value.refId}:${value.segmentOrdinal}`;
-    case "compaction":
-      if (
-        value.refId !== null ||
-        value.refOrdinal !== null ||
-        value.segmentOrdinal !== null
-      ) {
-        throw new IssueExecutionFinalizationRejected(
-          "Compaction finalization dependency has an invalid identity",
-          "identity_invalid",
-        );
-      }
-      exactIdentity(value.compactionControlId, "compaction control id");
-      return `compaction:${value.compactionControlId}`;
   }
 }
 
@@ -188,7 +164,6 @@ function assertPromptSettlement(
 }
 
 function assertPromptFrontier(
-  runKind: IssueExecutionRunKind,
   expected: readonly IssueExecutionFinalizationPromptIdentity[],
   actual: readonly IssueExecutionFinalizationPromptDependency[],
 ): void {
@@ -208,12 +183,7 @@ function assertPromptFrontier(
       "prompt_frontier_mismatch",
     );
   }
-  if (
-    (runKind === "compaction" &&
-      (actual.length !== 1 || actual[0]?.kind !== "compaction")) ||
-    (runKind !== "compaction" &&
-      (actual.length === 0 || actual.some((value) => value.kind === "compaction")))
-  ) {
+  if (actual.length === 0) {
     throw new IssueExecutionFinalizationRejected(
       "Finalization prompt dependencies do not match the run kind",
       "prompt_frontier_mismatch",
@@ -232,25 +202,9 @@ function assertBranch(input: BuildIssueExecutionFinalizationPlanInput): void {
     exactIdentity(input.runLivenessFactId, "run liveness fact id");
   } else if (input.runLivenessFactId !== null) {
     throw new IssueExecutionFinalizationRejected(
-      "Consult and compaction finalizations cannot reference productive liveness",
+      "Consult finalizations cannot reference productive liveness",
       "branch_invalid",
     );
-  }
-
-  if (input.runKind === "compaction") {
-    if (
-      input.action !== "no_conversational_output" ||
-      input.terminalSessionEventId !== null ||
-      input.terminalSessionMessageId !== null ||
-      input.progressCommentId !== null ||
-      input.updates.length !== 0
-    ) {
-      throw new IssueExecutionFinalizationRejected(
-        "Compaction finalization has conversational or delivery dependencies",
-        "branch_invalid",
-      );
-    }
-    return;
   }
 
   if (!input.progressCommentId) {
@@ -305,7 +259,7 @@ function assertBranch(input: BuildIssueExecutionFinalizationPlanInput): void {
 function assertGatewayRevocation(
   input: BuildIssueExecutionFinalizationPlanInput,
 ): void {
-  if (input.runKind === "compaction" || !input.gatewayRevocationRequired) {
+  if (!input.gatewayRevocationRequired) {
     if (input.gatewayRevocation !== null) {
       throw new IssueExecutionFinalizationRejected(
         "Finalization references an inapplicable gateway revocation",
@@ -371,7 +325,6 @@ function digestRecord(input: BuildIssueExecutionFinalizationPlanInput) {
       refId: dependency.refId,
       refOrdinal: dependency.refOrdinal,
       segmentOrdinal: dependency.segmentOrdinal,
-      compactionControlId: dependency.compactionControlId,
       protocolSettlementState: dependency.protocolSettlementState,
       settlementVersion: dependency.settlementVersion,
       accountingId: dependency.accountingId,
@@ -401,7 +354,6 @@ export function buildIssueExecutionFinalizationPlan(
     exactIdentity(value, label);
   }
   assertPromptFrontier(
-    input.runKind,
     input.expectedPromptIdentities,
     input.promptDependencies,
   );

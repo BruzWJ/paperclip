@@ -87,8 +87,7 @@ export interface CanonicalRunTraceTurn {
     | "synthetic"
     | "system"
     | "shell"
-    | "assistant"
-    | "compaction";
+    | "assistant";
   timestamp: string;
   completedAt?: string | null;
   agentId?: string | null;
@@ -104,8 +103,6 @@ export interface CanonicalRunTraceTurn {
   content?: CanonicalRunTracePart[];
   finish?: string | null;
   errorKind?: string | null;
-  compactionReason?: "auto" | "manual" | null;
-  recent?: string | null;
 }
 
 export interface CanonicalRunCommentLink {
@@ -128,15 +125,6 @@ export interface CanonicalRunTraceAccounting {
     | { kind: "unavailable"; unavailableReason: AcpCostUnavailableReason };
 }
 
-/** The only checkpoint evidence surfaced in a trace for a compaction run. */
-export interface CanonicalRunTraceCheckpoint {
-  kind: "checkpoint" | "failed-compaction";
-  requestMessageId: string;
-  summaryAssistantMessageId: string | null;
-  failedAssistantMessageId: string | null;
-  tailStartMessageId: string | null;
-}
-
 /**
  * Internal canonical trace assembled from V2 rows. It is not the provider
  * DTO: it may retain control-plane-safe board telemetry such as model switch
@@ -145,14 +133,11 @@ export interface CanonicalRunTraceCheckpoint {
 export interface CanonicalRunTrace {
   runId: string;
   runKind: IssueExecutionRunKind;
-  /** Present only for an automatic compaction trace. */
-  triggeredByRunId: string | null;
   issueId: string;
   status: string;
   startedAt: string | null;
   finishedAt: string | null;
   accounting: CanonicalRunTraceAccounting | null;
-  checkpoint: CanonicalRunTraceCheckpoint | null;
   turns: CanonicalRunTraceTurn[];
   outcome: "succeeded" | "failed" | null;
   comments: CanonicalRunCommentLink[];
@@ -711,7 +696,6 @@ function providerSafeTraceTurn(
   if (finish) result.finish = finish;
   const errorKind = providerSafeTraceString(turn.errorKind);
   if (errorKind) result.errorKind = errorKind;
-  if (turn.compactionReason) result.compactionReason = turn.compactionReason;
   return result;
 }
 

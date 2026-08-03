@@ -593,9 +593,7 @@ export function workTimelineService(db: Db) {
     const spanByRunId = new Map<string, WorkTimelineSpan>();
     for (const row of runRows) {
       if (!issueById.has(row.issueId) || spanByRunId.has(row.runId)) continue;
-      const runActorId = row.targetAgentId
-        ? actorId("agent", row.targetAgentId)
-        : actorId("system", "compaction");
+      const runActorId = actorId("agent", row.targetAgentId);
       actorIds.add(runActorId);
       spanByRunId.set(row.runId, {
         actorId: runActorId,

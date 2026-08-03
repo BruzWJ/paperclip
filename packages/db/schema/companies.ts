@@ -5,7 +5,6 @@ import {
   check,
   index,
   integer,
-  jsonb,
   pgTable,
   text,
   timestamp,
@@ -52,14 +51,6 @@ export const companies = pgTable(
       { onDelete: "set null" },
     ),
     feedbackDataSharingTermsVersion: text("feedback_data_sharing_terms_version"),
-    sessionCompaction: jsonb("session_compaction").$type<{
-      auto?: boolean;
-      prune?: boolean;
-      reserved?: number;
-      tail_turns?: number;
-      preserve_recent_tokens?: number;
-      modelRef?: string;
-    } | null>(),
     sessionIntegrityState: text("session_integrity_state")
       .$type<
         "ready" | "archive_fenced" | "hard_delete_fenced"
@@ -104,57 +95,6 @@ export const companies = pgTable(
       ) or (
         ${table.sessionIntegrityState} <> 'ready'
       )`,
-    ),
-    check(
-      "companies_session_compaction_check",
-      sql`${table.sessionCompaction} is null
-        or (
-          jsonb_typeof(${table.sessionCompaction}) = 'object'
-          and ${table.sessionCompaction}
-            - 'auto'
-            - 'prune'
-            - 'reserved'
-            - 'tail_turns'
-            - 'preserve_recent_tokens'
-            - 'modelRef' = '{}'::jsonb
-          and (
-            not (${table.sessionCompaction} ? 'auto')
-            or jsonb_typeof(${table.sessionCompaction} -> 'auto') = 'boolean'
-          )
-          and (
-            not (${table.sessionCompaction} ? 'prune')
-            or jsonb_typeof(${table.sessionCompaction} -> 'prune') = 'boolean'
-          )
-          and (
-            not (${table.sessionCompaction} ? 'reserved')
-            or (
-              jsonb_typeof(${table.sessionCompaction} -> 'reserved') = 'number'
-              and (${table.sessionCompaction} ->> 'reserved') ~ '^(0|[1-9][0-9]*)$'
-            )
-          )
-          and (
-            not (${table.sessionCompaction} ? 'tail_turns')
-            or (
-              jsonb_typeof(${table.sessionCompaction} -> 'tail_turns') = 'number'
-              and (${table.sessionCompaction} ->> 'tail_turns') ~ '^(0|[1-9][0-9]*)$'
-            )
-          )
-          and (
-            not (${table.sessionCompaction} ? 'preserve_recent_tokens')
-            or (
-              jsonb_typeof(${table.sessionCompaction} -> 'preserve_recent_tokens') = 'number'
-              and (${table.sessionCompaction} ->> 'preserve_recent_tokens') ~ '^(0|[1-9][0-9]*)$'
-            )
-          )
-          and (
-            not (${table.sessionCompaction} ? 'modelRef')
-            or (
-              jsonb_typeof(${table.sessionCompaction} -> 'modelRef') = 'string'
-              and btrim(${table.sessionCompaction} ->> 'modelRef') <> ''
-              and length(btrim(${table.sessionCompaction} ->> 'modelRef')) <= 500
-            )
-          )
-        )`,
     ),
     uniqueIndex("companies_issue_prefix_idx").on(table.issuePrefix),
     unique("companies_id_budget_currency_uq").on(

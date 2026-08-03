@@ -88,7 +88,7 @@ function everyNestedText(
 
 /**
  * Produces the one full, untruncated sourceOutputText used by the canonical
- * Session tool state and missing-session compaction. Inputs must already have
+ * Session tool-state projection and inspection. Inputs must already have
  * passed publication redaction; this function performs no provider-specific
  * interpretation.
  */

@@ -420,7 +420,7 @@ export function pipelineCaseOutputsService(db: Db) {
         );
         const workProductAgentByRunId = new Map<string, string>();
         for (const run of workProductRuns) {
-          if (run?.targetAgentId) {
+          if (run) {
             workProductAgentByRunId.set(run.runId, run.targetAgentId);
           }
         }

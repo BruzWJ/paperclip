@@ -16,6 +16,8 @@ import {
   issueExecutionRuns,
 } from "../schema/issue_execution_runs.js";
 import {
+  issueExecutionHistoryViewMessages,
+  issueExecutionHistoryViews,
   issueExecutionLanes,
   issueExecutionRefs,
 } from "../schema/issue_execution_runtime.js";
@@ -58,10 +60,8 @@ describe("canonical issue execution run schema", () => {
       "execution_mode",
       "issue_execution_authority_id",
       "consult_execution_id",
-      "compaction_scope_kind",
       "parent_run_id",
       "retry_of_run_id",
-      "triggered_by_run_id",
       "current_attempt_id",
       "current_lease_id",
       "cancellation_intent_id",
@@ -99,14 +99,12 @@ describe("canonical issue execution run schema", () => {
         "issue_execution_runs_cancellation_intent_id_issue_execution_cancellation_intents_id_fk",
       ]),
     );
-    expect(
-      checkSql(
-        issueExecutionRuns,
-        "issue_execution_runs_kind_shape_check",
-      ),
-    ).toContain(
-      '"issue_execution_runs"."parent_run_id" = "issue_execution_runs"."triggered_by_run_id"',
-    );
+    const kind = checkSql(issueExecutionRuns, "issue_execution_runs_kind_check");
+    expect(kind).toContain("'productive'");
+    expect(kind).toContain("'consult'");
+    expect(kind).not.toContain("'compaction'");
+    expect(issueExecutionRuns.targetAgentId.notNull).toBe(true);
+    expect(issueExecutionRuns.executionMode.notNull).toBe(true);
   });
 
   it("owns immutable ordered membership and the closed settlement matrix", () => {
@@ -300,7 +298,54 @@ describe("canonical issue execution run schema", () => {
     ).toContain("9007199254740991");
   });
 
-  it("binds one typed attempt to a base, steering, or compaction prompt", () => {
+  it("retains context-dial composition views without compaction checkpoints", () => {
+    const viewColumns = columnNames(issueExecutionHistoryViews);
+    expect(viewColumns).toEqual(
+      expect.arrayContaining([
+        "history_scope_kind",
+        "history_scope_id",
+        "composition_audience",
+        "effective_dial_snapshot",
+        "effective_dial_digest",
+        "selected_record_ids",
+        "lower_order_snapshot",
+        "composition_preparation_id",
+        "composition_bytes",
+        "composition_hash",
+      ]),
+    );
+    expect(viewColumns).not.toEqual(
+      expect.arrayContaining([
+        "compaction_settings_snapshot",
+        "model_snapshot",
+        "composition_checkpoint_control_id",
+        "composition_tail_start_message_id",
+        "active_execution_checkpoint_control_id",
+        "active_execution_tail_start_message_id",
+        "lowering_generation",
+      ]),
+    );
+    const snapshot = checkSql(
+      issueExecutionHistoryViews,
+      "issue_execution_history_views_snapshot_check",
+    );
+    expect(snapshot).toContain('"effective_dial_snapshot" is not null');
+    expect(snapshot).toContain('"selected_record_ids" is not null');
+    expect(snapshot).not.toContain("compaction_settings_snapshot");
+    expect(snapshot).not.toContain("model_snapshot");
+
+    const membership = checkSql(
+      issueExecutionHistoryViewMessages,
+      "issue_execution_history_view_messages_kind_check",
+    );
+    expect(membership).toContain("'composition'");
+    expect(membership).toContain("'source'");
+    expect(membership).toContain("'execution'");
+    expect(membership).not.toContain("checkpoint");
+    expect(membership).not.toContain("retained-tail");
+  });
+
+  it("binds one typed attempt to a base or steering prompt", () => {
     const config = getTableConfig(issueExecutionAttempts);
     const names = config.foreignKeys.map((key) => key.getName());
 
@@ -318,7 +363,6 @@ describe("canonical issue execution run schema", () => {
       "ref_ordinal",
       "segment_ordinal",
       "steering_segment_ordinal",
-      "compaction_control_id",
       "attempt_generation",
       "state",
       "started_at",
@@ -329,7 +373,7 @@ describe("canonical issue execution run schema", () => {
       issueExecutionAttempts,
       "issue_execution_attempts_prompt_identity_check",
     );
-    expect(identity).toContain("= 'compaction'");
+    expect(identity).not.toContain("= 'compaction'");
     expect(identity).toContain('"segment_ordinal" = 0');
     expect(identity).toContain('"segment_ordinal" > 0');
     expect(identity).toContain(
@@ -345,23 +389,21 @@ describe("canonical issue execution run schema", () => {
         issueExecutionAttempts,
         "issue_execution_attempts_session_operation_check",
       ),
-    ).toContain("'recovery_new'");
+    ).not.toContain("'recovery_new'");
     expect(names).toEqual(
       expect.arrayContaining([
         "issue_execution_attempts_run_fk",
         "issue_execution_attempts_run_kind_fk",
         "issue_execution_attempts_base_member_fk",
         "issue_execution_attempts_steering_segment_fk",
-        "issue_execution_attempts_compaction_control_fk",
       ]),
     );
     expect(config.indexes.filter((index) => index.config.unique)).toHaveLength(
-      4,
+      3,
     );
     for (const name of [
       "issue_execution_attempts_base_prompt_uq",
       "issue_execution_attempts_steering_prompt_uq",
-      "issue_execution_attempts_compaction_prompt_uq",
     ]) {
       const attemptIdentity = config.indexes.find(
         (index) => index.config.name === name,

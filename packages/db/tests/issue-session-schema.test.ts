@@ -12,6 +12,7 @@ import {
   issueSessionMessageIdAllocators,
   issueSessionMessageIdReservations,
   issueSessionMessages,
+  issueSessionSourceUserExecutions,
   issueSessions,
 } from "../schema/issue_sessions.js";
 
@@ -135,6 +136,24 @@ describe("issue-session schema", () => {
       "baseline_seq",
       "generation",
     ]);
+    expect(columns(issueSessionSourceUserExecutions)).toEqual([
+      "id",
+      "company_id",
+      "issue_id",
+      "session_id",
+      "message_id",
+      "source_agent_id",
+      "provider_id",
+      "model_id",
+      "variant",
+      "created_at",
+    ]);
+    expect(foreignKeys(issueSessionSourceUserExecutions)).toEqual(
+      expect.arrayContaining([
+        "issue_session_source_user_executions_message_fk",
+        "issue_session_source_user_executions_agent_fk",
+      ]),
+    );
   });
 
   it("defines deterministic message identifiers and immutable scoped records", () => {

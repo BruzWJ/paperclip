@@ -81,7 +81,6 @@ function setup(options: {
     async ({ runId }: { runId: string }) => ({
       runId,
       runKind: "productive" as const,
-      triggeredByRunId: null,
       issueId: "issue",
       status: "succeeded",
       startedAt: null,

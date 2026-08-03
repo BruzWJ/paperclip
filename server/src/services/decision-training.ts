@@ -167,7 +167,6 @@ async function listRunsAtDecisionCutoff(
       executionMode: run.executionMode,
       parentRunId: run.parentRunId,
       retryOfRunId: run.retryOfRunId,
-      triggeredByRunId: run.triggeredByRunId,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
       terminalClassification: run.terminalClassification,

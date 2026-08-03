@@ -35,7 +35,6 @@ function canonicalTrace(
   return {
     runId,
     runKind: "productive",
-    triggeredByRunId: null,
     issueId,
     status: "succeeded",
     startedAt: "2026-07-28T00:00:00.000Z",

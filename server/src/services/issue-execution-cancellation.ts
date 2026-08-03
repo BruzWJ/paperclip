@@ -12,9 +12,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import type {
   IssueExecutionAttemptCancellationSignal,
 } from "./issue-execution-dispatcher.js";
-import type {
-  IssueSessionCompactionAttemptCancellationSignal,
-} from "./issue-session-compaction-postgres.js";
 import {
   resolveIssueExecutionRunIdentityById,
   type IssueExecutionRunEnvelope,
@@ -44,15 +41,6 @@ export interface IssueExecutionCancellationDispatcherPort {
     input: IssueExecutionAttemptCancellationSignal,
   ): boolean;
   isAttemptActive(input: IssueExecutionAttemptCancellationSignal): boolean;
-}
-
-export interface IssueExecutionCompactionCancellationPort {
-  signalAttemptCancellation(
-    input: IssueSessionCompactionAttemptCancellationSignal,
-  ): boolean;
-  isAttemptActive(
-    input: IssueSessionCompactionAttemptCancellationSignal,
-  ): boolean;
 }
 
 export interface IssueExecutionCancelledRunSettlementPort {
@@ -140,7 +128,6 @@ export interface IssueExecutionCancellationServiceOptions {
   >;
   readonly dispatcher: IssueExecutionCancellationDispatcherPort;
   readonly settlement: IssueExecutionCancelledRunSettlementPort;
-  readonly compaction: IssueExecutionCompactionCancellationPort;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
 }
@@ -296,36 +283,6 @@ function attemptSignal(input: {
     sessionId: input.run.sessionId,
     executionScopeId: input.run.executionScopeId,
     refId: input.attempt.refId,
-    runId: input.run.runId,
-    attemptId: input.attempt.id,
-    leaseGeneration: input.lease.leaseGeneration,
-  });
-}
-
-function compactionAttemptSignal(input: {
-  readonly run: IssueExecutionRunEnvelope;
-  readonly attempt: typeof issueExecutionAttempts.$inferSelect;
-  readonly lease: typeof issueExecutionLeases.$inferSelect | null;
-}): IssueSessionCompactionAttemptCancellationSignal | null {
-  if (input.run.kind !== "compaction") return null;
-  if (!input.lease) return null;
-  if (
-    input.attempt.runKind !== "compaction" ||
-    input.attempt.promptKind !== "compaction" ||
-    input.attempt.refId !== null ||
-    input.attempt.compactionControlId === null ||
-    input.attempt.runId !== input.run.runId ||
-    input.lease.runId !== input.run.runId ||
-    input.lease.attemptId !== input.attempt.id ||
-    input.lease.state !== "active"
-  ) {
-    reject("compaction cancellation crossed its exact attempt lease");
-  }
-  return Object.freeze({
-    companyId: input.run.companyId,
-    issueId: input.run.issueId,
-    sessionId: input.run.sessionId,
-    executionScopeId: input.run.executionScopeId,
     runId: input.run.runId,
     attemptId: input.attempt.id,
     leaseGeneration: input.lease.leaseGeneration,
@@ -1053,34 +1010,12 @@ export function createIssueExecutionCancellationService(
     const attempt = attemptRows[0]!;
     const lease = leaseRows[0] ?? null;
     const signal = attemptSignal({ run, attempt, lease });
-    const compactionSignal = compactionAttemptSignal({ run, attempt, lease });
     if (signal) {
       options.dispatcher.signalAttemptCancellation(signal);
-    } else if (compactionSignal) {
-      const delivered = options.compaction.signalAttemptCancellation(
-        compactionSignal,
-      );
-      if (delivered && intent.sessionCancelSentAt === null) {
-        await options.database
-          .update(issueExecutionCancellationIntents)
-          .set({ sessionCancelSentAt: now() })
-          .where(
-            and(
-              eq(issueExecutionCancellationIntents.id, intent.id),
-              eq(
-                issueExecutionCancellationIntents.attemptId,
-                compactionSignal.attemptId,
-              ),
-              eq(issueExecutionCancellationIntents.state, "acknowledged"),
-            ),
-          );
-      }
     }
     const workerActive = signal
       ? options.dispatcher.isAttemptActive(signal)
-      : compactionSignal
-        ? options.compaction.isAttemptActive(compactionSignal)
-        : false;
+      : false;
     const process = processRows[0] ?? null;
     if (
       workerActive ||

@@ -69,12 +69,12 @@ describe("check-issue-session-durable-writers", () => {
       `
         import * as schema from "@paperclipai/db";
         const tables = schema;
-        db.insert(tables.issueSessionAssistantSources).values({});
+        db.insert(tables.issueSessionSourceUserExecutions).values({});
       `,
     );
     assert.match(
       namespace[0]?.message ?? "",
-      /direct insert\(issueSessionAssistantSources\)/,
+      /direct insert\(issueSessionSourceUserExecutions\)/,
     );
 
     const rawString = scanIssueSessionDurableWriterSource(

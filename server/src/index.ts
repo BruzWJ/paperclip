@@ -28,7 +28,6 @@ import {
   createPostgresCreatorDeliveryService,
   createPostgresSystemEscalationService,
   createPostgresIssueExecutionProductionRuntime,
-  createPostgresSessionCompactionProvider,
   createPostgresIssueSessionCompositionRuntime,
   createIssueSessionStore,
   createPostgresRuntimeIssueActionService,
@@ -431,11 +430,6 @@ export async function startServer(): Promise<StartedServer> {
       environmentRuntime:
         issueExecutionEnvironmentRuntime,
     });
-  const compactionProvider =
-    createPostgresSessionCompactionProvider(db as any, {
-      environmentOrchestrator:
-        issueExecutionEnvironmentOrchestrator,
-    });
   const issueExecution =
     createPostgresIssueExecutionProductionRuntime(
       db as any,
@@ -456,7 +450,6 @@ export async function startServer(): Promise<StartedServer> {
         actions,
         companyTools: promptCapabilityCompanyTools,
         steeringResults: issueExecutionSteeringResults,
-        compactionProvider,
         async prepareAndNotifyPersistedRef(refId, dispatcher) {
           await composition.prepareAndNotifyPersistedRef(
             refId,
@@ -559,7 +552,6 @@ export async function startServer(): Promise<StartedServer> {
     ordinaryIssueRuntime: ordinaryIssues,
     issueExecutionRunService: issueExecution.runService,
     issueExecutionCancellation: issueExecution.cancellation,
-    issueSessionCompactionRuntime: issueExecution.compaction,
     adapterReadinessEnvironmentOrchestrator:
       issueExecutionEnvironmentOrchestrator,
   });

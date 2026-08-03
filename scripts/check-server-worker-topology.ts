@@ -312,7 +312,6 @@ export function scanServerWorkerTopology(
       "createPaperclipRunToolsMcpServer",
       "resolveApprovedAcpLaunch",
       "sessionCorrelations.resolveStart",
-      "recovery.prepareReplacementPrompt",
       'promptKind: "base" | "steering"',
       "recordSubprocessTeardown",
     ],
@@ -382,7 +381,6 @@ export function scanServerWorkerTopology(
     markers: [
       "environmentRuntimeService",
       "environmentRunOrchestrator",
-      "createPostgresSessionCompactionProvider",
       "createPostgresIssueExecutionProductionRuntime",
     ],
     add,

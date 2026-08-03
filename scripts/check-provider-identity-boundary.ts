@@ -14,8 +14,6 @@ const PROCESS_ENV = "packages/adapter-utils/src/server-utils.ts";
 const ACP_PROCESS = "packages/adapter-utils/src/acp-subprocess/process.ts";
 const ATTEMPT_EXECUTOR =
   "server/src/services/issue-execution-attempt-executor.ts";
-const COMPACTION_PROVIDER =
-  "server/src/services/issue-session-compaction-provider.ts";
 const AGENT_ACTION_PORT =
   "server/src/services/runtime-agent-action-port.ts";
 const SERVER_ENTRY = "server/src/index.ts";
@@ -165,11 +163,6 @@ export function providerIdentityBoundaryViolations(
       "environment: Object.freeze({})",
       "message: input.message",
     ]),
-    ...requireFileTokens(repositoryRoot, COMPACTION_PROVIDER, [
-      "environment: Object.freeze({})",
-      "mcpServers: noAcpMcpServers()",
-      "message: input.prompt",
-    ]),
     ...requireFileTokens(repositoryRoot, AGENT_ACTION_PORT, [
       ") => Promise<void>",
       "await service.hireFromRun({",
@@ -243,7 +236,7 @@ export function providerIdentityBoundaryViolations(
     );
   }
 
-  for (const path of [ATTEMPT_EXECUTOR, COMPACTION_PROVIDER]) {
+  for (const path of [ATTEMPT_EXECUTOR]) {
     const source = read(repositoryRoot, path);
     if (
       source !== null &&

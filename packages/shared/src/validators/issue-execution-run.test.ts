@@ -6,13 +6,33 @@ import {
   issueExecutionNativeCorrelationStateSchema,
   issueExecutionPromptCapabilityStateSchema,
   issueExecutionPromptSettlementSchema,
+  issueExecutionRunKindSchema,
   issueExecutionRunLivenessFactSchema,
   issueExecutionWatchdogDecisionInputSchema,
 } from "./issue-execution-run.js";
+import {
+  ISSUE_EXECUTION_RUN_KINDS,
+  ISSUE_EXECUTION_SESSION_OPERATIONS,
+} from "../types/issue-execution-run.js";
 
 const outcomeReferenceId = "00000000-0000-4000-8000-000000000001";
 const accountingId = "00000000-0000-4000-8000-000000000002";
 const costEventId = "00000000-0000-4000-8000-000000000003";
+
+describe("issue execution run and session-operation enums", () => {
+  it("contains only ordinary productive/consult runs and native new/resume operations", () => {
+    expect(ISSUE_EXECUTION_RUN_KINDS).toEqual(["productive", "consult"]);
+    expect(issueExecutionRunKindSchema.parse("productive")).toBe("productive");
+    expect(issueExecutionRunKindSchema.parse("consult")).toBe("consult");
+    expect(issueExecutionRunKindSchema.safeParse("compaction").success).toBe(false);
+    expect(ISSUE_EXECUTION_SESSION_OPERATIONS).toEqual([
+      "new",
+      "resume",
+      "steer_resume",
+    ]);
+    expect(ISSUE_EXECUTION_SESSION_OPERATIONS).not.toContain("recovery_new");
+  });
+});
 
 describe("ACP correlation and prompt capability enums", () => {
   it("accepts only the closed canonical values", () => {

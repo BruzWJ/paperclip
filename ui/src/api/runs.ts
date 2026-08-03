@@ -84,17 +84,6 @@ export interface IssueExecutionPromptSegmentRecord
   steeringState: "requested" | "sent" | "protocol_settled" | "rebound" | "resumed";
 }
 
-export interface IssueExecutionCompactionSettlementRecord {
-  id: string;
-  promptTransmissionPhase: IssueExecutionPromptTransmissionPhase | null;
-  protocolSettlementState: IssueExecutionProtocolSettlementState | null;
-  promptSettlementReferenceId: string | null;
-  accountingId: string | null;
-  costEventId: string | null;
-  settlementVersion: number;
-  settledAt: string | null;
-}
-
 export interface IssueExecutionSessionEventRecord {
   id: string;
   seq: number;
@@ -114,8 +103,7 @@ export interface IssueExecutionSessionMessageRecord {
     | "synthetic"
     | "system"
     | "shell"
-    | "assistant"
-    | "compaction";
+    | "assistant";
   data: Record<string, unknown>;
   timeCreated: string;
   timeUpdated: string;
@@ -128,12 +116,11 @@ export interface IssueExecutionAttemptRecord {
   sessionId: string;
   runId: string;
   runKind: IssueExecutionRunKind;
-  promptKind: "base" | "steering" | "compaction";
+  promptKind: "base" | "steering";
   sessionOperation: IssueExecutionSessionOperation;
   refId: string | null;
   refOrdinal: number | null;
   segmentOrdinal: number | null;
-  compactionControlId: string | null;
   attemptGeneration: number;
   state: "pending" | "leased" | "running" | "settled" | "failed" | "cancelled";
   startedAt: string | null;
@@ -221,11 +208,10 @@ export interface AcpPromptAccountingRecord {
   agentId: string;
   runId: string;
   runKind: IssueExecutionRunKind;
-  promptKind: "base" | "steering" | "compaction";
+  promptKind: "base" | "steering";
   refId: string | null;
   runOrdinal: number | null;
   segmentOrdinal: number | null;
-  compactionControlId: string | null;
   contextUsedTokens: number;
   contextWindowTokens: number;
   createdAt: string;
@@ -299,11 +285,10 @@ export interface IssueExecutionFinalizationPromptDependencyRecord {
   runId: string;
   finalizationId: string;
   dependencyOrdinal: number;
-  promptKind: "base" | "steering" | "compaction";
+  promptKind: "base" | "steering";
   refId: string | null;
   refOrdinal: number | null;
   segmentOrdinal: number | null;
-  compactionControlId: string | null;
   protocolSettlementState: IssueExecutionProtocolSettlementState;
   settlementVersion: number;
   accountingId: string | null;
@@ -336,7 +321,6 @@ export interface IssueExecutionRunJoinedDetail {
   control: IssueExecutionRunControlRecord | null;
   refs: BoundedRunRecords<IssueExecutionRunRefRecord>;
   segments: BoundedRunRecords<IssueExecutionPromptSegmentRecord>;
-  compactionSettlement: IssueExecutionCompactionSettlementRecord | null;
   sessionEvents: BoundedRunRecords<IssueExecutionSessionEventRecord>;
   sessionMessages: BoundedRunRecords<IssueExecutionSessionMessageRecord>;
   attempts: BoundedRunRecords<IssueExecutionAttemptRecord>;

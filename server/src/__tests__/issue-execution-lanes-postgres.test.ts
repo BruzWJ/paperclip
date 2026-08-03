@@ -233,7 +233,7 @@ describe("issue-execution target lanes", () => {
       attempt: attempt("resume"),
     })).toEqual({
       kind: "retry",
-      reason: "target_not_found_recovery",
+      reason: "target_not_found_new_session",
       retryAt: now,
     });
     expect(classifyExpiredPromptClosure({

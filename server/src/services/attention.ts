@@ -745,17 +745,13 @@ export function attentionService(db: Db) {
         }));
       }
 
-      const failedRunEnvelopes = (await listCompanyRuns(
+      const failedRunEnvelopes = await listCompanyRuns(
         db,
         companyId,
         FAILED_RUN_STATUSES,
-      )).filter(
-        (run) =>
-          (run.kind === "productive" || run.kind === "consult") &&
-          run.targetAgentId !== null,
       );
       const failedTargetAgentIds = [
-        ...new Set(failedRunEnvelopes.map((run) => run.targetAgentId!)),
+        ...new Set(failedRunEnvelopes.map((run) => run.targetAgentId)),
       ];
       const failedTargetAgents = failedTargetAgentIds.length === 0
         ? []
@@ -771,7 +767,7 @@ export function attentionService(db: Db) {
         failedTargetAgents.map((agent) => [agent.id, agent]),
       );
       const exhaustedRunRows = failedRunEnvelopes.flatMap((run) => {
-        const agent = failedTargetAgentById.get(run.targetAgentId!);
+        const agent = failedTargetAgentById.get(run.targetAgentId);
         return agent
           ? [{
               id: run.runId,
@@ -811,13 +807,8 @@ export function attentionService(db: Db) {
           db,
           companyId,
           oldestFailedRunCreatedAt,
-        )).filter(
-          (run) =>
-            (run.kind === "productive" || run.kind === "consult") &&
-            run.targetAgentId !== null &&
-            failedAgentIds.includes(run.targetAgentId),
-        ).map((run) => ({
-          agentId: run.targetAgentId!,
+        )).filter((run) => failedAgentIds.includes(run.targetAgentId)).map((run) => ({
+          agentId: run.targetAgentId,
           createdAt: run.createdAt,
           issueId: run.issueId,
         }));

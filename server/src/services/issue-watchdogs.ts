@@ -593,17 +593,12 @@ export function issueWatchdogService(db: Db, deps: IssueWatchdogServiceDeps) {
         companyId,
         subtreeIssueIds,
         ISSUE_WATCHDOG_LIVE_RUN_STATUSES,
-      ).then((runs) => runs.flatMap((run) =>
-        (run.kind === "productive" || run.kind === "consult") &&
-        run.targetAgentId !== null
-          ? [{
-              companyId: run.companyId,
-              agentId: run.targetAgentId,
-              status: run.status,
-              issueId: run.issueId,
-            }]
-          : []
-      )),
+      ).then((runs) => runs.map((run) => ({
+        companyId: run.companyId,
+        agentId: run.targetAgentId,
+        status: run.status,
+        issueId: run.issueId,
+      }))),
       db
         .select({
           companyId: issueExecutionRefs.companyId,
@@ -734,11 +729,7 @@ export function issueWatchdogService(db: Db, deps: IssueWatchdogServiceDeps) {
       issueIds,
       ISSUE_WATCHDOG_TERMINAL_RUN_STATUSES,
     );
-    return [...new Set(completed.flatMap((run) =>
-      run.kind === "productive" || run.kind === "consult"
-        ? [run.issueId]
-        : []
-    ))];
+    return [...new Set(completed.map((run) => run.issueId))];
   }
 
   async function evaluateWatchdog(row: IssueWatchdogRow, opts: { runId?: string | null } = {}) {

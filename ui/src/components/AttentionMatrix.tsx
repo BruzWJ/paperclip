@@ -10,7 +10,7 @@ const DEPTH_LABELS = ["Content", "Comments", "Agent runs"] as const;
 
 const CELL_DESCRIPTIONS: Record<AgentContextGrantKey, string> = {
   carry_context:
-    "Resume the current issue's native session and authorize missing-session recovery.",
+    "Resume the current issue's eligible native session; otherwise start fresh.",
   read_issue_comments: "Read the current issue's chronological thread.",
   read_issue_agent_run: "Inspect runs referenced by the current issue.",
   list_sub_issues: "List issues beneath the active issue with their content.",

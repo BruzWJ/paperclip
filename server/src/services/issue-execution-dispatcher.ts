@@ -80,7 +80,7 @@ export interface IssueExecutionRetry {
     | "process_loss"
     | "transport_transient"
     | "provider_quota"
-    | "target_not_found_recovery";
+    | "target_not_found_new_session";
   retryAt: Date;
 }
 
@@ -367,10 +367,10 @@ export function createIssueExecutionDispatcher(options: {
           }
           if (result.kind === "retry") {
             // A target-not-found resume probe is an already-closed pre-send
-            // predecessor. Its monotonic recovery_new successor remains in
+            // predecessor. Its monotonic fresh-session successor remains in
             // this target-lane drain; all backoff retries wait for their persisted
             // due time and a later scheduler notification.
-            if (result.reason === "target_not_found_recovery") continue;
+            if (result.reason === "target_not_found_new_session") continue;
             return;
           }
         } finally {

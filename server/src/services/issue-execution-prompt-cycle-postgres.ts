@@ -867,13 +867,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
       return options.database.transaction(async (transaction) => {
         const run = await options.runService.lockRun(transaction, lease);
         if (
-          (run.kind !== "productive" && run.kind !== "consult") ||
-          !run.targetAgentId ||
-          !run.executionMode
-        ) {
-          reject("attempt lease is not current on one productive or consult run");
-        }
-        if (
           run.status !== "running" ||
           run.currentAttemptId !== lease.attemptId ||
           run.currentLeaseId !== lease.leaseId
@@ -1170,9 +1163,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
           ((attempt.sessionOperation === "resume" ||
             attempt.sessionOperation === "steer_resume") &&
             !selectedCorrelation) ||
-          ((attempt.sessionOperation === "new" ||
-            attempt.sessionOperation === "recovery_new") &&
-            selectedCorrelation)
+          (attempt.sessionOperation === "new" && selectedCorrelation)
         ) {
           reject("frozen session operation no longer matches native correlation state");
         }
@@ -1897,7 +1888,7 @@ export function createPostgresIssueExecutionPromptCycleRepository(
             kind: "dispatch" as const,
             result: {
               kind: "retry" as const,
-              reason: "target_not_found_recovery" as const,
+              reason: "target_not_found_new_session" as const,
               retryAt: timestamp,
             },
           };
@@ -1961,9 +1952,6 @@ export function createPostgresIssueExecutionPromptCycleRepository(
                 `evt_${sha256(`acp-prompt:${prompt.identity.attemptId}:step-ended`).slice(0, 40)}`,
               eventSeq: seq,
               assistantMessageId,
-              ...(outcome.settlement.stopReason === "cancelled"
-                ? { sourceAssistantErrorKind: "aborted" as const }
-                : {}),
             },
             settledAt: timestamp,
           });

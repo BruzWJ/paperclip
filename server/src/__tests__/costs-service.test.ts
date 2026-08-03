@@ -33,7 +33,6 @@ const EVENT = {
   refId: "00000000-0000-4000-8000-000000000007",
   runOrdinal: 0,
   segmentOrdinal: 0,
-  compactionControlId: null,
   budgetCurrency: "EUR",
   kind: "known",
   unavailableReason: null,

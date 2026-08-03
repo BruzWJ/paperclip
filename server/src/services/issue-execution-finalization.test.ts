@@ -10,7 +10,6 @@ const base = {
   refId: "ref-1",
   refOrdinal: 0,
   segmentOrdinal: 0 as const,
-  compactionControlId: null,
 };
 
 function productive(
@@ -103,42 +102,6 @@ describe("issue-execution finalization frontier", () => {
     expect(
       plan.deliveryDependencies.map((row) => row.creatorDeliveryId),
     ).toEqual(["delivery-1", "delivery-2"]);
-  });
-
-  it("accepts exactly one settlement-only compaction finalization", () => {
-    const compaction = {
-      kind: "compaction" as const,
-      refId: null,
-      refOrdinal: null,
-      segmentOrdinal: null,
-      compactionControlId: "control-1",
-    };
-    expect(
-      buildIssueExecutionFinalizationPlan({
-        companyId: "company-1",
-        issueId: "issue-1",
-        runId: "run-1",
-        runKind: "compaction",
-        action: "no_conversational_output",
-        expectedPromptIdentities: [compaction],
-        promptDependencies: [
-          {
-            ...compaction,
-            protocolSettlementState: "not_sent",
-            settlementVersion: 1,
-            accountingId: null,
-            costEventId: null,
-          },
-        ],
-        terminalSessionEventId: null,
-        terminalSessionMessageId: null,
-        progressCommentId: null,
-        runLivenessFactId: null,
-        gatewayRevocationRequired: false,
-        gatewayRevocation: null,
-        updates: [],
-      }).promptDependencies,
-    ).toHaveLength(1);
   });
 
   it("rejects missing gateway revocation when a productive capability existed", () => {

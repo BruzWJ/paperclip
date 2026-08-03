@@ -64,7 +64,6 @@ function companyRow(overrides: Record<string, unknown> = {}) {
     feedbackDataSharingConsentAt: null,
     feedbackDataSharingConsentByUserId: null,
     feedbackDataSharingTermsVersion: null,
-    sessionCompaction: {},
     brandColor: null,
     logoAssetId: null,
     createdAt: now,

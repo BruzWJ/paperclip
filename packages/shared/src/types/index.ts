@@ -34,12 +34,6 @@ export {
   type IssueExecutionWatchdogDecisionRecord,
 } from "./issue-execution-run.js";
 export type {
-  SessionCompactionAudience,
-  SessionCompactionHistoryScopeKind,
-  SessionCompactionScope,
-  SessionCompactionSettings,
-} from "./session-compaction.js";
-export type {
   RefreshSummarySlotRequest,
   RefreshSummarySlotResponse,
   GetSummarySlotResponse,

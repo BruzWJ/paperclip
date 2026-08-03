@@ -50,7 +50,7 @@ describe("expired prompt durable closure classification", () => {
       }),
     ).toEqual({
       kind: "retry",
-      reason: "target_not_found_recovery",
+      reason: "target_not_found_new_session",
       retryAt: revokedAt,
     });
     expect(

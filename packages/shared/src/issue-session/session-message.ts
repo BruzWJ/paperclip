@@ -131,7 +131,6 @@ export const AssistantTool = Schema.Struct({
     created: DateTimeUtcFromMillis,
     ran: DateTimeUtcFromMillis.pipe(optional),
     completed: DateTimeUtcFromMillis.pipe(optional),
-    pruned: DateTimeUtcFromMillis.pipe(optional),
   }),
 }).annotate({ identifier: "Session.Message.Assistant.Tool" })
 
@@ -186,15 +185,6 @@ export const Assistant = Schema.Struct({
   }),
 }).annotate({ identifier: "Session.Message.Assistant" })
 
-export interface Compaction extends Schema.Schema.Type<typeof Compaction> {}
-export const Compaction = Schema.Struct({
-  type: Schema.Literal("compaction"),
-  reason: Schema.Literals(["auto", "manual"]),
-  summary: Schema.String,
-  recent: Schema.String,
-  ...Base,
-}).annotate({ identifier: "Session.Message.Compaction" })
-
 export const Message = Schema.Union([
   AgentSwitched,
   ModelSwitched,
@@ -203,9 +193,8 @@ export const Message = Schema.Union([
   System,
   Shell,
   Assistant,
-  Compaction,
 ])
   .pipe(Schema.toTaggedUnion("type"))
   .annotate({ identifier: "Session.Message" })
-export type Message = AgentSwitched | ModelSwitched | User | Synthetic | System | Shell | Assistant | Compaction
+export type Message = AgentSwitched | ModelSwitched | User | Synthetic | System | Shell | Assistant
 export type Type = Message["type"]

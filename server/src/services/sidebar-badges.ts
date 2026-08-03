@@ -70,8 +70,6 @@ export function sidebarBadgeService(db: Db) {
         });
         for (const run of page.items) {
           if (
-            (run.kind === "productive" || run.kind === "consult") &&
-            run.targetAgentId !== null &&
             activeAgentIds.has(run.targetAgentId) &&
             !latestRunByAgent.has(run.targetAgentId)
           ) {

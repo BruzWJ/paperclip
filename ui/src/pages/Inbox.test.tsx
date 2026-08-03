@@ -101,7 +101,6 @@ vi.mock("../api/runs", async () => {
           items: value.map((run) => ({
             ...run,
             issueId: run.issueId ?? "issue-unknown",
-            targetAgentId: run.targetAgentId ?? run.agentId ?? null,
             terminalReasonCode: run.terminalReasonCode ?? run.errorCode ?? null,
           })),
           nextCursor: null,
@@ -868,10 +867,8 @@ describe("FailedRunInboxRow", () => {
       executionMode: "owner",
       issueExecutionAuthorityId: null,
       consultExecutionId: null,
-      compactionScopeKind: null,
       parentRunId: null,
       retryOfRunId: null,
-      triggeredByRunId: null,
       currentAttemptId: null,
       currentLeaseId: null,
       cancellationIntentId: null,

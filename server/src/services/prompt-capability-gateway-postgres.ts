@@ -265,7 +265,6 @@ export function createPostgresPromptCapabilityGatewayRepository(
     });
     if (!run) return invalid("run_not_found");
     if (
-      (run.kind !== "productive" && run.kind !== "consult") ||
       run.status !== "running" ||
       run.sessionId.length === 0 ||
       run.ownershipEpoch !== row.ownershipEpoch ||

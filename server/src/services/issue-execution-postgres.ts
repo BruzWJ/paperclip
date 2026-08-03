@@ -23,12 +23,6 @@ import { createIssueExecutionTargetAcquirer } from "./issue-execution-provider-c
 import { createPostgresIssueExecutionSteeringRepository } from "./issue-execution-run-postgres.js";
 import { createIssueExecutionRunService } from "./issue-execution-run-service.js";
 import type { IssueExecutionSteeringResultBroker } from "./issue-execution-steering-results.js";
-import { createPostgresIssueSessionTargetNotFoundRecovery } from "./issue-session-recovery-postgres.js";
-import {
-  createPostgresIssueSessionCompactionRuntime,
-  type PostgresIssueSessionCompactionRuntime,
-} from "./issue-session-compaction-postgres.js";
-import type { createPostgresSessionCompactionProvider } from "./issue-session-compaction-provider.js";
 import type { IssueSessionStore } from "./issue-session/store.js";
 import { createAuthenticatedNativeCorrelationProtector } from "./native-correlation-postgres.js";
 import { createNativeCorrelationService } from "./native-correlation.js";
@@ -58,14 +52,6 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
     refId: string,
     dispatcher: IssueExecutionDispatcher,
   ) => Promise<void>;
-  /**
-   * The provider boundary resolves and executes the configured compaction
-   * model. The production assembly owns the durable compaction runtime so it
-   * shares this worker, run service, and finalization writer.
-   */
-  readonly compactionProvider: ReturnType<
-    typeof createPostgresSessionCompactionProvider
-  >;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly leaseTtlMs?: number;
@@ -97,7 +83,6 @@ export interface PostgresIssueExecutionProductionRuntime {
   readonly liveness: ReturnType<
     typeof createIssueLivenessReconciliationService
   >;
-  readonly compaction: PostgresIssueSessionCompactionRuntime;
 }
 
 /**
@@ -229,28 +214,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     now,
     idFactory,
   });
-  const compaction = createPostgresIssueSessionCompactionRuntime(database, {
-    workerId: options.workerId,
-    ...options.compactionProvider,
-    finalizationWriter: finalizer,
-    blockedPromptFailure: repository,
-    budgetHooks: {
-      async suspendWorkForScope(scope) {
-        if (!cancellation) {
-          throw new Error("Issue-execution cancellation is not initialized");
-        }
-        await cancellation.suspendBudgetScopeWork(scope);
-      },
-      async resumeWorkForScope(scope) {
-        if (!cancellation) {
-          throw new Error("Issue-execution cancellation is not initialized");
-        }
-        await cancellation.resumeBudgetScopeWork(scope);
-      },
-    },
-    now,
-    idFactory,
-  });
   const targetSessionAcquirer = createIssueExecutionTargetAcquirer({
     environmentOrchestrator: options.environmentOrchestrator,
   });
@@ -263,10 +226,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     database,
     runService,
     now,
-  });
-  const recovery = createPostgresIssueSessionTargetNotFoundRecovery(database, {
-    compaction,
-    idFactory,
   });
   const promptCycle = createPostgresIssueExecutionPromptCycleRepository({
     database,
@@ -289,7 +248,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     repository: promptCycle,
     targetAcquirer: targetSessionAcquirer,
     sessionCorrelations: targetSessions,
-    recovery,
     events: eventProjector,
   });
   dispatcher = createIssueExecutionDispatcher({
@@ -316,7 +274,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     database,
     runService,
     dispatcher,
-    compaction,
     settlement: repository,
     now,
     idFactory,
@@ -334,6 +291,5 @@ export function createPostgresIssueExecutionProductionRuntime(
     cancellation,
     finalizer,
     liveness,
-    compaction,
   });
 }

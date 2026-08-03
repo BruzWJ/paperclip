@@ -11,7 +11,6 @@ import {
   issueExecutionPromptSegments,
   issueExecutionRunRefs,
   issueExecutionSessions,
-  issueSessionCompactionControls,
   type Db,
 } from "@paperclipai/db";
 import {
@@ -34,9 +33,6 @@ import {
 } from "./budgets.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { publishIssueSessionEventInTx } from "./issue-session/publication.js";
-import {
-  persistedSessionCompactionModelSchema,
-} from "./issue-session-compaction-contract.js";
 import { lockIssueExecutionRunInTransaction } from "./issue-execution-run-service.js";
 
 const TERMINAL_STOP_REASONS = new Set([
@@ -82,16 +78,8 @@ export type AcpProductivePromptSettlementIdentity =
       readonly segmentOrdinal: number;
     });
 
-export type AcpCompactionPromptSettlementIdentity =
-  AcpPromptSettlementCommonIdentity & {
-    readonly runKind: "compaction";
-    readonly promptKind: "compaction";
-    readonly compactionControlId: string;
-  };
-
 export type AcpPromptSettlementIdentity =
-  | AcpProductivePromptSettlementIdentity
-  | AcpCompactionPromptSettlementIdentity;
+  AcpProductivePromptSettlementIdentity;
 
 /**
  * The fixed durable accounting bridge for one already-materialized assistant.
@@ -104,7 +92,6 @@ export interface AcpPromptStepEndedPublication {
   readonly assistantMessageId: string;
   readonly snapshot?: string;
   readonly files?: readonly string[];
-  readonly sourceAssistantErrorKind?: "aborted" | "other";
 }
 
 export interface SettleAcpPromptInTransactionInput {
@@ -158,8 +145,8 @@ function requireCanonicalReference(value: string, label: string): string {
 function assertSettlementInput(input: SettleAcpPromptInTransactionInput): void {
   const identity = input.identity;
   if (
-    identity.promptKind !== "compaction" &&
-    (!Number.isSafeInteger(identity.runOrdinal) || identity.runOrdinal < 0)
+    !Number.isSafeInteger(identity.runOrdinal) ||
+    identity.runOrdinal < 0
   ) {
     reject("ACP prompt run ordinal must be a nonnegative safe integer");
   }
@@ -316,22 +303,9 @@ function sourceIdentityDigest(input: {
         runId: input.identity.runId,
         runKind: input.identity.runKind,
         promptKind: input.identity.promptKind,
-        refId:
-          input.identity.promptKind === "compaction"
-            ? null
-            : input.identity.refId,
-        runOrdinal:
-          input.identity.promptKind === "compaction"
-            ? null
-            : input.identity.runOrdinal,
-        segmentOrdinal:
-          input.identity.promptKind === "compaction"
-            ? null
-            : input.identity.segmentOrdinal,
-        compactionControlId:
-          input.identity.promptKind === "compaction"
-            ? input.identity.compactionControlId
-            : null,
+        refId: input.identity.refId,
+        runOrdinal: input.identity.runOrdinal,
+        segmentOrdinal: input.identity.segmentOrdinal,
         promptSettlementReferenceId: input.promptSettlementReferenceId,
         accountingId: input.accountingId,
         costEventId: input.costEventId,
@@ -413,82 +387,6 @@ async function lockProductivePromptOwner(
   return owner;
 }
 
-async function lockCompactionPromptOwner(
-  transaction: IssueSessionDbTransaction,
-  identity: AcpCompactionPromptSettlementIdentity,
-): Promise<unknown> {
-  const owner = await transaction
-    .select({
-      promptTransmissionPhase:
-        issueSessionCompactionControls.promptTransmissionPhase,
-      protocolSettlementState:
-        issueSessionCompactionControls.protocolSettlementState,
-      promptSettlementReferenceId:
-        issueSessionCompactionControls.promptSettlementReferenceId,
-      accountingId: issueSessionCompactionControls.accountingId,
-      costEventId: issueSessionCompactionControls.costEventId,
-      settlementVersion: issueSessionCompactionControls.settlementVersion,
-      modelSnapshot: issueSessionCompactionControls.modelSnapshot,
-    })
-    .from(issueSessionCompactionControls)
-    .where(
-      and(
-        eq(issueSessionCompactionControls.id, identity.compactionControlId),
-        eq(issueSessionCompactionControls.companyId, identity.companyId),
-        eq(issueSessionCompactionControls.issueId, identity.issueId),
-        eq(issueSessionCompactionControls.sessionId, identity.sessionId),
-        eq(issueSessionCompactionControls.kind, "recovery-prompt"),
-        eq(issueSessionCompactionControls.disposition, "active"),
-        eq(issueSessionCompactionControls.compactionRunId, identity.runId),
-      ),
-    )
-    .limit(1)
-    .for("update")
-    .then((rows) => rows[0] ?? null);
-  if (
-    !owner ||
-    owner.promptTransmissionPhase !== "transmitted" ||
-    owner.protocolSettlementState !== null ||
-    owner.promptSettlementReferenceId !== null ||
-    owner.accountingId !== null ||
-    owner.costEventId !== null ||
-    owner.settlementVersion !== 0
-  ) {
-    reject("ACP compaction prompt control is not the current transmitted prompt");
-  }
-  return owner.modelSnapshot;
-}
-
-/**
- * Compaction is the one prompt branch whose immutable selected model may
- * intentionally differ from the productive adapter revision. Its locked
- * recovery-prompt snapshot therefore owns accounting attribution and the
- * occupancy-size fence; productive/steering remain revision-derived.
- */
-export function resolveAcpPromptSettlementModel(input: {
-  readonly promptKind: "base" | "steering" | "compaction";
-  readonly revisionModelId: string;
-  readonly revisionContextTokenLimit: number;
-  readonly compactionModelSnapshot?: unknown;
-}): { readonly selectedModelId: string; readonly contextTokenLimit: number } {
-  if (input.promptKind !== "compaction") {
-    return {
-      selectedModelId: input.revisionModelId,
-      contextTokenLimit: input.revisionContextTokenLimit,
-    };
-  }
-  const model = persistedSessionCompactionModelSchema.safeParse(
-    input.compactionModelSnapshot,
-  );
-  if (!model.success) {
-    reject("ACP compaction prompt control lost its immutable model snapshot");
-  }
-  return {
-    selectedModelId: model.data.targetModelId,
-    contextTokenLimit: model.data.contextTokenLimit,
-  };
-}
-
 async function lockProductiveCostCursor(
   transaction: IssueSessionDbTransaction,
   identity: AcpProductivePromptSettlementIdentity,
@@ -496,7 +394,7 @@ async function lockProductiveCostCursor(
   run: {
     readonly ownershipEpoch: number;
     readonly executionWorkspaceBindingId: string;
-    readonly executionMode: "owner" | "consult" | null;
+    readonly executionMode: "owner" | "consult";
   },
 ): Promise<{
   readonly correlationId: string;
@@ -709,69 +607,44 @@ async function settlePromptOwner(
     if (!rows[0]) reject("ACP base prompt settlement lost its current owner");
     return;
   }
-  if (input.identity.promptKind === "steering") {
-    const rows = await transaction
-      .update(issueExecutionPromptSegments)
-      .set({
-        ...values,
-        steeringState: "protocol_settled",
-        outcome: input.outcome,
-        outcomeReferenceId: input.promptSettlementReferenceId,
-        terminalSessionMessageId: input.terminalSessionMessageId,
-      })
-      .where(
-        and(
-          eq(issueExecutionPromptSegments.companyId, input.identity.companyId),
-          eq(issueExecutionPromptSegments.issueId, input.identity.issueId),
-          eq(issueExecutionPromptSegments.sessionId, input.identity.sessionId),
-          eq(issueExecutionPromptSegments.runId, input.identity.runId),
-          eq(issueExecutionPromptSegments.refId, input.identity.refId),
-          eq(issueExecutionPromptSegments.refOrdinal, input.identity.runOrdinal),
-          eq(
-            issueExecutionPromptSegments.segmentOrdinal,
-            input.identity.segmentOrdinal,
-          ),
-          eq(issueExecutionPromptSegments.attemptId, input.identity.attemptId),
-          eq(
-            issueExecutionPromptSegments.promptTransmissionPhase,
-            "transmitted",
-          ),
-          isNull(issueExecutionPromptSegments.protocolSettlementState),
-          eq(issueExecutionPromptSegments.settlementVersion, 0),
-        ),
-      )
-      .returning({ runId: issueExecutionPromptSegments.runId });
-    if (!rows[0]) reject("ACP steering prompt settlement lost its current owner");
-    return;
-  }
   const rows = await transaction
-    .update(issueSessionCompactionControls)
+    .update(issueExecutionPromptSegments)
     .set({
       ...values,
-      promptSettlementReferenceId: input.promptSettlementReferenceId,
+      steeringState: "protocol_settled",
+      outcome: input.outcome,
+      outcomeReferenceId: input.promptSettlementReferenceId,
+      terminalSessionMessageId: input.terminalSessionMessageId,
     })
     .where(
       and(
-        eq(issueSessionCompactionControls.id, input.identity.compactionControlId),
-        eq(issueSessionCompactionControls.companyId, input.identity.companyId),
-        eq(issueSessionCompactionControls.issueId, input.identity.issueId),
-        eq(issueSessionCompactionControls.sessionId, input.identity.sessionId),
-        eq(issueSessionCompactionControls.kind, "recovery-prompt"),
-        eq(issueSessionCompactionControls.disposition, "active"),
-        eq(issueSessionCompactionControls.compactionRunId, input.identity.runId),
-        eq(issueSessionCompactionControls.promptTransmissionPhase, "transmitted"),
-        isNull(issueSessionCompactionControls.protocolSettlementState),
-        eq(issueSessionCompactionControls.settlementVersion, 0),
+        eq(issueExecutionPromptSegments.companyId, input.identity.companyId),
+        eq(issueExecutionPromptSegments.issueId, input.identity.issueId),
+        eq(issueExecutionPromptSegments.sessionId, input.identity.sessionId),
+        eq(issueExecutionPromptSegments.runId, input.identity.runId),
+        eq(issueExecutionPromptSegments.refId, input.identity.refId),
+        eq(issueExecutionPromptSegments.refOrdinal, input.identity.runOrdinal),
+        eq(
+          issueExecutionPromptSegments.segmentOrdinal,
+          input.identity.segmentOrdinal,
+        ),
+        eq(issueExecutionPromptSegments.attemptId, input.identity.attemptId),
+        eq(
+          issueExecutionPromptSegments.promptTransmissionPhase,
+          "transmitted",
+        ),
+        isNull(issueExecutionPromptSegments.protocolSettlementState),
+        eq(issueExecutionPromptSegments.settlementVersion, 0),
       ),
     )
-    .returning({ id: issueSessionCompactionControls.id });
-  if (!rows[0]) reject("ACP compaction prompt settlement lost its current control");
+    .returning({ runId: issueExecutionPromptSegments.runId });
+  if (!rows[0]) reject("ACP steering prompt settlement lost its current owner");
 }
 
 /**
  * Sole same-transaction writer for a protocol-settled ACP prompt's stable
  * accounting, cost transition, cursor/runtime aggregates, Step.Ended.3, and
- * productive/steering/compaction settlement owner. Incomplete and not-sent
+ * productive/steering settlement owner. Incomplete and not-sent
  * paths are intentionally outside this API and must never call it.
  */
 export async function settleAcpPromptInTransaction(
@@ -788,9 +661,7 @@ export async function settleAcpPromptInTransaction(
     run.sessionId !== identity.sessionId ||
     run.adapterConfigRevisionId !== identity.adapterConfigRevisionId ||
     run.currentAttemptId !== identity.attemptId ||
-    (identity.runKind === "compaction"
-      ? run.targetAgentId !== null
-      : run.targetAgentId !== identity.agentId)
+    run.targetAgentId !== identity.agentId
   ) {
     reject("ACP prompt run is not the current exact running envelope");
   }
@@ -830,25 +701,9 @@ export async function settleAcpPromptInTransaction(
         eq(issueExecutionAttempts.runKind, identity.runKind),
         eq(issueExecutionAttempts.promptKind, identity.promptKind),
         eq(issueExecutionAttempts.state, "running"),
-        identity.promptKind === "compaction"
-          ? and(
-              isNull(issueExecutionAttempts.refId),
-              isNull(issueExecutionAttempts.refOrdinal),
-              isNull(issueExecutionAttempts.segmentOrdinal),
-              eq(
-                issueExecutionAttempts.compactionControlId,
-                identity.compactionControlId,
-              ),
-            )
-          : and(
-              eq(issueExecutionAttempts.refId, identity.refId),
-              eq(issueExecutionAttempts.refOrdinal, identity.runOrdinal),
-              eq(
-                issueExecutionAttempts.segmentOrdinal,
-                identity.segmentOrdinal,
-              ),
-              isNull(issueExecutionAttempts.compactionControlId),
-            ),
+        eq(issueExecutionAttempts.refId, identity.refId),
+        eq(issueExecutionAttempts.refOrdinal, identity.runOrdinal),
+        eq(issueExecutionAttempts.segmentOrdinal, identity.segmentOrdinal),
       ),
     )
     .limit(1)
@@ -856,31 +711,19 @@ export async function settleAcpPromptInTransaction(
     .then((rows) => rows[0] ?? null);
   if (!attempt) reject("ACP prompt attempt is not the exact running attempt");
 
-  const compactionModelSnapshot = identity.promptKind === "compaction"
-    ? await lockCompactionPromptOwner(transaction, identity)
-    : undefined;
-  const { selectedModelId, contextTokenLimit } =
-    resolveAcpPromptSettlementModel({
-      promptKind: identity.promptKind,
-      revisionModelId: acpConfiguration.model.id,
-      revisionContextTokenLimit:
-        acpConfiguration.model.limits.contextTokenLimit,
-      ...(compactionModelSnapshot === undefined
-        ? {}
-        : { compactionModelSnapshot }),
-    });
+  const selectedModelId = acpConfiguration.model.id;
+  const contextTokenLimit = acpConfiguration.model.limits.contextTokenLimit;
   if (settlement.occupancy.size !== contextTokenLimit) {
     reject("ACP terminal occupancy size differs from the immutable prompt model");
   }
-  const owner = identity.promptKind === "compaction"
-    ? null
-    : await lockProductivePromptOwner(transaction, identity);
-  const productiveCursor = identity.promptKind === "compaction"
-    ? null
-    : await lockProductiveCostCursor(transaction, identity, owner!, run);
-  const cursorBefore: AcpCostCursor = productiveCursor?.cursorBefore ?? {
-    state: "unanchored",
-  };
+  const owner = await lockProductivePromptOwner(transaction, identity);
+  const productiveCursor = await lockProductiveCostCursor(
+    transaction,
+    identity,
+    owner,
+    run,
+  );
+  const cursorBefore = productiveCursor.cursorBefore;
 
   const company = await transaction
     .select({ budgetCurrency: companies.budgetCurrency })
@@ -914,15 +757,9 @@ export async function settleAcpPromptInTransaction(
       runId: identity.runId,
       runKind: identity.runKind,
       promptKind: identity.promptKind,
-      refId: identity.promptKind === "compaction" ? null : identity.refId,
-      runOrdinal:
-        identity.promptKind === "compaction" ? null : identity.runOrdinal,
-      segmentOrdinal:
-        identity.promptKind === "compaction" ? null : identity.segmentOrdinal,
-      compactionControlId:
-        identity.promptKind === "compaction"
-          ? identity.compactionControlId
-          : null,
+      refId: identity.refId,
+      runOrdinal: identity.runOrdinal,
+      segmentOrdinal: identity.segmentOrdinal,
       attemptId: identity.attemptId,
       adapterConfigRevisionId: identity.adapterConfigRevisionId,
       selectedModelId,
@@ -948,15 +785,9 @@ export async function settleAcpPromptInTransaction(
       runId: identity.runId,
       runKind: identity.runKind,
       promptKind: identity.promptKind,
-      refId: identity.promptKind === "compaction" ? null : identity.refId,
-      runOrdinal:
-        identity.promptKind === "compaction" ? null : identity.runOrdinal,
-      segmentOrdinal:
-        identity.promptKind === "compaction" ? null : identity.segmentOrdinal,
-      compactionControlId:
-        identity.promptKind === "compaction"
-          ? identity.compactionControlId
-          : null,
+      refId: identity.refId,
+      runOrdinal: identity.runOrdinal,
+      segmentOrdinal: identity.segmentOrdinal,
       budgetCurrency,
       kind: cost.kind,
       unavailableReason: cost.unavailableReason,
@@ -979,29 +810,24 @@ export async function settleAcpPromptInTransaction(
     await budgetService(transaction as unknown as Db)
       .evaluateCostEventInTransaction(costEvent);
 
-  if (productiveCursor) {
-    if (identity.promptKind === "compaction") {
-      reject("Compaction prompt unexpectedly acquired a productive cost cursor");
-    }
-    const cursorUpdated = await transaction
-      .update(issueExecutionSessions)
-      .set({
-        lastProtocolSettledRunId: identity.runId,
-        lastProtocolSettledRefId: identity.refId,
-        lastProtocolSettledRefOrdinal: identity.runOrdinal,
-        lastProtocolSettledSegmentOrdinal: identity.segmentOrdinal,
-        ...costCursorColumns(cost.cursorAfter),
-      })
-      .where(
-        and(
-          eq(issueExecutionSessions.id, productiveCursor.correlationId),
-          eq(issueExecutionSessions.companyId, identity.companyId),
-          eq(issueExecutionSessions.issueId, identity.issueId),
-        ),
-      )
-      .returning({ id: issueExecutionSessions.id });
-    if (!cursorUpdated[0]) reject("ACP prompt cost cursor update lost its owner");
-  }
+  const cursorUpdated = await transaction
+    .update(issueExecutionSessions)
+    .set({
+      lastProtocolSettledRunId: identity.runId,
+      lastProtocolSettledRefId: identity.refId,
+      lastProtocolSettledRefOrdinal: identity.runOrdinal,
+      lastProtocolSettledSegmentOrdinal: identity.segmentOrdinal,
+      ...costCursorColumns(cost.cursorAfter),
+    })
+    .where(
+      and(
+        eq(issueExecutionSessions.id, productiveCursor.correlationId),
+        eq(issueExecutionSessions.companyId, identity.companyId),
+        eq(issueExecutionSessions.issueId, identity.issueId),
+      ),
+    )
+    .returning({ id: issueExecutionSessions.id });
+  if (!cursorUpdated[0]) reject("ACP prompt cost cursor update lost its owner");
 
   await updateRuntimeState(transaction, {
     identity,
@@ -1017,9 +843,7 @@ export async function settleAcpPromptInTransaction(
     "acp_prompt_settlement",
     identity.runId,
     identity.promptKind,
-    identity.promptKind === "compaction"
-      ? identity.compactionControlId
-      : `${identity.refId}:${identity.runOrdinal}:${identity.segmentOrdinal}`,
+    `${identity.refId}:${identity.runOrdinal}:${identity.segmentOrdinal}`,
     input.promptSettlementReferenceId,
   ].join(":");
   const projectedCost = donorStepCost(cost);
@@ -1063,19 +887,6 @@ export async function settleAcpPromptInTransaction(
         eventId: input.stepEnded.eventId,
       }),
       createdAt: input.settledAt,
-    },
-    companions: {
-      assistantSource: {
-        assistantMessageId: input.stepEnded.assistantMessageId,
-        sourceTotalTokens: settlement.occupancy.used,
-        ...(input.stepEnded.sourceAssistantErrorKind === undefined
-          ? {}
-          : {
-              sourceAssistantErrorKind:
-                input.stepEnded.sourceAssistantErrorKind,
-            }),
-        createdAt: input.settledAt,
-      },
     },
   });
 

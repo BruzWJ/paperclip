@@ -274,7 +274,7 @@ const IDENTITY = Object.freeze({
 describe("adapter runtime readiness", () => {
   it.each([
     [
-      persistedBinding({ runKind: "compaction" }),
+      persistedBinding({ runKind: "unsupported" as never }),
       "run_not_preflightable",
     ],
     [persistedBinding({ runStatus: "succeeded" }), "run_not_preflightable"],

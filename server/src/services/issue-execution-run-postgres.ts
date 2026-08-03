@@ -218,7 +218,7 @@ function requestedResult(input: {
     issueId: input.run.issueId,
     ownershipEpoch: input.run.ownershipEpoch,
     runId: input.run.runId,
-    targetAgentId: input.run.targetAgentId!,
+    targetAgentId: input.run.targetAgentId,
     refId: input.control.currentRefId!,
     refOrdinal: input.control.currentOrdinal!,
     interruptedSegmentOrdinal: input.control.currentSegmentOrdinal!,
@@ -589,7 +589,7 @@ export function createPostgresIssueExecutionSteeringRepository(
               eq(issueExecutionSessions.companyId, run.companyId),
               eq(issueExecutionSessions.issueId, run.issueId),
               eq(issueExecutionSessions.ownershipEpoch, run.ownershipEpoch),
-              eq(issueExecutionSessions.targetAgentId, run.targetAgentId!),
+              eq(issueExecutionSessions.targetAgentId, run.targetAgentId),
               eq(
                 issueExecutionSessions.adapterConfigIdentity,
                 run.adapterConfigRevisionId,
@@ -1495,20 +1495,12 @@ export function createPostgresIssueExecutionSteeringRepository(
             "Persisted steering source crossed its canonical Session message identity",
           );
         }
-        if (
-          (run.kind !== "productive" && run.kind !== "consult") ||
-          run.targetAgentId === null
-        ) {
-          return ambiguous(
-            "Persisted steering source does not belong to an agent run",
-          );
-        }
         const rebound = Object.freeze({
           companyId: run.companyId,
           issueId: run.issueId,
           ownershipEpoch: run.ownershipEpoch,
           runId: run.runId,
-          targetAgentId: run.targetAgentId!,
+          targetAgentId: run.targetAgentId,
           refId: segment.refId,
           refOrdinal: segment.refOrdinal,
           segmentOrdinal: segment.segmentOrdinal,
