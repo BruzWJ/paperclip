@@ -64,3 +64,4 @@ tests/storybook-visual/playwright-report/
 .superpowers/
 .claude/worktrees/
 .herenow
+pnpm-lock.yaml
