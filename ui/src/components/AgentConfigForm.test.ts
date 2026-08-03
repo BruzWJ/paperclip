@@ -1,20 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Environment } from "@paperclipai/shared";
-import { supportsAdapterModelRefresh } from "./AgentConfigForm";
 import { resolveForcedKubernetesEnvironment } from "../lib/forced-kubernetes-environment";
-
-describe("supportsAdapterModelRefresh", () => {
-  it("enables the model refresh action for Claude and Codex adapters", () => {
-    expect(supportsAdapterModelRefresh("claude_local")).toBe(true);
-    expect(supportsAdapterModelRefresh("codex_local")).toBe(true);
-    expect(supportsAdapterModelRefresh("acpx_local")).toBe(false);
-  });
-
-  it("keeps the refresh action hidden for adapters without a live refresh hook", () => {
-    expect(supportsAdapterModelRefresh("opencode_local")).toBe(false);
-    expect(supportsAdapterModelRefresh("process")).toBe(false);
-  });
-});
 
 function makeEnvironment(overrides: Partial<Environment>): Environment {
   return {

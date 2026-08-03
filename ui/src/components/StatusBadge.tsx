@@ -59,7 +59,7 @@ export function AgentStatusBadge({ status }: { status: string }) {
 }
 
 /**
- * Agent status indicator — heartbeat capsule (vertical 8x16, r4) filled from the
+ * Agent status indicator — status capsule (vertical 8x16, r4) filled from the
  * editable `--status-agent-*` base hue. Running agents pulse, broken (error)
  * agents blink; both honor `prefers-reduced-motion`.
  */

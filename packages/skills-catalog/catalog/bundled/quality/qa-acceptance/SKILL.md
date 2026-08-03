@@ -2,10 +2,6 @@
 name: qa-acceptance
 description: Produce QA acceptance criteria and a manual validation plan for a feature change — golden path, edge cases, error states, performance limits, and explicit pass/fail evidence.
 key: paperclipai/bundled/quality/qa-acceptance
-recommendedForRoles:
-  - qa
-  - engineer
-  - product
 tags:
   - qa
   - acceptance
@@ -75,7 +71,7 @@ Each criterion needs evidence on the verification pass:
 - "Known issue" without a linked follow-up is not a waiver.
 - If you add a new criterion mid-pass, restart the pass — partial coverage hides regressions.
 
-## Handoff back to the author
+## Return the findings to the author
 
 Return the validation plan with three sections:
 

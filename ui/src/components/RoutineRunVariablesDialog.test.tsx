@@ -3,7 +3,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, ExecutionWorkspace, Project, RoutineVariable } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Agent, type ExecutionWorkspace, type Project, type RoutineVariable } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RoutineRunVariablesDialog } from "./RoutineRunVariablesDialog";
 
@@ -114,17 +114,16 @@ function createAgent(): Agent {
     id: "agent-1",
     companyId: "company-1",
     name: "Routine Agent",
-    role: "engineer",
     title: null,
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "process",
+    adapterType: "codex",
     adapterConfig: {},
+    currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    lastHeartbeatAt: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     icon: "code",
     metadata: null,
     createdAt: new Date("2026-04-02T00:00:00.000Z"),
@@ -132,7 +131,7 @@ function createAgent(): Agent {
     urlKey: "routine-agent",
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
+    governance: {},
   };
 }
 

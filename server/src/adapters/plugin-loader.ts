@@ -9,49 +9,42 @@
  * adapter-utils, never registry.ts.
  */
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { ServerAdapterModule } from "./types.js";
+import { pathToFileURL } from "node:url";
+import {
+  validateServerAdapterModule,
+  type ServerAdapterModule,
+} from "@paperclipai/adapter-utils";
+import {
+  adapterImplementationIdentityKey,
+  isAdapterImplementationIdentity,
+  type AdapterImplementationIdentity,
+} from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
+import { resolvePaperclipHomeDir } from "../home-paths.js";
 
 import {
   listAdapterPlugins,
-  getAdapterPluginsDir,
   getAdapterPluginByType,
+  getAdapterPluginsDir,
 } from "../services/adapter-plugin-store.js";
 import type { AdapterPluginRecord } from "../services/adapter-plugin-store.js";
+import {
+  attachAdapterImplementationIdentity,
+  createAdapterImplementationIdentity,
+  digestAdapterArtifact,
+} from "./implementation-identity.js";
 
-// ---------------------------------------------------------------------------
-// In-memory UI parser cache
-// ---------------------------------------------------------------------------
+const RETAINED_MANIFEST_VERSION =
+  "paperclip.retained-adapter-implementation/v1" as const;
 
-const uiParserCache = new Map<string, string>();
-
-export function getUiParserSource(adapterType: string): string | undefined {
-  return uiParserCache.get(adapterType);
-}
-
-/**
- * On cache miss, attempt on-demand extraction from the plugin store.
- * Makes the ui-parser.js endpoint self-healing.
- */
-export function getOrExtractUiParserSource(adapterType: string): string | undefined {
-  const cached = uiParserCache.get(adapterType);
-  if (cached) return cached;
-
-  const record = getAdapterPluginByType(adapterType);
-  if (!record) return undefined;
-
-  const packageDir = resolvePackageDir(record);
-  const source = extractUiParserSource(packageDir, record.packageName);
-  if (source) {
-    uiParserCache.set(adapterType, source);
-    logger.info(
-      { type: adapterType, packageName: record.packageName, origin: "lazy" },
-      "UI parser extracted on-demand (cache miss)",
-    );
-  }
-  return source;
+interface RetainedAdapterImplementationManifest {
+  version: typeof RETAINED_MANIFEST_VERSION;
+  identity: AdapterImplementationIdentity;
+  artifactDirectory: "artifact";
+  retainedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,69 +68,148 @@ function resolvePackageEntryPoint(packageDir: string): string {
   return pkg.main ?? "index.js";
 }
 
-// ---------------------------------------------------------------------------
-// UI parser extraction
-// ---------------------------------------------------------------------------
+function retainedImplementationsDir(): string {
+  return path.resolve(
+    resolvePaperclipHomeDir(),
+    "adapter-plugins",
+    "implementations",
+  );
+}
 
-const SUPPORTED_PARSER_CONTRACT = "1";
+function retainedDirectoryName(
+  identity: AdapterImplementationIdentity,
+): string {
+  return createHash("sha256")
+    .update(adapterImplementationIdentityKey(identity), "utf8")
+    .digest("hex");
+}
 
-function extractUiParserSource(
+function packageIdentityMetadata(
   packageDir: string,
-  packageName: string,
-): string | undefined {
-  const pkgJsonPath = path.join(packageDir, "package.json");
-  const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-
-  if (!pkg.exports || typeof pkg.exports !== "object" || !pkg.exports["./ui-parser"]) {
-    return undefined;
-  }
-
-  const contractVersion = pkg.paperclip?.adapterUiParser;
-  if (contractVersion) {
-    const major = contractVersion.split(".")[0];
-    if (major !== SUPPORTED_PARSER_CONTRACT) {
-      logger.warn(
-        { packageName, contractVersion, supported: `${SUPPORTED_PARSER_CONTRACT}.x` },
-        "Adapter declares unsupported UI parser contract version — skipping UI parser",
-      );
-      return undefined;
-    }
-  } else {
-    logger.info(
-      { packageName },
-      "Adapter has ./ui-parser export but no paperclip.adapterUiParser version — loading anyway (future versions may require it)",
+): { packageName: string; packageVersion: string } {
+  const parsed = JSON.parse(
+    fs.readFileSync(path.join(packageDir, "package.json"), "utf8"),
+  ) as { name?: unknown; version?: unknown };
+  if (
+    typeof parsed.name !== "string" ||
+    !parsed.name.trim() ||
+    typeof parsed.version !== "string" ||
+    !parsed.version.trim()
+  ) {
+    throw new Error(
+      "External adapter package requires exact package name and version metadata",
     );
   }
+  return {
+    packageName: parsed.name.trim(),
+    packageVersion: parsed.version.trim(),
+  };
+}
 
-  const uiParserExp = pkg.exports["./ui-parser"];
-  const uiParserFile = typeof uiParserExp === "string"
-    ? uiParserExp
-    : (uiParserExp.import ?? uiParserExp.default);
-  const uiParserPath = path.resolve(packageDir, uiParserFile);
+function readRetainedManifest(
+  implementationDir: string,
+): RetainedAdapterImplementationManifest {
+  const parsed = JSON.parse(
+    fs.readFileSync(path.join(implementationDir, "identity.json"), "utf8"),
+  ) as Partial<RetainedAdapterImplementationManifest>;
+  if (
+    parsed.version !== RETAINED_MANIFEST_VERSION ||
+    parsed.artifactDirectory !== "artifact" ||
+    !isAdapterImplementationIdentity(parsed.identity) ||
+    parsed.identity.origin !== "external" ||
+    typeof parsed.retainedAt !== "string"
+  ) {
+    throw new Error("Retained adapter implementation manifest is invalid");
+  }
+  return parsed as RetainedAdapterImplementationManifest;
+}
 
-  if (!uiParserPath.startsWith(packageDir + path.sep) && uiParserPath !== packageDir) {
-    logger.warn(
-      { packageName, uiParserFile },
-      "UI parser path escapes package directory — skipping",
-    );
-    return undefined;
+function verifyRetainedImplementation(
+  implementationDir: string,
+  expectedIdentity?: AdapterImplementationIdentity,
+): {
+  identity: AdapterImplementationIdentity;
+  artifactDir: string;
+} {
+  const manifest = readRetainedManifest(implementationDir);
+  if (
+    expectedIdentity &&
+    adapterImplementationIdentityKey(manifest.identity) !==
+      adapterImplementationIdentityKey(expectedIdentity)
+  ) {
+    throw new Error("Retained adapter implementation identity changed");
+  }
+  const artifactDir = path.join(
+    implementationDir,
+    manifest.artifactDirectory,
+  );
+  if (
+    digestAdapterArtifact(artifactDir) !==
+    manifest.identity.artifactDigest
+  ) {
+    throw new Error("Retained adapter implementation content digest changed");
+  }
+  return { identity: manifest.identity, artifactDir };
+}
+
+function materializeExternalImplementation(
+  packageDir: string,
+  identity: AdapterImplementationIdentity,
+): string {
+  const root = retainedImplementationsDir();
+  fs.mkdirSync(root, { recursive: true });
+  const implementationDir = path.join(
+    root,
+    retainedDirectoryName(identity),
+  );
+  if (fs.existsSync(implementationDir)) {
+    return verifyRetainedImplementation(implementationDir, identity).artifactDir;
   }
 
-  if (!fs.existsSync(uiParserPath)) {
-    return undefined;
-  }
-
+  const temporaryDir = fs.mkdtempSync(
+    path.join(root, ".retaining-"),
+  );
   try {
-    const source = fs.readFileSync(uiParserPath, "utf-8");
-    logger.info(
-      { packageName, uiParserFile, size: source.length },
-      `Loaded UI parser from adapter package${contractVersion ? "" : " (no version declared)"}`,
+    const artifactDir = path.join(temporaryDir, "artifact");
+    const sourceRoot = path.resolve(packageDir);
+    fs.cpSync(sourceRoot, artifactDir, {
+      recursive: true,
+      dereference: false,
+      filter(source) {
+        if (path.resolve(source) === sourceRoot) return true;
+        const relative = path.relative(sourceRoot, source);
+        return !relative
+          .split(path.sep)
+          .some((segment) => segment === ".git" || segment === "node_modules");
+      },
+    });
+    if (digestAdapterArtifact(artifactDir) !== identity.artifactDigest) {
+      throw new Error(
+        "Adapter package changed while its implementation was materialized",
+      );
+    }
+    const manifest: RetainedAdapterImplementationManifest = {
+      version: RETAINED_MANIFEST_VERSION,
+      identity,
+      artifactDirectory: "artifact",
+      retainedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(
+      path.join(temporaryDir, "identity.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
     );
-    return source;
-  } catch (err) {
-    logger.warn({ err, packageName, uiParserFile }, "Failed to read UI parser from adapter package");
-    return undefined;
+    try {
+      fs.renameSync(temporaryDir, implementationDir);
+    } catch (error) {
+      if (!fs.existsSync(implementationDir)) throw error;
+    }
+  } finally {
+    if (fs.existsSync(temporaryDir)) {
+      fs.rmSync(temporaryDir, { recursive: true, force: true });
+    }
   }
+  return verifyRetainedImplementation(implementationDir, identity).artifactDir;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,12 +226,48 @@ function validateAdapterModule(mod: unknown, packageName: string): ServerAdapter
     );
   }
 
-  const adapterModule = createServerAdapter() as ServerAdapterModule;
-  if (!adapterModule || !adapterModule.type) {
+  try {
+    return validateServerAdapterModule(createServerAdapter());
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
     throw new Error(
-      `createServerAdapter() from "${packageName}" returned an invalid module (missing "type").`,
+      `createServerAdapter() from "${packageName}" returned an invalid module: ${message}`,
+      { cause: error },
     );
   }
+}
+
+async function loadMaterializedExternalAdapter(input: {
+  artifactDir: string;
+  identity: AdapterImplementationIdentity;
+}): Promise<ServerAdapterModule> {
+  const entryPoint = resolvePackageEntryPoint(input.artifactDir);
+  const modulePath = path.resolve(input.artifactDir, entryPoint);
+  const relativeEntryPoint = path.relative(input.artifactDir, modulePath);
+  if (
+    relativeEntryPoint.startsWith("..") ||
+    path.isAbsolute(relativeEntryPoint)
+  ) {
+    throw new Error("Adapter package entry point escapes its retained artifact");
+  }
+  const moduleUrl = pathToFileURL(modulePath);
+  moduleUrl.searchParams.set(
+    "paperclipImplementation",
+    input.identity.artifactDigest,
+  );
+  const mod = await import(moduleUrl.href);
+  const adapterModule = validateAdapterModule(
+    mod,
+    input.identity.packageName,
+  );
+  if (adapterModule.type !== input.identity.adapterType) {
+    throw new Error(
+      "Retained adapter module type does not match its implementation identity",
+    );
+  }
+  attachAdapterImplementationIdentity(adapterModule, input.identity);
+
   return adapterModule;
 }
 
@@ -167,24 +275,52 @@ export async function loadExternalAdapterPackage(
   packageName: string,
   localPath?: string,
 ): Promise<ServerAdapterModule> {
-  const packageDir = localPath
+  const requestedPackageDir = localPath
     ? path.resolve(localPath)
     : path.resolve(getAdapterPluginsDir(), "node_modules", packageName);
+  const packageDir = fs.realpathSync(requestedPackageDir);
 
+  const artifactDigest = digestAdapterArtifact(packageDir);
+  const metadata = packageIdentityMetadata(packageDir);
+  const buildIdentity = `${metadata.packageName}@${metadata.packageVersion}`;
   const entryPoint = resolvePackageEntryPoint(packageDir);
   const modulePath = path.resolve(packageDir, entryPoint);
-  const uiParserSource = extractUiParserSource(packageDir, packageName);
-
-  logger.info({ packageName, packageDir, entryPoint, modulePath, hasUiParser: !!uiParserSource }, "Loading external adapter package");
-
-  const mod = await import(modulePath);
-  const adapterModule = validateAdapterModule(mod, packageName);
-
-  if (uiParserSource) {
-    uiParserCache.set(adapterModule.type, uiParserSource);
+  const moduleUrl = pathToFileURL(modulePath);
+  moduleUrl.searchParams.set("paperclipTypeDiscovery", artifactDigest);
+  const mod = await import(moduleUrl.href);
+  const discoveredAdapter = validateAdapterModule(
+    mod,
+    metadata.packageName,
+  );
+  const identity = createAdapterImplementationIdentity({
+    adapterType: discoveredAdapter.type,
+    origin: "external",
+    packageName: metadata.packageName,
+    packageVersion: metadata.packageVersion,
+    buildIdentity,
+    artifactDigest,
+  });
+  const artifactDir = materializeExternalImplementation(packageDir, identity);
+  if (digestAdapterArtifact(packageDir) !== artifactDigest) {
+    throw new Error(
+      "Adapter package changed while its implementation was loaded",
+    );
   }
 
-  return adapterModule;
+  logger.info(
+    {
+      packageName: metadata.packageName,
+      packageVersion: metadata.packageVersion,
+      packageDir,
+      entryPoint,
+      artifactDigest,
+    },
+    "Loading immutable external adapter implementation",
+  );
+  return loadMaterializedExternalAdapter({
+    artifactDir,
+    identity,
+  });
 }
 
 async function loadFromRecord(record: AdapterPluginRecord): Promise<ServerAdapterModule | null> {
@@ -209,46 +345,15 @@ export async function reloadExternalAdapter(
   const record = getAdapterPluginByType(type);
   if (!record) return null;
 
-  const packageDir = resolvePackageDir(record);
-  const entryPoint = resolvePackageEntryPoint(packageDir);
-  const modulePath = path.resolve(packageDir, entryPoint);
-  const fileUrl = `file://${modulePath}`;
-
-  // Bust ESM module cache so re-import loads fresh code from disk.
-  // Query-string trick (?t=...) works in Node; Bun may need the file:// URL
-  // to be evicted from its internal registry first.
-  try {
-    // @ts-expect-error -- Bun internal module cache
-    const bunCache = globalThis.Bun?.__moduleCache as Map<string, unknown> | undefined;
-    if (bunCache) {
-      bunCache.delete(fileUrl);
-      bunCache.delete(modulePath);
-    }
-  } catch {
-    // Ignore — query-string fallback still works in Node
-  }
-
-  const cacheBustUrl = `${fileUrl}?t=${Date.now()}`;
-
-  logger.info(
-    { type, packageName: record.packageName, modulePath, cacheBustUrl },
-    "Reloading external adapter (cache bust)",
+  const adapterModule = await loadExternalAdapterPackage(
+    record.packageName,
+    record.localPath,
   );
-
-  const mod = await import(cacheBustUrl);
-  const adapterModule = validateAdapterModule(mod, record.packageName);
-
-  uiParserCache.delete(type);
-  const uiParserSource = extractUiParserSource(packageDir, record.packageName);
-  if (uiParserSource) {
-    uiParserCache.set(adapterModule.type, uiParserSource);
+  if (adapterModule.type !== type) {
+    throw new Error(
+      `Reloaded adapter changed type from ${type} to ${adapterModule.type}`,
+    );
   }
-
-  logger.info(
-    { type, packageName: record.packageName, hasUiParser: !!uiParserSource },
-    "Successfully reloaded external adapter",
-  );
-
   return adapterModule;
 }
 
@@ -273,5 +378,38 @@ export async function buildExternalAdapters(): Promise<ServerAdapterModule[]> {
     );
   }
 
+  return results;
+}
+
+/**
+ * Loads every verified content-addressed implementation without selecting it.
+ * Corrupt, missing, or no-longer-loadable retained packages are unavailable
+ * rather than redirected to the current package with the same adapter type.
+ */
+export async function buildRetainedExternalAdapters(): Promise<
+  ServerAdapterModule[]
+> {
+  const root = retainedImplementationsDir();
+  if (!fs.existsSync(root)) return [];
+  const results: ServerAdapterModule[] = [];
+  for (const name of fs.readdirSync(root).sort()) {
+    if (name.startsWith(".")) continue;
+    const implementationDir = path.join(root, name);
+    try {
+      if (!fs.lstatSync(implementationDir).isDirectory()) continue;
+      const verified = verifyRetainedImplementation(implementationDir);
+      results.push(
+        await loadMaterializedExternalAdapter({
+          artifactDir: verified.artifactDir,
+          identity: verified.identity,
+        }),
+      );
+    } catch (error) {
+      logger.warn(
+        { error, implementationDir },
+        "Retained adapter implementation is unavailable; historical revisions will fail closed",
+      );
+    }
+  }
   return results;
 }

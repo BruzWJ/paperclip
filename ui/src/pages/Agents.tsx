@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
-import { builtInAgentsApi, type BuiltInAgentState } from "../api/builtInAgents";
 import { environmentsApi } from "../api/environments";
-import { heartbeatsApi } from "../api/heartbeats";
+import {
+  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  runsApi,
+} from "../api/runs";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -16,15 +18,14 @@ import { AgentActionButtons } from "../components/AgentActionButtons";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { EntityRow } from "../components/EntityRow";
-import { BuiltInLifecycleChip } from "../components/BuiltInAgentBadges";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
+import { cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Bot, Plus, List, GitBranch } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@paperclipai/shared";
+import { type Agent, type Environment, type EnvironmentCapabilities } from "@paperclipai/shared";
 import {
   isStarred,
   resourceMembershipState,
@@ -35,17 +36,7 @@ import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSh
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 
-const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
-
-// Lazy-loaded so the roster page doesn't statically pull in the full
-// AgentConfigForm module graph (the modal reuses its adapter/model pickers).
-const ConfigureBuiltInAgentModal = lazy(() =>
-  import("../components/ConfigureBuiltInAgentModal").then((m) => ({
-    default: m.ConfigureBuiltInAgentModal,
-  })),
-);
-
-export const AGENT_FILTER_TABS = ["all", "active", "paused", "error", "builtin"] as const;
+export const AGENT_FILTER_TABS = ["all", "active", "paused", "error"] as const;
 type FilterTab = (typeof AGENT_FILTER_TABS)[number];
 
 const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
@@ -53,7 +44,6 @@ const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [
   { value: "active", label: "Active" },
   { value: "paused", label: "Paused" },
   { value: "error", label: "Error" },
-  { value: "builtin", label: "Built-in" },
 ];
 
 function isFilterTab(value: string): value is FilterTab {
@@ -91,12 +81,10 @@ function matchesFilter(status: string, tab: FilterTab): boolean {
   return true;
 }
 
-function filterAgents(agents: Agent[], tab: FilterTab, builtInAgentIds: Set<string>): Agent[] {
+function filterAgents(agents: Agent[], tab: FilterTab): Agent[] {
   return agents
     .filter((a) => {
       if (HIDDEN_AGENT_STATUSES.has(a.status)) return false;
-      // The `builtin` filter keys on the built-in marker, not agent status.
-      if (tab === "builtin") return builtInAgentIds.has(a.id);
       return matchesFilter(a.status, tab);
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -164,19 +152,17 @@ function resolveAgentEnvironment(
     : describeMissingEnvironment(environmentId);
 }
 
-function filterOrgTree(nodes: OrgNode[], tab: FilterTab, builtInAgentIds: Set<string>): OrgNode[] {
+function filterOrgTree(nodes: OrgNode[], tab: FilterTab): OrgNode[] {
   return nodes
     .reduce<OrgNode[]>((acc, node) => {
-      const filteredReports = filterOrgTree(node.reports, tab, builtInAgentIds);
+      const filteredReports = filterOrgTree(node.reports, tab);
       // Hidden agents (terminated / pending_approval) never render as a row, but
       // any visible reports are promoted so the tree doesn't lose live agents.
       if (HIDDEN_AGENT_STATUSES.has(node.status)) {
         acc.push(...filteredReports);
         return acc;
       }
-      const nodeMatches = tab === "builtin"
-        ? builtInAgentIds.has(node.id)
-        : matchesFilter(node.status, tab);
+      const nodeMatches = matchesFilter(node.status, tab);
       if (nodeMatches || filteredReports.length > 0) {
         acc.push({ ...node, reports: filteredReports });
       }
@@ -203,28 +189,8 @@ export function Agents() {
     queryFn: () => instanceSettingsApi.get(),
     enabled: !!selectedCompanyId,
   });
-  const builtInAgentsEnabled = instanceSettings?.experimental.enableBuiltInAgents === true;
-  const tab: FilterTab = requestedTab === "builtin" && !builtInAgentsEnabled ? "all" : requestedTab;
-  const visibleTabItems = useMemo(
-    () => AGENT_FILTER_TAB_ITEMS.filter((item) => item.value !== "builtin" || builtInAgentsEnabled),
-    [builtInAgentsEnabled],
-  );
-
-  const { data: builtInAgents } = useQuery({
-    queryKey: queryKeys.builtInAgents.list(selectedCompanyId!),
-    queryFn: () => builtInAgentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && builtInAgentsEnabled,
-  });
-  const builtInByAgentId = useMemo(() => {
-    const map = new Map<string, BuiltInAgentState>();
-    if (!builtInAgentsEnabled) return map;
-    for (const entry of builtInAgents ?? []) {
-      if (entry.agentId) map.set(entry.agentId, entry);
-    }
-    return map;
-  }, [builtInAgents, builtInAgentsEnabled]);
-  const builtInAgentIds = useMemo(() => new Set(builtInByAgentId.keys()), [builtInByAgentId]);
-  const [configureState, setConfigureState] = useState<BuiltInAgentState | null>(null);
+  const tab: FilterTab = requestedTab;
+  const visibleTabItems = AGENT_FILTER_TAB_ITEMS;
 
   const { data: agents, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -252,39 +218,46 @@ export function Agents() {
     enabled: !!selectedCompanyId && environmentsEnabled,
   });
 
-  const runsQueryKey = [...queryKeys.liveRuns(selectedCompanyId!), "agents-page"] as const;
+  const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
+  const runsQueryKey = [
+    ...queryKeys.runs(selectedCompanyId!, { status: activeRunStatuses }),
+    "agents-page",
+  ] as const;
   const sharedRuns = useSharedPollingQuery({
     companyId: selectedCompanyId,
-    resourceKey: "live-runs:agents-page",
+    resourceKey: "active-runs:agents-page",
     queryKey: runsQueryKey,
     enabled: !!selectedCompanyId,
     refetchInterval: 15_000,
     leaderOnly: true,
   });
-  const { data: runs, dataUpdatedAt: runsUpdatedAt } = useQuery({
+  const { data: runPage, dataUpdatedAt: runsUpdatedAt } = useQuery({
     queryKey: runsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
+    queryFn: () => runsApi.listForCompany(selectedCompanyId!, {
+      status: activeRunStatuses,
+      limit: 200,
+    }),
     enabled: sharedRuns.enabled,
     refetchInterval: sharedRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedRuns, runs, runsUpdatedAt);
+  usePublishSharedQueryData(sharedRuns, runPage, runsUpdatedAt);
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
 
   // Map agentId -> first live run + live run count
   const liveRunByAgent = useMemo(() => {
     const map = new Map<string, { runId: string; liveCount: number }>();
-    for (const r of runs ?? []) {
-      if (r.status !== "running" && r.status !== "queued") continue;
-      const existing = map.get(r.agentId);
+    for (const r of runPage?.items ?? []) {
+      if (!r.targetAgentId) continue;
+      const existing = map.get(r.targetAgentId);
       if (existing) {
         existing.liveCount += 1;
         continue;
       }
-      map.set(r.agentId, { runId: r.id, liveCount: 1 });
+      map.set(r.targetAgentId, { runId: r.id, liveCount: 1 });
     }
     return map;
-  }, [runs]);
+  }, [runPage?.items]);
 
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
@@ -318,12 +291,6 @@ export function Agents() {
     setBreadcrumbs([{ label: "Agents" }]);
   }, [setBreadcrumbs]);
 
-  useEffect(() => {
-    if (selectedCompanyId && requestedTab === "builtin" && instanceSettings && !builtInAgentsEnabled) {
-      navigate("/agents/all", { replace: true });
-    }
-  }, [builtInAgentsEnabled, instanceSettings, navigate, requestedTab, selectedCompanyId]);
-
   if (!selectedCompanyId) {
     return <EmptyState icon={Bot} message="Select a company to view agents." />;
   }
@@ -332,8 +299,8 @@ export function Agents() {
     return <PageSkeleton variant="list" />;
   }
 
-  const filtered = filterAgents(agents ?? [], tab, builtInAgentIds);
-  const filteredOrg = filterOrgTree(orgTree ?? [], tab, builtInAgentIds);
+  const filtered = filterAgents(agents ?? [], tab);
+  const filteredOrg = filterOrgTree(orgTree ?? [], tab);
   const environmentDataLoading = environmentsEnabled && environments === undefined;
   const showEnvironmentColumn = environmentsEnabled && (environments === undefined || environments.length > 1);
   const resolveRenderedEnvironment = (agentId: string) => (
@@ -351,33 +318,6 @@ export function Agents() {
     const agentStarPending = agentPending && membershipMutation.variables?.starred !== undefined;
     const agentJoinLeavePending = agentPending && membershipMutation.variables?.starred === undefined;
     const agentStarred = isStarred(membershipsQuery.data, "agent", agent.id);
-    const builtInState = builtInByAgentId.get(agent.id);
-    const showBuiltInLifecycle = builtInState?.status === "needs_setup" || builtInState?.status === "pending_approval";
-    // Lifecycle chip + inline `Set up`. Rendered inline in
-    // `meta` at xl (where there's room and the meta columns align) and on a
-    // dedicated full-width line beneath the name below xl, so the chips never
-    // starve the name — the row's primary identifier — at narrow widths.
-    const builtInCluster = builtInState && showBuiltInLifecycle ? (
-      <>
-        <BuiltInLifecycleChip status={builtInState.status} />
-        {builtInState.status === "needs_setup" && (
-          <span
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
-            <Button
-              size="xs"
-              variant="outline"
-              onClick={() => setConfigureState(builtInState)}
-            >
-              Set up
-            </Button>
-          </span>
-        )}
-      </>
-    ) : null;
     return (
       <EntityRow
         key={agent.id}
@@ -390,7 +330,7 @@ export function Agents() {
         titleClassName="flex-1 xl:flex-none xl:w-56"
         titleTextClassName="whitespace-normal break-words xl:truncate xl:whitespace-nowrap"
         subtitleClassName="whitespace-normal break-words xl:truncate xl:whitespace-nowrap"
-        subtitle={`${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
+        subtitle={agent.title ?? agent.capabilities ?? undefined}
         to={agentUrl(agent)}
         className={cn(
           "group",
@@ -402,20 +342,8 @@ export function Agents() {
         ) : (
           <AgentStatusCapsule status={agent.status} />
         )}
-        secondaryRow={
-          builtInCluster ? (
-            <div className="xl:hidden flex flex-wrap items-center gap-1.5">
-              {builtInCluster}
-            </div>
-          ) : undefined
-        }
         meta={
           <div className="flex items-center gap-3">
-            {builtInCluster && (
-              <div className="hidden xl:flex items-center gap-1.5">
-                {builtInCluster}
-              </div>
-            )}
             <div className="hidden xl:flex items-center gap-3">
               <AgentMetaColumns
                 agent={agent}
@@ -451,7 +379,6 @@ export function Agents() {
                 <AgentActionButtons
                   agent={agent}
                   companyId={selectedCompanyId}
-                  runLabel="Run Heartbeat"
                   showStatus={false}
                 />
               </div>
@@ -583,8 +510,6 @@ export function Agents() {
               tab={tab}
               memberships={membershipsQuery.data}
               membershipMutation={membershipMutation}
-              builtInByAgentId={builtInByAgentId}
-              onConfigureBuiltIn={setConfigureState}
             />
           ))}
         </div>
@@ -601,18 +526,6 @@ export function Agents() {
           No organizational hierarchy defined.
         </p>
       )}
-      {configureState && selectedCompanyId && (
-        <Suspense fallback={null}>
-          <ConfigureBuiltInAgentModal
-            companyId={selectedCompanyId}
-            state={configureState}
-            open={configureState !== null}
-            onOpenChange={(open) => {
-              if (!open) setConfigureState(null);
-            }}
-          />
-        </Suspense>
-      )}
     </div>
   );
 }
@@ -628,8 +541,6 @@ function OrgTreeNode({
   tab,
   memberships,
   membershipMutation,
-  builtInByAgentId,
-  onConfigureBuiltIn,
 }: {
   node: OrgNode;
   depth: number;
@@ -641,12 +552,8 @@ function OrgTreeNode({
   tab: FilterTab;
   memberships: ReturnType<typeof useResourceMemberships>["data"];
   membershipMutation: ReturnType<typeof useResourceMembershipMutation>;
-  builtInByAgentId: Map<string, BuiltInAgentState>;
-  onConfigureBuiltIn: (state: BuiltInAgentState) => void;
 }) {
   const agent = agentMap.get(node.id);
-  const builtInState = builtInByAgentId.get(node.id);
-  const showBuiltInLifecycle = builtInState?.status === "needs_setup" || builtInState?.status === "pending_approval";
   const hasInvalidOrgChain = Boolean(agent && agent.orgChainHealth?.status === "invalid_org_chain");
   const membershipState = resourceMembershipState(memberships, "agent", node.id);
   const pending = membershipMutation.isPending &&
@@ -677,28 +584,10 @@ function OrgTreeNode({
               the name at narrow widths. */}
           <div className="min-w-(--sz-7rem) truncate">
             <span className="text-sm font-medium">{node.name}</span>
-            <span className="text-xs text-muted-foreground ml-2">
-              {roleLabels[node.role] ?? node.role}
-              {agent?.title ? ` - ${agent.title}` : ""}
-            </span>
+            {agent?.title ? (
+              <span className="text-xs text-muted-foreground ml-2">{agent.title}</span>
+            ) : null}
           </div>
-          {builtInState && showBuiltInLifecycle && (
-            <div className="flex items-center gap-1.5 shrink-0">
-              <BuiltInLifecycleChip status={builtInState.status} />
-              {builtInState.status === "needs_setup" && (
-                <span
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  <Button size="xs" variant="outline" onClick={() => onConfigureBuiltIn(builtInState)}>
-                    Set up
-                  </Button>
-                </span>
-              )}
-            </div>
-          )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="sm:hidden">
@@ -786,8 +675,6 @@ function OrgTreeNode({
               tab={tab}
               memberships={memberships}
               membershipMutation={membershipMutation}
-              builtInByAgentId={builtInByAgentId}
-              onConfigureBuiltIn={onConfigureBuiltIn}
             />
           ))}
         </div>
@@ -796,13 +683,7 @@ function OrgTreeNode({
   );
 }
 
-/**
- * Provider/model + heartbeat columns shared by the list and org views. The
- * model and adapter label share one fixed-width cell, each line truncating with
- * an ellipsis so a long model id can never overlap the heartbeat column. The
- * heartbeat is single-line (`whitespace-nowrap`) and wide enough for a full
- * date like "Apr 30, 2026".
- */
+/** Adapter/model columns shared by the list and org views. */
 function AgentMetaColumns({
   agent,
   environment,
@@ -813,7 +694,9 @@ function AgentMetaColumns({
   showEnvironment: boolean;
 }) {
   const model = getConfiguredModel(agent);
-  const adapterLabel = getAdapterLabel(agent.adapterType);
+  const adapterLabel = agent.adapterType
+    ? getAdapterLabel(agent.adapterType)
+    : "Not configured";
   return (
     <>
       <div className="w-44 min-w-0 leading-tight">
@@ -837,9 +720,6 @@ function AgentMetaColumns({
           </div>
         </div>
       )}
-      <span className="w-24 whitespace-nowrap text-right text-xs text-muted-foreground">
-        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
-      </span>
     </>
   );
 }

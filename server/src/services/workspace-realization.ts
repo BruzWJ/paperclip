@@ -29,9 +29,9 @@ function readWorkspaceRealizationRequest(value: unknown): WorkspaceRealizationRe
   const localPath = readString(source.localPath);
   const companyId = readString(parsed.companyId);
   const environmentId = readString(parsed.environmentId);
-  const heartbeatRunId = readString(parsed.heartbeatRunId);
+  const runId = readString(parsed.runId);
   const adapterType = readString(parsed.adapterType);
-  if (!localPath || !companyId || !environmentId || !heartbeatRunId || !adapterType) return null;
+  if (!localPath || !companyId || !environmentId || !runId || !adapterType) return null;
 
   return {
     version: 1,
@@ -40,13 +40,10 @@ function readWorkspaceRealizationRequest(value: unknown): WorkspaceRealizationRe
     environmentId,
     executionWorkspaceId: readString(parsed.executionWorkspaceId),
     issueId: readString(parsed.issueId),
-    heartbeatRunId,
+    runId,
     requestedMode: readString(parsed.requestedMode),
     source: {
-      kind:
-        source.kind === "task_session" || source.kind === "agent_home"
-          ? source.kind
-          : "project_primary",
+      kind: source.kind === "issue_execution" ? "issue_execution" : "project_primary",
       localPath,
       projectId: readString(source.projectId),
       projectWorkspaceId: readString(source.projectWorkspaceId),
@@ -73,7 +70,7 @@ export function buildWorkspaceRealizationRequest(input: {
   environmentId: string;
   executionWorkspaceId: string | null;
   issueId: string | null;
-  heartbeatRunId: string;
+  runId: string;
   requestedMode: string | null;
   workspace: RealizedExecutionWorkspace;
   workspaceConfig: ExecutionWorkspaceConfig | null;
@@ -85,7 +82,7 @@ export function buildWorkspaceRealizationRequest(input: {
     environmentId: input.environmentId,
     executionWorkspaceId: input.executionWorkspaceId,
     issueId: input.issueId,
-    heartbeatRunId: input.heartbeatRunId,
+    runId: input.runId,
     requestedMode: input.requestedMode,
     source: {
       kind: input.workspace.source,
@@ -242,11 +239,11 @@ export function buildWorkspaceRealizationRecordFromDriverInput(input: {
       environmentId: input.environment.id,
       executionWorkspaceId: input.lease.executionWorkspaceId,
       issueId: input.lease.issueId,
-      heartbeatRunId: input.lease.heartbeatRunId ?? "unknown",
+      runId: input.lease.runId ?? "unknown",
       requestedMode: input.workspace.mode ?? null,
       workspace: {
         baseCwd: input.workspace.localPath ?? input.cwd ?? input.workspace.remotePath ?? "/",
-        source: "task_session",
+        source: "issue_execution",
         projectId: null,
         workspaceId: null,
         repoUrl: null,

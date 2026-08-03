@@ -4,9 +4,12 @@ import {
   plugins,
   pluginConfig,
   pluginCompanySettings,
+  pluginDatabaseNamespaces,
   pluginEntities,
   pluginJobs,
   pluginJobRuns,
+  pluginMigrations,
+  pluginState,
   pluginWebhookDeliveries,
 } from "@paperclipai/db";
 import type {
@@ -28,20 +31,135 @@ import type {
   PluginWebhookDeliveryStatus,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
+import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import { lockPluginCompanySettingScopeInTransaction } from "./plugin-authorization-locks.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const HOST_MANAGED_AGENT_ENTITY_TYPE = "managed_agent";
+
+function assertGenericPluginEntityMutationAllowed(entityType: string): void {
+  if (entityType === HOST_MANAGED_AGENT_ENTITY_TYPE) {
+    throw conflict(
+      "Plugin-managed agent provenance is owned by the managed-agent lifecycle service",
+      { code: "plugin_managed_agent_generic_entity_mutation_denied" },
+    );
+  }
+}
 
 /**
  * Detect if a Postgres error is a unique-constraint violation on the
  * `plugins_plugin_key_idx` unique index.
  */
 function isPluginKeyConflict(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const err = error as { code?: string; constraint?: string; constraint_name?: string };
-  const constraint = err.constraint ?? err.constraint_name;
-  return err.code === "23505" && constraint === "plugins_plugin_key_idx";
+  let current = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (typeof current !== "object" || current === null) return false;
+    const err = current as {
+      code?: string;
+      constraint?: string;
+      constraint_name?: string;
+      cause?: unknown;
+    };
+    const constraint = err.constraint ?? err.constraint_name;
+    if (
+      err.code === "23505" &&
+      constraint === "plugins_plugin_key_idx"
+    ) {
+      return true;
+    }
+    current = err.cause;
+  }
+  return false;
+}
+
+function quotePersistedNamespace(value: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+    throw new Error(`Persisted plugin database namespace is invalid: ${value}`);
+  }
+  return `"${value.replaceAll("\"", "\"\"")}"`;
+}
+
+export async function lockPluginInstallationInTransaction(
+  tx: IssueSessionDbTransaction,
+  id: string,
+) {
+  return tx
+    .select()
+    .from(plugins)
+    .where(eq(plugins.id, id))
+    .for("update")
+    .then((rows) => rows[0] ?? null);
+}
+
+export async function persistPluginStatusInTransaction(
+  tx: IssueSessionDbTransaction,
+  id: string,
+  input: UpdatePluginStatus,
+  now: Date,
+) {
+  return tx
+    .update(plugins)
+    .set({
+      status: input.status,
+      lastError: input.lastError ?? null,
+      updatedAt: now,
+    })
+    .where(eq(plugins.id, id))
+    .returning()
+    .then((rows) => rows[0] ?? null);
+}
+
+/**
+ * Purge only operational data owned by one installation. Historical identity,
+ * issue provenance, callback/withdrawal delivery records, comments, logs,
+ * entities, managed-resource bindings, and audit rows deliberately remain.
+ */
+export async function purgePluginOperationalDataInTransaction(
+  tx: IssueSessionDbTransaction,
+  pluginId: string,
+): Promise<void> {
+  const namespaces = await tx
+    .select()
+    .from(pluginDatabaseNamespaces)
+    .where(eq(pluginDatabaseNamespaces.pluginId, pluginId))
+    .orderBy(asc(pluginDatabaseNamespaces.namespaceName))
+    .for("update");
+
+  for (const namespace of namespaces) {
+    await tx.execute(
+      sql.raw(
+        `DROP SCHEMA IF EXISTS ${quotePersistedNamespace(namespace.namespaceName)} CASCADE`,
+      ),
+    );
+  }
+
+  await tx
+    .delete(pluginMigrations)
+    .where(eq(pluginMigrations.pluginId, pluginId));
+  await tx
+    .delete(pluginDatabaseNamespaces)
+    .where(eq(pluginDatabaseNamespaces.pluginId, pluginId));
+  await tx
+    .delete(pluginJobRuns)
+    .where(eq(pluginJobRuns.pluginId, pluginId));
+  await tx
+    .delete(pluginJobs)
+    .where(eq(pluginJobs.pluginId, pluginId));
+  await tx
+    .delete(pluginWebhookDeliveries)
+    .where(eq(pluginWebhookDeliveries.pluginId, pluginId));
+  await tx
+    .delete(pluginState)
+    .where(eq(pluginState.pluginId, pluginId));
+  await tx
+    .delete(pluginCompanySettings)
+    .where(eq(pluginCompanySettings.pluginId, pluginId));
+  await tx
+    .delete(pluginConfig)
+    .where(eq(pluginConfig.pluginId, pluginId));
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +187,12 @@ export function pluginRegistryService(db: Db) {
     return db
       .select()
       .from(plugins)
-      .where(eq(plugins.id, id))
+      .where(
+        and(
+          eq(plugins.id, id),
+          ne(plugins.status, "uninstalled"),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
@@ -77,7 +200,12 @@ export function pluginRegistryService(db: Db) {
     return db
       .select()
       .from(plugins)
-      .where(eq(plugins.pluginKey, pluginKey))
+      .where(
+        and(
+          eq(plugins.pluginKey, pluginKey),
+          ne(plugins.status, "uninstalled"),
+        ),
+      )
       .then((rows) => rows[0] ?? null);
   }
 
@@ -95,15 +223,16 @@ export function pluginRegistryService(db: Db) {
   return {
     // ----- Read -----------------------------------------------------------
 
-    /** List all registered plugins ordered by install order. */
+    /** List all live plugin installations ordered by install order. */
     list: () =>
       db
         .select()
         .from(plugins)
+        .where(ne(plugins.status, "uninstalled"))
         .orderBy(asc(plugins.installOrder)),
 
     /**
-     * List installed plugins (excludes soft-deleted/uninstalled).
+     * List installed plugins (excludes terminal installation tombstones).
      * Use for Plugin Manager and default API list so uninstalled plugins do not appear.
      */
     listInstalled: () =>
@@ -118,13 +247,18 @@ export function pluginRegistryService(db: Db) {
       db
         .select()
         .from(plugins)
-        .where(eq(plugins.status, status))
+        .where(
+          and(
+            eq(plugins.status, status),
+            ne(plugins.status, "uninstalled"),
+          ),
+        )
         .orderBy(asc(plugins.installOrder)),
 
-    /** Get a single plugin by primary key. */
+    /** Get a live plugin installation by primary key. */
     getById,
 
-    /** Get a single plugin by its unique `pluginKey`. */
+    /** Get the live installation for a `pluginKey`. */
     getByKey,
 
     // ----- Install / Register --------------------------------------------
@@ -139,28 +273,7 @@ export function pluginRegistryService(db: Db) {
     install: async (input: InstallPlugin, manifest: PaperclipPluginManifestV1) => {
       const existing = await getByKey(manifest.id);
       if (existing) {
-        if (existing.status !== "uninstalled") {
-          throw conflict(`Plugin already installed: ${manifest.id}`);
-        }
-
-        // Reinstall after soft-delete: reactivate the existing row so plugin-scoped
-        // data and references remain stable across uninstall/reinstall cycles.
-        return db
-          .update(plugins)
-          .set({
-            packageName: input.packageName,
-            packagePath: input.packagePath ?? null,
-            version: manifest.version,
-            apiVersion: manifest.apiVersion,
-            categories: manifest.categories,
-            manifestJson: manifest,
-            status: "installed" as PluginStatus,
-            lastError: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(plugins.id, existing.id))
-          .returning()
-          .then((rows) => rows[0] ?? null);
+        throw conflict(`Plugin already installed: ${manifest.id}`);
       }
 
       const installOrder = await nextInstallOrder();
@@ -229,53 +342,29 @@ export function pluginRegistryService(db: Db) {
 
     /** Update a plugin's lifecycle status and optional error message. */
     updateStatus: async (id: string, input: UpdatePluginStatus) => {
-      const plugin = await getById(id);
-      if (!plugin) throw notFound("Plugin not found");
-
-      return db
-        .update(plugins)
-        .set({
-          status: input.status,
-          lastError: input.lastError ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(plugins.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
-    },
-
-    // ----- Uninstall / Remove --------------------------------------------
-
-    /**
-     * Uninstall a plugin.
-     *
-     * When `removeData` is true the plugin row (and cascaded config) is
-     * hard-deleted.  Otherwise the status is set to `"uninstalled"` for
-     * a soft-delete that preserves the record.
-     */
-    uninstall: async (id: string, removeData = false) => {
-      const plugin = await getById(id);
-      if (!plugin) throw notFound("Plugin not found");
-
-      if (removeData) {
-        // Hard delete – plugin_config cascades via FK onDelete
-        return db
-          .delete(plugins)
-          .where(eq(plugins.id, id))
-          .returning()
-          .then((rows) => rows[0] ?? null);
+      if (
+        input.status === "disabled" ||
+        input.status === "uninstalled"
+      ) {
+        throw conflict(
+          `Plugin status '${input.status}' requires the atomic lifecycle transition`,
+        );
       }
-
-      // Soft delete – mark as uninstalled
-      return db
-        .update(plugins)
-        .set({
-          status: "uninstalled" as PluginStatus,
-          updatedAt: new Date(),
-        })
-        .where(eq(plugins.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
+      return db.transaction(async (tx) => {
+        const plugin = await lockPluginInstallationInTransaction(tx, id);
+        if (!plugin) throw notFound("Plugin not found");
+        if (plugin.status === "uninstalled") {
+          throw conflict(
+            "Uninstalled plugin installation tombstones are immutable",
+          );
+        }
+        return persistPluginStatusInTransaction(
+          tx,
+          id,
+          input,
+          new Date(),
+        );
+      });
     },
 
     // ----- Config ---------------------------------------------------------
@@ -409,45 +498,56 @@ export function pluginRegistryService(db: Db) {
       pluginId: string,
       companyId: string,
       input: { enabled?: boolean; settingsJson: Record<string, unknown>; lastError?: string | null },
-    ): Promise<PluginCompanySettings> => {
-      const plugin = await getById(pluginId);
-      if (!plugin) throw notFound("Plugin not found");
+    ): Promise<PluginCompanySettings> =>
+      db.transaction(async (tx) => {
+        const scope =
+          await lockPluginCompanySettingScopeInTransaction(tx, {
+            pluginInstallationId: pluginId,
+            companyId,
+          });
+        if (
+          !scope.installation ||
+          scope.installation.status === "uninstalled"
+        ) {
+          throw notFound("Plugin not found");
+        }
+        if (!scope.company) {
+          throw notFound("Company not found");
+        }
 
-      const existing = await db
-        .select()
-        .from(pluginCompanySettings)
-        .where(and(
-          eq(pluginCompanySettings.pluginId, pluginId),
-          eq(pluginCompanySettings.companyId, companyId),
-        ))
-        .then((rows) => rows[0] ?? null);
+        const now = new Date();
+        if (scope.companySetting) {
+          return tx
+            .update(pluginCompanySettings)
+            .set({
+              enabled:
+                input.enabled ?? scope.companySetting.enabled,
+              settingsJson: input.settingsJson,
+              lastError: input.lastError ?? null,
+              updatedAt: now,
+            })
+            .where(
+              eq(
+                pluginCompanySettings.id,
+                scope.companySetting.id,
+              ),
+            )
+            .returning()
+            .then((rows) => rows[0]) as Promise<PluginCompanySettings>;
+        }
 
-      if (existing) {
-        return db
-          .update(pluginCompanySettings)
-          .set({
-            enabled: input.enabled ?? existing.enabled,
+        return tx
+          .insert(pluginCompanySettings)
+          .values({
+            pluginId,
+            companyId,
+            enabled: input.enabled ?? true,
             settingsJson: input.settingsJson,
             lastError: input.lastError ?? null,
-            updatedAt: new Date(),
           })
-          .where(eq(pluginCompanySettings.id, existing.id))
           .returning()
           .then((rows) => rows[0]) as Promise<PluginCompanySettings>;
-      }
-
-      return db
-        .insert(pluginCompanySettings)
-        .values({
-          pluginId,
-          companyId,
-          enabled: input.enabled ?? true,
-          settingsJson: input.settingsJson,
-          lastError: input.lastError ?? null,
-        })
-        .returning()
-        .then((rows) => rows[0]) as Promise<PluginCompanySettings>;
-    },
+      }),
 
     // ----- Entities -------------------------------------------------------
 
@@ -523,6 +623,7 @@ export function pluginRegistryService(db: Db) {
       pluginId: string,
       input: Omit<typeof pluginEntities.$inferInsert, "id" | "pluginId" | "createdAt" | "updatedAt">,
     ) => {
+      assertGenericPluginEntityMutationAllowed(input.entityType);
       // Drizzle doesn't support pg-specific onConflictDoUpdate easily in the insert() call
       // with complex where clauses, so we do it manually.
       // Match the per-tenant uniqueness of `plugin_entities_external_idx`
@@ -577,9 +678,21 @@ export function pluginRegistryService(db: Db) {
      * @returns The deleted record, or null if not found.
      */
     deleteEntity: async (id: string) => {
+      const entity = await db
+        .select({ entityType: pluginEntities.entityType })
+        .from(pluginEntities)
+        .where(eq(pluginEntities.id, id))
+        .then((rows) => rows[0] ?? null);
+      if (!entity) return null;
+      assertGenericPluginEntityMutationAllowed(entity.entityType);
       const rows = await db
         .delete(pluginEntities)
-        .where(eq(pluginEntities.id, id))
+        .where(
+          and(
+            eq(pluginEntities.id, id),
+            ne(pluginEntities.entityType, HOST_MANAGED_AGENT_ENTITY_TYPE),
+          ),
+        )
         .returning();
       return rows[0] ?? null;
     },

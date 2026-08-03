@@ -8,12 +8,16 @@ import {
   UserRound,
   UserRoundPen,
 } from "lucide-react";
-import type { DeploymentMode, ServerGitInfo } from "@paperclipai/shared";
+import type { ServerGitInfo } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
 import { useSidebar } from "../context/SidebarContext";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
@@ -27,7 +31,6 @@ const SOURCE_REPOSITORY_URL = "https://github.com/paperclipai/paperclip";
 const SOURCE_VERSION_RE = /\+\d+\.git\.([0-9a-f]{7,40})(?:\.dirty)?$/i;
 
 interface SidebarAccountMenuProps {
-  deploymentMode?: DeploymentMode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   serverGit?: ServerGitInfo;
@@ -51,7 +54,11 @@ function deriveInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function deriveUserSlug(name: string | null | undefined, email: string | null | undefined, id: string | null | undefined) {
+function deriveUserSlug(
+  name: string | null | undefined,
+  email: string | null | undefined,
+  id: string | null | undefined,
+) {
   const candidates = [name, email?.split("@")[0], email, id];
   for (const candidate of candidates) {
     const slug = candidate
@@ -70,7 +77,14 @@ function sourceVersionSha(version: string): string | null {
   return sourceVersion?.[1] ?? null;
 }
 
-function MenuAction({ label, description, icon: Icon, onClick, href, external = false }: MenuActionProps) {
+function MenuAction({
+  label,
+  description,
+  icon: Icon,
+  onClick,
+  href,
+  external = false,
+}: MenuActionProps) {
   const className =
     "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-accent/60";
 
@@ -80,8 +94,12 @@ function MenuAction({ label, description, icon: Icon, onClick, href, external = 
         <Icon className="size-4" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
+        <span className="block text-sm font-medium text-foreground">
+          {label}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          {description}
+        </span>
       </span>
     </>
   );
@@ -89,7 +107,13 @@ function MenuAction({ label, description, icon: Icon, onClick, href, external = 
   if (href) {
     if (external) {
       return (
-        <a href={href} target="_blank" rel="noreferrer" className={className} onClick={onClick}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className={className}
+          onClick={onClick}
+        >
           {content}
         </a>
       );
@@ -110,7 +134,6 @@ function MenuAction({ label, description, icon: Icon, onClick, href, external = 
 }
 
 export function SidebarAccountMenu({
-  deploymentMode,
   open: controlledOpen,
   onOpenChange,
   serverGit,
@@ -137,18 +160,20 @@ export function SidebarAccountMenu({
     },
   });
 
-  const displayName = session?.user.name?.trim() || "Board";
-  const secondaryLabel =
-    session?.user.email?.trim() || (deploymentMode === "authenticated" ? "Signed in" : "Local workspace board");
-  const accountBadge = deploymentMode === "authenticated" ? "Account" : "Local";
+  const displayName =
+    session?.user.name?.trim() || session?.user.email?.trim() || "Account";
+  const secondaryLabel = session?.user.email?.trim() || "Signed in";
   const initials = deriveInitials(displayName);
   const profileHref = `/u/${deriveUserSlug(session?.user.name, session?.user.email, session?.user.id)}`;
   const sourceSha = version ? sourceVersionSha(version) : null;
   const sourceFullSha =
-    sourceSha && serverGit?.available && serverGit.fullSha.toLowerCase().startsWith(sourceSha.toLowerCase())
+    sourceSha &&
+    serverGit?.available &&
+    serverGit.fullSha.toLowerCase().startsWith(sourceSha.toLowerCase())
       ? serverGit.fullSha
       : sourceSha;
-  const sourceBranch = sourceSha && serverGit?.available ? serverGit.branchName : null;
+  const sourceBranch =
+    sourceSha && serverGit?.available ? serverGit.branchName : null;
 
   function closeNavigationChrome() {
     setOpen(false);
@@ -165,10 +190,19 @@ export function SidebarAccountMenu({
             aria-label="Open account menu"
           >
             <Avatar size="sm">
-              {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
+              {session?.user.image ? (
+                <AvatarImage src={session.user.image} alt={displayName} />
+              ) : null}
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
-            <span className={cn("min-w-0 flex-1 truncate", rail && SIDEBAR_RAIL_HIDDEN_LABEL)}>{displayName}</span>
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate",
+                rail && SIDEBAR_RAIL_HIDDEN_LABEL,
+              )}
+            >
+              {displayName}
+            </span>
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -182,18 +216,27 @@ export function SidebarAccountMenu({
             <div className="flex items-start gap-3">
               <div className="rounded-2xl border-4 border-popover bg-popover p-0.5 shadow-sm">
                 <Avatar size="lg">
-                  {session?.user.image ? <AvatarImage src={session.user.image} alt={displayName} /> : null}
+                  {session?.user.image ? (
+                    <AvatarImage src={session.user.image} alt={displayName} />
+                  ) : null}
                   <AvatarFallback>{initials}</AvatarFallback>
                 </Avatar>
               </div>
               <div className="min-w-0 flex-1 pt-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
-                  <Badge variant="ghost" className="bg-accent text-(length:--text-nano) font-semibold uppercase tracking-wide text-muted-foreground">
-                    {accountBadge}
+                  <h2 className="truncate text-base font-semibold text-foreground">
+                    {displayName}
+                  </h2>
+                  <Badge
+                    variant="ghost"
+                    className="bg-accent text-(length:--text-nano) font-semibold uppercase tracking-wide text-muted-foreground"
+                  >
+                    Account
                   </Badge>
                 </div>
-                <p className="truncate text-sm text-muted-foreground">{secondaryLabel}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {secondaryLabel}
+                </p>
                 {sourceSha && sourceFullSha ? (
                   <div className="mt-1 text-xs text-muted-foreground">
                     {sourceBranch ? (
@@ -219,7 +262,9 @@ export function SidebarAccountMenu({
                     </p>
                   </div>
                 ) : version ? (
-                  <p className="mt-1 text-xs text-muted-foreground">Paperclip v{version}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Paperclip v{version}
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -255,30 +300,31 @@ export function SidebarAccountMenu({
                 external
                 onClick={() => setOpen(false)}
               />
-              <ThemeToggle variant="menu-action" onAfterToggle={() => setOpen(false)} />
-              {deploymentMode === "authenticated" ? (
-                <button
-                  type="button"
-                  className={cn(
-                    "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-destructive/10",
-                    signOutMutation.isPending && "cursor-not-allowed opacity-60",
-                  )}
-                  onClick={() => signOutMutation.mutate()}
-                  disabled={signOutMutation.isPending}
-                >
-                  <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
-                    <LogOut className="size-4" />
+              <ThemeToggle
+                variant="menu-action"
+                onAfterToggle={() => setOpen(false)}
+              />
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-destructive/10",
+                  signOutMutation.isPending && "cursor-not-allowed opacity-60",
+                )}
+                onClick={() => signOutMutation.mutate()}
+                disabled={signOutMutation.isPending}
+              >
+                <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
+                  <LogOut className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">
+                    {signOutMutation.isPending ? "Signing out..." : "Sign out"}
                   </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-foreground">
-                      {signOutMutation.isPending ? "Signing out..." : "Sign out"}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      End this browser session.
-                    </span>
+                  <span className="block text-xs text-muted-foreground">
+                    End this browser session.
                   </span>
-                </button>
-              ) : null}
+                </span>
+              </button>
               <SidebarServerInfo />
             </div>
           </div>

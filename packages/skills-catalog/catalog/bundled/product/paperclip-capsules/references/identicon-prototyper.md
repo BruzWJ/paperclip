@@ -158,7 +158,7 @@ Randomize behavior:
 
 - Randomizes style, color space/scheme, gradient angle, density, motion, and seed.
 - Keeps Size and Theme stable.
-- Seed words include `atlas`, `budget`, `capsule`, `delta`, `forge`, `governance`, `hermes`, `ledger`, `signal`, and `thread`.
+- Seed words include `atlas`, `budget`, `capsule`, `delta`, `forge`, `governance`, `relay`, `ledger`, `signal`, and `thread`.
 
 ## Export And Share
 

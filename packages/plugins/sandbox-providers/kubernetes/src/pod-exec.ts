@@ -33,24 +33,51 @@ export function shQuote(segment: string): string {
   return `'${segment.replace(/'/g, "'\\''")}'`;
 }
 
-// Wrap a command so the given env vars are exported before it runs. The Kubernetes
-// exec API has no env field, so the only way to give an exec'd process additional
-// env is to run it under a shell that exports the vars and then `exec`s the real
-// command. PATH is deliberately skipped (the caller's PATH is the orchestrator's,
-// not the sandbox image's, and overriding it would break command resolution), and
-// only valid shell identifiers are exported. Returns the original command unchanged
-// when there is nothing to apply.
+// Kubernetes exec inherits the pod environment by default. Provider invocations
+// must instead start from a clean environment, preserving only an explicit PATH
+// and the invocation-scoped values selected by the control plane.
 export function wrapCommandWithEnv(
   command: string[],
   env: Record<string, string> | undefined | null,
 ): string[] {
   const entries = Object.entries(env && typeof env === "object" ? env : {}).filter(
     ([key, value]) =>
-      typeof value === "string" && key !== "PATH" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key),
+      typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key),
   );
-  if (entries.length === 0) return command;
-  const exports = entries.map(([k, v]) => `export ${k}=${shQuote(v)};`).join(" ");
-  return ["/bin/sh", "-c", `${exports} exec ${command.map(shQuote).join(" ")}`];
+  const explicitPath =
+    entries.find(([key]) => key === "PATH")?.[1] ??
+    "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin";
+  const configuredHome =
+    entries.find(([key]) => key === "HOME")?.[1]?.trim() ||
+    entries.find(([key]) => key === "USERPROFILE")?.[1]?.trim() ||
+    null;
+  const effectiveEntries = [...entries];
+  if (configuredHome) {
+    if (!effectiveEntries.some(([key]) => key === "HOME")) {
+      effectiveEntries.push(["HOME", configuredHome]);
+    }
+    if (!effectiveEntries.some(([key]) => key === "USERPROFILE")) {
+      effectiveEntries.push(["USERPROFILE", configuredHome]);
+    }
+  }
+  const assignments = effectiveEntries
+    .filter(([key]) => key !== "PATH")
+    .map(([key, value]) => `${key}=${shQuote(value)}`)
+    .join(" ");
+  const privateHomePrelude = configuredHome
+    ? ""
+    : 'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)" && trap \'rm -rf -- "$paperclip_provider_home"\' EXIT && ';
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const prefix =
+    `${privateHomePrelude}${configuredHome ? "exec " : ""}` +
+    `env -i PATH=${shQuote(explicitPath)}${privateHomeArgs}`;
+  return [
+    "/bin/sh",
+    "-c",
+    `${prefix}${assignments ? ` ${assignments}` : ""} ${command.map(shQuote).join(" ")}`,
+  ];
 }
 
 export async function execInPod(
@@ -73,7 +100,7 @@ export async function execInPod(
   const stdinStream: PassThrough | null = stdinPayload ? new PassThrough() : null;
 
   // When stdin is provided, wrap the command so its stdin is bounded by
-  // `head -c <N>`. Any program reading stdin (`cat`, `claude --print -`,
+  // `head -c <N>`. Any program reading stdin (`cat`, `provider-agent run -`,
   // `base64 -d`, etc.) waits for EOF to terminate the read. With the k8s
   // client v0.21.0 stdin-end -> ws.close() limitation (see comment above)
   // we can't reliably deliver EOF without tearing down the exec — so we

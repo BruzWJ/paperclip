@@ -2,13 +2,13 @@
 
 This runbook covers Paperclip Tools & Access runtime slots for MCP connections. It is written for board and CloudOps operators responding to stuck local stdio slots, degraded remote HTTP connections, capacity deferrals, restart storms, and secret-resolution failures.
 
-Do not print raw bearer tokens, gateway session tokens, credential headers, environment variables, or secret values while following this runbook. The APIs below return redacted state and audit metadata; keep shell tracing disabled when exporting credentials.
+Do not print run-interface bearers, named gateway tokens, credential headers, environment variables, or secret values while following this runbook. The APIs below return redacted state and audit metadata; keep shell tracing disabled when exporting credentials.
 
-Tool action approvals require `PAPERCLIP_TOOL_ACTION_SIGNING_SECRET` to be set independently from auth/JWT secrets. Rotate it deliberately: changing it invalidates outstanding signed tool-action approvals, so drain or reject pending approvals before rotation.
+Tool action approvals authenticate the approving human through Better Auth and execute only the immutable arguments stored in PostgreSQL. There is no separate approval-signing credential to provision or rotate.
 
 ## Support Matrix
 
-| Transport | Local trusted | Hosted cloud / public authenticated | Notes |
+| Transport | Private trusted host | Public exposure | Notes |
 | --- | --- | --- | --- |
 | `remote_http` | Supported | Supported | Preferred production path. Paperclip proxies calls through the gateway with policy, audit, timeout, and redaction controls. |
 | `local_stdio` | Supported through approved templates and supervised runtime slots | Supported only when an explicitly trusted MCP runtime worker/host is configured | Set `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` or `PAPERCLIP_TOOL_RUNTIME_TRUSTED_HOST` only for a worker that is allowed to supervise local processes. Do not enable arbitrary agent-supplied commands. |

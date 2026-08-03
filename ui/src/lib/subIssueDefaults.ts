@@ -8,45 +8,37 @@ type SubIssueDefaultSource = Pick<
   | "projectId"
   | "projectWorkspaceId"
   | "goalId"
-  | "executionWorkspaceId"
   | "executionWorkspacePreference"
   | "currentExecutionWorkspace"
-  | "assigneeAgentId"
-  | "assigneeUserId"
+  | "ownerAgentId"
 >;
 
 export function buildSubIssueDefaults(issue: SubIssueDefaultSource) {
   return buildSubIssueDefaultsForViewer(issue);
 }
 
-export function buildSubIssueDefaultsForViewer(
-  issue: SubIssueDefaultSource,
-  currentUserId?: string | null,
-) {
+export function buildSubIssueDefaultsForViewer(issue: SubIssueDefaultSource) {
+  const executionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
   const parentExecutionWorkspaceLabel =
     issue.currentExecutionWorkspace?.name
     ?? issue.currentExecutionWorkspace?.branchName
     ?? issue.currentExecutionWorkspace?.cwd
-    ?? issue.executionWorkspaceId
+    ?? executionWorkspaceId
     ?? null;
-  const shouldInheritUserAssignee = Boolean(issue.assigneeUserId && issue.assigneeUserId !== currentUserId);
-  const inheritedAssigneeUserId = shouldInheritUserAssignee ? issue.assigneeUserId ?? undefined : undefined;
-
   return {
     parentId: issue.id,
     parentIdentifier: issue.identifier ?? undefined,
-    parentTitle: issue.title,
+    parentTitle: issue.title ?? issue.identifier ?? undefined,
     ...(issue.projectId ? { projectId: issue.projectId } : {}),
     ...(issue.projectWorkspaceId ? { projectWorkspaceId: issue.projectWorkspaceId } : {}),
     ...(issue.goalId ? { goalId: issue.goalId } : {}),
-    ...(issue.executionWorkspaceId ? { executionWorkspaceId: issue.executionWorkspaceId } : {}),
-    ...(issue.executionWorkspaceId
+    ...(executionWorkspaceId ? { executionWorkspaceId } : {}),
+    ...(executionWorkspaceId
       ? { executionWorkspaceMode: "reuse_existing" }
       : issue.executionWorkspacePreference
         ? { executionWorkspaceMode: issue.executionWorkspacePreference }
         : {}),
     ...(parentExecutionWorkspaceLabel ? { parentExecutionWorkspaceLabel } : {}),
-    ...(issue.assigneeAgentId ? { assigneeAgentId: issue.assigneeAgentId } : {}),
-    ...(inheritedAssigneeUserId ? { assigneeUserId: inheritedAssigneeUserId } : {}),
+    ...(issue.ownerAgentId ? { ownerAgentId: issue.ownerAgentId } : {}),
   };
 }

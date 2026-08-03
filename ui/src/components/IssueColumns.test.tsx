@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Issue } from "@paperclipai/shared";
 import { InboxIssueMetaLeading, InboxIssueTrailingColumns } from "./IssueColumns";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { createTestIssue } from "../test-utils/issue";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -15,13 +16,12 @@ function act(callback: () => void): void {
 }
 
 function makeIssue(overrides: Partial<Issue>): Issue {
-  return {
+  return createTestIssue({
     id: "issue-id",
     identifier: "PAP-1",
-    status: "in_progress",
-    blockerAttention: false,
+    boardPresentationStatus: "in_progress",
     ...overrides,
-  } as unknown as Issue;
+  });
 }
 
 let container: HTMLDivElement | null = null;
@@ -46,7 +46,7 @@ describe("InboxIssueMetaLeading live state", () => {
   it("shows the own Live chip for a running issue and never the subtree chip", () => {
     const text = renderLeading(
       <InboxIssueMetaLeading
-        issue={makeIssue({ id: "child", identifier: "PAP-2", status: "in_progress" })}
+        issue={makeIssue({ id: "child", identifier: "PAP-2", boardPresentationStatus: "in_progress" })}
         isLive
         subtreeLiveCount={3}
       />,
@@ -58,7 +58,7 @@ describe("InboxIssueMetaLeading live state", () => {
   it("shows the distinct subtree chip for a done parent with live descendants", () => {
     const text = renderLeading(
       <InboxIssueMetaLeading
-        issue={makeIssue({ id: "parent", identifier: "PAP-1", status: "done" })}
+        issue={makeIssue({ id: "parent", identifier: "PAP-1", boardPresentationStatus: "done" })}
         isLive={false}
         subtreeLiveCount={2}
       />,
@@ -71,7 +71,7 @@ describe("InboxIssueMetaLeading live state", () => {
   it("can suppress the subtree chip when the status glyph already carries descendant liveness", () => {
     const text = renderLeading(
       <InboxIssueMetaLeading
-        issue={makeIssue({ id: "parent", identifier: "PAP-1", status: "blocked" })}
+        issue={makeIssue({ id: "parent", identifier: "PAP-1", boardPresentationStatus: "blocked" })}
         isLive={false}
         subtreeLiveCount={2}
         showSubtreeLiveChip={false}
@@ -83,7 +83,7 @@ describe("InboxIssueMetaLeading live state", () => {
   it("renders no live treatment when the issue and its subtree are idle", () => {
     const text = renderLeading(
       <InboxIssueMetaLeading
-        issue={makeIssue({ id: "idle", identifier: "PAP-3", status: "done" })}
+        issue={makeIssue({ id: "idle", identifier: "PAP-3", boardPresentationStatus: "done" })}
         isLive={false}
         subtreeLiveCount={0}
       />,
@@ -98,16 +98,17 @@ describe("InboxIssueTrailingColumns attribution", () => {
     const text = renderLeading(
       <InboxIssueTrailingColumns
         issue={makeIssue({
-          createdByAgentId: "agent-1",
-          createdByUserId: null,
+          creatorKind: "agent-execution",
+          creatorAuthorityId: "agent-1",
+          creatorAdapterConfigRevisionId: "adapter-revision-1",
           updatedAt: new Date("2026-04-06T12:00:00.000Z"),
         })}
         columns={["kickedOffBy"]}
         projectName={null}
         projectColor={null}
         workspaceName={null}
-        assigneeName={null}
-        creatorAgentName="CodexCoder"
+        ownerName={null}
+        originatingAgentName="CodexCoder"
         currentUserId="user-1"
         parentIdentifier={null}
         parentTitle={null}
@@ -122,15 +123,14 @@ describe("InboxIssueTrailingColumns attribution", () => {
     const text = renderLeading(
       <InboxIssueTrailingColumns
         issue={makeIssue({
-          createdByAgentId: null,
-          createdByUserId: "user-1",
+          creatorUserId: "user-1",
           updatedAt: new Date("2026-04-06T12:00:00.000Z"),
         })}
         columns={["kickedOffBy"]}
         projectName={null}
         projectColor={null}
         workspaceName={null}
-        assigneeName={null}
+        ownerName={null}
         creatorUserName="Riley Board"
         currentUserId="user-1"
         parentIdentifier={null}
@@ -146,8 +146,9 @@ describe("InboxIssueTrailingColumns attribution", () => {
     const text = renderLeading(
       <InboxIssueTrailingColumns
         issue={makeIssue({
-          createdByAgentId: "agent-1",
-          createdByUserId: null,
+          creatorKind: "agent-execution",
+          creatorAuthorityId: "agent-1",
+          creatorAdapterConfigRevisionId: "adapter-revision-1",
           responsibleUserId: "user-2",
           updatedAt: new Date("2026-04-06T12:00:00.000Z"),
         })}
@@ -155,8 +156,8 @@ describe("InboxIssueTrailingColumns attribution", () => {
         projectName={null}
         projectColor={null}
         workspaceName={null}
-        assigneeName={null}
-        creatorAgentName="CodexCoder"
+        ownerName={null}
+        originatingAgentName="CodexCoder"
         creatorUserName="Morgan Product"
         viaAgentName="CodexCoder"
         currentUserId="user-1"
@@ -171,12 +172,13 @@ describe("InboxIssueTrailingColumns attribution", () => {
     expect(container?.querySelector('[data-shape="square"]')).toBeNull();
   });
 
-  it("surfaces the responsible user for a routine execution with no creator", () => {
+  it("surfaces the responsible user for a routine execution", () => {
     const text = renderLeading(
       <InboxIssueTrailingColumns
         issue={makeIssue({
-          createdByAgentId: null,
-          createdByUserId: null,
+          creatorKind: "routine",
+          creatorRoutineId: "routine-1",
+          creatorRoutineDispatchId: "dispatch-1",
           responsibleUserId: "user-2",
           updatedAt: new Date("2026-04-06T12:00:00.000Z"),
         })}
@@ -184,7 +186,7 @@ describe("InboxIssueTrailingColumns attribution", () => {
         projectName={null}
         projectColor={null}
         workspaceName={null}
-        assigneeName={null}
+        ownerName={null}
         creatorUserName="Morgan Product"
         currentUserId="user-1"
         parentIdentifier={null}

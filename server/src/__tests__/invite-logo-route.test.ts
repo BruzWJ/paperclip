@@ -52,10 +52,7 @@ function createApp(db: Record<string, unknown>) {
   app.use(
     "/api",
     accessRoutes(db as any, {
-      deploymentMode: "local_trusted",
       deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
     }),
   );
   app.use(errorHandler);
@@ -73,11 +70,12 @@ describe("GET /invites/:token/logo", () => {
       id: "invite-1",
       companyId: "company-1",
       inviteType: "company_join",
+      source: "board_api",
       allowedJoinTypes: "human",
       tokenHash: "hash",
       defaultsPayload: null,
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
-      invitedByUserId: null,
+      invitedByUserId: "board-user",
       revokedAt: null,
       acceptedAt: null,
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
@@ -116,11 +114,12 @@ describe("GET /invites/:token/logo", () => {
       id: "invite-1",
       companyId: "company-1",
       inviteType: "company_join",
+      source: "board_api",
       allowedJoinTypes: "human",
       tokenHash: "hash",
       defaultsPayload: null,
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
-      invitedByUserId: null,
+      invitedByUserId: "board-user",
       revokedAt: null,
       acceptedAt: null,
       createdAt: new Date("2026-03-07T00:00:00.000Z"),

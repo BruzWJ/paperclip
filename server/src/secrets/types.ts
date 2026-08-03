@@ -3,7 +3,6 @@ import type {
   SecretProviderConfigDiscoveryPreviewResult,
   SecretProviderDescriptor,
 } from "@paperclipai/shared";
-import type { DeploymentMode } from "@paperclipai/shared";
 
 export interface StoredSecretVersionMaterial {
   [key: string]: unknown;
@@ -128,7 +127,6 @@ export interface SecretProviderModule {
   id: SecretProvider;
   descriptor(): SecretProviderDescriptor;
   validateConfig(input?: {
-    deploymentMode?: DeploymentMode;
     strictMode?: boolean;
     providerConfig?: SecretProviderVaultRuntimeConfig | null;
   }): Promise<SecretProviderValidationResult>;
@@ -184,7 +182,6 @@ export interface SecretProviderModule {
     providerConfig?: SecretProviderVaultRuntimeConfig | null;
   }): Promise<void>;
   healthCheck(input?: {
-    deploymentMode?: DeploymentMode;
     strictMode?: boolean;
     providerConfig?: SecretProviderVaultRuntimeConfig | null;
   }): Promise<SecretProviderHealthCheck>;

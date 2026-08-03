@@ -409,9 +409,9 @@ export const toolsApi = {
       `/companies/${companyId}/tools/action-requests?status=${encodeURIComponent(status)}`,
     ),
   approveActionRequest: (companyId: string, actionRequestId: string) =>
-    api.post<ToolActionRequest>(`/tool-gateway/action-requests/${actionRequestId}/approve`, { companyId }),
+    api.post<ToolActionRequest>(`/companies/${companyId}/tools/action-requests/${actionRequestId}/approve`, {}),
   declineActionRequest: (companyId: string, actionRequestId: string) =>
-    api.post<ToolActionRequest>(`/tool-gateway/action-requests/${actionRequestId}/decline`, { companyId }),
+    api.post<ToolActionRequest>(`/companies/${companyId}/tools/action-requests/${actionRequestId}/decline`, {}),
   createTrustRuleFromActionRequest: (
     companyId: string,
     actionRequestId: string,

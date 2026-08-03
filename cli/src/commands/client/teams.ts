@@ -20,6 +20,7 @@ import {
   type ResolvedClientContext,
 } from "./common.js";
 import { ApiRequestError } from "../../client/http.js";
+import { parseExplicitAdapterOverrides } from "./adapter-overrides.js";
 
 interface TeamBrowseOptions extends BaseClientOptions {
   kind?: string;
@@ -33,6 +34,7 @@ interface TeamPreviewOptions extends BaseClientOptions {
   companyId?: string;
   targetManagerAgentId?: string;
   targetManagerSlug?: string;
+  standalone?: boolean;
   agent?: string[];
   collisionStrategy?: "rename" | "skip" | "replace";
   nameOverride?: string[];
@@ -40,13 +42,16 @@ interface TeamPreviewOptions extends BaseClientOptions {
   allowExternalSources?: boolean;
   allowUnpinnedOptionalSources?: boolean;
   allowLocalPathSources?: boolean;
+  adapterOverride?: string[];
+  adapterConfig?: string[];
+  defaultEnvironmentId?: string[];
+  skillChannel?: string[];
 }
 
 interface TeamInstallOptions extends TeamPreviewOptions {
   requestApprovalOnForbidden?: boolean;
   approvalIssueId?: string;
   secretValue?: string[];
-  adapterOverride?: string[];
 }
 
 interface TeamInstallApprovalFallbackResult {
@@ -169,12 +174,17 @@ export function registerTeamCommands(program: Command): void {
       .command("preview")
       .description("Preview importing a catalog team into a company")
       .argument("<catalogRef>", "Catalog team ID, key, or unique slug")
-      .option("--target-manager-agent-id <id>", "Existing agent ID that catalog root agents should report to")
-      .option("--target-manager-slug <slug>", "Portable manager slug that catalog root agents should report to")
+      .option("--target-manager-agent-id <id>", "Attach imported root agents to this existing manager ID")
+      .option("--target-manager-slug <slug>", "Attach imported root agents to this existing manager slug")
+      .option("--standalone", "Explicitly install imported root agents as a standalone team", false)
       .option("--agent <slug>", "Only preview selected agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--collision-strategy <strategy>", "Import collision strategy (rename, skip, replace)")
       .option("--name-override <slug=name>", "Override an imported entity name; may be repeated", collectOptionValue, [] as string[])
       .option("--selected-file <path>", "Restrict import preview to selected portable file; may be repeated", collectOptionValue, [] as string[])
+      .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--default-environment-id <slug=id>", "Explicit execution environment UUID for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--allow-external-sources", "Allow GitHub, URL, or skills.sh skill sources declared by the catalog team", false)
       .option("--allow-unpinned-optional-sources", "Allow optional-team external skill sources that are not pinned to a commit", false)
       .option("--allow-local-path-sources", "Development only: allow local-path skill sources declared by the catalog team", false)
@@ -202,14 +212,18 @@ export function registerTeamCommands(program: Command): void {
       .command("install")
       .description("Install a catalog team into a company")
       .argument("<catalogRef>", "Catalog team ID, key, or unique slug")
-      .option("--target-manager-agent-id <id>", "Existing agent ID that catalog root agents should report to")
-      .option("--target-manager-slug <slug>", "Portable manager slug that catalog root agents should report to")
+      .option("--target-manager-agent-id <id>", "Attach imported root agents to this existing manager ID")
+      .option("--target-manager-slug <slug>", "Attach imported root agents to this existing manager slug")
+      .option("--standalone", "Explicitly install imported root agents as a standalone team", false)
       .option("--agent <slug>", "Only install selected agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--collision-strategy <strategy>", "Import collision strategy (rename, skip, replace)")
       .option("--name-override <slug=name>", "Override an imported entity name; may be repeated", collectOptionValue, [] as string[])
       .option("--selected-file <path>", "Restrict install to selected portable file; may be repeated", collectOptionValue, [] as string[])
       .option("--secret-value <key=value>", "Secret env input value for install; may be repeated", collectOptionValue, [] as string[])
-      .option("--adapter-override <slug=type>", "Adapter type override for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--default-environment-id <slug=id>", "Explicit execution environment UUID for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--allow-external-sources", "Allow GitHub, URL, or skills.sh skill sources declared by the catalog team", false)
       .option("--allow-unpinned-optional-sources", "Allow optional-team external skill sources that are not pinned to a commit", false)
       .option("--allow-local-path-sources", "Development only: allow local-path skill sources declared by the catalog team", false)
@@ -218,7 +232,7 @@ export function registerTeamCommands(program: Command): void {
         "When install is denied by agents:create permissions, create a board approval request instead of exiting with the raw 403",
         false,
       )
-      .option("--approval-issue-id <id>", "Issue ID to link to the fallback approval request; defaults to PAPERCLIP_TASK_ID when set")
+      .option("--approval-issue-id <id>", "Issue ID to link to the fallback approval request")
       .action(async (catalogRef: string, opts: TeamInstallOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
@@ -350,13 +364,31 @@ function catalogTeamCompanyPath(companyId: string | undefined, catalogRef: strin
 }
 
 function buildTeamOptions(opts: TeamPreviewOptions): CatalogTeamImportOptions {
+  const explicitTargetCount = [
+    Boolean(opts.targetManagerAgentId?.trim()),
+    Boolean(opts.targetManagerSlug?.trim()),
+    opts.standalone === true,
+  ].filter(Boolean).length;
+  if (explicitTargetCount > 1) {
+    throw new Error(
+      "Choose exactly one catalog team target: --target-manager-agent-id, --target-manager-slug, or --standalone.",
+    );
+  }
   return removeUndefined({
-    targetManagerAgentId: emptyStringToUndefined(opts.targetManagerAgentId),
-    targetManagerSlug: emptyStringToUndefined(opts.targetManagerSlug),
+    targetManagerAgentId: opts.standalone
+      ? null
+      : opts.targetManagerAgentId,
+    targetManagerSlug: opts.targetManagerSlug,
     agents: opts.agent && opts.agent.length > 0 ? opts.agent : undefined,
     collisionStrategy: opts.collisionStrategy,
     nameOverrides: parseNameOverrides(opts.nameOverride),
     selectedFiles: opts.selectedFile && opts.selectedFile.length > 0 ? opts.selectedFile : undefined,
+    adapterOverrides: parseExplicitAdapterOverrides(
+      opts.adapterOverride,
+      opts.adapterConfig,
+      opts.defaultEnvironmentId,
+      opts.skillChannel,
+    ),
     sourcePolicy: buildSourcePolicy(opts),
   });
 }
@@ -364,26 +396,20 @@ function buildTeamOptions(opts: TeamPreviewOptions): CatalogTeamImportOptions {
 function buildTeamInstallOptions(opts: TeamInstallOptions): CatalogTeamInstallOptions {
   return removeUndefined({
     ...buildTeamOptions(opts),
-    adapterOverrides: parseAdapterOverrides(opts.adapterOverride),
     secretValues: parseSecretValues(opts.secretValue),
   });
 }
 
 const INSTALL_APPROVAL_FALLBACK_MESSAGES = [
   "missing permission: agents:create",
-  "missing permission: can create agents",
 ];
 const SECRET_VALUE_REDACTION = "[redacted]";
 
 function shouldRequestInstallApproval(error: unknown, opts: TeamInstallOptions): error is ApiRequestError {
-  if (!(opts.requestApprovalOnForbidden || isPaperclipTaskRun())) return false;
+  if (!opts.requestApprovalOnForbidden) return false;
   if (!(error instanceof ApiRequestError) || error.status !== 403) return false;
   const message = error.message.toLowerCase();
   return INSTALL_APPROVAL_FALLBACK_MESSAGES.some((expected) => message.includes(expected));
-}
-
-function isPaperclipTaskRun(): boolean {
-  return Boolean(process.env.PAPERCLIP_TASK_ID?.trim());
 }
 
 async function requestInstallApproval(
@@ -404,12 +430,12 @@ async function requestInstallApproval(
     payload: {
       title: `Approve catalog team install: ${trimmedRef}`,
       summary:
-        `A Paperclip CLI agent-run attempted to install catalog team "${trimmedRef}" into company "${ctx.companyId}", ` +
+        `A board CLI request attempted to install catalog team "${trimmedRef}" into company "${ctx.companyId}", ` +
         `but the API denied the install with: ${error.message}.`,
       recommendedAction:
-        "Approve the catalog team source and rerun the install with a board or agent-creator token, or grant agents:create to the requesting agent and rerun the same command.",
+        "Approve the catalog team source and rerun the install with board authority.",
       risks: [
-        "Catalog team installation can create agents, projects, tasks, routines, skills, and secret bindings.",
+        "Catalog team installation can create agents, projects, issues, routines, skills, and secret bindings.",
         "Only approve after checking the catalog source, selected files, target manager, and collision strategy.",
       ],
       installAttempt: {
@@ -453,7 +479,7 @@ function redactInstallSecretValues(options: CatalogTeamInstallOptions): CatalogT
 }
 
 function resolveApprovalIssueIds(opts: TeamInstallOptions): string[] | undefined {
-  const issueId = opts.approvalIssueId?.trim() || process.env.PAPERCLIP_TASK_ID?.trim();
+  const issueId = opts.approvalIssueId?.trim();
   if (!issueId) return undefined;
   return isUuidLike(issueId) ? [issueId] : undefined;
 }
@@ -493,21 +519,6 @@ function parseSecretValues(values: string[] | undefined): Record<string, string>
       throw new Error(`Invalid --secret-value "${raw}". Use key=value.`);
     }
     result[key] = value;
-  }
-  return result;
-}
-
-function parseAdapterOverrides(
-  values: string[] | undefined,
-): CatalogTeamInstallOptions["adapterOverrides"] | undefined {
-  if (!values || values.length === 0) return undefined;
-  const result: NonNullable<CatalogTeamInstallOptions["adapterOverrides"]> = {};
-  for (const raw of values) {
-    const [slug, adapterType] = parseKeyValueOption(raw, "--adapter-override", "slug=type");
-    if (!slug || !adapterType) {
-      throw new Error(`Invalid --adapter-override "${raw}". Use slug=type.`);
-    }
-    result[slug] = { adapterType };
   }
   return result;
 }
@@ -640,7 +651,7 @@ function printCatalogTeamDetail(team: CatalogTeam): void {
   console.log(`recommendedForCompanyTypes=${team.recommendedForCompanyTypes.join(",") || "-"}`);
   console.log(`tags=${team.tags.join(",") || "-"}`);
   console.log(
-    `counts=agents:${team.counts.agents},projects:${team.counts.projects},tasks:${team.counts.tasks},skills:${team.counts.localSkills + team.counts.catalogSkills}`,
+    `counts=agents:${team.counts.agents},projects:${team.counts.projects},issues:${team.counts.issues},skills:${team.counts.localSkills + team.counts.catalogSkills}`,
   );
   console.log("files:");
   printTable(team.files.map((file) => ({

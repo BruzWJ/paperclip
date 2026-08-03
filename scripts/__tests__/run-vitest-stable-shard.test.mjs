@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -9,9 +18,17 @@ import {
   loadShardDurations,
   partitionGeneralServerSuites,
 } from "../general-server-shard.mjs";
+import {
+  buildProjectVitestInvocation,
+  buildIsolatedVitestEnv,
+  isSerializedServerTest,
+  prepareStandaloneVitestProjects,
+} from "../run-vitest-stable.mjs";
+import { discoverVitestProjectManifest } from "../vitest-project-manifest.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const script = path.join(repoRoot, "scripts", "run-vitest-stable.mjs");
+const watchScript = path.join(repoRoot, "scripts", "run-vitest-watch.mjs");
 const durationsManifest = path.join(repoRoot, "scripts", "general-server-shard-durations.json");
 
 function dryRun(args) {
@@ -29,6 +46,254 @@ function dryRunJson(args) {
 }
 
 const SHARD_COUNT = 3;
+const REQUIRED_ADDED_PROJECT_PATHS = [
+  "packages/google-sheets-mcp-server",
+  "packages/kv-demo-mcp-server",
+  "packages/teams-catalog",
+  "packages/plugins/paperclip-plugin-fake-sandbox",
+  "packages/plugins/plugin-llm-wiki",
+  "packages/plugins/plugin-workspace-diff",
+  "packages/plugins/examples/plugin-authoring-smoke-example",
+  "packages/plugins/examples/plugin-orchestration-smoke-example",
+  "packages/plugins/sandbox-providers/cloudflare",
+  "packages/plugins/sandbox-providers/cloudflare/bridge-template",
+  "packages/plugins/sandbox-providers/daytona",
+  "packages/plugins/sandbox-providers/e2b",
+  "packages/plugins/sandbox-providers/exe-dev",
+  "packages/plugins/sandbox-providers/kubernetes",
+  "packages/plugins/sandbox-providers/modal",
+  "packages/plugins/sandbox-providers/novita",
+];
+const RAW_CENSUS_ROOTS = ["packages", "server", "ui", "cli"];
+const RAW_CENSUS_IGNORED_DIRECTORIES = new Set([
+  ".git",
+  "dist",
+  "node_modules",
+  "playwright-report",
+  "test-results",
+]);
+const RAW_VITEST_FILE_PATTERN = /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/;
+const SERIALIZED_FAMILY_PATTERNS = [
+  /(?:^|\/)issue-execution(?:-|\/)/,
+  /(?:^|\/)issue-session(?:-|\/)/,
+  /(?:^|\/)[^/]*liveness[^/]*\.test\.ts$/,
+  /(?:^|\/)[^/]*(?:prompt|acp)[^/]*\.test\.ts$/,
+  /(?:^|\/)[^/]*postgres[^/]*\.test\.ts$/,
+];
+
+test("the stable runner cannot inherit application or libpq database credentials", () => {
+  const retiredTestDatabaseUrl = ["PAPERCLIP", "TEST", "DATABASE", "URL"].join("_");
+  const env = buildIsolatedVitestEnv(
+    {
+      DATABASE_URL: "postgres://production.invalid/paperclip",
+      PAPERCLIP_DATABASE_URL: "postgres://development.invalid/paperclip",
+      [retiredTestDatabaseUrl]: "postgres://retired.invalid/paperclip",
+      PGHOST: "production.invalid",
+      PGPASSWORD: "do-not-inherit",
+      POSTGRES_PASSWORD: "do-not-inherit",
+      PAPERCLIP_CONFIG: "/tmp/production-paperclip-config.json",
+      NODE_OPTIONS: "--require dotenv/config",
+      NODE_PATH: "/tmp/production-node-modules",
+      NPM_CONFIG_NODE_OPTIONS: "--require dotenv/config",
+      npm_config_node_options: "--require dotenv/config",
+      DOTENV_CONFIG_PATH: "/tmp/production.env",
+      DOTENV_CONFIG_OVERRIDE: "true",
+      DOTENV_KEY: "dotenv://production-key",
+      NODE_CONFIG_DIR: "/tmp/production-config",
+      NODE_CONFIG_ENV: "production",
+      CONFIG_PATH: "/tmp/production-config.json",
+      ENV_FILE: "/tmp/production.env",
+      ENV_FILE_PATH: "/tmp/production.env",
+      ENV_PATH: "/tmp/production.env",
+      KEEP_ME: "must-not-cross-the-test-boundary",
+    },
+    "/tmp/paperclip-zero-db-contract",
+    "vitest-zero-db-contract",
+  );
+
+  assert.equal(env.KEEP_ME, undefined);
+  assert.equal(env.NODE_ENV, "test");
+  assert.equal(env.PAPERCLIP_INSTANCE_ID, "vitest-zero-db-contract");
+  assert.equal(env.DATABASE_URL, undefined);
+  assert.equal(env.PAPERCLIP_DATABASE_URL, undefined);
+  assert.equal(env[retiredTestDatabaseUrl], undefined);
+  assert.equal(env.PGHOST, undefined);
+  assert.equal(env.PGPASSWORD, undefined);
+  assert.equal(env.POSTGRES_PASSWORD, undefined);
+  assert.equal(env.PAPERCLIP_CONFIG, undefined);
+  assert.equal(env.NODE_OPTIONS, undefined);
+  assert.equal(env.NODE_PATH, undefined);
+  assert.equal(env.NPM_CONFIG_NODE_OPTIONS, undefined);
+  assert.equal(env.npm_config_node_options, undefined);
+  assert.equal(env.DOTENV_CONFIG_PATH, undefined);
+  assert.equal(env.DOTENV_CONFIG_OVERRIDE, undefined);
+  assert.equal(env.DOTENV_KEY, undefined);
+  assert.equal(env.NODE_CONFIG_DIR, undefined);
+  assert.equal(env.NODE_CONFIG_ENV, undefined);
+  assert.equal(env.CONFIG_PATH, undefined);
+  assert.equal(env.ENV_FILE, undefined);
+  assert.equal(env.ENV_FILE_PATH, undefined);
+  assert.equal(env.ENV_PATH, undefined);
+});
+
+test("the stable runner disables inherited Node and dotenv preload hooks", () => {
+  const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-preload-"));
+  try {
+    const preloadPath = path.join(fixtureRoot, "reload-database.cjs");
+    writeFileSync(
+      preloadPath,
+      [
+        'process.env.DATABASE_URL = "postgres://rehydrated.invalid/paperclip";',
+        'process.env.PAPERCLIP_TEST_PRELOAD_RAN = "true";',
+      ].join("\n"),
+    );
+    const env = buildIsolatedVitestEnv(
+      {
+        ...process.env,
+        NODE_OPTIONS: `--require ${preloadPath}`,
+        DOTENV_CONFIG_PATH: path.join(fixtureRoot, ".env"),
+      },
+      fixtureRoot,
+      "vitest-preload-contract",
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        "process.stdout.write(JSON.stringify({ databaseUrl: process.env.DATABASE_URL, preloadRan: process.env.PAPERCLIP_TEST_PRELOAD_RAN }))",
+      ],
+      { env, encoding: "utf8" },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {});
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("watch mode uses the same zero-database environment builder", () => {
+  const source = readFileSync(watchScript, "utf8");
+  assert.match(source, /buildIsolatedVitestEnv\(process\.env/);
+  assert.match(source, /prepareStandaloneVitestProjects\(repoRoot, projects\)/);
+  assert.doesNotMatch(source, /env:\s*process\.env/);
+});
+
+test("standalone projects use isolated pnpm installation and existing SDK linking", () => {
+  const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-standalone-"));
+  const project = {
+    name: "@paperclipai/plugin-fixture-sandbox",
+    path: "packages/plugins/sandbox-providers/fixture",
+    requiresStandaloneInstall: true,
+  };
+  const spawned = [];
+  const linked = [];
+  try {
+    mkdirSync(path.join(fixtureRoot, project.path), { recursive: true });
+    prepareStandaloneVitestProjects(fixtureRoot, [project], {
+      spawn(command, args, options) {
+        spawned.push({ command, args, cwd: options.cwd });
+        return { status: 0 };
+      },
+      linkSdk(projectRoot) {
+        linked.push(projectRoot);
+      },
+    });
+
+    assert.deepEqual(spawned, [{
+      command: "pnpm",
+      args: ["install", "--ignore-workspace", "--no-lockfile"],
+      cwd: path.join(fixtureRoot, project.path),
+    }]);
+    assert.deepEqual(linked, [path.join(fixtureRoot, project.path)]);
+    assert.deepEqual(buildProjectVitestInvocation(fixtureRoot, project), {
+      cwd: path.join(fixtureRoot, project.path),
+      args: ["--config", "vitest.config.ts"],
+    });
+
+    mkdirSync(path.join(fixtureRoot, project.path, "node_modules", ".bin"), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(
+        fixtureRoot,
+        project.path,
+        "node_modules",
+        ".bin",
+        process.platform === "win32" ? "vitest.cmd" : "vitest",
+      ),
+      "",
+    );
+    spawned.length = 0;
+    prepareStandaloneVitestProjects(fixtureRoot, [project], {
+      spawn() {
+        throw new Error("ready standalone project must not reinstall");
+      },
+      linkSdk() {},
+    });
+    assert.deepEqual(spawned, []);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+function walkFiles(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = path.join(directory, entry.name);
+    return entry.isDirectory() ? walkFiles(absolute) : [absolute];
+  });
+}
+
+// Deliberately independent from the manifest's package/config discovery. This
+// raw walk is the oracle that catches a filtered manifest silently omitting a
+// new directory, package, or suite.
+function rawVitestFileCensus() {
+  const files = [];
+  function visit(directory) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isFile() && RAW_VITEST_FILE_PATTERN.test(entry.name)) {
+        files.push(path.relative(repoRoot, absolute).split(path.sep).join("/"));
+      } else if (
+        entry.isDirectory() &&
+        !entry.isSymbolicLink() &&
+        !RAW_CENSUS_IGNORED_DIRECTORIES.has(entry.name)
+      ) {
+        visit(absolute);
+      }
+    }
+  }
+  for (const root of RAW_CENSUS_ROOTS) visit(path.join(repoRoot, root));
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+function requiredSerializedFamilies(files) {
+  return files.filter((file) =>
+    SERIALIZED_FAMILY_PATTERNS.some((pattern) => pattern.test(file)),
+  );
+}
+
+function assertSerializedFamilyCoverage(allFiles, serializedFiles) {
+  const serialized = new Set(serializedFiles);
+  const missing = requiredSerializedFamilies(allFiles).filter(
+    (file) => !serialized.has(file),
+  );
+  assert.deepEqual(
+    missing,
+    [],
+    `canonical serialized suites fell into the general lane: ${missing.join(", ")}`,
+  );
+}
+
+function assertProjectCoverage(expectedPaths, actualPaths) {
+  const actual = new Set(actualPaths);
+  const missing = expectedPaths.filter((projectPath) => !actual.has(projectPath));
+  assert.deepEqual(
+    missing,
+    [],
+    `stable runner omitted test-bearing projects: ${missing.join(", ")}`,
+  );
+}
 
 test("the general-server shards form a complete, non-overlapping partition", () => {
   const shards = Array.from({ length: SHARD_COUNT }, (_, index) =>
@@ -54,14 +319,232 @@ test("the general-server shards form a complete, non-overlapping partition", () 
   assert.equal(seen.size, total, "union of shards must cover the whole suite set");
 });
 
-test("a route/authz suite never leaks into the general-server shards", () => {
-  const shard = dryRunJson(["--mode", "general", "--group", "general-server", "--shard-index", "0", "--shard-count", SHARD_COUNT.toString()]);
-  for (const file of shard.selectedGeneralServerSuites) {
+test("a serialized suite never leaks into the general-server shards", () => {
+  const general = dryRunJson(["--mode", "general", "--group", "general-server", "--shard-index", "0", "--shard-count", "1"]);
+  const serialized = dryRunJson(["--mode", "serialized"]);
+  const serializedSet = new Set(serialized.selectedSerializedSuites);
+  for (const file of general.selectedGeneralServerSuites) {
     assert.ok(
-      !/[^/]*(?:route|routes|authz)[^/]*\.test\.ts$/.test(file),
-      `route/authz suite must stay in the serialized lane, not general-server: ${file}`,
+      !serializedSet.has(file),
+      `serialized suite must stay out of general-server: ${file}`,
     );
   }
+});
+
+test("execution, Session, liveness, prompt/ACP, and PostgreSQL suites are structurally serialized", () => {
+  const allServerTests = walkFiles(path.join(repoRoot, "server", "src"))
+    .map((file) => path.relative(repoRoot, file).split(path.sep).join("/"))
+    .filter((file) => file.endsWith(".test.ts"))
+    .sort();
+  const serialized = dryRunJson(["--mode", "serialized"])
+    .selectedSerializedSuites;
+  const required = requiredSerializedFamilies(allServerTests);
+  assert.ok(required.length >= 30, "expected the canonical serialized domain families");
+  assertSerializedFamilyCoverage(allServerTests, serialized);
+  for (const file of required) {
+    assert.equal(
+      isSerializedServerTest(file),
+      true,
+      `canonical classifier rejected ${file}`,
+    );
+  }
+
+  const representatives = [
+    "server/src/services/issue-execution-run-service.test.ts",
+    "server/src/services/issue-session/publication.test.ts",
+    "server/src/services/issue-liveness-reconciliation.test.ts",
+    "server/src/services/acp-prompt-settlement.test.ts",
+    "server/src/services/prompt-capability-gateway.test.ts",
+    "server/src/__tests__/ordinary-issue-runtime-postgres.test.ts",
+  ];
+  for (const removed of representatives) {
+    assert.throws(
+      () =>
+        assertSerializedFamilyCoverage(
+          allServerTests,
+          serialized.filter((file) => file !== removed),
+        ),
+      new RegExp(removed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `coverage mutation must detect removal of ${removed}`,
+    );
+  }
+});
+
+test("the project manifest assigns the independent raw Vitest census exactly once", () => {
+  const dry = dryRunJson([
+    "--mode",
+    "general",
+    "--group",
+    "general-workspaces-b",
+  ]);
+  const actualPaths = dry.testProjects.map((project) => project.path);
+  assertProjectCoverage(REQUIRED_ADDED_PROJECT_PATHS, actualPaths);
+  assert.deepEqual(dry.serializedWorkspaceProjects, ["@paperclipai/db"]);
+  assert.ok(
+    !dry.generalWorkspacesBProjects.includes("@paperclipai/db"),
+    "database project must run in the serialized lane only",
+  );
+
+  const rawFiles = rawVitestFileCensus();
+  const assignedFiles = dry.testFileAssignments
+    .map((assignment) => assignment.file)
+    .sort((left, right) => left.localeCompare(right));
+  assert.ok(rawFiles.length > 0, "expected a non-empty app-wide Vitest census");
+  assert.equal(
+    new Set(assignedFiles).size,
+    assignedFiles.length,
+    "a Vitest suite was assigned to more than one project/lane",
+  );
+  assert.deepEqual(
+    assignedFiles,
+    rawFiles,
+    "the canonical manifest must cover every raw first-party Vitest suite",
+  );
+
+  const sandboxAssignments = dry.testFileAssignments.filter((assignment) =>
+    assignment.file.startsWith("packages/plugins/sandbox-providers/"),
+  );
+  const rawSandboxFiles = rawFiles.filter((file) =>
+    file.startsWith("packages/plugins/sandbox-providers/"),
+  );
+  assert.ok(rawSandboxFiles.length >= 26, "expected the complete sandbox-provider census");
+  assert.deepEqual(
+    sandboxAssignments.map((assignment) => assignment.file).sort(),
+    rawSandboxFiles,
+  );
+  assert.ok(
+    sandboxAssignments.every(
+      (assignment) => assignment.lane === "general-workspaces-b",
+    ),
+    "every sandbox-provider suite must belong to the workspace-b lane",
+  );
+
+  const laneProjectNames = [
+    "@paperclipai/server",
+    ...dry.generalWorkspacesAProjects,
+    ...dry.generalWorkspacesBProjects,
+    ...dry.serializedWorkspaceProjects,
+  ];
+  assert.equal(new Set(laneProjectNames).size, dry.testProjects.length);
+  assert.deepEqual(
+    laneProjectNames.slice().sort(),
+    dry.testProjects.map((project) => project.name).sort(),
+    "every discovered project must belong to exactly one runner lane",
+  );
+
+  for (const removed of REQUIRED_ADDED_PROJECT_PATHS) {
+    assert.throws(
+      () =>
+        assertProjectCoverage(
+          REQUIRED_ADDED_PROJECT_PATHS,
+          actualPaths.filter((projectPath) => projectPath !== removed),
+        ),
+      new RegExp(removed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `coverage mutation must detect removal of ${removed}`,
+    );
+  }
+
+  const removedSandboxSuite = sandboxAssignments[0].file;
+  assert.notDeepEqual(
+    dry.testFileAssignments
+      .filter((assignment) => assignment.file !== removedSandboxSuite)
+      .map((assignment) => assignment.file)
+      .sort(),
+    rawFiles,
+    "raw census must detect a removed sandbox-provider assignment",
+  );
+});
+
+test("a new test-bearing package fails closed until it owns a Vitest project config", () => {
+  const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-projects-"));
+  try {
+    const projectRoot = path.join(fixtureRoot, "packages", "new-project");
+    mkdirSync(path.join(projectRoot, "src"), { recursive: true });
+    writeFileSync(
+      path.join(projectRoot, "package.json"),
+      JSON.stringify({ name: "@paperclipai/new-project", type: "module" }),
+    );
+    writeFileSync(
+      path.join(fixtureRoot, "pnpm-workspace.yaml"),
+      "packages:\n  - packages/*\n",
+    );
+    writeFileSync(path.join(projectRoot, "src", "new.test.ts"), "export {};\n");
+    assert.throws(
+      () => discoverVitestProjectManifest(fixtureRoot),
+      /has Vitest test files but no vitest\.config\.ts/,
+    );
+
+    writeFileSync(
+      path.join(projectRoot, "vitest.config.ts"),
+      "export default {};\n",
+    );
+    assert.deepEqual(discoverVitestProjectManifest(fixtureRoot).projects, [
+      {
+        name: "@paperclipai/new-project",
+        path: "packages/new-project",
+        lane: "general-workspaces-b",
+        workspace: true,
+        requiresStandaloneInstall: false,
+        testFiles: ["packages/new-project/src/new.test.ts"],
+      },
+    ]);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("root Vitest configuration uses the same discovered project manifest", () => {
+  const source = readFileSync(path.join(repoRoot, "vitest.config.ts"), "utf8");
+  const assertCanonicalWiring = (candidate) => {
+    assert.match(candidate, /discoverVitestProjectManifest\(repositoryRoot\)/);
+    assert.match(candidate, /projects:\s*projects\.map/);
+  };
+  assertCanonicalWiring(source);
+  assert.throws(
+    () =>
+      assertCanonicalWiring(
+        source.replace("discoverVitestProjectManifest(repositoryRoot)", "{ projects: [] }"),
+      ),
+    /discoverVitestProjectManifest/,
+  );
+});
+
+test("sandbox configs execute nested and opt-in suites through one project each", () => {
+  const cloudflareConfig = readFileSync(
+    path.join(
+      repoRoot,
+      "packages/plugins/sandbox-providers/cloudflare/vitest.config.ts",
+    ),
+    "utf8",
+  );
+  const bridgeConfig = readFileSync(
+    path.join(
+      repoRoot,
+      "packages/plugins/sandbox-providers/cloudflare/bridge-template/vitest.config.ts",
+    ),
+    "utf8",
+  );
+  const daytonaConfig = readFileSync(
+    path.join(
+      repoRoot,
+      "packages/plugins/sandbox-providers/daytona/vitest.config.ts",
+    ),
+    "utf8",
+  );
+  const kubernetesConfig = readFileSync(
+    path.join(
+      repoRoot,
+      "packages/plugins/sandbox-providers/kubernetes/vitest.config.ts",
+    ),
+    "utf8",
+  );
+
+  assert.match(cloudflareConfig, /include:\s*\["src\/\*\*\/\*\.test\.ts"\]/);
+  assert.doesNotMatch(cloudflareConfig, /bridge-template\/src/);
+  assert.match(bridgeConfig, /include:\s*\["src\/\*\*\/\*\.test\.ts"\]/);
+  assert.doesNotMatch(daytonaConfig, /\broot\s*:/);
+  assert.match(daytonaConfig, /include:\s*\["src\/\*\*\/\*\.test\.ts"\]/);
+  assert.match(kubernetesConfig, /"test\/integration\/\*\*\/\*\.test\.ts"/);
 });
 
 test("shard flags are rejected for the parallel workspace groups", () => {

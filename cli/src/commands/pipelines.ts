@@ -72,6 +72,12 @@ interface PipelineOptions extends BaseClientOptions {
   companyId?: string;
 }
 
+interface OpenConversationOptions extends PipelineOptions {
+  ownerAgentId: string;
+  request: string;
+  idempotencyKey?: string;
+}
+
 interface CreateOptions extends PipelineOptions {
   key: string;
   name: string;
@@ -623,11 +629,18 @@ function registerCaseCommands(caseCommand: Command): void {
   addPipelineOptions(
     caseCommand
       .command("open-conversation")
-      .description("Open or return the case conversation issue")
+      .description("Create a board-authored case discussion issue")
       .argument("<caseId>", "Case ID")
-      .action((caseId: string, opts: PipelineOptions) => withPipelineErrors(async () => {
+      .requiredOption("--owner-agent-id <id>", "Agent owner ID")
+      .requiredOption("--request <text>", "Immutable discussion request")
+      .option("--idempotency-key <key>", "Retry key")
+      .action((caseId: string, opts: OpenConversationOptions) => withPipelineErrors(async () => {
         const ctx = resolvePipelineContext(opts);
-        printOutput(await ctx.api.post(apiPath`/api/cases/${caseId}/open-conversation`, {}), { json: ctx.json });
+        printOutput(await ctx.api.post(apiPath`/api/cases/${caseId}/open-conversation`, {
+          ownerAgentId: opts.ownerAgentId,
+          request: opts.request,
+          idempotencyKey: opts.idempotencyKey,
+        }), { json: ctx.json });
       })),
   );
 }

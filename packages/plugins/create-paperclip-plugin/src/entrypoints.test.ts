@@ -70,5 +70,8 @@ describe("create-paperclip-plugin entrypoints", () => {
         ui: "./dist/ui/",
       },
     });
+    expect(
+      fs.readFileSync(path.join(outputDir, "tests", "plugin.spec.ts"), "utf8"),
+    ).toContain('{ actor: { type: "system", companyId: null } }');
   });
 });

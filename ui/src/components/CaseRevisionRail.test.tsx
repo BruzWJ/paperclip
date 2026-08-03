@@ -53,7 +53,12 @@ const revisions: CaseDocumentRevisions = {
       createdByUserId: null,
       createdByRunId: "run-2",
       actorAgentName: "Cases Agent",
-      issue: { id: "i1", identifier: "PAP-42", title: "Task", status: "in_progress" },
+      issue: {
+        id: "i1",
+        identifier: "PAP-42",
+        title: "Task",
+        boardPresentationStatus: "in_progress",
+      },
     },
     {
       id: "r1",

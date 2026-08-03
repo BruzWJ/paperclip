@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./fixtures";
 import { ciSmokeLabScenarios, type SmokeLabLifecycleTool, type SmokeLabScenario, type SmokeRunStepPath } from "./smoke-lab.catalog";
 
 type SmokeRunStepStatus = "pass" | "fail" | "skipped";
@@ -39,11 +39,11 @@ type TestCallResult = {
   actionRequestId?: string;
   error?: { reasonCode?: string | null; message: string };
 };
-type GatewaySession = {
-  sessionId: string;
+type NamedGatewayAccess = {
+  gatewayId: string;
+  tokenId: string;
   token: string;
-  toolsUrl: string;
-  callUrl: string;
+  mcpUrl: string;
 };
 
 async function json<T = Json>(response: Awaited<ReturnType<APIRequestContext["get"]>>): Promise<T> {
@@ -73,8 +73,8 @@ async function createScout(request: APIRequestContext, companyId: string): Promi
         role: "qa",
         title: "Smoke Lab scout",
         capabilities: "Runs deterministic Smoke Lab fixture calls.",
-        adapterType: "process",
-        adapterConfig: { command: "node", args: ["-e", "setTimeout(() => {}, 1000)"] },
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
       },
     }),
   );
@@ -251,9 +251,9 @@ async function policy(
 }
 
 async function approveActionRequest(request: APIRequestContext, companyId: string, actionRequestId: string) {
-  await json(await request.post(`/api/tool-gateway/action-requests/${actionRequestId}/approve`, {
-    data: { companyId },
-  }));
+  await json(await request.post(
+    `/api/companies/${companyId}/tools/action-requests/${actionRequestId}/approve`,
+  ));
 }
 
 async function pollTestCall(
@@ -285,19 +285,45 @@ async function expectAuditEvent(
   expect(audit.events.length, `expected audit/activity row matching ${options.search}`).toBeGreaterThan(0);
 }
 
-async function createGatewaySession(request: APIRequestContext, companyId: string, scout: Scout): Promise<GatewaySession> {
-  const invoked = await json<{ id: string }>(await request.post(`/api/agents/${scout.id}/heartbeat/invoke`));
-  return await json<GatewaySession>(
-    await request.post("/api/tool-gateway/sessions", {
-      data: { companyId, agentId: scout.id, runId: invoked.id, ttlMs: 60_000 },
+async function createNamedGatewayAccess(request: APIRequestContext, companyId: string): Promise<NamedGatewayAccess> {
+  const suffix = `${Date.now()}`;
+  const profile = await json<{ id: string }>(
+    await request.post(`/api/companies/${companyId}/tools/profiles`, {
+      data: {
+        profileKey: `smoke-named-gateway-${suffix}`,
+        name: `Smoke named gateway ${suffix}`,
+        defaultAction: "allow",
+      },
     }),
   );
+  const gateway = await json<{ id: string }>(
+    await request.post(`/api/companies/${companyId}/tools/gateways`, {
+      data: { name: `Smoke named gateway ${suffix}`, profileId: profile.id },
+    }),
+  );
+  const token = await json<{ id: string; token: string }>(
+    await request.post(`/api/tool-gateway/gateways/${gateway.id}/tokens`, {
+      data: {
+        companyId,
+        name: `Smoke client ${suffix}`,
+        clientLabel: "Smoke Lab",
+        ownerNote: "Ephemeral named-gateway revocation check",
+      },
+    }),
+  );
+  return {
+    gatewayId: gateway.id,
+    tokenId: token.id,
+    token: token.token,
+    mcpUrl: `/api/tool-gateway/gateways/${gateway.id}/mcp`,
+  };
 }
 
-async function gatewayFetch(request: APIRequestContext, path: string, token: string, data?: Json) {
-  const headers = { "x-paperclip-tool-gateway-token": token };
-  if (data) return await request.post(path, { headers, data });
-  return await request.get(path, { headers });
+async function namedGatewayList(request: APIRequestContext, access: NamedGatewayAccess) {
+  return await request.post(access.mcpUrl, {
+    headers: { authorization: `Bearer ${access.token}` },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+  });
 }
 
 test.describe.serial("Smoke Lab scenario catalog mirror", () => {
@@ -396,14 +422,14 @@ test.describe.serial("Smoke Lab scenario catalog mirror", () => {
         });
 
         await runRecordedStep(page, request, seed, smokeRun.id, scenario, "revoke", async () => {
-          if (scenario.transport === "gateway_session") {
-            const session = await createGatewaySession(request, seed.companyId, scout);
-            const listed = await gatewayFetch(request, session.toolsUrl, session.token);
+          if (scenario.transport === "named_gateway") {
+            const access = await createNamedGatewayAccess(request, seed.companyId);
+            const listed = await namedGatewayList(request, access);
             expect(listed.ok()).toBe(true);
-            await json(await request.post(`/api/tool-gateway/sessions/${session.sessionId}/revoke`, {
+            await json(await request.post(`/api/tool-gateway/gateway-tokens/${access.tokenId}/revoke`, {
               data: { companyId: seed.companyId },
             }));
-            await expectError(await gatewayFetch(request, session.toolsUrl, session.token), 401);
+            await expectError(await namedGatewayList(request, access), 401);
             await page.goto(`/${seed.prefix}/apps/${connection.id}/activity`);
             return scenario.lifecycle.revoke;
           }

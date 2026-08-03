@@ -7,10 +7,7 @@ import {
   issueChatLongThreadComments,
   issueChatLongThreadEvents,
   issueChatLongThreadFixtureContext,
-  issueChatLongThreadLinkedRuns,
-  issueChatLongThreadLiveRuns,
   issueChatLongThreadMarkdownCommentIds,
-  issueChatLongThreadTranscriptsByRunId,
   LONG_THREAD_COMMENT_COUNT,
   LONG_THREAD_MARKDOWN_COMMENT_COUNT,
 } from "../fixtures/issueChatLongThreadFixture";
@@ -59,7 +56,7 @@ export function IssueChatLongThreadPerf() {
   const publishedRef = useRef(false);
   const fixture = issueChatLongThreadFixtureContext;
   const rowTarget = useMemo(
-    () => LONG_THREAD_COMMENT_COUNT + issueChatLongThreadEvents.length + issueChatLongThreadLinkedRuns.length,
+    () => LONG_THREAD_COMMENT_COUNT + issueChatLongThreadEvents.length,
     [],
   );
 
@@ -112,7 +109,9 @@ export function IssueChatLongThreadPerf() {
             <Badge variant="outline" className="font-mono text-(length:--text-micro)">
               {fixture.issue.identifier}
             </Badge>
-            <Badge variant="secondary">{fixture.issue.status.replace(/_/g, " ")}</Badge>
+            <Badge variant="secondary">
+              {fixture.issue.boardPresentationStatus.replace(/_/g, " ")}
+            </Badge>
             <Badge variant="outline">{fixture.issue.projectName}</Badge>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">{fixture.issue.title}</h1>
@@ -160,18 +159,13 @@ export function IssueChatLongThreadPerf() {
           <Profiler id="issue-chat-long-thread" onRender={handleRender}>
             <IssueChatThread
               comments={issueChatLongThreadComments}
-              linkedRuns={issueChatLongThreadLinkedRuns}
               timelineEvents={issueChatLongThreadEvents}
-              liveRuns={issueChatLongThreadLiveRuns}
               issueStatus="in_progress"
               agentMap={issueChatLongThreadAgentMap}
               currentUserId="user-board"
               onAdd={noop}
               showComposer={false}
               showJumpToLatest={false}
-              enableLiveTranscriptPolling={false}
-              transcriptsByRunId={issueChatLongThreadTranscriptsByRunId}
-              hasOutputForRun={(runId) => issueChatLongThreadTranscriptsByRunId.has(runId)}
             />
           </Profiler>
         </main>

@@ -104,11 +104,15 @@ feedback-export-20260331T120000Z/
   full-traces/
     PAP-123-e5f6g7h8/
       bundle.json              # full export manifest for the trace
-      ...raw adapter files     # codex / claude / opencode session artifacts when available
+      paperclip/run.json       # redacted operational run metadata
+      paperclip/events.jsonl   # redacted Paperclip run events
 feedback-export-20260331T120000Z.zip
 ```
 
-Exports are full by default. `traces/` keeps the Paperclip envelope, while `full-traces/` contains the richer per-trace bundle plus any recoverable adapter-native files.
+Exports are full by default. `traces/` keeps the Paperclip envelope, while
+`full-traces/` contains the richer Paperclip-owned run bundle. Provider-native
+session stores, hidden state, configuration, and files are never read or
+exported.
 
 ```bash
 # Custom server and output directory
@@ -146,15 +150,11 @@ Open any file in `traces/` to see:
 }
 ```
 
-Open `full-traces/<issue>-<trace>/bundle.json` to see the expanded export metadata, including capture notes, adapter type, integrity metadata, and the inventory of raw files written alongside it.
+Open `full-traces/<issue>-<trace>/bundle.json` to see the expanded export
+metadata, including capture notes, adapter type, integrity metadata, and the
+inventory of redacted Paperclip-owned files written alongside it.
 
 Each entry in `bundle.json.files[]` includes the actual captured file payload under `contents`, not just a pathname. For text artifacts this is stored as UTF-8 text; binary artifacts use base64 plus an `encoding` marker.
-
-Built-in local adapters now export their native session artifacts more directly:
-
-- `codex_local`: `adapter/codex/session.jsonl`
-- `claude_local`: `adapter/claude/session.jsonl`, plus any `adapter/claude/session/...` sidecar files and `adapter/claude/debug.txt` when present
-- `opencode_local`: `adapter/opencode/session.json`, `adapter/opencode/messages/*.json`, and `adapter/opencode/parts/<messageId>/*.json`, with optional `project.json`, `todo.json`, and `session-diff.json`
 
 ## Sharing preferences
 

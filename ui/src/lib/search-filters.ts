@@ -38,12 +38,12 @@ export function parseSearchSort(params: URLSearchParams): CompanySearchSort {
   return raw && SORT_SET.has(raw) ? (raw as CompanySearchSort) : "relevance";
 }
 
-/** Count active filter *dimensions* (assignee counts once regardless of shape). */
+/** Count active filter dimensions (owner counts once regardless of shape). */
 export function countActiveFilters(filters: SearchFilters): number {
   let count = 0;
   if (filters.status?.length) count += 1;
   if (filters.priority?.length) count += 1;
-  if (filters.assigneeAgentId !== undefined || filters.assigneeUserId) count += 1;
+  if (filters.ownerAgentId !== undefined || filters.ownerUserId) count += 1;
   if (filters.projectId) count += 1;
   if (filters.labelId) count += 1;
   if (filters.updatedWithin || filters.updatedAfter) count += 1;
@@ -51,41 +51,41 @@ export function countActiveFilters(filters: SearchFilters): number {
 }
 
 // ---------------------------------------------------------------------------
-// Assignee: the UI treats assignee as a single choice, but the wire model splits
-// it across assigneeAgentId (string | null) and assigneeUserId (string). These
+// Owner: the UI treats ownership as a single choice, but the wire model splits
+// it across ownerAgentId (string | null) and ownerUserId (string). These
 // helpers translate between a single opaque token and that split representation.
-//   "me"          → assigneeUserId = currentUserId
-//   "none"        → assigneeAgentId = null (unassigned)
-//   "agent:<id>"  → assigneeAgentId
-//   "user:<id>"   → assigneeUserId
+//   "me"          → ownerUserId = currentUserId
+//   "board"       → ownerAgentId = null (board-owned)
+//   "agent:<id>"  → ownerAgentId
+//   "user:<id>"   → ownerUserId
 // ---------------------------------------------------------------------------
 
-export function assigneeToken(filters: SearchFilters, currentUserId: string | null): string | undefined {
-  if (filters.assigneeAgentId === null) return "none";
-  if (typeof filters.assigneeAgentId === "string") return `agent:${filters.assigneeAgentId}`;
-  if (filters.assigneeUserId) {
-    return filters.assigneeUserId === currentUserId ? "me" : `user:${filters.assigneeUserId}`;
+export function ownerToken(filters: SearchFilters, currentUserId: string | null): string | undefined {
+  if (filters.ownerAgentId === null) return "board";
+  if (typeof filters.ownerAgentId === "string") return `agent:${filters.ownerAgentId}`;
+  if (filters.ownerUserId) {
+    return filters.ownerUserId === currentUserId ? "me" : `user:${filters.ownerUserId}`;
   }
   return undefined;
 }
 
-export function applyAssigneeToken(
+export function applyOwnerToken(
   filters: SearchFilters,
   token: string | undefined,
   currentUserId: string | null,
 ): SearchFilters {
   const next: SearchFilters = { ...filters };
-  delete next.assigneeAgentId;
-  delete next.assigneeUserId;
+  delete next.ownerAgentId;
+  delete next.ownerUserId;
   if (!token) return next;
-  if (token === "none") {
-    next.assigneeAgentId = null;
+  if (token === "board") {
+    next.ownerAgentId = null;
   } else if (token === "me") {
-    if (currentUserId) next.assigneeUserId = currentUserId;
+    if (currentUserId) next.ownerUserId = currentUserId;
   } else if (token.startsWith("agent:")) {
-    next.assigneeAgentId = token.slice("agent:".length);
+    next.ownerAgentId = token.slice("agent:".length);
   } else if (token.startsWith("user:")) {
-    next.assigneeUserId = token.slice("user:".length);
+    next.ownerUserId = token.slice("user:".length);
   }
   return next;
 }
@@ -108,16 +108,16 @@ function humanize(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function assigneeChipLabel(filters: SearchFilters, lookups: FilterChipLookups): string {
-  if (filters.assigneeAgentId === null) return "Unassigned";
-  if (typeof filters.assigneeAgentId === "string") {
-    return lookups.agentName(filters.assigneeAgentId) ?? "Agent";
+function ownerChipLabel(filters: SearchFilters, lookups: FilterChipLookups): string {
+  if (filters.ownerAgentId === null) return "Board";
+  if (typeof filters.ownerAgentId === "string") {
+    return lookups.agentName(filters.ownerAgentId) ?? "Agent";
   }
-  if (filters.assigneeUserId) {
-    if (filters.assigneeUserId === lookups.currentUserId) return "Me";
-    return lookups.userName(filters.assigneeUserId) ?? "User";
+  if (filters.ownerUserId) {
+    if (filters.ownerUserId === lookups.currentUserId) return "Me";
+    return lookups.userName(filters.ownerUserId) ?? "User";
   }
-  return "Assignee";
+  return "Owner";
 }
 
 /** Removable chip descriptors for the active-filter row. */
@@ -149,14 +149,14 @@ export function buildFilterChips(filters: SearchFilters, lookups: FilterChipLook
       },
     });
   }
-  if (filters.assigneeAgentId !== undefined || filters.assigneeUserId) {
+  if (filters.ownerAgentId !== undefined || filters.ownerUserId) {
     chips.push({
-      id: "assignee",
-      label: `Assignee: ${assigneeChipLabel(filters, lookups)}`,
+      id: "owner",
+      label: `Owner: ${ownerChipLabel(filters, lookups)}`,
       remove: (current) => {
         const next = { ...current };
-        delete next.assigneeAgentId;
-        delete next.assigneeUserId;
+        delete next.ownerAgentId;
+        delete next.ownerUserId;
         return next;
       },
     });
@@ -205,10 +205,10 @@ export function describeLoosenSuggestion(filterKey: string, values: string[], lo
       return `Status: ${values.map(humanize).join(", ")}`;
     case "priority":
       return `Priority: ${values.map(humanize).join(", ")}`;
-    case "assigneeAgentId":
-      return `Assignee: ${values.map((id) => lookups.agentName(id) ?? "Agent").join(", ")}`;
-    case "assigneeUserId":
-      return `Assignee: ${values.map((id) => (id === lookups.currentUserId ? "Me" : lookups.userName(id) ?? "User")).join(", ")}`;
+    case "ownerAgentId":
+      return `Owner: ${values.map((id) => lookups.agentName(id) ?? "Agent").join(", ")}`;
+    case "ownerUserId":
+      return `Owner: ${values.map((id) => (id === lookups.currentUserId ? "Me" : lookups.userName(id) ?? "User")).join(", ")}`;
     case "projectId":
       return `Project: ${values.map((id) => lookups.projectName(id) ?? "Project").join(", ")}`;
     case "labelId":
@@ -231,10 +231,10 @@ export function clearFilterDimension(filters: SearchFilters, filterKey: string):
     case "priority":
       delete next.priority;
       break;
-    case "assigneeAgentId":
-    case "assigneeUserId":
-      delete next.assigneeAgentId;
-      delete next.assigneeUserId;
+    case "ownerAgentId":
+    case "ownerUserId":
+      delete next.ownerAgentId;
+      delete next.ownerUserId;
       break;
     case "projectId":
       delete next.projectId;

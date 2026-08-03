@@ -13,13 +13,18 @@ const adapterUtilsPackage = JSON.parse(
 const releaseScript = await readFile(new URL("./release.sh", import.meta.url), "utf8");
 const releaseLib = await readFile(new URL("./release-lib.sh", import.meta.url), "utf8");
 
-test("published packages preserve the patched ACPX runtime", () => {
-  assert.equal(
-    rootPackage.pnpm.patchedDependencies["acpx@0.12.0"],
-    "patches/acpx@0.12.0.patch",
-  );
-  assert.equal(adapterUtilsPackage.dependencies.acpx, "0.12.0");
-  assert.deepEqual(adapterUtilsPackage.bundleDependencies, ["acpx"]);
+test("published packages preserve the pinned registry and official ACP client", () => {
+  assert.equal(rootPackage.pnpm.patchedDependencies, undefined);
+  assert.equal(adapterUtilsPackage.dependencies.acpx, "0.13.0");
+  assert.equal(adapterUtilsPackage.dependencies["@agentclientprotocol/sdk"], "1.3.0");
+  assert.equal(adapterUtilsPackage.dependencies["@agentclientprotocol/codex-acp"], "1.1.7");
+  assert.equal(adapterUtilsPackage.dependencies.zod, "4.4.3");
+  assert.deepEqual(adapterUtilsPackage.bundleDependencies, [
+    "@agentclientprotocol/codex-acp",
+    "@agentclientprotocol/sdk",
+    "acpx",
+    "zod",
+  ]);
   assert.equal(bundledCliNpmDependencies.has("acpx"), true);
   assert.equal(cliEsbuildConfig.external.includes("acpx"), false);
 });

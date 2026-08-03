@@ -16,13 +16,13 @@ host, for example `https://pages.paperclip.ing/<slug>/`.
 - Source directory contains `index.html` at its root.
 - `aws` CLI v2, `curl`, and `jq` are available on PATH for live publishes.
 - Environment variables are configured:
-  - `PAPERCLIP_PAGE_BUCKET`
-  - `PAPERCLIP_PAGE_BASE_URL`
+  - `STATIC_PAGE_BUCKET`
+  - `STATIC_PAGE_BASE_URL`
   - `AWS_REGION`
   - AWS credentials via Paperclip Secrets or an approved AWS vault
 - Optional environment variables:
-  - `PAPERCLIP_PAGE_DEFAULT_PREFIX`
-  - `PAPERCLIP_PAGE_AWS_PROFILE`
+  - `STATIC_PAGE_DEFAULT_PREFIX`
+  - `STATIC_PAGE_AWS_PROFILE`
 
 ## Workflow
 

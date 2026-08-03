@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
-import { issues, projects, projectWorkspaces } from "@paperclipai/db";
+import { projects, projectWorkspaces } from "@paperclipai/db";
 import {
   findWorkspaceCommandDefinition,
   matchWorkspaceRuntimeServiceToCommand,
@@ -12,7 +12,7 @@ import {
 } from "@paperclipai/shared";
 import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { accessService, executionWorkspaceService, heartbeatService, logActivity, workspaceOperationService } from "../services/index.js";
+import { accessService, executionWorkspaceService, logActivity, workspaceOperationService } from "../services/index.js";
 import { mergeExecutionWorkspaceConfig, readExecutionWorkspaceConfig } from "../services/execution-workspaces.js";
 import { parseProjectExecutionWorkspacePolicy } from "../services/execution-workspace-policy.js";
 import { readProjectWorkspaceRuntimeConfig } from "../services/project-workspace-runtime-config.js";
@@ -25,14 +25,9 @@ import {
   startRuntimeServicesForWorkspaceControl,
   stopRuntimeServicesForExecutionWorkspace,
 } from "../services/workspace-runtime.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
-import { logger } from "../middleware/logger.js";
-import {
-  assertNoAgentHostWorkspaceCommandMutation,
-  collectExecutionWorkspaceCommandPaths,
-} from "./workspace-command-authz.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import { assertCanManageExecutionWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
-import { appendWithCap } from "../adapters/utils.js";
+import { appendWithCap } from "@paperclipai/adapter-utils/server-utils";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 
@@ -43,9 +38,6 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
   const svc = executionWorkspaceService(db);
   const access = accessService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
-  const heartbeat = heartbeatService(db, {
-    pluginWorkerManager: opts.pluginWorkerManager,
-  });
   const environmentRuntime = environmentRuntimeService(db, {
     pluginWorkerManager: opts.pluginWorkerManager,
   });
@@ -152,8 +144,16 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
     await assertCanManageExecutionWorkspaceRuntimeServices(db, req, {
       companyId: existing.companyId,
       executionWorkspaceId: existing.id,
-      sourceIssueId: existing.sourceIssueId,
     });
+    const currentBindings = await svc.listCurrentBindings(existing.id, existing.companyId);
+    const commandBinding = currentBindings.length === 1 ? currentBindings[0]! : null;
+    const commandIssue = commandBinding
+      ? {
+          id: commandBinding.issueId,
+          identifier: commandBinding.issueIdentifier,
+          title: commandBinding.issueTitle ?? existing.name,
+        }
+      : null;
 
     const workspaceCwd = existing.cwd;
     if (!workspaceCwd) {
@@ -248,7 +248,12 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
       return;
     }
 
-    const actor = getActorInfo(req);
+    assertBoard(req);
+    const boardRuntimeActor = {
+      id: null,
+      name: "Board",
+      companyId: existing.companyId,
+    };
     const recorder = workspaceOperationsSvc.createRecorder({
       companyId: existing.companyId,
       executionWorkspaceId: existing.id,
@@ -275,7 +280,7 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
           await ensurePersistedExecutionWorkspaceAvailable({
             base: {
               baseCwd: projectWorkspace?.cwd ?? workspaceCwd,
-              source: existing.mode === "shared_workspace" ? "project_primary" : "task_session",
+              source: existing.mode === "shared_workspace" ? "project_primary" : "issue_execution",
               projectId: existing.projectId,
               workspaceId: existing.projectWorkspaceId,
               repoUrl: existing.repoUrl,
@@ -300,18 +305,8 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
                   ?? null,
               },
             },
-            issue: existing.sourceIssueId
-              ? {
-                  id: existing.sourceIssueId,
-                  identifier: null,
-                  title: existing.name,
-                }
-              : null,
-            agent: {
-              id: actor.agentId ?? null,
-              name: actor.actorType === "user" ? "Board" : "Agent",
-              companyId: existing.companyId,
-            },
+            issue: commandIssue,
+            agent: boardRuntimeActor,
             recorder,
           });
 
@@ -324,18 +319,8 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
             throw new Error("Execution workspace needs a local path before Paperclip can run workspace commands");
           }
           return await runWorkspaceJobForControl({
-            actor: {
-              id: actor.agentId ?? null,
-              name: actor.actorType === "user" ? "Board" : "Agent",
-              companyId: existing.companyId,
-            },
-            issue: existing.sourceIssueId
-              ? {
-                  id: existing.sourceIssueId,
-                  identifier: null,
-                  title: existing.name,
-                }
-              : null,
+            actor: boardRuntimeActor,
+            issue: commandIssue,
             workspace: availableWorkspace,
             command: workspaceCommand.rawConfig,
             adapterEnv: {},
@@ -376,18 +361,8 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
           }
           const startedServices = await startRuntimeServicesForWorkspaceControl({
             db,
-            actor: {
-              id: actor.agentId ?? null,
-              name: actor.actorType === "user" ? "Board" : "Agent",
-              companyId: existing.companyId,
-            },
-            issue: existing.sourceIssueId
-              ? {
-                  id: existing.sourceIssueId,
-                  identifier: null,
-                  title: existing.name,
-                }
-              : null,
+            actor: boardRuntimeActor,
+            issue: commandIssue,
             workspace: availableWorkspace,
             executionWorkspaceId: existing.id,
             config: { workspaceRuntime: effectiveRuntimeConfig },
@@ -454,11 +429,8 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
 
     await logActivity(db, {
       companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: `execution_workspace.runtime_${action}`,
       entityType: "execution_workspace",
       entityId: existing.id,
@@ -488,25 +460,20 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
     assertBoard(req);
     if (!(await assertRuntimeManageAllowed(req, res, existing.companyId))) return;
 
-    const actor = getActorInfo(req);
     const result = await svc.reconcileExecutionWorkspaceBranch(id, {
       mode: req.body.mode,
+      issueId: req.body.issueId ?? null,
       reason: req.body.reason ?? null,
       actor: {
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
+        actorType: "user",
+        actorId: req.actor.userId,
       },
     });
 
     await logActivity(db, {
       companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "execution_workspace.branch_reconciled",
       entityType: "execution_workspace",
       entityId: existing.id,
@@ -519,53 +486,22 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
         toSha: result.inspection.toSha,
         ancestryVerdict: result.inspection.ancestryVerdict,
         fingerprint: result.inspection.fingerprint,
-        sourceIssueId: existing.sourceIssueId,
+        issueId: result.boundIssueId,
+        ownershipEpoch: result.boundOwnershipEpoch,
         auditCommentId: result.auditCommentId,
-        recoveryActionId: result.recoveryAction?.id ?? null,
         rescueRef: result.rescueRef,
-        sourceIssueStatus: result.restoredSourceIssue?.status ?? null,
+        sourceIssueBoardPresentationStatus:
+          result.restoredSourceIssue?.boardPresentationStatus ?? null,
         actor: {
-          type: actor.actorType,
-          id: actor.actorId,
-          source: actor.actorSource,
+          type: "user",
+          id: req.actor.userId,
+          source: req.actor.source,
         },
       },
     });
 
-    if (
-      result.restoredSourceIssue &&
-      (result.restoredSourceIssue.status === "todo" || result.restoredSourceIssue.status === "in_review") &&
-      result.sourceIssueStatusChanged &&
-      result.restoredSourceIssue.assigneeAgentId
-    ) {
-      void heartbeat.wakeup(result.restoredSourceIssue.assigneeAgentId, {
-        source: "automation",
-        triggerDetail: "system",
-        reason: "issue_recovery_action_restored",
-        payload: {
-          issueId: result.restoredSourceIssue.id,
-          recoveryActionId: result.recoveryAction?.id ?? null,
-          executionWorkspaceId: existing.id,
-          rescueRef: result.rescueRef?.branchName ?? null,
-          mutation: "execution_workspace_quarantine_restore",
-        },
-        requestedByActorType: actor.actorType,
-        requestedByActorId: actor.actorId,
-        contextSnapshot: {
-          issueId: result.restoredSourceIssue.id,
-          taskId: result.restoredSourceIssue.id,
-          wakeReason: "issue_recovery_action_restored",
-          source: "execution_workspace.quarantine_restore",
-          recoveryActionId: result.recoveryAction?.id ?? null,
-          executionWorkspaceId: existing.id,
-          rescueRef: result.rescueRef?.branchName ?? null,
-        },
-      }).catch((err) =>
-        logger.warn(
-          { err, issueId: result.restoredSourceIssue?.id, agentId: result.restoredSourceIssue?.assigneeAgentId },
-          "failed to wake agent after execution workspace quarantine restore",
-        ));
-    }
+    // Workspace restoration is a board control-plane action. It records its
+    // canonical notice in the workspace service and never invokes a provider.
 
     res.json(result);
   });
@@ -575,13 +511,6 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Execution workspace not found");
     if (!existing) return;
     if (!(await assertRuntimeManageAllowed(req, res, existing.companyId))) return;
-    assertNoAgentHostWorkspaceCommandMutation(
-      req,
-      collectExecutionWorkspaceCommandPaths({
-        config: req.body.config,
-        metadata: req.body.metadata,
-      }),
-    );
     const patch: Record<string, unknown> = {
       ...(req.body.name === undefined ? {} : { name: req.body.name }),
       ...(req.body.cwd === undefined ? {} : { cwd: req.body.cwd }),
@@ -642,21 +571,6 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
         executionWorkspaceId: existing.id,
         failureReason: "execution_workspace_closed",
       });
-
-      if (existing.mode === "shared_workspace") {
-        await db
-          .update(issues)
-          .set({
-            executionWorkspaceId: null,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(issues.companyId, existing.companyId),
-              eq(issues.executionWorkspaceId, existing.id),
-            ),
-          );
-      }
 
       try {
         await stopRuntimeServicesForExecutionWorkspace({
@@ -730,14 +644,11 @@ export function executionWorkspaceRoutes(db: Db, opts: { pluginWorkerManager?: P
       }
       workspace = updatedWorkspace;
     }
-    const actor = getActorInfo(req);
+    assertBoard(req);
     await logActivity(db, {
       companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "execution_workspace.updated",
       entityType: "execution_workspace",
       entityId: workspace.id,

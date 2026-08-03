@@ -35,7 +35,7 @@ directory containing a `SKILL.md` plus any supporting `references/`, `scripts/`,
 
 The catalog splits skills into two **kinds**:
 
-- **`bundled`** — first-party Paperclip skills (e.g. `issue-triage`, `task-planning`,
+- **`bundled`** — first-party Paperclip skills (e.g. `issue-triage`, `issue-planning`,
   `qa-acceptance`, `wireframe`, `github-pr-workflow`, `doc-maintenance`). These carry the
   reserved `paperclipai/paperclip/...` key namespace.
 - **`optional`** — additional curated skills you opt into (e.g. `agent-browser`,
@@ -45,8 +45,6 @@ Every catalog skill carries metadata used for discovery and safety:
 
 - **`category`** — grouping such as `software-development`, `quality`, `product`,
   `research`, `content`, `browser`, `paperclip-operations`, `docs`.
-- **`recommendedForRoles`** — agent roles the skill suits (`engineer`, `qa`, `designer`,
-  `product`, `researcher`, …), used to suggest skills when staffing a company.
 - **`trustLevel`** — see [Trust levels](#trust-levels-what-a-skill-is-allowed-to-carry).
 - **`compatibility`** — `compatible`, `unknown`, or `invalid`, derived during the build
   validation pass.
@@ -91,7 +89,7 @@ change what your agents run.
 Some optional catalog skills intentionally do not vendor a third-party playbook. The
 `ramp` skill is the model: Paperclip ships the stable governance wrapper, source
 allowlist, and approval gates, then tells the agent to fetch Ramp's current published
-instructions from `agents.ramp.com` when the task starts.
+instructions from `agents.ramp.com` when the issue starts.
 
 Use this pattern only when the external provider's setup flow changes often enough that
 a vendored snapshot would go stale, and when Paperclip can keep the safety boundary in
@@ -219,16 +217,16 @@ can filter by it.
 
 ## How agents actually use installed skills
 
-Installing a skill is not the same as an agent running it. At runtime, a company's
-installed skills are materialized into the agent's workspace as `SKILL.md` directories,
-and the agent's harness loads the **frontmatter `name` + `description`** of each skill as
-routing logic. The agent reads those one-line descriptions to decide *whether* a skill is
-relevant to the current task, and only then loads the full body. (This is why a skill's
-`description` should read as "what this does and when to use it" — it is the index the
-agent searches.)
+Installing a skill is not the same as selecting it. At runtime, Paperclip
+materializes only the exact company-skill versions explicitly selected for
+that agent into the bound issue-execution workspace as `SKILL.md` directories.
+There is no company-wide auto-attach, ambient default set, or operational
+Paperclip bundle.
 
-Skill sync into agent workspaces is governed by a per-instance preference, so an operator
-can control whether and how the company library is pushed down to running agents.
+The provider discovers those files through its native workspace conventions
+or operator-authored native configuration. The files are static content: they
+grant no tools, permissions, reach, or issue context, and they are never copied
+into the Paperclip-authored user message.
 
 ## Reference: API surface
 
@@ -281,7 +279,7 @@ manifest.
 ## See also
 
 - [Writing a Skill](writing-a-skill) — the `SKILL.md` format and authoring best practices
-- [How Agents Work](how-agents-work) — how skills fit into a heartbeat
+- [How Agents Work](how-agents-work) — how selected company skills relate to issue execution
 
 ```
          (o)___(o)

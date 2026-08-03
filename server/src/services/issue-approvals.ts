@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { approvals, issueApprovals, issues } from "@paperclipai/db";
+import { approvals, issueApprovals, issueExecutionAuthorities, issues } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { redactEventPayload } from "../redaction.js";
 
@@ -82,12 +82,15 @@ export function issueApprovalService(db: Db) {
           goalId: issues.goalId,
           parentId: issues.parentId,
           title: issues.title,
-          description: issues.description,
-          status: issues.status,
+          request: issues.request,
+          boardPresentationStatus: issues.boardPresentationStatus,
           priority: issues.priority,
-          assigneeAgentId: issues.assigneeAgentId,
-          createdByAgentId: issues.createdByAgentId,
-          createdByUserId: issues.createdByUserId,
+          ownerKind: issues.ownerKind,
+          ownerAgentId: issues.ownerAgentId,
+          ownerUserId: issues.ownerUserId,
+          creatorKind: issues.creatorKind,
+          creatorAgentId: issueExecutionAuthorities.agentId,
+          creatorUserId: issues.creatorUserId,
           issueNumber: issues.issueNumber,
           identifier: issues.identifier,
           requestDepth: issues.requestDepth,
@@ -100,6 +103,10 @@ export function issueApprovalService(db: Db) {
         })
         .from(issueApprovals)
         .innerJoin(issues, eq(issueApprovals.issueId, issues.id))
+        .leftJoin(
+          issueExecutionAuthorities,
+          eq(issueExecutionAuthorities.id, issues.creatorAuthorityId),
+        )
         .where(eq(issueApprovals.approvalId, approvalId))
         .orderBy(desc(issueApprovals.createdAt));
     },

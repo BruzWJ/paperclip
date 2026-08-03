@@ -3,11 +3,19 @@ import {
   ISSUE_EXECUTION_WORKSPACE_PREFERENCES,
   issueExecutionWorkspaceSettingsSchema,
 } from "./issue.js";
+import {
+  PIPELINE_CASE_GENERIC_ISSUE_LINK_ROLES,
+  PIPELINE_CASE_ISSUE_LINK_ROLES,
+} from "../types/pipeline.js";
 
 const routineVariableLikeNameSchema = z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_]*$/);
 
 export const pipelineStageKindSchema = z.enum(["working", "review", "done", "cancelled"]);
 export const legacyPipelineStageKindSchema = z.enum(["open", "working", "review", "done", "cancelled"]);
+export const pipelineCaseIssueLinkRoleSchema = z.enum(PIPELINE_CASE_ISSUE_LINK_ROLES);
+export const pipelineCaseGenericIssueLinkRoleSchema = z.enum(
+  PIPELINE_CASE_GENERIC_ISSUE_LINK_ROLES,
+);
 
 export const pipelineStageApproverSchema = z.object({
   kind: z.enum(["any_human", "user", "agent"]).optional().default("any_human"),

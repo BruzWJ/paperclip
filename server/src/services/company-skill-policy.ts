@@ -1,6 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, companySkillPolicies, principalPermissionGrants } from "@paperclipai/db";
+import { agents, companySkillPolicies } from "@paperclipai/db";
 import {
   normalizeSkillPolicySourceLocator,
   skillPolicyDocumentSchema,
@@ -18,7 +18,6 @@ import { logActivity, type LogActivityInput } from "./activity-log.js";
 export type SkillPolicyPrincipal = {
   type: "agent" | "board";
   id: string;
-  role: string | null;
 };
 
 const OPEN_DEFAULT_POLICY: EffectiveSkillPolicy = {
@@ -38,17 +37,9 @@ function effectivePolicyFromRow(row: typeof companySkillPolicies.$inferSelect): 
   return { ...document, revision: row.revision, materialized: true };
 }
 
-function normalizeRole(role: string | null) {
-  return role?.trim().toLowerCase() || null;
-}
-
 function subjectMatches(rule: SkillPolicyRule, principal: SkillPolicyPrincipal) {
   if (rule.subject.type === "all_agents") return principal.type === "agent";
-  if (rule.subject.type === "agents") {
-    return principal.type === "agent" && rule.subject.agentIds.includes(principal.id);
-  }
-  const role = normalizeRole(principal.role);
-  return Boolean(role && rule.subject.roles.some((candidate) => normalizeRole(candidate) === role));
+  return principal.type === "agent" && rule.subject.agentIds.includes(principal.id);
 }
 
 function resourceMatches(rule: SkillPolicyRule, resource: SkillPolicyEvaluationResource) {
@@ -123,7 +114,7 @@ export function companySkillPolicyService(db: Db) {
 
   async function resolveAgentPrincipal(companyId: string, agentId: string): Promise<SkillPolicyPrincipal> {
     const agent = await db
-      .select({ id: agents.id, companyId: agents.companyId, role: agents.role })
+      .select({ id: agents.id, companyId: agents.companyId })
       .from(agents)
       .where(eq(agents.id, agentId))
       .then((rows) => rows[0] ?? null);
@@ -133,23 +124,7 @@ export function companySkillPolicyService(db: Db) {
         code: "skill_company_boundary_denied",
       });
     }
-    return { type: "agent", id: agent.id, role: agent.role };
-  }
-
-  async function hasLegacyBroadMutationGrant(companyId: string, principal: SkillPolicyPrincipal) {
-    const principalType = principal.type === "agent" ? "agent" : "user";
-    const row = await db
-      .select({ permissionKey: principalPermissionGrants.permissionKey })
-      .from(principalPermissionGrants)
-      .where(and(
-        eq(principalPermissionGrants.companyId, companyId),
-        eq(principalPermissionGrants.principalType, principalType),
-        eq(principalPermissionGrants.principalId, principal.id),
-        inArray(principalPermissionGrants.permissionKey, ["skills:create", "skills:suggest-changes"]),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    return Boolean(row);
+    return { type: "agent", id: agent.id };
   }
 
   async function evaluate(input: {
@@ -176,12 +151,6 @@ export function companySkillPolicyService(db: Db) {
         policy.revision,
         matchingRule.id,
       );
-    }
-    // These grants historically authorized the full company-skill mutation surface.
-    // Preserve that broad scope only as a default-deny compatibility fallback;
-    // explicit policy rules and platform invariants still take precedence.
-    if (policy.defaultEffect === "deny" && await hasLegacyBroadMutationGrant(input.companyId, input.principal)) {
-      return decision(true, input.action, "legacy_compatibility", policy.revision);
     }
     return decision(policy.defaultEffect === "allow", input.action, "policy_default", policy.revision);
   }

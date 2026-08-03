@@ -1,18 +1,27 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { and, asc, desc, eq, gte, inArray, lt, max, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  max,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
   agents,
   connectionGrants,
-  connectionTokenIssuances,
   authUsers,
-  companySecretBindings,
   companySecrets,
-  heartbeatRuns,
   issues,
-  issueThreadInteractions,
   plugins,
   projects,
   routines,
@@ -34,12 +43,9 @@ import {
   toolRuntimeMetricCounters,
   toolRuntimeSlots,
 } from "@paperclipai/db";
+import { resolveIssueExecutionRunIdentityById } from "./issue-execution-run-service.js";
 import type {
   AppDefinition,
-  ConnectionTokenIssuanceOutcome,
-  ConnectionTokenIssuancePath,
-  ConnectionTokenRequest,
-  ConnectionTokenResponse,
   CreateToolApplication,
   CreateToolConnection,
   ConnectToolApp,
@@ -52,7 +58,6 @@ import type {
   CreateToolProfileWithEntries,
   DeleteToolProfile,
   DeploymentExposure,
-  DeploymentMode,
   DuplicateToolProfile,
   ImportMcpJson,
   McpConnectionCredentialRef,
@@ -112,12 +117,16 @@ import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } f
 import { logActivity } from "./activity-log.js";
 import { mcpHttpRequestHeaders, parseMcpHttpResponseBody } from "./mcp-http.js";
 import { assertPublicRemoteHttpEndpoint, parseRemoteHttpEndpoint } from "./remote-http-endpoint-guard.js";
-import { secretService } from "./secrets.js";
+import {
+  requireSecretMutationActor,
+  secretService,
+  type SecretMutationActor,
+} from "./secrets.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
-import { readSignedToolArgumentsPayload } from "./tool-content-guards.js";
 import { narrowestScopeBindings, profileIdsInBindingOrder } from "./tool-profile-binding-precedence.js";
 import { recordToolRuntimeAuditWriteFailure, TOOL_RUNTIME_AUDIT_WRITE_FAILURE_METRIC } from "./tool-runtime-metrics.js";
 import { createToolRuntimeSupervisor, ToolRuntimeSupervisorError } from "./tool-runtime-supervisor.js";
+import { lockToolSelectionRowsInOrder } from "./tool-selection-lock-order.js";
 
 type ActorInfo = {
   actorType?: "agent" | "user" | "system" | "plugin";
@@ -125,7 +134,6 @@ type ActorInfo = {
   sessionId?: string | null;
 };
 
-const ACTIVE_BROKER_RUN_STATUSES = new Set(["running"]);
 const REMOTE_HTTP_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REMOTE_HTTP_REDIRECTS = 5;
 
@@ -139,7 +147,6 @@ type OAuthProviderEndpoints = {
 };
 
 type ToolAccessServiceOptions = {
-  deploymentMode?: DeploymentMode;
   deploymentExposure?: DeploymentExposure;
   trustedLocalStdioRuntimeHost?: string | null;
   now?: () => Date;
@@ -364,7 +371,6 @@ const APPROVED_STDIO_TEMPLATES: Record<string, {
 const GOOGLE_SHEETS_GALLERY_KEY = "google-sheets";
 const GOOGLE_SHEETS_TEMPLATE_ID = "paperclip.google-sheets";
 const GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS_ENV = "GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS";
-const CONNECTION_TOKEN_MINT_TOOL_NAME = "connection_token.mint";
 
 type ToolExampleDefinition = {
   id: string;
@@ -639,13 +645,31 @@ function toConnection(row: typeof toolConnections.$inferSelect): ToolConnection 
   };
 }
 
+function connectionInstallTargetId(
+  row: typeof toolConnectionInstalls.$inferSelect,
+): string {
+  if (row.targetType === "company") return row.companyId;
+  if (row.targetType === "agent" && row.targetAgentId) {
+    return row.targetAgentId;
+  }
+  throw new Error(
+    `Tool connection install ${row.id} violates its target shape`,
+  );
+}
+
+function connectionInstallKey(
+  row: typeof toolConnectionInstalls.$inferSelect,
+): string {
+  return `${row.targetType}:${connectionInstallTargetId(row)}`;
+}
+
 function toConnectionInstall(row: typeof toolConnectionInstalls.$inferSelect): ToolConnectionInstall {
   return {
     id: row.id,
     companyId: row.companyId,
     connectionId: row.connectionId,
     targetType: row.targetType,
-    targetId: row.targetId,
+    targetId: connectionInstallTargetId(row),
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt,
@@ -836,18 +860,14 @@ function toToolActionRequest(row: typeof toolActionRequests.$inferSelect): ToolA
     companyId: row.companyId,
     invocationId: row.invocationId,
     issueId: row.issueId,
-    interactionId: row.interactionId,
     approvalId: row.approvalId,
     status: row.status,
     canonicalArgumentsHash: row.canonicalArgumentsHash,
     canonicalArgumentsSummary: row.canonicalArgumentsSummary,
-    signedArguments: row.signedArguments,
     previewMarkdown: row.previewMarkdown,
     requestedByAgentId: row.requestedByAgentId,
     requestedByUserId: row.requestedByUserId,
-    resolvedByAgentId: row.resolvedByAgentId,
     resolvedByUserId: row.resolvedByUserId,
-    decidedByAgentId: row.decidedByAgentId,
     decidedByUserId: row.decidedByUserId,
     decidedAt: row.decidedAt,
     expiresAt: row.expiresAt,
@@ -895,7 +915,6 @@ function toToolCallEvent(row: typeof toolCallEvents.$inferSelect): ToolCallEvent
 }
 
 function userFallbackName(userId: string): string {
-  if (userId === "local-board") return "Board";
   return userId;
 }
 
@@ -1290,7 +1309,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
   const runtimeSupervisor = createToolRuntimeSupervisor(db, options);
 
   function allowPrivateRemoteEndpoints() {
-    return options.deploymentMode !== "authenticated" || options.deploymentExposure !== "public";
+    return options.deploymentExposure !== "public";
   }
 
   async function assertRemoteHttpUrlAllowed(value: string): Promise<string> {
@@ -1339,11 +1358,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     if (
       transport === "local_stdio"
       && enabled
-      && options.deploymentMode === "authenticated"
       && options.deploymentExposure === "public"
       && !trustedRuntimeHost()
     ) {
-      throw unprocessable("Local stdio MCP connections cannot be enabled in authenticated public deployments without a trusted runtime host");
+      throw unprocessable("Local stdio MCP connections cannot be enabled on public deployments without a trusted runtime host");
     }
   }
 
@@ -1407,466 +1425,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     }
   }
 
-
-  function readConfigString(record: Record<string, unknown>, key: string): string | null {
-    const value = record[key];
-    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  function readConfigStringArray(value: unknown): string[] {
-    if (Array.isArray(value)) {
-      return value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-    if (typeof value === "string") return value.split(/\s+/).map((item) => item.trim()).filter(Boolean);
-    return [];
-  }
-
-  function normalizeConnectionTokenScopes(scope: ConnectionTokenRequest["scope"]): string[] {
-    if (Array.isArray(scope)) return [...new Set(scope.map((item) => item.trim()).filter(Boolean))];
-    if (typeof scope === "string") return [...new Set(scope.split(/\s+/).map((item) => item.trim()).filter(Boolean))];
-    return [];
-  }
-
-  function tokenBrokerConfig(connection: typeof toolConnections.$inferSelect): Record<string, unknown> {
-    const config = asRecord(connection.config);
-    const broker = asRecord(config.tokenBroker);
-    if (Object.keys(broker).length > 0) return broker;
-    return asRecord(config.broker);
-  }
-
-  function connectionTokenBrokerEnabled(connection: typeof toolConnections.$inferSelect): boolean {
-    const config = asRecord(connection.config);
-    const tokenBroker = asRecord(config.tokenBroker);
-    if (Object.keys(tokenBroker).length > 0) return tokenBroker.enabled === true;
-    const broker = asRecord(config.broker);
-    if (Object.keys(broker).length > 0) return broker.enabled === true;
-    return false;
-  }
-
-  function isPagesTokenConnection(connection: typeof toolConnections.$inferSelect, application?: typeof toolApplications.$inferSelect | null) {
-    const config = asRecord(connection.config);
-    const broker = tokenBrokerConfig(connection);
-    const applicationKey = application?.applicationKey ?? "";
-    return Boolean(
-      applicationKey === "paperclip-pages"
-      || applicationKey === "paperclip.pages"
-      || applicationKey === "pages.paperclip"
-      || readConfigString(config, "connectionType") === "pages"
-      || readConfigString(config, "service") === "pages"
-      || readConfigString(broker, "connectionType") === "pages"
-      || readConfigString(broker, "service") === "pages"
-      || asRecord(config.pages).enabled === true,
-    );
-  }
-
-  async function getConnectionApplication(connection: typeof toolConnections.$inferSelect) {
-    const [application] = await db.select().from(toolApplications).where(eq(toolApplications.id, connection.applicationId));
-    return application ?? null;
-  }
-
-  function inferConnectionTokenPath(
-    connection: typeof toolConnections.$inferSelect,
-    application?: typeof toolApplications.$inferSelect | null,
-  ): ConnectionTokenIssuancePath {
-    const broker = tokenBrokerConfig(connection);
-    const configuredPath = readConfigString(broker, "path") ?? readConfigString(asRecord(connection.config), "tokenPath");
-    if (configuredPath === "exchange" || configuredPath === "oauth_access" || configuredPath === "static") return configuredPath;
-    if (isPagesTokenConnection(connection, application)) return "exchange";
-    if (readConfigString(broker, "tokenUrl") || readConfigString(asRecord(connection.config), "tokenExchangeUrl")) return "exchange";
-    return "static";
-  }
-
-  function parentScopesForConnection(connection: typeof toolConnections.$inferSelect): string[] {
-    const config = asRecord(connection.config);
-    const broker = tokenBrokerConfig(connection);
-    const configured = [
-      ...readConfigStringArray(broker.parentScopes),
-      ...readConfigStringArray(broker.scopes),
-      ...readConfigStringArray(config.parentScopes),
-      ...readConfigStringArray(asRecord(config.oauth).scopes),
-      ...readConfigStringArray(asRecord(config.oauth).scope),
-    ];
-    const namespaceAllowlist = readConfigStringArray(config.namespaceAllowlist)
-      .map((namespace) => `pages:publish:ns/${namespace}`);
-    return [...new Set([...configured, ...namespaceAllowlist])];
-  }
-
-  function defaultScopesForConnection(connection: typeof toolConnections.$inferSelect): string[] {
-    const broker = tokenBrokerConfig(connection);
-    return [...new Set([
-      ...readConfigStringArray(broker.defaultScopes),
-      ...readConfigStringArray(asRecord(connection.config).defaultScopes),
-    ])];
-  }
-
-  function assertScopeSubset(input: { requestedScope: string[]; parentScopes: string[] }) {
-    if (input.requestedScope.length === 0) return;
-    const parent = new Set(input.parentScopes);
-    if (parent.size === 0 || input.requestedScope.some((scope) => !parent.has(scope))) {
-      throw forbidden("Requested token scope exceeds the connection parent scope");
-    }
-  }
-
-  function requestedTtlSeconds(body: ConnectionTokenRequest, connection: typeof toolConnections.$inferSelect): number {
-    const broker = tokenBrokerConfig(connection);
-    const configured = Number(broker.defaultTtlSeconds ?? broker.ttlSeconds ?? 900);
-    const requested = Number(body.requestedTtlSeconds ?? configured);
-    const finite = Number.isFinite(requested) && requested > 0 ? Math.trunc(requested) : 900;
-    return Math.max(1, Math.min(900, finite));
-  }
-
-  function sha256Hex(value: string): string {
-    return createHash("sha256").update(value).digest("hex");
-  }
-
-  function bearerTokenHash(token: string): string {
-    return sha256Hex(token);
-  }
-
-  function runSnapshotString(snapshot: Record<string, unknown>, ...keys: string[]): string | null {
-    for (const key of keys) {
-      const value = snapshot[key];
-      if (typeof value === "string" && value.trim().length > 0) return value;
-    }
-    return null;
-  }
-
-  async function loadBrokerRunContext(input: { companyId: string; agentId: string; runId: string }) {
-    const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, input.runId));
-    if (!run || run.companyId !== input.companyId || run.agentId !== input.agentId) {
-      throw forbidden("Agent run context does not match the authenticated actor");
-    }
-    if (!ACTIVE_BROKER_RUN_STATUSES.has(run.status)) {
-      throw forbidden("Agent run is not active");
-    }
-    const snapshot = asRecord(run.contextSnapshot);
-    const paperclipIssue = asRecord(snapshot.paperclipIssue);
-    return {
-      run,
-      issueId: runSnapshotString(snapshot, "issueId") ?? runSnapshotString(paperclipIssue, "id"),
-      projectId: runSnapshotString(snapshot, "projectId") ?? runSnapshotString(paperclipIssue, "projectId"),
-      routineId: runSnapshotString(snapshot, "routineId"),
-      responsibleUserId: runSnapshotString(snapshot, "responsibleUserId", "responsible_user_id")
-        ?? runSnapshotString(paperclipIssue, "responsibleUserId", "responsible_user_id"),
-    };
-  }
-
-  async function recordConnectionTokenIssuance(input: {
-    companyId: string;
-    applicationId: string | null;
-    connectionId: string;
-    agentId: string;
-    runId: string | null;
-    issueId: string | null;
-    projectId: string | null;
-    responsibleUserId: string | null;
-    path: ConnectionTokenIssuancePath;
-    requestedScope: string[];
-    issuedScope: string[];
-    ttlSeconds: number | null;
-    expiresAt: Date | null;
-    tokenHash: string | null;
-    outcome: ConnectionTokenIssuanceOutcome;
-    errorCode?: string | null;
-    metadata?: Record<string, unknown>;
-  }) {
-    await db.insert(connectionTokenIssuances).values({
-      companyId: input.companyId,
-      applicationId: input.applicationId,
-      connectionId: input.connectionId,
-      agentId: input.agentId,
-      runId: input.runId,
-      issueId: input.issueId,
-      projectId: input.projectId,
-      responsibleUserId: input.responsibleUserId,
-      path: input.path,
-      requestedScope: input.requestedScope,
-      issuedScope: input.issuedScope,
-      ttlSeconds: input.ttlSeconds,
-      expiresAt: input.expiresAt,
-      tokenHash: input.tokenHash,
-      outcome: input.outcome,
-      errorCode: input.errorCode ?? null,
-      metadata: input.metadata ?? {},
-    });
-  }
-
-  async function auditConnectionTokenIssuance(input: {
-    companyId: string;
-    connectionId: string;
-    agentId: string;
-    runId: string;
-    path: ConnectionTokenIssuancePath;
-    outcome: ConnectionTokenIssuanceOutcome;
-    reasonCode?: string | null;
-    details?: Record<string, unknown>;
-  }) {
-    const success = input.outcome === "success";
-    await audit({
-      companyId: input.companyId,
-      connectionId: input.connectionId,
-      action: success ? "connection_token.minted" : "connection_token.denied",
-      outcome: success ? "success" : "failure",
-      reasonCode: input.reasonCode ?? null,
-      actor: { actorType: "agent", actorId: input.agentId },
-      details: { path: input.path, outcome: input.outcome, runId: input.runId, ...(input.details ?? {}) },
-    });
-    await logActivity(db, {
-      companyId: input.companyId,
-      actorType: "agent",
-      actorId: input.agentId,
-      agentId: input.agentId,
-      runId: input.runId,
-      action: success ? "connection_token.minted" : "connection_token.denied",
-      entityType: "tool_connection",
-      entityId: input.connectionId,
-      details: { path: input.path, outcome: input.outcome, reasonCode: input.reasonCode ?? null, ...(input.details ?? {}) },
-    });
-  }
-
-  async function enforceDefaultConnectionTokenRateLimit(input: {
-    connection: typeof toolConnections.$inferSelect;
-    agentId: string;
-    path: ConnectionTokenIssuancePath;
-  }) {
-    const broker = tokenBrokerConfig(input.connection);
-    const configured = Number(broker.rateLimitPerHour ?? 30);
-    const limit = Number.isFinite(configured) && configured > 0 ? Math.trunc(configured) : 30;
-    const since = new Date(now().getTime() - 60 * 60 * 1000);
-    const [row] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(connectionTokenIssuances)
-      .where(and(
-        eq(connectionTokenIssuances.companyId, input.connection.companyId),
-        eq(connectionTokenIssuances.connectionId, input.connection.id),
-        eq(connectionTokenIssuances.agentId, input.agentId),
-        eq(connectionTokenIssuances.outcome, "success"),
-        gte(connectionTokenIssuances.createdAt, since),
-      ));
-    const count = Number(row?.count ?? 0);
-    if (count >= limit) {
-      throw new HttpError(429, "Connection token mint rate limit exceeded", {
-        code: "rate_limited",
-        path: input.path,
-        limit,
-        windowSeconds: 3600,
-      });
-    }
-  }
-
-  async function hasExplicitConnectionTokenMintProfileGrant(input: {
-    companyId: string;
-    agentId: string;
-    issueId: string | null;
-    projectId: string | null;
-    routineId: string | null;
-  }) {
-    const bindings = await db.select().from(toolProfileBindings).where(eq(toolProfileBindings.companyId, input.companyId));
-    const matchingBindings = bindings.filter((binding) => {
-      if (binding.targetType === "company") return binding.targetId === input.companyId;
-      if (binding.targetType === "agent") return binding.targetId === input.agentId;
-      if (binding.targetType === "issue") return Boolean(input.issueId && binding.targetId === input.issueId);
-      if (binding.targetType === "project") return Boolean(input.projectId && binding.targetId === input.projectId);
-      if (binding.targetType === "routine") return Boolean(input.routineId && binding.targetId === input.routineId);
-      return false;
-    });
-    const profileIds = profileIdsInBindingOrder(narrowestScopeBindings(matchingBindings));
-    if (profileIds.length === 0) return false;
-    const profiles = await db.select().from(toolProfiles).where(and(
-      eq(toolProfiles.companyId, input.companyId),
-      inArray(toolProfiles.id, profileIds),
-    ));
-    const activeProfileIds = profiles
-      .filter((profile) => profile.status === "active")
-      .map((profile) => profile.id);
-    if (activeProfileIds.length === 0) return false;
-    const entries = await db.select().from(toolProfileEntries).where(and(
-      eq(toolProfileEntries.companyId, input.companyId),
-      inArray(toolProfileEntries.profileId, activeProfileIds),
-    ));
-    return activeProfileIds.some((profileId) => {
-      const profileEntries = entries.filter((entry) => entry.profileId === profileId);
-      const exactBrokerEntries = profileEntries.filter((entry) =>
-        entry.selectorType === "tool_name"
-        && entry.toolName === CONNECTION_TOKEN_MINT_TOOL_NAME
-        && Object.keys(asRecord(entry.conditions)).length === 0
-      );
-      if (exactBrokerEntries.some((entry) => entry.effect === "exclude")) return false;
-      return exactBrokerEntries.some((entry) => entry.effect === "include");
-    });
-  }
-
-  function accessContextForBroker(input: {
-    connection: typeof toolConnections.$inferSelect;
-    agentId: string;
-    runId: string;
-    issueId: string | null;
-    actorSource?: ActorInfo["actorType"] | null;
-    configPath: string;
-  }) {
-    return {
-      consumerType: "tool_connection" as const,
-      consumerId: input.connection.id,
-      configPath: input.configPath,
-      actorType: "agent" as const,
-      actorId: input.agentId,
-      actorSource: "agent_jwt" as const,
-      issueId: input.issueId,
-      heartbeatRunId: input.runId,
-    };
-  }
-
-  function findBrokerCredentialRef(connection: typeof toolConnections.$inferSelect) {
-    const broker = tokenBrokerConfig(connection);
-    const configuredPath = readConfigString(broker, "parentCredentialConfigPath")
-      ?? readConfigString(broker, "credentialConfigPath")
-      ?? readConfigString(broker, "secretConfigPath");
-    const configuredName = readConfigString(broker, "parentCredentialName") ?? readConfigString(broker, "credentialName");
-    const secretCandidates = connection.credentialSecretRefs.filter((ref) => ref.configPath !== "oauth.access_token" && ref.configPath !== "oauth.refresh_token");
-    const secretRef = configuredPath
-      ? connection.credentialSecretRefs.find((ref) => ref.configPath === configuredPath)
-      : secretCandidates.find((ref) => ref.configPath === "credentials.deploy_token")
-        ?? secretCandidates.find((ref) => ref.configPath === "pages.deploy_token")
-        ?? secretCandidates[0];
-    if (secretRef) return { kind: "secret_ref" as const, ref: secretRef, configPath: secretRef.configPath };
-    const credentialRef = configuredName
-      ? connection.credentialRefs.find((ref) => ref.name === configuredName)
-      : connection.credentialRefs[0];
-    if (credentialRef) return { kind: "credential_ref" as const, ref: credentialRef, configPath: `credentials.${credentialRef.name}` };
-    return null;
-  }
-
-  async function resolveBrokerParentCredential(input: {
-    connection: typeof toolConnections.$inferSelect;
-    agentId: string;
-    runId: string;
-    issueId: string | null;
-  }) {
-    const ref = findBrokerCredentialRef(input.connection);
-    if (!ref) {
-      throw unprocessable("Connection token exchange requires a vault-backed parent credential", {
-        code: "parent_credential_missing",
-      });
-    }
-    if (ref.kind === "secret_ref") {
-      return secrets.resolveSecretValue(input.connection.companyId, ref.ref.secretId, ref.ref.versionSelector ?? "latest", {
-        accessContext: accessContextForBroker({ ...input, configPath: ref.configPath }),
-        bindingContext: accessContextForBroker({ ...input, configPath: ref.configPath }),
-      });
-    }
-    return secrets.resolveSecretValue(input.connection.companyId, ref.ref.secretId, ref.ref.version ?? "latest", {
-      accessContext: accessContextForBroker({ ...input, configPath: ref.configPath }),
-      bindingContext: accessContextForBroker({ ...input, configPath: ref.configPath }),
-    });
-  }
-
-  function exchangeTokenUrl(connection: typeof toolConnections.$inferSelect, isPages: boolean): string {
-    const broker = tokenBrokerConfig(connection);
-    const config = asRecord(connection.config);
-    const url = readConfigString(broker, "tokenUrl")
-      ?? readConfigString(broker, "exchangeTokenUrl")
-      ?? readConfigString(config, "tokenExchangeUrl")
-      ?? readConfigString(config, "pagesTokenExchangeUrl");
-    if (url) return url;
-    const pagesApiBase = process.env.PAPERCLIP_PAGES_API_URL?.trim();
-    if (isPages && pagesApiBase) return new URL("/v1/tokens/exchange", pagesApiBase.endsWith("/") ? pagesApiBase : `${pagesApiBase}/`).toString();
-    throw unprocessable("Connection token exchange URL is not configured", { code: "exchange_url_missing" });
-  }
-
-  function pagesNamespaceFromScope(scope: string[]): string | null {
-    const first = scope[0];
-    if (!first) return null;
-    const match = first.match(/^pages:publish:ns\/([^/\s]+)$/);
-    return match?.[1] ?? null;
-  }
-
-  async function mintExchangeConnectionToken(input: {
-    connection: typeof toolConnections.$inferSelect;
-    application: typeof toolApplications.$inferSelect | null;
-    agentId: string;
-    runId: string;
-    issueId: string | null;
-    responsibleUserId: string | null;
-    scope: string[];
-    ttlSeconds: number;
-  }) {
-    const isPages = isPagesTokenConnection(input.connection, input.application);
-    const parentToken = await resolveBrokerParentCredential(input);
-    const broker = tokenBrokerConfig(input.connection);
-    const protocol = readConfigString(broker, "protocol") ?? readConfigString(broker, "exchangeProtocol") ?? (isPages ? "pages" : "generic");
-    const url = exchangeTokenUrl(input.connection, isPages);
-    const actor = {
-      type: "agent",
-      id: input.agentId,
-      runId: input.runId,
-      ...(input.responsibleUserId ? { onBehalfOf: `user:${input.responsibleUserId}` } : {}),
-    };
-    let response: Response;
-    if (protocol === "rfc8693") {
-      const body = new URLSearchParams();
-      body.set("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange");
-      body.set("subject_token", parentToken);
-      body.set("subject_token_type", readConfigString(broker, "subjectTokenType") ?? "urn:ietf:params:oauth:token-type:access_token");
-      body.set("scope", input.scope.join(" "));
-      const audience = readConfigString(broker, "audience");
-      if (audience) body.set("audience", audience);
-      body.set("requested_token_type", readConfigString(broker, "requestedTokenType") ?? "urn:ietf:params:oauth:token-type:access_token");
-      body.set("actor_token", Buffer.from(JSON.stringify(actor)).toString("base64url"));
-      body.set("actor_token_type", readConfigString(broker, "actorTokenType") ?? "urn:ietf:params:oauth:token-type:jwt");
-      response = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body,
-      });
-    } else {
-      const namespace = isPages ? pagesNamespaceFromScope(input.scope) : null;
-      const body = isPages && namespace
-        ? { namespace, ttlSeconds: input.ttlSeconds, actions: ["publish"], actor }
-        : { scope: input.scope, ttlSeconds: input.ttlSeconds, actor, audience: readConfigString(broker, "audience") };
-      response = await fetch(url, {
-        method: "POST",
-        headers: { authorization: `Bearer ${parentToken}`, "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    }
-    const payload = await response.json().catch(() => ({})) as unknown;
-    const record = asRecord(payload);
-    if (!response.ok) {
-      const code = typeof record.code === "string"
-        ? record.code
-        : typeof record.error === "string"
-          ? record.error
-          : "upstream_error";
-      throw new HttpError(response.status === 401 || response.status === 403 ? 409 : 502, "Connection token exchange failed", {
-        code: code === "parent_revoked" ? "credential_revoked" : "upstream_error",
-        upstreamCode: code,
-        upstreamStatus: response.status,
-        upstreamRequestId: typeof record.requestId === "string" ? record.requestId : null,
-      });
-    }
-    const token = typeof record.token === "string"
-      ? record.token
-      : typeof record.access_token === "string"
-        ? record.access_token
-        : null;
-    if (!token) throw new HttpError(502, "Connection token exchange did not return a token", { code: "upstream_token_missing" });
-    const expiresIn = typeof record.expires_in === "number" ? record.expires_in : Number(record.expires_in);
-    const expiresAt = typeof record.expiresAt === "string" && Number.isFinite(Date.parse(record.expiresAt))
-      ? new Date(record.expiresAt)
-      : typeof record.expires_at === "string" && Number.isFinite(Date.parse(record.expires_at))
-        ? new Date(record.expires_at)
-        : new Date(now().getTime() + Math.min(input.ttlSeconds, Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : input.ttlSeconds) * 1000);
-    const responseScope = readConfigStringArray(record.scope).length > 0 ? readConfigStringArray(record.scope) : input.scope;
-    return {
-      token,
-      tokenType: typeof record.token_type === "string" ? record.token_type : "Bearer",
-      expiresAt,
-      scope: responseScope,
-    };
-  }
 
   function runtimeAlert(input: ToolRuntimeAlertRecommendation): ToolRuntimeAlertRecommendation {
     return input;
@@ -2123,9 +1681,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       : firing.length > 0
         ? "degraded"
         : "ok";
-    const deploymentMode = options.deploymentMode ?? "local_trusted";
     const deploymentExposure = options.deploymentExposure ?? "private";
-    const localStdioSupported = deploymentMode === "local_trusted" || Boolean(trustedRuntimeHost());
+    const localStdioSupported =
+      deploymentExposure !== "public" ||
+      Boolean(trustedRuntimeHost());
     return {
       status,
       generatedAt,
@@ -2134,13 +1693,13 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       supportMatrix: {
         remoteHttp: {
           supported: true,
-          note: "mcp_remote MCP connections are supported in hosted cloud and local deployments.",
+          note: "mcp_remote MCP connections are supported for private and public deployments.",
         },
         localStdio: {
           supported: localStdioSupported,
           note: localStdioSupported
-            ? "local_stdio is available for local trusted mode or through the configured trusted MCP runtime host."
-            : `local_stdio should stay disabled for ${deploymentMode}/${deploymentExposure}; use mcp_remote or configure a trusted runtime worker.`,
+            ? "local_stdio is available on private deployments or through the configured trusted MCP runtime host."
+            : "local_stdio is disabled for public exposure; use mcp_remote or configure a trusted runtime worker.",
         },
       },
       alerts: firing,
@@ -2224,8 +1783,18 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
 
   async function assertOptionalPlugin(pluginId: string | null | undefined) {
     if (!pluginId) return;
-    const [row] = await db.select({ id: plugins.id }).from(plugins).where(eq(plugins.id, pluginId));
-    if (!row) throw unprocessable("Tool application plugin was not found");
+    const [row] = await db
+      .select({ id: plugins.id })
+      .from(plugins)
+      .where(
+        and(
+          eq(plugins.id, pluginId),
+          eq(plugins.status, "ready"),
+        ),
+      );
+    if (!row) {
+      throw unprocessable("Ready tool application plugin was not found");
+    }
   }
 
   async function assertSecretRefs(companyId: string, refs: Array<{
@@ -2376,7 +1945,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         eq(toolConnectionInstalls.companyId, connection.companyId),
         eq(toolConnectionInstalls.connectionId, connection.id),
       ))
-      .orderBy(asc(toolConnectionInstalls.targetType), asc(toolConnectionInstalls.targetId));
+      .orderBy(
+        asc(toolConnectionInstalls.targetType),
+        asc(toolConnectionInstalls.targetAgentId),
+      );
     return rows.map(toConnectionInstall);
   }
 
@@ -2387,7 +1959,16 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       .from(toolConnectionInstalls)
       .where(and(
         eq(toolConnectionInstalls.companyId, companyId),
-        sql`((${toolConnectionInstalls.targetType} = 'company' and ${toolConnectionInstalls.targetId} = ${companyId}) or (${toolConnectionInstalls.targetType} = 'agent' and ${toolConnectionInstalls.targetId} = ${agentId}))`,
+        or(
+          and(
+            eq(toolConnectionInstalls.targetType, "company"),
+            isNull(toolConnectionInstalls.targetAgentId),
+          ),
+          and(
+            eq(toolConnectionInstalls.targetType, "agent"),
+            eq(toolConnectionInstalls.targetAgentId, agentId),
+          ),
+        ),
       ));
     if (installRows.length === 0) return [];
     const connectionIds = [...new Set(installRows.map((install) => install.connectionId))];
@@ -2435,8 +2016,11 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     return row;
   }
 
-  async function ensureDefaultWorkspaceGrant(connection: typeof toolConnections.$inferSelect) {
-    const [existing] = await db
+  async function ensureDefaultWorkspaceGrant(
+    connection: typeof toolConnections.$inferSelect,
+    executor: ToolAccessMutationDb = db,
+  ) {
+    const [existing] = await executor
       .select()
       .from(connectionGrants)
       .where(and(
@@ -2447,7 +2031,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       ))
       .limit(1);
     if (existing) return existing;
-    const [created] = await db
+    const [created] = await executor
       .insert(connectionGrants)
       .values({
         companyId: connection.companyId,
@@ -2640,40 +2224,48 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     await createProfileEntries(companyId, profileId, entries);
   }
 
-  async function syncCredentialBindings(connection: typeof toolConnections.$inferSelect) {
-    await db
-      .delete(companySecretBindings)
-      .where(
-        and(
-          eq(companySecretBindings.companyId, connection.companyId),
-          eq(companySecretBindings.targetType, "tool_connection"),
-          eq(companySecretBindings.targetId, connection.id),
-        ),
-      );
+  async function syncCredentialBindings(
+    connection: typeof toolConnections.$inferSelect,
+    actor: SecretMutationActor,
+    executor?: DbTransaction,
+  ) {
+    requireSecretMutationActor(actor);
     const bindings = [
       ...connection.credentialRefs.map((ref) => ({
         secretId: ref.secretId,
         configPath: `credentials.${ref.name}`,
-        projectionClass: "unclassified",
+        versionSelector: ref.version ?? "latest",
+        required: true,
+        label: ref.name,
+        projectionClass: "unclassified" as const,
         projectionAllowlistKey: null,
       })),
       ...connection.credentialSecretRefs.map((ref) => ({
         secretId: ref.secretId,
         configPath: ref.configPath,
+        versionSelector: ref.versionSelector ?? "latest",
+        required: ref.required ?? true,
+        label: ref.label ?? null,
         projectionClass: ref.projectionClass ?? "unclassified",
         projectionAllowlistKey: ref.projectionAllowlistKey ?? null,
       })),
     ];
-    if (bindings.length === 0) return;
-    await db.insert(companySecretBindings).values(bindings.map((ref) => ({
-      companyId: connection.companyId,
-      secretId: ref.secretId,
-      targetType: "tool_connection" as const,
-      targetId: connection.id,
-      configPath: ref.configPath,
-      projectionClass: ref.projectionClass,
-      projectionAllowlistKey: ref.projectionAllowlistKey,
-    })));
+    const bindingService = executor
+      ? secretService(executor as unknown as Db)
+      : secrets;
+    await bindingService.syncSecretRefsForTarget(
+      connection.companyId,
+      {
+        targetType: "tool_connection",
+        targetId: connection.id,
+      },
+      bindings,
+      {
+        actor,
+        replaceAll: true,
+        ...(executor ? { db: executor } : {}),
+      },
+    );
   }
 
   async function ensureRuntimeSlot(connection: typeof toolConnections.$inferSelect): Promise<ToolRuntimeSlot | null> {
@@ -2702,11 +2294,17 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     return toRuntimeSlot(created);
   }
 
-  async function resolveCredentialHeaders(connection: typeof toolConnections.$inferSelect): Promise<Record<string, string>> {
+  async function resolveCredentialHeaders(
+    connection: typeof toolConnections.$inferSelect,
+    actor: ActorInfo,
+  ): Promise<Record<string, string>> {
     try {
-      connection = await maybeRefreshOAuthCredentials(connection);
+      connection = await maybeRefreshOAuthCredentials(
+        connection,
+        actor,
+      );
     } catch (error) {
-      const scope = credentialScope(connection);
+      const scope = credentialScope(connection, actor);
       await audit({
         companyId: connection.companyId,
         connectionId: connection.id,
@@ -2725,7 +2323,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       throw error;
     }
     const headers: Record<string, string> = {};
-    const scope = credentialScope(connection);
+    const scope = credentialScope(connection, actor);
     for (const ref of connection.credentialRefs) {
       let value: string;
       try {
@@ -2733,7 +2331,8 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           consumerType: "tool_connection",
           consumerId: connection.id,
           configPath: `credentials.${ref.name}`,
-          actorType: "system",
+          actorType: actor.actorType ?? "system",
+          actorId: actor.actorId ?? null,
         });
       } catch (error) {
         await audit({
@@ -2771,8 +2370,11 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     return headers;
   }
 
-  async function remoteTools(connection: typeof toolConnections.$inferSelect): Promise<McpToolDescriptor[]> {
-    const headers = await resolveCredentialHeaders(connection);
+  async function remoteTools(
+    connection: typeof toolConnections.$inferSelect,
+    actor: ActorInfo,
+  ): Promise<McpToolDescriptor[]> {
+    const headers = await resolveCredentialHeaders(connection, actor);
     const endpoint = await assertRemoteEndpointAllowed(connection.config);
     const response = await fetch(endpoint, {
       method: "POST",
@@ -2837,9 +2439,14 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     }));
   }
 
-  async function discoverTools(connection: typeof toolConnections.$inferSelect): Promise<McpToolDescriptor[]> {
-    if (connection.transport === "mcp_remote") return remoteTools(connection);
-    await resolveCredentialHeaders(connection);
+  async function discoverTools(
+    connection: typeof toolConnections.$inferSelect,
+    actor: ActorInfo,
+  ): Promise<McpToolDescriptor[]> {
+    if (connection.transport === "mcp_remote") {
+      return remoteTools(connection, actor);
+    }
+    await resolveCredentialHeaders(connection, actor);
     return localTools(connection);
   }
 
@@ -2870,13 +2477,14 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     return updated;
   }
 
-  async function checkConnectionHealth(connectionId: string, actor?: ActorInfo): Promise<ToolConnectionHealthCheckResult> {
+  async function checkConnectionHealth(connectionId: string, actor: ActorInfo): Promise<ToolConnectionHealthCheckResult> {
+    actorForSecret(actor);
     const connection = await getConnectionRow(connectionId);
     try {
       if (connection.transport === "mcp_remote") {
-        await remoteTools(connection);
+        await remoteTools(connection, actor);
       } else {
-        await resolveCredentialHeaders(connection);
+        await resolveCredentialHeaders(connection, actor);
         await stdioTemplateId(connection.companyId, connection.config);
       }
       const updated = await updateConnectionHealth(connection, "ok", connection.transport === "local_stdio"
@@ -2915,12 +2523,13 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     }
   }
 
-  async function refreshCatalog(connectionId: string, actor?: ActorInfo): Promise<ToolCatalogRefreshResult> {
+  async function refreshCatalog(connectionId: string, actor: ActorInfo): Promise<ToolCatalogRefreshResult> {
+    actorForSecret(actor);
     const connection = await getConnectionRow(connectionId);
     const now = new Date();
     let descriptors: McpToolDescriptor[];
     try {
-      descriptors = await discoverTools(connection);
+      descriptors = await discoverTools(connection, actor);
     } catch (error) {
       const failure = sanitizeHttpFailure(error);
       const updated = await updateConnectionHealth(connection, failure.status, failure.message);
@@ -3201,10 +2810,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
   }
 
   function localStdioInstallBlocker(): string | null {
-    return options.deploymentMode === "authenticated"
-      && options.deploymentExposure === "public"
+    return options.deploymentExposure === "public"
       && !trustedRuntimeHost()
-      ? "Local stdio examples require a trusted MCP runtime host in authenticated public deployments."
+      ? "Local stdio examples require a trusted MCP runtime host on public deployments."
       : null;
   }
 
@@ -3335,6 +2943,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     definition: ToolExampleDefinition,
     applicationId: string,
     existing: typeof toolConnections.$inferSelect | null,
+    secretMutationActor: SecretMutationActor,
   ) {
     const config = {
       templateId: definition.templateId,
@@ -3359,7 +2968,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         })
         .where(eq(toolConnections.id, existing.id))
         .returning();
-      await syncCredentialBindings(updated);
+      await syncCredentialBindings(updated, secretMutationActor);
       await ensureRuntimeSlot(updated);
       return { row: updated, created: false };
     }
@@ -3379,7 +2988,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       credentialRefs: [],
       credentialSecretRefs: [],
     }).returning();
-    await syncCredentialBindings(created);
+    await syncCredentialBindings(created, secretMutationActor);
     await ensureRuntimeSlot(created);
     return { row: created, created: true };
   }
@@ -3593,10 +3202,17 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     return fields;
   }
 
-  function actorForSecret(actor?: ActorInfo): { userId?: string | null; agentId?: string | null } | undefined {
-    if (actor?.actorType === "user") return { userId: actor.actorId ?? null };
-    if (actor?.actorType === "agent") return { agentId: actor.actorId ?? null };
-    return undefined;
+  function actorForSecret(actor?: ActorInfo): SecretMutationActor {
+    let candidate: unknown = actor;
+    if (actor?.actorType === "user" && actor.actorId) {
+      candidate = { type: "user", userId: actor.actorId };
+    } else if (actor?.actorType === "agent" && actor.actorId) {
+      candidate = { type: "agent", agentId: actor.actorId };
+    } else if (actor?.actorType === "system" || actor?.actorType === "plugin") {
+      candidate = { type: "system" };
+    }
+    requireSecretMutationActor(candidate);
+    return candidate as SecretMutationActor;
   }
 
   function oauthEnvName(provider: string, suffix: "CLIENT_ID" | "CLIENT_SECRET") {
@@ -3937,7 +3553,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     configPath: "oauth.access_token" | "oauth.refresh_token";
     label: string;
     value: string;
-    actor?: ActorInfo;
+    actor: ActorInfo;
     existingRefs?: typeof connectionGrants.$inferSelect.credentialSecretRefs;
   }) {
     const existing = input.existingRefs === undefined
@@ -4020,17 +3636,18 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
 
   async function maybeRefreshOAuthCredentials(
     connection: typeof toolConnections.$inferSelect,
-    actor?: ActorInfo,
+    actor: ActorInfo,
     accessContext?: {
-      actorSource?: "local_implicit" | "session" | "board_key" | "agent_key" | "agent_jwt" | "cloud_tenant";
+      actorSource?: "session" | "board_key" | "internal";
       issueId?: string | null;
-      heartbeatRunId?: string | null;
+      runId?: string | null;
     },
   ): Promise<typeof toolConnections.$inferSelect> {
     const oauth = oauthConfig(connection);
     if (typeof oauth.tokenUrl !== "string" || typeof oauth.provider !== "string") return connection;
     const expiresAtMs = oauthExpiresAtMs(connection);
     if (expiresAtMs && expiresAtMs > Date.now() + 60_000) return connection;
+    const secretMutationActor = actorForSecret(actor);
     const grantType = oauth.grantType === "client_credentials" || oauth.clientCredentials === true
       ? "client_credentials" as const
       : "refresh_token" as const;
@@ -4053,7 +3670,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           actorId: actor?.actorId ?? null,
           actorSource: accessContext?.actorSource,
           issueId: accessContext?.issueId,
-          heartbeatRunId: accessContext?.heartbeatRunId,
+          runId: accessContext?.runId,
         })
       : null;
     const token = await exchangeOAuthToken({
@@ -4108,28 +3725,35 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         },
       },
     };
-    const [updated] = await db
-      .update(toolConnections)
-      .set({
-        config: nextConfig,
-        transportConfig: nextConfig,
-        credentialSecretRefs: nextCredentialSecretRefs,
-        credentialRefs: [
-          ...connection.credentialRefs.filter((ref) => ref.name !== "oauth.access_token"),
-          {
-            name: "oauth.access_token",
-            secretId: accessRef.secretId,
-            version: "latest" as const,
-            placement: "header" as const,
-            key: "Authorization",
-            prefix: "Bearer ",
-          },
-        ],
-        updatedAt: new Date(),
-      })
-      .where(eq(toolConnections.id, connection.id))
-      .returning();
-    await syncCredentialBindings(updated);
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(toolConnections)
+        .set({
+          config: nextConfig,
+          transportConfig: nextConfig,
+          credentialSecretRefs: nextCredentialSecretRefs,
+          credentialRefs: [
+            ...connection.credentialRefs.filter((ref) => ref.name !== "oauth.access_token"),
+            {
+              name: "oauth.access_token",
+              secretId: accessRef.secretId,
+              version: "latest" as const,
+              placement: "header" as const,
+              key: "Authorization",
+              prefix: "Bearer ",
+            },
+          ],
+          updatedAt: new Date(),
+        })
+        .where(eq(toolConnections.id, connection.id))
+        .returning();
+      await syncCredentialBindings(
+        row,
+        secretMutationActor,
+        tx,
+      );
+      return row;
+    });
     return updated;
   }
 
@@ -4141,8 +3765,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
   async function connectGalleryApp(
     companyId: string,
     input: ConnectToolApp,
-    actor?: ActorInfo,
+    actor: ActorInfo,
   ): Promise<ConnectToolAppResult> {
+    const secretMutationActor = actorForSecret(actor);
     const galleryEntry = input.galleryKey ? getConnectableAppDefinition(input.galleryKey) : null;
     if (input.galleryKey && !galleryEntry) throw notFound("Tool app gallery entry not found");
 
@@ -4208,7 +3833,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           provider: "local_encrypted",
           value,
           description: `Credential for ${name} (${field.configPath}).`,
-        }, actorForSecret(actor));
+        }, secretMutationActor);
         createdSecretIds.push(secret.id);
         credentialSecretRefs.push({
           secretId: secret.id,
@@ -4300,7 +3925,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           createdByUserId: actor?.actorType === "user" ? actor.actorId ?? null : null,
         }).returning();
       }
-      await syncCredentialBindings(connectionRow);
+      await syncCredentialBindings(
+        connectionRow,
+        secretMutationActor,
+      );
       await ensureRuntimeSlot(connectionRow);
 
       if (galleryEntry && connectionMethodFor(galleryEntry).auth === "oauth") {
@@ -4375,7 +4003,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           .catch(() => undefined);
       }
       for (const secretId of createdSecretIds) {
-        await secrets.remove(secretId).catch(() => undefined);
+        await secrets.remove(
+          secretId,
+          secretMutationActor,
+        ).catch(() => undefined);
       }
       throw error;
     }
@@ -4666,8 +4297,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     connectionId: string,
     companyId: string,
     input: { credentialValues: Record<string, string> },
-    actor?: ActorInfo,
+    actor: ActorInfo,
   ): Promise<ToolConnectionHealthCheckResult> {
+    const secretMutationActor = actorForSecret(actor);
     const connection = await getConnectionRow(connectionId, companyId);
     if (connection.status === "archived") throw conflict("Archived app connections cannot be reconnected");
     const sourceTemplateKey =
@@ -4697,7 +4329,11 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       const value = input.credentialValues[field.configPath]!.trim();
       const existing = credentialSecretRefs.find((ref) => ref.configPath === field.configPath);
       if (existing) {
-        await secrets.rotate(existing.secretId, { value }, actorForSecret(actor));
+        await secrets.rotate(
+          existing.secretId,
+          { value },
+          secretMutationActor,
+        );
         continue;
       }
       const secret = await secrets.create(companyId, {
@@ -4706,7 +4342,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         provider: "local_encrypted",
         value,
         description: `Credential for ${connection.name} (${field.configPath}).`,
-      }, actorForSecret(actor));
+      }, secretMutationActor);
       credentialSecretRefs.push({
         secretId: secret.id,
         versionSelector: "latest",
@@ -4726,12 +4362,24 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       }
     }
 
-    const [updated] = await db
-      .update(toolConnections)
-      .set({ credentialRefs, credentialSecretRefs, lastError: null, updatedAt: new Date() })
-      .where(eq(toolConnections.id, connection.id))
-      .returning();
-    await syncCredentialBindings(updated);
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(toolConnections)
+        .set({
+          credentialRefs,
+          credentialSecretRefs,
+          lastError: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(toolConnections.id, connection.id))
+        .returning();
+      await syncCredentialBindings(
+        row,
+        secretMutationActor,
+        tx,
+      );
+      return row;
+    });
     return checkConnectionHealth(updated.id, actor);
   }
 
@@ -4783,53 +4431,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     const authorizationScopes = input.scopes ?? endpoints.scopes;
     if (authorizationScopes.length > 0) authorizationUrl.searchParams.set("scope", authorizationScopes.join(" "));
 
-    if (input.subjectUserId && input.issueId && binding.actorType === "agent") {
-      const idempotencyKey = `connection-authorization:${connection.id}:${input.subjectUserId}`;
-      const payload = {
-        version: 1 as const,
-        prompt: `Connect your account to ${connection.name}`,
-        acceptLabel: "Open authorization",
-        rejectLabel: "Not now",
-        detailsMarkdown: "Authorization is required before this agent can act on your behalf.",
-        target: {
-          type: "custom" as const,
-          key: `connection:${connection.uid}:user:${input.subjectUserId}`,
-          revisionId: state,
-          label: `Connect ${connection.name}`,
-          href: authorizationUrl.toString(),
-        },
-      };
-      const [existingInteraction] = await db.select().from(issueThreadInteractions).where(and(
-        eq(issueThreadInteractions.companyId, companyId),
-        eq(issueThreadInteractions.issueId, input.issueId),
-        eq(issueThreadInteractions.idempotencyKey, idempotencyKey),
-      )).limit(1);
-      const [interaction] = existingInteraction
-        ? await db.update(issueThreadInteractions).set({
-            status: "pending",
-            payload,
-            result: null,
-            resolvedAt: null,
-            updatedAt: new Date(),
-          }).where(eq(issueThreadInteractions.id, existingInteraction.id)).returning()
-        : await db.insert(issueThreadInteractions).values({
-            companyId,
-            issueId: input.issueId,
-            kind: "request_confirmation",
-            status: "pending",
-            continuationPolicy: "none",
-            idempotencyKey,
-            sourceRunId: binding.actorType === "agent" ? input.actor.sessionId ?? null : null,
-            title: "Connect your account",
-            summary: `Connect ${connection.name} to continue`,
-            createdByAgentId: binding.actorType === "agent" ? binding.actorId : null,
-            payload,
-          }).returning();
-      if (interaction) {
-        await db.update(toolOauthStates).set({ interactionId: interaction.id }).where(eq(toolOauthStates.state, state));
-      }
-    }
-
     const nextConfig = {
       ...connection.config,
       oauth: {
@@ -4873,7 +4474,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     error?: string | null;
     errorDescription?: string | null;
     redirectUri: string;
-    actor?: ActorInfo;
+    actor: ActorInfo;
   }): Promise<ConnectToolAppResult> {
     if (input.error) throw badRequest(input.errorDescription ?? `OAuth provider returned ${input.error}`);
     if (!input.code) throw badRequest("OAuth callback is missing a code");
@@ -4891,6 +4492,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     } else {
       assertSameOAuthActor(stateRow, input.actor);
     }
+    const secretMutationActor = actorForSecret(input.actor);
     await db.delete(toolOauthStates).where(eq(toolOauthStates.state, input.state));
 
     let connection = await getConnectionRow(stateRow.connectionId, stateRow.companyId);
@@ -4969,18 +4571,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           createdByUserId: stateRow.subjectUserId,
         });
       }
-      if (stateRow.interactionId) {
-        await db.update(issueThreadInteractions).set({
-          status: "accepted",
-          result: { version: 1, outcome: "accepted" },
-          resolvedByUserId: stateRow.subjectUserId,
-          resolvedAt: new Date(),
-          updatedAt: new Date(),
-        }).where(and(
-          eq(issueThreadInteractions.id, stateRow.interactionId),
-          eq(issueThreadInteractions.companyId, connection.companyId),
-        ));
-      }
       const [application] = await db.select().from(toolApplications).where(eq(toolApplications.id, connection.applicationId));
       if (!application) throw new Error("OAuth connection application was not found");
       const catalog = (await db.select().from(toolCatalogEntries).where(and(
@@ -5019,35 +4609,41 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         oauth: { expiresAt, scope: token.scope, tokenType: token.tokenType },
       },
     };
-    const [updatedConnection] = await db
-      .update(toolConnections)
-      .set({
-        status: "active",
-        enabled: isSmokeLabOAuthFixture(connection) ? true : false,
-        config: nextConfig,
-        transportConfig: nextConfig,
-        credentialSecretRefs: nextCredentialSecretRefs,
-        credentialRefs: [
-          ...connection.credentialRefs.filter((ref) => ref.name !== "oauth.access_token"),
-          {
-            name: "oauth.access_token",
-            secretId: accessRef.secretId,
-            version: "latest" as const,
-            placement: "header" as const,
-            key: "Authorization",
-            prefix: "Bearer ",
-          },
-        ],
-        updatedAt: new Date(),
-      })
-      .where(eq(toolConnections.id, connection.id))
-      .returning();
-    connection = updatedConnection;
-    await db
-      .update(toolApplications)
-      .set({ status: "active", updatedAt: new Date() })
-      .where(eq(toolApplications.id, connection.applicationId));
-    await syncCredentialBindings(connection);
+    connection = await db.transaction(async (tx) => {
+      const [updatedConnection] = await tx
+        .update(toolConnections)
+        .set({
+          status: "active",
+          enabled: isSmokeLabOAuthFixture(connection) ? true : false,
+          config: nextConfig,
+          transportConfig: nextConfig,
+          credentialSecretRefs: nextCredentialSecretRefs,
+          credentialRefs: [
+            ...connection.credentialRefs.filter((ref) => ref.name !== "oauth.access_token"),
+            {
+              name: "oauth.access_token",
+              secretId: accessRef.secretId,
+              version: "latest" as const,
+              placement: "header" as const,
+              key: "Authorization",
+              prefix: "Bearer ",
+            },
+          ],
+          updatedAt: new Date(),
+        })
+        .where(eq(toolConnections.id, connection.id))
+        .returning();
+      await tx
+        .update(toolApplications)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(eq(toolApplications.id, updatedConnection.applicationId));
+      await syncCredentialBindings(
+        updatedConnection,
+        secretMutationActor,
+        tx,
+      );
+      return updatedConnection;
+    });
 
     await checkConnectionHealth(connection.id, input.actor);
     const refresh = await refreshCatalog(connection.id, input.actor);
@@ -5262,35 +4858,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
 
     startOAuth,
 
-    startAuthorizationForAgent: async (input: {
-      companyId: string;
-      connectionId: string;
-      agentId: string;
-      runId: string;
-      subjectUserId: string;
-      scopes?: string[];
-      returnTo?: string;
-      redirectUri: string;
-    }) => {
-      const runContext = await loadBrokerRunContext(input);
-      const connection = await getConnectionRow(input.connectionId, input.companyId);
-      if (!runContext.responsibleUserId || runContext.responsibleUserId !== input.subjectUserId) {
-        throw new HttpError(403, "The agent run cannot start authorization for the requested user", {
-          code: "subject_not_permitted",
-          connection: { uid: connection.uid },
-          subject: { type: "user", userId: input.subjectUserId },
-        });
-      }
-      return startOAuth(input.companyId, connection.id, {
-        redirectUri: input.redirectUri,
-        actor: { actorType: "agent", actorId: input.agentId },
-        subjectUserId: input.subjectUserId,
-        scopes: input.scopes,
-        returnTo: input.returnTo,
-        issueId: runContext.issueId ?? undefined,
-      });
-    },
-
     peekOAuthState,
 
     completeOAuthCallback,
@@ -5305,8 +4872,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     installExample: async (
       companyId: string,
       exampleId: string,
-      actor?: ActorInfo,
+      actor: ActorInfo,
     ): Promise<ToolExampleInstallResult> => {
+      const secretMutationActor = actorForSecret(actor);
       const definition = findExample(exampleId);
       const blocker = localStdioInstallBlocker();
       if (blocker) throw unprocessable(blocker);
@@ -5314,7 +4882,13 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       await stdioTemplateId(companyId, { templateId: definition.templateId });
       const before = await exampleRows(companyId, definition);
       const application = await upsertExampleApplication(companyId, definition, before.application);
-      const connection = await upsertExampleConnection(companyId, definition, application.row.id, before.connection);
+      const connection = await upsertExampleConnection(
+        companyId,
+        definition,
+        application.row.id,
+        before.connection,
+        secretMutationActor,
+      );
       const refresh = await refreshCatalog(connection.row.id, actor);
       let catalog = refresh.catalog;
       const safeReadEntryIds = catalog
@@ -5357,8 +4931,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     smokeExample: async (
       companyId: string,
       exampleId: string,
-      actor?: ActorInfo,
+      actor: ActorInfo,
     ): Promise<ToolExampleSmokeResult> => {
+      actorForSecret(actor);
       const definition = findExample(exampleId);
       const rows = await exampleRows(companyId, definition);
       if (!rows.connection || !rows.profile || !rows.profileBinding) {
@@ -5528,7 +5103,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         .select()
         .from(toolConnectionInstalls)
         .where(eq(toolConnectionInstalls.companyId, companyId))
-        .orderBy(asc(toolConnectionInstalls.targetType), asc(toolConnectionInstalls.targetId));
+        .orderBy(
+          asc(toolConnectionInstalls.targetType),
+          asc(toolConnectionInstalls.targetAgentId),
+        );
       const installsByConnection = new Map<string, ToolConnectionInstall[]>();
       for (const row of installRows) {
         const installs = installsByConnection.get(row.connectionId) ?? [];
@@ -5563,7 +5141,12 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       return connections;
     },
 
-    createConnection: async (companyId: string, input: CreateToolConnection): Promise<ToolConnection> => {
+    createConnection: async (
+      companyId: string,
+      input: CreateToolConnection,
+      actor: ActorInfo,
+    ): Promise<ToolConnection> => {
+      const secretMutationActor = actorForSecret(actor);
       let applicationId = input.applicationId;
       let applicationNamespace = input.applicationName ?? input.name;
       const transport = input.transport;
@@ -5579,38 +5162,47 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         if ((transport === "mcp_remote" && app.type !== "mcp_http") || (transport === "local_stdio" && app.type !== "mcp_stdio")) {
           throw unprocessable("Connection transport must match application type");
         }
-      } else {
-        const [app] = await db.insert(toolApplications).values({
-          companyId,
-          applicationKey: normalizeKey(input.applicationName ?? input.name),
-          name: input.applicationName ?? input.name,
-          type: transport === "mcp_remote" ? "mcp_http" : "mcp_stdio",
-          status: "active",
-          metadata: {},
-        }).returning();
-        applicationId = app.id;
       }
       await assertSecretRefs(companyId, [...(input.credentialRefs ?? []), ...(input.credentialSecretRefs ?? [])]);
       const connectionId = randomUUID();
-      const [row] = await db.insert(toolConnections).values({
-        id: connectionId,
-        companyId,
-        applicationId,
-        name: input.name,
-        uid: connectionUid(applicationNamespace, input.name, connectionId),
-        connectionKind: input.connectionKind ?? "managed",
-        ownership: input.ownership ?? "customer",
-        transport,
-        authKind: input.authKind ?? "none",
-        status: input.status ?? "draft",
-        enabled: input.enabled ?? false,
-        config,
-        transportConfig: isGoogleSheetsConnectionConfig(config) ? config : input.transportConfig ?? config,
-        credentialRefs: input.credentialRefs ?? [],
-        credentialSecretRefs: input.credentialSecretRefs ?? [],
-      }).returning();
-      await ensureDefaultWorkspaceGrant(row);
-      await syncCredentialBindings(row);
+      const row = await db.transaction(async (tx) => {
+        let resolvedApplicationId = applicationId;
+        if (!resolvedApplicationId) {
+          const [app] = await tx.insert(toolApplications).values({
+            companyId,
+            applicationKey: normalizeKey(input.applicationName ?? input.name),
+            name: input.applicationName ?? input.name,
+            type: transport === "mcp_remote" ? "mcp_http" : "mcp_stdio",
+            status: "active",
+            metadata: {},
+          }).returning();
+          resolvedApplicationId = app.id;
+        }
+        const [created] = await tx.insert(toolConnections).values({
+          id: connectionId,
+          companyId,
+          applicationId: resolvedApplicationId,
+          name: input.name,
+          uid: connectionUid(applicationNamespace, input.name, connectionId),
+          connectionKind: input.connectionKind ?? "managed",
+          ownership: input.ownership ?? "customer",
+          transport,
+          authKind: input.authKind ?? "none",
+          status: input.status ?? "draft",
+          enabled: input.enabled ?? false,
+          config,
+          transportConfig: isGoogleSheetsConnectionConfig(config) ? config : input.transportConfig ?? config,
+          credentialRefs: input.credentialRefs ?? [],
+          credentialSecretRefs: input.credentialSecretRefs ?? [],
+        }).returning();
+        await ensureDefaultWorkspaceGrant(created, tx);
+        await syncCredentialBindings(
+          created,
+          secretMutationActor,
+          tx,
+        );
+        return created;
+      });
       await ensureRuntimeSlot(row);
       return toConnection(row);
     },
@@ -5684,38 +5276,27 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       const start = new Date();
       start.setUTCHours(0, 0, 0, 0);
       start.setUTCDate(start.getUTCDate() - days + 1);
-      const [issuances, invocations] = await Promise.all([
-        db.select({ createdAt: connectionTokenIssuances.createdAt, outcome: connectionTokenIssuances.outcome, path: connectionTokenIssuances.path })
-          .from(connectionTokenIssuances).where(and(
-            eq(connectionTokenIssuances.companyId, connection.companyId),
-            eq(connectionTokenIssuances.connectionId, connection.id),
-            gte(connectionTokenIssuances.createdAt, start),
-          )),
-        db.select({ createdAt: toolInvocations.createdAt, riskLevel: toolInvocations.riskLevel })
-          .from(toolInvocations).where(and(
-            eq(toolInvocations.companyId, connection.companyId),
-            eq(toolInvocations.connectionId, connection.id),
-            gte(toolInvocations.createdAt, start),
-          )),
-      ]);
+      const invocations = await db
+        .select({
+          createdAt: toolInvocations.createdAt,
+          riskLevel: toolInvocations.riskLevel,
+        })
+        .from(toolInvocations)
+        .where(and(
+          eq(toolInvocations.companyId, connection.companyId),
+          eq(toolInvocations.connectionId, connection.id),
+          gte(toolInvocations.createdAt, start),
+        ));
       const buckets = Array.from({ length: days }, (_, offset) => {
         const date = new Date(start);
         date.setUTCDate(start.getUTCDate() + offset);
         return {
           date: date.toISOString().slice(0, 10),
-          issuances: { total: 0, byOutcome: {} as Record<string, number>, byPath: {} as Record<string, number> },
           invocations: { total: 0, byRiskLevel: {} as Record<string, number> },
           deliveries: { received: 0, forwarded: 0 },
         };
       });
       const byDate = new Map(buckets.map((bucket) => [bucket.date, bucket]));
-      for (const row of issuances) {
-        const bucket = byDate.get(row.createdAt.toISOString().slice(0, 10));
-        if (!bucket) continue;
-        bucket.issuances.total += 1;
-        bucket.issuances.byOutcome[row.outcome] = (bucket.issuances.byOutcome[row.outcome] ?? 0) + 1;
-        bucket.issuances.byPath[row.path] = (bucket.issuances.byPath[row.path] ?? 0) + 1;
-      }
       for (const row of invocations) {
         const bucket = byDate.get(row.createdAt.toISOString().slice(0, 10));
         if (!bucket) continue;
@@ -5744,6 +5325,11 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       }
       const accessExtensions: Array<{ targetType: "company" | "agent"; targetId: string; profileId: string }> = [];
       await db.transaction(async (tx) => {
+        await lockToolSelectionRowsInOrder(tx, {
+          companyId: connection.companyId,
+          connectionIds: [connection.id],
+          installConnectionIds: [connection.id],
+        });
         const existing = await tx
           .select()
           .from(toolConnectionInstalls)
@@ -5751,9 +5337,13 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
             eq(toolConnectionInstalls.companyId, connection.companyId),
             eq(toolConnectionInstalls.connectionId, connection.id),
           ));
-        const existingKeys = new Set(existing.map((install) => `${install.targetType}:${install.targetId}`));
+        const existingKeys = new Set(
+          existing.map(connectionInstallKey),
+        );
         const removeIds = existing
-          .filter((install) => !requested.has(`${install.targetType}:${install.targetId}`))
+          .filter(
+            (install) => !requested.has(connectionInstallKey(install)),
+          )
           .map((install) => install.id);
         if (removeIds.length > 0) await tx.delete(toolConnectionInstalls).where(inArray(toolConnectionInstalls.id, removeIds));
         const additions = [...requested.entries()].filter(([key]) => !existingKeys.has(key)).map(([, install]) => install);
@@ -5762,7 +5352,10 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
             companyId: connection.companyId,
             connectionId: connection.id,
             targetType: install.targetType,
-            targetId: install.targetId,
+            targetAgentId:
+              install.targetType === "agent"
+                ? install.targetId
+                : null,
             createdByAgentId: actor?.actorType === "agent" ? actor.actorId ?? null : null,
             createdByUserId: actor?.actorType === "user" ? actor.actorId ?? null : null,
           })));
@@ -5802,7 +5395,12 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       return { connectionId: connection.id, installs: await listConnectionInstalls(connection.id, connection.companyId) };
     },
 
-    updateConnection: async (connectionId: string, input: UpdateToolConnection): Promise<ToolConnection> => {
+    updateConnection: async (
+      connectionId: string,
+      input: UpdateToolConnection,
+      actor: ActorInfo,
+    ): Promise<ToolConnection> => {
+      const secretMutationActor = actorForSecret(actor);
       const existing = await getConnectionRow(connectionId);
       const config = normalizeGoogleSheetsConnectionConfig(input.config ?? input.transportConfig ?? existing.config);
       if (existing.transport === "mcp_remote") await assertRemoteEndpointAllowed(config);
@@ -5810,21 +5408,28 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       assertLocalStdioCanBeEnabled(existing.transport, input.enabled ?? existing.enabled);
       await assertGoogleSheetsSpreadsheetOwnership(existing.companyId, config, { excludeConnectionId: existing.id });
       await assertSecretRefs(existing.companyId, [...(input.credentialRefs ?? existing.credentialRefs), ...(input.credentialSecretRefs ?? existing.credentialSecretRefs)]);
-      const [row] = await db
-        .update(toolConnections)
-        .set({
-          name: input.name ?? existing.name,
-          status: input.status ?? existing.status,
-          enabled: input.enabled ?? existing.enabled,
-          config,
-          transportConfig: isGoogleSheetsConnectionConfig(config) ? config : input.transportConfig ?? config,
-          credentialRefs: input.credentialRefs ?? existing.credentialRefs,
-          credentialSecretRefs: input.credentialSecretRefs ?? existing.credentialSecretRefs,
-          updatedAt: new Date(),
-        })
-        .where(eq(toolConnections.id, connectionId))
-        .returning();
-      await syncCredentialBindings(row);
+      const row = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(toolConnections)
+          .set({
+            name: input.name ?? existing.name,
+            status: input.status ?? existing.status,
+            enabled: input.enabled ?? existing.enabled,
+            config,
+            transportConfig: isGoogleSheetsConnectionConfig(config) ? config : input.transportConfig ?? config,
+            credentialRefs: input.credentialRefs ?? existing.credentialRefs,
+            credentialSecretRefs: input.credentialSecretRefs ?? existing.credentialSecretRefs,
+            updatedAt: new Date(),
+          })
+          .where(eq(toolConnections.id, connectionId))
+          .returning();
+        await syncCredentialBindings(
+          updated,
+          secretMutationActor,
+          tx,
+        );
+        return updated;
+      });
       await ensureRuntimeSlot(row);
       return toConnection(row);
     },
@@ -5928,7 +5533,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           .select({
             id: toolActionRequests.id,
             status: toolActionRequests.status,
-            resolvedByAgentId: toolActionRequests.resolvedByAgentId,
             resolvedByUserId: toolActionRequests.resolvedByUserId,
           })
           .from(toolActionRequests)
@@ -5938,21 +5542,13 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           ))
         : [];
 
-      const resolverAgentIds = [...new Set(requestRows.map((row) => row.resolvedByAgentId).filter(Boolean))] as string[];
       const resolverUserIds = [...new Set(requestRows.map((row) => row.resolvedByUserId).filter(Boolean))] as string[];
-      const resolverAgents = resolverAgentIds.length
-        ? await db
-          .select({ id: agents.id, name: agents.name })
-          .from(agents)
-          .where(and(eq(agents.companyId, connection.companyId), inArray(agents.id, resolverAgentIds)))
-        : [];
       const resolverUsers = resolverUserIds.length
         ? await db
           .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
           .from(authUsers)
           .where(inArray(authUsers.id, resolverUserIds))
         : [];
-      const resolverAgentNames = new Map(resolverAgents.map((agent) => [agent.id, agent.name]));
       const resolverUserNames = new Map(
         resolverUsers.map((user) => [user.id, user.name?.trim() || user.email?.trim() || user.id]),
       );
@@ -5961,12 +5557,9 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           request.id,
           {
             status: request.status,
-            resolverDisplayName: request.resolvedByAgentId
-              ? resolverAgentNames.get(request.resolvedByAgentId) ?? request.resolvedByAgentId
-              : request.resolvedByUserId
-                ? resolverUserNames.get(request.resolvedByUserId) ?? userFallbackName(request.resolvedByUserId)
-                : null,
-            resolvedByAgentId: request.resolvedByAgentId,
+            resolverDisplayName: request.resolvedByUserId
+              ? resolverUserNames.get(request.resolvedByUserId) ?? userFallbackName(request.resolvedByUserId)
+              : null,
             resolvedByUserId: request.resolvedByUserId,
           },
         ]),
@@ -6004,36 +5597,7 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         .from(toolInvocations)
         .where(and(eq(toolInvocations.companyId, companyId), inArray(toolInvocations.id, invocationIds)));
       const invocationById = new Map(invocations.map((invocation) => [invocation.id, invocation]));
-      let visibleRequests = requests;
-      if (status === "pending") {
-        const invalidRequestIds = requests
-          .filter((request) => {
-            const invocation = invocationById.get(request.invocationId);
-            if (!invocation) return true;
-            try {
-              return !readSignedToolArgumentsPayload({
-                signedArguments: request.signedArguments,
-                invocationId: invocation.id,
-                toolName: invocation.toolName,
-              });
-            } catch {
-              return true;
-            }
-          })
-          .map((request) => request.id);
-        if (invalidRequestIds.length > 0) {
-          await db
-            .update(toolActionRequests)
-            .set({ status: "cancelled", resolvedAt: new Date(), updatedAt: new Date() })
-            .where(and(
-              eq(toolActionRequests.companyId, companyId),
-              eq(toolActionRequests.status, "pending"),
-              inArray(toolActionRequests.id, invalidRequestIds),
-            ));
-          const invalidIds = new Set(invalidRequestIds);
-          visibleRequests = requests.filter((request) => !invalidIds.has(request.id));
-        }
-      }
+      const visibleRequests = requests;
       if (visibleRequests.length === 0) return [];
 
       const visibleInvocations = visibleRequests
@@ -6514,327 +6078,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
       };
     },
 
-    mintConnectionTokenForAgent: async (input: {
-      connectionId: string;
-      companyId: string;
-      agentId: string;
-      runId: string;
-      body: ConnectionTokenRequest;
-    }): Promise<ConnectionTokenResponse> => {
-      const runContext = await loadBrokerRunContext({ companyId: input.companyId, agentId: input.agentId, runId: input.runId });
-      const connection = await getConnectionRow(input.connectionId, input.companyId);
-      const application = await getConnectionApplication(connection);
-      const brokerEnabled = connectionTokenBrokerEnabled(connection);
-      const path = brokerEnabled ? inferConnectionTokenPath(connection, application) : "static";
-      const requestedScope = normalizeConnectionTokenScopes(input.body.scope);
-      const parentScopes = parentScopesForConnection(connection);
-      const fallbackScopes = defaultScopesForConnection(connection);
-      const issuedScope = requestedScope.length > 0
-        ? requestedScope
-        : fallbackScopes.length > 0
-          ? fallbackScopes
-          : parentScopes;
-      const ttlSeconds = requestedTtlSeconds(input.body, connection);
-      const attribution = {
-        agentId: input.agentId,
-        runId: input.runId,
-        issueId: runContext.issueId,
-        projectId: runContext.projectId,
-        responsibleUserId: runContext.responsibleUserId,
-      };
-
-      const recordFailure = async (outcome: ConnectionTokenIssuanceOutcome, errorCode: string, details: Record<string, unknown> = {}) => {
-        await recordConnectionTokenIssuance({
-          companyId: connection.companyId,
-          applicationId: connection.applicationId,
-          connectionId: connection.id,
-          agentId: input.agentId,
-          runId: input.runId,
-          issueId: runContext.issueId,
-          projectId: runContext.projectId,
-          responsibleUserId: runContext.responsibleUserId,
-          path,
-          requestedScope,
-          issuedScope,
-          ttlSeconds: outcome === "use_env_lease" ? null : ttlSeconds,
-          expiresAt: null,
-          tokenHash: null,
-          outcome,
-          errorCode,
-          metadata: details,
-        });
-        await auditConnectionTokenIssuance({
-          companyId: connection.companyId,
-          connectionId: connection.id,
-          agentId: input.agentId,
-          runId: input.runId,
-          path,
-          outcome,
-          reasonCode: errorCode,
-          details,
-        });
-      };
-
-      const fail = async (status: number, message: string, outcome: ConnectionTokenIssuanceOutcome, errorCode: string, details: Record<string, unknown> = {}): Promise<never> => {
-        await recordFailure(outcome, errorCode, details);
-        throw new HttpError(status, message, { code: errorCode, path, ...details });
-      };
-
-      const subject = input.body.subject ?? { type: "app" as const };
-      if (subject.type === "user" && subject.userId !== runContext.responsibleUserId) {
-        await fail(403, "The agent run cannot act as the requested user", "denied", "subject_not_permitted", {
-          connection: { uid: connection.uid },
-          subject,
-        });
-      }
-
-      let grant: typeof connectionGrants.$inferSelect;
-      if (subject.type === "user") {
-        const conditions = [
-          eq(connectionGrants.companyId, connection.companyId),
-          eq(connectionGrants.connectionId, connection.id),
-          eq(connectionGrants.kind, "user"),
-          eq(connectionGrants.subjectUserId, subject.userId),
-        ];
-        if (input.body.grantId) conditions.push(eq(connectionGrants.id, input.body.grantId));
-        [grant] = await db.select().from(connectionGrants).where(and(...conditions)).limit(1);
-        if (!grant) {
-          await fail(409, "User authorization is required", "denied", "user_authorization_required", {
-            connection: { uid: connection.uid },
-            subject,
-            remediation: { action: "start_authorization" },
-          });
-        }
-      } else if (input.body.grantId) {
-        [grant] = await db.select().from(connectionGrants).where(and(
-          eq(connectionGrants.id, input.body.grantId),
-          eq(connectionGrants.companyId, connection.companyId),
-          eq(connectionGrants.connectionId, connection.id),
-          eq(connectionGrants.kind, "workspace"),
-        )).limit(1);
-        if (!grant) {
-          await fail(409, "The requested installation is not available", "denied", "installation_required", {
-            connection: { uid: connection.uid },
-            subject,
-            remediation: { action: "add_installation" },
-          });
-        }
-      } else {
-        grant = await ensureDefaultWorkspaceGrant(connection);
-      }
-
-      if (grant.status !== "active") {
-        const code = grant.status === "needs_reauthorization" ? "needs_reauthorization" : "grant_revoked";
-        await fail(409, "The selected connection grant is not active", "denied", code, {
-          connection: { uid: connection.uid },
-          subject,
-          grantId: grant.id,
-          remediation: { action: "reauthorize" },
-        });
-      }
-      const requestedScopeSelectors = new Set(requestedScope);
-      const matchingScopedRefs = grant.credentialSecretRefs.filter(
-        (ref) => ref.keyScope && requestedScopeSelectors.has(ref.keyScope),
-      );
-      const selectedCredentialSecretRefs = matchingScopedRefs.length > 0
-        ? grant.credentialSecretRefs.filter((ref) => !ref.keyScope || requestedScopeSelectors.has(ref.keyScope))
-        : grant.credentialSecretRefs.filter((ref) => !ref.keyScope);
-      const rotateBefore = Date.now() + 14 * 24 * 60 * 60 * 1000;
-      const expiringRef = selectedCredentialSecretRefs.find((ref) => ref.expiresAt && Date.parse(ref.expiresAt) <= rotateBefore);
-      if (expiringRef && connection.healthStatus !== "degraded") {
-        await db.update(toolConnections).set({
-          healthStatus: "degraded",
-          healthMessage: `Rotate ${expiringRef.label ?? expiringRef.configPath} before it expires.`,
-          updatedAt: new Date(),
-        }).where(eq(toolConnections.id, connection.id));
-      }
-      const credentialConnection = { ...connection, credentialSecretRefs: selectedCredentialSecretRefs };
-
-      if (!connection.enabled || connection.status !== "active") {
-        await fail(409, "Connection is not active", "denied", "connection_not_active", {
-          connectionStatus: connection.status,
-          enabled: connection.enabled,
-        });
-      }
-      if (["failed", "error", "missing_secret"].includes(connection.healthStatus)) {
-        await fail(409, "Connection credential needs attention", "denied", "credential_revoked", {
-          healthStatus: connection.healthStatus,
-          healthMessage: connection.healthMessage ?? null,
-        });
-      }
-      if (!brokerEnabled) {
-        await fail(403, "Connection token broker is not enabled for this connection", "denied", "broker_not_enabled", {
-          reason: "Connections must explicitly opt in with tokenBroker.enabled before agents can request brokered tokens.",
-        });
-      }
-      try {
-        assertScopeSubset({ requestedScope: issuedScope, parentScopes });
-      } catch {
-        await fail(403, "Requested token scope exceeds the connection parent scope", "denied", "scope_exceeds_parent", {
-          parentScopeCount: parentScopes.length,
-        });
-      }
-
-      const hasBrokerGrant = await hasExplicitConnectionTokenMintProfileGrant({
-        companyId: connection.companyId,
-        agentId: input.agentId,
-        issueId: runContext.issueId,
-        projectId: runContext.projectId,
-        routineId: runContext.routineId,
-      });
-      if (!hasBrokerGrant) {
-        await fail(403, "Connection token minting requires an explicit broker profile grant", "denied", "broker_mint_not_granted", {
-          reason: "A connection-level profile grant is not sufficient for connection_token.mint.",
-        });
-      }
-
-      const decisionInput = {
-        companyId: connection.companyId,
-        actor: {
-          actorType: "agent" as const,
-          actorId: input.agentId,
-          agentId: input.agentId,
-        },
-        runContext: {
-          heartbeatRunId: input.runId,
-          issueId: runContext.issueId,
-          projectId: runContext.projectId,
-          routineId: runContext.routineId,
-        },
-        request: {
-          applicationId: connection.applicationId,
-          connectionId: connection.id,
-          providerType: "connection_token_broker",
-          applicationKey: application?.applicationKey ?? null,
-          upstreamToolName: CONNECTION_TOKEN_MINT_TOOL_NAME,
-          riskLevel: "write",
-          toolName: CONNECTION_TOKEN_MINT_TOOL_NAME,
-          arguments: {
-            path,
-            scope: issuedScope,
-            requestedTtlSeconds: input.body.requestedTtlSeconds ?? null,
-          },
-        },
-        consumeRateLimit: true,
-      };
-      const decision = await policySvc.decide(decisionInput);
-      await policySvc.writeAudit(decisionInput, decision);
-      if (!decision.allowed) {
-        await fail(
-          decision.decision === "rate_limited" ? 429 : 403,
-          decision.explanation,
-          decision.decision === "rate_limited" ? "rate_limited" : "denied",
-          decision.reasonCode,
-          {
-            decision: decision.decision,
-            effectiveProfileIds: decision.effectiveProfileIds,
-            matchedPolicyIds: decision.matchedPolicyIds,
-            rateLimitState: decision.rateLimitState ?? null,
-          },
-        );
-      }
-
-      try {
-        await enforceDefaultConnectionTokenRateLimit({ connection, agentId: input.agentId, path });
-      } catch (error) {
-        if (error instanceof HttpError && error.status === 429) {
-          await fail(429, error.message, "rate_limited", "rate_limited", asRecord(error.details));
-        }
-        throw error;
-      }
-
-      if (path === "static") {
-        await recordFailure("use_env_lease", "use_env_lease", {
-          reason: "Connection uses durable static credentials; broker token delivery is refused.",
-        });
-        return {
-          status: "use_env_lease",
-          code: "use_env_lease",
-          connectionId: connection.id,
-          connection: { id: connection.id, uid: connection.uid },
-          grantId: grant.id,
-          path: "static",
-          message: "This connection uses static credentials. Use an audited environment lease projection instead.",
-          scope: issuedScope,
-          attribution,
-        };
-      }
-      if (path === "oauth_access") {
-        await fail(422, "OAuth access-token projection is disabled; configure a short-lived exchange mint path instead", "denied", "oauth_access_projection_disabled", {
-          reason: "The broker must not return stored upstream OAuth bearer tokens directly.",
-        });
-      }
-
-      try {
-        const minted = await mintExchangeConnectionToken({
-          connection: credentialConnection,
-          application,
-          agentId: input.agentId,
-          runId: input.runId,
-          issueId: runContext.issueId,
-          responsibleUserId: runContext.responsibleUserId,
-          scope: issuedScope,
-          ttlSeconds,
-        });
-        const expiresAt = minted.expiresAt;
-        const mintedScope = "scope" in minted ? minted.scope : issuedScope;
-        const effectiveTtlSeconds = Math.max(1, Math.min(900, Math.ceil((expiresAt.getTime() - now().getTime()) / 1000)));
-        const tokenHash = bearerTokenHash(minted.token);
-        await recordConnectionTokenIssuance({
-          companyId: connection.companyId,
-          applicationId: connection.applicationId,
-          connectionId: connection.id,
-          agentId: input.agentId,
-          runId: input.runId,
-          issueId: runContext.issueId,
-          projectId: runContext.projectId,
-          responsibleUserId: runContext.responsibleUserId,
-          path,
-          requestedScope,
-          issuedScope: mintedScope,
-          ttlSeconds: effectiveTtlSeconds,
-          expiresAt,
-          tokenHash,
-          outcome: "success",
-          metadata: { tokenRef: tokenHash, tokenType: minted.tokenType },
-        });
-        await db.update(connectionGrants).set({ lastUsedAt: new Date(), updatedAt: new Date() }).where(eq(connectionGrants.id, grant.id));
-        await auditConnectionTokenIssuance({
-          companyId: connection.companyId,
-          connectionId: connection.id,
-          agentId: input.agentId,
-          runId: input.runId,
-          path,
-          outcome: "success",
-          details: { ttlSeconds: effectiveTtlSeconds, scopeCount: mintedScope.length, tokenRef: tokenHash },
-        });
-        return {
-          status: "minted",
-          connectionId: connection.id,
-          connection: { id: connection.id, uid: connection.uid },
-          grantId: grant.id,
-          providerTenantId: grant.providerTenant?.externalId,
-          path: "exchange",
-          token: minted.token,
-          tokenType: minted.tokenType,
-          expiresAt: expiresAt.toISOString(),
-          ttlSeconds: effectiveTtlSeconds,
-          scope: mintedScope,
-          attribution,
-        };
-      } catch (error) {
-        const details = error instanceof HttpError && asRecord(error.details).code
-          ? asRecord(error.details)
-          : {};
-        const errorCode = typeof details.code === "string" ? details.code : "mint_failed";
-        const outcome: ConnectionTokenIssuanceOutcome = errorCode === "upstream_error" || errorCode === "upstream_token_missing"
-          ? "upstream_error"
-          : "failure";
-        await recordFailure(outcome, errorCode, { ...details, message: error instanceof Error ? error.message : String(error) });
-        throw error;
-      }
-    },
-
     listRuntimeSlots: async (companyId: string): Promise<ToolRuntimeSlot[]> => {
       const rows = await db
         .select()
@@ -6853,12 +6096,8 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     getRuntimeHealth: runtimeHealth,
 
     getRunDecisionLookup: async (companyId: string, runId: string): Promise<ToolRunDecisionLookup> => {
-      const [run] = await db
-        .select({ id: heartbeatRuns.id })
-        .from(heartbeatRuns)
-        .where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, companyId)))
-        .limit(1);
-      if (!run) throw notFound("Run not found");
+      const run = await resolveIssueExecutionRunIdentityById(db, runId);
+      if (!run || run.companyId !== companyId) throw notFound("Run not found");
 
       const invocationRows = await db
         .select()
@@ -6901,7 +6140,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           ? {
             actionRequestId: actionRequest.id,
             issueId: actionRequest.issueId,
-            interactionId: actionRequest.interactionId,
             approvalId: actionRequest.approvalId,
             status: actionRequest.status,
             previewMarkdown: actionRequest.previewMarkdown,

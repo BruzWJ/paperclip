@@ -12,7 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { Download, Maximize2, Minus, Network, Plus, Upload } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import { type Agent } from "@paperclipai/shared";
 
 // Layout constants
 const CARD_W = 200;
@@ -29,7 +29,7 @@ const TOUCH_MOVE_THRESHOLD = 6;
 interface LayoutNode {
   id: string;
   name: string;
-  role: string;
+  subtitle: string;
   status: string;
   x: number;
   y: number;
@@ -81,7 +81,7 @@ function layoutTree(node: OrgNode, x: number, y: number): LayoutNode {
   return {
     id: node.id,
     name: node.name,
-    role: node.role,
+    subtitle: node.subtitle,
     status: node.status,
     x: x + (totalW - CARD_W) / 2,
     y,
@@ -592,17 +592,19 @@ export function OrgChart() {
                       style={{ backgroundColor: dotColor }}
                     />
                   </div>
-                  {/* Name + role + adapter type */}
+                  {/* Name + optional title + adapter type */}
                   <div className="flex flex-col items-start min-w-0 flex-1">
                     <span className="text-sm font-semibold text-foreground leading-tight">
                       {node.name}
                     </span>
                     <span className="text-(length:--text-micro) text-muted-foreground leading-tight mt-0.5">
-                      {agent?.title ?? roleLabel(node.role)}
+                      {agent?.title ?? ""}
                     </span>
                     {agent && (
                       <span className="text-(length:--text-nano) text-muted-foreground/60 font-mono leading-tight mt-1">
-                        {getAdapterLabel(agent.adapterType)}
+                        {agent.adapterType
+                          ? getAdapterLabel(agent.adapterType)
+                          : "Not configured"}
                       </span>
                     )}
                     {agent && agent.capabilities && (
@@ -619,10 +621,4 @@ export function OrgChart() {
       </div>
     </div>
   );
-}
-
-const roleLabels: Record<string, string> = AGENT_ROLE_LABELS;
-
-function roleLabel(role: string): string {
-  return roleLabels[role] ?? role;
 }

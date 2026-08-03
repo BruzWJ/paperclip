@@ -27,7 +27,6 @@ v1, plugin, skill, MCP, and gateway language onto Apps v2.
 | Plugin | Code extension package: workers, UI, migrations. May declare apps/providers and provision skills. Packaging, not governance. | An integration per se. |
 | Skill | Instructions an agent follows. May use connections; must not own tokens. | A token store. |
 | MCP | A wire protocol; one transport apps may support. | A product category. |
-| Broker | The run-time service that turns a stored credential plus a grant into a short-lived, downscoped, attributed token. | A vault or a permission model. |
 
 ## Product Copy Defaults
 
@@ -64,17 +63,16 @@ Keep protocol and implementation terms behind Developer or Advanced surfaces:
 | Action / Tool | Catalog entries discovered from MCP/OpenAPI/vendor wrappers. |
 | Profile | Access profiles and bindings. |
 | Rule | Policy rules such as allow, ask-first, block, rate limit, and trust rules. |
-| Gateway | Inbound MCP gateway sessions and scoped client tokens. |
+| Gateway | An explicitly profiled inbound MCP endpoint with scoped external-client tokens. |
 | Plugin | Extension packaging that may declare apps but does not bypass governance. |
 | Skill | Agent instruction package that calls governed connections through Paperclip. |
 | MCP | Transport option for apps and gateways. |
-| Broker | Credential resolver/token broker path over `company_secrets`. |
 
 ## Translation Rules
 
 - MCP is a transport, not the information architecture.
 - A plugin may bundle an app, but governance always flows through the connection,
-  profile, rule, broker, and audit model.
+  profile, rule, gateway, and audit model.
 - A skill may use Slack, Google Drive, Ramp, or another vendor, but the durable
   credential belongs in `company_secrets` and is reached through a connection.
 - Inbound clients use scoped Paperclip auth; outbound vendor calls use the Apps

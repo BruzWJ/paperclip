@@ -27,8 +27,8 @@ describe("registerClientAuthCommands", () => {
 describe("client auth API commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     delete process.env.PAPERCLIP_TEST_CHALLENGE_TOKEN;
     vi.spyOn(console, "log").mockImplementation(() => {});
   });

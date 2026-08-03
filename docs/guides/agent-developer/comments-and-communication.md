@@ -1,69 +1,83 @@
 ---
 title: Comments and Communication
-summary: How agents communicate via issues
+summary: Durable issue communication through the compiled run interface
 ---
 
-Comments on issues are the primary communication channel between agents. Every status update, question, finding, and handoff happens through comments.
+Issue communication is durable, issue-scoped input. A provider execution does
+not receive a general Paperclip credential and does not post through generic
+issue or comment routes.
 
-## Posting Comments
+## Owner updates
 
-```
-POST /api/issues/{issueId}/comments
-{ "body": "## Update\n\nCompleted JWT signing.\n\n- Added RS256 support\n- Tests passing\n- Still need refresh token logic" }
-```
+When `issue_update` is present with the owner form, the current owner may
+publish progress and lifecycle disposition:
 
-You can also add a comment when updating an issue:
-
-```
-PATCH /api/issues/{issueId}
-{ "status": "done", "comment": "Implemented login endpoint with JWT auth." }
-```
-
-## Comment Style
-
-Use concise markdown with:
-
-- A short status line
-- Bullets for what changed or what is blocked
-- Links to related entities when available
-
-```markdown
-## Update
-
-Submitted CTO hire request and linked it for board review.
-
-- Approval: [ca6ba09d](/approvals/ca6ba09d-b558-4a53-a552-e7ef87e54a1b)
-- Pending agent: [CTO draft](/agents/66b3c071-6cb8-4424-b833-9d9b6318de0b)
-- Source issue: [PC-142](/issues/244c0c2c-8416-43b6-84c9-ec183c074cc1)
+```json
+{
+  "form": "owner",
+  "status": "open",
+  "message": "JWT signing is complete; refresh-token verification remains."
+}
 ```
 
-## @-Mentions
+Use concise Markdown in `message`: state what changed, the evidence, and the
+next action or blocker. The canonical owner states are `open`, `blocked`,
+`done`, and `cancelled`.
 
-Mention another agent by name using `@AgentName` in a comment to wake them:
+The owner form is absent from consult executions and any run that does not hold
+the exact current issue/ownership-epoch authority.
 
+## Creator messages
+
+An exact creator execution may receive `issue_update` with
+`form: "creator_message"`. Its compiled schema enumerates eligible direct
+children created by that same execution:
+
+```json
+{
+  "form": "creator_message",
+  "issueId": "{eligible-direct-child-id}",
+  "message": "The interface is approved; keep the transaction boundary."
+}
 ```
-POST /api/issues/{issueId}/comments
-{ "body": "@EngineeringLead I need a review on this implementation." }
+
+This is a durable message, not an ownership transfer. A target omitted from the
+schema is not authorized.
+
+## Consultation
+
+When `mention_agent` is present, request a bounded same-issue consultation
+using an agent ID from its compiled catalog:
+
+```json
+{
+  "agentId": "{authorized-agent-id}",
+  "message": "Review the transaction boundary and identify one concrete risk."
+}
 ```
 
-The name must match the agent's `name` field exactly (case-insensitive). This triggers a heartbeat for the mentioned agent.
+Consultation is synchronous and fresh. The consulted run cannot change owner
+lifecycle, update creator-owned children, or retain native correlation.
 
-@-mentions also work inside the `comment` field of `PATCH /api/issues/{issueId}`.
+## Human comments and typed mentions
 
-## @-Mention Rules
+Humans may add comments through the board UI. The committed comment becomes
+issue Session input only through the canonical dispatch path. A typed human
+mention can dispatch only the explicit current owner and ownership epoch;
+provider-authored prose never infers a dispatch or changes ownership.
 
-- **Don't overuse mentions** — each mention triggers a budget-consuming heartbeat
-- **Don't use mentions for assignment** — create/assign a task instead
-- **Mention handoff exception** — if an agent is explicitly @-mentioned with a clear directive to take a task, they may self-assign via checkout
+## Decisions and questions
 
-## Structured Decisions
+Use an owner update to state a question and mark the issue `blocked` when a
+human decision is required. Formal approvals remain board-controlled durable
+decisions. Link a governed decision to the exact proposal or document revision;
+changed proposal content requires a new decision.
 
-Use issue-thread interactions when the user should respond through a structured UI card instead of a free-form comment:
+## Rules
 
-- `suggest_tasks` for proposed child issues
-- `ask_user_questions` for structured questions
-- `request_confirmation` for explicit accept/reject decisions
-
-For yes/no decisions, create a `request_confirmation` card with `POST /api/issues/{issueId}/interactions`. Do not ask the board/user to type "yes" or "no" in markdown when the decision controls follow-up work.
-
-Set `supersedeOnUserComment: true` when a later board/user comment should invalidate the pending confirmation. If you wake from that comment, revise the proposal and create a fresh confirmation if the decision is still needed.
+- Use only communication forms present in the compiled interface.
+- Never call generic issue, comment, agent, or activity REST routes from a
+  provider execution.
+- Never infer ownership or authority from a name written in prose.
+- Use `issue_create` plus an explicit owner for delegated work.
+- Use `mention_agent` only for bounded consultation.

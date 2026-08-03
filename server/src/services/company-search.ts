@@ -52,17 +52,18 @@ const FUZZY_PAIR_MEDIUM_MAX_EDITS = 1;
 const FUZZY_PAIR_SHORT_MAX_EDITS = 0;
 const FUZZY_IDENTIFIER_SIMILARITY_THRESHOLD = 0.45;
 const SNIPPET_MAX_CHARS = 240;
+const ISSUE_DISPLAY_LABEL_MAX_CHARS = 96;
 export const COMPANY_SEARCH_BRANCH_FETCH_LIMIT = COMPANY_SEARCH_MAX_OFFSET + COMPANY_SEARCH_MAX_LIMIT + 1;
 
 type IssueSearchRow = {
   id: string;
   identifier: string | null;
-  title: string;
-  description: string | null;
+  title: string | null;
+  request: string | null;
   status: string;
   priority: string;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
   projectId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -79,7 +80,6 @@ type SimpleSearchRow = {
   id: string;
   title: string;
   description: string | null;
-  role?: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -141,6 +141,15 @@ function plainText(value: string | null | undefined) {
     .replace(/[#>*_~|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function issueDisplayLabel(issue: Pick<IssueSearchRow, "id" | "identifier" | "title" | "request">) {
+  if (issue.title) return issue.title;
+  if (issue.identifier) return issue.identifier;
+  const requestLabel = plainText(issue.request);
+  if (!requestLabel) return `Issue ${issue.id}`;
+  if (requestLabel.length <= ISSUE_DISPLAY_LABEL_MAX_CHARS) return requestLabel;
+  return `${requestLabel.slice(0, ISSUE_DISPLAY_LABEL_MAX_CHARS - 3).trimEnd()}...`;
 }
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)/;
@@ -228,8 +237,8 @@ function emptyFilterOptionCounts(): CompanySearchFilterOptionCounts {
   return {
     status: {},
     priority: {},
-    assigneeAgentId: {},
-    assigneeUserId: {},
+    ownerAgentId: {},
+    ownerUserId: {},
     projectId: {},
     labelId: {},
     updatedWithin: {},
@@ -254,8 +263,8 @@ function updatedWithinStart(value: string | undefined, now = new Date()): Date |
 function issueOnlyFiltersActive(query: CompanySearchQuery) {
   return query.status.length > 0
     || query.priority.length > 0
-    || query.assigneeAgentId !== undefined
-    || Boolean(query.assigneeUserId)
+    || query.ownerAgentId !== undefined
+    || Boolean(query.ownerUserId)
     || Boolean(query.projectId)
     || Boolean(query.labelId)
     || Boolean(query.updatedWithin)
@@ -265,8 +274,8 @@ function issueOnlyFiltersActive(query: CompanySearchQuery) {
 function activeIssueFilters(query: CompanySearchQuery): Array<{ key: CompanySearchIssueFilterKey; values: string[] }> {
   const filters: Array<{ key: CompanySearchIssueFilterKey; values: string[] }> = [];
   if (query.status.length > 0) filters.push({ key: "status", values: query.status });
-  if (query.assigneeAgentId !== undefined) filters.push({ key: "assigneeAgentId", values: [query.assigneeAgentId ?? "null"] });
-  if (query.assigneeUserId) filters.push({ key: "assigneeUserId", values: [query.assigneeUserId] });
+  if (query.ownerAgentId !== undefined) filters.push({ key: "ownerAgentId", values: [query.ownerAgentId ?? "null"] });
+  if (query.ownerUserId) filters.push({ key: "ownerUserId", values: [query.ownerUserId] });
   if (query.projectId) filters.push({ key: "projectId", values: [query.projectId] });
   if (query.labelId) filters.push({ key: "labelId", values: [query.labelId] });
   if (query.priority.length > 0) filters.push({ key: "priority", values: query.priority });
@@ -280,8 +289,8 @@ function queryWithoutFilter(query: CompanySearchQuery, key: CompanySearchIssueFi
     ...query,
     status: key === "status" ? [] : query.status,
     priority: key === "priority" ? [] : query.priority,
-    assigneeAgentId: key === "assigneeAgentId" ? undefined : query.assigneeAgentId,
-    assigneeUserId: key === "assigneeUserId" ? undefined : query.assigneeUserId,
+    ownerAgentId: key === "ownerAgentId" ? undefined : query.ownerAgentId,
+    ownerUserId: key === "ownerUserId" ? undefined : query.ownerUserId,
     projectId: key === "projectId" ? undefined : query.projectId,
     labelId: key === "labelId" ? undefined : query.labelId,
     updatedWithin: key === "updatedWithin" ? undefined : query.updatedWithin,
@@ -294,8 +303,8 @@ function queryWithoutIssueFilters(query: CompanySearchQuery): CompanySearchQuery
     ...query,
     status: [],
     priority: [],
-    assigneeAgentId: undefined,
-    assigneeUserId: undefined,
+    ownerAgentId: undefined,
+    ownerUserId: undefined,
     projectId: undefined,
     labelId: undefined,
     updatedWithin: undefined,
@@ -306,16 +315,16 @@ function queryWithoutIssueFilters(query: CompanySearchQuery): CompanySearchQuery
 function issueFilterConditions(companyId: string, query: CompanySearchQuery, omit?: CompanySearchIssueFilterKey): SQL[] {
   const conditions: SQL[] = [];
   if (omit !== "status" && query.status.length > 0) {
-    conditions.push(query.status.length === 1 ? eq(issues.status, query.status[0]!) : inArray(issues.status, query.status));
+    conditions.push(query.status.length === 1 ? eq(issues.boardPresentationStatus, query.status[0]!) : inArray(issues.boardPresentationStatus, query.status));
   }
   if (omit !== "priority" && query.priority.length > 0) {
     conditions.push(query.priority.length === 1 ? eq(issues.priority, query.priority[0]!) : inArray(issues.priority, query.priority));
   }
-  if (omit !== "assigneeAgentId" && query.assigneeAgentId !== undefined) {
-    conditions.push(query.assigneeAgentId === null ? isNull(issues.assigneeAgentId) : eq(issues.assigneeAgentId, query.assigneeAgentId));
+  if (omit !== "ownerAgentId" && query.ownerAgentId !== undefined) {
+    conditions.push(query.ownerAgentId === null ? isNull(issues.ownerAgentId) : eq(issues.ownerAgentId, query.ownerAgentId));
   }
-  if (omit !== "assigneeUserId" && query.assigneeUserId) {
-    conditions.push(eq(issues.assigneeUserId, query.assigneeUserId));
+  if (omit !== "ownerUserId" && query.ownerUserId) {
+    conditions.push(eq(issues.ownerUserId, query.ownerUserId));
   }
   if (omit !== "projectId" && query.projectId) conditions.push(eq(issues.projectId, query.projectId));
   if (omit !== "labelId" && query.labelId) {
@@ -349,13 +358,13 @@ function matchedFacetConditions(companyId: string, query: CompanySearchQuery, om
   if (omit !== "priority" && query.priority.length > 0) {
     conditions.push(sql`m.priority = ANY(${sqlTextArray(query.priority)})`);
   }
-  if (omit !== "assigneeAgentId" && query.assigneeAgentId !== undefined) {
-    conditions.push(query.assigneeAgentId === null
-      ? sql`m.assignee_agent_id IS NULL`
-      : sql`m.assignee_agent_id = ${query.assigneeAgentId}`);
+  if (omit !== "ownerAgentId" && query.ownerAgentId !== undefined) {
+    conditions.push(query.ownerAgentId === null
+      ? sql`m.owner_agent_id IS NULL`
+      : sql`m.owner_agent_id = ${query.ownerAgentId}`);
   }
-  if (omit !== "assigneeUserId" && query.assigneeUserId) {
-    conditions.push(sql`m.assignee_user_id = ${query.assigneeUserId}`);
+  if (omit !== "ownerUserId" && query.ownerUserId) {
+    conditions.push(sql`m.owner_user_id = ${query.ownerUserId}`);
   }
   if (omit !== "projectId" && query.projectId) {
     conditions.push(sql`m.project_id = ${query.projectId}`);
@@ -445,8 +454,8 @@ function selectPrimarySnippets(row: IssueSearchRow, normalizedQuery: string, tok
   if (matchedFields.has("document")) {
     candidates.push(createSnippet("document", row.documentTitle || "Document", row.documentSnippet, terms));
   }
-  if (matchedFields.has("description")) {
-    candidates.push(createSnippet("description", "Description", row.description, terms));
+  if (matchedFields.has("request")) {
+    candidates.push(createSnippet("request", "Request", row.request, terms));
   }
   return candidates.filter((snippet): snippet is CompanySearchSnippet => Boolean(snippet)).slice(0, 2);
 }
@@ -461,22 +470,24 @@ function issueResult(row: IssueSearchRow, prefix: string, normalizedQuery: strin
     id: row.id,
     identifier: row.identifier,
     title: row.title,
-    status: row.status as CompanySearchIssueSummary["status"],
+    boardPresentationStatus:
+      row.status as CompanySearchIssueSummary["boardPresentationStatus"],
     priority: row.priority as CompanySearchIssueSummary["priority"],
-    assigneeAgentId: row.assigneeAgentId,
-    assigneeUserId: row.assigneeUserId,
+    request: row.request ?? "",
+    ownerAgentId: row.ownerAgentId,
+    ownerUserId: row.ownerUserId,
     projectId: row.projectId,
     updatedAt: iso(row.updatedAt)!,
   };
   const previewImageUrl =
-    extractFirstImageUrl(row.description) ??
+    extractFirstImageUrl(row.request) ??
     extractFirstImageUrl(row.commentSnippet) ??
     extractFirstImageUrl(row.documentSnippet);
   return {
     id: row.id,
     type: "issue",
     score: Number(row.score),
-    title: row.identifier ? `${row.identifier} ${row.title}` : row.title,
+    title: issueDisplayLabel(row),
     href: issueHref(prefix, row, suffix),
     matchedFields: row.matchedFields ?? [],
     sourceLabel,
@@ -489,7 +500,7 @@ function issueResult(row: IssueSearchRow, prefix: string, normalizedQuery: strin
 }
 
 function scoreSimpleRow(row: SimpleSearchRow, normalizedQuery: string, tokens: string[]) {
-  const haystack = [row.title, row.description, row.role].filter(Boolean).join(" ").toLowerCase();
+  const haystack = [row.title, row.description].filter(Boolean).join(" ").toLowerCase();
   let score = haystack.includes(normalizedQuery) ? 90 : 0;
   for (const token of tokens) {
     if (haystack.includes(token)) score += 20;
@@ -606,10 +617,10 @@ export function companySearchService(db: Db) {
       const identifierPhraseMatch = hasSearchText ? sql<boolean>`coalesce(issues.identifier, '') ILIKE ${containsPattern}` : noMatchSql();
       const identifierStartsWith = hasSearchText ? sql<boolean>`coalesce(issues.identifier, '') ILIKE ${startsWithPattern}` : noMatchSql();
       const identifierExactMatch = hasSearchText ? sql<boolean>`lower(coalesce(issues.identifier, '')) = ${normalizedQuery}` : noMatchSql();
-      const descriptionPhraseMatch = hasSearchText ? sql<boolean>`coalesce(issues.description, '') ILIKE ${containsPattern}` : noMatchSql();
+      const requestPhraseMatch = hasSearchText ? sql<boolean>`coalesce(issues.request, '') ILIKE ${containsPattern}` : noMatchSql();
       const titleTokenMatch = tokenCount > 0 ? sql<boolean>`issues.title ILIKE ANY(${tokenPatternArray})` : noMatchSql();
       const identifierTokenMatch = tokenCount > 0 ? sql<boolean>`coalesce(issues.identifier, '') ILIKE ANY(${tokenPatternArray})` : noMatchSql();
-      const descriptionTokenMatch = tokenCount > 0 ? sql<boolean>`coalesce(issues.description, '') ILIKE ANY(${tokenPatternArray})` : noMatchSql();
+      const requestTokenMatch = tokenCount > 0 ? sql<boolean>`coalesce(issues.request, '') ILIKE ANY(${tokenPatternArray})` : noMatchSql();
       // Comment/document matches are computed once per request into tagged
       // CTEs (issue_id, ord) where ord 1 is the phrase pattern and ord k+1 is
       // token k. Flags and per-token coverage become cheap hashed IN probes
@@ -629,7 +640,6 @@ export function companySearchService(db: Db) {
             SELECT search_comments.issue_id, 1 AS ord
             FROM issue_comments search_comments
             WHERE search_comments.company_id = ${companyId}
-              AND search_comments.deleted_at IS NULL
               AND search_comments.body ILIKE ${matchPatterns[0]!}
             GROUP BY 1, 2
           `
@@ -639,7 +649,6 @@ export function companySearchService(db: Db) {
             INNER JOIN unnest(${matchPatternArray}) WITH ORDINALITY AS pat(pattern, ord)
               ON search_comments.body ILIKE pat.pattern
             WHERE search_comments.company_id = ${companyId}
-              AND search_comments.deleted_at IS NULL
             GROUP BY 1, 2
           `;
       // Documents get one UNION ALL arm per pattern (each arm a bare
@@ -704,10 +713,10 @@ export function companySearchService(db: Db) {
       const issueTextMatch = sql<boolean>`(
         ${titlePhraseMatch}
         OR ${identifierPhraseMatch}
-        OR ${descriptionPhraseMatch}
+        OR ${requestPhraseMatch}
         OR ${titleTokenMatch}
         OR ${identifierTokenMatch}
-        OR ${descriptionTokenMatch}
+        OR ${requestTokenMatch}
       )`;
       const fuzzyMatch = sql<boolean>`(${fuzzyTokenTitleMatch} OR ${fuzzyIdentifierMatch})`;
       const anySearchMatch = sql<boolean>`(${issueTextMatch} OR ${commentMatch} OR ${documentMatch} OR ${fuzzyMatch})`;
@@ -718,8 +727,8 @@ export function companySearchService(db: Db) {
       // Scope conditions over precomputed flag columns (alias-qualified).
       function flagTextMatch(alias: string) {
         return sql<boolean>`(
-          ${sql.raw(alias)}.title_phrase OR ${sql.raw(alias)}.ident_phrase OR ${sql.raw(alias)}.desc_phrase
-          OR ${sql.raw(alias)}.title_token OR ${sql.raw(alias)}.ident_token OR ${sql.raw(alias)}.desc_token
+          ${sql.raw(alias)}.title_phrase OR ${sql.raw(alias)}.ident_phrase OR ${sql.raw(alias)}.request_phrase
+          OR ${sql.raw(alias)}.title_token OR ${sql.raw(alias)}.ident_token OR ${sql.raw(alias)}.request_token
         )`;
       }
       function flagFuzzyMatch(alias: string) {
@@ -776,7 +785,7 @@ export function companySearchService(db: Db) {
             + CASE WHEN m.ident_phrase THEN 320 ELSE 0 END
             + CASE WHEN m.comment_match THEN 180 ELSE 0 END
             + CASE WHEN m.document_match THEN 170 ELSE 0 END
-            + CASE WHEN m.desc_phrase THEN 120 ELSE 0 END
+            + CASE WHEN m.request_phrase THEN 120 ELSE 0 END
             + ${allTokensBonus}
             + (m.token_coverage * 70)
             + CASE WHEN (m.fuzzy_title OR m.fuzzy_ident) THEN 110 ELSE 0 END
@@ -798,11 +807,11 @@ export function companySearchService(db: Db) {
               m.id,
               m.identifier,
               m.title,
-              m.description,
+              m.request,
               m.status,
               m.priority,
-              m.assignee_agent_id AS "assigneeAgentId",
-              m.assignee_user_id AS "assigneeUserId",
+              m.owner_agent_id AS "ownerAgentId",
+              m.owner_user_id AS "ownerUserId",
               m.project_id AS "projectId",
               m.created_at AS "createdAt",
               m.updated_at AS "updatedAt",
@@ -810,7 +819,7 @@ export function companySearchService(db: Db) {
               array_remove(ARRAY[
                 CASE WHEN m.ident_phrase OR m.ident_token OR m.fuzzy_ident THEN 'identifier' END,
                 CASE WHEN m.title_phrase OR m.title_token OR m.fuzzy_title THEN 'title' END,
-                CASE WHEN m.desc_phrase OR m.desc_token THEN 'description' END,
+                CASE WHEN m.request_phrase OR m.request_token THEN 'request' END,
                 CASE WHEN m.comment_match THEN 'comment' END,
                 CASE WHEN m.document_match THEN 'document' END
               ], NULL)::text[] AS "matchedFields"
@@ -839,8 +848,8 @@ export function companySearchService(db: Db) {
         `;
         branches.push(facetBranch("facet:status", sql`m.status`, "status"));
         branches.push(facetBranch("facet:priority", sql`m.priority`, "priority"));
-        branches.push(facetBranch("facet:assigneeAgentId", sql`m.assignee_agent_id`, "assigneeAgentId", [sql`m.assignee_agent_id IS NOT NULL`]));
-        branches.push(facetBranch("facet:assigneeUserId", sql`m.assignee_user_id`, "assigneeUserId", [sql`m.assignee_user_id IS NOT NULL`]));
+        branches.push(facetBranch("facet:ownerAgentId", sql`m.owner_agent_id`, "ownerAgentId", [sql`m.owner_agent_id IS NOT NULL`]));
+        branches.push(facetBranch("facet:ownerUserId", sql`m.owner_user_id`, "ownerUserId", [sql`m.owner_user_id IS NOT NULL`]));
         branches.push(facetBranch("facet:projectId", sql`m.project_id`, "projectId", [sql`m.project_id IS NOT NULL`]));
         branches.push(sql`
           SELECT 'facet:labelId' AS kind, matched_labels.label_id::text AS value, count(DISTINCT m.id)::int AS count ${countTail}
@@ -887,7 +896,7 @@ export function companySearchService(db: Db) {
             return sql`(CASE WHEN
               issues.title ILIKE ${pattern}
               OR coalesce(issues.identifier, '') ILIKE ${pattern}
-              OR coalesce(issues.description, '') ILIKE ${pattern}
+              OR coalesce(issues.request, '') ILIKE ${pattern}
               OR issues.id IN (SELECT comment_matches.issue_id FROM comment_matches WHERE comment_matches.ord = ${ord})
               OR issues.id IN (SELECT document_matches.issue_id FROM document_matches WHERE document_matches.ord = ${ord})
             THEN 1 ELSE 0 END)`;
@@ -903,11 +912,11 @@ export function companySearchService(db: Db) {
               issues.id,
               issues.identifier,
               issues.title,
-              issues.description,
-              issues.status,
+              issues.request,
+              ${issues.boardPresentationStatus} AS status,
               issues.priority,
-              issues.assignee_agent_id,
-              issues.assignee_user_id,
+              issues.owner_agent_id,
+              issues.owner_user_id,
               issues.project_id,
               issues.created_at,
               issues.updated_at,
@@ -917,10 +926,10 @@ export function companySearchService(db: Db) {
               ${identifierPhraseMatch} AS ident_phrase,
               ${identifierStartsWith} AS ident_starts,
               ${identifierExactMatch} AS ident_exact,
-              ${descriptionPhraseMatch} AS desc_phrase,
+              ${requestPhraseMatch} AS request_phrase,
               ${titleTokenMatch} AS title_token,
               ${identifierTokenMatch} AS ident_token,
-              ${descriptionTokenMatch} AS desc_token,
+              ${requestTokenMatch} AS request_token,
               ${commentMatch} AS comment_match,
               ${documentMatch} AS document_match,
               ${fuzzyTokenTitleMatch} AS fuzzy_title,
@@ -946,11 +955,11 @@ export function companySearchService(db: Db) {
               id: row.id,
               identifier: row.identifier,
               title: row.title,
-              description: row.description,
+              request: row.request,
               status: row.status,
               priority: row.priority,
-              assigneeAgentId: row.assigneeAgentId,
-              assigneeUserId: row.assigneeUserId,
+              ownerAgentId: row.ownerAgentId,
+              ownerUserId: row.ownerUserId,
               projectId: row.projectId,
               createdAt: row.createdAt,
               updatedAt: row.updatedAt,
@@ -972,8 +981,8 @@ export function companySearchService(db: Db) {
             aggregates.filterOptionCounts.status[row.value as keyof CompanySearchFilterOptionCounts["status"]] = count;
           } else if (row.kind === "facet:priority" && row.value && (ISSUE_PRIORITIES as readonly string[]).includes(row.value)) {
             aggregates.filterOptionCounts.priority[row.value as keyof CompanySearchFilterOptionCounts["priority"]] = count;
-          } else if (row.kind === "facet:assigneeAgentId" && row.value) aggregates.filterOptionCounts.assigneeAgentId[row.value] = count;
-          else if (row.kind === "facet:assigneeUserId" && row.value) aggregates.filterOptionCounts.assigneeUserId[row.value] = count;
+          } else if (row.kind === "facet:ownerAgentId" && row.value) aggregates.filterOptionCounts.ownerAgentId[row.value] = count;
+          else if (row.kind === "facet:ownerUserId" && row.value) aggregates.filterOptionCounts.ownerUserId[row.value] = count;
           else if (row.kind === "facet:projectId" && row.value) aggregates.filterOptionCounts.projectId[row.value] = count;
           else if (row.kind === "facet:labelId" && row.value) aggregates.filterOptionCounts.labelId[row.value] = count;
           else if (row.kind === "facet:updatedWithin" && row.value) {
@@ -1012,7 +1021,6 @@ export function companySearchService(db: Db) {
             FROM issue_comments search_comments
             WHERE search_comments.company_id = ${companyId}
               AND search_comments.issue_id = target.id
-              AND search_comments.deleted_at IS NULL
               AND (
                 search_comments.body ILIKE ${containsPattern}
                 OR search_comments.body ILIKE ANY(${tokenPatternArray})
@@ -1073,7 +1081,6 @@ export function companySearchService(db: Db) {
       // --- agents / projects / artifacts ------------------------------------
       const simpleCondition = simpleTextCondition([
         sql`${agents.name}`,
-        sql`${agents.role}`,
         sql`${agents.title}`,
         sql`${agents.capabilities}`,
       ], containsPattern, tokenPatternArray);
@@ -1089,7 +1096,6 @@ export function companySearchService(db: Db) {
             id: agents.id,
             title: agents.name,
             description: agents.capabilities,
-            role: agents.role,
             createdAt: agents.createdAt,
             updatedAt: agents.updatedAt,
           })
@@ -1256,7 +1262,7 @@ export function companySearchService(db: Db) {
         })),
         ...(agentRows as SimpleSearchRow[]).map((row) => {
           const terms = matchTerms(normalizedQuery, tokens);
-          const snippet = createSnippet("capabilities", "Agent", row.description ?? row.role ?? row.title, terms);
+          const snippet = createSnippet("capabilities", "Agent", row.description ?? row.title, terms);
           return {
             id: row.id,
             type: "agent" as const,

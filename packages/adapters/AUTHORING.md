@@ -1,58 +1,80 @@
 # Adapter Authoring Notes
 
-In-repo notes for adapter authors. The user-facing guide lives at
-[`docs/adapters/creating-an-adapter.md`](../../docs/adapters/creating-an-adapter.md);
-this file holds invariants that are easy to violate from inside the adapter
-package itself.
+Paperclip AI adapters are declarative ACP subprocess definitions. The public
+guide is [Creating an Adapter](../../docs/adapters/creating-an-adapter.md).
 
-## No-remote-git contract (cross-run persistence)
+## Closed execution boundary
 
-The local execution-workspace cwd is the only persistence boundary across
-runs. No adapter may depend on a git remote for cross-run state.
+`ServerAdapterModule` has exactly two properties: `type` and `definition`.
+`definition.version` is exactly `acp-subprocess/v1`. An adapter package may
+describe an approved launch and its configuration, but it never executes a
+provider request.
 
-Why: Paperclip resolves a local execution workspace (a worktree) for each
-heartbeat. Code state is carried forward by syncing that local cwd to wherever
-the agent actually runs — over ssh, into a sandbox, into a managed runtime —
-and then syncing changes back when the run finishes. Treating a `git remote`
-as the source of truth (`git push` from inside the agent, fetch on the next
-wake) breaks dependent issues that are gated on the local worktree being
-caught up, and breaks isolated execution workspaces that have no remote
-configured at all.
+The definition may contain only:
 
-How to apply:
+- the exact approved ACPX registry name and immutable executable/argv;
+- the exact ACP frontend package and version;
+- execution-target cwd, directory, environment, and driver requirements;
+- stable ACP readiness facts;
+- schema-driven UI metadata;
+- required non-secret stable ACP configuration options;
+- model/profile values and immutable token limits.
 
-- Never `git push` from adapter runtime code. Never assume the local worktree
-  has any `git remote` configured. If you need data from the previous run,
-  read it from the local cwd Paperclip handed you.
-- If your adapter runs the agent on a different host (ssh, sandbox, remote
-  container), use the round-trip helpers in `@paperclipai/adapter-utils`:
-  [`prepareWorkspaceForSshExecution`](../adapter-utils/src/ssh.ts) bundles the
-  local cwd to the remote dir before the run, and
-  [`restoreWorkspaceFromSshExecution`](../adapter-utils/src/ssh.ts) syncs
-  remote-side changes (including new git commits) back into the local cwd
-  after the run. Both run with no `git remote` configured.
-- If your adapter runs the agent locally, you can read and write the cwd
-  directly — same invariant applies: changes that future runs need must live
-  in the local cwd by the time `execute()` returns.
-- A failed sync-back is a run-level error. The heartbeat records
-  `workspace_finalize=failed` on the execution workspace, which gates
-  dependent issue wakes until the next successful finalize. Do not swallow
-  restore errors.
+Do not add execution callbacks, provider SDK or HTTP clients, prompt builders,
+terminal/stdout parsers, session codecs or CLI resume flags, model CLI flags,
+authentication probes, credential copyback, provider-home mutation, tool
+injection, or adapter-local process/session state. The common official-SDK ACP
+client owns initialize, new/resume, configuration, prompt, updates,
+cancellation, and process cleanup.
 
-The invariant is pinned by the `no-remote-git contract` case in
-[`packages/adapter-utils/src/ssh-fixture.test.ts`](../adapter-utils/src/ssh-fixture.test.ts),
-which asserts that a remote-only commit propagates to the local worktree
-through `prepareWorkspaceForSshExecution` → `restoreWorkspaceFromSshExecution`
-with no git remote configured at any point.
+## Registry admission
 
-A static check enforces the rule before runtime ever sees it:
-[`scripts/check-no-git-push.mjs`](../../scripts/check-no-git-push.mjs) scans
-adapter and runtime source (`packages/adapters/`, `packages/adapter-utils/`,
-`server/src/`, `cli/src/`) and fails the `policy` CI job if any unapproved
-`git push` invocation is added. If you are building an operator-configured
-path that legitimately must push, add a
-`// paperclip:allow-git-push: <reason>` comment on the line (or the line
-above) so the opt-in shows up in code review.
+An adapter's `launchProfile.registryName` must be present byte-for-byte in both
+ACPX's public registry and Paperclip's immutable conformance-approved catalog.
+The source command, argv, frontend package, frontend version, and lowercase
+SHA-256 frontend digest must exactly match that catalog entry. Never normalize
+a name, accept an alias, invoke `npx`, use a semver range, or supply an
+arbitrary command fallback.
 
-For the architecture-level write-up of cross-run persistence, see
-[`docs/guides/board-operator/execution-workspaces-and-runtime-services.md`](../../docs/guides/board-operator/execution-workspaces-and-runtime-services.md#cross-run-persistence-no-remote-git-contract).
+The initial approved registry contains only exact `codex`, backed by pinned
+`@agentclientprotocol/codex-acp@1.1.7`. A new frontend requires its own real
+wire conformance suite and approved launch-catalog entry before an adapter may
+reference it. An external package cannot widen the approved registry.
+
+The catalog command and argv identify the worker-bundled source artifact; they
+are not copied into a remote launch. For every selected execution target,
+Paperclip resolves one absolute target Node path, materializes the verified
+bundled frontend bytes into the request-scoped target directory, verifies those
+bytes again on the target, and launches exactly that Node path with the
+target-local frontend. Missing target Node, source drift, target drift, or an
+unresolved path fails closed without install, global-frontend, or `npx`
+fallback.
+
+## Authentication and configuration
+
+Provider authentication remains entirely native to the installed CLI.
+Paperclip does not store, forward, probe, copy, or refresh any AI-provider
+credential.
+
+Every configuration field maps one-to-one to a required stable ACP
+`session/set_config_option` selection. The schema and option keys are closed;
+unknown or missing values fail. Exactly one option is the productive model,
+and every advertised model supplies positive immutable context and output
+limits. Configuration must not be encoded in argv, environment secrets,
+prompt prose, or `_meta`.
+
+## Workspace ownership
+
+The adapter definition declares which existing execution-target drivers it
+supports. It does not copy workspaces or run git. The common execution-target
+path owns workspace realization, remote transfer, read-only selected-skill
+materialization, and finalization. No adapter may introduce a git-remote,
+secondary worker, tunnel, or alternate provider transport.
+
+## Verification
+
+Run the adapter-utils contract/type checks, server registry tests, and the
+real-frontend ACP conformance suite. Tests must prove that unknown definition
+fields fail, registry admission occurs before resolution, launch bytes are
+immutable, configuration is nonempty and legal, and no callback or credential
+surface exists.

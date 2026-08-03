@@ -21,12 +21,6 @@
     "scripts/watchlist.py"
   ],
   "defaultInstall": false,
-  "recommendedForRoles": [
-    "researcher",
-    "marketer",
-    "product-manager",
-    "analyst"
-  ],
   "requires": [
     "node",
     "python3"

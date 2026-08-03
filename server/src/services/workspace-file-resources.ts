@@ -4,7 +4,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { executionWorkspaces, issues, projects, projectWorkspaces } from "@paperclipai/db";
+import {
+  executionWorkspaces,
+  issueExecutionWorkspaceBindings,
+  issues,
+  projects,
+  projectWorkspaces,
+} from "@paperclipai/db";
 import type {
   ResolvedWorkspaceResource,
   WorkspaceFileContent,
@@ -937,28 +943,39 @@ export function workspaceFileResourceService(db: Db) {
 
     const candidates: WorkspaceCandidate[] = [];
     if ((selector === "auto" || selector === "execution") && issue.projectId) {
-      const executionIds = [issue.executionWorkspaceId].filter((id): id is string => Boolean(id));
-      let executionRows: ExecutionWorkspaceRow[] = [];
-      if (executionIds.length > 0) {
-        executionRows = await db.select().from(executionWorkspaces).where(
-          and(
-            eq(executionWorkspaces.companyId, issue.companyId),
-            inArray(executionWorkspaces.id, executionIds),
-          ),
-        );
-      }
       const sourceIssueIds = [issue.id, issue.parentId].filter((id): id is string => Boolean(id));
+      let executionRows: ExecutionWorkspaceRow[] = [];
       if (sourceIssueIds.length > 0) {
-        const activeRows = await db.select().from(executionWorkspaces).where(
-          and(
-            eq(executionWorkspaces.companyId, issue.companyId),
-            eq(executionWorkspaces.projectId, issue.projectId),
-            inArray(executionWorkspaces.sourceIssueId, sourceIssueIds),
-            eq(executionWorkspaces.status, "active"),
-            isNull(executionWorkspaces.closedAt),
-          ),
-        ).orderBy(desc(executionWorkspaces.lastUsedAt)).limit(2);
-        executionRows = [...executionRows, ...activeRows];
+        const activeRows = await db
+          .select({ workspace: executionWorkspaces })
+          .from(issueExecutionWorkspaceBindings)
+          .innerJoin(
+            issues,
+            and(
+              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+              eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+            ),
+          )
+          .innerJoin(
+            executionWorkspaces,
+            and(
+              eq(executionWorkspaces.companyId, issueExecutionWorkspaceBindings.companyId),
+              eq(executionWorkspaces.id, issueExecutionWorkspaceBindings.executionWorkspaceId),
+            ),
+          )
+          .where(
+            and(
+              eq(issueExecutionWorkspaceBindings.companyId, issue.companyId),
+              inArray(issueExecutionWorkspaceBindings.issueId, sourceIssueIds),
+              eq(executionWorkspaces.projectId, issue.projectId),
+              eq(executionWorkspaces.status, "active"),
+              isNull(executionWorkspaces.closedAt),
+            ),
+          )
+          .orderBy(desc(executionWorkspaces.lastUsedAt))
+          .limit(2);
+        executionRows = activeRows.map((row) => row.workspace);
       }
       const seen = new Set<string>();
       for (const row of executionRows) {

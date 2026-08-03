@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { pluginManifestV1Schema, type PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -15,15 +16,10 @@ const mockLifecycle = vi.hoisted(() => ({
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
-  assertCheckoutOwner: vi.fn(),
 }));
 
 vi.mock("../services/plugin-registry.js", () => ({
   pluginRegistryService: () => mockRegistry,
-}));
-
-vi.mock("../services/plugin-lifecycle.js", () => ({
-  pluginLifecycleManager: () => mockLifecycle,
 }));
 
 vi.mock("../services/issues.js", () => ({
@@ -83,6 +79,7 @@ async function createApp(input: {
     pluginRoutes(
       {} as never,
       { installPlugin: vi.fn() } as never,
+      mockLifecycle as never,
       undefined,
       undefined,
       undefined,
@@ -97,21 +94,10 @@ async function createApp(input: {
 describe.sequential("plugin scoped API routes", () => {
   const pluginId = "11111111-1111-4111-8111-111111111111";
   const companyId = "22222222-2222-4222-8222-222222222222";
-  const agentId = "33333333-3333-4333-8333-333333333333";
-  const peerAgentId = "33333333-3333-4333-8333-333333333334";
-  const runId = "44444444-4444-4444-8444-444444444444";
-  const issueId = "55555555-5555-4555-8555-555555555555";
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockIssueService.getById.mockResolvedValue(null);
-    mockIssueService.assertCheckoutOwner.mockResolvedValue({
-      id: issueId,
-      status: "in_progress",
-      assigneeAgentId: agentId,
-      checkoutRunId: runId,
-      adoptedFromRunId: null,
-    });
   });
 
   it("dispatches a board GET route with params, query, actor, and company context", async () => {
@@ -126,12 +112,15 @@ describe.sequential("plugin scoped API routes", () => {
       },
     ]);
     const { app, workerManager } = await createApp({
-      actor: {
-        type: "board",
+      actor: testBoardSessionActor({
         userId: "user-1",
-        source: "local_implicit",
+        userName: "User One",
+        userEmail: "user-1@paperclip.test",
+        sessionId: "session-user-1",
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
         isInstanceAdmin: true,
-      },
+      }),
       plugin: {
         id: pluginId,
         pluginKey: apiRoutes.id,
@@ -153,7 +142,11 @@ describe.sequential("plugin scoped API routes", () => {
       params: { companySlug: "acme" },
       query: { companyId, view: "compact" },
       companyId,
-      actor: expect.objectContaining({ actorType: "user", actorId: "user-1" }),
+      actor: {
+        actorType: "user",
+        actorId: "user-1",
+        userId: "user-1",
+      },
     }));
     expect(workerManager.call.mock.calls[0]?.[2].headers.authorization).toBeUndefined();
   });
@@ -170,12 +163,15 @@ describe.sequential("plugin scoped API routes", () => {
       },
     ]);
     const { app } = await createApp({
-      actor: {
-        type: "board",
+      actor: testBoardSessionActor({
         userId: "user-1",
-        source: "local_implicit",
+        userName: "User One",
+        userEmail: "user-1@paperclip.test",
+        sessionId: "session-user-1",
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
         isInstanceAdmin: true,
-      },
+      }),
       plugin: {
         id: pluginId,
         pluginKey: apiRoutes.id,
@@ -204,190 +200,6 @@ describe.sequential("plugin scoped API routes", () => {
     expect(res.headers.location).toBeUndefined();
   });
 
-  it("enforces agent checkout ownership before dispatching issue-scoped POST routes", async () => {
-    const apiRoutes = manifest([
-      {
-        routeKey: "issue.advance",
-        method: "POST",
-        path: "/issues/:issueId/advance",
-        auth: "agent",
-        capability: "api.routes.register",
-        checkoutPolicy: "required-for-agent-in-progress",
-        companyResolution: { from: "issue", param: "issueId" },
-      },
-    ]);
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
-      companyId,
-      status: "in_progress",
-      assigneeAgentId: agentId,
-    });
-    const { app, workerManager } = await createApp({
-      actor: {
-        type: "agent",
-        agentId,
-        companyId,
-        runId,
-        source: "agent_key",
-      },
-      plugin: {
-        id: pluginId,
-        pluginKey: apiRoutes.id,
-        status: "ready",
-        manifestJson: apiRoutes,
-      },
-    });
-
-    const res = await request(app)
-      .post(`/api/plugins/${pluginId}/api/issues/${issueId}/advance`)
-      .send({ step: "next" });
-
-    expect(res.status).toBe(200);
-    expect(mockIssueService.assertCheckoutOwner).toHaveBeenCalledWith(issueId, agentId, runId);
-    expect(workerManager.call).toHaveBeenCalledWith(pluginId, "handleApiRequest", expect.objectContaining({
-      routeKey: "issue.advance",
-      params: { issueId },
-      body: { step: "next" },
-      actor: expect.objectContaining({ actorType: "agent", agentId, runId }),
-      companyId,
-    }));
-  });
-
-  it("allows non-assignee agents on in-progress required checkout routes without claiming checkout ownership", async () => {
-    const apiRoutes = manifest([
-      {
-        routeKey: "issue.advance",
-        method: "POST",
-        path: "/issues/:issueId/advance",
-        auth: "agent",
-        capability: "api.routes.register",
-        checkoutPolicy: "required-for-agent-in-progress",
-        companyResolution: { from: "issue", param: "issueId" },
-      },
-    ]);
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
-      companyId,
-      status: "in_progress",
-      assigneeAgentId: agentId,
-    });
-    const { app, workerManager } = await createApp({
-      actor: {
-        type: "agent",
-        agentId: peerAgentId,
-        companyId,
-        runId,
-        source: "agent_key",
-      },
-      plugin: {
-        id: pluginId,
-        pluginKey: apiRoutes.id,
-        status: "ready",
-        manifestJson: apiRoutes,
-      },
-    });
-
-    const res = await request(app)
-      .post(`/api/plugins/${pluginId}/api/issues/${issueId}/advance`)
-      .send({ step: "next" });
-
-    expect(res.status).toBe(200);
-    expect(mockIssueService.assertCheckoutOwner).not.toHaveBeenCalled();
-    expect(workerManager.call).toHaveBeenCalledWith(pluginId, "handleApiRequest", expect.objectContaining({
-      routeKey: "issue.advance",
-      params: { issueId },
-      body: { step: "next" },
-      actor: expect.objectContaining({ actorType: "agent", agentId: peerAgentId, runId }),
-      companyId,
-    }));
-  });
-
-  it("rejects checkout-protected agent routes without a run id before worker dispatch", async () => {
-    const apiRoutes = manifest([
-      {
-        routeKey: "issue.advance",
-        method: "POST",
-        path: "/issues/:issueId/advance",
-        auth: "agent",
-        capability: "api.routes.register",
-        checkoutPolicy: "required-for-agent-in-progress",
-        companyResolution: { from: "issue", param: "issueId" },
-      },
-    ]);
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
-      companyId,
-      status: "in_progress",
-      assigneeAgentId: agentId,
-    });
-    const { app, workerManager } = await createApp({
-      actor: {
-        type: "agent",
-        agentId,
-        companyId,
-        source: "agent_key",
-      },
-      plugin: {
-        id: pluginId,
-        pluginKey: apiRoutes.id,
-        status: "ready",
-        manifestJson: apiRoutes,
-      },
-    });
-
-    const res = await request(app)
-      .post(`/api/plugins/${pluginId}/api/issues/${issueId}/advance`)
-      .send({});
-
-    expect(res.status).toBe(401);
-    expect(workerManager.call).not.toHaveBeenCalled();
-  });
-
-  it("rejects checkout-protected agent routes when the active checkout belongs to another run", async () => {
-    const apiRoutes = manifest([
-      {
-        routeKey: "issue.advance",
-        method: "POST",
-        path: "/issues/:issueId/advance",
-        auth: "agent",
-        capability: "api.routes.register",
-        checkoutPolicy: "always-for-agent",
-        companyResolution: { from: "issue", param: "issueId" },
-      },
-    ]);
-    mockIssueService.getById.mockResolvedValue({
-      id: issueId,
-      companyId,
-      status: "in_progress",
-      assigneeAgentId: agentId,
-    });
-    const conflict = new Error("Issue run ownership conflict") as Error & { status?: number };
-    conflict.status = 409;
-    mockIssueService.assertCheckoutOwner.mockRejectedValue(conflict);
-    const { app, workerManager } = await createApp({
-      actor: {
-        type: "agent",
-        agentId,
-        companyId,
-        runId,
-        source: "agent_key",
-      },
-      plugin: {
-        id: pluginId,
-        pluginKey: apiRoutes.id,
-        status: "ready",
-        manifestJson: apiRoutes,
-      },
-    });
-
-    const res = await request(app)
-      .post(`/api/plugins/${pluginId}/api/issues/${issueId}/advance`)
-      .send({});
-
-    expect(res.status).toBe(409);
-    expect(workerManager.call).not.toHaveBeenCalled();
-  });
-
   it("returns a clear error for disabled plugins without worker dispatch", async () => {
     const apiRoutes = manifest([
       {
@@ -400,12 +212,15 @@ describe.sequential("plugin scoped API routes", () => {
       },
     ]);
     const { app, workerManager } = await createApp({
-      actor: {
-        type: "board",
+      actor: testBoardSessionActor({
         userId: "user-1",
-        source: "local_implicit",
+        userName: "User One",
+        userEmail: "user-1@paperclip.test",
+        sessionId: "session-user-1",
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
         isInstanceAdmin: true,
-      },
+      }),
       plugin: {
         id: pluginId,
         pluginKey: apiRoutes.id,
@@ -434,12 +249,15 @@ describe.sequential("plugin scoped API routes", () => {
       },
     ]);
     const { app, workerManager } = await createApp({
-      actor: {
-        type: "board",
+      actor: testBoardSessionActor({
         userId: "user-1",
-        source: "local_implicit",
+        userName: "User One",
+        userEmail: "user-1@paperclip.test",
+        sessionId: "session-user-1",
+        companyIds: [companyId],
+        memberships: [{ companyId, status: "active", membershipRole: "admin" }],
         isInstanceAdmin: true,
-      },
+      }),
       plugin: {
         id: pluginId,
         pluginKey: apiRoutes.id,

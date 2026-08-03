@@ -7,7 +7,6 @@ import {
   assets,
   companies,
   documents,
-  heartbeatRuns,
   issueAttachments,
   issueDocuments,
   issues,
@@ -28,6 +27,10 @@ import {
 } from "@paperclipai/shared";
 import { badRequest, notFound } from "../errors.js";
 import type { StorageService } from "../storage/types.js";
+import {
+  readIssueExecutionRun,
+  resolveIssueExecutionRunIdentityById,
+} from "./issue-execution-run-service.js";
 
 const TEXT_PREVIEW_BYTES = 4096;
 const PREVIEW_TEXT_MAX_LENGTH = 280;
@@ -45,7 +48,7 @@ type IssueGroupingRow = {
   id: string;
   parentId: string | null;
   identifier: string | null;
-  title: string;
+  title: string | null;
   updatedAt: Date;
 };
 
@@ -243,7 +246,7 @@ function resolveRootIssueId(issueId: string, issueRows: Map<string, IssueGroupin
 }
 
 function resolveGroupIssueId(groupBy: ArtifactGroupBy, issueId: string, issueRows: Map<string, IssueGroupingRow>) {
-  return groupBy === "task" ? issueId : resolveRootIssueId(issueId, issueRows);
+  return groupBy === "issue" ? issueId : resolveRootIssueId(issueId, issueRows);
 }
 
 function emptyGroup(input: {
@@ -257,7 +260,7 @@ function emptyGroup(input: {
     id: `${input.groupBy}:${input.issue.id}`,
     groupBy: input.groupBy,
     issue: summary,
-    title: summary.title,
+    title: summary.title ?? summary.identifier,
     count: 0,
     mediaKinds: [],
     previewArtifacts: [],
@@ -354,7 +357,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         ];
         const documentCursor = groupBy ? undefined : cursorCondition(sql<Date>`${documents.updatedAt}`, documentArtifactId, cursor);
         if (documentCursor) documentConditions.push(documentCursor);
-        if (groupBy === "task" && query.groupIssueId) documentConditions.push(eq(issues.id, query.groupIssueId));
+        if (groupBy === "issue" && query.groupIssueId) documentConditions.push(eq(issues.id, query.groupIssueId));
         if (query.projectId) documentConditions.push(eq(issues.projectId, query.projectId));
         if (q) {
           documentConditions.push(sql`(
@@ -445,7 +448,6 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
       }
 
       if (query.kind !== "document") {
-        const workProductAgent = alias(agents, "work_product_agent");
         const workProductArtifactId = sql<string>`concat('work_product:', ${issueWorkProducts.id})`;
         const workProductContentType = sql<string>`coalesce(${issueWorkProducts.metadata}->>'contentType', '')`;
         const workProductBaseConditions: SQL[] = [
@@ -460,7 +462,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
           : cursorCondition(sql<Date>`${issueWorkProducts.updatedAt}`, workProductArtifactId, cursor);
         const workProductKind = contentTypeKindCondition(workProductContentType, query.kind);
         if (workProductCursor) workProductConditions.push(workProductCursor);
-        if (groupBy === "task" && query.groupIssueId) {
+        if (groupBy === "issue" && query.groupIssueId) {
           const selectedIssueCondition = eq(issues.id, query.groupIssueId);
           workProductBaseConditions.push(selectedIssueCondition);
           workProductConditions.push(selectedIssueCondition);
@@ -497,8 +499,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             title: issueWorkProducts.title,
             summary: issueWorkProducts.summary,
             metadata: issueWorkProducts.metadata,
-            createdByAgentId: workProductAgent.id,
-            createdByAgentName: workProductAgent.name,
+            createdByRunId: issueWorkProducts.createdByRunId,
             updatedAt: issueWorkProducts.updatedAt,
           })
           .from(issueWorkProducts)
@@ -516,23 +517,40 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
               eq(projects.companyId, issueWorkProducts.companyId),
             ),
           )
-          .leftJoin(
-            heartbeatRuns,
-            and(
-              eq(issueWorkProducts.createdByRunId, heartbeatRuns.id),
-              eq(heartbeatRuns.companyId, issueWorkProducts.companyId),
-            ),
-          )
-          .leftJoin(
-            workProductAgent,
-            and(
-              eq(heartbeatRuns.agentId, workProductAgent.id),
-              eq(workProductAgent.companyId, issueWorkProducts.companyId),
-            ),
-          )
           .where(and(...workProductConditions))
           .orderBy(desc(issueWorkProducts.updatedAt), desc(workProductArtifactId));
         const workProductRows = await workProductRowsQuery.limit(sourceFetchLimit);
+        const workProductRunIds = [...new Set(
+          workProductRows
+            .map((row) => row.createdByRunId)
+            .filter((runId): runId is string => runId !== null),
+        )];
+        const workProductRuns = await Promise.all(
+          workProductRunIds.map(async (runId) => {
+            const identity = await resolveIssueExecutionRunIdentityById(db, runId);
+            if (!identity || identity.companyId !== companyId) return null;
+            return readIssueExecutionRun(db, identity);
+          }),
+        );
+        const workProductAgentIdByRunId = new Map<string, string>();
+        for (const run of workProductRuns) {
+          if (run?.targetAgentId) {
+            workProductAgentIdByRunId.set(run.runId, run.targetAgentId);
+          }
+        }
+        const workProductAgentIds = [...new Set(workProductAgentIdByRunId.values())];
+        const workProductAgents = workProductAgentIds.length === 0
+          ? []
+          : await db
+            .select({ id: agents.id, name: agents.name })
+            .from(agents)
+            .where(and(
+              eq(agents.companyId, companyId),
+              inArray(agents.id, workProductAgentIds),
+            ));
+        const workProductAgentById = new Map(
+          workProductAgents.map((agent) => [agent.id, agent]),
+        );
 
         const workProductAttachmentRows = await db
           .select({
@@ -556,6 +574,12 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         }
 
         for (const row of workProductRows) {
+          const createdByAgentId = row.createdByRunId
+            ? workProductAgentIdByRunId.get(row.createdByRunId) ?? null
+            : null;
+          const createdByAgent = createdByAgentId
+            ? workProductAgentById.get(createdByAgentId) ?? null
+            : null;
           const metadata = attachmentArtifactWorkProductMetadataSchema.safeParse(row.metadata);
           const attachmentMetadata = metadata.success ? metadata.data : null;
           if (attachmentMetadata) {
@@ -575,8 +599,8 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
             downloadPath: attachmentMetadata?.downloadPath ?? null,
             issue: { id: row.issueId, identifier, title: row.issueTitle },
             project: row.projectId && row.projectName ? { id: row.projectId, name: row.projectName } : null,
-            createdByAgent: row.createdByAgentId && row.createdByAgentName
-              ? { id: row.createdByAgentId, name: row.createdByAgentName }
+            createdByAgent: createdByAgent
+              ? { id: createdByAgent.id, name: createdByAgent.name }
               : null,
             updatedAt: row.updatedAt.toISOString(),
             href: buildIssueHref(company.issuePrefix, identifier, `work-product-${row.workProductId}`),
@@ -596,7 +620,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
           : cursorCondition(sql<Date>`${issueAttachments.updatedAt}`, attachmentArtifactId, cursor);
         const attachmentKind = contentTypeKindCondition(sql<string>`${assets.contentType}`, query.kind);
         if (attachmentCursor) attachmentConditions.push(attachmentCursor);
-        if (groupBy === "task" && query.groupIssueId) attachmentConditions.push(eq(issues.id, query.groupIssueId));
+        if (groupBy === "issue" && query.groupIssueId) attachmentConditions.push(eq(issues.id, query.groupIssueId));
         if (attachmentKind) attachmentConditions.push(attachmentKind);
         if (query.projectId) attachmentConditions.push(eq(issues.projectId, query.projectId));
         if (q) {

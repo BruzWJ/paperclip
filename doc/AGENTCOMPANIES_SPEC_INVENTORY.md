@@ -14,13 +14,12 @@ Use it when you need to:
 
 | File | Role |
 |---|---|
-| `docs/companies/companies-spec.md` | **Normative spec** — defines the markdown-first package format (COMPANY.md, TEAM.md, AGENTS.md, PROJECT.md, TASK.md, SKILL.md), reserved files, frontmatter schemas, and vendor extension conventions (`.paperclip.yaml`). |
+| `docs/companies/companies-spec.md` | **Normative spec** — defines the markdown-first package format (COMPANY.md, TEAM.md, AGENTS.md, PROJECT.md, ISSUE.md, SKILL.md), reserved files, frontmatter schemas, and vendor extension conventions (`.paperclip.yaml`). |
 | `doc/plans/2026-03-13-company-import-export-v2.md` | Implementation plan for the markdown-first package model cutover — phases, API changes, UI plan, and rollout strategy. |
 | `doc/SPEC-implementation.md` | V1 implementation contract; references the portability system and `.paperclip.yaml` sidecar format. |
 | `docs/specs/cliphub-plan.md` | Earlier blueprint bundle plan; partially superseded by the markdown-first spec (noted in the v2 plan). |
 | `doc/plans/2026-02-16-module-system.md` | Module system plan; JSON-only company template sections superseded by the markdown-first model. |
 | `doc/plans/2026-03-14-skills-ui-product-plan.md` | Skills UI plan; references portable skill files and `.paperclip.yaml`. |
-| `doc/plans/2026-03-14-adapter-skill-sync-rollout.md` | Adapter skill sync rollout; companion to the v2 import/export plan. |
 
 ## 2. Shared Types & Validators
 
@@ -37,8 +36,8 @@ These define the contract between server, CLI, and UI.
 
 | File | Responsibility |
 |---|---|
-| `server/src/services/company-portability.ts` | **Core portability service.** Export (manifest generation, markdown file emission, `.paperclip.yaml` sidecars), import (graph resolution, collision handling, entity creation), preview (planned-action summary). Handles skill key derivation, recurring task <-> routine mapping, legacy recurrence migration, and package README generation. References `agentcompanies/v1` version string. |
-| `server/src/services/routines.ts` | Paperclip routine runtime service. Portability now exports routines as recurring `TASK.md` entries and imports recurring tasks back through this service. |
+| `server/src/services/company-portability.ts` | **Core portability service.** Export (manifest generation, markdown file emission, `.paperclip.yaml` sidecars), import (graph resolution, collision handling, entity creation), preview (planned-action summary). Handles skill key derivation, recurring issue <-> routine mapping, recurrence validation, and package README generation. References `agentcompanies/v1` version string. |
+| `server/src/services/routines.ts` | Paperclip routine runtime service. Portability exports routines as recurring `ISSUE.md` entries and imports recurring issues back through this service. |
 | `server/src/services/company-export-readme.ts` | Generates `README.md` and Mermaid org-chart for exported company packages. |
 | `server/src/services/index.ts` | Re-exports `companyPortabilityService`. |
 
@@ -90,22 +89,21 @@ Route registration lives in `server/src/app.ts` via `companyRoutes(db, storage)`
 |---|---|
 | `ui/src/api/companies.ts` | `companiesApi.exportBundle`, `companiesApi.exportPreview`, `companiesApi.exportPackage`, `companiesApi.importPreview`, `companiesApi.importBundle` — typed fetch wrappers for the portability endpoints. |
 
-## 11. Skills & Agent Instructions
+## 11. Company Skill Packages
 
 | File | Relevance |
 |---|---|
-| `skills/paperclip/references/company-skills.md` | Reference doc for company skill library workflow — install, inspect, update, assign. Skill packages are a subset of the agent companies spec. |
-| `server/src/services/company-skills.ts` | Company skill management service — handles SKILL.md-based imports and company-level skill library. |
-| `server/src/services/agent-instructions.ts` | Agent instructions service — resolves AGENTS.md paths for agent instruction loading. |
+| `docs/guides/agent-developer/skills-store.md` | Operator-facing guide to installing, inspecting, updating, and selecting company skill packages. |
+| `server/src/services/company-skills.ts` | Company skill data service — handles SKILL.md-based imports and the company-level library without granting provider execution authority. |
 
 ## 12. Quick Cross-Reference by Spec Concept
 
 | Spec concept | Primary implementation files |
 |---|---|
 | `COMPANY.md` frontmatter & body | `company-portability.ts` (export emitter + import parser) |
-| `AGENTS.md` frontmatter & body | `company-portability.ts`, `agent-instructions.ts` |
+| `AGENTS.md` frontmatter & body | `company-portability.ts` |
 | `PROJECT.md` frontmatter & body | `company-portability.ts` |
-| `TASK.md` frontmatter & body | `company-portability.ts` |
+| `ISSUE.md` frontmatter & body | `company-portability.ts` |
 | `SKILL.md` packages | `company-portability.ts`, `company-skills.ts` |
 | `.paperclip.yaml` vendor sidecar | `company-portability.ts`, `routines.ts`, `CompanyExport.tsx`, `company.ts` (CLI) |
 | `manifest.json` | `company-portability.ts` (generation), shared types (schema) |

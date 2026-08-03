@@ -18,7 +18,7 @@ const mockExecutionWorkspacesApi = vi.hoisted(() => ({
 const mockProjectsApi = vi.hoisted(() => ({ get: vi.fn() }));
 const mockIssuesApi = vi.hoisted(() => ({ get: vi.fn(), list: vi.fn() }));
 const mockAgentsApi = vi.hoisted(() => ({ list: vi.fn() }));
-const mockHeartbeatsApi = vi.hoisted(() => ({ liveRunsForCompany: vi.fn() }));
+const mockRunsApi = vi.hoisted(() => ({ listForCompany: vi.fn() }));
 const mockRoutinesApi = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), run: vi.fn() }));
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
@@ -40,7 +40,10 @@ vi.mock("../api/execution-workspaces", () => ({ executionWorkspacesApi: mockExec
 vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
 vi.mock("../api/issues", () => ({ issuesApi: mockIssuesApi }));
 vi.mock("../api/agents", () => ({ agentsApi: mockAgentsApi }));
-vi.mock("../api/heartbeats", () => ({ heartbeatsApi: mockHeartbeatsApi }));
+vi.mock("../api/runs", async () => {
+  const actual = await vi.importActual<typeof import("../api/runs")>("../api/runs");
+  return { ...actual, runsApi: mockRunsApi };
+});
 vi.mock("../api/routines", () => ({ routinesApi: mockRoutinesApi }));
 
 vi.mock("@/lib/router", () => ({
@@ -225,7 +228,7 @@ describe("ExecutionWorkspaceDetail plugin slots", () => {
     mockIssuesApi.list.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);
     mockRoutinesApi.list.mockResolvedValue([]);
-    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
+    mockRunsApi.listForCompany.mockResolvedValue({ items: [], nextCursor: null });
     mockPluginSlotState.slots = [];
     mockPluginSlotState.isLoading = false;
     mockPluginSlotState.errorMessage = null;

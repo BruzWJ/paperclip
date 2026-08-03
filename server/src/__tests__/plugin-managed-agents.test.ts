@@ -1,49 +1,52 @@
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  activityLog,
-  agentConfigRevisions,
-  agents,
-  approvals,
-  companies,
-  createDb,
   pluginEntities,
-  pluginCompanySettings,
   pluginManagedResources,
-  plugins,
 } from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { buildHostServices } from "../services/plugin-host-services.js";
+  pluginManifestV1Schema,
+  type PaperclipPluginManifestV1,
+} from "@paperclipai/shared";
+import {
+  adoptPluginManagedAgentFromBoard,
+  pausePluginManagedAgentsIntoTriageInTransaction,
+  pluginManagedAgentService,
+} from "../services/plugin-managed-agents.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const mocks = vi.hoisted(() => ({
+  getAgentById: vi.fn(),
+  lockCompanyAgentGraph: vi.fn(),
+  logActivity: vi.fn(),
+}));
 
-function createEventBusStub() {
+vi.mock("../services/agents.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/agents.js")>();
   return {
-    forPlugin() {
-      return {
-        emit: async () => {},
-        subscribe: () => {},
-      };
-    },
-  } as any;
-}
+    ...actual,
+    agentService: vi.fn(() => ({ getById: mocks.getAgentById })),
+  };
+});
 
-function issuePrefix(id: string) {
-  return `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-}
+vi.mock("../services/agent-org-graph-lock.js", () => ({
+  lockCompanyAgentGraph: mocks.lockCompanyAgentGraph,
+}));
+
+vi.mock("../services/activity-log.js", () => ({
+  logActivity: mocks.logActivity,
+}));
+
+const now = new Date("2026-01-02T03:04:05.000Z");
+const companyId = "00000000-0000-4000-8000-000000000001";
+const pluginId = "00000000-0000-4000-8000-000000000002";
+const agentId = "00000000-0000-4000-8000-000000000003";
+const entityId = "00000000-0000-4000-8000-000000000004";
+const bindingId = "00000000-0000-4000-8000-000000000005";
+const pluginKey = "paperclip.managed-agents-test";
 
 function manifest(): PaperclipPluginManifestV1 {
   return {
-    id: "paperclip.managed-agents-test",
+    id: pluginKey,
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Managed Agents Test",
@@ -52,314 +55,368 @@ function manifest(): PaperclipPluginManifestV1 {
     categories: ["automation"],
     capabilities: ["agents.managed"],
     entrypoints: { worker: "./dist/worker.js" },
-    agents: [
-      {
-        agentKey: "wiki-maintainer",
-        displayName: "Wiki Maintainer",
-        role: "engineer",
-        title: "Maintains plugin-owned knowledge",
-        capabilities: "Maintains a plugin-owned wiki.",
-        adapterType: "process",
-        adapterConfig: { command: "pnpm wiki:maintain" },
-        runtimeConfig: { modelProfiles: { cheap: { enabled: true, adapterConfig: { model: "small" } } } },
-        permissions: { canCreateAgents: false },
-        budgetMonthlyCents: 1234,
-      },
-    ],
+    agents: [{
+      agentKey: "wiki-maintainer",
+      displayName: "Wiki Maintainer",
+      title: "Maintains plugin-owned knowledge",
+      capabilities: "Maintains a plugin-owned wiki.",
+    }],
   };
 }
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres plugin-managed agent tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
-
-describeEmbeddedPostgres("plugin-managed agents", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-managed-agents-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(agentConfigRevisions);
-    await db.delete(activityLog);
-    await db.delete(pluginEntities);
-    await db.delete(pluginManagedResources);
-    await db.delete(pluginCompanySettings);
-    await db.delete(approvals);
-    await db.delete(agents);
-    await db.delete(plugins);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedCompanyAndPlugin(options: { requireApproval?: boolean; manifest?: PaperclipPluginManifestV1 } = {}) {
-    const companyId = randomUUID();
-    const pluginId = randomUUID();
-    const pluginManifest = options.manifest ?? manifest();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: issuePrefix(companyId),
-      requireBoardApprovalForNewAgents: options.requireApproval ?? false,
-    });
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-agents-test",
-      version: pluginManifest.version,
-      apiVersion: pluginManifest.apiVersion,
-      categories: pluginManifest.categories,
-      manifestJson: pluginManifest,
-      status: "ready",
-      installOrder: 1,
-    });
-    const services = buildHostServices(db, pluginId, pluginManifest.id, createEventBusStub(), undefined, {
-      manifest: pluginManifest,
-    });
-    return { companyId, pluginId, pluginManifest, services };
-  }
-
-  it("creates and resolves managed agents by stable resource key", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-
-    const created = await services.agents.managedReconcile({
-      companyId,
-      agentKey: "wiki-maintainer",
-    });
-
-    expect(created.status).toBe("created");
-    expect(created.agentId).toBeTruthy();
-    expect(created.agent).toMatchObject({
-      name: "Wiki Maintainer",
-      role: "engineer",
-      adapterConfig: { command: "pnpm wiki:maintain" },
-    });
-
-    const resolved = await services.agents.managedGet({
-      companyId,
-      agentKey: "wiki-maintainer",
-    });
-    expect(resolved.status).toBe("resolved");
-    expect(resolved.agentId).toBe(created.agentId);
-
-    const [binding] = await db.select().from(pluginEntities);
-    expect(binding?.entityType).toBe("managed_agent");
-    expect(binding?.scopeKind).toBe("company");
-    expect(binding?.scopeId).toBe(companyId);
-    expect(binding?.data).toMatchObject({
+function binding(overrides: Record<string, unknown> = {}) {
+  return {
+    id: bindingId,
+    companyId,
+    pluginId,
+    pluginKey,
+    resourceKind: "agent",
+    resourceKey: "wiki-maintainer",
+    resourceId: agentId,
+    defaultsJson: {},
+    lifecycleState: "active",
+    originalDeclarationRef: {
+      pluginInstallationId: pluginId,
+      pluginKey,
       resourceKind: "agent",
       resourceKey: "wiki-maintainer",
-      agentId: created.agentId,
-    });
+    },
+    lifecycleReason: null,
+    triagePausedAt: null,
+    adoptedAt: null,
+    terminatedAt: null,
+    lifecycleActorType: null,
+    lifecycleActorId: null,
+    lifecycleAudit: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function entity(overrides: Record<string, unknown> = {}) {
+  return {
+    id: entityId,
+    pluginId,
+    companyId,
+    entityType: "managed_agent",
+    scopeKind: "company",
+    scopeId: companyId,
+    externalId: `managed:agent:${companyId}:wiki-maintainer`,
+    title: "Wiki Maintainer",
+    status: "active",
+    data: {
+      pluginKey,
+      resourceKind: "agent",
+      resourceKey: "wiki-maintainer",
+      agentId,
+    },
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function agent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: agentId,
+    companyId,
+    name: "Wiki Maintainer",
+    title: "Maintains plugin-owned knowledge",
+    status: "idle",
+    pauseReason: null,
+    pausedAt: null,
+    adapterType: null,
+    adapterConfig: null,
+    currentAdapterConfigRevisionId: null,
+    runtimeConfig: {},
+    permissions: {},
+    metadata: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function service(db: ReturnType<typeof createMockDb>["db"]) {
+  return pluginManagedAgentService(db, {
+    pluginId,
+    pluginKey,
+    manifest: manifest(),
+  });
+}
+
+describe("plugin-managed agents", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.logActivity.mockResolvedValue(undefined);
   });
 
-  it("preserves user edits during reconcile and resets only on explicit reset", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const created = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-    expect(created.agentId).toBeTruthy();
-
-    await db
-      .update(agents)
-      .set({
-        name: "Knowledge Lead",
-        adapterConfig: { command: "custom" },
-        updatedAt: new Date(),
-      })
-      .where(eq(agents.id, created.agentId!));
-
-    const reconciled = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-    expect(reconciled.status).toBe("resolved");
-    expect(reconciled.agent).toMatchObject({
-      name: "Knowledge Lead",
-      adapterConfig: { command: "custom" },
-    });
-
-    const reset = await services.agents.managedReset({ companyId, agentKey: "wiki-maintainer" });
-    expect(reset.status).toBe("reset");
-    expect(reset.agent).toMatchObject({
-      name: "Wiki Maintainer",
-      adapterConfig: { command: "pnpm wiki:maintain" },
-    });
-  });
-
-  it("creates managed agents with the most-used compatible company adapter", async () => {
+  it("rejects managed-agent instruction declarations", () => {
     const pluginManifest = manifest();
-    pluginManifest.agents![0] = {
-      ...pluginManifest.agents![0]!,
-      adapterType: "claude_local",
-      adapterPreference: ["claude_local", "codex_local"],
-      adapterConfig: {},
-    };
-    const { companyId, services } = await seedCompanyAndPlugin({ manifest: pluginManifest });
-    await db.insert(agents).values([
-      {
-        id: randomUUID(),
-        companyId,
-        name: "Codex One",
-        role: "engineer",
-        status: "idle",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: randomUUID(),
-        companyId,
-        name: "Codex Two",
-        role: "engineer",
-        status: "idle",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: randomUUID(),
-        companyId,
-        name: "Claude One",
-        role: "engineer",
-        status: "idle",
-        adapterType: "claude_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-    ]);
-
-    const created = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-
-    expect(created.status).toBe("created");
-    expect(created.agent?.adapterType).toBe("codex_local");
-  });
-
-  it("materializes declared managed agent instructions with local folder paths", async () => {
-    const previousHome = process.env.PAPERCLIP_HOME;
-    const previousInstance = process.env.PAPERCLIP_INSTANCE_ID;
-    const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-managed-agent-home-"));
-    const wikiRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-managed-agent-wiki-")));
-    process.env.PAPERCLIP_HOME = tempHome;
-    process.env.PAPERCLIP_INSTANCE_ID = "test";
-    try {
-      const pluginManifest = manifest();
-      pluginManifest.localFolders = [
-        {
-          folderKey: "wiki-root",
-          displayName: "Wiki root",
-          access: "readWrite",
-          requiredDirectories: [],
-          requiredFiles: ["AGENTS.md"],
-        },
-      ];
-      pluginManifest.agents![0] = {
+    const parsed = pluginManifestV1Schema.safeParse({
+      ...pluginManifest,
+      agents: [{
         ...pluginManifest.agents![0]!,
-        adapterType: "claude_local",
-        adapterConfig: {},
         instructions: {
           entryFile: "AGENTS.md",
-          content: [
-            "# LLM Wiki Maintainer",
-            "",
-            "You are the LLM Wiki Maintainer.",
-            "Wiki root: `{{localFolders.wiki-root.path}}`",
-            "Wiki schema: `{{localFolders.wiki-root.agentsPath}}`",
-            "",
-          ].join("\n"),
+          content: "Paperclip-managed instructions are forbidden.",
         },
-      };
-      const { companyId, pluginId, services } = await seedCompanyAndPlugin({ manifest: pluginManifest });
-      await fs.writeFile(path.join(wikiRoot, "AGENTS.md"), "# Wiki schema\n", "utf8");
-      await db.insert(pluginCompanySettings).values({
+      }],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("returns a canonical missing resolution only when both provenance rows are absent", async () => {
+    const harness = createMockDb({ select: [[], []] });
+
+    await expect(service(harness.db).get("wiki-maintainer", companyId))
+      .resolves.toEqual({
+        pluginKey,
+        resourceKind: "agent",
+        resourceKey: "wiki-maintainer",
         companyId,
-        pluginId,
-        enabled: true,
-        settingsJson: {
-          localFolders: {
-            "wiki-root": {
-              path: wikiRoot,
-              access: "readWrite",
-              requiredDirectories: [],
-              requiredFiles: ["AGENTS.md"],
-            },
-          },
-        },
+        agentId: null,
+        agent: null,
+        status: "missing",
+        approvalId: null,
       });
+    expect(harness.remaining("select")).toBe(0);
+    expect(mocks.getAgentById).not.toHaveBeenCalled();
+  });
 
-      const created = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
+  it("resolves an active resource/entity pair to its live canonical agent", async () => {
+    const canonicalAgent = agent();
+    const harness = createMockDb({ select: [[binding()], [entity()]] });
+    mocks.getAgentById.mockResolvedValue(canonicalAgent);
 
-      const instructionsFilePath = created.agent?.adapterConfig.instructionsFilePath;
-      expect(typeof instructionsFilePath).toBe("string");
-      const content = await fs.readFile(instructionsFilePath as string, "utf8");
-      expect(content).toContain("You are the LLM Wiki Maintainer.");
-      expect(content).toContain(`Wiki root: \`${wikiRoot}\``);
-      expect(content).toContain(`Wiki schema: \`${path.join(wikiRoot, "AGENTS.md")}\``);
-    } finally {
-      if (previousHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousHome;
-      if (previousInstance === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousInstance;
-      await fs.rm(tempHome, { recursive: true, force: true });
-      await fs.rm(wikiRoot, { recursive: true, force: true });
+    await expect(service(harness.db).get("wiki-maintainer", companyId))
+      .resolves.toMatchObject({
+        status: "resolved",
+        agentId,
+        agent: canonicalAgent,
+      });
+    expect(mocks.getAgentById).toHaveBeenCalledWith(agentId);
+    expect(harness.remaining("select")).toBe(0);
+  });
+
+  it("fails closed when an active binding has no live in-company agent", async () => {
+    for (const unavailableAgent of [
+      null,
+      agent({ status: "terminated" }),
+      agent({ companyId: "00000000-0000-4000-8000-000000000099" }),
+    ]) {
+      const harness = createMockDb({ select: [[binding()], [entity()]] });
+      mocks.getAgentById.mockResolvedValueOnce(unavailableAgent);
+
+      await expect(service(harness.db).get("wiki-maintainer", companyId))
+        .rejects.toMatchObject({ status: 409 });
     }
   });
 
-  it("repairs a missing binding by relinking a same-company managed agent marker", async () => {
-    const { companyId, pluginId, pluginManifest, services } = await seedCompanyAndPlugin();
-    const agentId = randomUUID();
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "Renamed Wiki Agent",
-      role: "engineer",
-      status: "idle",
-      adapterType: "process",
-      adapterConfig: { command: "custom" },
-      runtimeConfig: {},
-      permissions: {},
-      metadata: {
-        paperclipManagedResource: {
-          pluginId,
-          pluginKey: pluginManifest.id,
-          resourceKind: "agent",
-          resourceKey: "wiki-maintainer",
-        },
-      },
-    });
+  it("fails closed when either half of the canonical provenance pair is absent or disagrees", async () => {
+    const invalidPairs = [
+      [[binding()], []],
+      [[], [entity()]],
+      [[binding()], [entity({ status: "adopted" })]],
+      [[binding()], [entity({ data: { pluginKey, agentId: "other-agent" } })]],
+    ] as const;
 
-    const relinked = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-    expect(relinked.status).toBe("relinked");
-    expect(relinked.agentId).toBe(agentId);
+    for (const [bindings, entities] of invalidPairs) {
+      const harness = createMockDb({ select: [bindings, entities] });
 
-    const [binding] = await db.select().from(pluginEntities);
-    expect(binding?.data).toMatchObject({ agentId });
+      await expect(service(harness.db).get("wiki-maintainer", companyId))
+        .rejects.toMatchObject({ status: 409 });
+      expect(mocks.getAgentById).not.toHaveBeenCalled();
+    }
   });
 
-  it("respects board approval policy for new managed agents", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin({ requireApproval: true });
-
-    const created = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-
-    expect(created.status).toBe("created");
-    expect(created.agent?.status).toBe("pending_approval");
-    expect(created.approvalId).toBeTruthy();
-
-    const [approval] = await db.select().from(approvals).where(eq(approvals.id, created.approvalId!));
-    expect(approval).toMatchObject({
-      type: "hire_agent",
-      status: "pending",
+  it("never reacquires a resource after its managed lifecycle leaves active", async () => {
+    const harness = createMockDb({
+      select: [[binding({ lifecycleState: "triage_paused" })]],
     });
-    expect(approval?.payload).toMatchObject({
-      agentId: created.agentId,
-      sourcePluginKey: "paperclip.managed-agents-test",
-      managedResourceKey: "wiki-maintainer",
+
+    await expect(service(harness.db).reconcile("wiki-maintainer", companyId))
+      .resolves.toMatchObject({
+        status: "missing",
+        agentId: null,
+        agent: null,
+      });
+    expect(harness.calls.filter((call) => call.operation === "insert")).toEqual([]);
+    expect(mocks.getAgentById).not.toHaveBeenCalled();
+  });
+
+  it("refreshes active provenance without overwriting ordinary agent configuration", async () => {
+    const configuredAgent = agent({
+      name: "Knowledge Lead",
+      adapterConfig: { command: "custom" },
     });
+    const harness = createMockDb({
+      select: [
+        [binding()],
+        [binding()],
+        [entity()],
+        [binding()],
+        [entity()],
+      ],
+      update: [[{ id: bindingId }], [entity()]],
+    });
+    mocks.getAgentById.mockResolvedValue(configuredAgent);
+
+    await expect(service(harness.db).reset("wiki-maintainer", companyId))
+      .resolves.toMatchObject({
+        status: "resolved",
+        agent: {
+          name: "Knowledge Lead",
+          adapterConfig: { command: "custom" },
+        },
+      });
+
+    const updateTargets = harness.calls
+      .filter((call) => call.operation === "update" && call.method === "update")
+      .map((call) => call.args[0]);
+    expect(updateTargets).toEqual([pluginManagedResources, pluginEntities]);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+  });
+
+  it("requires an exact authenticated board actor before triage persistence", async () => {
+    const harness = createMockDb();
+
+    await expect(pausePluginManagedAgentsIntoTriageInTransaction(
+      harness.db as never,
+      {
+        pluginId,
+        pluginKey,
+        reason: "plugin_disabled",
+        actorType: "user",
+        actorId: null,
+      },
+      {} as never,
+      now,
+    )).rejects.toMatchObject({ status: 409 });
+    expect(harness.calls).toEqual([]);
+  });
+
+  it("atomically pauses the agent, resource, and entity before requesting suspension", async () => {
+    const suspensionResult = {
+      companyId,
+      agentIds: [agentId],
+      reason: "plugin_disabled",
+      fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+      requests: [],
+    };
+    const requestAgentSuspensionsInTransaction = vi.fn()
+      .mockResolvedValue(suspensionResult);
+    const harness = createMockDb({
+      select: [[{ companyId }], [binding()], [entity()]],
+      update: [[{ id: agentId }], [{ id: bindingId }], [{ id: entityId }]],
+    });
+    mocks.lockCompanyAgentGraph.mockResolvedValue({ agents: [agent()] });
+
+    await expect(pausePluginManagedAgentsIntoTriageInTransaction(
+      harness.db as never,
+      {
+        pluginId,
+        pluginKey,
+        reason: "plugin_disabled",
+        actorType: "system",
+        actorId: pluginId,
+      },
+      { requestAgentSuspensionsInTransaction } as never,
+      now,
+    )).resolves.toEqual({
+      triagePausedAgentIds: [agentId],
+      suspensionRequests: [suspensionResult],
+    });
+
+    expect(mocks.lockCompanyAgentGraph).toHaveBeenCalledWith(
+      expect.anything(),
+      companyId,
+    );
+    const persistedTransitions = harness.calls
+      .filter((call) => call.operation === "update" && call.method === "set")
+      .map((call) => call.args[0]);
+    expect(persistedTransitions).toEqual([
+      expect.objectContaining({ status: "paused", pauseReason: "system" }),
+      expect.objectContaining({
+        lifecycleState: "triage_paused",
+        lifecycleReason: "plugin_disabled",
+        lifecycleActorType: "system",
+        lifecycleActorId: pluginId,
+      }),
+      expect.objectContaining({ status: "triage_paused" }),
+    ]);
+    expect(requestAgentSuspensionsInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ companyId, agentIds: [agentId] }),
+    );
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId,
+        actorType: "system",
+        actorId: pluginId,
+        action: "plugin.managed_agent.moved_to_board_triage",
+        entityId: agentId,
+      }),
+    );
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+  });
+
+  it("adopts only the locked triage pair and preserves the paused agent", async () => {
+    const triageBinding = binding({
+      lifecycleState: "triage_paused",
+      lifecycleReason: "plugin_disabled",
+      triagePausedAt: now,
+    });
+    const triageEntity = entity({ status: "triage_paused" });
+    const adopted = binding({
+      lifecycleState: "adopted",
+      lifecycleReason: "board_adopted",
+      lifecycleActorType: "user",
+      lifecycleActorId: "board-user",
+      adoptedAt: now,
+    });
+    const harness = createMockDb({
+      select: [[triageBinding], [triageEntity]],
+      update: [[adopted], [{ id: entityId }]],
+    });
+    mocks.lockCompanyAgentGraph.mockResolvedValue({
+      agents: [agent({ status: "paused", pauseReason: "system" })],
+    });
+
+    await expect(adoptPluginManagedAgentFromBoard(harness.db, {
+      companyId,
+      agentId,
+      actorUserId: "board-user",
+    })).resolves.toEqual(adopted);
+
+    const persistedTransitions = harness.calls
+      .filter((call) => call.operation === "update" && call.method === "set")
+      .map((call) => call.args[0]);
+    expect(persistedTransitions).toEqual([
+      expect.objectContaining({
+        lifecycleState: "adopted",
+        lifecycleReason: "board_adopted",
+        lifecycleActorType: "user",
+        lifecycleActorId: "board-user",
+      }),
+      expect.objectContaining({ status: "adopted" }),
+    ]);
+    expect(mocks.logActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId,
+        actorType: "user",
+        actorId: "board-user",
+        action: "plugin.managed_agent.adopted",
+        entityId: agentId,
+      }),
+    );
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
   });
 });

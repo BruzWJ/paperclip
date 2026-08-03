@@ -52,9 +52,9 @@ function gateway(overrides: Partial<ToolMcpGatewayWithTokens> = {}): ToolMcpGate
     id: "gateway-1",
     companyId: "c",
     gatewayPublicId: "gw",
-    name: "CTO agents",
-    displaySlug: "cto-agents",
-    slug: "cto-agents",
+    name: "Engineering agents",
+    displaySlug: "architect-agents",
+    slug: "architect-agents",
     description: null,
     status: "active",
     profileId: "profile-1",
@@ -65,11 +65,10 @@ function gateway(overrides: Partial<ToolMcpGatewayWithTokens> = {}): ToolMcpGate
     projectId: null,
     issueId: null,
     approvalIssueId: null,
-    endpointPath: "/g/cto-agents/mcp",
+    endpointPath: "/g/architect-agents/mcp",
     authConfig: {} as ToolMcpGatewayWithTokens["authConfig"],
     headerPolicy: {} as ToolMcpGatewayWithTokens["headerPolicy"],
     metadataPolicy: {} as ToolMcpGatewayWithTokens["metadataPolicy"],
-    onDemandToolsConfig: {} as ToolMcpGatewayWithTokens["onDemandToolsConfig"],
     metadata: null,
     createdByAgentId: null,
     createdByUserId: "u",
@@ -134,13 +133,12 @@ describe("formatScope", () => {
 });
 
 describe("orderedSnippets", () => {
-  it("orders clients cursor → claude_desktop → vscode → claude_code → opencode", () => {
+  it("orders the canonical supported clients", () => {
     const snippets: ToolMcpGatewayClientSnippet[] = [
-      { client: "opencode", label: "OpenCode", config: {}, notes: [] },
       { client: "cursor", label: "Cursor", config: {}, notes: [] },
       { client: "vscode", label: "VS Code", config: {}, notes: [] },
     ];
-    expect(orderedSnippets(snippets).map((s) => s.client)).toEqual(["cursor", "vscode", "opencode"]);
+    expect(orderedSnippets(snippets).map((s) => s.client)).toEqual(["cursor", "vscode"]);
   });
 });
 

@@ -12,8 +12,8 @@ import type { CompanySearchParams } from "@/api/search";
 const SEARCH_FILTER_PARAM_KEYS = [
   "status",
   "priority",
-  "assigneeAgentId",
-  "assigneeUserId",
+  "ownerAgentId",
+  "ownerUserId",
   "projectId",
   "labelId",
   "updatedWithin",
@@ -23,7 +23,7 @@ const SEARCH_FILTER_PARAM_KEYS = [
 const OPEN_STATUSES: IssueStatus[] = ["backlog", "todo", "in_progress", "in_review", "blocked"];
 const CLOSED_STATUSES: IssueStatus[] = ["done", "cancelled"];
 
-export type SearchOperatorKey = "status" | "assignee" | "project" | "label" | "priority" | "updated" | "is";
+export type SearchOperatorKey = "status" | "owner" | "project" | "label" | "priority" | "updated" | "is";
 
 export interface SearchOperatorPill {
   key: SearchOperatorKey;
@@ -37,12 +37,12 @@ export interface SearchOperatorSuggestion {
   description: string;
 }
 
-export const SEARCH_OPERATOR_QUICK_FILTERS = ["assignee:me", "is:open", "updated:>7d"] as const;
+export const SEARCH_OPERATOR_QUICK_FILTERS = ["owner:me", "is:open", "updated:>7d"] as const;
 
 export const SEARCH_OPERATOR_SUGGESTIONS: SearchOperatorSuggestion[] = [
   { token: "status:todo", label: "Open todo tasks", description: "Filter by task status" },
   { token: "status:blocked", label: "Blocked tasks", description: "Find blocked work" },
-  { token: "assignee:me", label: "Assigned to me", description: "Use your current board user" },
+  { token: "owner:me", label: "Owned by me", description: "Use your current board user" },
   { token: "project:\"Paperclip App\"", label: "Project name", description: "Quote multi-word project names" },
   { token: "label:bug", label: "Label", description: "Filter by issue label" },
   { token: "priority:high", label: "High priority", description: "Filter by priority" },
@@ -63,8 +63,8 @@ export interface ParsedSearchQuery {
     CompanySearchParams,
     | "status"
     | "priority"
-    | "assigneeAgentId"
-    | "assigneeUserId"
+    | "ownerAgentId"
+    | "ownerUserId"
     | "projectId"
     | "labelId"
     | "updatedWithin"
@@ -226,16 +226,16 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
       continue;
     }
 
-    if (key === "assignee") {
+    if (key === "owner") {
       if (value.toLowerCase() === "me") {
         if (context.currentAgentId) {
-          filters.assigneeAgentId = context.currentAgentId;
-          pills.push({ key: "assignee", value: "me", label: "assignee:me" });
+          filters.ownerAgentId = context.currentAgentId;
+          pills.push({ key: "owner", value: "me", label: "owner:me" });
           continue;
         }
         if (context.currentUserId) {
-          filters.assigneeUserId = context.currentUserId;
-          pills.push({ key: "assignee", value: "me", label: "assignee:me" });
+          filters.ownerUserId = context.currentUserId;
+          pills.push({ key: "owner", value: "me", label: "owner:me" });
           continue;
         }
         appendText(textParts, token.raw);
@@ -247,8 +247,8 @@ export function parseSearchQuery(input: string, context: SearchQueryParserContex
         appendText(textParts, token.raw);
         continue;
       }
-      filters.assigneeAgentId = agent.id;
-      pills.push({ key: "assignee", value: agent.name, label: operatorLabel("assignee", agent.name) });
+      filters.ownerAgentId = agent.id;
+      pills.push({ key: "owner", value: agent.name, label: operatorLabel("owner", agent.name) });
       continue;
     }
 
@@ -327,8 +327,8 @@ export function applySearchFiltersToParams(search: URLSearchParams, filters: Par
   clearSearchFilterParams(search);
   appendMulti(search, "status", filters.status);
   appendMulti(search, "priority", filters.priority);
-  if (filters.assigneeAgentId !== undefined) search.set("assigneeAgentId", filters.assigneeAgentId ?? "null");
-  if (filters.assigneeUserId !== undefined) search.set("assigneeUserId", filters.assigneeUserId);
+  if (filters.ownerAgentId !== undefined) search.set("ownerAgentId", filters.ownerAgentId ?? "null");
+  if (filters.ownerUserId !== undefined) search.set("ownerUserId", filters.ownerUserId);
   if (filters.projectId !== undefined) search.set("projectId", filters.projectId);
   if (filters.labelId !== undefined) search.set("labelId", filters.labelId);
   if (filters.updatedWithin !== undefined) search.set("updatedWithin", filters.updatedWithin);
@@ -343,8 +343,8 @@ export function readSearchFiltersFromParams(search: URLSearchParams): ParsedSear
   const filters: ParsedSearchQuery["filters"] = {};
   const statuses = validValues(search.getAll("status").flatMap((value) => value.split(",")), ISSUE_STATUSES);
   const priorities = validValues(search.getAll("priority").flatMap((value) => value.split(",")), ISSUE_PRIORITIES);
-  const assigneeAgentId = search.get("assigneeAgentId");
-  const assigneeUserId = search.get("assigneeUserId");
+  const ownerAgentId = search.get("ownerAgentId");
+  const ownerUserId = search.get("ownerUserId");
   const projectId = search.get("projectId");
   const labelId = search.get("labelId");
   const updatedWithin = search.get("updatedWithin");
@@ -352,8 +352,8 @@ export function readSearchFiltersFromParams(search: URLSearchParams): ParsedSear
 
   if (statuses.length > 0) filters.status = statuses;
   if (priorities.length > 0) filters.priority = priorities;
-  if (assigneeAgentId !== null) filters.assigneeAgentId = assigneeAgentId === "null" ? null : assigneeAgentId;
-  if (assigneeUserId) filters.assigneeUserId = assigneeUserId;
+  if (ownerAgentId !== null) filters.ownerAgentId = ownerAgentId === "null" ? null : ownerAgentId;
+  if (ownerUserId) filters.ownerUserId = ownerUserId;
   if (projectId && isUuidLike(projectId)) filters.projectId = projectId;
   if (labelId && isUuidLike(labelId)) filters.labelId = labelId;
   if (updatedWithin && (/^[1-9]\d{0,2}(h|d|w|m)$/.test(updatedWithin) || (COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS as readonly string[]).includes(updatedWithin))) {
@@ -367,8 +367,8 @@ export function hasSearchFilters(filters: ParsedSearchQuery["filters"]) {
   return Boolean(
     filters.status?.length
     || filters.priority?.length
-    || filters.assigneeAgentId !== undefined
-    || filters.assigneeUserId
+    || filters.ownerAgentId !== undefined
+    || filters.ownerUserId
     || filters.projectId
     || filters.labelId
     || filters.updatedWithin
@@ -391,15 +391,15 @@ export function searchFilterPills(
   for (const priority of filters.priority ?? []) {
     pills.push({ key: "priority", value: priority, label: operatorLabel("priority", priority) });
   }
-  if (filters.assigneeAgentId !== undefined) {
-    const value = filters.assigneeAgentId === null
-      ? "unassigned"
-      : nameForId(context.agents, filters.assigneeAgentId);
-    pills.push({ key: "assignee", value, label: operatorLabel("assignee", value) });
+  if (filters.ownerAgentId !== undefined) {
+    const value = filters.ownerAgentId === null
+      ? "board"
+      : nameForId(context.agents, filters.ownerAgentId);
+    pills.push({ key: "owner", value, label: operatorLabel("owner", value) });
   }
-  if (filters.assigneeUserId) {
-    const value = filters.assigneeUserId === context.currentUserId ? "me" : filters.assigneeUserId.slice(0, 8);
-    pills.push({ key: "assignee", value, label: operatorLabel("assignee", value) });
+  if (filters.ownerUserId) {
+    const value = filters.ownerUserId === context.currentUserId ? "me" : filters.ownerUserId.slice(0, 8);
+    pills.push({ key: "owner", value, label: operatorLabel("owner", value) });
   }
   if (filters.projectId) {
     const value = nameForId(context.projects, filters.projectId);

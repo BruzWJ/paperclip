@@ -63,7 +63,7 @@ Relevant current behavior:
 - `server/src/services/issue-continuation-summary.ts`
   - Continuation summaries already prefer sanitized summaries over transcript copies.
 - `server/src/services/recovery/*` and `server/src/__tests__/heartbeat-process-recovery.test.ts`
-  - Recovery/handoff code already encodes a no-transcript-copy direction and redacts secret-bearing progress summaries.
+  - Recovery/transfer code already encodes a no-transcript-copy direction and redacts secret-bearing progress summaries.
 
 ## Contract: `low_trust_review`
 
@@ -90,7 +90,7 @@ Relevant current behavior:
 | Secrets / env | None | Secret routes, provider health, plugin secret resolution, direct secret-ref materialization, env/lease introspection | Secrets are outside review scope |
 | Runtime services | None | Start/stop/restart runtime services, environment probes, lease operations, execution workspace runtime control | Prevent runtime pivot and SSRF |
 | Recovery / watchdog | None except passive viewing of the review issue's own status notices | Resolve recovery actions, interrupt active runs, schedule monitors, wake other agents | Too much control-plane authority |
-| Interactions / approvals / child tasks | None in Phase 1 | Create approvals, interactions, child issues, blocker graphs | Reviewer should report findings, not orchestrate the company |
+| Interactions / approvals / child issues | None in Phase 1 | Create approvals, interactions, child issues, blocker graphs | Reviewer should report findings, not orchestrate the company |
 
 ## Raw-output quarantine rule
 
@@ -144,7 +144,7 @@ This blocks the most likely confused-deputy chain:
 
 These surfaces must be explicitly denied or specially filtered for `low_trust_review`:
 
-1. `GET /api/agents/me`
+1. the retired generic agent-profile REST bridge
    Reason: current route returns raw `adapterConfig` and `runtimeConfig`.
 
 2. Same-company issue read fanout
@@ -197,7 +197,7 @@ and keep the actual allow/deny matrix in server code, not user-editable JSON.
 
 - New typed SQL columns for every deny/allow bit
 - Operator-editable per-issue capability lists
-- Reusing company-wide agent permissions as the enforcement source
+- Reusing company-wide action grants as the trust-containment source
 
 ### When typed columns become justified
 

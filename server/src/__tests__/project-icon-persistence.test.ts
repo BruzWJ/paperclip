@@ -1,95 +1,96 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { companies, createDb, projects as projectsTable } from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import { projects as projectsTable } from "@paperclipai/db";
 import { projectService } from "../services/projects.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+type ProjectRow = typeof projectsTable.$inferSelect;
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres project icon tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+function projectRow(input: {
+  companyId: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+}): ProjectRow {
+  const now = new Date("2026-07-01T12:00:00.000Z");
+  return {
+    id: randomUUID(),
+    companyId: input.companyId,
+    goalId: null,
+    name: input.name,
+    description: null,
+    status: "backlog",
+    leadAgentId: null,
+    targetDate: null,
+    color: input.color ?? null,
+    icon: input.icon ?? null,
+    env: null,
+    pauseReason: null,
+    pausedAt: null,
+    executionWorkspacePolicy: null,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
-// Verifies the PAP-69 data layer: the 0094 migration applies cleanly (the
-// embedded harness runs all pending migrations on startup) and the `icon`
-// column persists + round-trips through the projects service.
-describeEmbeddedPostgres("project icon persistence", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  let companyId!: string;
-  let prefixCounter = 0;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-project-icon-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(projectsTable);
-    await db.delete(companies);
+function projectPersistenceHarness(row: ProjectRow) {
+  return createMockDb({
+    // create: shortname check, goals, workspaces, managed-project binding.
+    // getById: project, goals, workspaces, managed-project binding.
+    select: [[], [], [], [], [row], [], [], []],
+    insert: [[row]],
   });
+}
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedCompany(): Promise<string> {
-    prefixCounter += 1;
-    const [company] = await db
-      .insert(companies)
-      .values({ name: "Icon Co", issuePrefix: `ICN${prefixCounter}` })
-      .returning();
-    return company.id;
-  }
-
-  it("persists and round-trips a project icon on create", async () => {
-    companyId = await seedCompany();
+describe("project icon persistence", () => {
+  it.each([
+    {
+      title: "persists and round-trips a project icon on create",
+      name: "Rocket",
+      createInput: { icon: "rocket" },
+      expected: { icon: "rocket", color: null },
+    },
+    {
+      title: "defaults icon to null when none is provided",
+      name: "Plain",
+      createInput: {},
+      expected: { icon: null, color: null },
+    },
+    {
+      title: "defaults color to null when none is provided (no auto-assign)",
+      name: "Gray",
+      createInput: {},
+      expected: { icon: null, color: null },
+    },
+    {
+      title: "still persists an explicit color when one is supplied",
+      name: "Blue",
+      createInput: { color: "#3b82f6" },
+      expected: { icon: null, color: "#3b82f6" },
+    },
+  ])("$title", async ({ name, createInput, expected }) => {
+    const companyId = randomUUID();
+    const row = projectRow({ companyId, name, ...createInput });
+    const { db, calls, remaining } = projectPersistenceHarness(row);
     const projects = projectService(db);
 
-    const created = await projects.create(companyId, { name: "Rocket", icon: "rocket" });
-    expect(created.icon).toBe("rocket");
-
+    const created = await projects.create(companyId, { name, ...createInput });
     const fetched = await projects.getById(created.id);
-    expect(fetched?.icon).toBe("rocket");
-  });
 
-  it("defaults icon to null when none is provided", async () => {
-    companyId = await seedCompany();
-    const projects = projectService(db);
+    expect(created).toMatchObject(expected);
+    expect(fetched).toMatchObject({ id: row.id, ...expected });
 
-    const created = await projects.create(companyId, { name: "Plain" });
-    expect(created.icon).toBeNull();
-
-    const fetched = await projects.getById(created.id);
-    expect(fetched?.icon).toBeNull();
-  });
-
-  // PAP-71: new projects must NOT auto-assign a color — they stay neutral gray
-  // (color = null) unless an explicit color is supplied on create.
-  it("defaults color to null when none is provided (no auto-assign)", async () => {
-    companyId = await seedCompany();
-    const projects = projectService(db);
-
-    const created = await projects.create(companyId, { name: "Gray" });
-    expect(created.color).toBeNull();
-
-    const fetched = await projects.getById(created.id);
-    expect(fetched?.color).toBeNull();
-  });
-
-  it("still persists an explicit color when one is supplied", async () => {
-    companyId = await seedCompany();
-    const projects = projectService(db);
-
-    const created = await projects.create(companyId, { name: "Blue", color: "#3b82f6" });
-    expect(created.color).toBe("#3b82f6");
-
-    const fetched = await projects.getById(created.id);
-    expect(fetched?.color).toBe("#3b82f6");
+    const valuesCall = calls.find(
+      (call) => call.operation === "insert" && call.method === "values",
+    );
+    expect(valuesCall?.args[0]).toMatchObject({
+      companyId,
+      name,
+      goalId: null,
+      ...createInput,
+    });
+    expect(remaining("select")).toBe(0);
+    expect(remaining("insert")).toBe(0);
   });
 });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  recoveryAssigneeAdapterOverrides,
   scrubRecoveryModelProfileHints,
   withRecoveryModelProfileHint,
 } from "./model-profile-hint.js";
@@ -15,7 +14,6 @@ describe("recovery model profile policy", () => {
       resumeRequiresNormalModel: true,
       modelProfile: "cheap",
     });
-    expect(recoveryAssigneeAdapterOverrides("status_only")).toEqual({ modelProfile: "cheap" });
   });
 
   it("scrubs inherited cheap hints from normal model source-work retries", () => {
@@ -35,10 +33,10 @@ describe("recovery model profile policy", () => {
 
   it("can scrub copied downstream source-work contexts without applying a profile", () => {
     expect(scrubRecoveryModelProfileHints({
-      taskId: "source-task",
+      sourceIssueId: "source-issue",
       modelProfile: "cheap",
       paperclipModelProfile: { requested: "cheap" },
       allowDocumentUpdates: false,
-    })).toEqual({ taskId: "source-task" });
+    })).toEqual({ sourceIssueId: "source-issue" });
   });
 });

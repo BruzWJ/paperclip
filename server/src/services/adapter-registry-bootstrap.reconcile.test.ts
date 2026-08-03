@@ -5,9 +5,8 @@ const setAdapterDisabled = vi.fn();
 vi.mock("../adapters/registry.js", async (orig) => ({
   ...(await orig()),
   listServerAdapters: () => [
-    { type: "claude_local" },
-    { type: "opencode_local" },
-    { type: "pi_local" },
+    { type: "codex" },
+    { type: "external_test" },
   ],
 }));
 
@@ -25,15 +24,15 @@ describe("reconcileAdapterAvailability", () => {
     expect(setAdapterDisabled).not.toHaveBeenCalled();
   });
 
-  it("enables declared, disables everything else (e.g. drops claude_local)", () => {
+  it("enables declared adapters and disables the rest", () => {
     setAdapterDisabled.mockReset();
     const result = reconcileAdapterAvailability([
-      { adapterType: "opencode_local", enabled: true },
+      { adapterType: "codex", enabled: true },
     ]);
-    expect(result.enabled).toEqual(["opencode_local"]);
-    expect(result.disabled.sort()).toEqual(["claude_local", "pi_local"]);
-    expect(setAdapterDisabled).toHaveBeenCalledWith("claude_local", true);
-    expect(setAdapterDisabled).toHaveBeenCalledWith("opencode_local", false);
+    expect(result.enabled).toEqual(["codex"]);
+    expect(result.disabled).toEqual(["external_test"]);
+    expect(setAdapterDisabled).toHaveBeenCalledWith("external_test", true);
+    expect(setAdapterDisabled).toHaveBeenCalledWith("codex", false);
   });
 
   it("throws when a declared adapter has no installed implementation", () => {

@@ -1,14 +1,14 @@
 /**
- * SandboxOrchestrator implementation backed by the kubernetes-sigs/agent-sandbox
- * Sandbox CRD (agents.x-k8s.io/v1alpha1).
+ * Kubernetes Sandbox custom-resource lifecycle
+ * (agents.x-k8s.io/v1alpha1).
  *
  * The Sandbox CR creates a long-lived pod that paperclip-server can exec into
- * for multi-command adapter-install workflows — the key architectural win over
- * the batch/v1 Job backend.
+ * for multi-command adapter-install workflows.
  *
- * Key semantic differences from jobOrchestrator:
- * - claim() creates a Sandbox CR via CustomObjectsApi instead of a batch Job
- * - getStatus() maps Sandbox phase (Pending|Ready|Terminating|Failed) to SandboxStatus
+ * Lifecycle semantics:
+ * - claim() creates a Sandbox CR via CustomObjectsApi
+ * - getStatus() maps Sandbox phase (Pending|Ready|Terminating|Failed) to the
+ *   worker's Pending|Running|Failed lifecycle
  * - findPod() reads status.podName from the Sandbox CR (falls back to label query)
  * - waitForCompletion() means "wait until pod is Ready to exec" NOT "wait until
  *   workload finishes". The Sandbox pod runs sleep infinity; execution completion
@@ -16,17 +16,19 @@
  * - release() deletes the Sandbox CR with Foreground propagation (controller
  *   tears down the underlying pod).
  *
- * NOTE: streamLogs() is provided for interface conformance but is limited —
- * the sleep-infinity pod has no meaningful stdout. Callers in execute mode
- * should use execInPod() and capture its stdout/stderr directly.
  */
 
 import type { KubeClients } from "./kube-client.js";
-import type { SandboxOrchestrator, SandboxStatus } from "./sandbox-orchestrator.js";
 
 const SANDBOX_GROUP = "agents.x-k8s.io";
 const SANDBOX_VERSION = "v1alpha1";
 const SANDBOX_PLURAL = "sandboxes";
+
+export interface SandboxCrStatus {
+  phase: "Pending" | "Running" | "Failed";
+  reason?: string;
+  message?: string;
+}
 
 export class SandboxCrTimeoutError extends Error {
   constructor(namespace: string, name: string, timeoutMs: number) {
@@ -42,31 +44,23 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Map a Sandbox CR status.phase value to our SandboxStatus shape.
+ * Map a Sandbox CR status.phase value to the worker lifecycle.
  * Sandbox phases: Pending | Ready | Terminating | Failed
  */
 function mapSandboxPhase(
   cr: Record<string, unknown>,
-): SandboxStatus {
+): SandboxCrStatus {
   const status = (cr.status as Record<string, unknown>) ?? {};
   const phase = (status.phase as string) ?? "Pending";
 
   switch (phase) {
     case "Ready":
       return {
-        phase: "Running", // SandboxStatus.phase uses Job semantics; "Running" = active pod
-        complete: false,
-        active: 1,
-        succeeded: 0,
-        failed: 0,
+        phase: "Running",
       };
     case "Terminating":
       return {
         phase: "Running",
-        complete: false,
-        active: 0,
-        succeeded: 0,
-        failed: 0,
         reason: "Terminating",
       };
     case "Failed": {
@@ -74,10 +68,6 @@ function mapSandboxPhase(
       const failedCond = conditions.find((c) => c.type === "Failed");
       return {
         phase: "Failed",
-        complete: false,
-        active: 0,
-        succeeded: 0,
-        failed: 1,
         reason: failedCond?.reason,
         message: failedCond?.message,
       };
@@ -86,10 +76,6 @@ function mapSandboxPhase(
       // "Pending" or unknown
       return {
         phase: "Pending",
-        complete: false,
-        active: 0,
-        succeeded: 0,
-        failed: 0,
       };
   }
 }
@@ -115,7 +101,7 @@ export async function getSandboxCrStatus(
   clients: KubeClients,
   namespace: string,
   name: string,
-): Promise<SandboxStatus> {
+): Promise<SandboxCrStatus> {
   const result = await clients.custom.getNamespacedCustomObject({
     group: SANDBOX_GROUP,
     version: SANDBOX_VERSION,
@@ -203,23 +189,6 @@ export async function findPodForSandbox(
   return (running ?? matching[0])?.metadata?.name ?? null;
 }
 
-export async function streamSandboxLogs(
-  clients: KubeClients,
-  namespace: string,
-  podName: string,
-  onChunk: (stream: "stdout" | "stderr", text: string) => Promise<void>,
-): Promise<void> {
-  // V1 limitation: readNamespacedPodLog returns combined stdout. The
-  // sleep-infinity pod will have minimal output; this is provided for interface
-  // conformance. For actual command output, use execInPod() directly.
-  const result = await clients.core.readNamespacedPodLog({
-    namespace,
-    name: podName,
-  });
-  const text = (result as string) ?? "";
-  if (text.length > 0) await onChunk("stdout", text);
-}
-
 export async function deleteSandboxCr(
   clients: KubeClients,
   namespace: string,
@@ -252,7 +221,7 @@ export async function waitForSandboxReady(
     timeoutMs: 120_000,
     pollMs: 2000,
   },
-): Promise<SandboxStatus> {
+): Promise<SandboxCrStatus> {
   const deadline = Date.now() + opts.timeoutMs;
   const pollMs = opts.pollMs ?? 2000;
 
@@ -300,17 +269,14 @@ export async function waitForSandboxReady(
 }
 
 /**
- * Sandbox CR-backed conformance to SandboxOrchestrator.
- *
- * waitForCompletion semantics change: for this backend, "completion" means
+ * Here, waitForCompletion means
  * "pod is up and Ready to exec into" — NOT "workload finished". The actual
  * command execution and its completion is handled by execInPod().
  */
-export const sandboxCrOrchestrator: SandboxOrchestrator = {
+export const sandboxCrOrchestrator = {
   claim: createSandboxCr,
   getStatus: getSandboxCrStatus,
   findPod: findPodForSandbox,
-  streamLogs: streamSandboxLogs,
   release: deleteSandboxCr,
   waitForCompletion: waitForSandboxReady,
 };

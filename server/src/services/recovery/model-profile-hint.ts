@@ -59,7 +59,3 @@ export function withRecoveryModelProfileHint<T extends Record<string, unknown>>(
     modelProfile: RECOVERY_MODEL_PROFILE_KEY,
   };
 }
-
-export function recoveryAssigneeAdapterOverrides(_workClass: Extract<RecoveryModelProfileWorkClass, "status_only">) {
-  return { modelProfile: RECOVERY_MODEL_PROFILE_KEY };
-}

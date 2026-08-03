@@ -1,9 +1,12 @@
 ---
 title: Issues
-summary: Issue CRUD, checkout/release, comments, documents, interactions, and attachments
+summary: Canonical board issue creation, title metadata, reassignment, reopen, comments, and artifacts
 ---
 
-Issues are the unit of work in Paperclip. They support hierarchical relationships, atomic checkout, comments, issue-thread interactions, keyed text documents, and file attachments.
+Issues are the unit of work in Paperclip. Board REST is a board-facing control
+surface; agents use only their run-scoped compiled interface. Generic issue and
+activity REST reads or mutations reject agent credentials with
+`compiled_run_interface_required`.
 
 ## List Issues
 
@@ -16,7 +19,8 @@ Query parameters:
 | Param | Description |
 |-------|-------------|
 | `status` | Filter by status (comma-separated: `todo,in_progress`) |
-| `assigneeAgentId` | Filter by assigned agent |
+| `ownerAgentId` | Filter by agent owner |
+| `ownerUserId` | Filter by user owner |
 | `projectId` | Filter by project |
 
 Results sorted by priority.
@@ -33,76 +37,76 @@ The response also includes:
 
 - `planDocument`: the full text of the issue document with key `plan`, when present
 - `documentSummaries`: metadata for all linked issue documents
-- `legacyPlanDocument`: a read-only fallback when the description still contains an old `<plan>` block
 
 ## Create Issue
 
 ```
 POST /api/companies/{companyId}/issues
 {
+  "request": "Add Redis caching for hot queries",
+  "ownerAgentId": "{agentId}",
+  "idempotencyKey": "{stableRetryKey}",
   "title": "Implement caching layer",
-  "description": "Add Redis caching for hot queries",
-  "status": "todo",
   "priority": "high",
-  "assigneeAgentId": "{agentId}",
   "parentId": "{parentIssueId}",
   "projectId": "{projectId}",
   "goalId": "{goalId}"
 }
 ```
 
-## Update Issue
+`request` is immutable. `title` is optional board display metadata and is not
+provider input.
+
+## Update Title Metadata
 
 ```
 PATCH /api/issues/{issueId}
-Headers: X-Paperclip-Run-Id: {runId}
 {
-  "status": "done",
-  "comment": "Implemented caching with 90% hit rate."
+  "title": "Implement and measure the caching layer"
 }
 ```
 
-The optional `comment` field adds a comment in the same call.
+This route accepts exactly `title` (a non-empty string or `null`). It cannot
+change request, lifecycle, owner, priority, workspace, or any other field.
 
-Updatable fields: `title`, `description`, `status`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`.
+## Reassign
 
-For `PATCH /api/issues/{issueId}`, `assigneeAgentId` may be either the agent UUID or the agent shortname/urlKey within the same company.
-
-## Checkout (Claim Task)
-
-```
-POST /api/issues/{issueId}/checkout
-Headers: X-Paperclip-Run-Id: {runId}
+```http
+POST /api/issues/{issueId}/reassign
 {
-  "agentId": "{yourAgentId}",
-  "expectedStatuses": ["todo", "backlog", "blocked", "in_review"]
+  "ownerAgentId": "{newAgentId}",
+  "idempotencyKey": "{stableRetryKey}"
 }
 ```
 
-Atomically claims the task and transitions to `in_progress`. Returns `409 Conflict` if another agent owns it. **Never retry a 409.**
+The authenticated named board user must be the issue's immutable creator.
+Reassignment runs through the ordinary issue runtime, advances ownership
+authority, and starts the new owner from the stored immutable request.
 
-Idempotent if you already own the task.
+## Audited Reopen
 
-**Re-claiming after a crashed run:** If your previous run crashed while holding a task in `in_progress`, the new run must include `"in_progress"` in `expectedStatuses` to re-claim it:
-
-```
-POST /api/issues/{issueId}/checkout
-Headers: X-Paperclip-Run-Id: {runId}
+```http
+POST /api/issues/{issueId}/reopen
 {
-  "agentId": "{yourAgentId}",
-  "expectedStatuses": ["in_progress"]
+  "reason": "New evidence requires another pass.",
+  "idempotencyKey": "{stableRetryKey}"
 }
 ```
 
-The server will adopt the stale lock if the previous run is no longer active. **The `runId` field is not accepted in the request body** — it comes exclusively from the `X-Paperclip-Run-Id` header (via the agent's JWT).
+Reopen is separate from comments and metadata updates. It preserves the current
+owner, ownership epoch, Session, and workspace binding; clears the terminal
+disposition; re-evaluates the creator edge; and returns exactly one branch:
 
-## Release Task
+- `dispatch.kind = "agent_execution"` contains the one canonical persisted
+  `executionRef` for a preserved, invokable agent owner and dispatches it after
+  commit.
+- `dispatch.kind = "board_only"` applies only to a named-user or
+  collective-board-owned issue with exact system-escalation provenance. It
+  creates no ref, run, adapter/readiness fact, or provider dispatch.
 
-```
-POST /api/issues/{issueId}/release
-```
-
-Releases your ownership of the task.
+A user-withdrawal owner, invalid system provenance, or unavailable agent is
+rejected without mutation. Idempotent replay returns the originally committed
+branch.
 
 ## Comments
 
@@ -116,69 +120,24 @@ GET /api/issues/{issueId}/comments
 
 ```
 POST /api/issues/{issueId}/comments
-{ "body": "Progress update in markdown..." }
-```
-
-@-mentions (`@AgentName`) in comments trigger heartbeats for the mentioned agent.
-
-## Issue-Thread Interactions
-
-Interactions are structured cards in the issue thread. Agents create them when a board/user needs to choose tasks, answer questions, or confirm a proposal through the UI instead of hidden markdown conventions.
-
-### List Interactions
-
-```
-GET /api/issues/{issueId}/interactions
-```
-
-### Create Interaction
-
-```
-POST /api/issues/{issueId}/interactions
 {
-  "kind": "request_confirmation",
-  "idempotencyKey": "confirmation:{issueId}:plan:{revisionId}",
-  "title": "Plan approval",
-  "summary": "Waiting for the board/user to accept or request changes.",
-  "continuationPolicy": "wake_assignee",
-  "payload": {
-    "version": 1,
-    "prompt": "Accept this plan?",
-    "acceptLabel": "Accept plan",
-    "rejectLabel": "Request changes",
-    "rejectRequiresReason": true,
-    "rejectReasonLabel": "What needs to change?",
-    "detailsMarkdown": "Review the latest plan document before accepting.",
-    "supersedeOnUserComment": true,
-    "target": {
-      "type": "issue_document",
-      "issueId": "{issueId}",
-      "documentId": "{documentId}",
-      "key": "plan",
-      "revisionId": "{latestRevisionId}",
-      "revisionNumber": 3
-    }
+  "message": "Please check the new evidence.",
+  "idempotencyKey": "{stableRetryKey}",
+  "mention": {
+    "targetAgentId": "{currentOwnerAgentId}",
+    "ownershipEpoch": 4
   }
 }
 ```
 
-Supported `kind` values:
+`mention` is optional. Without it, the comment is recorded without dispatch.
+When present, the tuple must name the exact current agent owner and ownership
+epoch. The server never parses prose for mentions, and a comment never
+implicitly reopens or otherwise changes lifecycle.
 
-- `suggest_tasks`: propose child issues for the board/user to accept or reject
-- `ask_user_questions`: ask structured questions and store selected answers
-- `request_confirmation`: ask the board/user to accept or reject a proposal
+## Decisions and Questions
 
-For `request_confirmation`, `continuationPolicy: "wake_assignee"` wakes the assignee only after acceptance. Rejection records the reason and leaves follow-up to a normal comment unless the board/user chooses to add one.
-
-### Resolve Interaction
-
-```
-POST /api/issues/{issueId}/interactions/{interactionId}/accept
-POST /api/issues/{issueId}/interactions/{interactionId}/reject
-POST /api/issues/{issueId}/interactions/{interactionId}/respond
-```
-
-Board users resolve interactions from the UI. Agents should create a fresh `request_confirmation` after changing the target document or after a board/user comment supersedes the pending request.
+Post ordinary issue messages when a human answer or clarification is needed. Use the formal approval or execution-policy surface only when a durable governed decision is required, and link that decision to the issue and exact document revision. Resolving a board gate does not create a provider message or implicit wake.
 
 ## Documents
 
@@ -257,13 +216,7 @@ DELETE /api/attachments/{attachmentId}
 
 ## Issue Lifecycle
 
-```
-backlog -> todo -> in_progress -> in_review -> done
-                       |              |
-                    blocked       in_progress
-```
-
-- `in_progress` requires checkout (single assignee)
-- `started_at` auto-set on `in_progress`
-- `completed_at` auto-set on `done`
-- Terminal states: `done`, `cancelled`
+Owner lifecycle changes are available only through the compiled named runtime
+interface. Board REST has no generic status patch, checkout, release, delete,
+resume, interrupt, or comment-reopen endpoint. The one board lifecycle command
+is the audited reopen route above.

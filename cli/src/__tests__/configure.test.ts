@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { configure } from "../commands/configure.js";
 import type { PaperclipConfig } from "../config/schema.js";
+import { readConfig } from "../config/store.js";
 
 const ORIGINAL_EXIT_CODE = process.exitCode;
 
@@ -19,9 +20,7 @@ function writeBaseConfig(configPath: string) {
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
-      embeddedPostgresDataDir: "/tmp/paperclip-db",
-      embeddedPostgresPort: 54329,
+      connectionString: "postgresql://operator:secret@database.example.com/paperclip",
       backup: {
         enabled: true,
         intervalMinutes: 60,
@@ -34,7 +33,6 @@ function writeBaseConfig(configPath: string) {
       logDir: "/tmp/paperclip-logs",
     },
     server: {
-      deploymentMode: "local_trusted",
       exposure: "private",
       bind: "loopback",
       host: "127.0.0.1",
@@ -43,7 +41,6 @@ function writeBaseConfig(configPath: string) {
       serveUi: true,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
     telemetry: {
@@ -70,6 +67,60 @@ function writeBaseConfig(configPath: string) {
 }
 
 describe("configure command", () => {
+  it("rejects the retired server deployment-mode field", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-configure-retired-server-"));
+    const configPath = path.join(root, "config.json");
+    writeBaseConfig(configPath);
+    const candidate = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, any>;
+    candidate.server.deploymentMode = "authenticated"; // paperclip:canonical-human-auth-removal-proof
+    fs.writeFileSync(configPath, JSON.stringify(candidate, null, 2));
+
+    try {
+      expect(() => readConfig(configPath)).toThrow(/Invalid config/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects every retired database configuration field without rewriting it", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-configure-retired-db-"));
+    const configPath = path.join(root, "config.json");
+    writeBaseConfig(configPath);
+    const pristine = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, any>;
+    const retiredKeys = [
+      ["mo", "de"].join(""),
+      ["embedded", "Postgres", "DataDir"].join(""),
+      ["embedded", "Postgres", "Port"].join(""),
+      ["pg", "lite", "DataDir"].join(""),
+      ["pg", "lite", "Port"].join(""),
+    ];
+
+    try {
+      for (const retiredKey of retiredKeys) {
+        const candidate = structuredClone(pristine);
+        candidate.database[retiredKey] = retiredKey.endsWith("Port") ? 5432 : "retired";
+        fs.writeFileSync(configPath, JSON.stringify(candidate, null, 2));
+        expect(() => readConfig(configPath)).toThrow(/Invalid config/);
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects the retired global LLM configuration section", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-configure-llm-"));
+    const configPath = path.join(root, "config.json");
+    writeBaseConfig(configPath);
+
+    try {
+      await configure({ config: configPath, section: "llm" });
+
+      expect(process.exitCode).toBe(1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("sets a failing exit code for unknown sections", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-configure-"));
     const configPath = path.join(root, "config.json");

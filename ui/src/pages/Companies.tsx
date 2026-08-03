@@ -5,7 +5,8 @@ import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { companiesApi } from "../api/companies";
 import { queryKeys } from "../lib/queryKeys";
-import { formatCents, relativeTime } from "../lib/utils";
+import { formatMoneyAmount, relativeTime } from "../lib/utils";
+import { compareMoneyAmounts, parseMoneyAmount } from "@paperclipai/shared";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -29,6 +30,8 @@ import {
   DollarSign,
   Calendar,
 } from "lucide-react";
+
+const ZERO_AMOUNT = parseMoneyAmount("0");
 
 export function Companies() {
   const {
@@ -111,12 +114,10 @@ export function Companies() {
           const companyStats = stats?.[company.id];
           const agentCount = companyStats?.agentCount ?? 0;
           const issueCount = companyStats?.issueCount ?? 0;
-          const budgetPct =
-            company.budgetMonthlyCents > 0
-              ? Math.round(
-                  (company.spentMonthlyCents / company.budgetMonthlyCents) * 100,
-                )
-              : 0;
+          const hasBudget = compareMoneyAmounts(
+            company.budgetMonthlyAmount,
+            ZERO_AMOUNT,
+          ) > 0;
 
           return (
             <Card
@@ -248,9 +249,9 @@ export function Companies() {
                 <div className="flex items-center gap-1.5 tabular-nums">
                   <DollarSign className="h-3.5 w-3.5" />
                   <span>
-                    {formatCents(company.spentMonthlyCents)}
-                    {company.budgetMonthlyCents > 0
-                      ? <> / {formatCents(company.budgetMonthlyCents)} <span className="text-xs">({budgetPct}%)</span></>
+                    {formatMoneyAmount(company.knownSpendAmount, company.budgetCurrency)}
+                    {hasBudget
+                      ? <> / {formatMoneyAmount(company.budgetMonthlyAmount, company.budgetCurrency)}</>
                       : <span className="text-xs ml-1">Unlimited budget</span>}
                   </span>
                 </div>

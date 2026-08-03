@@ -229,16 +229,10 @@ Note:
 - keep existing `permissions` JSON for transition only
 - mark as deprecated in code path once principal grants are live
 
-## 5.4 Migration strategy
+## 5.4 Database migration
 
-Migration ordering:
-
-1. add new tables/columns/indexes
-2. backfill minimum memberships/grants for existing data:
-- create local implicit admin membership context in local mode at runtime (not persisted as Better Auth user)
-- for cloud, bootstrap creates first admin user role on acceptance
-3. switch authz reads to new tables
-4. remove legacy board-only checks
+The next ordinary forward migration adds the required tables, columns, indexes,
+memberships, and grants. Existing migration history remains immutable.
 
 ## 6. API contract (new/changed)
 
@@ -581,7 +575,7 @@ Required UX:
 ## 12.4 Regression tests
 
 - existing agent API key flows still work
-- task assignment and checkout invariants unchanged
+- issue assignment and checkout invariants unchanged
 - activity logging still emitted for all mutations
 
 ## 13. Delivery plan
@@ -622,7 +616,7 @@ Required UX:
 
 ## 14. Verification gate
 
-Before handoff:
+Before transfer:
 
 ```sh
 pnpm -r typecheck

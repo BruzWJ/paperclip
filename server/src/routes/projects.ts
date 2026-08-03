@@ -14,10 +14,10 @@ import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } fr
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { conflict, forbidden } from "../errors.js";
+import { conflict } from "../errors.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
   listConfiguredRuntimeServiceEntries,
@@ -25,20 +25,14 @@ import {
   startRuntimeServicesForWorkspaceControl,
   stopRuntimeServicesForProjectWorkspace,
 } from "../services/workspace-runtime.js";
-import {
-  assertNoAgentHostWorkspaceCommandMutation,
-  collectProjectExecutionWorkspaceCommandPaths,
-  collectProjectWorkspaceCommandPaths,
-} from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
 import { getTelemetryClient } from "../telemetry.js";
-import { appendWithCap } from "../adapters/utils.js";
+import { appendWithCap } from "@paperclipai/adapter-utils/server-utils";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { environmentService } from "../services/environments.js";
 import { secretService } from "../services/secrets.js";
 
 const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
-const SHARED_WORKSPACE_STOP_AND_RESTART_ACTIONS = new Set(["stop", "restart"]);
 
 export function projectRoutes(db: Db) {
   const router = Router();
@@ -77,9 +71,6 @@ export function projectRoutes(db: Db) {
     if (requestedCompanyId) {
       assertCompanyAccess(req, requestedCompanyId);
       return requestedCompanyId;
-    }
-    if (req.actor.type === "agent" && req.actor.companyId) {
-      return req.actor.companyId;
     }
     return null;
   }
@@ -161,13 +152,6 @@ export function projectRoutes(db: Db) {
       companyId,
       readProjectPolicyEnvironmentId(projectData.executionWorkspacePolicy),
     );
-    assertNoAgentHostWorkspaceCommandMutation(
-      req,
-      [
-        ...collectProjectExecutionWorkspaceCommandPaths(projectData.executionWorkspacePolicy),
-        ...collectProjectWorkspaceCommandPaths(workspace, "workspace"),
-      ],
-    );
     if (projectData.env !== undefined) {
       projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
         companyId,
@@ -177,10 +161,11 @@ export function projectRoutes(db: Db) {
     }
     const project = await svc.create(companyId, projectData);
     if (project.env) {
-      await secretsSvc.syncEnvBindingsForTarget?.(
+      await secretsSvc.syncEnvBindingsForTarget(
         companyId,
         { targetType: "project", targetId: project.id },
         project.env,
+        { actor: { type: "user", userId: req.actor.userId } },
       );
     }
     let createdWorkspaceId: string | null = null;
@@ -195,12 +180,10 @@ export function projectRoutes(db: Db) {
     }
     const hydratedProject = workspace ? await svc.getById(project.id) : project;
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "project.created",
       entityType: "project",
       entityId: project.id,
@@ -221,11 +204,8 @@ export function projectRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
+    assertBoard(req);
     const body = { ...req.body };
-    assertNoAgentHostWorkspaceCommandMutation(
-      req,
-      collectProjectExecutionWorkspaceCommandPaths(body.executionWorkspacePolicy),
-    );
     await assertProjectEnvironmentSelection(
       existing.companyId,
       readProjectPolicyEnvironmentId(body.executionWorkspacePolicy),
@@ -245,19 +225,18 @@ export function projectRoutes(db: Db) {
       return;
     }
     if (body.env !== undefined) {
-      await secretsSvc.syncEnvBindingsForTarget?.(
+      await secretsSvc.syncEnvBindingsForTarget(
         project.companyId,
         { targetType: "project", targetId: project.id },
         project.env,
+        { actor: { type: "user", userId: req.actor.userId } },
       );
     }
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: project.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "project.updated",
       entityType: "project",
       entityId: project.id,
@@ -277,6 +256,7 @@ export function projectRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
+    assertBoard(req);
     const workspaces = await svc.listWorkspaces(id);
     res.json(workspaces);
   });
@@ -285,22 +265,18 @@ export function projectRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
-    assertNoAgentHostWorkspaceCommandMutation(
-      req,
-      collectProjectWorkspaceCommandPaths(req.body),
-    );
+    assertBoard(req);
+    const actorUserId = req.actor.userId;
     const workspace = await svc.createWorkspace(id, req.body);
     if (!workspace) {
       res.status(422).json({ error: "Invalid project workspace payload" });
       return;
     }
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: actorUserId,
       action: "project.workspace_created",
       entityType: "project",
       entityId: id,
@@ -323,10 +299,7 @@ export function projectRoutes(db: Db) {
       const workspaceId = req.params.workspaceId as string;
       const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
       if (!existing) return;
-      assertNoAgentHostWorkspaceCommandMutation(
-        req,
-        collectProjectWorkspaceCommandPaths(req.body),
-      );
+      assertBoard(req);
       const workspaceExists = (await svc.listWorkspaces(id)).some((workspace) => workspace.id === workspaceId);
       if (!workspaceExists) {
         res.status(404).json({ error: "Project workspace not found" });
@@ -338,12 +311,10 @@ export function projectRoutes(db: Db) {
         return;
       }
 
-      const actor = getActorInfo(req);
       await logActivity(db, {
         companyId: existing.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "project.workspace_updated",
         entityType: "project",
         entityId: id,
@@ -358,6 +329,8 @@ export function projectRoutes(db: Db) {
   );
 
   async function handleProjectWorkspaceRuntimeCommand(req: Request, res: Response) {
+    assertBoard(req);
+    const actorUserId = req.actor.userId;
     const id = req.params.id as string;
     const workspaceId = req.params.workspaceId as string;
     const action = String(req.params.action ?? "").trim().toLowerCase();
@@ -373,15 +346,6 @@ export function projectRoutes(db: Db) {
     if (!workspace) {
       res.status(404).json({ error: "Project workspace not found" });
       return;
-    }
-
-    const isSharedWorkspace = Boolean(workspace.sharedWorkspaceKey);
-    if (
-      req.actor.type === "agent"
-      && isSharedWorkspace
-      && SHARED_WORKSPACE_STOP_AND_RESTART_ACTIONS.has(action)
-    ) {
-      throw forbidden("Missing permission to manage workspace runtime services");
     }
 
     await assertCanManageProjectWorkspaceRuntimeServices(db, req, {
@@ -443,8 +407,12 @@ export function projectRoutes(db: Db) {
       return;
     }
 
-    const actor = getActorInfo(req);
     const recorder = workspaceOperations.createRecorder({ companyId: project.companyId });
+    const boardRuntimeActor = {
+      id: null,
+      name: "Board",
+      companyId: project.companyId,
+    };
     let runtimeServiceCount = workspace.runtimeServices?.length ?? 0;
     let stdout = "";
     let stderr = "";
@@ -469,11 +437,7 @@ export function projectRoutes(db: Db) {
             throw new Error("Workspace job selection is required");
           }
           return await runWorkspaceJobForControl({
-            actor: {
-              id: actor.agentId ?? null,
-              name: actor.actorType === "user" ? "Board" : "Agent",
-              companyId: project.companyId,
-            },
+            actor: boardRuntimeActor,
             issue: null,
             workspace: {
               baseCwd: workspaceCwd,
@@ -524,11 +488,7 @@ export function projectRoutes(db: Db) {
         if (action === "start" || action === "restart") {
           const startedServices = await startRuntimeServicesForWorkspaceControl({
             db,
-            actor: {
-              id: actor.agentId ?? null,
-              name: actor.actorType === "user" ? "Board" : "Agent",
-              companyId: project.companyId,
-            },
+            actor: boardRuntimeActor,
             issue: null,
             workspace: {
               baseCwd: workspaceCwd,
@@ -587,9 +547,9 @@ export function projectRoutes(db: Db) {
           stderr,
           system:
             action === "stop"
-              ? "Stopped project workspace runtime services.\nThis does not pause issue work or held wake scheduling."
+              ? "Stopped project workspace runtime services.\nThis does not pause issue work or held execution scheduling."
               : action === "restart"
-                ? "Restarted project workspace runtime services.\nThis does not pause issue work or held wake scheduling."
+                ? "Restarted project workspace runtime services.\nThis does not pause issue work or held execution scheduling."
                 : "Started project workspace runtime services.\n",
           metadata: {
             runtimeServiceCount,
@@ -605,9 +565,8 @@ export function projectRoutes(db: Db) {
 
     await logActivity(db, {
       companyId: project.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: actorUserId,
       action: `project.workspace_runtime_${action}`,
       entityType: "project",
       entityId: project.id,
@@ -636,18 +595,17 @@ export function projectRoutes(db: Db) {
     const workspaceId = req.params.workspaceId as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
+    assertBoard(req);
     const workspace = await svc.removeWorkspace(id, workspaceId);
     if (!workspace) {
       res.status(404).json({ error: "Project workspace not found" });
       return;
     }
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "project.workspace_deleted",
       entityType: "project",
       entityId: id,
@@ -664,18 +622,17 @@ export function projectRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
     if (!existing) return;
+    assertBoard(req);
     const project = await svc.remove(id);
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: project.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "project.deleted",
       entityType: "project",
       entityId: project.id,

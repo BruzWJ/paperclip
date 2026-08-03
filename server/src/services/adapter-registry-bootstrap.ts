@@ -7,7 +7,7 @@
  *      exactly the declared, enabled set (runs for any instance).
  *   2. k8s runtime: the same registry rides on the Kubernetes environment config
  *      (see execution-policy-bootstrap) so the plugin resolves runtime
- *      image/envKeys/allowFqdns/probe/defaultEnv from it.
+ *      image/allowFqdns/probe settings from it.
  *
  * Parsing is pure + fails loud on malformed/invalid config, mirroring
  * execution-policy-bootstrap.

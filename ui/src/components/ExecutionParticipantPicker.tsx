@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Agent, Issue } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
 import { accessApi } from "../api/access";
-import { formatAssigneeUserLabel } from "../lib/assignees";
+import { formatUserLabel } from "../lib/issue-owners";
 import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
 import { sortAgentsByRecency, getRecentAssigneeIds } from "../lib/recent-assignees";
@@ -52,14 +52,15 @@ export function ExecutionParticipantPicker({
     () => buildCompanyUserLabelMap(companyMembers?.users),
     [companyMembers?.users],
   );
+  const creatorUserId = issue.creatorKind === "user/board" ? issue.creatorUserId : null;
   const otherUserOptions = useMemo(
-    () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
-    [companyMembers?.users, currentUserId, issue.createdByUserId],
+    () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, creatorUserId] }),
+    [companyMembers?.users, creatorUserId, currentUserId],
   );
 
   const userLabel = (userId: string | null | undefined) =>
-    formatAssigneeUserLabel(userId, currentUserId, userLabelMap);
-  const creatorUserLabel = userLabel(issue.createdByUserId);
+    userId === currentUserId ? "You" : formatUserLabel(userId, userLabelMap);
+  const creatorUserLabel = userLabel(creatorUserId);
 
   const agentName = (id: string) => {
     const agent = agents.find((a) => a.id === id);
@@ -143,13 +144,13 @@ export function ExecutionParticipantPicker({
               Assign to me
             </button>
           )}
-          {issue.createdByUserId && issue.createdByUserId !== currentUserId && (
+          {creatorUserId && creatorUserId !== currentUserId && (
             <button
               className={cn(
                 "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                values.includes(`user:${issue.createdByUserId}`) && "bg-accent",
+                values.includes(`user:${creatorUserId}`) && "bg-accent",
               )}
-              onClick={() => toggle(`user:${issue.createdByUserId}`)}
+              onClick={() => toggle(`user:${creatorUserId}`)}
             >
               <User className="h-3 w-3 shrink-0 text-muted-foreground" />
               {creatorUserLabel ?? "Requester"}

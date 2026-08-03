@@ -8,9 +8,6 @@ const DEFAULT_PROFILE = "default";
 export interface ClientContextProfile {
   apiBase?: string;
   companyId?: string;
-  persona?: "board" | "agent";
-  agentId?: string;
-  agentName?: string;
   apiKeyEnvVarName?: string;
   tokenName?: string;
   tokenId?: string;
@@ -72,16 +69,10 @@ function toStringOrUndefined(value: unknown): string | undefined {
 function normalizeProfile(value: unknown): ClientContextProfile {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
   const profile = value as Record<string, unknown>;
-  const persona = profile.persona === "board" || profile.persona === "agent"
-    ? profile.persona
-    : undefined;
 
   return {
     apiBase: toStringOrUndefined(profile.apiBase),
     companyId: toStringOrUndefined(profile.companyId),
-    persona,
-    agentId: toStringOrUndefined(profile.agentId),
-    agentName: toStringOrUndefined(profile.agentName),
     apiKeyEnvVarName: toStringOrUndefined(profile.apiKeyEnvVarName),
     tokenName: toStringOrUndefined(profile.tokenName),
     tokenId: toStringOrUndefined(profile.tokenId),
@@ -153,9 +144,6 @@ export function upsertProfile(
 
   if (patch.apiBase !== undefined) merged.apiBase = patch.apiBase;
   if (patch.companyId !== undefined) merged.companyId = patch.companyId;
-  if (patch.persona !== undefined) merged.persona = patch.persona;
-  if (patch.agentId !== undefined) merged.agentId = patch.agentId;
-  if (patch.agentName !== undefined) merged.agentName = patch.agentName;
   if (patch.apiKeyEnvVarName !== undefined) merged.apiKeyEnvVarName = patch.apiKeyEnvVarName;
   if (patch.tokenName !== undefined) merged.tokenName = patch.tokenName;
   if (patch.tokenId !== undefined) merged.tokenId = patch.tokenId;
@@ -166,15 +154,6 @@ export function upsertProfile(
   }
   if (patch.companyId !== undefined && patch.companyId.trim().length === 0) {
     delete merged.companyId;
-  }
-  if (patch.persona === undefined && "persona" in patch) {
-    delete merged.persona;
-  }
-  if (patch.agentId !== undefined && patch.agentId.trim().length === 0) {
-    delete merged.agentId;
-  }
-  if (patch.agentName !== undefined && patch.agentName.trim().length === 0) {
-    delete merged.agentName;
   }
   if (patch.apiKeyEnvVarName !== undefined && patch.apiKeyEnvVarName.trim().length === 0) {
     delete merged.apiKeyEnvVarName;

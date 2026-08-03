@@ -2,27 +2,30 @@ import * as p from "@clack/prompts";
 import path from "node:path";
 import pc from "picocolors";
 import {
-  AUTH_BASE_URL_MODES,
+  redactExternalPostgresConnectionString,
+  validateExternalPostgresConnectionString,
+} from "@paperclipai/db";
+import {
   BIND_MODES,
   DEPLOYMENT_EXPOSURES,
-  DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
   inferBindModeFromHost,
+  normalizePublicOrigin,
   resolveRuntimeBind,
   type BindMode,
-  type AuthBaseUrlMode,
   type DeploymentExposure,
-  type DeploymentMode,
   type SecretProvider,
   type StorageProvider,
 } from "@paperclipai/shared";
 import { configExists, readConfig, resolveConfigPath, writeConfig } from "../config/store.js";
-import type { PaperclipConfig } from "../config/schema.js";
-import { ensureAgentJwtSecret, resolveAgentJwtEnvFile } from "../config/env.js";
+import {
+  paperclipConfigSchema,
+  type PaperclipConfig,
+} from "../config/schema.js";
 import { ensureLocalSecretsKeyFile } from "../config/secrets-key.js";
+import { provisionPrimaryBetterAuthSecret } from "../config/auth-secret.js";
 import { promptDatabase } from "../prompts/database.js";
-import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig } from "../prompts/secrets.js";
 import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
@@ -32,11 +35,9 @@ import {
   describeLocalInstancePaths,
   expandHomePrefix,
   resolveDefaultBackupDir,
-  resolveDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir,
   resolvePaperclipInstanceId,
 } from "../config/home.js";
-import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import {
   getTelemetryClient,
@@ -66,7 +67,6 @@ const ONBOARD_ENV_KEYS = [
   "PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES",
   "PAPERCLIP_DB_BACKUP_RETENTION_DAYS",
   "PAPERCLIP_DB_BACKUP_DIR",
-  "PAPERCLIP_DEPLOYMENT_MODE",
   "PAPERCLIP_DEPLOYMENT_EXPOSURE",
   "PAPERCLIP_BIND",
   "PAPERCLIP_BIND_HOST",
@@ -75,10 +75,7 @@ const ONBOARD_ENV_KEYS = [
   "PORT",
   "SERVE_UI",
   "PAPERCLIP_ALLOWED_HOSTNAMES",
-  "PAPERCLIP_AUTH_BASE_URL_MODE",
-  "PAPERCLIP_AUTH_PUBLIC_BASE_URL",
-  "BETTER_AUTH_URL",
-  "BETTER_AUTH_BASE_URL",
+  "BETTER_AUTH_SECRET",
   "PAPERCLIP_STORAGE_PROVIDER",
   "PAPERCLIP_STORAGE_LOCAL_DIR",
   "PAPERCLIP_STORAGE_S3_BUCKET",
@@ -127,44 +124,48 @@ function describeServerBinding(server: Pick<PaperclipConfig["server"], "bind" | 
   return `${bind}${detail ? ` (${detail})` : ""}:${server.port}`;
 }
 
-function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
+function quickstartDefaultsFromEnv(opts?: { preferLoopback?: boolean }): {
   defaults: OnboardDefaults;
   usedEnvKeys: string[];
   ignoredEnvKeys: Array<{ key: string; reason: string }>;
 } {
-  const preferTrustedLocal = opts?.preferTrustedLocal ?? false;
+  const preferLoopback = opts?.preferLoopback ?? false;
+  if (process.env.PAPERCLIP_DEPLOYMENT_MODE !== undefined) {
+    throw new Error(
+      "PAPERCLIP_DEPLOYMENT_MODE is unsupported. Configure PAPERCLIP_BIND and PAPERCLIP_DEPLOYMENT_EXPOSURE instead.",
+    );
+  }
   const instanceId = resolvePaperclipInstanceId();
   const defaultStorage = defaultStorageConfig();
   const defaultSecrets = defaultSecretsConfig();
   const databaseUrl = process.env.DATABASE_URL?.trim() || undefined;
-  const publicUrl = preferTrustedLocal
-    ? undefined
-    : (
-      process.env.PAPERCLIP_PUBLIC_URL?.trim() ||
-      process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL?.trim() ||
-      process.env.BETTER_AUTH_URL?.trim() ||
-      process.env.BETTER_AUTH_BASE_URL?.trim() ||
-      undefined
-    );
-  const deploymentMode = preferTrustedLocal
-    ? "local_trusted"
-    : (parseEnumFromEnv<DeploymentMode>(process.env.PAPERCLIP_DEPLOYMENT_MODE, DEPLOYMENT_MODES) ?? "local_trusted");
+  const configuredPublicUrl = process.env.PAPERCLIP_PUBLIC_URL?.trim()
+    ? normalizePublicOrigin(process.env.PAPERCLIP_PUBLIC_URL)
+    : undefined;
   const deploymentExposureFromEnv = parseEnumFromEnv<DeploymentExposure>(
     process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE,
     DEPLOYMENT_EXPOSURES,
   );
-  const deploymentExposure =
-    deploymentMode === "local_trusted" ? "private" : (deploymentExposureFromEnv ?? "private");
+  const deploymentExposure = preferLoopback ? "private" : (deploymentExposureFromEnv ?? "private");
+  if (!preferLoopback && deploymentExposure === "private" && configuredPublicUrl) {
+    throw new Error(
+      "PAPERCLIP_PUBLIC_URL is only valid when PAPERCLIP_DEPLOYMENT_EXPOSURE=public",
+    );
+  }
+  const publicUrl = deploymentExposure === "public" ? configuredPublicUrl : undefined;
   const bindFromEnv = parseEnumFromEnv<BindMode>(process.env.PAPERCLIP_BIND, BIND_MODES);
   const customBindHostFromEnv = process.env.PAPERCLIP_BIND_HOST?.trim() || undefined;
   const hostFromEnv = process.env.HOST?.trim() || undefined;
   const configuredBindHost = customBindHostFromEnv ?? hostFromEnv;
-  const bind = preferTrustedLocal
+  const bind = preferLoopback
     ? "loopback"
     : (
-      deploymentMode === "local_trusted"
-        ? "loopback"
-        : (bindFromEnv ?? (configuredBindHost ? inferBindModeFromHost(configuredBindHost) : "lan"))
+      bindFromEnv ??
+      (configuredBindHost
+        ? inferBindModeFromHost(configuredBindHost)
+        : deploymentExposure === "public"
+          ? "lan"
+          : "loopback")
     );
   const resolvedBind = resolveRuntimeBind({
     bind,
@@ -173,26 +174,12 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
     tailnetBindHost: process.env.PAPERCLIP_TAILNET_BIND_HOST?.trim(),
   });
   const authPublicBaseUrl = publicUrl;
-  const authBaseUrlModeFromEnv = parseEnumFromEnv<AuthBaseUrlMode>(
-    process.env.PAPERCLIP_AUTH_BASE_URL_MODE,
-    AUTH_BASE_URL_MODES,
-  );
-  const authBaseUrlMode = authBaseUrlModeFromEnv ?? (authPublicBaseUrl ? "explicit" : "auto");
   const allowedHostnamesFromEnv = process.env.PAPERCLIP_ALLOWED_HOSTNAMES
     ? process.env.PAPERCLIP_ALLOWED_HOSTNAMES
       .split(",")
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value.length > 0)
     : [];
-  const hostnameFromPublicUrl = publicUrl
-    ? (() => {
-      try {
-        return new URL(publicUrl).hostname.trim().toLowerCase();
-      } catch {
-        return null;
-      }
-    })()
-    : null;
   const storageProvider =
     parseEnumFromEnv<StorageProvider>(process.env.PAPERCLIP_STORAGE_PROVIDER, STORAGE_PROVIDERS) ??
     defaultStorage.provider;
@@ -210,10 +197,6 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
   );
   const defaults: OnboardDefaults = {
     database: {
-      mode: databaseUrl ? "postgres" : "embedded-postgres",
-      ...(databaseUrl ? { connectionString: databaseUrl } : {}),
-      embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(instanceId),
-      embeddedPostgresPort: 54329,
       backup: {
         enabled: databaseBackupEnabled,
         intervalMinutes: databaseBackupIntervalMinutes,
@@ -226,17 +209,15 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
       logDir: resolveDefaultLogsDir(instanceId),
     },
     server: {
-      deploymentMode,
       exposure: deploymentExposure,
       bind: resolvedBind.bind,
       ...(resolvedBind.customBindHost ? { customBindHost: resolvedBind.customBindHost } : {}),
       host: resolvedBind.host,
       port: Number(process.env.PORT) || 3100,
-      allowedHostnames: Array.from(new Set([...allowedHostnamesFromEnv, ...(hostnameFromPublicUrl ? [hostnameFromPublicUrl] : [])])),
+      allowedHostnames: Array.from(new Set(allowedHostnamesFromEnv)),
       serveUi: parseBooleanFromEnv(process.env.SERVE_UI) ?? true,
     },
     auth: {
-      baseUrlMode: authBaseUrlMode,
       disableSignUp: false,
       ...(authPublicBaseUrl ? { publicBaseUrl: authPublicBaseUrl } : {}),
     },
@@ -267,48 +248,19 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
     },
   };
   const ignoredEnvKeys: Array<{ key: string; reason: string }> = [];
-  if (preferTrustedLocal) {
-    const forcedLocalReason = "Ignored because --yes quickstart forces trusted local loopback defaults";
+  if (preferLoopback) {
+    const forcedLocalReason = "Ignored because --yes quickstart uses private loopback defaults";
     for (const key of [
-      "PAPERCLIP_DEPLOYMENT_MODE",
       "PAPERCLIP_DEPLOYMENT_EXPOSURE",
       "PAPERCLIP_BIND",
       "PAPERCLIP_BIND_HOST",
       "HOST",
-      "PAPERCLIP_AUTH_BASE_URL_MODE",
-      "PAPERCLIP_AUTH_PUBLIC_BASE_URL",
       "PAPERCLIP_PUBLIC_URL",
-      "BETTER_AUTH_URL",
-      "BETTER_AUTH_BASE_URL",
     ] as const) {
       if (process.env[key] !== undefined) {
         ignoredEnvKeys.push({ key, reason: forcedLocalReason });
       }
     }
-  }
-  if (deploymentMode === "local_trusted" && process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE !== undefined) {
-    ignoredEnvKeys.push({
-      key: "PAPERCLIP_DEPLOYMENT_EXPOSURE",
-      reason: "Ignored because deployment mode local_trusted always forces private exposure",
-    });
-  }
-  if (deploymentMode === "local_trusted" && process.env.PAPERCLIP_BIND !== undefined) {
-    ignoredEnvKeys.push({
-      key: "PAPERCLIP_BIND",
-      reason: "Ignored because deployment mode local_trusted always uses loopback reachability",
-    });
-  }
-  if (deploymentMode === "local_trusted" && process.env.PAPERCLIP_BIND_HOST !== undefined) {
-    ignoredEnvKeys.push({
-      key: "PAPERCLIP_BIND_HOST",
-      reason: "Ignored because deployment mode local_trusted always uses loopback reachability",
-    });
-  }
-  if (deploymentMode === "local_trusted" && process.env.HOST !== undefined) {
-    ignoredEnvKeys.push({
-      key: "HOST",
-      reason: "Ignored because deployment mode local_trusted always uses loopback reachability",
-    });
   }
 
   const ignoredKeySet = new Set(ignoredEnvKeys.map((entry) => entry.key));
@@ -316,10 +268,6 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
     (key) => process.env[key] !== undefined && !ignoredKeySet.has(key),
   );
   return { defaults, usedEnvKeys, ignoredEnvKeys };
-}
-
-function canCreateBootstrapInviteImmediately(config: Pick<PaperclipConfig, "database" | "server">): boolean {
-  return config.server.deploymentMode === "authenticated" && config.database.mode !== "embedded-postgres";
 }
 
 export async function onboard(opts: OnboardOptions): Promise<void> {
@@ -344,11 +292,13 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     try {
       existingConfig = readConfig(opts.config);
     } catch (err) {
-      p.log.message(
-        pc.yellow(
-          `Existing config appears invalid and will be updated.\n${err instanceof Error ? err.message : String(err)}`,
-        ),
+      p.log.error(
+        `Existing config is invalid and cannot be upgraded in place.\n${err instanceof Error ? err.message : String(err)}`,
       );
+      p.log.message("Remove or replace the retired configuration, then run onboarding again.");
+      p.outro("");
+      process.exitCode = 1;
+      return;
     }
   }
 
@@ -357,16 +307,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       pc.dim("Existing Paperclip install detected; keeping the current configuration unchanged."),
     );
     p.log.message(pc.dim(`Use ${pc.cyan("paperclipai configure")} if you want to change settings.`));
-
-    const jwtSecret = ensureAgentJwtSecret(configPath);
-    const envFilePath = resolveAgentJwtEnvFile(configPath);
-    if (jwtSecret.created) {
-      p.log.success(`Created ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
-    } else if (process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim()) {
-      p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from environment`);
-    } else {
-      p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
-    }
 
     const keyResult = ensureLocalSecretsKeyFile(existingConfig, configPath);
     if (keyResult.status === "created") {
@@ -378,15 +318,18 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     p.note(
       [
         "Existing config preserved",
-        `Database: ${existingConfig.database.mode}`,
-        existingConfig.llm ? `LLM: ${existingConfig.llm.provider}` : "LLM: not configured",
+        `Database: ${
+          existingConfig.database.connectionString
+            ? redactExternalPostgresConnectionString(existingConfig.database.connectionString)
+            : "DATABASE_URL / adjacent environment"
+        }`,
         `Logging: ${existingConfig.logging.mode} -> ${existingConfig.logging.logDir}`,
-        `Server: ${existingConfig.server.deploymentMode}/${existingConfig.server.exposure} @ ${describeServerBinding(existingConfig.server)}`,
+        `Server: ${existingConfig.server.exposure} @ ${describeServerBinding(existingConfig.server)}`,
         `Allowed hosts: ${existingConfig.server.allowedHostnames.length > 0 ? existingConfig.server.allowedHostnames.join(", ") : "(loopback only)"}`,
-        `Auth URL mode: ${existingConfig.auth.baseUrlMode}${existingConfig.auth.publicBaseUrl ? ` (${existingConfig.auth.publicBaseUrl})` : ""}`,
+        `Auth origin: ${existingConfig.server.exposure === "public" ? existingConfig.auth.publicBaseUrl : "request-derived"}`,
+        "Account flow: sign up or sign in at /auth, then claim first-admin access or redeem an invite",
         `Storage: ${existingConfig.storage.provider}`,
         `Secrets: ${existingConfig.secrets.provider} (strict mode ${existingConfig.secrets.strictMode ? "on" : "off"})`,
-        "Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured",
       ].join("\n"),
       "Configuration ready",
     );
@@ -414,7 +357,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     if (shouldRunNow && !opts.invokedByRun) {
       process.env.PAPERCLIP_OPEN_ON_LISTEN = "true";
       const { runCommand } = await import("./run.js");
-      await runCommand({ config: configPath, repair: true, yes: true });
+      await runCommand({ config: configPath });
       return;
     }
 
@@ -458,10 +401,10 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   const tc = getTelemetryClient();
   if (tc) trackInstallStarted(tc);
 
-  let llm: PaperclipConfig["llm"] | undefined;
   const { defaults: derivedDefaults, usedEnvKeys, ignoredEnvKeys } = quickstartDefaultsFromEnv({
-    preferTrustedLocal: opts.yes === true && !opts.bind,
+    preferLoopback: opts.yes === true && !opts.bind,
   });
+  const explicitDatabaseUrl = process.env.DATABASE_URL?.trim() || undefined;
   let {
     database,
     logging,
@@ -487,64 +430,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   if (setupMode === "advanced") {
     p.log.step(pc.bold("Database"));
     database = await promptDatabase(database);
-
-    if (database.mode === "postgres" && database.connectionString) {
-      const s = p.spinner();
-      s.start("Testing database connection...");
-      try {
-        const { createDb } = await import("@paperclipai/db");
-        const db = createDb(database.connectionString);
-        await db.execute("SELECT 1");
-        s.stop("Database connection successful");
-      } catch {
-        s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclipai doctor`"));
-      }
-    }
-
-    p.log.step(pc.bold("LLM Provider"));
-    llm = await promptLlm();
-
-    if (llm?.apiKey) {
-      const s = p.spinner();
-      s.start("Validating API key...");
-      try {
-        if (llm.provider === "claude") {
-          const res = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "x-api-key": llm.apiKey,
-              "anthropic-version": "2023-06-01",
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-5-20250929",
-              max_tokens: 1,
-              messages: [{ role: "user", content: "hi" }],
-            }),
-          });
-          if (res.ok || res.status === 400) {
-            s.stop("API key is valid");
-          } else if (res.status === 401) {
-            s.stop(pc.yellow("API key appears invalid — you can update it later"));
-          } else {
-            s.stop(pc.yellow("Could not validate API key — continuing anyway"));
-          }
-        } else {
-          const res = await fetch("https://api.openai.com/v1/models", {
-            headers: { Authorization: `Bearer ${llm.apiKey}` },
-          });
-          if (res.ok) {
-            s.stop("API key is valid");
-          } else if (res.status === 401) {
-            s.stop(pc.yellow("API key appears invalid — you can update it later"));
-          } else {
-            s.stop(pc.yellow("Could not validate API key — continuing anyway"));
-          }
-        }
-      } catch {
-        s.stop(pc.yellow("Could not reach API — continuing anyway"));
-      }
-    }
 
     p.log.step(pc.bold("Logging"));
     logging = await promptLogging();
@@ -575,14 +460,22 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       pc.dim(
         opts.bind
           ? `Using quickstart defaults with bind=${opts.bind}.`
-          : `Using quickstart defaults: ${server.deploymentMode}/${server.exposure} @ ${describeServerBinding(server)}.`,
+          : `Using quickstart defaults: ${server.exposure} @ ${describeServerBinding(server)}.`,
       ),
     );
+    if (!database.connectionString && !explicitDatabaseUrl) {
+      if (opts.yes) {
+        throw new Error(
+          "An external PostgreSQL URL is required. Set DATABASE_URL or run interactive onboarding.",
+        );
+      }
+      database = await promptDatabase(database);
+    }
     if (usedEnvKeys.length > 0) {
       p.log.message(pc.dim(`Environment-aware defaults active (${usedEnvKeys.length} env var(s) detected).`));
     } else {
       p.log.message(
-        pc.dim("No environment overrides detected: embedded database, file storage, local encrypted secrets."),
+        pc.dim("No optional environment overrides detected: using file storage and local encrypted secrets."),
       );
     }
     for (const ignored of ignoredEnvKeys) {
@@ -590,14 +483,35 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     }
   }
 
-  const jwtSecret = ensureAgentJwtSecret(configPath);
-  const envFilePath = resolveAgentJwtEnvFile(configPath);
-  if (jwtSecret.created) {
-    p.log.success(`Created ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
-  } else if (process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim()) {
-    p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from environment`);
-  } else {
-    p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
+  const selectedDatabaseUrl = database.connectionString ?? explicitDatabaseUrl;
+  if (!selectedDatabaseUrl) {
+    throw new Error(
+      "An external PostgreSQL URL is required. Set DATABASE_URL or configure database.connectionString.",
+    );
+  }
+  const validatedDatabaseUrl = validateExternalPostgresConnectionString(
+    selectedDatabaseUrl,
+    database.connectionString ? "database.connectionString" : "DATABASE_URL",
+  );
+
+  const databaseSpinner = p.spinner();
+  databaseSpinner.start("Testing external PostgreSQL connection...");
+  try {
+    const { createDb } = await import("@paperclipai/db");
+    const db = createDb(validatedDatabaseUrl);
+    try {
+      await db.execute("SELECT 1");
+    } finally {
+      await db.$client?.end?.({ timeout: 5 }).catch(() => undefined);
+    }
+    databaseSpinner.stop("External PostgreSQL connection successful");
+  } catch (error) {
+    databaseSpinner.stop(pc.red("External PostgreSQL connection failed"));
+    throw new Error(
+      `Cannot connect to the configured external PostgreSQL database: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 
   const config: PaperclipConfig = {
@@ -606,7 +520,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       updatedAt: new Date().toISOString(),
       source: "onboard",
     },
-    ...(llm && { llm }),
     database,
     logging,
     server,
@@ -617,6 +530,9 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     storage,
     secrets,
   };
+  paperclipConfigSchema.parse(config);
+
+  const authSecretProvision = provisionPrimaryBetterAuthSecret(configPath);
 
   const keyResult = ensureLocalSecretsKeyFile(config, configPath);
   if (keyResult.status === "created") {
@@ -627,21 +543,23 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
   writeConfig(config, opts.config);
 
-  if (tc) trackInstallCompleted(tc, {
-    adapterType: server.deploymentMode,
-  });
+  if (tc) trackInstallCompleted(tc, { adapterType: "other" });
 
   p.note(
     [
-      `Database: ${database.mode}`,
-      llm ? `LLM: ${llm.provider}` : "LLM: not configured",
+      `Database: ${
+        database.connectionString
+          ? redactExternalPostgresConnectionString(database.connectionString)
+          : redactExternalPostgresConnectionString(explicitDatabaseUrl!)
+      }`,
       `Logging: ${logging.mode} -> ${logging.logDir}`,
-      `Server: ${server.deploymentMode}/${server.exposure} @ ${describeServerBinding(server)}`,
+      `Server: ${server.exposure} @ ${describeServerBinding(server)}`,
       `Allowed hosts: ${server.allowedHostnames.length > 0 ? server.allowedHostnames.join(", ") : "(loopback only)"}`,
-      `Auth URL mode: ${auth.baseUrlMode}${auth.publicBaseUrl ? ` (${auth.publicBaseUrl})` : ""}`,
+      `Auth origin: ${server.exposure === "public" ? auth.publicBaseUrl : "request-derived"}`,
+      "Account flow: sign up or sign in at /auth, then claim first-admin access or redeem an invite",
+      `Better Auth secret: persisted in ${authSecretProvision.path}`,
       `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
-      "Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured",
     ].join("\n"),
     "Configuration saved",
   );
@@ -654,11 +572,6 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     ].join("\n"),
     "Next commands",
   );
-
-  if (canCreateBootstrapInviteImmediately({ database, server })) {
-    p.log.step("Generating bootstrap CEO invite");
-    await bootstrapCeoInvite({ config: configPath });
-  }
 
   let shouldRunNow = opts.run === true || opts.yes === true;
   if (!shouldRunNow && !opts.invokedByRun && process.stdin.isTTY && process.stdout.isTTY) {
@@ -674,18 +587,8 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   if (shouldRunNow && !opts.invokedByRun) {
     process.env.PAPERCLIP_OPEN_ON_LISTEN = "true";
     const { runCommand } = await import("./run.js");
-    await runCommand({ config: configPath, repair: true, yes: true });
+    await runCommand({ config: configPath });
     return;
-  }
-
-  if (server.deploymentMode === "authenticated" && database.mode === "embedded-postgres") {
-    p.log.info(
-      [
-        "Bootstrap CEO invite will be created after the server starts.",
-        `Next: ${pc.cyan("paperclipai run")}`,
-        `Then: ${pc.cyan("paperclipai auth bootstrap-ceo")}`,
-      ].join("\n"),
-    );
   }
 
   p.outro("You're all set!");

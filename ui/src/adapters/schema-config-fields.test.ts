@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AdapterConfigSchema, ConfigFieldSchema } from "@paperclipai/adapter-utils";
-import { fieldMatchesVisibleWhen } from "./schema-config-fields";
+import {
+  fieldMatchesVisibleWhen,
+  missingRequiredAdapterConfigFields,
+} from "./schema-config-fields";
 
 const sourceField: ConfigFieldSchema = {
-  key: "provider",
-  label: "Provider",
+  key: "mode",
+  label: "Mode",
   type: "select",
   options: [
-    { label: "Claude", value: "claude" },
-    { label: "Codex", value: "codex" },
+    { label: "Fast", value: "fast" },
+    { label: "Precise", value: "precise" },
   ],
 };
 
@@ -27,21 +30,64 @@ function targetWithVisibleWhen(visibleWhen: Record<string, unknown>): ConfigFiel
 
 describe("fieldMatchesVisibleWhen", () => {
   it("treats an empty values array as no match", () => {
-    const field = targetWithVisibleWhen({ key: "provider", values: [] });
+    const field = targetWithVisibleWhen({ key: "mode", values: [] });
 
-    expect(fieldMatchesVisibleWhen(field, () => "claude", schema)).toBe(false);
+    expect(fieldMatchesVisibleWhen(field, () => "fast", schema)).toBe(false);
   });
 
   it("treats all non-string values as no match", () => {
-    const field = targetWithVisibleWhen({ key: "provider", values: [null, 42] });
+    const field = targetWithVisibleWhen({ key: "mode", values: [null, 42] });
 
-    expect(fieldMatchesVisibleWhen(field, () => "claude", schema)).toBe(false);
+    expect(fieldMatchesVisibleWhen(field, () => "fast", schema)).toBe(false);
   });
 
   it("matches non-empty string values", () => {
-    const field = targetWithVisibleWhen({ key: "provider", values: ["claude"] });
+    const field = targetWithVisibleWhen({ key: "mode", values: ["fast"] });
 
-    expect(fieldMatchesVisibleWhen(field, () => "claude", schema)).toBe(true);
-    expect(fieldMatchesVisibleWhen(field, () => "codex", schema)).toBe(false);
+    expect(fieldMatchesVisibleWhen(field, () => "fast", schema)).toBe(true);
+    expect(fieldMatchesVisibleWhen(field, () => "precise", schema)).toBe(false);
+  });
+});
+
+describe("missingRequiredAdapterConfigFields", () => {
+  it("requires an explicit stored value even when the schema advertises a default", () => {
+    const engine: ConfigFieldSchema = {
+      key: "engine",
+      label: "Execution engine",
+      type: "select",
+      required: true,
+      default: "acp",
+      options: [
+        { label: "ACP", value: "acp" },
+        { label: "CLI", value: "cli" },
+      ],
+    };
+
+    expect(
+      missingRequiredAdapterConfigFields({ fields: [engine] }, {}),
+    ).toEqual([engine]);
+    expect(
+      missingRequiredAdapterConfigFields(
+        { fields: [engine] },
+        { engine: "cli" },
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not require a conditionally hidden field", () => {
+    const field: ConfigFieldSchema = {
+      ...targetWithVisibleWhen({ key: "mode", values: ["fast"] }),
+      required: true,
+    };
+    const conditionalSchema: AdapterConfigSchema = {
+      fields: [sourceField, field],
+    };
+
+    expect(
+      missingRequiredAdapterConfigFields(
+        conditionalSchema,
+        { mode: "precise" },
+      ),
+    ).toEqual([]);
   });
 });

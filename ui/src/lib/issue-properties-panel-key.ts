@@ -3,19 +3,25 @@ import type { Issue } from "@paperclipai/shared";
 type IssuePropertiesPanelKeyIssue = Pick<
   Issue,
   | "id"
-  | "status"
+  | "boardPresentationStatus"
   | "priority"
-  | "assigneeAgentId"
-  | "assigneeUserId"
+  | "ownerKind"
+  | "ownerAgentId"
+  | "ownerUserId"
+  | "ownershipEpoch"
   | "projectId"
   | "projectWorkspaceId"
   | "parentId"
-  | "createdByUserId"
+  | "creatorKind"
+  | "creatorAuthorityId"
+  | "creatorUserId"
+  | "creatorPluginInstallationId"
+  | "creatorRoutineId"
+  | "creatorSystemSourceId"
   | "hiddenAt"
   | "labelIds"
   | "executionPolicy"
   | "executionState"
-  | "executionWorkspaceId"
   | "executionWorkspacePreference"
   | "executionWorkspaceSettings"
   | "currentExecutionWorkspace"
@@ -35,17 +41,23 @@ export function buildIssuePropertiesPanelKey(
 
   return JSON.stringify({
     id: issue.id,
-    status: issue.status,
+    boardPresentationStatus: issue.boardPresentationStatus,
     priority: issue.priority,
-    assigneeAgentId: issue.assigneeAgentId,
-    assigneeUserId: issue.assigneeUserId,
+    ownerKind: issue.ownerKind,
+    ownerAgentId: issue.ownerAgentId,
+    ownerUserId: issue.ownerUserId,
+    ownershipEpoch: issue.ownershipEpoch,
     projectId: issue.projectId,
     projectWorkspaceId: issue.projectWorkspaceId,
     parentId: issue.parentId,
-    createdByUserId: issue.createdByUserId,
+    creatorKind: issue.creatorKind,
+    creatorAuthorityId: issue.creatorAuthorityId,
+    creatorUserId: issue.creatorUserId,
+    creatorPluginInstallationId: issue.creatorPluginInstallationId,
+    creatorRoutineId: issue.creatorRoutineId,
+    creatorSystemSourceId: issue.creatorSystemSourceId,
     hiddenAt: issue.hiddenAt,
     labelIds: issue.labelIds ?? [],
-    executionWorkspaceId: issue.executionWorkspaceId,
     executionWorkspacePreference: issue.executionWorkspacePreference,
     executionWorkspaceSettings: issue.executionWorkspaceSettings ?? null,
     currentExecutionWorkspace: issue.currentExecutionWorkspace
@@ -69,28 +81,28 @@ export function buildIssuePropertiesPanelKey(
           status: issue.executionState.status,
           currentStageType: issue.executionState.currentStageType,
           currentParticipant: issue.executionState.currentParticipant,
-          returnAssignee: issue.executionState.returnAssignee,
+          returnOwner: issue.executionState.returnOwner,
         }
       : null,
     blocks: (issue.blocks ?? []).map((relation) => ({
       id: relation.id,
       identifier: relation.identifier ?? null,
       title: relation.title,
-      status: relation.status,
+      boardPresentationStatus: relation.boardPresentationStatus,
     })),
     blockedBy: (issue.blockedBy ?? []).map((relation) => ({
       id: relation.id,
       identifier: relation.identifier ?? null,
       title: relation.title,
-      status: relation.status,
+      boardPresentationStatus: relation.boardPresentationStatus,
     })),
     watchdog: issue.watchdog
       ? {
           id: issue.watchdog.id,
-          watchdogAgentId: issue.watchdog.watchdogAgentId,
-          instructions: issue.watchdog.instructions ?? null,
           status: issue.watchdog.status,
-          watchdogIssueId: issue.watchdog.watchdogIssueId ?? null,
+          lastObservedFingerprint: issue.watchdog.lastObservedFingerprint,
+          lastTriggeredAt: issue.watchdog.lastTriggeredAt,
+          triggerCount: issue.watchdog.triggerCount,
         }
       : null,
     parentSummary: issue.ancestors?.[0]

@@ -1,14 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import type { Db } from "@paperclipai/db";
 import { ZodError } from "zod";
 import { HttpError } from "../errors.js";
 import { trackErrorHandlerCrash } from "@paperclipai/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
-import { COMPANY_IMPORT_API_PATH } from "../routes/company-import-paths.js";
-import { logger } from "./logger.js";
-import {
-  recordResponsibleUserDenialOnActiveRun,
-} from "../services/responsible-user-denial-run-outcomes.js";
 
 export interface ErrorContext {
   error: { message: string; stack?: string; name?: string; details?: unknown; raw?: unknown };
@@ -42,36 +36,6 @@ function attachErrorContext(
   }
 }
 
-function getPaperclipDb(req: Request): Db | null {
-  const locals = req.app?.locals as { paperclipDb?: Db; db?: Db } | undefined;
-  return locals?.paperclipDb ?? locals?.db ?? null;
-}
-
-function recordResponsibleUserDenialFromHttpError(
-  req: Request,
-  details: Record<string, unknown> | null,
-) {
-  if (req.actor?.type !== "agent") return;
-  const db = getPaperclipDb(req);
-  if (!db) return;
-
-  void recordResponsibleUserDenialOnActiveRun(db, {
-    runId: req.actor.runId ?? null,
-    agentId: req.actor.agentId ?? null,
-    companyId: req.actor.companyId ?? null,
-    code: details?.code,
-  }).catch((recordErr) => {
-    logger.warn(
-      {
-        err: recordErr,
-        runId: req.actor?.runId ?? null,
-        agentId: req.actor?.type === "agent" ? req.actor.agentId ?? null : null,
-      },
-      "failed to record responsible-user denial on heartbeat run",
-    );
-  });
-}
-
 export function errorHandler(
   err: unknown,
   req: Request,
@@ -91,7 +55,6 @@ export function errorHandler(
       "connection_not_installed",
       "subject_not_permitted",
     ]).has(typeof details?.code === "string" ? details.code : "");
-    recordResponsibleUserDenialFromHttpError(req, details);
     if (err.status >= 500) {
       attachErrorContext(
         req,
@@ -137,12 +100,5 @@ export function errorHandler(
 
   res.status(500).json({
     error: "Internal server error",
-    ...(shouldExposeTrustedCloudTenantImportError(req) ? { message: rootError.message } : {}),
   });
-}
-
-function shouldExposeTrustedCloudTenantImportError(req: Request) {
-  return req.actor?.source === "cloud_tenant"
-    && req.method === "POST"
-    && req.originalUrl.split("?")[0] === COMPANY_IMPORT_API_PATH;
 }

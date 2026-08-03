@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 interface ArtifactsPanelProps {
-  taskId: string;
+  issueId: string;
   isAgentWorking?: boolean;
   /** Open the document viewer directly to a specific doc */
   openDocKey?: string | null;
@@ -84,13 +84,13 @@ function statusBadge(status: string) {
   }
 }
 
-export function ArtifactsPanel({ taskId, isAgentWorking, openDocKey, openDocTitle, onClearOpenDoc, onApprove, onReject }: ArtifactsPanelProps) {
+export function ArtifactsPanel({ issueId, isAgentWorking, openDocKey, openDocTitle, onClearOpenDoc, onApprove, onReject }: ArtifactsPanelProps) {
   const [filter, setFilter] = useState<FilterValue>("all");
   const [viewingDoc, setViewingDoc] = useState<{ key: string; title: string } | null>(null);
 
   const { data: workProducts, isLoading } = useQuery({
-    queryKey: queryKeys.issues.workProducts(taskId),
-    queryFn: () => issuesApi.listWorkProducts(taskId),
+    queryKey: queryKeys.issues.workProducts(issueId),
+    queryFn: () => issuesApi.listWorkProducts(issueId),
     refetchInterval: 5000,
   });
 
@@ -115,7 +115,7 @@ export function ArtifactsPanel({ taskId, isAgentWorking, openDocKey, openDocTitl
   if (effectiveViewingDoc) {
     return (
       <DocumentViewer
-        taskId={taskId}
+        issueId={issueId}
         docKey={effectiveViewingDoc.key}
         title={effectiveViewingDoc.title}
         onBack={handleBack}
@@ -241,7 +241,7 @@ export function ArtifactsPanel({ taskId, isAgentWorking, openDocKey, openDocTitl
 }
 
 function DocumentViewer({
-  taskId,
+  issueId,
   docKey,
   title,
   onBack,
@@ -250,7 +250,7 @@ function DocumentViewer({
   onApprove,
   onReject,
 }: {
-  taskId: string;
+  issueId: string;
   docKey: string;
   title: string;
   onBack: () => void;
@@ -260,8 +260,8 @@ function DocumentViewer({
   onReject?: () => void;
 }) {
   const { data: doc, isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.documents(taskId),
-    queryFn: () => issuesApi.getDocument(taskId, docKey),
+    queryKey: queryKeys.issues.documents(issueId),
+    queryFn: () => issuesApi.getDocument(issueId, docKey),
   });
 
   const needsAction = status === "ready_for_review" || reviewState === "needs_board_review";
@@ -328,7 +328,7 @@ function DocumentViewer({
           <div className="flex items-center gap-2">
             <XCircle className="h-4 w-4 text-orange-500" />
             <p className="text-(length:--text-compact) font-medium text-orange-700 dark:text-orange-400">
-              Changes requested — CEO is revising
+              Changes requested — the assigned agent is revising
             </p>
           </div>
         </div>

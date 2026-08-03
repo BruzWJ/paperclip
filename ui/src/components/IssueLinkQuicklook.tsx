@@ -66,9 +66,9 @@ const QUICKLOOK_OPEN_DELAY_MS = 120;
 
 export type IssueQuicklookIssue = Pick<Issue, "id" | "title" | "updatedAt"> & {
   identifier?: string | null;
-  status: string;
+  boardPresentationStatus: string;
   priority: string;
-  description?: string | null;
+  request?: string | null;
   blockerAttention?: Issue["blockerAttention"];
   projectId?: string | null;
   project?: { name?: string | null } | null;
@@ -76,9 +76,9 @@ export type IssueQuicklookIssue = Pick<Issue, "id" | "title" | "updatedAt"> & {
   originId?: string | null;
 };
 
-function summarizeIssueDescription(description: string | null | undefined) {
-  if (!description) return null;
-  const summary = description
+function summarizeIssueRequest(request: string | null | undefined) {
+  if (!request) return null;
+  const summary = request
     .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[#>*_`~-]+/g, " ")
@@ -100,12 +100,12 @@ export function IssueQuicklookCard({
   linkState?: unknown;
   compact?: boolean;
 }) {
-  const description = useMemo(() => summarizeIssueDescription(issue.description), [issue.description]);
+  const requestSummary = useMemo(() => summarizeIssueRequest(issue.request), [issue.request]);
 
   return (
     <div className={cn("space-y-2", compact && "space-y-1.5")}>
       <div className="flex items-start gap-2">
-        <StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} className="mt-0.5 shrink-0" />
+        <StatusIcon status={issue.boardPresentationStatus} blockerAttention={issue.blockerAttention} className="mt-0.5 shrink-0" />
         <RouterDom.Link
           to={linkTo}
           state={linkState ?? withIssueDetailHeaderSeed(null, issue)}
@@ -117,13 +117,13 @@ export function IssueQuicklookCard({
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono">{issue.identifier ?? issue.id.slice(0, 8)}</span>
         <span>&middot;</span>
-        <span>{issue.status.replace(/_/g, " ")}</span>
+        <span>{issue.boardPresentationStatus.replace(/_/g, " ")}</span>
         <span>&middot;</span>
         <span>{timeAgo(new Date(issue.updatedAt))}</span>
       </div>
-      {description ? (
+      {requestSummary ? (
         <p className="text-xs leading-5 text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:4] overflow-hidden">
-          {description}
+          {requestSummary}
         </p>
       ) : null}
     </div>

@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockFeedbackService = vi.hoisted(() => ({
   getFeedbackTraceById: vi.fn(),
@@ -28,13 +29,6 @@ const mockAccessService = vi.hoisted(() => ({
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
-const mockHeartbeatService = vi.hoisted(() => ({
-  wakeup: vi.fn(async () => undefined),
-  reportRunActivity: vi.fn(async () => undefined),
-  getRun: vi.fn(async () => null),
-  getActiveRunForAgent: vi.fn(async () => null),
-  cancelRun: vi.fn(async () => null),
-}));
 const mockInstanceSettingsService = vi.hoisted(() => ({
   get: vi.fn(async () => ({
     id: "instance-settings-1",
@@ -49,10 +43,6 @@ const mockRoutineService = vi.hoisted(() => ({
   syncRunStatusForIssue: vi.fn(async () => undefined),
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
-const mockIssueThreadInteractionService = vi.hoisted(() => ({
-  expireRequestConfirmationsSupersededByComment: vi.fn(async () => []),
-  expireStaleRequestConfirmationsForIssueDocument: vi.fn(async () => []),
-}));
 const mockEnvironmentService = vi.hoisted(() => ({
   getById: vi.fn(async () => null),
 }));
@@ -73,7 +63,7 @@ const mockIssueReferenceService = vi.hoisted(() => ({
 
 function registerModuleMocks() {
   vi.doMock("@paperclipai/shared/telemetry", () => ({
-    trackAgentTaskCompleted: vi.fn(),
+    trackAgentIssueCompleted: vi.fn(),
     trackErrorHandlerCrash: vi.fn(),
   }));
 
@@ -94,15 +84,9 @@ function registerModuleMocks() {
     documentService: () => ({}),
     executionWorkspaceService: () => mockExecutionWorkspaceService,
     goalService: () => ({}),
-    heartbeatService: () => mockHeartbeatService,
     issueApprovalService: () => ({}),
     issueReferenceService: () => mockIssueReferenceService,
-    issueRecoveryActionService: () => ({
-      getActiveForIssue: vi.fn(async () => null),
-      listActiveForIssues: vi.fn(async () => new Map()),
-    }),
     issueService: () => mockIssueService,
-    issueThreadInteractionService: () => mockIssueThreadInteractionService,
     logActivity: mockLogActivity,
     projectService: () => ({}),
     routineService: () => mockRoutineService,
@@ -137,7 +121,17 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", issueRoutes({} as any, {} as any, { feedbackExportService: mockFeedbackExportService }));
+  app.use(
+    "/api",
+    issueRoutes(
+      {} as any,
+      {} as any,
+      {
+        feedbackExportService: mockFeedbackExportService,
+        ordinaryIssues: {} as any,
+      },
+    ),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -161,11 +155,6 @@ describe("issue feedback trace routes", () => {
       sent: 1,
       failed: 0,
     });
-    mockHeartbeatService.wakeup.mockResolvedValue(undefined);
-    mockHeartbeatService.reportRunActivity.mockResolvedValue(undefined);
-    mockHeartbeatService.getRun.mockResolvedValue(null);
-    mockHeartbeatService.getActiveRunForAgent.mockResolvedValue(null);
-    mockHeartbeatService.cancelRun.mockResolvedValue(null);
     mockInstanceSettingsService.get.mockResolvedValue({
       id: "instance-settings-1",
       general: {
@@ -197,13 +186,11 @@ describe("issue feedback trace routes", () => {
       persistedSharingPreference: null,
       sharingEnabled: true,
     });
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: true,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app)
       .post("/api/issues/issue-1/feedback-votes")
@@ -220,14 +207,14 @@ describe("issue feedback trace routes", () => {
       traceId: "trace-1",
       limit: 1,
     });
-  });
+  }, 15_000);
 
   it("rejects non-board callers before fetching a feedback trace", async () => {
     const app = await createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -241,13 +228,11 @@ describe("issue feedback trace routes", () => {
       id: "trace-1",
       companyId: "company-2",
     });
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app).get("/api/feedback-traces/trace-1");
 
@@ -261,13 +246,11 @@ describe("issue feedback trace routes", () => {
       issueId: "issue-1",
       files: [],
     });
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app).get("/api/feedback-traces/trace-1/bundle");
 

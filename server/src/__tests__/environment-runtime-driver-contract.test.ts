@@ -1,299 +1,186 @@
-import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Environment, EnvironmentLease } from "@paperclipai/shared";
 import {
-  buildSshEnvLabFixtureConfig,
-  getSshEnvLabSupport,
-  startSshEnvLabFixture,
-  stopSshEnvLabFixture,
-  type SshEnvironmentConfig,
-} from "@paperclipai/adapter-utils/ssh";
-import {
-  agents,
-  companies,
-  companySecretVersions,
-  companySecrets,
-  createDb,
-  environmentLeases,
-  environments,
-  heartbeatRuns,
-} from "@paperclipai/db";
-import type { Environment } from "@paperclipai/shared";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { environmentRuntimeService } from "../services/environment-runtime.js";
-import { secretService } from "../services/secrets.js";
+  environmentRuntimeService,
+  type EnvironmentRuntimeDriver,
+} from "../services/environment-runtime.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-const sshFixtureSupport = await getSshEnvLabSupport();
+const environmentServiceMocks = vi.hoisted(() => ({
+  getById: vi.fn(),
+  acquireLease: vi.fn(),
+  releaseLease: vi.fn(),
+  listLeases: vi.fn(),
+}));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping environment runtime driver contract tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+vi.mock("../services/environments.js", () => ({
+  environmentService: vi.fn(() => environmentServiceMocks),
+}));
+
+const companyId = "11111111-1111-4111-8111-111111111111";
+const environmentId = "22222222-2222-4222-8222-222222222222";
+const runId = "run_environment_contract";
+const workspaceId = "33333333-3333-4333-8333-333333333333";
+const now = new Date("2026-08-01T12:00:00.000Z");
+
+function environment(driver: string): Environment {
+  return {
+    id: environmentId,
+    companyId,
+    name: `${driver} contract`,
+    description: null,
+    driver,
+    status: "active",
+    config: {},
+    metadata: null,
+    createdAt: now,
+    updatedAt: now,
+  } as Environment;
 }
 
-interface RuntimeContractCase {
-  name: string;
-  driver: string;
-  config: Record<string, unknown>;
-  setup?: () => Promise<() => Promise<void>>;
-  expectLease: (lease: {
-    providerLeaseId: string | null;
-    metadata: Record<string, unknown> | null;
-  }, environment: Environment) => void;
+function lease(driver: string, status: "active" | "released" = "active"): EnvironmentLease {
+  return {
+    id: "44444444-4444-4444-8444-444444444444",
+    companyId,
+    environmentId,
+    executionWorkspaceId: workspaceId,
+    issueId: null,
+    runId,
+    status,
+    leasePolicy: "ephemeral",
+    provider: driver,
+    providerLeaseId: driver === "local" ? null : `${driver}://lease-1`,
+    acquiredAt: now,
+    lastUsedAt: now,
+    expiresAt: null,
+    releasedAt: status === "released" ? now : null,
+    failureReason: null,
+    cleanupStatus: "not_required",
+    metadata: {
+      driver,
+      executionWorkspaceMode: "isolated",
+    },
+    createdAt: now,
+    updatedAt: now,
+  } as EnvironmentLease;
 }
 
-describeEmbeddedPostgres("environment runtime driver contract", () => {
-  let stopDb: (() => Promise<void>) | null = null;
-  let db!: ReturnType<typeof createDb>;
-  const fixtureRoots: string[] = [];
+function driverContract(driver: string) {
+  const acquireRunLease = vi.fn(async () => lease(driver));
+  const releaseRunLease = vi.fn(async () => lease(driver, "released"));
+  return {
+    implementation: {
+      driver,
+      acquireRunLease,
+      releaseRunLease,
+    } satisfies EnvironmentRuntimeDriver,
+    acquireRunLease,
+    releaseRunLease,
+  };
+}
 
-  beforeAll(async () => {
-    const started = await startEmbeddedPostgresTestDatabase("environment-runtime-contract");
-    stopDb = started.stop;
-    db = createDb(started.connectionString);
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
-  afterEach(async () => {
-    while (fixtureRoots.length > 0) {
-      const root = fixtureRoots.pop();
-      if (!root) continue;
-      await stopSshEnvLabFixture(path.join(root, "state.json")).catch(() => undefined);
-      await rm(root, { recursive: true, force: true }).catch(() => undefined);
-    }
-    await db.delete(environmentLeases);
-    await db.delete(heartbeatRuns);
-    await db.delete(agents);
-    await db.delete(environments);
-    await db.delete(companySecretVersions);
-    await db.delete(companySecrets);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await stopDb?.();
-  });
-
-  async function seedEnvironment(input: {
-    driver: string;
-    config: Record<string, unknown>;
-  }) {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    const environmentId = randomUUID();
-    const runId = randomUUID();
-    const now = new Date();
-    let config = input.config;
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Acme",
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "Contract Agent",
-      role: "engineer",
-      status: "active",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-      createdAt: now,
-      updatedAt: now,
-    });
-    if (typeof config.privateKey === "string" && config.privateKey.length > 0) {
-      const secret = await secretService(db).create(companyId, {
-        name: `environment-contract-private-key-${randomUUID()}`,
-        provider: "local_encrypted",
-        value: config.privateKey,
+describe.each(["local", "sandbox", "ssh"])(
+  "environment runtime %s driver contract",
+  (driverKey) => {
+    it("passes the canonical lease context through acquire and release", async () => {
+      const targetEnvironment = environment(driverKey);
+      const activeLease = lease(driverKey);
+      const harness = createMockDb({ select: [[activeLease], []] });
+      const contract = driverContract(driverKey);
+      environmentServiceMocks.getById.mockResolvedValue(targetEnvironment);
+      const runtime = environmentRuntimeService(harness.db, {
+        drivers: [contract.implementation],
       });
-      await secretService(db).createBinding({
+
+      await expect(runtime.acquireRunLease({
         companyId,
-        secretId: secret.id,
-        targetType: "environment",
-        targetId: environmentId,
-        configPath: "privateKeySecretRef",
-      });
-      config = {
-        ...config,
-        privateKey: null,
-        privateKeySecretRef: {
-          type: "secret_ref",
-          secretId: secret.id,
-          version: "latest",
+        environment: targetEnvironment,
+        issueId: null,
+        agentId: "55555555-5555-4555-8555-555555555555",
+        runId,
+        persistedExecutionWorkspace: {
+          id: workspaceId,
+          mode: "isolated",
         },
-      };
-    }
-    const existingLocal =
-      input.driver === "local"
-        ? await db.query.environments.findFirst({
-            where: (environment, { eq }) => eq(environment.driver, "local"),
-          })
-        : null;
-    const resolvedEnvironmentId = existingLocal?.id ?? environmentId;
-    if (!existingLocal) {
-      await db.insert(environments).values({
-        id: resolvedEnvironmentId,
-        name: `${input.driver} contract`,
-        driver: input.driver,
-        status: "active",
-        config,
-        createdAt: now,
-        updatedAt: now,
+        adapterType: "codex",
+      })).resolves.toEqual({
+        environment: targetEnvironment,
+        lease: activeLease,
+        leaseContext: {
+          executionWorkspaceId: workspaceId,
+          executionWorkspaceMode: "isolated",
+        },
       });
-    } else {
-      config = (existingLocal.config as Record<string, unknown> | null) ?? {};
-    }
-    await db.insert(heartbeatRuns).values({
-      id: runId,
-      companyId,
-      agentId,
-      invocationSource: "manual",
-      status: "running",
-      createdAt: now,
-      updatedAt: now,
+
+      expect(contract.acquireRunLease).toHaveBeenCalledWith({
+        companyId,
+        environment: targetEnvironment,
+        issueId: null,
+        agentId: "55555555-5555-4555-8555-555555555555",
+        runId,
+        executionWorkspaceId: workspaceId,
+        executionWorkspaceMode: "isolated",
+        adapterType: "codex",
+        applyCustomImageTemplate: false,
+      });
+
+      await expect(runtime.releaseRunLeases(runId)).resolves.toEqual([{
+        environment: targetEnvironment,
+        lease: lease(driverKey, "released"),
+        leaseContext: {
+          executionWorkspaceId: workspaceId,
+          executionWorkspaceMode: "isolated",
+        },
+      }]);
+      expect(contract.releaseRunLease).toHaveBeenCalledWith({
+        environment: targetEnvironment,
+        lease: activeLease,
+        status: "released",
+      });
+      await expect(runtime.releaseRunLeases(runId)).resolves.toEqual([]);
+      expect(harness.remaining("select")).toBe(0);
+    });
+  },
+);
+
+describe("environment runtime driver admission", () => {
+  it("rejects an inactive environment before invoking its driver", async () => {
+    const harness = createMockDb();
+    const contract = driverContract("local");
+    const runtime = environmentRuntimeService(harness.db, {
+      drivers: [contract.implementation],
     });
 
-    return {
+    await expect(runtime.acquireRunLease({
       companyId,
+      environment: { ...environment("local"), status: "paused" },
       issueId: null,
       runId,
-      environment: {
-        id: resolvedEnvironmentId,
-        companyId,
-        name: `${input.driver} contract`,
-        description: null,
-        driver: input.driver,
-        status: "active",
-        config,
-        metadata: null,
-        createdAt: now,
-        updatedAt: now,
-      } as Environment,
-    };
-  }
+      persistedExecutionWorkspace: null,
+    })).rejects.toThrow('Environment "local contract" is not active');
 
-  async function runContract(testCase: RuntimeContractCase) {
-    const cleanup = await testCase.setup?.();
-    try {
-      const runtime = environmentRuntimeService(db);
-      const { companyId, environment, issueId, runId } = await seedEnvironment({
-        driver: testCase.driver,
-        config: testCase.config,
-      });
+    expect(contract.acquireRunLease).not.toHaveBeenCalled();
+    expect(harness.calls).toEqual([]);
+  });
 
-      const acquired = await runtime.acquireRunLease({
-        companyId,
-        environment,
-        issueId,
-        heartbeatRunId: runId,
-        persistedExecutionWorkspace: null,
-      });
+  it("fails closed when an environment driver is not registered", async () => {
+    const harness = createMockDb();
+    const runtime = environmentRuntimeService(harness.db, { drivers: [] });
 
-      expect(acquired.environment.id).toBe(environment.id);
-      expect(acquired.lease.companyId).toBe(companyId);
-      expect(acquired.lease.environmentId).toBe(environment.id);
-      expect(acquired.lease.issueId).toBeNull();
-      expect(acquired.lease.heartbeatRunId).toBe(runId);
-      expect(acquired.lease.status).toBe("active");
-      expect(acquired.leaseContext).toEqual({
-        executionWorkspaceId: null,
-        executionWorkspaceMode: null,
-      });
-      expect(acquired.lease.metadata).toMatchObject({
-        driver: testCase.driver,
-        executionWorkspaceMode: null,
-      });
-      testCase.expectLease(acquired.lease, environment);
+    await expect(runtime.acquireRunLease({
+      companyId,
+      environment: environment("unknown"),
+      issueId: null,
+      runId,
+      persistedExecutionWorkspace: null,
+    })).rejects.toThrow(
+      'Environment driver "unknown" is not registered in the environment runtime yet',
+    );
 
-      const released = await runtime.releaseRunLeases(runId);
-
-      expect(released).toHaveLength(1);
-      expect(released[0]?.environment.id).toBe(environment.id);
-      expect(released[0]?.lease.id).toBe(acquired.lease.id);
-      expect(released[0]?.lease.status).toBe("released");
-
-      const activeRows = await db
-        .select()
-        .from(environmentLeases)
-        .where(eq(environmentLeases.status, "active"));
-      expect(activeRows).toHaveLength(0);
-      await expect(runtime.releaseRunLeases(runId)).resolves.toEqual([]);
-    } finally {
-      await cleanup?.();
-    }
-  }
-
-  const contractCases: RuntimeContractCase[] = [
-    {
-      name: "local",
-      driver: "local",
-      config: {},
-      expectLease: (lease) => {
-        expect(lease.providerLeaseId).toBeNull();
-      },
-    },
-    {
-      name: "fake sandbox",
-      driver: "sandbox",
-      config: {
-        provider: "fake",
-        image: "ubuntu:24.04",
-        reuseLease: false,
-      },
-      expectLease: (lease) => {
-        expect(lease.providerLeaseId).toMatch(/^sandbox:\/\/fake\/[0-9a-f-]+\/[0-9a-f-]+$/);
-        expect(lease.metadata).toMatchObject({
-          provider: "fake",
-          image: "ubuntu:24.04",
-          reuseLease: false,
-        });
-      },
-    },
-  ];
-
-  for (const testCase of contractCases) {
-    it(`${testCase.name} satisfies the acquire/release host contract`, async () => {
-      await runContract(testCase);
-    });
-  }
-
-  it("SSH satisfies the acquire/release host contract", async () => {
-    if (!sshFixtureSupport.supported) {
-      console.warn(`Skipping SSH driver contract test: ${sshFixtureSupport.reason ?? "unsupported environment"}`);
-      return;
-    }
-
-    const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-env-runtime-contract-ssh-"));
-    fixtureRoots.push(fixtureRoot);
-    const fixture = await startSshEnvLabFixture({ statePath: path.join(fixtureRoot, "state.json") });
-    const sshConfig = await buildSshEnvLabFixtureConfig(fixture);
-
-    await runContract({
-      name: "ssh",
-      driver: "ssh",
-      config: sshConfig as SshEnvironmentConfig as unknown as Record<string, unknown>,
-      expectLease: (lease) => {
-        expect(lease.providerLeaseId).toContain(`ssh://${sshConfig.username}@${sshConfig.host}:${sshConfig.port}`);
-        expect(lease.metadata).toMatchObject({
-          host: sshConfig.host,
-          port: sshConfig.port,
-          username: sshConfig.username,
-          remoteWorkspacePath: sshConfig.remoteWorkspacePath,
-          remoteCwd: sshConfig.remoteWorkspacePath,
-        });
-      },
-    });
+    expect(harness.calls).toEqual([]);
   });
 });

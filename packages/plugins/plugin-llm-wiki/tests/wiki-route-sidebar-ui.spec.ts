@@ -547,7 +547,7 @@ describe("WikiPage", () => {
                   source: "managed",
                   agentId: "agent-1",
                   resourceKey: "wiki-maintainer",
-                  details: { name: "Wiki Maintainer", status: "idle", adapterType: "claude_local", icon: "book-open", urlKey: "wiki-maintainer" },
+                  details: { name: "Wiki Maintainer", status: "idle", adapterType: "codex", icon: "book-open", urlKey: "wiki-maintainer" },
                 },
                 managedProject: {
                   status: "resolved",
@@ -641,7 +641,7 @@ describe("WikiPage", () => {
         }),
         MarkdownBlock: ({ content }: { content: string }) => createElement("div", {}, content),
         MarkdownEditor: ({ value }: { value: string }) => createElement("textarea", { value, readOnly: true }),
-        AssigneePicker: () => createElement("div", { "data-testid": "assignee-picker" }),
+        OwnerPicker: () => createElement("div", { "data-testid": "owner-picker" }),
         ProjectPicker: () => createElement("div", { "data-testid": "project-picker" }),
       },
     };

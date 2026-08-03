@@ -1,4 +1,20 @@
 services:
+  review-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: paperclip_review
+      POSTGRES_USER: paperclip_review
+      POSTGRES_PASSWORD: paperclip_review
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U paperclip_review -d paperclip_review
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - review-db:/var/lib/postgresql/data
+
   review:
     build:
       context: ..
@@ -12,6 +28,7 @@ services:
       CODEX_HOME: "/home/reviewer/.codex"
       CLAUDE_HOME: "/home/reviewer/.claude"
       PAPERCLIP_HOME: "/home/reviewer/.paperclip-review"
+      DATABASE_URL: "postgres://paperclip_review:paperclip_review@review-db:5432/paperclip_review"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
@@ -21,6 +38,9 @@ services:
     volumes:
       - review-home:/home/reviewer
       - review-work:/work
+    depends_on:
+      review-db:
+        condition: service_healthy
     cap_drop:
       - ALL
     security_opt:
@@ -29,5 +49,6 @@ services:
       - /tmp:mode=1777,size=1g
 
 volumes:
+  review-db:
   review-home:
   review-work:

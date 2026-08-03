@@ -1,12 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
+import type { ProviderSafeRunTrace } from "@paperclipai/shared";
 import type { HostServices } from "../src/host-client-factory.js";
 import {
   CapabilityDeniedError,
   createHostClientHandlers,
   InvocationScopeDeniedError,
 } from "../src/host-client-factory.js";
-import { PLUGIN_RPC_ERROR_CODES } from "../src/protocol.js";
+import {
+  PLUGIN_RPC_ERROR_CODES,
+  type WorkerToHostMethods,
+} from "../src/protocol.js";
 
 describe("createHostClientHandlers invocation company scope", () => {
   it("rejects worker-selected config and secret company ids without a host invocation scope", async () => {
@@ -230,5 +234,324 @@ describe("createHostClientHandlers invocation company scope", () => {
       ),
     ).rejects.toBeInstanceOf(InvocationScopeDeniedError);
     expect(searchAudit).not.toHaveBeenCalled();
+  });
+
+  it("gates withdrawal and injects the host-owned operation identity", async () => {
+    const withdraw = vi.fn(async (_params, operation) => ({
+      operationId: operation.hostRpcOperationId,
+      issue: { id: "issue-1", status: "cancelled" },
+      retried: false,
+    }));
+    const services = {
+      issues: { withdraw },
+    } as unknown as HostServices;
+    const handlers = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["issues.withdraw"],
+      services,
+    });
+
+    await expect(handlers["issues.withdraw"]({
+      companyId: "company-a",
+      issueId: "issue-1",
+      message: "No longer needed",
+    }, {
+      invocationScope: { companyId: "company-a" },
+      rpcOperationId: "host-op-1",
+    })).resolves.toMatchObject({
+      operationId: "host-op-1",
+      retried: false,
+    });
+    expect(withdraw).toHaveBeenCalledWith({
+      companyId: "company-a",
+      issueId: "issue-1",
+      message: "No longer needed",
+    }, {
+      hostRpcOperationId: "host-op-1",
+    });
+
+    await expect(handlers["issues.withdraw"]({
+      companyId: "company-a",
+      issueId: "issue-1",
+      message: "No host identity",
+    }, {
+      invocationScope: { companyId: "company-a" },
+    })).rejects.toThrow("Host-assigned RPC operation identity is required");
+
+    const denied = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: [],
+      services,
+    });
+    await expect(denied["issues.withdraw"]({
+      companyId: "company-a",
+      issueId: "issue-1",
+      message: "No longer needed",
+    }, {
+      invocationScope: { companyId: "company-a" },
+      rpcOperationId: "host-op-2",
+    })).rejects.toBeInstanceOf(CapabilityDeniedError);
+  });
+});
+
+describe("createHostClientHandlers plugin run-context scope", () => {
+  it.each([
+    [
+      "issues.list",
+      "issues.read",
+      { companyId: "company-a" },
+    ],
+    [
+      "issues.get",
+      "issues.read",
+      { companyId: "company-a", issueId: "issue-a" },
+    ],
+    [
+      "issues.creatorCallback.register",
+      "issues.create",
+      { callbackKey: "creator", callbackVersion: "1" },
+    ],
+    [
+      "issues.create",
+      "issues.create",
+      {
+        companyId: "company-a",
+        request: "Create ordinary plugin work.",
+        ownerAgentId: "agent-a",
+        callbackKey: "creator",
+        callbackVersion: "1",
+      },
+    ],
+    [
+      "issues.update",
+      "issues.update",
+      {
+        companyId: "company-a",
+        issueId: "issue-a",
+        input: { kind: "message", message: "Creator message." },
+      },
+    ],
+    [
+      "issues.withdraw",
+      "issues.withdraw",
+      {
+        companyId: "company-a",
+        issueId: "issue-a",
+        message: "No longer needed.",
+      },
+    ],
+  ] as const)(
+    "rejects ordinary %s control-plane access while an agent run context is active",
+    async (method, capability, params) => {
+      const ordinaryIssueServices = {
+        list: vi.fn(async () => []),
+        get: vi.fn(async () => null),
+        registerCreatorCallback: vi.fn(async () => ({
+          callbackKey: "creator",
+          callbackVersion: "1",
+          registered: true as const,
+        })),
+        create: vi.fn(async () => ({ id: "issue-a" })),
+        update: vi.fn(async () => ({ id: "issue-a" })),
+        withdraw: vi.fn(async () => ({ issue: { id: "issue-a" } })),
+      };
+      const handlers = createHostClientHandlers({
+        pluginId: "paperclip.test",
+        capabilities: [capability],
+        services: {
+          issues: ordinaryIssueServices,
+        } as unknown as HostServices,
+      });
+
+      await expect(
+        (
+          handlers as Record<
+            string,
+            (input: unknown, context: unknown) => Promise<unknown>
+          >
+        )[method](params, {
+          invocationScope: {
+            companyId: "company-a",
+            pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
+          },
+          rpcOperationId: "host-operation-a",
+        }),
+      ).rejects.toMatchObject({
+        name: "InvocationScopeDeniedError",
+        code: PLUGIN_RPC_ERROR_CODES.INVOCATION_SCOPE_DENIED,
+        message: expect.stringContaining(
+          "installation issue control plane is unavailable while serving an agent run",
+        ),
+      });
+      expect(
+        Object.values(ordinaryIssueServices).reduce(
+          (callCount, delegate) => callCount + delegate.mock.calls.length,
+          0,
+        ),
+      ).toBe(0);
+    },
+  );
+
+  it("allows a run-serving issue read only with the exact active opaque handle", async () => {
+    const listCompanyIssues = vi.fn(async () => ({
+      items: [],
+      nextCursor: null,
+    }));
+    const services = {
+      runIssues: { listCompanyIssues },
+    } as unknown as HostServices;
+    const handlers = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["issues.read"],
+      services,
+    });
+    const params = {
+      runContextHandle: "pc_plugin_ctx_v1_exact",
+      limit: 10,
+    };
+
+    await expect(
+      handlers["run.issues.listCompanyIssues"](params, {
+        invocationScope: {
+          companyId: "company-a",
+          pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
+        },
+      }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+    expect(listCompanyIssues).toHaveBeenCalledWith(params);
+  });
+
+  it("uses the shared gateway trace DTO unchanged in the plugin protocol", async () => {
+    type PluginTrace =
+      WorkerToHostMethods["run.issues.readIssueAgentRun"][1];
+    expectTypeOf<PluginTrace>().toEqualTypeOf<ProviderSafeRunTrace>();
+
+    const trace: ProviderSafeRunTrace = {
+      runId: "run-a",
+      runKind: "productive",
+      status: "succeeded",
+      startedAt: "2026-07-25T00:00:00.000Z",
+      finishedAt: "2026-07-25T00:01:00.000Z",
+      outcome: "succeeded",
+      turns: [
+        {
+          kind: "assistant",
+          timestamp: "2026-07-25T00:00:30.000Z",
+          content: [
+            { kind: "reasoning", text: "Safe summary" },
+            {
+              kind: "tool",
+              name: "lookup",
+              state: "completed",
+              input: { query: "safe" },
+              result: { answer: "safe" },
+            },
+          ],
+        },
+      ],
+      outputComments: [
+        { commentId: "comment-a" },
+      ],
+    };
+    const readIssueAgentRun = vi.fn(async () => trace);
+    const services = {
+      runIssues: { readIssueAgentRun },
+    } as unknown as HostServices;
+    const handlers = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["issues.read"],
+      services,
+    });
+    const params = {
+      runContextHandle: "pc_plugin_ctx_v1_exact",
+      runId: "run-a",
+    };
+
+    const result = await handlers["run.issues.readIssueAgentRun"](params, {
+      invocationScope: {
+        companyId: "company-a",
+        pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
+      },
+    });
+
+    expect(result).toBe(trace);
+    expect(readIssueAgentRun).toHaveBeenCalledWith(params);
+  });
+
+  it.each([
+    ["missing invocation", undefined],
+    [
+      "missing run handle",
+      { invocationScope: { companyId: "company-a" } },
+    ],
+    [
+      "forged run handle",
+      {
+        invocationScope: {
+          companyId: "company-a",
+          pluginRunContextHandle: "pc_plugin_ctx_v1_other",
+        },
+      },
+    ],
+    ["expired invocation", { invalidInvocationScope: true }],
+  ])("rejects %s without calling the run reader", async (_label, context) => {
+    const readIssueComments = vi.fn(async () => ({
+      items: [],
+      nextCursor: null,
+    }));
+    const services = {
+      runIssues: { readIssueComments },
+    } as unknown as HostServices;
+    const handlers = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["issues.read"],
+      services,
+    });
+
+    await expect(
+      handlers["run.issues.readIssueComments"](
+        { runContextHandle: "pc_plugin_ctx_v1_exact" },
+        context,
+      ),
+    ).rejects.toBeInstanceOf(InvocationScopeDeniedError);
+    expect(readIssueComments).not.toHaveBeenCalled();
+  });
+
+  it("keeps the installation control plane available outside runs and unrelated control-plane calls available during runs", async () => {
+    const list = vi.fn(async () => []);
+    const managedGet = vi.fn(async () => ({ routine: null }));
+    const services = {
+      issues: { list },
+      routines: { managedGet },
+    } as unknown as HostServices;
+    const handlers = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["issues.read", "routines.managed"],
+      services,
+    });
+
+    await expect(
+      handlers["issues.list"](
+        { companyId: "company-a" },
+        { invocationScope: { companyId: "company-a" } },
+      ),
+    ).resolves.toEqual([]);
+    expect(list).toHaveBeenCalledWith({ companyId: "company-a" });
+
+    await expect(
+      handlers["routines.managed.get"](
+        { routineKey: "daily", companyId: "company-a" },
+        {
+          invocationScope: {
+            companyId: "company-a",
+            pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
+          },
+        },
+      ),
+    ).resolves.toEqual({ routine: null });
+    expect(managedGet).toHaveBeenCalledWith({
+      routineKey: "daily",
+      companyId: "company-a",
+    });
   });
 });

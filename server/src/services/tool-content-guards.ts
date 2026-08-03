@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { redactEventPayload, redactSensitiveText, REDACTED_EVENT_VALUE } from "../redaction.js";
 
 export class ToolContentValidationError extends Error {
@@ -17,10 +17,6 @@ const PROMPT_INJECTION_PATTERNS: Array<{ code: string; re: RegExp }> = [
   { code: "instruction_hijack", re: /\b(new|updated)\b.{0,20}\b(system|developer)\b.{0,20}\b(instructions?|message)\b/i },
   { code: "secret_exfiltration", re: /\b(exfiltrate|leak|steal|send)\b.{0,40}\b(secret|token|api[-_ ]?key|credential)s?\b/i },
 ];
-
-type ToolActionSigningSecretEnv = Partial<
-  Record<"PAPERCLIP_TOOL_ACTION_SIGNING_SECRET" | "PAPERCLIP_AGENT_JWT_SECRET" | "BETTER_AUTH_SECRET", string | undefined>
->;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
@@ -44,155 +40,12 @@ function scanPromptInjection(value: unknown): string[] {
     .map((pattern) => pattern.code);
 }
 
-export class ToolActionSigningSecretMissingError extends Error {
-  constructor() {
-    super(
-      "PAPERCLIP_TOOL_ACTION_SIGNING_SECRET is not configured; signed tool action approvals cannot be issued. " +
-        "Set PAPERCLIP_TOOL_ACTION_SIGNING_SECRET in this instance's environment (worktrees inherit it from .paperclip/.env).",
-    );
-    this.name = "ToolActionSigningSecretMissingError";
-  }
-}
-
-export function resolveToolActionSigningSecret(env: ToolActionSigningSecretEnv = process.env as ToolActionSigningSecretEnv) {
-  const secret = env.PAPERCLIP_TOOL_ACTION_SIGNING_SECRET?.trim();
-  if (!secret) {
-    throw new ToolActionSigningSecretMissingError();
-  }
-  return secret;
-}
-
-function signingSecret(explicitSecret?: string) {
-  const secret = explicitSecret?.trim();
-  return secret || resolveToolActionSigningSecret();
-}
-
 export function canonicalToolArguments(value: unknown) {
   return stableSerialize(value ?? {});
 }
 
 export function hashToolValue(value: unknown) {
   return createHash("sha256").update(stableSerialize(value)).digest("hex");
-}
-
-export function signToolArguments(args: {
-  invocationId: string;
-  toolName: string;
-  canonicalArguments: string;
-  approvalSnapshot?: unknown;
-  executionOnApprove?: boolean;
-  signingSecret?: string;
-}) {
-  const payloadValue: Record<string, unknown> = {
-    invocationId: args.invocationId,
-    toolName: args.toolName,
-    canonicalArguments: args.canonicalArguments,
-  };
-  if (args.executionOnApprove === true) {
-    payloadValue.executionOnApprove = true;
-  }
-  if (args.approvalSnapshot !== undefined) {
-    payloadValue.approvalSnapshot = args.approvalSnapshot;
-  }
-  const payload = stableSerialize(payloadValue);
-  const signature = createHmac("sha256", signingSecret(args.signingSecret)).update(payload).digest("base64url");
-  return Buffer.from(JSON.stringify({ version: 1, alg: "HS256", payload, signature }), "utf8").toString("base64url");
-}
-
-export function verifyToolArgumentsSignature(input: {
-  signedArguments: string | null | undefined;
-  invocationId: string;
-  toolName: string;
-  canonicalArguments: string;
-  approvalSnapshot?: unknown;
-  executionOnApprove?: boolean;
-  signingSecret?: string;
-}) {
-  if (!input.signedArguments) return false;
-  let parsed: { version?: unknown; alg?: unknown; payload?: unknown; signature?: unknown };
-  try {
-    parsed = JSON.parse(Buffer.from(input.signedArguments, "base64url").toString("utf8"));
-  } catch {
-    return false;
-  }
-  if (parsed.version !== 1 || parsed.alg !== "HS256") return false;
-  if (typeof parsed.payload !== "string" || typeof parsed.signature !== "string") return false;
-  const expectedPayloadValue: Record<string, unknown> = {
-    invocationId: input.invocationId,
-    toolName: input.toolName,
-    canonicalArguments: input.canonicalArguments,
-  };
-  if (input.executionOnApprove !== undefined) {
-    expectedPayloadValue.executionOnApprove = input.executionOnApprove;
-  }
-  if (input.approvalSnapshot !== undefined) {
-    expectedPayloadValue.approvalSnapshot = input.approvalSnapshot;
-  }
-  const expectedPayload = stableSerialize(expectedPayloadValue);
-  if (parsed.payload !== expectedPayload) return false;
-  const expected = createHmac("sha256", signingSecret(input.signingSecret)).update(parsed.payload).digest("base64url");
-  const left = Buffer.from(parsed.signature);
-  const right = Buffer.from(expected);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
-export function readSignedToolArgumentsPayload(input: {
-  signedArguments: string | null | undefined;
-  invocationId: string;
-  toolName: string;
-  signingSecret?: string;
-}): { arguments: unknown; approvalSnapshot?: unknown; executionOnApprove?: boolean } | null {
-  if (!input.signedArguments) return null;
-  let parsed: { payload?: unknown };
-  try {
-    parsed = JSON.parse(Buffer.from(input.signedArguments, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
-  if (typeof parsed.payload !== "string") return null;
-  let payload: {
-    invocationId?: unknown;
-    toolName?: unknown;
-    canonicalArguments?: unknown;
-    approvalSnapshot?: unknown;
-    executionOnApprove?: unknown;
-  };
-  try {
-    payload = JSON.parse(parsed.payload);
-  } catch {
-    return null;
-  }
-  if (payload.invocationId !== input.invocationId || payload.toolName !== input.toolName) return null;
-  if (typeof payload.canonicalArguments !== "string") return null;
-  if (!verifyToolArgumentsSignature({
-    signedArguments: input.signedArguments,
-    invocationId: input.invocationId,
-    toolName: input.toolName,
-    canonicalArguments: payload.canonicalArguments,
-    approvalSnapshot: payload.approvalSnapshot,
-    executionOnApprove: payload.executionOnApprove === true ? true : undefined,
-    signingSecret: input.signingSecret,
-  })) {
-    return null;
-  }
-  try {
-    return {
-      arguments: JSON.parse(payload.canonicalArguments) as unknown,
-      ...(payload.approvalSnapshot !== undefined ? { approvalSnapshot: payload.approvalSnapshot } : {}),
-      ...(payload.executionOnApprove === true ? { executionOnApprove: true } : {}),
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function readSignedToolArguments(input: {
-  signedArguments: string | null | undefined;
-  invocationId: string;
-  toolName: string;
-  signingSecret?: string;
-}) {
-  return readSignedToolArgumentsPayload(input)?.arguments ?? null;
 }
 
 export function summarizeToolValue(value: unknown) {

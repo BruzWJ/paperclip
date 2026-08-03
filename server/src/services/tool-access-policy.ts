@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
-  heartbeatRuns,
+  approvals,
+  issueApprovals,
   issues,
   principalPermissionGrants,
   projects,
@@ -44,13 +45,18 @@ import { toolPolicyConditionsSchema } from "@paperclipai/shared";
 import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
 import { narrowestScopeBindings, profileIdsInBindingOrder } from "./tool-profile-binding-precedence.js";
 import { recordToolRuntimeAuditWriteFailure } from "./tool-runtime-metrics.js";
+import { resolveProductiveRunLinkage } from "./productive-run-linkage.js";
 
 type ToolAccessContext = {
   companyId: string;
   actorType: "agent" | "user" | "system" | "plugin";
   actorId: string;
   agentId: string | null;
-  heartbeatRunId: string | null;
+  runId: string | null;
+  issueExecutionRefId: string | null;
+  adapterConfigRevisionId: string | null;
+  executionMode: "owner" | "consult" | null;
+  ownershipEpoch: number | null;
   issueId: string | null;
   projectId: string | null;
   routineId: string | null;
@@ -73,6 +79,13 @@ type ToolAccessContext = {
 type RedactionResult = {
   summary: ToolRedactedValueSummary;
   redactionPlan: { redactedFieldCount: number; redactedFields: string[] };
+};
+
+export type ToolActionApprovalAdmission = {
+  approvalSnapshot: Record<string, unknown> | null;
+  previewMarkdown: string | null;
+  expiresAt: Date;
+  requiresFormalApproval: boolean;
 };
 
 type PolicyConditionEvaluation = {
@@ -108,11 +121,6 @@ const SECRET_VALUE_RE = /\b(sk-[a-z0-9_-]{12,}|ghp_[a-z0-9_]{12,}|xox[baprs]-[a-
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function snapshotString(snapshot: Record<string, unknown>, key: string): string | null {
-  const value = snapshot[key];
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 function stableStringify(value: unknown): string {
@@ -223,19 +231,6 @@ function trustRuleIsActive(policy: typeof toolPolicies.$inferSelect, now = new D
     if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime()) return false;
   }
   return true;
-}
-
-function sideEffectIdempotencyKey(ctx: ToolAccessContext, argumentsHash: string): string {
-  return `side_effect:${sha256({
-    companyId: ctx.companyId,
-    runId: ctx.heartbeatRunId,
-    issueId: ctx.issueId,
-    applicationId: ctx.applicationId,
-    connectionId: ctx.connectionId,
-    catalogEntryId: ctx.catalogEntryId,
-    toolName: ctx.toolName,
-    argumentsHash,
-  })}`;
 }
 
 function auditOutcome(accessDecision: ToolAccessDecision): "pending" | "success" | "denied" | "timeout" {
@@ -511,9 +506,6 @@ function evaluatePolicyConditions(
     }
     if (boolCondition(boundary.remoteHttpOnly) === true && ctx.providerType !== "mcp_remote_http") {
       return conditionGroupFail("trustBoundary", "Policy condition requires a remote HTTP MCP tool.");
-    }
-    if (boolCondition(boundary.paperclipSelfOnly) === true && ctx.providerType !== "paperclip_self") {
-      return conditionGroupFail("trustBoundary", "Policy condition requires a Paperclip self tool.");
     }
     matchedGroups.push("trustBoundary");
   }
@@ -840,10 +832,14 @@ export function toolAccessPolicyService(db: Db) {
   > {
     const redaction = summarizeAndRedact(input.request.arguments ?? {});
     let agentId = input.actor.agentId ?? (input.actor.actorType === "agent" ? input.actor.actorId : null);
-    let heartbeatRunId = input.runContext?.heartbeatRunId ?? null;
+    let runId = input.runContext?.runId ?? null;
     let issueId = input.runContext?.issueId ?? null;
     let projectId = input.runContext?.projectId ?? null;
     let routineId = input.runContext?.routineId ?? null;
+    let issueExecutionRefId: string | null = null;
+    let adapterConfigRevisionId: string | null = null;
+    let executionMode: "owner" | "consult" | null = null;
+    let ownershipEpoch: number | null = null;
     const gatewayId = input.runContext?.gatewayId ?? null;
 
     if (input.actor.actorType === "agent") {
@@ -854,24 +850,33 @@ export function toolAccessPolicyService(db: Db) {
       agentId = agent.id;
     }
 
-    if (heartbeatRunId) {
-      const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, heartbeatRunId));
-      if (!run || run.companyId !== input.companyId || (input.actor.actorType === "agent" && run.agentId !== agentId)) {
-        return { ok: false, redaction, decision: decision("deny", "deny_run_context_mismatch", "Supplied run context does not match the authenticated actor.", [], [], { redactionPlan: redaction.redactionPlan }) };
+    if (runId) {
+      const linkage = await resolveProductiveRunLinkage(db, {
+        runId: runId,
+        companyId: input.companyId,
+        agentId:
+          input.actor.actorType === "agent"
+            ? agentId
+            : null,
+      });
+      if (!linkage) {
+        return { ok: false, redaction, decision: decision("deny", "deny_run_context_mismatch", "Supplied run is not backed by its canonical productive issue-execution ref.", [], [], { redactionPlan: redaction.redactionPlan }) };
       }
-      agentId = run.agentId;
-      const snapshot = isRecord(run.contextSnapshot) ? run.contextSnapshot : {};
-      const runIssueId = snapshotString(snapshot, "issueId");
-      const runProjectId = snapshotString(snapshot, "projectId");
-      const runRoutineId = snapshotString(snapshot, "routineId");
-      if ((issueId && runIssueId && issueId !== runIssueId)
-        || (projectId && runProjectId && projectId !== runProjectId)
-        || (routineId && runRoutineId && routineId !== runRoutineId)) {
-        return { ok: false, redaction, decision: decision("deny", "deny_run_context_mismatch", "Supplied run context does not match the stored heartbeat context.", [], [], { redactionPlan: redaction.redactionPlan }) };
+      if (
+        (issueId && issueId !== linkage.issueId)
+        || (projectId && projectId !== linkage.projectId)
+        || (routineId && routineId !== linkage.routineId)
+      ) {
+        return { ok: false, redaction, decision: decision("deny", "deny_run_context_mismatch", "Supplied run context does not match the canonical productive issue execution.", [], [], { redactionPlan: redaction.redactionPlan }) };
       }
-      issueId = runIssueId ?? issueId;
-      projectId = runProjectId ?? projectId;
-      routineId = runRoutineId ?? routineId;
+      agentId = linkage.agentId;
+      issueId = linkage.issueId;
+      projectId = linkage.projectId;
+      routineId = linkage.routineId;
+      issueExecutionRefId = linkage.refId;
+      adapterConfigRevisionId = linkage.adapterConfigRevisionId;
+      executionMode = linkage.mode;
+      ownershipEpoch = linkage.ownershipEpoch;
     }
 
     if (issueId) {
@@ -978,7 +983,11 @@ export function toolAccessPolicyService(db: Db) {
         actorType: input.actor.actorType,
         actorId: input.actor.actorId,
         agentId,
-        heartbeatRunId,
+        runId,
+        issueExecutionRefId,
+        adapterConfigRevisionId,
+        executionMode,
+        ownershipEpoch,
         issueId,
         projectId,
         routineId,
@@ -1027,7 +1036,9 @@ export function toolAccessPolicyService(db: Db) {
       .where(and(
         eq(principalPermissionGrants.companyId, ctx.companyId),
         eq(principalPermissionGrants.principalType, principalType),
-        eq(principalPermissionGrants.principalId, principalId),
+        principalType === "user"
+          ? eq(principalPermissionGrants.principalUserId, principalId)
+          : eq(principalPermissionGrants.principalAgentId, principalId),
         eq(principalPermissionGrants.permissionKey, "tools:use"),
       ));
     return grants.some((grant) => scopeAllowsTool(grant.scope, ctx));
@@ -1123,7 +1134,8 @@ export function toolAccessPolicyService(db: Db) {
         policyId: policy.id,
         agentId: ctx.agentId,
         issueId: ctx.issueId,
-        runId: ctx.heartbeatRunId,
+        runId: ctx.runId,
+        gatewayId: ctx.gatewayId,
         toolName: ctx.toolName,
         hitCount: nextRule.hitCount,
         argumentsSummary: redaction.summary,
@@ -1135,7 +1147,7 @@ export function toolAccessPolicyService(db: Db) {
       actorType: ctx.actorType,
       actorId: ctx.actorId,
       agentId: ctx.agentId,
-      runId: ctx.heartbeatRunId,
+      runId: ctx.runId,
       issueId: ctx.issueId,
       applicationId: ctx.applicationId,
       connectionId: ctx.connectionId,
@@ -1289,7 +1301,7 @@ export function toolAccessPolicyService(db: Db) {
       agentId: input.actor.agentId ?? null,
       issueId: input.runContext?.issueId ?? null,
       gatewayId: input.runContext?.gatewayId ?? null,
-      runId: input.runContext?.heartbeatRunId ?? null,
+      runId: input.runContext?.runId ?? null,
       connectionId: input.request.connectionId ?? null,
       catalogEntryId: input.request.catalogEntryId ?? null,
       applicationId: input.request.applicationId ?? null,
@@ -1299,7 +1311,7 @@ export function toolAccessPolicyService(db: Db) {
       toolName: input.request.toolName,
       riskLevel: input.request.riskLevel ?? null,
     };
-    const runId = "runId" in ctx ? ctx.runId : ctx.heartbeatRunId;
+    const runId = ctx.runId;
     try {
       const [legacyAuditEvent] = await db.insert(toolAccessAuditEvents).values({
         companyId: input.companyId,
@@ -1368,20 +1380,16 @@ export function toolAccessPolicyService(db: Db) {
     }
   }
 
-  async function recordInvocation(input: ToolAccessDecisionInput, accessDecision: ToolAccessDecision) {
+  async function recordInvocation(
+    input: ToolAccessDecisionInput,
+    accessDecision: ToolAccessDecision,
+    approvalAdmission?: ToolActionApprovalAdmission,
+  ) {
     const loaded = await loadContext(input);
     if (!loaded.ok) throw new Error("Cannot record invocation for invalid tool access context");
     const { ctx, redaction } = loaded;
     const argumentsHash = redaction.summary.sha256 ?? sha256(input.request.arguments ?? {});
-    const idempotencyKey = input.request.idempotencyKey
-      ?? (input.request.sideEffecting ? sideEffectIdempotencyKey(ctx, argumentsHash) : null);
-    if (idempotencyKey) {
-      const [existing] = await db.select().from(toolInvocations).where(and(
-        eq(toolInvocations.companyId, input.companyId),
-        eq(toolInvocations.idempotencyKey, idempotencyKey),
-      ));
-      if (existing) return { invocation: existing, replayed: true, actionRequest: null };
-    }
+    const idempotencyKey = input.request.idempotencyKey ?? null;
     const status = accessDecision.decision === "allow"
       ? "authorized"
       : accessDecision.decision === "require_approval"
@@ -1389,48 +1397,143 @@ export function toolAccessPolicyService(db: Db) {
         : accessDecision.decision === "rate_limited"
           ? "rate_limited"
           : "denied";
-    const [invocation] = await db.insert(toolInvocations).values({
-      companyId: ctx.companyId,
-      idempotencyKey,
-      actorType: ctx.actorType,
-      actorId: ctx.actorId,
-      agentId: ctx.agentId,
-      issueId: ctx.issueId,
-      runId: ctx.heartbeatRunId,
-      applicationId: ctx.applicationId,
-      connectionId: ctx.connectionId,
-      catalogEntryId: ctx.catalogEntryId,
-      catalogVersionHash: ctx.catalogVersionHash,
-      catalogSchemaHash: ctx.catalogSchemaHash,
-      providerType: ctx.providerType,
-      applicationKey: ctx.applicationKey,
-      upstreamToolName: ctx.upstreamToolName,
-      riskLevel: ctx.riskLevel,
-      toolName: ctx.toolName,
-      argumentsHash,
-      argumentsSummary: redaction.summary,
-      policyDecision: accessDecision.decision,
-      matchedPolicyIds: accessDecision.matchedPolicyIds,
-      approvalState: accessDecision.decision === "require_approval" ? "pending" : "not_required",
-      status,
-      errorCode: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : accessDecision.reasonCode,
-      errorMessage: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : accessDecision.explanation,
-      completedAt: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : new Date(),
-    }).returning();
-    let actionRequest = null;
-    if (accessDecision.decision === "require_approval") {
-      [actionRequest] = await db.insert(toolActionRequests).values({
+    return db.transaction(async (tx) => {
+      if (idempotencyKey) {
+        const [existing] = await tx.select().from(toolInvocations).where(and(
+          eq(toolInvocations.companyId, input.companyId),
+          eq(toolInvocations.idempotencyKey, idempotencyKey),
+        ));
+        if (existing) {
+          return {
+            invocation: existing,
+            replayed: true,
+            actionRequest: null,
+          };
+        }
+      }
+      const [invocation] = await tx.insert(toolInvocations).values({
         companyId: ctx.companyId,
-        invocationId: invocation.id,
+        idempotencyKey,
+        actorType: ctx.actorType,
+        actorId: ctx.actorId,
+        agentId: ctx.agentId,
         issueId: ctx.issueId,
-        status: "pending",
-        canonicalArgumentsHash: invocation.argumentsHash ?? argumentsHash,
-        canonicalArgumentsSummary: redaction.summary,
-        requestedByAgentId: ctx.actorType === "agent" ? ctx.agentId : null,
-        requestedByUserId: ctx.actorType === "user" ? ctx.actorId : null,
+        runId: ctx.runId,
+        gatewayId: input.runContext?.gatewayId ?? null,
+        gatewayPublicId: input.runContext?.gatewayPublicId ?? null,
+        gatewayTokenId: input.runContext?.gatewayTokenId ?? null,
+        clientSubjectType: input.runContext?.clientSubjectType ?? null,
+        clientSubjectId: input.runContext?.clientSubjectId ?? null,
+        clientName: input.runContext?.clientName ?? null,
+        mcpSessionId: input.runContext?.mcpSessionId ?? null,
+        correlationId: input.runContext?.correlationId ?? null,
+        applicationId: ctx.applicationId,
+        connectionId: ctx.connectionId,
+        connectionInstallId: input.request.connectionInstallId ?? null,
+        companyToolSelectionId:
+          input.request.companyToolSelectionId ?? null,
+        catalogEntryId: ctx.catalogEntryId,
+        callIdentitySource: input.request.callIdentitySource ?? null,
+        callIdentityType: input.request.callIdentityType ?? null,
+        callIdentityValue: input.request.callIdentityValue ?? null,
+        runInterfaceToolCallId:
+          input.request.runInterfaceToolCallId ?? null,
+        catalogVersionHash: ctx.catalogVersionHash,
+        catalogSchemaHash: ctx.catalogSchemaHash,
+        providerType: ctx.providerType,
+        applicationKey: ctx.applicationKey,
+        upstreamToolName: ctx.upstreamToolName,
+        riskLevel: ctx.riskLevel,
+        toolName: ctx.toolName,
+        argumentsHash,
+        argumentsSummary: redaction.summary,
+        policyDecision: accessDecision.decision,
+        matchedPolicyIds: accessDecision.matchedPolicyIds,
+        approvalState:
+          accessDecision.decision === "require_approval"
+            ? "pending"
+            : "not_required",
+        status,
+        errorCode:
+          accessDecision.allowed || accessDecision.decision === "require_approval"
+            ? null
+            : accessDecision.reasonCode,
+        errorMessage:
+          accessDecision.allowed || accessDecision.decision === "require_approval"
+            ? null
+            : accessDecision.explanation,
+        completedAt:
+          accessDecision.allowed || accessDecision.decision === "require_approval"
+            ? null
+            : new Date(),
       }).returning();
-    }
-    return { invocation, replayed: false, actionRequest };
+      let actionRequest = null;
+      if (accessDecision.decision === "require_approval") {
+        if (!approvalAdmission) {
+          throw new Error("Approval-required invocation is missing its immutable admission snapshot");
+        }
+        const actionRequestId = randomUUID();
+        let approvalId: string | null = null;
+        if (approvalAdmission.requiresFormalApproval) {
+          const [approval] = await tx
+            .insert(approvals)
+            .values({
+              companyId: ctx.companyId,
+              type: "request_board_approval",
+              requestedByAgentId: ctx.agentId,
+              payload: {
+                title: `Approve high-risk tool action: ${ctx.toolName}`,
+                summary: `${ctx.toolName} is classified as ${ctx.riskLevel ?? "destructive"} and requires formal board approval before execution.`,
+                recommendedAction: "Approve only if the reviewed action matches the intended operation.",
+                risks: [
+                  "The tool may perform irreversible or externally visible side effects.",
+                  "Execution uses the immutable arguments stored on this action request.",
+                ],
+                source: "tool_gateway",
+                invocationId: invocation.id,
+                actionRequestId,
+                tool: ctx.toolName,
+                risk: ctx.riskLevel,
+                argumentsHash: invocation.argumentsHash ?? argumentsHash,
+              },
+            })
+            .returning({ id: approvals.id });
+          approvalId = approval?.id ?? null;
+          if (approvalId && ctx.issueId) {
+            await tx.insert(issueApprovals).values({
+              companyId: ctx.companyId,
+              issueId: ctx.issueId,
+              approvalId,
+              linkedByAgentId: ctx.agentId,
+            });
+          }
+        }
+        [actionRequest] = await tx.insert(toolActionRequests).values({
+          id: actionRequestId,
+          companyId: ctx.companyId,
+          invocationId: invocation.id,
+          issueId: ctx.issueId,
+          approvalId,
+          status: "pending",
+          canonicalArguments: input.request.arguments ?? {},
+          canonicalArgumentsHash: invocation.argumentsHash ?? argumentsHash,
+          canonicalArgumentsSummary: redaction.summary,
+          policySnapshot: {
+            decision: accessDecision.decision,
+            reasonCode: accessDecision.reasonCode,
+            explanation: accessDecision.explanation,
+            matchedPolicyIds: accessDecision.matchedPolicyIds,
+            policyExplanation: accessDecision.policyExplanation ?? null,
+          },
+          approvalSnapshot: approvalAdmission.approvalSnapshot,
+          previewMarkdown: approvalAdmission.previewMarkdown,
+          expiresAt: approvalAdmission.expiresAt,
+          requestedByAgentId: ctx.actorType === "agent" ? ctx.agentId : null,
+          requestedByUserId: ctx.actorType === "user" ? ctx.actorId : null,
+        }).returning();
+      }
+      return { invocation, replayed: false, actionRequest };
+    });
   }
 
   async function matchingApprovedActionRequestCount(input: {
@@ -1477,7 +1580,11 @@ export function toolAccessPolicyService(db: Db) {
         actorType: invocation.actorType as ToolAccessContext["actorType"],
         actorId: invocation.actorId ?? invocation.agentId ?? "system",
         agentId: invocation.agentId,
-        heartbeatRunId: invocation.runId,
+        runId: invocation.runId,
+        issueExecutionRefId: null,
+        adapterConfigRevisionId: null,
+        executionMode: null,
+        ownershipEpoch: null,
         issueId: invocation.issueId,
         projectId: invocation.issueId ? issueProjectById.get(invocation.issueId) ?? null : null,
         routineId: null,

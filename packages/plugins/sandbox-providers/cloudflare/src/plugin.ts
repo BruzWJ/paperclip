@@ -1,7 +1,13 @@
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import { randomUUID } from "node:crypto";
+import {
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+} from "@paperclipai/plugin-sdk";
 import type {
   PluginLogger,
   PluginEnvironmentAcquireLeaseParams,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
@@ -25,6 +31,7 @@ const SANDBOX_EXEC_CHANNEL_ENV = "PAPERCLIP_SANDBOX_EXEC_CHANNEL";
 const SANDBOX_EXEC_CHANNEL_BRIDGE = "bridge";
 const CLOUDFLARE_EXEC_STDOUT_PREFIX = "[cloudflare exec stdout]";
 const CLOUDFLARE_EXEC_STDERR_PREFIX = "[cloudflare exec stderr]";
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
 function isLostLeaseError(error: unknown): boolean {
   return error instanceof CloudflareBridgeError && (error.status === 404 || error.status === 409);
@@ -278,6 +285,7 @@ const plugin = definePlugin({
         await client.execute(
           {
             providerLeaseId: params.lease.providerLeaseId,
+            executionId: randomUUID(),
             command: "mkdir",
             args: ["-p", remoteCwd],
             cwd: "/",
@@ -304,53 +312,96 @@ const plugin = definePlugin({
   async onEnvironmentExecute(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
-    if (!params.lease.providerLeaseId) {
-      return {
-        exitCode: 1,
-        timedOut: false,
-        signal: null,
-        stdout: "",
-        stderr: "No provider lease ID available for execution.\n",
-      };
-    }
-
     const { config, client } = bridgeClientFor(params.config);
     const session = resolveExecuteSession(config, params.env);
-    try {
-      // Bridge-channel commands carry machine-consumed stdout (JSON, base64,
-      // file contents). The @cloudflare/sandbox SDK's streaming mode can drop
-      // the final stdout chunk when the inner shell exits the same tick as it
-      // writes (e.g. `cat ready.json && exit 0`), so we never stream for
-      // bridge control traffic — only adapter sessions get live log forwarding.
-      const isBridgeChannel = params.env?.[SANDBOX_EXEC_CHANNEL_ENV] === SANDBOX_EXEC_CHANNEL_BRIDGE;
-      const streamingOptions = pluginLogger && !isBridgeChannel
-        ? {
-            onOutput: async (stream: "stdout" | "stderr", chunk: string) => {
-              logCloudflareExecChunk(pluginLogger, stream, chunk);
+    return await activeExecutions.execute(params, {
+      cancel: async (reason) => {
+        if (!params.lease.providerLeaseId) return;
+        const result = await client.cancelExecution(
+          {
+            providerLeaseId: params.lease.providerLeaseId,
+            executionId: params.executionId,
+            reason,
+          },
+          { environmentId: params.environmentId, issueId: params.issueId },
+        );
+        if (!result.cancelled) {
+          throw new Error(
+            `Cloudflare bridge did not acknowledge exact execution "${params.executionId}".`,
+          );
+        }
+      },
+      execute: async () => {
+        if (!params.lease.providerLeaseId) {
+          return {
+            exitCode: 1,
+            timedOut: false,
+            signal: null,
+            stdout: "",
+            stderr: "No provider lease ID available for execution.\n",
+          };
+        }
+        try {
+          // Bridge-channel commands carry machine-consumed stdout (JSON,
+          // base64, file contents), so only adapter sessions use live stream
+          // forwarding.
+          const isBridgeChannel = params.env?.[SANDBOX_EXEC_CHANNEL_ENV] === SANDBOX_EXEC_CHANNEL_BRIDGE;
+          const streamingOptions = pluginLogger && !isBridgeChannel
+            ? {
+                onOutput: async (stream: "stdout" | "stderr", chunk: string) => {
+                  logCloudflareExecChunk(pluginLogger, stream, chunk);
+                },
+              }
+            : undefined;
+          return await client.execute(
+            {
+              providerLeaseId: params.lease.providerLeaseId,
+              executionId: params.executionId,
+              command: params.command,
+              args: params.args,
+              cwd: params.cwd,
+              env: sanitizeExecuteEnv(params.env),
+              stdin: params.stdin ?? null,
+              timeoutMs: params.timeoutMs ?? config.timeoutMs,
+              sessionStrategy: session.sessionStrategy,
+              sessionId: session.sessionId,
             },
+            { environmentId: params.environmentId, issueId: params.issueId },
+            streamingOptions,
+          );
+        } catch (error) {
+          if (error instanceof CloudflareBridgeError && isLostLeaseError(error)) {
+            return lostLeaseExecuteResult(error);
           }
-        : undefined;
-      return await client.execute(
-        {
-          providerLeaseId: params.lease.providerLeaseId,
-          command: params.command,
-          args: params.args,
-          cwd: params.cwd,
-          env: sanitizeExecuteEnv(params.env),
-          stdin: params.stdin ?? null,
-          timeoutMs: params.timeoutMs ?? config.timeoutMs,
-          sessionStrategy: session.sessionStrategy,
-          sessionId: session.sessionId,
-        },
-        { environmentId: params.environmentId, issueId: params.issueId },
-        streamingOptions,
-      );
-    } catch (error) {
-      if (error instanceof CloudflareBridgeError && isLostLeaseError(error)) {
-        return lostLeaseExecuteResult(error);
-      }
-      throw error;
-    }
+          throw error;
+        }
+      },
+    });
+  },
+
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async (reason) => {
+        if (!params.lease.providerLeaseId) return false;
+        const { client } = bridgeClientFor(params.config);
+        const result = await client.cancelExecution(
+          {
+            providerLeaseId:
+              params.lease.providerLeaseId,
+            executionId: params.executionId,
+            reason,
+          },
+          {
+            environmentId: params.environmentId,
+            issueId: params.issueId,
+          },
+        );
+        return result.cancelled;
+      },
+    );
   },
 });
 

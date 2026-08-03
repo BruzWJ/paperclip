@@ -159,7 +159,9 @@ export function InboxAgentPolicyControl({ companyId }: { companyId: string | nul
                       />
                       <AgentIcon icon={agent.icon} className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 truncate text-sm">{agent.name}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">{agent.role}</span>
+                      {agent.title ? (
+                        <span className="shrink-0 text-xs text-muted-foreground">{agent.title}</span>
+                      ) : null}
                     </label>
                   </li>
                 );

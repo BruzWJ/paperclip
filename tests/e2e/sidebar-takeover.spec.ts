@@ -1,4 +1,4 @@
-import { test, expect, request as pwRequest, type APIRequestContext } from "@playwright/test";
+import { test, expect, request as pwRequest, type APIRequestContext } from "./fixtures";
 
 /**
  * E2E: Sidebar takeover model (PAP-10695).
@@ -15,16 +15,16 @@ import { test, expect, request as pwRequest, type APIRequestContext } from "@pla
  * The plugin `routeSidebar` half of this behavior shares the exact same Layout
  * code path (one `secondarySidebar`/`hasSecondarySidebar` resolver drives both
  * company-settings and plugin routes) and is covered by the unit tests in
- * `ui/src/components/Layout.test.tsx`. A live plugin-route e2e requires the
- * `plugin-llm-wiki` plugin to be installed in the throwaway e2e instance, which
- * is out of scope for this default local_trusted run; visual QA of both panes
- * is delegated to the QA child issue.
+ * `ui/src/components/Layout.test.tsx`. A plugin-route browser check requires a
+ * dedicated test-owned plugin fixture and is out of scope for this suite;
+ * visual QA of both panes is delegated to the QA child issue.
  */
 
 const PORT = Number(process.env.PAPERCLIP_E2E_PORT ?? 3199);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const COMPANY_NAME_PREFIX = "E2E-SidebarTakeover";
 const COLLAPSED_STORAGE_KEY = "paperclip.sidebar.collapsed";
+const AUTH_STORAGE_STATE = process.env.PAPERCLIP_E2E_STORAGE_STATE_PATH;
 
 // The sidebar header's "Open search" control only renders when the app sidebar
 // is expanded (pinned or peeking); in the collapsed rail it is hidden to fit
@@ -35,8 +35,6 @@ const APP_SIDEBAR_EXPANDED_MARKER = "Open search";
 async function createCompany(board: APIRequestContext): Promise<{ id: string; prefix: string }> {
   const healthRes = await board.get(`${BASE_URL}/api/health`);
   expect(healthRes.ok()).toBe(true);
-  const health = await healthRes.json();
-  expect(health.deploymentMode).toBe("local_trusted");
 
   const companyRes = await board.post(`${BASE_URL}/api/companies`, {
     data: { name: `${COMPANY_NAME_PREFIX}-${Date.now()}` },
@@ -57,7 +55,10 @@ test.describe("Sidebar takeover (collapse + secondary pane)", () => {
   let prefix: string;
 
   test.beforeAll(async () => {
-    board = await pwRequest.newContext({ baseURL: BASE_URL });
+    board = await pwRequest.newContext({
+      baseURL: BASE_URL,
+      storageState: AUTH_STORAGE_STATE,
+    });
     const company = await createCompany(board);
     companyId = company.id;
     prefix = company.prefix;

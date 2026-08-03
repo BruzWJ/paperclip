@@ -13,8 +13,22 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
-import type { ApprovalComment } from "@paperclipai/shared";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+  type ApprovalComment,
+} from "@paperclipai/shared";
 import { MarkdownBody } from "../components/MarkdownBody";
+
+function completeBooleanGrantMap<Key extends string>(
+  keys: readonly Key[],
+  values: Partial<Record<Key, boolean>>,
+): Record<Key, boolean> {
+  return Object.fromEntries(
+    keys.map((key) => [key, values[key] === true]),
+  ) as Record<Key, boolean>;
+}
 
 export function ApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -113,7 +127,56 @@ export function ApprovalDetail() {
   });
 
   const resubmitMutation = useMutation({
-    mutationFn: () => approvalsApi.resubmit(approvalId!),
+    mutationFn: async () => {
+      if (!approval || approval.type !== "hire_agent") {
+        return approvalsApi.resubmit(approvalId!);
+      }
+
+      const hirePayload = approval.payload as Record<string, unknown>;
+      const agentId = hirePayload.agentId;
+      const runtimeAgentConfigurationAuditId =
+        hirePayload.runtimeAgentConfigurationAuditId;
+      const runtimeAgentConfigurationRequestDigest =
+        hirePayload.runtimeAgentConfigurationRequestDigest;
+      if (
+        typeof agentId !== "string" ||
+        typeof runtimeAgentConfigurationAuditId !== "string" ||
+        typeof runtimeAgentConfigurationRequestDigest !== "string"
+      ) {
+        throw new Error(
+          "Hire approval is missing its audited runtime-configuration contract",
+        );
+      }
+
+      const current = await agentsApi.getRuntimeConfiguration(
+        agentId,
+        approval.companyId,
+      );
+      return approvalsApi.resubmitHire(approvalId!, {
+        agentId,
+        runtimeAgentConfigurationAuditId,
+        runtimeAgentConfigurationRequestDigest,
+        configuration: {
+          name: current.identity.name,
+          title: current.identity.title,
+          capabilities: current.identity.capabilities,
+          reportsTo: current.identity.reportsTo,
+          contextGrants: completeBooleanGrantMap(
+            AGENT_CONTEXT_GRANT_KEYS,
+            current.contextGrants,
+          ),
+          actionGrants: completeBooleanGrantMap(
+            PAPERCLIP_ACTION_KEYS,
+            current.actionGrants,
+          ),
+          mentionReachGrants: completeBooleanGrantMap(
+            AGENT_MENTION_REACH_GRANT_KEYS,
+            current.mentionReachGrants,
+          ),
+          companyToolIds: current.companyToolIds,
+        },
+      });
+    },
     onSuccess: () => {
       setError(null);
       refresh();
@@ -129,16 +192,6 @@ export function ApprovalDetail() {
       refresh();
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Comment failed"),
-  });
-
-  const deleteAgentMutation = useMutation({
-    mutationFn: (agentId: string) => agentsApi.remove(agentId),
-    onSuccess: () => {
-      setError(null);
-      refresh();
-      navigate("/approvals");
-    },
-    onError: (err) => setError(err instanceof Error ? err.message : "Delete failed"),
   });
 
   if (isLoading) return <PageSkeleton variant="detail" />;
@@ -304,20 +357,6 @@ export function ApprovalDetail() {
               disabled={resubmitMutation.isPending}
             >
               Mark resubmitted
-            </Button>
-          )}
-          {approval.status === "rejected" && approval.type === "hire_agent" && linkedAgentId && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-destructive border-destructive/40"
-              onClick={() => {
-                if (!window.confirm("Delete this disapproved agent? This cannot be undone.")) return;
-                deleteAgentMutation.mutate(linkedAgentId);
-              }}
-              disabled={deleteAgentMutation.isPending}
-            >
-              Delete disapproved agent
             </Button>
           )}
         </div>

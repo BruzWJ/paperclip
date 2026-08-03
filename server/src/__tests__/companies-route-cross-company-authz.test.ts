@@ -1,10 +1,12 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const companyAId = "11111111-1111-4111-8111-111111111111";
 const companyBId = "22222222-2222-4222-8222-222222222222";
-const ceoAgentId = "ceo-agent-a";
+const agentAId = "agent-a";
 
 const mockCompanyService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -22,7 +24,7 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockAccessService = vi.hoisted(() => ({
   ensureMembership: vi.fn(),
-  ensureRoleDefaultGrants: vi.fn(),
+  stampRoleGrants: vi.fn(),
 }));
 
 const mockBudgetService = vi.hoisted(() => ({
@@ -76,7 +78,11 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api/companies", companyRoutes({} as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use(
+    "/api/companies",
+    companyRoutes({} as any, undefined, {} as never),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -90,8 +96,9 @@ function createCompany(id: string) {
     status: "active",
     issuePrefix: id === companyAId ? "CPA" : "CPB",
     issueCounter: 1,
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetCurrency: "USD",
+    budgetMonthlyAmount: "0",
+    knownSpendAmount: "0",
     requireBoardApprovalForNewAgents: false,
     feedbackDataSharingEnabled: false,
     brandColor: "#123456",
@@ -166,9 +173,16 @@ function resetMockDefaults() {
     ...createCompany(id),
     status: "archived",
   }));
-  mockCompanyService.remove.mockImplementation(async (id: string) => createCompany(id));
+  mockCompanyService.remove.mockImplementation(async (id: string) => ({
+    companyId: id,
+    lifecycleOperationId: "33333333-3333-4333-8333-333333333333",
+    generation: 1,
+    status: "completed",
+    purged: true,
+    alreadyAbsent: false,
+  }));
   mockAgentService.getById.mockImplementation(async (id: string) => {
-    if (id === ceoAgentId) return { id, companyId: companyAId, role: "ceo" };
+    if (id === agentAId) return { id, companyId: companyAId };
     return null;
   });
   mockCompanyPortabilityService.exportBundle.mockResolvedValue(exportResult());
@@ -188,12 +202,12 @@ function assertNoTargetMutationSideEffects() {
   expect(mockLogActivity).not.toHaveBeenCalled();
 }
 
-function companyACeoActor() {
+function companyAAgentActor() {
   return {
     type: "agent",
-    agentId: ceoAgentId,
+    agentId: agentAId,
     companyId: companyAId,
-    source: "agent_key",
+    source: "internal",
     runId: "run-1",
   };
 }
@@ -205,14 +219,12 @@ function boardActor(input: {
   isInstanceAdmin?: boolean;
   source?: string;
 }) {
-  return {
-    type: "board",
+  return testBoardSessionActor({
     userId: input.userId,
-    source: input.source ?? "session",
     companyIds: input.companyIds ?? [],
     memberships: input.memberships ?? [],
     isInstanceAdmin: input.isInstanceAdmin ?? false,
-  };
+  });
 }
 
 describe.sequential("company route cross-company authorization", () => {
@@ -261,36 +273,39 @@ describe.sequential("company route cross-company authorization", () => {
       label: "POST /api/companies/:companyId/imports/apply",
       request: (app: express.Express) => request(app).post(`/api/companies/${companyBId}/imports/apply`).send(importRequest()),
     },
-  ])("rejects a company A CEO attempting company B operation: $label", async ({ request: buildRequest }) => {
-    const app = await createApp(companyACeoActor());
+  ])("rejects a company A agent attempting company B operation: $label", async ({ request: buildRequest }) => {
+    const app = await createApp(companyAAgentActor());
 
     const res = await buildRequest(app);
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/another company|access to this company|active company access/i);
+    expect(res.body.error).toMatch(/generic company API|run-scoped compiled interface/i);
     assertNoTargetMutationSideEffects();
   });
 
-  it("allows a same-company CEO to use CEO-safe company routes without allowing board-only lifecycle routes", async () => {
-    const app = await createApp(companyACeoActor());
+  it("rejects same-company agent credentials on every generic company route", async () => {
+    const app = await createApp(companyAAgentActor());
 
-    await request(app).get(`/api/companies/${companyAId}`).expect(200);
-    await request(app).patch(`/api/companies/${companyAId}`).send({ brandColor: "#abcdef" }).expect(200);
-    await request(app).patch(`/api/companies/${companyAId}/branding`).send({ brandColor: "#abcdef" }).expect(200);
-    await request(app).post(`/api/companies/${companyAId}/export`).send(exportRequest).expect(200);
-    await request(app).post(`/api/companies/${companyAId}/exports/preview`).send(exportRequest).expect(200);
-    await request(app).post(`/api/companies/${companyAId}/imports/preview`).send(importRequest(companyAId)).expect(200);
-    await request(app).post(`/api/companies/${companyAId}/imports/apply`).send(importRequest(companyAId)).expect(200);
+    const responses = [
+      await request(app).get(`/api/companies/${companyAId}`),
+      await request(app).patch(`/api/companies/${companyAId}`).send({ brandColor: "#abcdef" }),
+      await request(app).patch(`/api/companies/${companyAId}/branding`).send({ brandColor: "#abcdef" }),
+      await request(app).post(`/api/companies/${companyAId}/archive`).send({}),
+      await request(app).delete(`/api/companies/${companyAId}`),
+      await request(app).post(`/api/companies/${companyAId}/export`).send(exportRequest),
+      await request(app).post(`/api/companies/${companyAId}/exports/preview`).send(exportRequest),
+      await request(app).post(`/api/companies/${companyAId}/imports/preview`).send(importRequest(companyAId)),
+      await request(app).post(`/api/companies/${companyAId}/imports/apply`).send(importRequest(companyAId)),
+    ];
 
-    const archive = await request(app).post(`/api/companies/${companyAId}/archive`).send({});
-    expect(archive.status).toBe(403);
-    expect(archive.body.error).toContain("Board access required");
-    const remove = await request(app).delete(`/api/companies/${companyAId}`);
-    expect(remove.status).toBe(403);
-    expect(remove.body.error).toContain("Board access required");
+    for (const response of responses) {
+      expect(response.status).toBe(403);
+      expect(response.body.error).toMatch(/generic company API|run-scoped compiled interface/i);
+    }
+    assertNoTargetMutationSideEffects();
   });
 
-  it("covers board actor access for non-member, viewer, active member, local trusted board, and instance admin without target membership", async () => {
+  it("covers board actor access for non-member, viewer, active member, and instance admins without target membership", async () => {
     const nonMemberApp = await createApp(boardActor({ userId: "outsider" }));
     const nonMember = await request(nonMemberApp).get(`/api/companies/${companyBId}`);
     expect(nonMember.status).toBe(403);
@@ -328,13 +343,16 @@ describe.sequential("company route cross-company authorization", () => {
 
     vi.clearAllMocks();
     resetMockDefaults();
-    const localTrustedApp = await createApp(boardActor({
-      userId: "local-board",
-      source: "local_implicit",
+    const adminWithoutSnapshotApp = await createApp(boardActor({
+      userId: "board-user",
+      source: "session",
       isInstanceAdmin: true,
     }));
-    await request(localTrustedApp).get(`/api/companies/${companyBId}`).expect(200);
-    await request(localTrustedApp).patch(`/api/companies/${companyBId}`).send({ description: "Local" }).expect(200);
+    await request(adminWithoutSnapshotApp).get(`/api/companies/${companyBId}`).expect(403);
+    await request(adminWithoutSnapshotApp)
+      .patch(`/api/companies/${companyBId}`)
+      .send({ description: "Denied" })
+      .expect(403);
 
     vi.clearAllMocks();
     resetMockDefaults();

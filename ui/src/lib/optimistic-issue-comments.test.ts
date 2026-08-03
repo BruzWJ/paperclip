@@ -1,28 +1,107 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Issue } from "@paperclipai/shared";
+import type {
+  BoardIssueComment,
+  BoardIssueCommentGroupPage,
+  Issue,
+} from "@paperclipai/shared";
 import {
   applyLocalQueuedIssueCommentState,
   applyOptimisticIssueFieldUpdate,
   applyOptimisticIssueFieldUpdateToCollection,
-  applyOptimisticIssueCommentUpdate,
   createOptimisticIssueComment,
-  flattenIssueCommentPages,
-  getNextIssueCommentPageParam,
+  flattenBoardIssueCommentGroupPages,
   isQueuedIssueComment,
-  loadRemainingIssueCommentPages,
   matchesIssueRef,
   mergeIssueComments,
-  removeIssueCommentFromPages,
   shouldAutoloadOlderIssueComments,
   takeOptimisticIssueComment,
   upsertIssueComment,
-  upsertIssueCommentInPages,
 } from "./optimistic-issue-comments";
+import {
+  createTestExecutionWorkspace,
+  createTestIssue,
+} from "../test-utils/issue";
 
 describe("optimistic issue comments", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  const boardComment = (
+    id: string,
+    canonicalSequence: number,
+    body: string,
+  ): BoardIssueComment => ({
+    id,
+    author: {
+      type: "user",
+      label: "Test User",
+      agentId: null,
+      userId: "user-1",
+      pluginKey: null,
+    },
+    body,
+    presentation: null,
+    metadata: null,
+    sourceTrust: null,
+    runState: null,
+    canonicalSequence,
+    immediateParentDisplayReference: null,
+    createdAt: new Date(`2026-03-28T14:00:0${canonicalSequence}.000Z`),
+    updatedAt: new Date(`2026-03-28T14:00:0${canonicalSequence}.000Z`),
+  });
+
+  it("keeps independently paged replies inside their canonical root group", () => {
+    const root = boardComment("root-1", 1, "Root");
+    const firstReply = { kind: "comment" as const, ...boardComment("reply-1", 2, "First") };
+    const laterReply = { kind: "comment" as const, ...boardComment("reply-2", 3, "Later") };
+    const pages: BoardIssueCommentGroupPage[] = [{
+      groups: [{
+        root,
+        replyCount: 2,
+        runSegmentCount: 0,
+        entries: [firstReply],
+        entriesNextCursor: "thread-cursor-1",
+      }],
+      nextCursor: null,
+    }];
+
+    const collapsed = flattenBoardIssueCommentGroupPages(
+      pages,
+      { companyId: "company-1", issueId: "issue-1" },
+    );
+    expect(collapsed.map((comment) => comment.id)).toEqual(["root-1"]);
+    expect(collapsed[0]).toMatchObject({
+      boardGroupRootId: "root-1",
+      boardGroupHasMore: true,
+    });
+
+    const flattened = flattenBoardIssueCommentGroupPages(
+      pages,
+      { companyId: "company-1", issueId: "issue-1" },
+      new Map([[
+        root.id,
+        {
+          entries: [firstReply, laterReply],
+          nextCursor: null,
+          expanded: true,
+          loading: false,
+          error: null,
+        },
+      ]]),
+    );
+
+    expect(flattened.map((comment) => comment.id)).toEqual([
+      "root-1",
+      "reply-1",
+      "reply-2",
+    ]);
+    expect(flattened[1]?.boardGroupHasMore).toBeUndefined();
+    expect(flattened[2]).toMatchObject({
+      boardGroupRootId: "root-1",
+    });
+    expect(flattened[2]?.boardGroupHasMore).toBeUndefined();
   });
 
   it("creates a pending optimistic comment for the current user", () => {
@@ -86,6 +165,9 @@ describe("optimistic issue comments", () => {
           authorType: "user",
           presentation: null,
           metadata: null,
+          runId: null,
+          canonicalSourceKind: "human_comment",
+          canonicalSequence: 1,
           createdAt: new Date("2026-03-28T14:00:02.000Z"),
           updatedAt: new Date("2026-03-28T14:00:02.000Z"),
         },
@@ -172,121 +254,6 @@ describe("optimistic issue comments", () => {
     expect(next[0]?.body).toBe("Updated");
   });
 
-  it("flattens paged comments into one chronological thread", () => {
-    const flattened = flattenIssueCommentPages([
-      [
-        {
-          id: "comment-3",
-          companyId: "company-1",
-          issueId: "issue-1",
-          authorAgentId: null,
-          authorUserId: "board-1",
-          body: "Newest",
-          authorType: "user",
-          presentation: null,
-          metadata: null,
-          createdAt: new Date("2026-03-28T14:00:03.000Z"),
-          updatedAt: new Date("2026-03-28T14:00:03.000Z"),
-        },
-      ],
-      [
-        {
-          id: "comment-1",
-          companyId: "company-1",
-          issueId: "issue-1",
-          authorAgentId: null,
-          authorUserId: "board-1",
-          body: "Oldest",
-          authorType: "user",
-          presentation: null,
-          metadata: null,
-          createdAt: new Date("2026-03-28T14:00:01.000Z"),
-          updatedAt: new Date("2026-03-28T14:00:01.000Z"),
-        },
-        {
-          id: "comment-2",
-          companyId: "company-1",
-          issueId: "issue-1",
-          authorAgentId: null,
-          authorUserId: "board-1",
-          body: "Middle",
-          authorType: "user",
-          presentation: null,
-          metadata: null,
-          createdAt: new Date("2026-03-28T14:00:02.000Z"),
-          updatedAt: new Date("2026-03-28T14:00:02.000Z"),
-        },
-      ],
-    ]);
-
-    expect(flattened.map((comment) => comment.id)).toEqual(["comment-1", "comment-2", "comment-3"]);
-  });
-
-  it("returns no next page param when the last page is missing", () => {
-    expect(getNextIssueCommentPageParam(undefined, 50)).toBeUndefined();
-  });
-
-  it("returns the oldest id when the last page is full", () => {
-    expect(
-      getNextIssueCommentPageParam(
-        [
-          {
-            id: "comment-2",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "Second",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:02.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:02.000Z"),
-          },
-          {
-            id: "comment-1",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "First",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:01.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:01.000Z"),
-          },
-        ],
-        2,
-      ),
-    ).toBe("comment-1");
-  });
-
-  it("loads remaining comment pages until the terminal partial page", async () => {
-    const fetchPage = vi.fn(async (afterCommentId: string) => {
-      if (afterCommentId === "comment-3") return [{ id: "comment-2" }, { id: "comment-1" }];
-      if (afterCommentId === "comment-1") return [{ id: "comment-0" }];
-      return [];
-    });
-
-    const loaded = await loadRemainingIssueCommentPages({
-      pages: [[{ id: "comment-4" }, { id: "comment-3" }]],
-      pageParams: [null],
-      pageSize: 2,
-      fetchPage,
-    });
-
-    expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(fetchPage).toHaveBeenNthCalledWith(1, "comment-3");
-    expect(fetchPage).toHaveBeenNthCalledWith(2, "comment-1");
-    expect(loaded.pages.map((page) => page.map((comment) => comment.id))).toEqual([
-      ["comment-4", "comment-3"],
-      ["comment-2", "comment-1"],
-      ["comment-0"],
-    ]);
-    expect(loaded.pageParams).toEqual([null, "comment-3", "comment-1"]);
-  });
-
   it("autoloads older chat comments while the initial thread is still under the threshold", () => {
     expect(
       shouldAutoloadOlderIssueComments({
@@ -326,188 +293,35 @@ describe("optimistic issue comments", () => {
     ).toBe(false);
   });
 
-  it("upserts paged comments without dropping older pages", () => {
-    const nextPages = upsertIssueCommentInPages(
-      [
-        [
-          {
-            id: "comment-3",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "Newest",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:03.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:03.000Z"),
-          },
-        ],
-        [
-          {
-            id: "comment-1",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "Oldest",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:01.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:01.000Z"),
-          },
-        ],
-      ],
-      {
-        id: "comment-4",
-        companyId: "company-1",
-        issueId: "issue-1",
-        authorAgentId: null,
-        authorUserId: "board-1",
-        body: "Brand new",
-        authorType: "user",
-        presentation: null,
-        metadata: null,
-        createdAt: new Date("2026-03-28T14:00:04.000Z"),
-        updatedAt: new Date("2026-03-28T14:00:04.000Z"),
-      },
-    );
-
-    expect(nextPages[0]?.map((comment) => comment.id)).toEqual(["comment-4", "comment-3"]);
-    expect(nextPages[1]?.map((comment) => comment.id)).toEqual(["comment-1"]);
-  });
-
-  it("removes a confirmed queued comment from paged caches", () => {
-    const nextPages = removeIssueCommentFromPages(
-      [
-        [
-          {
-            id: "comment-3",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "Newest",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:03.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:03.000Z"),
-          },
-        ],
-        [
-          {
-            id: "comment-2",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "Middle",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:02.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:02.000Z"),
-          },
-          {
-            id: "comment-1",
-            companyId: "company-1",
-            issueId: "issue-1",
-            authorAgentId: null,
-            authorUserId: "board-1",
-            body: "Oldest",
-            authorType: "user",
-            presentation: null,
-            metadata: null,
-            createdAt: new Date("2026-03-28T14:00:01.000Z"),
-            updatedAt: new Date("2026-03-28T14:00:01.000Z"),
-          },
-        ],
-      ],
-      "comment-2",
-    );
-
-    expect(nextPages).toHaveLength(2);
-    expect(nextPages[0]?.map((comment) => comment.id)).toEqual(["comment-3"]);
-    expect(nextPages[1]?.map((comment) => comment.id)).toEqual(["comment-1"]);
-  });
-
-  it("applies optimistic reopen and reassignment updates to the issue cache", () => {
-    const next = applyOptimisticIssueCommentUpdate(
-      {
-        id: "issue-1",
-        companyId: "company-1",
-        projectId: null,
-        projectWorkspaceId: null,
-        goalId: null,
-        parentId: null,
-        title: "Fix comment flow",
-        description: null,
-        status: "done",
-        workMode: "standard",
-        priority: "medium",
-        assigneeAgentId: "agent-1",
-        assigneeUserId: null,
-        responsibleUserId: null,
-        checkoutRunId: null,
-        executionRunId: null,
-        executionAgentNameKey: null,
-        executionLockedAt: null,
-        createdByAgentId: null,
-        createdByUserId: "board-1",
-        issueNumber: 1,
-        identifier: "PAP-1",
-        originKind: "manual",
-        originId: null,
-        originRunId: null,
-        requestDepth: 0,
-        billingCode: null,
-        assigneeAdapterOverrides: null,
-        executionWorkspaceId: null,
-        executionWorkspacePreference: null,
-        executionWorkspaceSettings: null,
-        startedAt: null,
-        completedAt: null,
-        cancelledAt: null,
-        hiddenAt: null,
-        createdAt: new Date("2026-03-28T14:00:00.000Z"),
-        updatedAt: new Date("2026-03-28T14:00:00.000Z"),
-      },
-      {
-        reopen: true,
-        reassignment: {
-          assigneeAgentId: null,
-          assigneeUserId: "board-2",
-        },
-      },
-    );
-
-    expect(next?.status).toBe("todo");
-    expect(next?.assigneeAgentId).toBeNull();
-    expect(next?.assigneeUserId).toBe("board-2");
-  });
-
   it("applies optimistic field updates for issue property edits", () => {
+    const currentExecutionWorkspace = createTestExecutionWorkspace({
+      id: "exec-1",
+      projectId: "project-1",
+      sourceIssueId: "issue-1",
+      mode: "shared_workspace",
+      strategyType: "project_primary",
+      name: "Execution workspace",
+      cwd: "/tmp/paperclip",
+      lastUsedAt: new Date("2026-03-28T14:00:00.000Z"),
+      openedAt: new Date("2026-03-28T14:00:00.000Z"),
+      createdAt: new Date("2026-03-28T14:00:00.000Z"),
+      updatedAt: new Date("2026-03-28T14:00:00.000Z"),
+    });
     const next = applyOptimisticIssueFieldUpdate(
-      {
+      createTestIssue({
         id: "issue-1",
-        companyId: "company-1",
         projectId: "project-1",
         projectWorkspaceId: "workspace-1",
-        goalId: null,
-        parentId: null,
         ancestors: [
           {
             id: "issue-9",
             identifier: "PAP-9",
             title: "Old parent",
-            description: null,
-            status: "todo",
+            request: "Parent request",
+            boardPresentationStatus: "todo",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
             projectId: null,
             goalId: null,
             project: null,
@@ -515,34 +329,14 @@ describe("optimistic issue comments", () => {
           },
         ],
         title: "Fix property pane",
-        description: null,
-        status: "todo",
-        workMode: "standard",
-        priority: "medium",
-        assigneeAgentId: "agent-1",
-        assigneeUserId: null,
-        responsibleUserId: null,
-        checkoutRunId: null,
-        executionRunId: null,
-        executionAgentNameKey: null,
-        executionLockedAt: null,
-        createdByAgentId: null,
-        createdByUserId: "board-1",
-        issueNumber: 1,
-        identifier: "PAP-1",
-        originKind: "manual",
-        originId: null,
-        originRunId: null,
-        requestDepth: 0,
-        billingCode: null,
-        assigneeAdapterOverrides: null,
-        executionWorkspaceId: "exec-1",
+        request: "Update the issue properties",
+        boardPresentationStatus: "todo",
+        ownerKind: "agent",
+        ownerAgentId: "agent-1",
+        ownerUserId: null,
+        creatorKind: "user/board",
+        creatorUserId: "board-1",
         executionWorkspacePreference: "shared_workspace",
-        executionWorkspaceSettings: null,
-        startedAt: null,
-        completedAt: null,
-        cancelledAt: null,
-        hiddenAt: null,
         labelIds: ["label-1", "label-2"],
         labels: [
           {
@@ -567,19 +361,19 @@ describe("optimistic issue comments", () => {
             id: "issue-2",
             identifier: "PAP-2",
             title: "First blocker",
-            status: "todo",
+            boardPresentationStatus: "todo",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
           {
             id: "issue-3",
             identifier: "PAP-3",
             title: "Second blocker",
-            status: "todo",
+            boardPresentationStatus: "todo",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
         ],
         blocks: [],
@@ -618,51 +412,30 @@ describe("optimistic issue comments", () => {
           createdAt: new Date("2026-03-28T14:00:00.000Z"),
           updatedAt: new Date("2026-03-28T14:00:00.000Z"),
         },
-        currentExecutionWorkspace: {
-          id: "exec-1",
-          companyId: "company-1",
-          projectId: "project-1",
-          projectWorkspaceId: null,
-          sourceIssueId: "issue-1",
-          mode: "shared_workspace",
-          strategyType: "project_primary",
-          branchName: null,
-          status: "active",
-          name: "Execution workspace",
-          cwd: "/tmp/paperclip",
-          repoUrl: null,
-          baseRef: null,
-          providerType: "local_fs",
-          providerRef: null,
-          derivedFromExecutionWorkspaceId: null,
-          lastUsedAt: new Date("2026-03-28T14:00:00.000Z"),
-          cleanupEligibleAt: null,
-          cleanupReason: null,
-          config: null,
-          metadata: null,
-          createdAt: new Date("2026-03-28T14:00:00.000Z"),
-          updatedAt: new Date("2026-03-28T14:00:00.000Z"),
-          openedAt: new Date("2026-03-28T14:00:00.000Z"),
-          closedAt: null,
-        },
+        currentExecutionWorkspace,
         createdAt: new Date("2026-03-28T14:00:00.000Z"),
         updatedAt: new Date("2026-03-28T14:00:00.000Z"),
-      },
+      }),
       {
-        status: "in_review",
-        assigneeAgentId: null,
-        assigneeUserId: "board-2",
+        boardPresentationStatus: "in_review",
+        ownerKind: "user",
+        ownerAgentId: null,
+        ownerUserId: "board-2",
+        ownerAssignmentSource: null,
+        ownershipEpoch: 2,
         labelIds: ["label-2"],
         blockedByIssueIds: ["issue-3"],
         parentId: "issue-4",
         projectId: "project-2",
-        executionWorkspaceId: "exec-2",
+        executionWorkspacePreference: "isolated_workspace",
       },
     );
 
-    expect(next?.status).toBe("in_review");
-    expect(next?.assigneeAgentId).toBeNull();
-    expect(next?.assigneeUserId).toBe("board-2");
+    expect(next?.boardPresentationStatus).toBe("in_review");
+    expect(next?.ownerKind).toBe("user");
+    expect(next?.ownerAgentId).toBeNull();
+    expect(next?.ownerUserId).toBe("board-2");
+    expect(next?.ownershipEpoch).toBe(2);
     expect(next?.labelIds).toEqual(["label-2"]);
     expect(next?.labels?.map((label) => label.id)).toEqual(["label-2"]);
     expect(next?.blockedBy?.map((relation) => relation.id)).toEqual(["issue-3"]);
@@ -670,8 +443,8 @@ describe("optimistic issue comments", () => {
     expect(next?.ancestors).toBeUndefined();
     expect(next?.projectId).toBe("project-2");
     expect(next?.project).toBeNull();
-    expect(next?.executionWorkspaceId).toBe("exec-2");
-    expect(next?.currentExecutionWorkspace).toBeNull();
+    expect(next?.executionWorkspacePreference).toBe("isolated_workspace");
+    expect(next?.currentExecutionWorkspace).toBe(currentExecutionWorkspace);
   });
 
   it("matches issues by either uuid or identifier reference", () => {
@@ -682,98 +455,48 @@ describe("optimistic issue comments", () => {
 
   it("applies optimistic field updates across cached issue collections", () => {
     const issues: Issue[] = [
-      {
+      createTestIssue({
         id: "issue-1",
-        companyId: "company-1",
-        projectId: null,
-        projectWorkspaceId: null,
-        goalId: null,
-        parentId: null,
         title: "Fix property pane",
-        description: null,
-        status: "todo",
-        workMode: "standard",
-        priority: "medium",
-        assigneeAgentId: "agent-1",
-        assigneeUserId: null,
-        responsibleUserId: null,
-        checkoutRunId: null,
-        executionRunId: null,
-        executionAgentNameKey: null,
-        executionLockedAt: null,
-        createdByAgentId: null,
-        createdByUserId: "board-1",
-        issueNumber: 1,
-        identifier: "PAP-1",
-        originKind: "manual",
-        originId: null,
-        originRunId: null,
-        requestDepth: 0,
-        billingCode: null,
-        assigneeAdapterOverrides: null,
-        executionWorkspaceId: null,
-        executionWorkspacePreference: null,
-        executionWorkspaceSettings: null,
-        startedAt: null,
-        completedAt: null,
-        cancelledAt: null,
-        hiddenAt: null,
+        request: "Update the issue properties",
+        ownerKind: "agent",
+        ownerAgentId: "agent-1",
+        ownerUserId: null,
         labelIds: [],
         labels: [],
         blockedBy: [],
         blocks: [],
         createdAt: new Date("2026-03-28T14:00:00.000Z"),
         updatedAt: new Date("2026-03-28T14:00:00.000Z"),
-      },
-      {
+      }),
+      createTestIssue({
         id: "issue-2",
-        companyId: "company-1",
-        projectId: null,
-        projectWorkspaceId: null,
-        goalId: null,
-        parentId: null,
         title: "Leave me alone",
-        description: null,
-        status: "todo",
-        workMode: "standard",
-        priority: "medium",
-        assigneeAgentId: "agent-2",
-        assigneeUserId: null,
-        responsibleUserId: null,
-        checkoutRunId: null,
-        executionRunId: null,
-        executionAgentNameKey: null,
-        executionLockedAt: null,
-        createdByAgentId: null,
-        createdByUserId: "board-1",
+        request: "Preserve this issue",
         issueNumber: 2,
         identifier: "PAP-2",
-        originKind: "manual",
-        originId: null,
-        originRunId: null,
-        requestDepth: 0,
-        billingCode: null,
-        assigneeAdapterOverrides: null,
-        executionWorkspaceId: null,
-        executionWorkspacePreference: null,
-        executionWorkspaceSettings: null,
-        startedAt: null,
-        completedAt: null,
-        cancelledAt: null,
-        hiddenAt: null,
+        ownerKind: "agent",
+        ownerAgentId: "agent-2",
+        ownerUserId: null,
         labelIds: [],
         labels: [],
         blockedBy: [],
         blocks: [],
         createdAt: new Date("2026-03-28T14:00:00.000Z"),
         updatedAt: new Date("2026-03-28T14:00:00.000Z"),
-      },
+      }),
     ];
 
-    const next = applyOptimisticIssueFieldUpdateToCollection(issues, ["PAP-1"], { assigneeAgentId: "agent-9" });
+    const next = applyOptimisticIssueFieldUpdateToCollection(issues, ["PAP-1"], {
+      ownerKind: "agent",
+      ownerAgentId: "agent-9",
+      ownerUserId: null,
+      ownerAssignmentSource: null,
+      ownershipEpoch: 2,
+    });
 
-    expect(next?.[0]?.assigneeAgentId).toBe("agent-9");
-    expect(next?.[1]?.assigneeAgentId).toBe("agent-2");
+    expect(next?.[0]?.ownerAgentId).toBe("agent-9");
+    expect(next?.[1]?.ownerAgentId).toBe("agent-2");
   });
 
   it("treats comments without a run id as queued when they arrive during an active run", () => {

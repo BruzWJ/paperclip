@@ -1,11 +1,39 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, costEvents, financeEvents, goals, heartbeatRuns, issues, projects } from "@paperclipai/db";
+import {
+  agents,
+  financeEvents,
+  goals,
+  issues,
+  projects,
+} from "@paperclipai/db";
+import {
+  canonicalizeMoneyAmount,
+  compareMoneyAmounts,
+  parseMoneyAmount,
+  subtractMoneyAmounts,
+  type FinanceDirection,
+  type FinanceSummaryRow,
+  type MoneyAmount,
+} from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 
 export interface FinanceDateRange {
   from?: Date;
   to?: Date;
+}
+
+function trustedAmount(value: string | null | undefined): MoneyAmount {
+  return canonicalizeMoneyAmount(value ?? "0");
+}
+
+function parseFinanceCurrency(value: unknown) {
+  if (typeof value !== "string" || !/^[A-Z]{3}$/.test(value)) {
+    throw unprocessable(
+      "Finance currency must be an exact uppercase three-letter code",
+    );
+  }
+  return value;
 }
 
 async function assertBelongsToCompany(
@@ -20,115 +48,164 @@ async function assertBelongsToCompany(
     .from(table)
     .where(eq(table.id, id))
     .then((rows) => rows[0] ?? null);
-
   if (!row) throw notFound(`${label} not found`);
-  if ((row as unknown as { companyId: string }).companyId !== companyId) {
+  if ((row as { companyId: string }).companyId !== companyId) {
     throw unprocessable(`${label} does not belong to company`);
   }
 }
 
 function rangeConditions(companyId: string, range?: FinanceDateRange) {
-  const conditions: ReturnType<typeof eq>[] = [eq(financeEvents.companyId, companyId)];
+  const conditions = [eq(financeEvents.companyId, companyId)];
   if (range?.from) conditions.push(gte(financeEvents.occurredAt, range.from));
   if (range?.to) conditions.push(lte(financeEvents.occurredAt, range.to));
   return conditions;
 }
 
-export function financeService(db: Db) {
-  const debitExpr = sql<number>`coalesce(sum(case when ${financeEvents.direction} = 'debit' then ${financeEvents.amountCents} else 0 end), 0)::double precision`;
-  const creditExpr = sql<number>`coalesce(sum(case when ${financeEvents.direction} = 'credit' then ${financeEvents.amountCents} else 0 end), 0)::double precision`;
-  const estimatedDebitExpr = sql<number>`coalesce(sum(case when ${financeEvents.direction} = 'debit' and ${financeEvents.estimated} = true then ${financeEvents.amountCents} else 0 end), 0)::double precision`;
-
+function aggregateSelection() {
   return {
-    createEvent: async (companyId: string, data: Omit<typeof financeEvents.$inferInsert, "companyId">) => {
-      if (data.agentId) await assertBelongsToCompany(db, agents, data.agentId, companyId, "Agent");
-      if (data.issueId) await assertBelongsToCompany(db, issues, data.issueId, companyId, "Issue");
-      if (data.projectId) await assertBelongsToCompany(db, projects, data.projectId, companyId, "Project");
-      if (data.goalId) await assertBelongsToCompany(db, goals, data.goalId, companyId, "Goal");
-      if (data.heartbeatRunId) await assertBelongsToCompany(db, heartbeatRuns, data.heartbeatRunId, companyId, "Heartbeat run");
-      if (data.costEventId) await assertBelongsToCompany(db, costEvents, data.costEventId, companyId, "Cost event");
+    debitAmount:
+      sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'debit' then ${financeEvents.amount} else 0 end), 0)::text`,
+    creditAmount:
+      sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'credit' then ${financeEvents.amount} else 0 end), 0)::text`,
+    estimatedDebitAmount:
+      sql<string>`coalesce(sum(case when ${financeEvents.direction} = 'debit' and ${financeEvents.estimated} = true then ${financeEvents.amount} else 0 end), 0)::text`,
+    eventCount: sql<number>`count(*)::int`,
+  };
+}
 
+function netAmount(
+  debitAmount: MoneyAmount,
+  creditAmount: MoneyAmount,
+): { netDirection: FinanceDirection; netAmount: MoneyAmount } {
+  const comparison = compareMoneyAmounts(debitAmount, creditAmount);
+  if (comparison >= 0) {
+    return {
+      netDirection: "debit",
+      netAmount: subtractMoneyAmounts(debitAmount, creditAmount),
+    };
+  }
+  return {
+    netDirection: "credit",
+    netAmount: subtractMoneyAmounts(creditAmount, debitAmount),
+  };
+}
+
+function summaryRow(row: {
+  currency: string;
+  debitAmount: string;
+  creditAmount: string;
+  estimatedDebitAmount: string;
+  eventCount: number;
+}): FinanceSummaryRow {
+  const debitAmount = trustedAmount(row.debitAmount);
+  const creditAmount = trustedAmount(row.creditAmount);
+  return {
+    currency: row.currency,
+    debitAmount,
+    creditAmount,
+    ...netAmount(debitAmount, creditAmount),
+    estimatedDebitAmount: trustedAmount(row.estimatedDebitAmount),
+    eventCount: Number(row.eventCount),
+  };
+}
+
+export function financeService(db: Db) {
+  return {
+    createEvent: async (
+      companyId: string,
+      data: Omit<typeof financeEvents.$inferInsert, "companyId">,
+    ) => {
+      if (data.agentId) {
+        await assertBelongsToCompany(db, agents, data.agentId, companyId, "Agent");
+      }
+      if (data.issueId) {
+        await assertBelongsToCompany(db, issues, data.issueId, companyId, "Issue");
+      }
+      if (data.projectId) {
+        await assertBelongsToCompany(db, projects, data.projectId, companyId, "Project");
+      }
+      if (data.goalId) {
+        await assertBelongsToCompany(db, goals, data.goalId, companyId, "Goal");
+      }
       const event = await db
         .insert(financeEvents)
         .values({
           ...data,
           companyId,
-          currency: data.currency ?? "USD",
+          amount: parseMoneyAmount(data.amount),
+          currency: parseFinanceCurrency(data.currency),
           direction: data.direction ?? "debit",
           estimated: data.estimated ?? false,
         })
         .returning()
-        .then((rows) => rows[0]);
-
-      return event;
+        .then((rows) => rows[0]!);
+      return { ...event, amount: trustedAmount(event.amount) };
     },
 
     summary: async (companyId: string, range?: FinanceDateRange) => {
-      const conditions = rangeConditions(companyId, range);
-      const [row] = await db
-        .select({
-          debitCents: debitExpr,
-          creditCents: creditExpr,
-          estimatedDebitCents: estimatedDebitExpr,
-          eventCount: sql<number>`count(*)::int`,
-        })
+      const rows = await db
+        .select({ currency: financeEvents.currency, ...aggregateSelection() })
         .from(financeEvents)
-        .where(and(...conditions));
-
+        .where(and(...rangeConditions(companyId, range)))
+        .groupBy(financeEvents.currency)
+        .orderBy(financeEvents.currency);
       return {
         companyId,
-        debitCents: Number(row?.debitCents ?? 0),
-        creditCents: Number(row?.creditCents ?? 0),
-        netCents: Number(row?.debitCents ?? 0) - Number(row?.creditCents ?? 0),
-        estimatedDebitCents: Number(row?.estimatedDebitCents ?? 0),
-        eventCount: Number(row?.eventCount ?? 0),
+        currencies: rows.map(summaryRow),
       };
     },
 
     byBiller: async (companyId: string, range?: FinanceDateRange) => {
-      const conditions = rangeConditions(companyId, range);
-      return db
+      const rows = await db
         .select({
           biller: financeEvents.biller,
-          debitCents: debitExpr,
-          creditCents: creditExpr,
-          estimatedDebitCents: estimatedDebitExpr,
-          eventCount: sql<number>`count(*)::int`,
-          kindCount: sql<number>`count(distinct ${financeEvents.eventKind})::int`,
-          netCents: sql<number>`(${debitExpr} - ${creditExpr})::double precision`,
+          currency: financeEvents.currency,
+          ...aggregateSelection(),
+          kindCount:
+            sql<number>`count(distinct ${financeEvents.eventKind})::int`,
         })
         .from(financeEvents)
-        .where(and(...conditions))
-        .groupBy(financeEvents.biller)
-        .orderBy(desc(sql`(${debitExpr} - ${creditExpr})::double precision`), financeEvents.biller);
+        .where(and(...rangeConditions(companyId, range)))
+        .groupBy(financeEvents.biller, financeEvents.currency)
+        .orderBy(financeEvents.currency, financeEvents.biller);
+      return rows.map((row) => ({
+        biller: row.biller,
+        ...summaryRow(row),
+        kindCount: Number(row.kindCount),
+      }));
     },
 
     byKind: async (companyId: string, range?: FinanceDateRange) => {
-      const conditions = rangeConditions(companyId, range);
-      return db
+      const rows = await db
         .select({
           eventKind: financeEvents.eventKind,
-          debitCents: debitExpr,
-          creditCents: creditExpr,
-          estimatedDebitCents: estimatedDebitExpr,
-          eventCount: sql<number>`count(*)::int`,
+          currency: financeEvents.currency,
+          ...aggregateSelection(),
           billerCount: sql<number>`count(distinct ${financeEvents.biller})::int`,
-          netCents: sql<number>`(${debitExpr} - ${creditExpr})::double precision`,
         })
         .from(financeEvents)
-        .where(and(...conditions))
-        .groupBy(financeEvents.eventKind)
-        .orderBy(desc(sql`(${debitExpr} - ${creditExpr})::double precision`), financeEvents.eventKind);
+        .where(and(...rangeConditions(companyId, range)))
+        .groupBy(financeEvents.eventKind, financeEvents.currency)
+        .orderBy(financeEvents.currency, financeEvents.eventKind);
+      return rows.map((row) => ({
+        eventKind: row.eventKind,
+        ...summaryRow(row),
+        billerCount: Number(row.billerCount),
+      }));
     },
 
-    list: async (companyId: string, range?: FinanceDateRange, limit: number = 100) => {
-      const conditions = rangeConditions(companyId, range);
-      return db
+    list: async (
+      companyId: string,
+      range?: FinanceDateRange,
+      limit = 100,
+    ) => {
+      const rows = await db
         .select()
         .from(financeEvents)
-        .where(and(...conditions))
+        .where(and(...rangeConditions(companyId, range)))
         .orderBy(desc(financeEvents.occurredAt), desc(financeEvents.createdAt))
         .limit(limit);
+      return rows.map((row) => ({ ...row, amount: trustedAmount(row.amount) }));
     },
   };
 }

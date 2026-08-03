@@ -28,7 +28,7 @@ function usageAgent(over: Partial<CompanySkillUsageAgent>): CompanySkillUsageAge
     id: "agent-1",
     name: "Reviewer",
     urlKey: "reviewer",
-    adapterType: "claude_local",
+    adapterType: "codex",
     desired: true,
     actualState: null,
     versionId: null,
@@ -38,7 +38,7 @@ function usageAgent(over: Partial<CompanySkillUsageAgent>): CompanySkillUsageAge
 
 const USAGE_AGENTS: CompanySkillUsageAgent[] = [
   usageAgent({ id: "agent-1", name: "Reviewer", urlKey: "reviewer" }),
-  usageAgent({ id: "agent-2", name: "Coder", urlKey: "coder", adapterType: "codex_local" }),
+  usageAgent({ id: "agent-2", name: "Coder", urlKey: "coder", adapterType: "codex" }),
   usageAgent({ id: "agent-3", name: "Planner", urlKey: "planner" }),
 ];
 

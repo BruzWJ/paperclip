@@ -54,61 +54,11 @@ export interface SandboxRemoteExecutionSpec {
   apiKey: string | null;
 }
 
-/**
- * Remote paths handed to an asset's `provision.extractCommand`. All are POSIX
- * paths inside the sandbox: `assetTarPath` is the uploaded asset tarball,
- * `assetDir` is where the asset should be materialized, and `runtimeRootDir`
- * is the directory any `stageFiles` were written into.
- */
-export interface SandboxManagedRuntimeAssetProvisionContext {
-  assetTarPath: string;
-  assetDir: string;
-  runtimeRootDir: string;
-}
-
-/**
- * Per-asset inbound provisioning contribution. The core is adapter-agnostic:
- * an asset that supplies neither `stageFiles` nor `extractCommand` is extracted
- * with a plain `tar -xf`. An adapter that needs custom provisioning (e.g. a
- * credential merge) supplies helper files via `stageFiles` and the shell
- * command that consumes them via `extractCommand`.
- */
-export interface SandboxManagedRuntimeAssetProvision {
-  /**
-   * Extra files written into `runtimeRootDir` (alongside the asset tar) before
-   * the extract command runs — typically helper scripts the extract command
-   * invokes. Contents may be raw bytes or a UTF-8 string.
-   */
-  stageFiles?: { name: string; contents: Buffer | string }[];
-  /**
-   * Builds the shell command that materializes the uploaded asset tar into
-   * `assetDir`. Defaults to a plain `tar -xf` extraction when omitted.
-   */
-  extractCommand?: (ctx: SandboxManagedRuntimeAssetProvisionContext) => string;
-}
-
-/**
- * Context passed to an asset's `restore` contribution during teardown.
- * `assetDir` is the asset's directory inside the sandbox and `readFile` reads
- * a file back from the sandbox as raw bytes.
- */
-export interface SandboxManagedRuntimeAssetRestoreContext {
-  assetDir: string;
-  readFile: (remotePath: string) => Promise<Buffer>;
-}
-
 export interface SandboxManagedRuntimeAsset {
   key: string;
   localDir: string;
   followSymlinks?: boolean;
   exclude?: string[];
-  /** Optional inbound provisioning contribution (staged files + extract command). */
-  provision?: SandboxManagedRuntimeAssetProvision;
-  /**
-   * Optional teardown/outbound contribution, invoked once per asset during
-   * `restoreWorkspace`. Defaults to a no-op when omitted.
-   */
-  restore?: (ctx: SandboxManagedRuntimeAssetRestoreContext) => Promise<void>;
 }
 
 /**
@@ -519,6 +469,7 @@ function makeTransferProgress(
   runtimeStatus?: {
     sink: RuntimeStatusSink | undefined;
     phase: RuntimeStatusPhase;
+    target?: "sandbox" | "plugin";
   },
 ): {
   options: SandboxTransferProgressOptions | undefined;
@@ -540,7 +491,7 @@ function makeTransferProgress(
     },
     phase,
     direction,
-    target: "sandbox",
+    target: runtimeStatus?.target ?? "sandbox",
     label,
   });
   return {
@@ -557,6 +508,7 @@ function makeTransferProgress(
 
 export async function prepareSandboxManagedRuntime(input: {
   spec: SandboxRemoteExecutionSpec;
+  runtimeTarget?: "sandbox" | "plugin";
   adapterKey: string;
   client: SandboxManagedRuntimeClient;
   workspaceLocalDir: string;
@@ -569,6 +521,7 @@ export async function prepareSandboxManagedRuntime(input: {
   onProgress?: RuntimeProgressSink;
   onRuntimeProgress?: RuntimeStatusSink;
 }): Promise<PreparedSandboxManagedRuntime> {
+  const runtimeTarget = input.runtimeTarget ?? "sandbox";
   const workspaceRemoteDir = input.workspaceRemoteDir ?? input.spec.remoteCwd;
   const runtimeRootDir = path.posix.join(workspaceRemoteDir, ".paperclip-runtime", input.adapterKey);
   const gitSnapshot = await readGitWorkspaceSnapshot(input.workspaceLocalDir);
@@ -600,14 +553,18 @@ export async function prepareSandboxManagedRuntime(input: {
   let syncOperationSeq = 0;
   const nextSyncOperationId = () => `sync-op-${++syncOperationSeq}`;
 
-  await withTempDir("paperclip-sandbox-sync-", async (tempDir) => {
+  await withTempDir(`paperclip-${runtimeTarget}-sync-`, async (tempDir) => {
     const preservedNames = new Set([
       ".paperclip-runtime",
       ...(gitSnapshot ? [".git"] : []),
       ...(input.preserveAbsentOnRestore ?? []),
     ]);
     if (gitSnapshot) {
-      await emitRuntimeStatus(input.onRuntimeProgress, "git_sync", "Syncing git history to sandbox");
+      await emitRuntimeStatus(
+        input.onRuntimeProgress,
+        "git_sync",
+        `Syncing git history to ${runtimeTarget}`,
+      );
       await withShallowGitWorkspaceClone({
         localDir: input.workspaceLocalDir,
         snapshot: gitSnapshot,
@@ -616,7 +573,7 @@ export async function prepareSandboxManagedRuntime(input: {
         // on the target (and the git overlay merges on top rather than replacing),
         // which the generic destroy-then-replace file mapping cannot express, so
         // they always take the tar path. Native transfer is used for the clean
-        // destroy-then-replace cases (default-provision assets inbound; the
+        // destroy-then-replace cases (runtime assets inbound; the
         // workspace download into a fresh host dir outbound).
         const gitTarPath = path.join(tempDir, "git-workspace.tar");
         await createTarballFromDirectory({
@@ -632,7 +589,11 @@ export async function prepareSandboxManagedRuntime(input: {
           "Syncing",
           "to",
           "git history",
-          { sink: input.onRuntimeProgress, phase: "git_sync" },
+          {
+            sink: input.onRuntimeProgress,
+            phase: "git_sync",
+            target: runtimeTarget,
+          },
         );
         await input.client.writeFile(remoteGitTar, toArrayBuffer(gitTarBytes), gitUpload.options);
         await gitUpload.finish(gitTarBytes.byteLength, gitTarBytes.byteLength);
@@ -650,7 +611,11 @@ export async function prepareSandboxManagedRuntime(input: {
 
     const workspaceTarPath = path.join(tempDir, "workspace.tar");
     const workspaceArchiveDir = gitSnapshot ? path.join(tempDir, "workspace-overlay") : input.workspaceLocalDir;
-    await emitRuntimeStatus(input.onRuntimeProgress, "config_sync", "Syncing workspace to sandbox");
+    await emitRuntimeStatus(
+      input.onRuntimeProgress,
+      "config_sync",
+      `Syncing workspace to ${runtimeTarget}`,
+    );
     if (gitSnapshot) {
       await copySelectedWorkspaceEntries({
         sourceDir: input.workspaceLocalDir,
@@ -672,7 +637,11 @@ export async function prepareSandboxManagedRuntime(input: {
       "Syncing",
       "to",
       "workspace",
-      { sink: input.onRuntimeProgress, phase: "config_sync" },
+      {
+        sink: input.onRuntimeProgress,
+        phase: "config_sync",
+        target: runtimeTarget,
+      },
     );
     await input.client.writeFile(
       remoteWorkspaceTar,
@@ -702,17 +671,13 @@ export async function prepareSandboxManagedRuntime(input: {
     }
 
     for (const asset of input.assets ?? []) {
-      await emitRuntimeStatus(input.onRuntimeProgress, "config_sync", "Syncing runtime assets to sandbox");
+      await emitRuntimeStatus(
+        input.onRuntimeProgress,
+        "config_sync",
+        `Syncing runtime assets to ${runtimeTarget}`,
+      );
       const remoteAssetDir = path.posix.join(runtimeRootDir, asset.key);
-      // Assets with custom provisioning (staged helper files or a bespoke extract
-      // command such as a credential merge) do more than a plain directory
-      // replacement, so they cannot be expressed as a generic file mapping and
-      // always take the tar path. A default-provisioned asset is a clean
-      // destroy-then-replace of its own directory, which the native transport
-      // reproduces exactly.
-      const usesCustomProvision =
-        Boolean(asset.provision?.extractCommand) || (asset.provision?.stageFiles?.length ?? 0) > 0;
-      if (nativeSyncIn && !usesCustomProvision) {
+      if (nativeSyncIn) {
         const operations: SandboxSyncOperation[] = [{
           operationId: nextSyncOperationId(),
           files: [{
@@ -732,7 +697,11 @@ export async function prepareSandboxManagedRuntime(input: {
           "Syncing",
           "to",
           asset.key,
-          { sink: input.onRuntimeProgress, phase: "config_sync" },
+          {
+            sink: input.onRuntimeProgress,
+            phase: "config_sync",
+            target: runtimeTarget,
+          },
         );
         await input.client.syncIn!(operations);
         await assetUpload.finish(0, 0);
@@ -752,28 +721,18 @@ export async function prepareSandboxManagedRuntime(input: {
         "Syncing",
         "to",
         asset.key,
-        { sink: input.onRuntimeProgress, phase: "config_sync" },
+        {
+          sink: input.onRuntimeProgress,
+          phase: "config_sync",
+          target: runtimeTarget,
+        },
       );
       await input.client.writeFile(remoteAssetTar, toArrayBuffer(assetTarBytes), assetUpload.options);
       await assetUpload.finish(assetTarBytes.byteLength, assetTarBytes.byteLength);
-      for (const stageFile of asset.provision?.stageFiles ?? []) {
-        const stageBytes = typeof stageFile.contents === "string"
-          ? Buffer.from(stageFile.contents)
-          : stageFile.contents;
-        const safeName = stageFile.name;
-        if (/[\\/]|\.\.(\.|$)/.test(safeName) || safeName === "..") {
-          throw new Error(`provision stageFile.name must be a simple basename, got: ${safeName}`);
-        }
-        await input.client.writeFile(
-          path.posix.join(runtimeRootDir, safeName),
-          toArrayBuffer(stageBytes),
-        );
-      }
-      const extractCommand = asset.provision?.extractCommand?.({
-        assetTarPath: remoteAssetTar,
-        assetDir: remoteAssetDir,
-        runtimeRootDir,
-      }) ?? buildDefaultExtractRuntimeAssetCommand({ remoteAssetDir, remoteAssetTar });
+      const extractCommand = buildDefaultExtractRuntimeAssetCommand({
+        remoteAssetDir,
+        remoteAssetTar,
+      });
       await input.client.run(
         `sh -c ${shellQuote(extractCommand)}`,
         { timeoutMs: input.spec.timeoutMs },
@@ -793,153 +752,187 @@ export async function prepareSandboxManagedRuntime(input: {
     assetDirs,
     restoreWorkspace: async (onProgress?: RuntimeProgressSink) => {
       const restoreSink = onProgress ?? input.onProgress;
-      await withTempDir("paperclip-sandbox-restore-", async (tempDir) => {
-        let importedRef: string | null = null;
-        let importedHead: string | null = null;
-        let remoteWorkspaceStatus = "dirty";
-        try {
-          if (gitSnapshot) {
-            await emitRuntimeStatus(input.onRuntimeProgress, "export", "Exporting git changes from sandbox");
-            importedRef = createImportedGitRef("sandbox");
-            const remoteGitBundle = path.posix.join(runtimeRootDir, "git-delta.bundle");
-            const remoteWorkspaceStatusPath = path.posix.join(runtimeRootDir, "workspace-status.txt");
-            const exportRef = createRemoteGitExportRef("sandbox");
-            await input.client.run(
-              `sh -c ${shellQuote(buildRemoteGitDeltaBundleScript({
-                remoteDir: workspaceRemoteDir,
-                baseSha: gitSnapshot.headCommit,
+      await withTempDir(
+        `paperclip-${runtimeTarget}-restore-`,
+        async (tempDir) => {
+          let importedRef: string | null = null;
+          let importedHead: string | null = null;
+          let remoteWorkspaceStatus = "dirty";
+          try {
+            if (gitSnapshot) {
+              await emitRuntimeStatus(
+                input.onRuntimeProgress,
+                "export",
+                `Exporting git changes from ${runtimeTarget}`,
+              );
+              importedRef = createImportedGitRef(runtimeTarget);
+              const remoteGitBundle = path.posix.join(runtimeRootDir, "git-delta.bundle");
+              const remoteWorkspaceStatusPath = path.posix.join(runtimeRootDir, "workspace-status.txt");
+              const exportRef = createRemoteGitExportRef(runtimeTarget);
+              await input.client.run(
+                `sh -c ${shellQuote(buildRemoteGitDeltaBundleScript({
+                  remoteDir: workspaceRemoteDir,
+                  baseSha: gitSnapshot.headCommit,
+                  exportRef,
+                  bundlePath: remoteGitBundle,
+                  statusPath: remoteWorkspaceStatusPath,
+                }))}`,
+                { timeoutMs: input.spec.timeoutMs },
+              );
+              const gitExport = makeTransferProgress(
+                restoreSink,
+                "Exporting git history",
+                "from",
+                undefined,
+                {
+                  sink: input.onRuntimeProgress,
+                  phase: "export",
+                  target: runtimeTarget,
+                },
+              );
+              const bundleBytes = await input.client.readFile(
+                remoteGitBundle,
+                gitExport.options,
+              );
+              const bundleBuffer = toBuffer(bundleBytes);
+              await gitExport.finish(
+                bundleBuffer.byteLength,
+                bundleBuffer.byteLength,
+              );
+              await input.client.remove(remoteGitBundle).catch(() => undefined);
+              remoteWorkspaceStatus = await input.client.readFile(remoteWorkspaceStatusPath)
+                .then((bytes) => toBuffer(bytes).toString("utf8").trim())
+                .catch(() => "dirty");
+              remoteWorkspaceStatus = remoteWorkspaceStatus === "clean" ? "clean" : "dirty";
+              await input.client.remove(remoteWorkspaceStatusPath).catch(() => undefined);
+              const bundlePath = path.join(tempDir, "git-delta.bundle");
+              await fs.writeFile(bundlePath, bundleBuffer);
+              importedHead = await fetchGitBundleIntoLocalRef({
+                localDir: input.workspaceLocalDir,
+                bundlePath,
                 exportRef,
-                bundlePath: remoteGitBundle,
-                statusPath: remoteWorkspaceStatusPath,
-              }))}`,
-              { timeoutMs: input.spec.timeoutMs },
-            );
-            const gitExport = makeTransferProgress(
-              restoreSink,
-              "Exporting git history",
-              "from",
-              undefined,
-              { sink: input.onRuntimeProgress, phase: "export" },
-            );
-            const bundleBytes = await input.client.readFile(remoteGitBundle, gitExport.options);
-            const bundleBuffer = toBuffer(bundleBytes);
-            await gitExport.finish(bundleBuffer.byteLength, bundleBuffer.byteLength);
-            await input.client.remove(remoteGitBundle).catch(() => undefined);
-            remoteWorkspaceStatus = await input.client.readFile(remoteWorkspaceStatusPath)
-              .then((bytes) => toBuffer(bytes).toString("utf8").trim())
-              .catch(() => "dirty");
-            remoteWorkspaceStatus = remoteWorkspaceStatus === "clean" ? "clean" : "dirty";
-            await input.client.remove(remoteWorkspaceStatusPath).catch(() => undefined);
-            const bundlePath = path.join(tempDir, "git-delta.bundle");
-            await fs.writeFile(bundlePath, bundleBuffer);
-            importedHead = await fetchGitBundleIntoLocalRef({
-              localDir: input.workspaceLocalDir,
-              bundlePath,
-              exportRef,
-              importedRef,
-              baseSha: gitSnapshot.headCommit,
-            });
-          }
+                importedRef,
+                baseSha: gitSnapshot.headCommit,
+              });
+            }
 
-          await emitRuntimeStatus(input.onRuntimeProgress, "restore", "Restoring workspace from sandbox");
-          const extractedDir = path.join(tempDir, "workspace");
-          if (nativeSyncOut) {
-            // Native outbound: the provider materializes the sandbox workspace into
-            // a fresh host directory. It is a clean destroy-then-replace into a
-            // temp dir the orchestrator just created, so it maps exactly to a
-            // generic directory file mapping; the host-side baseline merge below is
-            // unchanged.
-            const operations: SandboxSyncOperation[] = [{
-              operationId: nextSyncOperationId(),
-              files: [{
-                sourcePath: workspaceRemoteDir,
-                targetPath: extractedDir,
-                kind: "directory",
-                exclude: restoreExclude,
-              }],
-            }];
-            assertSyncOperationsConfined(operations, {
-              sourceRoots: [workspaceRemoteDir],
-              targetRoots: [extractedDir],
-            });
-            await fs.mkdir(extractedDir, { recursive: true });
-            const workspaceRestore = makeTransferProgress(
-              restoreSink,
-              "Restoring",
-              "from",
-              "workspace",
-              { sink: input.onRuntimeProgress, phase: "restore" },
+            await emitRuntimeStatus(
+              input.onRuntimeProgress,
+              "restore",
+              `Restoring workspace from ${runtimeTarget}`,
             );
-            await input.client.syncOut!(operations);
-            await workspaceRestore.finish(0, 0);
-          } else {
-            const remoteWorkspaceTar = path.posix.join(runtimeRootDir, "workspace-download.tar");
-            await input.client.run(
-              `sh -c ${shellQuote(createRemoteTarballFromDirectoryCommand({
-                remoteDir: workspaceRemoteDir,
-                archivePath: remoteWorkspaceTar,
-                exclude: restoreExclude,
-              }))}`,
-              { timeoutMs: input.spec.timeoutMs },
-            );
-            const workspaceRestore = makeTransferProgress(
-              restoreSink,
-              "Restoring",
-              "from",
-              "workspace",
-              { sink: input.onRuntimeProgress, phase: "restore" },
-            );
-            const archiveBytes = await input.client.readFile(remoteWorkspaceTar, workspaceRestore.options);
-            const archiveBuffer = toBuffer(archiveBytes);
-            await workspaceRestore.finish(archiveBuffer.byteLength, archiveBuffer.byteLength);
-            await input.client.remove(remoteWorkspaceTar).catch(() => undefined);
-            const localArchivePath = path.join(tempDir, "workspace.tar");
-            await fs.writeFile(localArchivePath, archiveBuffer);
-            await extractTarballToDirectory({
-              archivePath: localArchivePath,
-              localDir: extractedDir,
+            const extractedDir = path.join(tempDir, "workspace");
+            if (nativeSyncOut) {
+              // Native outbound materializes the managed target workspace into
+              // a fresh host directory. It is a clean destroy-then-replace into
+              // a temp dir the orchestrator just created, so it maps exactly to
+              // a generic directory file mapping.
+              const operations: SandboxSyncOperation[] = [{
+                operationId: nextSyncOperationId(),
+                files: [{
+                  sourcePath: workspaceRemoteDir,
+                  targetPath: extractedDir,
+                  kind: "directory",
+                  exclude: restoreExclude,
+                }],
+              }];
+              assertSyncOperationsConfined(operations, {
+                sourceRoots: [workspaceRemoteDir],
+                targetRoots: [extractedDir],
+              });
+              await fs.mkdir(extractedDir, { recursive: true });
+              const workspaceRestore = makeTransferProgress(
+                restoreSink,
+                "Restoring",
+                "from",
+                "workspace",
+                {
+                  sink: input.onRuntimeProgress,
+                  phase: "restore",
+                  target: runtimeTarget,
+                },
+              );
+              await input.client.syncOut!(operations);
+              await workspaceRestore.finish(0, 0);
+            } else {
+              const remoteWorkspaceTar = path.posix.join(
+                runtimeRootDir,
+                "workspace-download.tar",
+              );
+              await input.client.run(
+                `sh -c ${shellQuote(createRemoteTarballFromDirectoryCommand({
+                  remoteDir: workspaceRemoteDir,
+                  archivePath: remoteWorkspaceTar,
+                  exclude: restoreExclude,
+                }))}`,
+                { timeoutMs: input.spec.timeoutMs },
+              );
+              const workspaceRestore = makeTransferProgress(
+                restoreSink,
+                "Restoring",
+                "from",
+                "workspace",
+                {
+                  sink: input.onRuntimeProgress,
+                  phase: "restore",
+                  target: runtimeTarget,
+                },
+              );
+              const archiveBytes = await input.client.readFile(
+                remoteWorkspaceTar,
+                workspaceRestore.options,
+              );
+              const archiveBuffer = toBuffer(archiveBytes);
+              await workspaceRestore.finish(
+                archiveBuffer.byteLength,
+                archiveBuffer.byteLength,
+              );
+              await input.client.remove(remoteWorkspaceTar).catch(() => undefined);
+              const localArchivePath = path.join(tempDir, "workspace.tar");
+              await fs.writeFile(localArchivePath, archiveBuffer);
+              await extractTarballToDirectory({
+                archivePath: localArchivePath,
+                localDir: extractedDir,
+              });
+            }
+            const gitHeadToIntegrate = importedHead;
+            await mergeDirectoryWithBaseline({
+              baseline: baselineSnapshot,
+              sourceDir: extractedDir,
+              targetDir: input.workspaceLocalDir,
+              beforeApply: gitHeadToIntegrate
+                ? async () => {
+                    await integrateImportedGitHead({
+                      localDir: input.workspaceLocalDir,
+                      importedHead: gitHeadToIntegrate,
+                    });
+                  }
+                : undefined,
+              afterApply: gitSnapshot
+                ? async () => {
+                    await resetLocalGitIndexToHead({
+                      localDir: input.workspaceLocalDir,
+                      checkWorkingTreeClean:
+                        remoteWorkspaceStatus === "clean",
+                    });
+                  }
+                : undefined,
             });
+          } finally {
+            await emitRuntimeStatus(
+              input.onRuntimeProgress,
+              "finalize",
+              `Finalizing ${runtimeTarget} workspace`,
+            );
+            if (importedRef) {
+              await deleteLocalGitRef({
+                localDir: input.workspaceLocalDir,
+                ref: importedRef,
+              });
+            }
           }
-          const gitHeadToIntegrate = importedHead;
-          await mergeDirectoryWithBaseline({
-            baseline: baselineSnapshot,
-            sourceDir: extractedDir,
-            targetDir: input.workspaceLocalDir,
-            beforeApply: gitHeadToIntegrate
-              ? async () => {
-                  await integrateImportedGitHead({
-                    localDir: input.workspaceLocalDir,
-                    importedHead: gitHeadToIntegrate,
-                  });
-                }
-              : undefined,
-            afterApply: gitSnapshot
-              ? async () => {
-                  await resetLocalGitIndexToHead({
-                    localDir: input.workspaceLocalDir,
-                    checkWorkingTreeClean: remoteWorkspaceStatus === "clean",
-                  });
-                }
-              : undefined,
-          });
-
-          // Per-asset teardown/outbound contributions. Generic: an asset with
-          // no `restore` is a no-op. The contribution reads back from the
-          // sandbox (e.g. a refreshed credential) via the provided `readFile`.
-          for (const asset of input.assets ?? []) {
-            if (!asset.restore) continue;
-            await asset.restore({
-              assetDir: path.posix.join(runtimeRootDir, asset.key),
-              readFile: async (remotePath) => toBuffer(await input.client.readFile(remotePath)),
-            });
-          }
-        } finally {
-          await emitRuntimeStatus(input.onRuntimeProgress, "finalize", "Finalizing sandbox workspace");
-          if (importedRef) {
-            await deleteLocalGitRef({ localDir: input.workspaceLocalDir, ref: importedRef });
-          }
-        }
-      });
+        },
+      );
     },
   };
 }

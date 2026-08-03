@@ -52,7 +52,7 @@ describe("sandbox provider runtime", () => {
         reuseLease: true,
       },
       environmentId: "env-1",
-      heartbeatRunId: "run-1",
+      runId: "run-1",
       issueId: "issue-1",
     });
 
@@ -70,7 +70,7 @@ describe("sandbox provider runtime", () => {
         reuseLease: true,
       },
       environmentId: "env-1",
-      heartbeatRunId: "run-2",
+      runId: "run-2",
       issueId: "issue-1",
       reusableProviderLeaseId: lease.providerLeaseId,
     });

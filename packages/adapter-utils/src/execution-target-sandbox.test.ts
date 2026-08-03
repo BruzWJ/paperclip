@@ -1,7 +1,7 @@
-import { createServer } from "node:http";
+// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: AGENT_HOME, PAPERCLIP_API_URL
 import net from "node:net";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -11,7 +11,6 @@ import {
   DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
   adapterExecutionTargetSessionIdentity,
   adapterExecutionTargetToRemoteSpec,
-  adapterExecutionTargetUsesPaperclipBridge,
   ensureAdapterExecutionTargetCommandResolvable,
   formatAdapterExecutionTimeoutErrorMessage,
   formatAdapterExecutionTimeoutStartLogLine,
@@ -20,10 +19,8 @@ import {
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
   startAdapterExecutionTargetProcessSessionBridge,
-  startAdapterExecutionTargetPaperclipBridge,
   type AdapterSandboxExecutionTarget,
 } from "./execution-target.js";
-import { createSandboxRunLogTailFactory } from "./sandbox-run-log-stream.js";
 import { runChildProcess } from "./server-utils.js";
 import { shellQuote } from "./ssh.js";
 
@@ -44,6 +41,7 @@ describe("sandbox adapter execution targets", () => {
   function createLocalSandboxRunner() {
     let counter = 0;
     return {
+      ...createNoopCancellation(),
       execute: async (input: {
         command: string;
         args?: string[];
@@ -71,6 +69,15 @@ describe("sandbox adapter execution targets", () => {
     };
   }
 
+  function createNoopCancellation() {
+    return {
+      cancelExecution: vi.fn(async (input: { executionId: string }) => ({
+        executionId: input.executionId,
+        cancelled: false,
+      })),
+    };
+  }
+
   async function readRuntimeTextFiles(rootDir: string): Promise<string[]> {
     const entries = await readdir(rootDir, { withFileTypes: true }).catch(() => []);
     const contents: string[] = [];
@@ -83,17 +90,6 @@ describe("sandbox adapter execution targets", () => {
       }
     }
     return contents;
-  }
-
-  function encodeTailTick(stdout: Buffer, stderr: Buffer): string {
-    return [
-      "__PAPERCLIP_RUN_LOG_STDOUT__",
-      stdout.toString("base64"),
-      "__PAPERCLIP_RUN_LOG_STDERR__",
-      stderr.toString("base64"),
-      "__PAPERCLIP_RUN_LOG_END__",
-      "",
-    ].join("\n");
   }
 
   async function waitForCondition(predicate: () => boolean, message: string, timeoutMs = 1000): Promise<void> {
@@ -135,15 +131,9 @@ describe("sandbox adapter execution targets", () => {
     return { stdout, stderr, code };
   }
 
-  function combinedStream(
-    events: Array<{ stream: "stdout" | "stderr"; chunk: string }>,
-    stream: "stdout" | "stderr",
-  ): string {
-    return events.filter((event) => event.stream === stream).map((event) => event.chunk).join("");
-  }
-
   it("executes through the provider-neutral runner without a remote spec", async () => {
     const runner = {
+      ...createNoopCancellation(),
       execute: vi.fn(async () => ({
         exitCode: 0,
         signal: null,
@@ -194,6 +184,147 @@ describe("sandbox adapter execution targets", () => {
     });
   });
 
+  it("propagates abort to the exact sandbox command and fences a late provider result", async () => {
+    let resolveExecution!: (result: Awaited<ReturnType<typeof runAdapterExecutionTargetProcess>>) => void;
+    const execution = new Promise<Awaited<ReturnType<typeof runAdapterExecutionTargetProcess>>>(
+      (resolve) => {
+        resolveExecution = resolve;
+      },
+    );
+    const runner = {
+      execute: vi.fn(() => execution),
+      cancelExecution: vi.fn(async (input: { executionId: string }) => ({
+        executionId: input.executionId,
+        cancelled: true,
+      })),
+    };
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      providerKey: "exact-cancel-provider",
+      environmentId: "env-1",
+      leaseId: "lease-1",
+      remoteCwd: "/workspace",
+      runner,
+    };
+    const controller = new AbortController();
+    const result = runAdapterExecutionTargetProcess(
+      "productive-attempt-opaque",
+      target,
+      "agent-cli",
+      [],
+      {
+        cwd: "/local/workspace",
+        env: {},
+        abortSignal: controller.signal,
+        timeoutSec: 5,
+        graceSec: 1,
+        onLog: async () => {},
+      },
+    );
+
+    await waitForCondition(() => runner.execute.mock.calls.length === 1, "sandbox execute did not start");
+    controller.abort(new Error("operator cancelled the attempt"));
+
+    await expect(result).rejects.toMatchObject({
+      name: "AbortError",
+      message: "operator cancelled the attempt",
+    });
+    expect(runner.execute).toHaveBeenCalledWith(expect.objectContaining({
+      executionId: "productive-attempt-opaque",
+      abortSignal: controller.signal,
+    }));
+    expect(runner.cancelExecution).toHaveBeenCalledTimes(1);
+    expect(runner.cancelExecution).toHaveBeenCalledWith({
+      executionId: "productive-attempt-opaque",
+      reason: "operator cancelled the attempt",
+    });
+
+    // A provider response arriving after cancellation acknowledgement cannot
+    // turn the already-rejected productive attempt into success.
+    resolveExecution({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stdout: "late success",
+      stderr: "",
+      pid: null,
+      startedAt: new Date().toISOString(),
+    });
+    await Promise.resolve();
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("rejects sandbox execution readiness when exact cancellation is unsupported", async () => {
+    const runner = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        stdout: "",
+        stderr: "",
+        pid: null,
+        startedAt: new Date().toISOString(),
+      })),
+    };
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      providerKey: "legacy-provider",
+      remoteCwd: "/workspace",
+      runner,
+    };
+
+    await expect(
+      runAdapterExecutionTargetProcess("attempt", target, "agent-cli", [], {
+        cwd: "/local/workspace",
+        env: {},
+        timeoutSec: 5,
+        graceSec: 1,
+        onLog: async () => {},
+      }),
+    ).rejects.toThrow("does not support exact command cancellation");
+    expect(runner.execute).not.toHaveBeenCalled();
+  });
+
+  it("closes the abort race between starting the provider command and attaching the listener", async () => {
+    const controller = new AbortController();
+    const runner = {
+      execute: vi.fn(() => {
+        controller.abort("cancelled during provider launch");
+        return new Promise<never>(() => undefined);
+      }),
+      cancelExecution: vi.fn(async (input: { executionId: string }) => ({
+        executionId: input.executionId,
+        cancelled: true,
+      })),
+    };
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      remoteCwd: "/workspace",
+      runner,
+    };
+
+    await expect(
+      runAdapterExecutionTargetProcess("launch-race-attempt", target, "agent-cli", [], {
+        cwd: "/local/workspace",
+        env: {},
+        abortSignal: controller.signal,
+        timeoutSec: 5,
+        graceSec: 1,
+        onLog: async () => {},
+      }),
+    ).rejects.toMatchObject({
+      name: "AbortError",
+      message: "cancelled during provider launch",
+    });
+    expect(runner.cancelExecution).toHaveBeenCalledWith({
+      executionId: "launch-race-attempt",
+      reason: "cancelled during provider launch",
+    });
+  });
+
   it("bridges bidirectional sandbox process sessions through a local ACPX-spawnable proxy", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-"));
     cleanupDirs.push(rootDir);
@@ -236,6 +367,61 @@ describe("sandbox adapter execution targets", () => {
       expect(result.code).toBe(0);
       expect(result.stdout).toBe("out:hello\n");
       expect(result.stderr).toBe("err:hello\n");
+    } finally {
+      await bridge?.stop();
+    }
+  });
+
+  it("strips exact bridge keys but preserves unrelated operator-native Paperclip names", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-env-"));
+    cleanupDirs.push(rootDir);
+    const childPath = path.join(rootDir, "env-acp-child.mjs");
+    await writeFile(
+      childPath,
+      [
+        "const forbidden = Object.keys(process.env)",
+        "  .filter((key) => ['PAPERCLIP_API_URL', 'AGENT_HOME'].includes(key.toUpperCase()))",
+        "  .sort();",
+        "process.stdout.write(JSON.stringify({ forbidden, safe: process.env.SAFE_VALUE ?? null, operatorNative: process.env.PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN ?? null }));",
+      ].join("\n"),
+      "utf8",
+    );
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      providerKey: "local-test",
+      remoteCwd: rootDir,
+      timeoutMs: 30_000,
+      runner: createLocalSandboxRunner(),
+    };
+
+    const bridge = await startAdapterExecutionTargetProcessSessionBridge({
+      runId: "run-process-session-env",
+      target,
+      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      adapterKey: "acpx",
+      command: process.execPath,
+      args: [childPath],
+      cwd: rootDir,
+      env: {
+        SAFE_VALUE: "visible",
+        PAPERCLIP_CLOUD_PROD_PROVIDER_TOKEN: "operator-selected",
+        PAPERCLIP_API_URL: "https://paperclip.invalid",
+        AGENT_HOME: "/server/agent-home",
+      },
+      timeoutSec: 5,
+      onLog: async () => {},
+    });
+    expect(bridge).not.toBeNull();
+
+    try {
+      const result = await runProxyWithInput(bridge!.agentCommand, "");
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({
+        forbidden: [],
+        operatorNative: "operator-selected",
+        safe: "visible",
+      });
     } finally {
       await bridge?.stop();
     }
@@ -489,6 +675,69 @@ describe("sandbox adapter execution targets", () => {
     }
   });
 
+  it("terminates and reaps the remote process group when the bridge is stopped", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stop-"));
+    cleanupDirs.push(rootDir);
+    const startedPath = path.join(rootDir, "remote-child-started");
+    const stoppedPath = path.join(rootDir, "remote-child-stopped");
+    const childPath = path.join(rootDir, "long-running-acp-child.mjs");
+    await writeFile(
+      childPath,
+      [
+        "import { writeFile } from 'node:fs/promises';",
+        `const startedPath = ${JSON.stringify(startedPath)};`,
+        `const stoppedPath = ${JSON.stringify(stoppedPath)};`,
+        "process.on('SIGTERM', async () => {",
+        "  await writeFile(stoppedPath, 'SIGTERM', 'utf8');",
+        "  process.exit(0);",
+        "});",
+        "await writeFile(startedPath, 'ready', 'utf8');",
+        "setInterval(() => {}, 1000);",
+      ].join("\n"),
+      "utf8",
+    );
+    const runtimeRootDir = path.posix.join(rootDir, ".paperclip-runtime", "acp");
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      providerKey: "local-test",
+      remoteCwd: rootDir,
+      timeoutMs: 30_000,
+      runner: createLocalSandboxRunner(),
+    };
+    const bridge = await startAdapterExecutionTargetProcessSessionBridge({
+      runId: "run-process-session-stop",
+      target,
+      runtimeRootDir,
+      adapterKey: "acp",
+      command: process.execPath,
+      args: [childPath],
+      cwd: rootDir,
+      env: {},
+      timeoutSec: 5,
+      onLog: async () => {},
+    });
+    expect(bridge).not.toBeNull();
+
+    const readinessDeadline = Date.now() + 3_000;
+    while (Date.now() < readinessDeadline) {
+      if (await readFile(startedPath, "utf8").then(() => true).catch(() => false)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(await readFile(startedPath, "utf8")).toBe("ready");
+
+    await bridge!.stop();
+    await bridge!.stop();
+
+    expect(await readFile(stoppedPath, "utf8")).toBe("SIGTERM");
+    const sessionRoot = path.join(runtimeRootDir, "process-sessions");
+    expect(await readdir(sessionRoot)).toEqual([
+      "paperclip-process-session-remote.mjs",
+    ]);
+  });
+
   it("applies the remote sandbox fallback when adapter timeoutSec is unset", () => {
     const sandboxTarget: AdapterSandboxExecutionTarget = {
       kind: "remote",
@@ -639,6 +888,7 @@ describe("sandbox adapter execution targets", () => {
 
   it("uses the caller timeout override when installing a missing sandbox command", async () => {
     const runner = {
+      ...createNoopCancellation(),
       execute: vi.fn()
         .mockResolvedValueOnce({
           exitCode: 1,
@@ -662,7 +912,7 @@ describe("sandbox adapter execution targets", () => {
           exitCode: 0,
           signal: null,
           timedOut: false,
-          stdout: "/usr/bin/opencode\n",
+          stdout: "/usr/bin/fixture-agent\n",
           stderr: "",
           pid: null,
           startedAt: new Date().toISOString(),
@@ -677,22 +927,23 @@ describe("sandbox adapter execution targets", () => {
     };
 
     await ensureAdapterExecutionTargetCommandResolvable(
-      "opencode",
+      "fixture-agent",
       target,
       "/local/workspace",
       {},
-      { installCommand: "npm install -g opencode", timeoutSec: 1800 },
+      { installCommand: "npm install -g @fixture/agent-cli", timeoutSec: 1800 },
     );
 
     expect(runner.execute).toHaveBeenNthCalledWith(2, expect.objectContaining({
       command: "sh",
-      args: ["-c", "npm install -g opencode"],
+      args: ["-c", "npm install -g @fixture/agent-cli"],
       timeoutMs: 1_800_000,
     }));
   });
 
   it("runs shell commands through the same runner", async () => {
     const runner = {
+      ...createNoopCancellation(),
       execute: vi.fn(async () => ({
         exitCode: 0,
         signal: null,
@@ -730,6 +981,7 @@ describe("sandbox adapter execution targets", () => {
     vi.stubEnv("TMPDIR", "/var/folders/local/T");
 
     const runner = {
+      ...createNoopCancellation(),
       execute: vi.fn(async () => ({
         exitCode: 0,
         signal: null,
@@ -772,6 +1024,7 @@ describe("sandbox adapter execution targets", () => {
     vi.stubEnv("HOME", "/Users/local");
 
     const runner = {
+      ...createNoopCancellation(),
       execute: vi.fn(async () => ({
         exitCode: 0,
         signal: null,
@@ -810,35 +1063,10 @@ describe("sandbox adapter execution targets", () => {
     }));
   });
 
-  it("treats SSH targets as bridge-only", () => {
-    const target = {
-      kind: "remote" as const,
-      transport: "ssh" as const,
-      remoteCwd: "/workspace",
-      spec: {
-        host: "ssh.example.test",
-        port: 22,
-        username: "paperclip",
-        remoteWorkspacePath: "/workspace",
-        remoteCwd: "/workspace",
-        privateKey: null,
-        knownHosts: null,
-        strictHostKeyChecking: true,
-      },
-    };
-
-    expect(adapterExecutionTargetUsesPaperclipBridge(target)).toBe(true);
-    expect(adapterExecutionTargetSessionIdentity(target)).toEqual({
-      transport: "ssh",
-      host: "ssh.example.test",
-      port: 22,
-      username: "paperclip",
-      remoteCwd: "/workspace",
-    });
-  });
 
   it("uses the provider-declared shell for sandbox helper commands", async () => {
     const runner = {
+      ...createNoopCancellation(),
       execute: vi.fn(async () => ({
         exitCode: 0,
         signal: null,
@@ -872,560 +1100,5 @@ describe("sandbox adapter execution targets", () => {
     }));
   });
 
-  it("starts a localhost Paperclip bridge for sandbox targets in bridge mode", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-"));
-    cleanupDirs.push(rootDir);
-    const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
-    await mkdir(runtimeRootDir, { recursive: true });
 
-    const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
-    const apiServer = createServer((req, res) => {
-      requests.push({
-        method: req.method ?? "GET",
-        url: req.url ?? "/",
-        auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
-      });
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-    });
-    await new Promise<void>((resolve, reject) => {
-      apiServer.once("error", reject);
-      apiServer.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = apiServer.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected the bridge test API server to listen on a TCP port.");
-    }
-
-    const target: AdapterSandboxExecutionTarget = {
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "e2b",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      remoteCwd,
-      runner: createLocalSandboxRunner(),
-      timeoutMs: 30_000,
-    };
-
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge",
-      target,
-      runtimeRootDir,
-      adapterKey: "codex",
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: `http://127.0.0.1:${address.port}`,
-    });
-    try {
-      expect(bridge).not.toBeNull();
-      expect(bridge?.env.PAPERCLIP_API_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
-      expect(bridge?.env.PAPERCLIP_API_KEY).not.toBe("real-run-jwt");
-      expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("queue_v1");
-
-      const response = await fetch(`${bridge!.env.PAPERCLIP_API_URL}/api/agents/me`, {
-        headers: {
-          authorization: `Bearer ${bridge!.env.PAPERCLIP_API_KEY}`,
-          accept: "application/json",
-        },
-      });
-
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ ok: true });
-      expect(requests).toEqual([{
-        method: "GET",
-        url: "/api/agents/me",
-        auth: "Bearer real-run-jwt",
-        runId: "run-bridge",
-      }]);
-    } finally {
-      await bridge?.stop();
-      await new Promise<void>((resolve) => apiServer.close(() => resolve()));
-    }
-  });
-
-  it("creates a sandbox run log tail factory when bridge streaming is enabled", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-stream-"));
-    cleanupDirs.push(rootDir);
-    const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
-    await mkdir(runtimeRootDir, { recursive: true });
-
-    const logs: Array<{ stream: "stdout" | "stderr"; chunk: string }> = [];
-    const target: AdapterSandboxExecutionTarget = {
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "e2b",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      remoteCwd,
-      runner: createLocalSandboxRunner(),
-      streamRunLogs: true,
-      timeoutMs: 30_000,
-    };
-
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge-stream",
-      target,
-      runtimeRootDir,
-      adapterKey: "codex",
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: "http://127.0.0.1:9",
-      onLog: async (stream, chunk) => {
-        logs.push({ stream, chunk });
-      },
-    });
-    try {
-      expect(bridge?.runLogTail).toBeTruthy();
-      expect(combinedStream(logs, "stdout")).toContain("Sandbox run log streaming enabled");
-
-      const wrapped = bridge!.runLogTail!.create().wrapCommand("agent-cli", ["--message", "hello world"]);
-      expect(wrapped.command).toBe("sh");
-      expect(wrapped.args.join("\n")).toContain("tee -a");
-      expect(wrapped.args.join("\n")).toContain("agent-cli");
-    } finally {
-      await bridge?.stop();
-    }
-  });
-
-  it("defaults sandbox run log streaming on and honors the explicit opt-out", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-stream-default-"));
-    cleanupDirs.push(rootDir);
-    const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
-    await mkdir(runtimeRootDir, { recursive: true });
-
-    const baseTarget: AdapterSandboxExecutionTarget = {
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "e2b",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      remoteCwd,
-      runner: createLocalSandboxRunner(),
-      timeoutMs: 30_000,
-    };
-
-    const defaultBridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge-stream-default",
-      target: baseTarget,
-      runtimeRootDir,
-      adapterKey: "codex",
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: "http://127.0.0.1:9",
-    });
-    try {
-      expect(defaultBridge?.runLogTail).toBeTruthy();
-    } finally {
-      await defaultBridge?.stop();
-    }
-
-    const optOutBridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge-stream-opt-out",
-      target: { ...baseTarget, streamRunLogs: false },
-      runtimeRootDir,
-      adapterKey: "codex",
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: "http://127.0.0.1:9",
-    });
-    try {
-      expect(optOutBridge?.runLogTail ?? null).toBeNull();
-    } finally {
-      await optOutBridge?.stop();
-    }
-  });
-
-  it("tails sandbox run log chunks with byte offsets and dedupes the final batch", async () => {
-    const stdoutText = "stdout-abc\n";
-    const stderrText = "stderr-xyz\n";
-    const stdoutBytes = Buffer.from(stdoutText, "utf8");
-    const stderrBytes = Buffer.from(stderrText, "utf8");
-    const stdoutOffsets: number[] = [];
-    const stderrOffsets: number[] = [];
-    const events: Array<{ stream: "stdout" | "stderr"; chunk: string }> = [];
-
-    const runner = {
-      execute: vi.fn(async (input: {
-        command: string;
-        args?: string[];
-        cwd?: string;
-        env?: Record<string, string>;
-        timeoutMs?: number;
-      }) => {
-        const script = input.args?.[1] ?? "";
-        const offsets = [...script.matchAll(/tail -c \+(\d+) /g)].map((match) => Number(match[1]));
-        const stdoutStart = Math.max(0, (offsets[0] ?? 1) - 1);
-        const stderrStart = Math.max(0, (offsets[1] ?? 1) - 1);
-        stdoutOffsets.push(stdoutStart + 1);
-        stderrOffsets.push(stderrStart + 1);
-        return {
-          exitCode: 0,
-          signal: null,
-          timedOut: false,
-          stdout: encodeTailTick(
-            stdoutBytes.subarray(stdoutStart, stdoutStart + 4),
-            stderrBytes.subarray(stderrStart, stderrStart + 4),
-          ),
-          stderr: "",
-          pid: null,
-          startedAt: new Date().toISOString(),
-        };
-      }),
-    };
-
-    const tail = createSandboxRunLogTailFactory({
-      runner,
-      remoteCwd: "/workspace",
-      logsDir: "/workspace/.paperclip-runtime/codex/paperclip-bridge/queue/logs",
-      pollIntervalMs: 1,
-      maxChunkBytesPerTick: 4,
-      tickTimeoutMs: 50,
-    }).create();
-
-    tail.start(async (stream, chunk) => {
-      events.push({ stream, chunk });
-    });
-
-    await waitForCondition(
-      () => combinedStream(events, "stdout") === stdoutText && combinedStream(events, "stderr") === stderrText,
-      "run log tail did not stream expected stdout/stderr chunks",
-    );
-
-    await tail.finish({ stdout: stdoutText, stderr: stderrText });
-
-    expect(combinedStream(events, "stdout")).toBe(stdoutText);
-    expect(combinedStream(events, "stderr")).toBe(stderrText);
-    expect(stdoutOffsets.slice(0, 3)).toEqual([1, 5, 9]);
-    expect(stderrOffsets.slice(0, 3)).toEqual([1, 5, 9]);
-    expect(runner.execute).toHaveBeenCalledWith(expect.objectContaining({
-      command: "sh",
-      cwd: "/workspace",
-      env: { PAPERCLIP_SANDBOX_EXEC_CHANNEL: "bridge" },
-      timeoutMs: 50,
-    }));
-  });
-
-  it("emits only the unstreamed final suffix when the tail loop stops early", async () => {
-    const finalStdout = "prefix suffix\n";
-    const finalBytes = Buffer.from(finalStdout, "utf8");
-    const events: Array<{ stream: "stdout" | "stderr"; chunk: string }> = [];
-
-    const runner = {
-      execute: vi.fn(async (input: { args?: string[] }) => {
-        const script = input.args?.[1] ?? "";
-        const offsets = [...script.matchAll(/tail -c \+(\d+) /g)].map((match) => Number(match[1]));
-        const stdoutStart = Math.max(0, (offsets[0] ?? 1) - 1);
-        return {
-          exitCode: 0,
-          signal: null,
-          timedOut: false,
-          stdout: encodeTailTick(finalBytes.subarray(stdoutStart, stdoutStart + 7), Buffer.alloc(0)),
-          stderr: "",
-          pid: null,
-          startedAt: new Date().toISOString(),
-        };
-      }),
-    };
-
-    const tail = createSandboxRunLogTailFactory({
-      runner,
-      remoteCwd: "/workspace",
-      logsDir: "/workspace/.paperclip-runtime/codex/paperclip-bridge/queue/logs",
-      pollIntervalMs: 1,
-      maxChunkBytesPerTick: 7,
-      tickTimeoutMs: 50,
-    }).create();
-
-    tail.start(async (stream, chunk) => {
-      events.push({ stream, chunk });
-    });
-    await waitForCondition(() => combinedStream(events, "stdout").length >= 7, "run log tail did not emit prefix");
-    await tail.finish({ stdout: finalStdout, stderr: "" });
-
-    expect(combinedStream(events, "stdout")).toBe(finalStdout);
-    expect(events.filter((event) => event.stream === "stdout").map((event) => event.chunk).join("|"))
-      .toBe("prefix |suffix\n");
-  });
-
-  it("delivers the final batch and a warning when run log polling degrades", async () => {
-    const events: Array<{ stream: "stdout" | "stderr"; chunk: string }> = [];
-    const runner = {
-      execute: vi.fn(async () => ({
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        stdout: "",
-        stderr: "tail failed",
-        pid: null,
-        startedAt: new Date().toISOString(),
-      })),
-    };
-
-    const tail = createSandboxRunLogTailFactory({
-      runner,
-      remoteCwd: "/workspace",
-      logsDir: "/workspace/.paperclip-runtime/codex/paperclip-bridge/queue/logs",
-      pollIntervalMs: 1,
-      tickTimeoutMs: 50,
-      maxConsecutiveFailures: 1,
-    }).create();
-
-    tail.start(async (stream, chunk) => {
-      events.push({ stream, chunk });
-    });
-    await waitForCondition(() => runner.execute.mock.calls.length >= 1, "run log tail did not poll before finish");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    await tail.finish({ stdout: "final out\n", stderr: "final err\n" });
-
-    expect(combinedStream(events, "stdout")).toBe("final out\n");
-    expect(combinedStream(events, "stderr")).toBe(
-      "final err\n[paperclip] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
-    );
-  });
-
-  it("exposes the Paperclip bridge to the sandbox shell surface", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-shell-"));
-    cleanupDirs.push(rootDir);
-    const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "claude");
-    await mkdir(runtimeRootDir, { recursive: true });
-
-    const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
-    const apiServer = createServer((req, res) => {
-      requests.push({
-        method: req.method ?? "GET",
-        url: req.url ?? "/",
-        auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
-      });
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-    });
-    await new Promise<void>((resolve, reject) => {
-      apiServer.once("error", reject);
-      apiServer.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = apiServer.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected the bridge shell test API server to listen on a TCP port.");
-    }
-
-    const delegateRunner = createLocalSandboxRunner();
-    const runner = {
-      execute: vi.fn(async (input: Parameters<typeof delegateRunner.execute>[0]) => delegateRunner.execute(input)),
-    };
-    const target: AdapterSandboxExecutionTarget = {
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "daytona",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      remoteCwd,
-      runner,
-      timeoutMs: 30_000,
-    };
-
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge-shell",
-      target,
-      runtimeRootDir,
-      adapterKey: "claude",
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: `http://127.0.0.1:${address.port}`,
-    });
-    try {
-      expect(bridge).not.toBeNull();
-      const shellProbe = [
-        "const url = `${process.env.PAPERCLIP_API_URL}/api/agents/me`;",
-        "fetch(url, { headers: { authorization: `Bearer ${process.env.PAPERCLIP_API_KEY}`, accept: 'application/json' } })",
-        "  .then(async (response) => {",
-        "    const body = await response.json();",
-        "    process.stdout.write(JSON.stringify({",
-        "      status: response.status,",
-        "      body,",
-        "      bridgeMode: process.env.PAPERCLIP_API_BRIDGE_MODE,",
-        "    }));",
-        "  })",
-        "  .catch((error) => {",
-        "    console.error(error instanceof Error ? error.stack : String(error));",
-        "    process.exit(1);",
-        "  });",
-      ].join("\n");
-
-      const result = await runAdapterExecutionTargetShellCommand(
-        "run-bridge-shell",
-        target,
-        `${shellQuote(process.execPath)} -e ${shellQuote(shellProbe)}`,
-        {
-          cwd: remoteCwd,
-          env: bridge!.env,
-          timeoutSec: 15,
-          graceSec: 5,
-          onLog: async () => {},
-        },
-      );
-
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe("");
-      expect(JSON.parse(result.stdout)).toEqual({
-        status: 200,
-        body: { ok: true },
-        bridgeMode: "queue_v1",
-      });
-      expect(`${result.stdout}\n${result.stderr}`).not.toContain("real-run-jwt");
-      expect(`${result.stdout}\n${result.stderr}`).not.toContain(bridge!.env.PAPERCLIP_API_KEY);
-      const runnerCommandText = JSON.stringify(
-        runner.execute.mock.calls.map(([call]) => ({
-          command: call.command,
-          args: call.args,
-        })),
-      );
-      expect(runnerCommandText).not.toContain("real-run-jwt");
-      expect(runnerCommandText).not.toContain(bridge!.env.PAPERCLIP_API_KEY);
-      const runtimeFiles = (await readRuntimeTextFiles(runtimeRootDir)).join("\n");
-      expect(runtimeFiles).not.toContain("real-run-jwt");
-      expect(runtimeFiles).not.toContain(bridge!.env.PAPERCLIP_API_KEY);
-      expect(requests).toEqual([{
-        method: "GET",
-        url: "/api/agents/me",
-        auth: "Bearer real-run-jwt",
-        runId: "run-bridge-shell",
-      }]);
-    } finally {
-      await bridge?.stop();
-      await new Promise<void>((resolve) => apiServer.close(() => resolve()));
-    }
-  });
-
-  it("uses the effective adapter timeout when starting the sandbox callback bridge", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-timeout-"));
-    cleanupDirs.push(rootDir);
-    const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
-    await mkdir(runtimeRootDir, { recursive: true });
-
-    const delegateRunner = createLocalSandboxRunner();
-    const runner = {
-      execute: vi.fn(async (input: Parameters<typeof delegateRunner.execute>[0]) => delegateRunner.execute(input)),
-    };
-    const apiServer = createServer((req, res) => {
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-    });
-    await new Promise<void>((resolve, reject) => {
-      apiServer.once("error", reject);
-      apiServer.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = apiServer.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected the bridge timeout test API server to listen on a TCP port.");
-    }
-
-    const target: AdapterSandboxExecutionTarget = {
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "cloudflare",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      remoteCwd,
-      runner,
-      timeoutMs: 30_000,
-    };
-
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge-timeout",
-      target,
-      runtimeRootDir,
-      adapterKey: "codex",
-      timeoutSec: DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: `http://127.0.0.1:${address.port}`,
-    });
-    try {
-      expect(bridge).not.toBeNull();
-      expect(runner.execute).toHaveBeenCalled();
-      expect(
-        runner.execute.mock.calls.some(([input]) => input.timeoutMs === DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC * 1000),
-      ).toBe(true);
-    } finally {
-      await bridge?.stop();
-      await new Promise<void>((resolve) => apiServer.close(() => resolve()));
-    }
-  });
-
-  it("fails oversized host responses with a 502 before returning them to the sandbox client", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-limit-"));
-    cleanupDirs.push(rootDir);
-    const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
-    await mkdir(runtimeRootDir, { recursive: true });
-
-    const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
-    const largeBody = "x".repeat(64);
-    const apiServer = createServer((req, res) => {
-      requests.push({
-        method: req.method ?? "GET",
-        url: req.url ?? "/",
-        auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
-      });
-      res.writeHead(200, {
-        "content-type": "application/json",
-        "content-length": String(Buffer.byteLength(largeBody, "utf8")),
-      });
-      res.end(largeBody);
-    });
-    await new Promise<void>((resolve, reject) => {
-      apiServer.once("error", reject);
-      apiServer.listen(0, "127.0.0.1", () => resolve());
-    });
-    const address = apiServer.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected the bridge test API server to listen on a TCP port.");
-    }
-
-    const target: AdapterSandboxExecutionTarget = {
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "e2b",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      remoteCwd,
-      runner: createLocalSandboxRunner(),
-      timeoutMs: 30_000,
-    };
-
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
-      runId: "run-bridge-limit",
-      target,
-      runtimeRootDir,
-      adapterKey: "codex",
-      hostApiToken: "real-run-jwt",
-      hostApiUrl: `http://127.0.0.1:${address.port}`,
-      maxBodyBytes: 32,
-    });
-    try {
-      const response = await fetch(`${bridge!.env.PAPERCLIP_API_URL}/api/agents/me`, {
-        headers: {
-          authorization: `Bearer ${bridge!.env.PAPERCLIP_API_KEY}`,
-          accept: "application/json",
-        },
-      });
-
-      expect(response.status).toBe(502);
-      await expect(response.json()).resolves.toEqual({
-        error: "Bridge response body exceeded the configured size limit of 32 bytes.",
-      });
-      expect(requests).toEqual([{
-        method: "GET",
-        url: "/api/agents/me",
-        auth: "Bearer real-run-jwt",
-        runId: "run-bridge-limit",
-      }]);
-    } finally {
-      await bridge?.stop();
-      await new Promise<void>((resolve) => apiServer.close(() => resolve()));
-    }
-  });
 });

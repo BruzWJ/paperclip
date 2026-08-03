@@ -2,7 +2,6 @@ import path from "node:path";
 import {
   expandHomePrefix,
   resolveDefaultBackupDir as resolveSharedDefaultBackupDir,
-  resolveDefaultEmbeddedPostgresDir as resolveSharedDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir as resolveSharedDefaultLogsDir,
   resolveDefaultSecretsKeyFilePath as resolveSharedDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir as resolveSharedDefaultStorageDir,
@@ -36,10 +35,6 @@ export function resolveDefaultCliAuthPath(): string {
   return path.resolve(resolvePaperclipHomeDir(), "auth.json");
 }
 
-export function resolveDefaultEmbeddedPostgresDir(instanceId?: string): string {
-  return resolveSharedDefaultEmbeddedPostgresDir({ instanceId });
-}
-
 export function resolveDefaultLogsDir(instanceId?: string): string {
   return resolveSharedDefaultLogsDir({ instanceId });
 }
@@ -64,7 +59,6 @@ export function describeLocalInstancePaths(instanceId?: string) {
     instanceId: resolvedInstanceId,
     instanceRoot,
     configPath: resolveDefaultConfigPath(resolvedInstanceId),
-    embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(resolvedInstanceId),
     backupDir: resolveDefaultBackupDir(resolvedInstanceId),
     logDir: resolveDefaultLogsDir(resolvedInstanceId),
     secretsKeyFilePath: resolveDefaultSecretsKeyFilePath(resolvedInstanceId),

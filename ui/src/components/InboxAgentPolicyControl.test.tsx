@@ -83,9 +83,9 @@ describe("InboxAgentPolicyControl", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockAgentsApi.list.mockResolvedValue([
-      { id: "agent-1", name: "Gardener", role: "gardener", status: "active", icon: null },
-      { id: "agent-2", name: "Coder", role: "engineer", status: "active", icon: null },
-      { id: "agent-3", name: "Retired", role: "engineer", status: "terminated", icon: null },
+      { id: "agent-1", name: "Gardener", status: "active", icon: null },
+      { id: "agent-2", name: "Coder", status: "active", icon: null },
+      { id: "agent-3", name: "Retired", status: "terminated", icon: null },
     ]);
     mockInboxAgentPolicyApi.getMine.mockResolvedValue(policy());
     mockInboxAgentPolicyApi.updateMine.mockImplementation((_companyId: string, input) =>

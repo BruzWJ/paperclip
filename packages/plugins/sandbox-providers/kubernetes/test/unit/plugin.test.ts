@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
 import plugin from "../../src/plugin.js";
 
+const adapters = [
+  {
+    adapterType: "codex",
+    runtimeImage: "registry.example/provider-runtime:v1",
+    allowFqdns: ["provider.example"],
+    probeCommand: ["provider", "--version"],
+  },
+];
+
 describe("plugin", () => {
   it("exports the kubernetes driver", () => {
     expect(plugin.definition.onEnvironmentAcquireLease).toBeTypeOf("function");
@@ -10,7 +19,7 @@ describe("plugin", () => {
   it("validateConfig accepts inCluster=true config", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
-      config: { inCluster: true },
+      config: { inCluster: true, adapters },
     });
     expect(result.ok).toBe(true);
   });
@@ -18,7 +27,7 @@ describe("plugin", () => {
   it("validateConfig rejects missing auth", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
-      config: {},
+      config: { adapters },
     });
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]).toMatch(/requires one of `inCluster`/);
@@ -27,45 +36,31 @@ describe("plugin", () => {
   it("validateConfig normalizes defaults", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
-      config: { inCluster: true },
+      config: { inCluster: true, adapters },
     });
     expect(result.ok).toBe(true);
     expect(result.normalizedConfig).toEqual(
       expect.objectContaining({
         namespacePrefix: "paperclip-",
         egressMode: "standard",
-        jobTtlSecondsAfterFinished: 900,
         podActivityDeadlineSec: 3600,
-        adapterType: "claude_local",
-        backend: "sandbox-cr", // new default
+        adapterType: "codex",
+        adapters: expect.any(Array),
       }),
     );
   });
 
-  it("validateConfig accepts backend=sandbox-cr explicitly", async () => {
+  it("validateConfig rejects the removed backend selector", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
-      config: { inCluster: true, backend: "sandbox-cr" },
-    });
-    expect(result.ok).toBe(true);
-    expect(result.normalizedConfig?.backend).toBe("sandbox-cr");
-  });
-
-  it("validateConfig accepts backend=job (stable fallback)", async () => {
-    const result = await plugin.definition.onEnvironmentValidateConfig!({
-      driverKey: "kubernetes",
-      config: { inCluster: true, backend: "job" },
-    });
-    expect(result.ok).toBe(true);
-    expect(result.normalizedConfig?.backend).toBe("job");
-  });
-
-  it("validateConfig rejects unknown backend value", async () => {
-    const result = await plugin.definition.onEnvironmentValidateConfig!({
-      driverKey: "kubernetes",
-      config: { inCluster: true, backend: "kata-fc" },
+      config: {
+        inCluster: true,
+        backend: "sandbox-cr",
+        adapters,
+      },
     });
     expect(result.ok).toBe(false);
+    expect(result.errors?.join(" ")).toMatch(/backend/);
   });
 
   it("onHealth returns ok", async () => {
@@ -76,17 +71,30 @@ describe("plugin", () => {
   it("validateConfig warns about FQDN limitation in standard mode", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
-      config: { inCluster: true, adapterType: "claude_local" },
+      config: {
+        inCluster: true,
+        adapterType: "codex",
+        adapters,
+      },
     });
     expect(result.ok).toBe(true);
     expect(result.warnings).toBeDefined();
-    expect(result.warnings?.some((w) => w.includes("api.anthropic.com"))).toBe(true);
+    expect(
+      result.warnings?.some((warning) =>
+        warning.includes("provider.example")
+      ),
+    ).toBe(true);
   });
 
   it("validateConfig does NOT warn when egressMode is cilium", async () => {
     const result = await plugin.definition.onEnvironmentValidateConfig!({
       driverKey: "kubernetes",
-      config: { inCluster: true, adapterType: "claude_local", egressMode: "cilium" },
+      config: {
+        inCluster: true,
+        adapterType: "codex",
+        adapters,
+        egressMode: "cilium",
+      },
     });
     expect(result.ok).toBe(true);
     expect(result.warnings).toBeUndefined();

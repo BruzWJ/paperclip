@@ -9,8 +9,8 @@
  *   node scripts/screenshot.cjs <url-or-path> [output.png] [--width 1280] [--height 800] [--wait 2000]
  *
  * Examples:
- *   node scripts/screenshot.cjs /PAPA/agents/cto/instructions /tmp/shot.png
- *   node scripts/screenshot.cjs http://localhost:5173/PAPA/agents/cto/instructions
+ *   node scripts/screenshot.cjs /PAPA/agents/cto /tmp/shot.png
+ *   node scripts/screenshot.cjs http://localhost:5173/PAPA/agents/cto
  */
 
 const fs = require("fs");

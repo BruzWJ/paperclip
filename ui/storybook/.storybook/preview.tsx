@@ -133,14 +133,13 @@ function installStorybookApiFixtures() {
     if (url.pathname === "/api/adapters") {
       return Response.json([
         {
-          type: "claude_local",
+          type: "process",
           label: "Claude Code",
           source: "builtin",
           modelsCount: 2,
           loaded: true,
           disabled: false,
           capabilities: {
-            supportsInstructionsBundle: true,
             supportsSkills: true,
             supportsLocalAgentJwt: true,
             requiresMaterializedRuntimeSkills: false,
@@ -148,14 +147,13 @@ function installStorybookApiFixtures() {
           },
         },
         {
-          type: "codex_local",
+          type: "process",
           label: "Codex",
           source: "builtin",
           modelsCount: 3,
           loaded: true,
           disabled: false,
           capabilities: {
-            supportsInstructionsBundle: true,
             supportsSkills: true,
             supportsLocalAgentJwt: true,
             requiresMaterializedRuntimeSkills: false,
@@ -172,16 +170,16 @@ function installStorybookApiFixtures() {
       const [, , resource] = adapterModelsMatch;
       if (resource === "models") {
         return Response.json([
-          { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
-          { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-          { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+          { id: "fixture-large", label: "Fixture Large" },
+          { id: "fixture-standard", label: "Fixture Standard" },
+          { id: "fixture-small", label: "Fixture Small" },
         ]);
       }
       return Response.json([
         {
           key: "cheap",
           label: "Cheap",
-          adapterConfig: { model: "claude-sonnet-4-6" },
+          adapterConfig: { model: "fixture-standard" },
           source: "adapter_default",
         },
       ]);

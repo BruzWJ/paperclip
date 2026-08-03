@@ -1,244 +1,194 @@
-import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  companies,
-  createDb,
-  documents,
-  issueComments,
-  issueDocuments,
-  issueReferenceMentions,
-  issues,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { describe, expect, it } from "vitest";
 import { issueReferenceService } from "../services/issue-references.ts";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const companyId = "00000000-0000-4000-8000-000000000001";
+const sourceIssueId = "00000000-0000-4000-8000-000000000002";
+const targetTwoId = "00000000-0000-4000-8000-000000000003";
+const targetThreeId = "00000000-0000-4000-8000-000000000004";
+const inboundIssueId = "00000000-0000-4000-8000-000000000005";
 
-async function ensureIssueReferenceMentionsTable(db: ReturnType<typeof createDb>) {
-  await db.execute(sql.raw(`
-    CREATE TABLE IF NOT EXISTS "issue_reference_mentions" (
-      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      "company_id" uuid NOT NULL,
-      "source_issue_id" uuid NOT NULL REFERENCES "issues"("id") ON DELETE CASCADE,
-      "target_issue_id" uuid NOT NULL REFERENCES "issues"("id") ON DELETE CASCADE,
-      "source_kind" text NOT NULL,
-      "source_record_id" uuid,
-      "document_key" text,
-      "matched_text" text,
-      "created_at" timestamptz NOT NULL DEFAULT now(),
-      "updated_at" timestamptz NOT NULL DEFAULT now()
+describe("issueReferenceService", () => {
+  it("extracts and replaces issue, comment, and document source mentions", async () => {
+    const issueHarness = createMockDb({
+      select: [
+        [{
+          id: sourceIssueId,
+          companyId,
+          title: "Coordinate PAP-2",
+          request: "Review /issues/pap-3 and ignore PAP-1 self references.",
+        }],
+        [{ id: targetTwoId, identifier: "PAP-2" }],
+        [
+          { id: targetThreeId, identifier: "PAP-3" },
+          { id: sourceIssueId, identifier: "PAP-1" },
+        ],
+      ],
+      delete: [[], []],
+      insert: [[], []],
+    });
+    await issueReferenceService(issueHarness.db).syncIssue(
+      sourceIssueId,
+      issueHarness.db as never,
     );
-    CREATE INDEX IF NOT EXISTS "issue_reference_mentions_company_source_issue_idx"
-      ON "issue_reference_mentions" ("company_id", "source_issue_id");
-    CREATE INDEX IF NOT EXISTS "issue_reference_mentions_company_target_issue_idx"
-      ON "issue_reference_mentions" ("company_id", "target_issue_id");
-    CREATE INDEX IF NOT EXISTS "issue_reference_mentions_company_issue_pair_idx"
-      ON "issue_reference_mentions" ("company_id", "source_issue_id", "target_issue_id");
-    CREATE UNIQUE INDEX IF NOT EXISTS "issue_reference_mentions_company_source_mention_uq"
-      ON "issue_reference_mentions" ("company_id", "source_issue_id", "target_issue_id", "source_kind", "source_record_id");
-  `));
-}
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres issue reference tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
-
-describeEmbeddedPostgres("issueReferenceService", () => {
-  let db!: ReturnType<typeof createDb>;
-  let refs!: ReturnType<typeof issueReferenceService>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-refs-");
-    db = createDb(tempDb.connectionString);
-    refs = issueReferenceService(db);
-    await ensureIssueReferenceMentionsTable(db);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(issueReferenceMentions);
-    await db.delete(issueComments);
-    await db.delete(issueDocuments);
-    await db.delete(documents);
-    await db.delete(issues);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  it("tracks outbound and inbound references across issue fields, comments, and documents", async () => {
-    const companyId = randomUUID();
-    const sourceIssueId = randomUUID();
-    const targetTwoId = randomUUID();
-    const targetThreeId = randomUUID();
-    const inboundIssueId = randomUUID();
-    const commentId = randomUUID();
-    const documentId = randomUUID();
-    const issueDocumentId = randomUUID();
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: `R${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
-    });
-
-    await db.insert(issues).values([
-      {
-        id: sourceIssueId,
+    const issueValues = issueHarness.calls
+      .filter((call) => call.operation === "insert" && call.method === "values")
+      .map((call) => call.args[0]);
+    expect(issueValues).toEqual([
+      [{
         companyId,
-        title: "Coordinate PAP-2",
-        description: "Review /issues/pap-3 and ignore PAP-1 self references.",
-        status: "todo",
-        priority: "medium",
-        identifier: "PAP-1",
-      },
-      {
-        id: targetTwoId,
+        sourceIssueId,
+        targetIssueId: targetTwoId,
+        sourceKind: "title",
+        sourceRecordId: null,
+        documentKey: null,
+        matchedText: "PAP-2",
+      }],
+      [{
         companyId,
-        title: "Target two",
-        status: "todo",
-        priority: "medium",
-        identifier: "PAP-2",
-      },
-      {
-        id: targetThreeId,
-        companyId,
-        title: "Target three",
-        status: "todo",
-        priority: "medium",
-        identifier: "PAP-3",
-      },
-      {
-        id: inboundIssueId,
-        companyId,
-        title: "Inbound reference",
-        description: "This one depends on PAP-1.",
-        status: "in_progress",
-        priority: "high",
-        identifier: "PAP-4",
-      },
+        sourceIssueId,
+        targetIssueId: targetThreeId,
+        sourceKind: "request",
+        sourceRecordId: null,
+        documentKey: null,
+        matchedText: "/issues/pap-3",
+      }],
     ]);
 
-    await refs.syncIssue(sourceIssueId);
-    await refs.syncIssue(inboundIssueId);
-
-    await db.insert(issueComments).values({
-      id: commentId,
-      companyId,
-      issueId: sourceIssueId,
-      body: "Follow up in https://paperclip.test/issues/pap-2 after the document lands.",
+    const commentId = "00000000-0000-4000-8000-000000000006";
+    const commentHarness = createMockDb({
+      select: [
+        [{
+          id: commentId,
+          companyId,
+          issueId: sourceIssueId,
+          body: "Follow up in https://paperclip.test/issues/pap-2.",
+        }],
+        [{ id: targetTwoId, identifier: "PAP-2" }],
+      ],
+      delete: [[]],
+      insert: [[]],
     });
-    await refs.syncComment(commentId);
+    await issueReferenceService(commentHarness.db).syncComment(
+      commentId,
+      commentHarness.db as never,
+    );
+    expect(
+      commentHarness.calls.find(
+        (call) => call.operation === "insert" && call.method === "values",
+      )?.args[0],
+    ).toEqual([expect.objectContaining({
+      sourceKind: "comment",
+      sourceRecordId: commentId,
+      targetIssueId: targetTwoId,
+    })]);
 
-    await db.insert(documents).values({
-      id: documentId,
-      companyId,
-      title: "Plan",
-      format: "markdown",
-      latestBody: "Spec note: /PAP/issues/PAP-3",
-      latestRevisionNumber: 1,
+    const documentId = "00000000-0000-4000-8000-000000000007";
+    const documentHarness = createMockDb({
+      select: [
+        [{
+          documentId,
+          companyId,
+          issueId: sourceIssueId,
+          key: "plan",
+          body: "Spec note: /PAP/issues/PAP-3",
+        }],
+        [{ id: targetThreeId, identifier: "PAP-3" }],
+      ],
+      delete: [[]],
+      insert: [[]],
     });
-    await db.insert(issueDocuments).values({
-      id: issueDocumentId,
-      companyId,
-      issueId: sourceIssueId,
+    await issueReferenceService(documentHarness.db).syncDocument(
       documentId,
-      key: "plan",
+      documentHarness.db as never,
+    );
+    expect(
+      documentHarness.calls.find(
+        (call) => call.operation === "insert" && call.method === "values",
+      )?.args[0],
+    ).toEqual([expect.objectContaining({
+      sourceKind: "document",
+      sourceRecordId: documentId,
+      documentKey: "plan",
+      targetIssueId: targetThreeId,
+    })]);
+  });
+
+  it("groups, orders, and counts outbound and inbound references", async () => {
+    const related = (
+      id: string,
+      identifier: string,
+      title: string,
+      sourceKind: "title" | "request" | "document" | "comment",
+      sourceRecordId: string | null,
+      documentKey: string | null = null,
+    ) => ({
+      relatedIssueId: id,
+      relatedIssueIdentifier: identifier,
+      relatedIssueTitle: title,
+      relatedIssueBoardPresentationStatus: "todo",
+      relatedIssuePriority: "medium",
+      relatedIssueOwnerAgentId: null,
+      relatedIssueOwnerUserId: null,
+      sourceKind,
+      sourceRecordId,
+      documentKey,
+      matchedText: identifier,
     });
-    await refs.syncDocument(documentId);
+    const { db } = createMockDb({
+      select: [
+        [{ id: sourceIssueId, companyId, title: "Source", request: null }],
+        [
+          related(targetTwoId, "PAP-2", "Target two", "title", null),
+          related(targetTwoId, "PAP-2", "Target two", "comment", "comment-1"),
+          related(targetThreeId, "PAP-3", "Target three", "request", null),
+          related(targetThreeId, "PAP-3", "Target three", "document", "document-1", "plan"),
+        ],
+        [related(inboundIssueId, "PAP-4", "Inbound reference", "request", null)],
+      ],
+    });
 
-    const summary = await refs.listIssueReferenceSummary(sourceIssueId);
+    const summary = await issueReferenceService(db).listIssueReferenceSummary(sourceIssueId);
 
-    expect(summary.outbound.map((item) => item.issue.identifier)).toEqual(["PAP-2", "PAP-3"]);
+    expect(summary.outbound.map((item) => item.issue.identifier)).toEqual(["PAP-3", "PAP-2"]);
     expect(summary.outbound[0]?.mentionCount).toBe(2);
-    expect(summary.outbound[0]?.sources.map((source) => source.label)).toEqual(["title", "comment"]);
+    expect(summary.outbound[0]?.sources.map((source) => source.label)).toEqual(["request", "plan"]);
     expect(summary.outbound[1]?.mentionCount).toBe(2);
-    expect(summary.outbound[1]?.sources.map((source) => source.label)).toEqual(["description", "plan"]);
+    expect(summary.outbound[1]?.sources.map((source) => source.label)).toEqual(["title", "comment"]);
     expect(summary.inbound.map((item) => item.issue.identifier)).toEqual(["PAP-4"]);
-
-    await refs.deleteDocumentSource(documentId);
-
-    const withoutDocument = await refs.listIssueReferenceSummary(sourceIssueId);
-    const pap3 = withoutDocument.outbound.find((item) => item.issue.identifier === "PAP-3");
-
-    expect(pap3?.mentionCount).toBe(1);
-    expect(pap3?.sources.map((source) => source.label)).toEqual(["description"]);
   });
 
-  it("backfills existing references for a company without requiring write-time sync", async () => {
-    const companyId = randomUUID();
-    const sourceIssueId = randomUUID();
-    const targetIssueId = randomUUID();
-    const commentId = randomUUID();
-    const documentId = randomUUID();
-    const issueDocumentId = randomUUID();
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip Backfill",
-      issuePrefix: `B${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
+  it("projects an annotation comment and deletes its source projection", async () => {
+    const annotationCommentId = "00000000-0000-4000-8000-000000000008";
+    const { db, calls } = createMockDb({
+      select: [
+        [{
+          id: annotationCommentId,
+          companyId,
+          issueId: sourceIssueId,
+          body: "Review PAP-20.",
+        }],
+        [{ id: targetTwoId, identifier: "PAP-20" }],
+      ],
+      delete: [[], []],
+      insert: [[]],
     });
+    const refs = issueReferenceService(db);
 
-    await db.insert(issues).values([
-      {
-        id: sourceIssueId,
-        companyId,
-        title: "Legacy issue",
-        status: "todo",
-        priority: "medium",
-        identifier: "PAP-10",
-      },
-      {
-        id: targetIssueId,
-        companyId,
-        title: "Referenced legacy issue",
-        status: "todo",
-        priority: "medium",
-        identifier: "PAP-20",
-      },
-    ]);
+    await refs.syncAnnotationComment(annotationCommentId, db as never);
+    await refs.deleteCommentSource(annotationCommentId, db as never);
 
-    await db.insert(issueComments).values({
-      id: commentId,
-      companyId,
-      issueId: sourceIssueId,
-      body: "Legacy comment points at PAP-20.",
-    });
-
-    await db.insert(documents).values({
-      id: documentId,
-      companyId,
-      title: "Legacy plan",
-      format: "markdown",
-      latestBody: "Legacy plan also links /issues/PAP-20.",
-      latestRevisionNumber: 1,
-    });
-    await db.insert(issueDocuments).values({
-      id: issueDocumentId,
-      companyId,
-      issueId: sourceIssueId,
-      documentId,
-      key: "plan",
-    });
-
-    await refs.syncAllForCompany(companyId);
-
-    const summary = await refs.listIssueReferenceSummary(sourceIssueId);
-
-    expect(summary.outbound).toHaveLength(1);
-    expect(summary.outbound[0]?.issue.identifier).toBe("PAP-20");
-    expect(summary.outbound[0]?.mentionCount).toBe(2);
-    expect(summary.outbound[0]?.sources.map((source) => source.label)).toEqual(["plan", "comment"]);
+    expect(calls.find(
+      (call) => call.operation === "insert" && call.method === "values",
+    )?.args[0]).toEqual([expect.objectContaining({
+      sourceIssueId,
+      sourceKind: "comment",
+      sourceRecordId: annotationCommentId,
+      targetIssueId: targetTwoId,
+    })]);
+    expect(calls.filter(
+      (call) => call.operation === "delete" && call.method === "where",
+    )).toHaveLength(2);
   });
 });

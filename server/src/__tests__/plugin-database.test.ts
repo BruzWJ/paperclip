@@ -1,44 +1,106 @@
-import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { and, eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  companies,
-  createDb,
-  issueRelations,
-  issues,
-  pluginDatabaseNamespaces,
-  pluginMigrations,
-  plugins,
-} from "@paperclipai/db";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import { afterEach, describe, expect, it } from "vitest";
 import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import {
+  derivePluginDatabaseMigrationNamespace,
   derivePluginDatabaseNamespace,
   pluginDatabaseService,
   validatePluginMigrationStatement,
   validatePluginRuntimeExecute,
   validatePluginRuntimeQuery,
 } from "../services/plugin-database.js";
-import { buildPluginWorkerEnv, pluginLoader } from "../services/plugin-loader.js";
+import { buildPluginWorkerEnv } from "../services/plugin-loader.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-const multiMigrationPluginKey = "paperclip.dbfixture";
 const llmWikiPluginKey = "paperclipai.plugin-llm-wiki";
+const pluginId = "00000000-0000-4000-8000-000000000001";
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres plugin database tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+function manifest(pluginKey = "paperclip.dbtest"): PaperclipPluginManifestV1 {
+  return {
+    id: pluginKey,
+    apiVersion: 1,
+    version: "1.0.0",
+    displayName: "DB Test",
+    description: "Exercises restricted plugin database access.",
+    author: "Paperclip",
+    categories: ["automation"],
+    capabilities: [
+      "database.namespace.migrate",
+      "database.namespace.read",
+      "database.namespace.write",
+    ],
+    entrypoints: { worker: "./dist/worker.js" },
+    database: {
+      migrationsDir: "migrations",
+      coreReadTables: ["issues"],
+    },
+  };
 }
 
 describe("plugin database SQL validation", () => {
+  it("derives a distinct physical namespace for every installation identity", () => {
+    const pluginKey = "paperclip.installation-scope";
+    const logical = derivePluginDatabaseMigrationNamespace(pluginKey);
+    const first = derivePluginDatabaseNamespace(
+      pluginKey,
+      "00000000-0000-4000-8000-000000000001",
+    );
+    const second = derivePluginDatabaseNamespace(
+      pluginKey,
+      "00000000-0000-4000-8000-000000000002",
+    );
+
+    expect(first).not.toBe(second);
+    expect(first).not.toBe(logical);
+    expect(second).not.toBe(logical);
+  });
+
+  it("keeps the bundled LLM Wiki schema as one direct canonical baseline", async () => {
+    const repoRoot = path.basename(process.cwd()) === "server"
+      ? path.resolve(process.cwd(), "..")
+      : process.cwd();
+    const migrationsRoot = path.join(
+      repoRoot,
+      "packages",
+      "plugins",
+      "plugin-llm-wiki",
+      "migrations",
+    );
+    expect((await readdir(migrationsRoot)).sort()).toEqual(["001_llm_wiki.sql"]);
+
+    const baselineSql = await readFile(
+      path.join(migrationsRoot, "001_llm_wiki.sql"),
+      "utf8",
+    );
+    expect(baselineSql).not.toMatch(/\bALTER\s+TABLE\b|\bRENAME\b|\bWITH\s+wiki_pairs\b/i);
+    expect(baselineSql).not.toMatch(
+      /\bwiki_query_sessions\b|\bwiki_query_audit\b|\bagent_session_id\b|\bfiled_outputs\b|\bhidden_issue_id\b|\bdraft(?:_[a-z0-9_]+)?\b/i,
+    );
+
+    const namespace = derivePluginDatabaseMigrationNamespace(
+      llmWikiPluginKey,
+      "llm_wiki",
+    );
+    const statements = baselineSql
+      .split(";")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    expect(statements.length).toBeGreaterThan(0);
+    for (const statement of statements) {
+      expect(() =>
+        validatePluginMigrationStatement(statement, namespace, [
+          "companies",
+          "issues",
+          "projects",
+          "agents",
+        ])
+      ).not.toThrow();
+    }
+  });
+
   it("allows namespace migrations with whitelisted public foreign keys", () => {
     expect(() =>
       validatePluginMigrationStatement(
@@ -49,7 +111,7 @@ describe("plugin database SQL validation", () => {
     ).not.toThrow();
   });
 
-  it("allows qualified index creation and namespace-scoped migration backfills", () => {
+  it("allows qualified indexes and namespace-scoped migration backfills", () => {
     expect(() =>
       validatePluginMigrationStatement(
         "CREATE INDEX IF NOT EXISTS rows_issue_idx ON plugin_test.rows (issue_id)",
@@ -58,36 +120,26 @@ describe("plugin database SQL validation", () => {
     ).not.toThrow();
     expect(() =>
       validatePluginMigrationStatement(
-        `
-        WITH source_rows AS (
-          SELECT id FROM plugin_test.rows
-        )
-        INSERT INTO plugin_test.row_copies (id)
-        SELECT id FROM source_rows
-        ON CONFLICT (id) DO NOTHING
-        `,
+        `WITH source_rows AS (SELECT id FROM plugin_test.rows)
+         INSERT INTO plugin_test.row_copies (id)
+         SELECT id FROM source_rows ON CONFLICT (id) DO NOTHING`,
         "plugin_test",
       )
     ).not.toThrow();
     expect(() =>
       validatePluginMigrationStatement(
-        `
-        UPDATE plugin_test.rows r
-        SET copied_from_id = s.id
-        FROM plugin_test.source_rows s
-        WHERE s.id = r.id
-        `,
+        `UPDATE plugin_test.rows r SET copied_from_id = s.id
+         FROM plugin_test.source_rows s WHERE s.id = r.id`,
         "plugin_test",
       )
     ).not.toThrow();
   });
 
-  it("keeps migration backfill writes scoped to the plugin namespace", () => {
+  it("keeps migration writes scoped to the plugin namespace", () => {
     expect(() =>
       validatePluginMigrationStatement(
-        "CREATE TABLE rows (id uuid PRIMARY KEY, issue_id uuid REFERENCES public.issues(id))",
+        "CREATE TABLE rows (id uuid PRIMARY KEY)",
         "plugin_test",
-        ["issues"],
       )
     ).toThrow(/fully qualified/i);
     expect(() =>
@@ -106,16 +158,6 @@ describe("plugin database SQL validation", () => {
     ).toThrow(/public/i);
   });
 
-  it("rejects migrations that create public objects", () => {
-    expect(() =>
-      validatePluginMigrationStatement(
-        "CREATE TABLE public.rows (id uuid PRIMARY KEY)",
-        "plugin_test",
-        ["issues"],
-      )
-    ).toThrow(/public/i);
-  });
-
   it("allows whitelisted runtime reads but rejects public writes", () => {
     expect(() =>
       validatePluginRuntimeQuery(
@@ -125,7 +167,10 @@ describe("plugin database SQL validation", () => {
       )
     ).not.toThrow();
     expect(() =>
-      validatePluginRuntimeExecute("UPDATE public.issues SET title = $1", "plugin_test")
+      validatePluginRuntimeExecute(
+        "UPDATE public.issues SET title = $1",
+        "plugin_test",
+      )
     ).toThrow(/namespace/i);
   });
 
@@ -143,12 +188,9 @@ describe("plugin database SQL validation", () => {
 });
 
 describe("buildPluginWorkerEnv", () => {
-  const instanceInfo = {
-    deploymentMode: "authenticated",
-    deploymentExposure: "public",
-  };
+  const instanceInfo = { deploymentExposure: "public" };
 
-  it("passes only model provider keys through to environment driver plugins", () => {
+  it("does not pass host provider keys to environment driver plugins", () => {
     const env = buildPluginWorkerEnv({
       manifest: { capabilities: ["environment.drivers.register"] },
       instanceInfo,
@@ -160,15 +202,10 @@ describe("buildPluginWorkerEnv", () => {
       },
     });
 
-    expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
-      ANTHROPIC_API_KEY: "anthropic-token",
-      OPENAI_API_KEY: "openai-token",
-    });
+    expect(env).toEqual({ PAPERCLIP_DEPLOYMENT_EXPOSURE: "public" });
   });
 
-  it("passes in-cluster Kubernetes service-discovery vars to environment driver plugins", () => {
+  it("passes Kubernetes discovery vars to environment driver plugins", () => {
     const env = buildPluginWorkerEnv({
       manifest: { capabilities: ["environment.drivers.register"] },
       instanceInfo,
@@ -181,7 +218,6 @@ describe("buildPluginWorkerEnv", () => {
     });
 
     expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
       KUBERNETES_SERVICE_HOST: "10.0.0.1",
       KUBERNETES_SERVICE_PORT: "443",
@@ -192,471 +228,204 @@ describe("buildPluginWorkerEnv", () => {
     const env = buildPluginWorkerEnv({
       manifest: { capabilities: ["ui.slots.register"] },
       instanceInfo,
-      processEnv: {
-        OPENAI_API_KEY: "openai-token",
-      },
+      processEnv: { OPENAI_API_KEY: "openai-token" },
     });
 
-    expect(env).toEqual({
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
-    });
+    expect(env).toEqual({ PAPERCLIP_DEPLOYMENT_EXPOSURE: "public" });
   });
 });
 
-describeEmbeddedPostgres("plugin database namespaces", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  let packageRoots: string[] = [];
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-db-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+describe("plugin database service without a database process", () => {
+  const packageRoots: string[] = [];
 
   afterEach(async () => {
-    for (const pluginKey of ["paperclip.dbtest", "paperclip.escape", "paperclip.refresh", multiMigrationPluginKey, llmWikiPluginKey]) {
-      const namespace = derivePluginDatabaseNamespace(pluginKey);
-      await db.execute(sql.raw(`DROP SCHEMA IF EXISTS "${namespace}" CASCADE`));
-    }
-    await db.execute(sql.raw(`DROP SCHEMA IF EXISTS "${derivePluginDatabaseNamespace(llmWikiPluginKey, "llm_wiki")}" CASCADE`));
-    await db.delete(pluginMigrations);
-    await db.delete(pluginDatabaseNamespaces);
-    await db.delete(plugins);
-    await db.delete(issueRelations);
-    await db.delete(issues);
-    await db.delete(companies);
-    await Promise.all(packageRoots.map((root) => rm(root, { recursive: true, force: true })));
-    packageRoots = [];
+    await Promise.all(
+      packageRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    );
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function createPluginPackage(manifest: PaperclipPluginManifestV1, migrationSql: string) {
-    const packageRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-package-"));
+  async function createMigrationPackage(
+    files: Readonly<Record<string, string>>,
+  ): Promise<string> {
+    const packageRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-db-"));
     packageRoots.push(packageRoot);
-    const migrationsDir = path.join(packageRoot, manifest.database!.migrationsDir);
+    const migrationsDir = path.join(packageRoot, "migrations");
     await mkdir(migrationsDir, { recursive: true });
-    await writeFile(path.join(migrationsDir, "001_init.sql"), migrationSql, "utf8");
+    await Promise.all(
+      Object.entries(files).map(([name, source]) =>
+        writeFile(path.join(migrationsDir, name), source, "utf8")
+      ),
+    );
     return packageRoot;
   }
 
-  function llmWikiManifest(): PaperclipPluginManifestV1 {
+  function namespaceRow(pluginManifest: PaperclipPluginManifestV1) {
     return {
-      id: llmWikiPluginKey,
-      apiVersion: 1,
-      version: "0.1.0",
-      displayName: "LLM Wiki",
-      description: "Local-file LLM Wiki plugin.",
-      author: "Paperclip",
-      categories: ["automation", "ui"],
-      capabilities: [
-        "database.namespace.migrate",
-        "database.namespace.read",
-        "database.namespace.write",
-      ],
-      entrypoints: { worker: "./dist/worker.js" },
-      database: {
-        namespaceSlug: "llm_wiki",
-        migrationsDir: "migrations",
-        coreReadTables: ["companies", "issues", "projects", "agents"],
-      },
+      pluginId,
+      pluginKey: pluginManifest.id,
+      namespaceName: derivePluginDatabaseNamespace(pluginManifest.id, pluginId),
+      namespaceMode: "schema",
+      status: "active",
     };
   }
 
-  async function createInstallablePluginPackage(
-    pluginManifest: PaperclipPluginManifestV1,
-    migrationSql: string,
-  ) {
-    const packageRoot = await createPluginPackage(pluginManifest, migrationSql);
-    await writeFile(
-      path.join(packageRoot, "package.json"),
-      JSON.stringify({
-        name: pluginManifest.id,
-        version: pluginManifest.version,
-        type: "module",
-        paperclipPlugin: { manifest: "./manifest.js" },
-      }),
-      "utf8",
-    );
-    await writeFile(
-      path.join(packageRoot, "manifest.js"),
-      `export default ${JSON.stringify(pluginManifest, null, 2)};\n`,
-      "utf8",
-    );
-    await mkdir(path.join(packageRoot, "dist"), { recursive: true });
-    await writeFile(path.join(packageRoot, "dist", "worker.js"), "export {};\n", "utf8");
-    return packageRoot;
-  }
-
-  async function installPluginRecord(manifest: PaperclipPluginManifestV1) {
-    const pluginId = randomUUID();
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: manifest.id,
-      packageName: manifest.id,
-      version: manifest.version,
-      apiVersion: manifest.apiVersion,
-      categories: manifest.categories,
-      manifestJson: manifest,
-      status: "installed",
-      installOrder: 1,
-    });
-    return pluginId;
-  }
-
-  function manifest(pluginKey = "paperclip.dbtest"): PaperclipPluginManifestV1 {
-    return {
-      id: pluginKey,
-      apiVersion: 1,
-      version: "1.0.0",
-      displayName: "DB Test",
-      description: "Exercises restricted plugin database access.",
-      author: "Paperclip",
-      categories: ["automation"],
-      capabilities: [
-        "database.namespace.migrate",
-        "database.namespace.read",
-        "database.namespace.write",
-      ],
-      entrypoints: { worker: "./dist/worker.js" },
-      database: {
-        migrationsDir: "migrations",
-        coreReadTables: ["issues"],
-      },
-    };
-  }
-
-  it("applies multi-file plugin migrations through the production validator", async () => {
-    const pluginManifest = manifest(multiMigrationPluginKey);
-    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
-    const packageRoot = await createPluginPackage(
-      pluginManifest,
-      `CREATE TABLE ${namespace}.source_rows (id uuid PRIMARY KEY, label text NOT NULL);`,
-    );
-    await writeFile(
-      path.join(packageRoot, pluginManifest.database!.migrationsDir, "002_derived.sql"),
-      `CREATE TABLE ${namespace}.derived_rows (
-        id uuid PRIMARY KEY,
-        source_id uuid NOT NULL REFERENCES ${namespace}.source_rows(id)
-      );`,
-      "utf8",
-    );
-    const pluginId = await installPluginRecord(pluginManifest);
-    await pluginDatabaseService(db).applyMigrations(pluginId, pluginManifest, packageRoot);
-
-    const migrations = await db
-      .select()
-      .from(pluginMigrations)
-      .where(and(eq(pluginMigrations.pluginId, pluginId), eq(pluginMigrations.status, "applied")));
-    expect(migrations).toHaveLength(2);
-  });
-
-  it("applies the bundled LLM Wiki migrations through the production validator", async () => {
-    const pluginManifest = llmWikiManifest();
-    const repoRoot = path.basename(process.cwd()) === "server" ? path.resolve(process.cwd(), "..") : process.cwd();
-    const packageRoot = path.join(repoRoot, "packages", "plugins", "plugin-llm-wiki");
-    const namespace = derivePluginDatabaseNamespace(pluginManifest.id, pluginManifest.database?.namespaceSlug);
-    const pluginId = await installPluginRecord(pluginManifest);
-
-    await pluginDatabaseService(db).applyMigrations(pluginId, pluginManifest, packageRoot);
-
-    const migrations = await db
-      .select()
-      .from(pluginMigrations)
-      .where(and(eq(pluginMigrations.pluginId, pluginId), eq(pluginMigrations.status, "applied")));
-    expect(migrations.map((migration) => migration.migrationKey)).toEqual([
-      "001_llm_wiki.sql",
-      "002_paperclip_distillation.sql",
-      "003_spaces.sql",
-    ]);
-
-    const constraintRows = Array.from(
-      await db.execute(
-        sql<{ table_name: string; conname: string; columns: string[] }>`
-          SELECT t.relname AS table_name, c.conname, array_agg(a.attname ORDER BY constraint_columns.ordinality)::text[] AS columns
-          FROM pg_constraint c
-          JOIN pg_class t ON t.oid = c.conrelid
-          JOIN unnest(c.conkey) WITH ORDINALITY AS constraint_columns(attnum, ordinality) ON true
-          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = constraint_columns.attnum
-          WHERE c.connamespace = ${namespace}::regnamespace AND c.contype = 'u'
-          GROUP BY t.relname, c.conname
-          ORDER BY t.relname, c.conname
-        `,
-      ) as Iterable<{ table_name: string; conname: string; columns: string[] }>,
-    );
-    const constraints = constraintRows.map((row) => row.conname);
-    const uniqueColumnSets = new Set(
-      constraintRows.map((row) => `${row.table_name}:${row.columns.join(",")}`),
-    );
-    expect(constraints).toEqual(
-      expect.arrayContaining([
-        "wiki_pages_company_wiki_space_path_key",
-        "distillation_cursors_company_wiki_space_scope_key",
-        "distillation_work_items_company_wiki_space_idempotency_key",
-        "page_bindings_company_wiki_space_page_path_key",
-      ]),
-    );
-    expect(constraints).not.toContain("wiki_pages_company_id_wiki_id_path_key");
-    expect(constraints).not.toContain("paperclip_distillation_cursor_company_id_wiki_id_source_sco_key");
-    expect(constraints).not.toContain("paperclip_distillation_work_i_company_id_wiki_id_idempotenc_key");
-    expect(constraints).not.toContain("paperclip_page_bindings_company_id_wiki_id_page_path_key");
-    expect(uniqueColumnSets).not.toContain("wiki_pages:company_id,wiki_id,path");
-    expect(uniqueColumnSets).not.toContain("paperclip_distillation_cursors:company_id,wiki_id,source_scope,scope_key,source_kind");
-    expect(uniqueColumnSets).not.toContain("paperclip_distillation_work_items:company_id,wiki_id,idempotency_key");
-    expect(uniqueColumnSets).not.toContain("paperclip_page_bindings:company_id,wiki_id,page_path");
-  });
-
-  it("applies migrations once and allows whitelisted core joins at runtime", async () => {
+  it("applies ordered migration files through the production validator", async () => {
     const pluginManifest = manifest();
-    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
-    const packageRoot = await createPluginPackage(
+    const logicalNamespace = derivePluginDatabaseMigrationNamespace(pluginManifest.id);
+    const packageRoot = await createMigrationPackage({
+      "002_rows.sql": `CREATE TABLE ${logicalNamespace}.derived_rows (id uuid PRIMARY KEY);`,
+      "001_rows.sql": `CREATE TABLE ${logicalNamespace}.source_rows (id uuid PRIMARY KEY);`,
+    });
+    const harness = createMockDb({
+      execute: [[], [], [], []],
+      insert: [[namespaceRow(pluginManifest)], [], []],
+      select: [[], []],
+    });
+
+    const result = await pluginDatabaseService(harness.db).applyMigrations(
+      pluginId,
       pluginManifest,
-      `
-      CREATE TABLE ${namespace}.mission_rows (
-        id uuid PRIMARY KEY,
-        issue_id uuid NOT NULL REFERENCES public.issues(id),
-        label text NOT NULL
-      );
-      `,
+      packageRoot,
     );
-    const pluginId = await installPluginRecord(pluginManifest);
-    const companyId = randomUUID();
-    const issueId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: "TST",
-      requireBoardApprovalForNewAgents: false,
-    });
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      title: "Joined issue",
-      status: "todo",
-      priority: "medium",
-      identifier: "TST-1",
-    });
 
-    const pluginDb = pluginDatabaseService(db);
-    await pluginDb.applyMigrations(pluginId, pluginManifest, packageRoot);
-    await pluginDb.applyMigrations(pluginId, pluginManifest, packageRoot);
-
-    await pluginDb.execute(
-      pluginId,
-      `INSERT INTO ${namespace}.mission_rows (id, issue_id, label) VALUES ($1, $2, $3)`,
-      [randomUUID(), issueId, "alpha"],
-    );
-    const rows = await pluginDb.query<{ label: string; title: string }>(
-      pluginId,
-      `SELECT m.label, i.title FROM ${namespace}.mission_rows m JOIN public.issues i ON i.id = m.issue_id`,
-    );
-    expect(rows).toEqual([{ label: "alpha", title: "Joined issue" }]);
-
-    const migrations = await db
-      .select()
-      .from(pluginMigrations)
-      .where(and(eq(pluginMigrations.pluginId, pluginId), eq(pluginMigrations.status, "applied")));
-    expect(migrations).toHaveLength(1);
+    expect(result).toMatchObject(namespaceRow(pluginManifest));
+    expect(harness.remaining("execute")).toBe(0);
+    expect(harness.remaining("insert")).toBe(0);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.calls.filter((call) => call.operation === "execute"))
+      .toHaveLength(4);
   });
 
-  it("rejects runtime writes to public core tables", async () => {
+  it("rejects an altered checksum before executing migration SQL", async () => {
     const pluginManifest = manifest();
-    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
-    const packageRoot = await createPluginPackage(
-      pluginManifest,
-      `CREATE TABLE ${namespace}.notes (id uuid PRIMARY KEY, body text NOT NULL);`,
-    );
-    const pluginId = await installPluginRecord(pluginManifest);
-    const pluginDb = pluginDatabaseService(db);
-    await pluginDb.applyMigrations(pluginId, pluginManifest, packageRoot);
+    const logicalNamespace = derivePluginDatabaseMigrationNamespace(pluginManifest.id);
+    const source = `CREATE TABLE ${logicalNamespace}.rows (id uuid PRIMARY KEY);`;
+    const packageRoot = await createMigrationPackage({ "001_rows.sql": source });
+    const harness = createMockDb({
+      execute: [[], []],
+      insert: [[namespaceRow(pluginManifest)]],
+      select: [[{
+        status: "applied",
+        checksum: createHash("sha256").update(`${source} changed`).digest("hex"),
+      }]],
+    });
 
     await expect(
-      pluginDb.execute(pluginId, "UPDATE public.issues SET title = $1", ["bad"]),
+      pluginDatabaseService(harness.db).applyMigrations(
+        pluginId,
+        pluginManifest,
+        packageRoot,
+      ),
+    ).rejects.toThrow(/checksum mismatch/i);
+
+    expect(harness.calls.filter((call) => call.operation === "execute"))
+      .toHaveLength(2);
+    expect(harness.calls.filter((call) => call.operation === "update"))
+      .toHaveLength(0);
+  });
+
+  it("records migration validation failure without a live database", async () => {
+    const pluginManifest = manifest("paperclip.escape");
+    const packageRoot = await createMigrationPackage({
+      "001_escape.sql": "CREATE TABLE public.plugin_escape (id uuid PRIMARY KEY);",
+    });
+    const harness = createMockDb({
+      execute: [[], []],
+      insert: [[namespaceRow(pluginManifest)], []],
+      select: [[]],
+      update: [[]],
+    });
+
+    await expect(
+      pluginDatabaseService(harness.db).applyMigrations(
+        pluginId,
+        pluginManifest,
+        packageRoot,
+      ),
+    ).rejects.toThrow(/public/i);
+
+    expect(harness.remaining("insert")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+    expect(harness.calls.filter((call) => call.operation === "execute"))
+      .toHaveLength(2);
+  });
+
+  it("can leave failure persistence to a surrounding install transaction", async () => {
+    const pluginManifest = manifest("paperclip.install-transaction");
+    const packageRoot = await createMigrationPackage({
+      "001_escape.sql": "CREATE TABLE public.plugin_escape (id uuid PRIMARY KEY);",
+    });
+    const harness = createMockDb({
+      execute: [[], []],
+      insert: [[namespaceRow(pluginManifest)]],
+      select: [[]],
+    });
+
+    await expect(
+      pluginDatabaseService(harness.db).applyMigrations(
+        pluginId,
+        pluginManifest,
+        packageRoot,
+        { persistFailure: false },
+      ),
+    ).rejects.toThrow(/public/i);
+
+    expect(harness.calls.filter((call) => call.operation === "update"))
+      .toHaveLength(0);
+    expect(harness.calls.filter((call) => call.method === "insert"))
+      .toHaveLength(1);
+  });
+
+  it("returns canonical runtime query rows for an active ready plugin", async () => {
+    const pluginManifest = manifest();
+    const namespace = namespaceRow(pluginManifest);
+    const harness = createMockDb({
+      select: [
+        [{ manifestJson: pluginManifest }],
+        [{ namespace }],
+      ],
+      execute: [[{ id: "row-1", title: "Allowed" }]],
+    });
+
+    const rows = await pluginDatabaseService(harness.db).query(
+      pluginId,
+      `SELECT r.id, i.title FROM ${namespace.namespaceName}.rows r JOIN public.issues i ON i.id = r.issue_id`,
+    );
+
+    expect(rows).toEqual([{ id: "row-1", title: "Allowed" }]);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("execute")).toBe(0);
+  });
+
+  it("rejects runtime writes to public core tables before execution", async () => {
+    const pluginManifest = manifest();
+    const namespace = namespaceRow(pluginManifest);
+    const harness = createMockDb({ select: [[{ namespace }]] });
+
+    await expect(
+      pluginDatabaseService(harness.db).execute(
+        pluginId,
+        "UPDATE public.issues SET title = $1",
+        ["bad"],
+      ),
     ).rejects.toThrow(/plugin namespace/i);
+
+    expect(harness.calls.filter((call) => call.operation === "execute"))
+      .toHaveLength(0);
   });
 
-  it("records a failed migration when SQL escapes the plugin namespace", async () => {
-    const pluginManifest = manifest("paperclip.escape");
-    const packageRoot = await createPluginPackage(
-      pluginManifest,
-      "CREATE TABLE public.plugin_escape (id uuid PRIMARY KEY);",
-    );
-    const pluginId = await installPluginRecord(pluginManifest);
+  it("rejects runtime access when the plugin namespace is not active", async () => {
+    const harness = createMockDb({ select: [[]] });
 
     await expect(
-      pluginDatabaseService(db).applyMigrations(pluginId, pluginManifest, packageRoot),
-    ).rejects.toThrow(/public\.plugin_escape|public/i);
+      pluginDatabaseService(harness.db).execute(
+        pluginId,
+        "DELETE FROM plugin_missing.rows WHERE id = $1",
+        ["row-1"],
+      ),
+    ).rejects.toThrow("Plugin database namespace is not active");
 
-    const [migration] = await db
-      .select()
-      .from(pluginMigrations)
-      .where(eq(pluginMigrations.pluginId, pluginId));
-    expect(migration?.status).toBe("failed");
-  });
-
-  it("rolls back plugin install when migration validation fails", async () => {
-    const pluginManifest = manifest("paperclip.escape");
-    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
-    const packageRoot = await createInstallablePluginPackage(
-      pluginManifest,
-      "CREATE TABLE public.plugin_escape (id uuid PRIMARY KEY);",
-    );
-    const loader = pluginLoader(db, {
-      enableLocalFilesystem: false,
-      enableNpmDiscovery: false,
-    });
-
-    await expect(loader.installPlugin({ localPath: packageRoot }))
-      .rejects.toThrow(/public\.plugin_escape|public/i);
-
-    const installedPlugins = await db
-      .select()
-      .from(plugins)
-      .where(eq(plugins.pluginKey, pluginManifest.id));
-    const namespaces = await db
-      .select()
-      .from(pluginDatabaseNamespaces)
-      .where(eq(pluginDatabaseNamespaces.pluginKey, pluginManifest.id));
-    const migrations = await db
-      .select()
-      .from(pluginMigrations)
-      .where(eq(pluginMigrations.pluginKey, pluginManifest.id));
-    const schemaRows = Array.from(
-      await db.execute(
-        sql<{ schema_name: string }>`SELECT schema_name FROM information_schema.schemata WHERE schema_name = ${namespace}`,
-      ) as Iterable<{ schema_name: string }>,
-    );
-
-    expect(installedPlugins).toHaveLength(0);
-    expect(namespaces).toHaveLength(0);
-    expect(migrations).toHaveLength(0);
-    expect(schemaRows).toHaveLength(0);
-  });
-
-  it("refreshes persisted manifests from disk before activation", async () => {
-    const staleManifest = manifest("paperclip.refresh");
-    const refreshedManifest: PaperclipPluginManifestV1 = {
-      ...staleManifest,
-      capabilities: [...staleManifest.capabilities, "agent.tools.register"],
-      database: {
-        ...staleManifest.database!,
-        coreReadTables: ["companies"],
-      },
-      tools: [
-        {
-          name: "db-smoke",
-          displayName: "DB Smoke",
-          description: "Exercises plugin tool registration worker lookup.",
-          parametersSchema: { type: "object", properties: {} },
-        },
-      ],
-    };
-    const namespace = derivePluginDatabaseNamespace(refreshedManifest.id);
-    const packageRoot = await createInstallablePluginPackage(
-      refreshedManifest,
-      `
-      CREATE TABLE ${namespace}.company_refs (
-        id uuid PRIMARY KEY,
-        company_id uuid NOT NULL REFERENCES public.companies(id)
-      );
-      `,
-    );
-    const pluginId = await installPluginRecord(staleManifest);
-    await db
-      .update(plugins)
-      .set({
-        packagePath: packageRoot,
-        status: "ready",
-      })
-      .where(eq(plugins.id, pluginId));
-
-    const workerManager = {
-      startWorker: vi.fn().mockResolvedValue(undefined),
-      stopAll: vi.fn().mockResolvedValue(undefined),
-    };
-    const toolDispatcher = {
-      registerPluginTools: vi.fn(),
-    };
-    const loader = pluginLoader(db, {
-      enableLocalFilesystem: false,
-      enableNpmDiscovery: false,
-    }, {
-      workerManager,
-      eventBus: {
-        forPlugin: vi.fn(() => ({})),
-        subscriptionCount: vi.fn(() => 0),
-      },
-      jobScheduler: {
-        registerPlugin: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn(),
-      },
-      jobStore: {
-        syncJobDeclarations: vi.fn().mockResolvedValue(undefined),
-      },
-      toolDispatcher,
-      lifecycleManager: {
-        markError: vi.fn().mockResolvedValue(undefined),
-      },
-      buildHostHandlers: vi.fn(() => ({})),
-      instanceInfo: {
-        instanceId: "test-instance",
-        hostVersion: "1.0.0",
-        deploymentMode: "authenticated",
-        deploymentExposure: "public",
-      },
-    } as never);
-
-    const result = await loader.loadSingle(pluginId);
-
-    expect(result.success).toBe(true);
-    expect(workerManager.startWorker).toHaveBeenCalledWith(
-      pluginId,
-      expect.objectContaining({
-        databaseNamespace: namespace,
-        env: {
-          PAPERCLIP_DEPLOYMENT_MODE: "authenticated",
-          PAPERCLIP_DEPLOYMENT_EXPOSURE: "public",
-        },
-        manifest: expect.objectContaining({
-          database: expect.objectContaining({ coreReadTables: ["companies"] }),
-        }),
-      }),
-    );
-    expect(toolDispatcher.registerPluginTools).toHaveBeenCalledWith(
-      refreshedManifest.id,
-      expect.objectContaining({
-        tools: refreshedManifest.tools,
-      }),
-      pluginId,
-    );
-    const [plugin] = await db
-      .select()
-      .from(plugins)
-      .where(eq(plugins.id, pluginId));
-    expect(plugin?.manifestJson.database?.coreReadTables).toEqual(["companies"]);
-  });
-
-  it("rejects checksum changes for already applied migrations", async () => {
-    const pluginManifest = manifest();
-    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
-    const packageRoot = await createPluginPackage(
-      pluginManifest,
-      `CREATE TABLE ${namespace}.checksum_rows (id uuid PRIMARY KEY);`,
-    );
-    const pluginId = await installPluginRecord(pluginManifest);
-    const pluginDb = pluginDatabaseService(db);
-    await pluginDb.applyMigrations(pluginId, pluginManifest, packageRoot);
-
-    await writeFile(
-      path.join(packageRoot, "migrations", "001_init.sql"),
-      `CREATE TABLE ${namespace}.checksum_rows (id uuid PRIMARY KEY, note text);`,
-      "utf8",
-    );
-
-    await expect(pluginDb.applyMigrations(pluginId, pluginManifest, packageRoot))
-      .rejects.toThrow(/checksum mismatch/i);
+    expect(harness.calls.filter((call) => call.operation === "execute"))
+      .toHaveLength(0);
   });
 });

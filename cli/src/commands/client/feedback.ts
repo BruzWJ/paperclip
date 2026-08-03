@@ -210,7 +210,7 @@ export async function resolveFeedbackCompanyId(
   const companyId = companies[0]?.id?.trim();
   if (!companyId) {
     throw new Error(
-      "Company ID is required. Pass --company-id, set PAPERCLIP_COMPANY_ID, or configure a CLI context default.",
+      "Company ID is required. Pass --company-id, set PAPERCLIP_BOARD_COMPANY_ID, or configure a CLI context default.",
     );
   }
   return companyId;

@@ -44,12 +44,6 @@ describe("instance experimental settings validators", () => {
     });
   });
 
-  it("defaults built-in agents off", () => {
-    const settings = instanceExperimentalSettingsSchema.parse({});
-
-    expect(settings.enableBuiltInAgents).toBe(false);
-  });
-
   it("defaults apps off", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
@@ -114,14 +108,12 @@ describe("instance experimental settings validators", () => {
     });
   });
 
-  it("accepts built-in agents patches", () => {
+  it("rejects the retired built-in agents setting", () => {
     expect(
-      patchInstanceExperimentalSettingsSchema.parse({
+      patchInstanceExperimentalSettingsSchema.safeParse({
         enableBuiltInAgents: true,
-      }),
-    ).toEqual({
-      enableBuiltInAgents: true,
-    });
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts apps patches", () => {

@@ -12,7 +12,7 @@ export type CatalogTeamFileKind =
   | "team"
   | "agent"
   | "project"
-  | "task"
+  | "issue"
   | "skill"
   | "extension"
   | "readme"
@@ -45,7 +45,6 @@ export interface CatalogTeamSkillRequirement {
 
 export interface CatalogTeamEnvInputSummary {
   key: string;
-  agentSlug: string | null;
   projectSlug: string | null;
   kind: "secret" | "plain";
   requirement: "required" | "optional";
@@ -81,7 +80,7 @@ export interface CatalogTeam {
   counts: {
     agents: number;
     projects: number;
-    tasks: number;
+    issues: number;
     routines: number;
     localSkills: number;
     catalogSkills: number;

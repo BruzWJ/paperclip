@@ -81,13 +81,23 @@ function readLastFailure(alertFiles: string[]) {
 function findLatestBackup(backupDir: string, nowMs: number) {
   if (!existsSync(backupDir)) return null;
 
-  const candidates = readdirSync(backupDir)
-    .filter((name) => name.endsWith(".sql.gz"))
+  const names = readdirSync(backupDir);
+  const nameSet = new Set(names);
+  const candidates = names
+    .filter(
+      (name) =>
+        name.endsWith(".dump") &&
+        nameSet.has(`${name}.manifest.json`),
+    )
     .map((name) => {
       const fullPath = join(backupDir, name);
       const stat = statSync(fullPath);
-      return { fullPath, name, stat };
+      const manifestStat = statSync(`${fullPath}.manifest.json`);
+      return { fullPath, name, stat, manifestStat };
     })
+    .filter(({ stat, manifestStat }) =>
+      stat.isFile() && manifestStat.isFile()
+    )
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
   const latest = candidates[0];
@@ -119,7 +129,7 @@ export function inspectDatabaseBackupHealth(
     if (!latestBackup) {
       warnings.push({
         code: "database_backup_missing",
-        message: `No .sql.gz database backups found in ${opts.backupDir}.`,
+        message: `No complete manifested database backups found in ${opts.backupDir}.`,
       });
     } else if (latestBackup.ageHours > maxAgeHours) {
       warnings.push({

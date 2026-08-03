@@ -32,17 +32,22 @@ function isCompleteIssueSnapshot(value: unknown): value is Issue {
   return (
     isNonEmptyString(issue.id)
     && isNonEmptyString(issue.companyId)
-    && typeof issue.title === "string"
-    && typeof issue.status === "string"
+    && (issue.title === null || typeof issue.title === "string")
+    && isNonEmptyString(issue.request)
+    && typeof issue.boardPresentationStatus === "string"
+    && typeof issue.lifecycleStatus === "string"
     && typeof issue.workMode === "string"
     && typeof issue.priority === "string"
     && (issue.projectId === null || typeof issue.projectId === "string")
     && (issue.parentId === null || typeof issue.parentId === "string")
     && (issue.identifier === null || typeof issue.identifier === "string")
-    && (issue.description === null || typeof issue.description === "string")
-    && (issue.assigneeAgentId === null || typeof issue.assigneeAgentId === "string")
-    && (issue.assigneeUserId === null || typeof issue.assigneeUserId === "string")
-    && (issue.executionRunId === null || typeof issue.executionRunId === "string")
+    && (
+      (issue.ownerKind === "agent" && isNonEmptyString(issue.ownerAgentId) && issue.ownerUserId === null)
+      || (issue.ownerKind === "user" && issue.ownerAgentId === null && isNonEmptyString(issue.ownerUserId))
+      || (issue.ownerKind === "board" && issue.ownerAgentId === null && issue.ownerUserId === null)
+    )
+    && typeof issue.ownershipEpoch === "number"
+    && typeof issue.creatorKind === "string"
     && (issue.issueNumber === null || typeof issue.issueNumber === "number")
     && typeof issue.requestDepth === "number"
     && issue.createdAt != null

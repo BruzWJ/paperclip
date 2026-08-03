@@ -6,7 +6,6 @@ Audience: Product and engineering
 Related:
 - `doc/SPEC-implementation.md`
 - `doc/PRODUCT.md`
-- `doc/plans/2026-03-14-adapter-skill-sync-rollout.md`
 
 ## 1. Purpose
 
@@ -15,14 +14,14 @@ This document defines a V1 plan for "smart model routing" in Paperclip.
 The goal is not to build a generic cross-provider router in the server. The goal is:
 
 - let supported adapters use a cheaper model for lightweight heartbeat orchestration work
-- keep the main task execution on the adapter's normal primary model
-- preserve Paperclip's existing task, session, and audit invariants
+- keep the main issue execution on the adapter's normal primary model
+- preserve Paperclip's existing issue, session, and audit invariants
 - report cost and model usage truthfully when more than one model participates in a single heartbeat
 
 The motivating use case is a local coding adapter where a cheap model can handle the first fast pass:
 
 - read the wake context
-- orient to the task and workspace
+- orient to the issue and workspace
 - leave an immediate progress comment when appropriate
 - perform bounded lightweight triage
 
@@ -48,7 +47,7 @@ More useful than the routing heuristic itself is Hermes' broader model-slot desi
 
 - main conversational model
 - fallback model for failover
-- auxiliary model slots for side tasks like compression and classification
+- auxiliary model slots for side work like compression and classification
 
 That separation is a better fit for Paperclip than copying Hermes' exact keyword heuristic.
 
@@ -58,7 +57,7 @@ Paperclip already has the right execution shape for adapter-specific routing, bu
 
 Current implementation facts:
 
-- `server/src/services/heartbeat.ts` builds rich run context, including `paperclipWake`, workspace metadata, and session handoff context
+- the canonical issue-execution resolver compiles the persisted ref, workspace binding, context dial, and provider configuration
 - each adapter receives a single resolved `config` object and executes once
 - built-in local adapters read one `config.model` and pass it directly to the underlying CLI
 - UI config today exposes one main `model` field plus adapter-specific thinking-effort controls
@@ -122,13 +121,13 @@ Supported adapters should run cheap preflight only when all are true:
 - `cheapModel` is configured
 - the run is issue-scoped
 - the adapter is starting a fresh session, not resuming a persisted one
-- the run is expected to do real task work rather than just resume an existing thread
+- the run is expected to do real issue work rather than just resume an existing thread
 
 Supported adapters should skip cheap preflight when any are true:
 
-- a persisted task session already exists
+- a persisted issue session already exists
 - the adapter cannot safely isolate preflight from the primary session
-- the issue or wake type implies the task is already mid-flight and continuity matters more than first-response speed
+- the issue or wake type implies the issue is already mid-flight and continuity matters more than first-response speed
 
 This is intentionally phase-based, not text-heuristic-based.
 
@@ -141,13 +140,13 @@ Allowed responsibilities:
 - ingest wake context and issue summary
 - inspect the workspace at a shallow level
 - leave a short "starting investigation" style comment when appropriate
-- collect a compact handoff summary for the primary phase
+- collect a compact transfer summary for the primary phase
 
 Not allowed in V1:
 
 - long tool loops
 - risky file mutations
-- being the canonical persisted task session
+- being the canonical persisted issue session
 - deciding final completion without either explicit adapter support or a trivial success case
 
 Implementation detail:
@@ -162,13 +161,13 @@ After preflight, the adapter launches the normal primary execution using the exi
 The primary phase should receive:
 
 - the normal Paperclip prompt
-- any preflight-generated handoff summary
+- any preflight-generated transfer summary
 - normal workspace and wake context
 
 The primary phase remains the source of truth for:
 
 - persisted session state
-- final task completion
+- final issue completion
 - most file changes
 - most cost
 
@@ -219,16 +218,16 @@ Success criteria:
 
 Why first:
 
-- Codex already has rich prompt/handoff handling
+- Codex already has rich prompt/transfer handling
 - the adapter already injects Paperclip skills and workspace metadata cleanly
-- the current implementation already distinguishes bootstrap, wake delta, and handoff prompt sections
+- the current implementation already distinguishes bootstrap, wake delta, and transfer prompt sections
 
 Implementation work:
 
 1. Add config support for `smartModelRouting`.
 2. Add a cheap-preflight prompt builder.
 3. Run cheap preflight only on fresh sessions.
-4. Pass a compact preflight handoff note into the primary prompt.
+4. Pass a compact preflight transfer note into the primary prompt.
 5. Report segmented usage and model metadata.
 
 Important guardrail:
@@ -280,7 +279,7 @@ Hermes' cheap-route heuristic is useful precedent, but Paperclip should not star
 Reasons:
 
 - Hermes is optimizing free-form conversational turns
-- Paperclip agents run structured, issue-scoped heartbeats with explicit task and workspace context
+- Paperclip agents run structured, issue-scoped heartbeats with explicit issue and workspace context
 - Paperclip already knows whether a run is fresh vs resumed, issue-scoped vs approval follow-up, and what workspace/session exists
 - those execution facts are stronger routing signals than prompt keyword matching
 
@@ -359,4 +358,4 @@ Paperclip should ship smart model routing as:
 - session-safe
 - cost-truthful
 
-The right V1 is not "choose the cheapest model for simple prompts." The right V1 is "use a cheap model for bounded orchestration work on fresh runs, then hand off to the primary model for the real task."
+The right V1 is not "choose the cheapest model for simple prompts." The right V1 is "use a cheap model for bounded orchestration work on fresh runs, then hand off to the primary model for the real issue."

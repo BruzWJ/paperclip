@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 vi.unmock("http");
 vi.unmock("node:http");
@@ -122,16 +123,14 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
   });
 
   describe("viewer role", () => {
-    const viewerActor = {
-      type: "board" as const,
+    const viewerActor = testBoardSessionActor({
       userId: "viewer-user",
       companyIds: [companyId],
-      source: "session" as const,
       isInstanceAdmin: false,
       memberships: [
         { companyId, status: "active", membershipRole: "viewer" },
       ],
-    };
+    });
 
     it("rejects PATCH on a goal with 403 'Viewer access is read-only'", async () => {
       const app = await createApp(viewerActor);
@@ -181,16 +180,14 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
   });
 
   describe("inactive membership", () => {
-    const inactiveActor = {
-      type: "board" as const,
+    const inactiveActor = testBoardSessionActor({
       userId: "ex-employee",
       companyIds: [companyId],
-      source: "session" as const,
       isInstanceAdmin: false,
       memberships: [
         { companyId, status: "removed", membershipRole: "editor" },
       ],
-    };
+    });
 
     it("rejects PATCH on a goal with 403 'User does not have active company access'", async () => {
       const app = await createApp(inactiveActor);
@@ -229,16 +226,14 @@ describe.sequential("write-path membership checks (viewer / inactive)", () => {
   });
 
   describe("active editor (sanity check)", () => {
-    const editorActor = {
-      type: "board" as const,
+    const editorActor = testBoardSessionActor({
       userId: "editor-user",
       companyIds: [companyId],
-      source: "session" as const,
       isInstanceAdmin: false,
       memberships: [
         { companyId, status: "active", membershipRole: "editor" },
       ],
-    };
+    });
 
     it("allows PATCH on a goal", async () => {
       const app = await createApp(editorActor);

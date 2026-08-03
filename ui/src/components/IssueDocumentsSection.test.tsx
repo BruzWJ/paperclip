@@ -6,10 +6,10 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { DocumentRevision, Issue, IssueDocument } from "@paperclipai/shared";
-import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueDocumentsSection } from "./IssueDocumentsSection";
 import { queryKeys } from "../lib/queryKeys";
+import { createTestIssue } from "../test-utils/issue";
 
 const mockIssuesApi = vi.hoisted(() => ({
   listDocuments: vi.fn(),
@@ -239,47 +239,18 @@ function createRevision(overrides: Partial<DocumentRevision> = {}): DocumentRevi
 }
 
 function createIssue(): Issue {
-  return {
-    id: "issue-1",
+  return createTestIssue({
     identifier: "PAP-807",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title: "Plan rendering",
-    description: null,
-    status: "in_progress",
-    workMode: "standard",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: "user-1",
+    boardPresentationStatus: "in_progress",
     issueNumber: 807,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     labels: [],
     labelIds: [],
     planDocument: createIssueDocument(),
     documentSummaries: [createIssueDocument()],
-    legacyPlanDocument: null,
     createdAt: new Date("2026-03-31T12:00:00.000Z"),
     updatedAt: new Date("2026-03-31T12:05:00.000Z"),
-  };
+  });
 }
 
 describe("IssueDocumentsSection", () => {
@@ -296,50 +267,6 @@ describe("IssueDocumentsSection", () => {
 
   afterEach(() => {
     container.remove();
-  });
-
-  it("keeps system handoff documents out of the normal document surface", async () => {
-    const issue = createIssue();
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-        mutations: {
-          retry: false,
-        },
-      },
-    });
-
-    mockIssuesApi.listDocuments.mockResolvedValue([
-      createIssueDocument({ key: "plan", body: "# Plan" }),
-      createIssueDocument({
-        id: "document-handoff",
-        key: ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-        title: "Continuation Summary",
-        body: "# Handoff",
-      }),
-    ]);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
-        </QueryClientProvider>,
-      );
-    });
-    await flush();
-    await flush();
-
-    expect(container.textContent).toContain("# Plan");
-    expect(container.textContent).not.toContain("# Handoff");
-    expect(container.querySelector(`#document-${ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY}`)).toBeNull();
-
-    await act(async () => {
-      root.unmount();
-    });
-    queryClient.clear();
   });
 
   it("locks documents from the document header action", async () => {
@@ -945,7 +872,6 @@ describe("IssueDocumentsSection", () => {
               restoreDocumentRevision: vi.fn().mockResolvedValue(caseDocument),
               setDocumentLock,
               hideSystemDocuments: false,
-              legacyPlanDocument: null,
               annotations: null,
             }}
             canDeleteDocuments

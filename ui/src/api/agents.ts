@@ -1,21 +1,19 @@
 import type {
   Agent,
-  AgentDesiredSkillEntry,
-  AgentPermissions,
+  AgentAdapterConfigRevision,
+  AgentAdapterRevisionConfigurationInput,
+  AgentCompanySkillPinsResponse,
   AgentDetail,
-  AgentInstructionsBundle,
-  AgentInstructionsFileDetail,
-  AgentSkillSnapshot,
-  AdapterEnvironmentTestResult,
-  AgentKeyCreated,
   AgentRuntimeState,
-  AgentTaskSession,
-  AgentWakeupResponse,
-  HeartbeatRun,
-  Approval,
-  AgentConfigRevision,
+  AgentOperationalConfigurationUpdateInput,
+  AgentPluginManagementBinding,
   ClearAgentErrorResponse,
-  AgentApiKeyScope,
+  RuntimeAgentCreateConfigurationInput,
+  RuntimeAgentCompanyToolOption,
+  RuntimeAgentConfigurationSnapshot,
+  RuntimeAgentConfigurationUpdate,
+  CompanySkillPin,
+  InvokableIssueOwnerCatalogEntry,
 } from "@paperclipai/shared";
 import type {
   AdapterModelProfileDefinition,
@@ -23,14 +21,6 @@ import type {
 } from "@paperclipai/adapter-utils";
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { ApiError, api } from "./client";
-
-export interface AgentKey {
-  id: string;
-  name: string;
-  scope: AgentApiKeyScope;
-  createdAt: Date;
-  revokedAt: Date | null;
-}
 
 export interface AdapterModel {
   id: string;
@@ -40,50 +30,37 @@ export interface AdapterModel {
 export type { AdapterModelProfileKey };
 export type AdapterModelProfile = AdapterModelProfileDefinition;
 
-export interface DetectedAdapterModel {
-  model: string;
-  provider: string;
-  source: string;
-  candidates?: string[];
-}
-
-export interface ClaudeLoginResult {
-  exitCode: number | null;
-  signal: string | null;
-  timedOut: boolean;
-  loginUrl: string | null;
-  stdout: string;
-  stderr: string;
-}
-
 export interface OrgNode {
   id: string;
   name: string;
-  role: string;
+  subtitle: string;
   status: string;
   reports: OrgNode[];
 }
 
-export interface AgentHireResponse {
+export interface RuntimeAgentCreateResponse {
   agent: Agent;
-  approval: Approval | null;
+  configuration: RuntimeAgentConfigurationSnapshot;
+  auditId: string;
+  retried: boolean;
 }
 
-export interface AgentPermissionUpdate {
-  canCreateAgents: boolean;
-  canCreateSkills: boolean;
-  canAssignTasks: boolean;
-  trustPreset?: AgentPermissions["trustPreset"];
-  authorizationPolicy?: AgentPermissions["authorizationPolicy"];
+export interface AgentAdapterRevisionCreateResponse {
+  revision: AgentAdapterConfigRevision;
+  current: {
+    agentId: string;
+    adapterType: string | null;
+    adapterConfig: Record<string, unknown> | null;
+    runtimeConfig: Record<string, unknown>;
+    currentAdapterConfigRevisionId: string | null;
+    updatedAt: Date;
+  };
+  appended: boolean;
 }
 
-export interface AgentWakeRequest {
-  source?: "timer" | "assignment" | "on_demand" | "automation";
-  triggerDetail?: "manual" | "ping" | "callback" | "system";
-  reason?: string | null;
-  payload?: Record<string, unknown> | null;
-  idempotencyKey?: string | null;
-  forceFreshSession?: boolean;
+export interface AgentPluginManagementAdoptionResponse {
+  agent: Agent;
+  pluginManagement: AgentPluginManagementBinding;
 }
 
 function withCompanyScope(path: string, companyId?: string) {
@@ -98,9 +75,11 @@ function agentPath(id: string, companyId?: string, suffix = "") {
 
 export const agentsApi = {
   list: (companyId: string) => api.get<Agent[]>(`/companies/${companyId}/agents`),
+  listInvokableIssueOwners: (companyId: string) =>
+    api.get<InvokableIssueOwnerCatalogEntry[]>(
+      `/companies/${encodeURIComponent(companyId)}/issue-owner-catalog`,
+    ),
   org: (companyId: string) => api.get<OrgNode[]>(`/companies/${companyId}/org`),
-  listConfigurations: (companyId: string) =>
-    api.get<Record<string, unknown>[]>(`/companies/${companyId}/agent-configurations`),
   get: async (id: string, companyId?: string) => {
     try {
       return await api.get<AgentDetail>(agentPath(id, companyId));
@@ -127,117 +106,97 @@ export const agentsApi = {
       return api.get<AgentDetail>(agentPath(matches[0]!.id, companyId));
     }
   },
-  getConfiguration: (id: string, companyId?: string) =>
-    api.get<Record<string, unknown>>(agentPath(id, companyId, "/configuration")),
-  listConfigRevisions: (id: string, companyId?: string) =>
-    api.get<AgentConfigRevision[]>(agentPath(id, companyId, "/config-revisions")),
-  getConfigRevision: (id: string, revisionId: string, companyId?: string) =>
-    api.get<AgentConfigRevision>(agentPath(id, companyId, `/config-revisions/${revisionId}`)),
-  rollbackConfigRevision: (id: string, revisionId: string, companyId?: string) =>
-    api.post<Agent>(agentPath(id, companyId, `/config-revisions/${revisionId}/rollback`), {}),
-  create: (companyId: string, data: Record<string, unknown>) =>
-    api.post<Agent>(`/companies/${companyId}/agents`, data),
-  hire: (companyId: string, data: Record<string, unknown>) =>
-    api.post<AgentHireResponse>(`/companies/${companyId}/agent-hires`, data),
-  update: (id: string, data: Record<string, unknown>, companyId?: string) =>
-    api.patch<Agent>(agentPath(id, companyId), data),
-  updatePermissions: (id: string, data: AgentPermissionUpdate, companyId?: string) =>
-    api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
-  instructionsBundle: (id: string, companyId?: string) =>
-    api.get<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle")),
-  updateInstructionsBundle: (
-    id: string,
-    data: {
-      mode?: "managed" | "external";
-      rootPath?: string | null;
-      entryFile?: string;
-      clearLegacyPromptTemplate?: boolean;
-    },
-    companyId?: string,
-  ) => api.patch<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle"), data),
-  instructionsFile: (id: string, relativePath: string, companyId?: string) =>
-    api.get<AgentInstructionsFileDetail>(
-      agentPath(id, companyId, `/instructions-bundle/file?path=${encodeURIComponent(relativePath)}`),
+  getRuntimeConfiguration: (id: string, companyId?: string) =>
+    api.get<RuntimeAgentConfigurationSnapshot>(
+      agentPath(id, companyId, "/runtime-configuration"),
     ),
-  saveInstructionsFile: (
+  listCreateRuntimeAgentToolOptions: (companyId: string) =>
+    api.get<RuntimeAgentCompanyToolOption[]>(
+      `/companies/${encodeURIComponent(companyId)}/runtime-agent-tool-options`,
+    ),
+  listRuntimeAgentToolOptions: (id: string, companyId?: string) =>
+    api.get<RuntimeAgentCompanyToolOption[]>(
+      agentPath(id, companyId, "/runtime-configuration/tool-options"),
+    ),
+  updateRuntimeConfiguration: (
     id: string,
-    data: { path: string; content: string; clearLegacyPromptTemplate?: boolean },
+    data: RuntimeAgentConfigurationUpdate,
     companyId?: string,
-  ) => api.put<AgentInstructionsFileDetail>(agentPath(id, companyId, "/instructions-bundle/file"), data),
-  deleteInstructionsFile: (id: string, relativePath: string, companyId?: string) =>
-    api.delete<AgentInstructionsBundle>(
-      agentPath(id, companyId, `/instructions-bundle/file?path=${encodeURIComponent(relativePath)}`),
+  ) =>
+    api.patch<RuntimeAgentConfigurationSnapshot>(
+      agentPath(id, companyId, "/runtime-configuration"),
+      data,
+    ),
+  createRuntimeAgent: (
+    companyId: string,
+    data: RuntimeAgentCreateConfigurationInput,
+    idempotencyKey: string,
+  ) =>
+    api.post<RuntimeAgentCreateResponse>(
+      `/companies/${companyId}/runtime-agents`,
+      data,
+      { headers: { "Idempotency-Key": idempotencyKey } },
+    ),
+  createAdapterConfigRevision: (
+    id: string,
+    data: AgentAdapterRevisionConfigurationInput,
+    companyId?: string,
+  ) =>
+    api.post<AgentAdapterRevisionCreateResponse>(
+      agentPath(id, companyId, "/adapter-config-revisions"),
+      data,
+    ),
+  listAdapterConfigRevisions: (id: string, companyId?: string) =>
+    api.get<AgentAdapterConfigRevision[]>(
+      agentPath(id, companyId, "/adapter-config-revisions"),
+    ),
+  getCurrentAdapterConfigRevision: (id: string, companyId?: string) =>
+    api.get<AgentAdapterConfigRevision | null>(
+      agentPath(id, companyId, "/adapter-config-revisions/current"),
+    ),
+  updateOperationalConfiguration: (
+    id: string,
+    data: AgentOperationalConfigurationUpdateInput,
+    companyId?: string,
+  ) =>
+    api.patch<Agent>(
+      agentPath(id, companyId, "/operational-configuration"),
+      data,
     ),
   pause: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/pause"), {}),
   resume: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/resume"), {}),
   clearError: (id: string, companyId?: string) =>
     api.post<ClearAgentErrorResponse>(agentPath(id, companyId, "/clear-error"), {}),
-  approve: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/approve"), {}),
+  adoptPluginManagement: (id: string, companyId?: string) =>
+    api.post<AgentPluginManagementAdoptionResponse>(
+      agentPath(id, companyId, "/plugin-management/adopt"),
+      {},
+    ),
   terminate: (id: string, companyId?: string) => api.post<Agent>(agentPath(id, companyId, "/terminate"), {}),
-  remove: (id: string, companyId?: string) => api.delete<{ ok: true }>(agentPath(id, companyId)),
-  listKeys: (id: string, companyId?: string) => api.get<AgentKey[]>(agentPath(id, companyId, "/keys")),
-  skills: (id: string, companyId?: string) =>
-    api.get<AgentSkillSnapshot>(agentPath(id, companyId, "/skills")),
-  syncSkills: (id: string, desiredSkills: Array<string | AgentDesiredSkillEntry>, companyId?: string) =>
-    api.post<AgentSkillSnapshot>(agentPath(id, companyId, "/skills/sync"), { desiredSkills }),
-  createKey: (id: string, name: string, companyId?: string, scope?: AgentApiKeyScope) =>
-    api.post<AgentKeyCreated>(agentPath(id, companyId, "/keys"), { name, ...(scope ? { scope } : {}) }),
-  revokeKey: (agentId: string, keyId: string, companyId?: string) =>
-    api.delete<{ ok: true }>(agentPath(agentId, companyId, `/keys/${encodeURIComponent(keyId)}`)),
+  companySkillPins: (
+    id: string,
+    companyId?: string,
+  ) =>
+    api.get<AgentCompanySkillPinsResponse>(
+      agentPath(id, companyId, "/company-skill-pins"),
+    ),
+  replaceCompanySkillPins: (
+    id: string,
+    entries: CompanySkillPin[],
+    companyId?: string,
+  ) =>
+    api.put<AgentCompanySkillPinsResponse>(
+      agentPath(id, companyId, "/company-skill-pins"),
+      { entries },
+    ),
   runtimeState: (id: string, companyId?: string) =>
-    api.get<AgentRuntimeState>(agentPath(id, companyId, "/runtime-state")),
-  taskSessions: (id: string, companyId?: string) =>
-    api.get<AgentTaskSession[]>(agentPath(id, companyId, "/task-sessions")),
-  resetSession: (id: string, taskKey?: string | null, companyId?: string) =>
-    api.post<void>(agentPath(id, companyId, "/runtime-state/reset-session"), { taskKey: taskKey ?? null }),
-  adapterModels: (
-    companyId: string,
-    type: string,
-    options?: { refresh?: boolean; environmentId?: string | null },
-  ) => {
-    const params = new URLSearchParams();
-    if (options?.refresh) params.set("refresh", "1");
-    if (options?.environmentId) params.set("environmentId", options.environmentId);
-    const query = params.size > 0 ? `?${params.toString()}` : "";
-    return api.get<AdapterModel[]>(
-      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models${query}`,
-    );
-  },
-  detectModel: (companyId: string, type: string) =>
-    api.get<DetectedAdapterModel | null>(
-      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/detect-model`,
+    api.get<AgentRuntimeState | null>(agentPath(id, companyId, "/runtime-state")),
+  adapterModels: (companyId: string, type: string) =>
+    api.get<AdapterModel[]>(
+      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`,
     ),
   adapterModelProfiles: (companyId: string, type: string) =>
     api.get<AdapterModelProfile[]>(
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/model-profiles`,
     ),
-  testEnvironment: (
-    companyId: string,
-    type: string,
-    data: {
-      adapterConfig: Record<string, unknown>;
-      environmentId?: string | null;
-    },
-  ) =>
-    api.post<AdapterEnvironmentTestResult>(
-      `/companies/${companyId}/adapters/${type}/test-environment`,
-      data,
-    ),
-  invoke: (id: string, companyId?: string, data: AgentWakeRequest = {}) =>
-    api.post<HeartbeatRun>(agentPath(id, companyId, "/heartbeat/invoke"), data),
-  wakeup: (
-    id: string,
-    data: AgentWakeRequest,
-    companyId?: string,
-  ) => api.post<AgentWakeupResponse>(agentPath(id, companyId, "/wakeup"), data),
-  loginWithClaude: (id: string, companyId?: string) =>
-    api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
-  availableSkills: () =>
-    api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 };
-
-export interface AvailableSkill {
-  name: string;
-  description: string;
-  isPaperclipManaged: boolean;
-}

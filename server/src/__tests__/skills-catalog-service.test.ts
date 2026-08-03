@@ -53,7 +53,6 @@ function catalogSkill(slug: string, name = slug): CatalogSkill {
     trustLevel: "markdown_only",
     compatibility: "compatible",
     defaultInstall: false,
-    recommendedForRoles: ["engineer"],
     requires: [],
     tags: ["test"],
     files: [{ path: "SKILL.md", kind: "skill", sizeBytes: 8, sha256: `sha256:${slug}` }],

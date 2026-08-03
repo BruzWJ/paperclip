@@ -51,6 +51,7 @@ describe("environment test harness", () => {
     const execResult = await harness.execute({
       ...BASE_PARAMS,
       lease,
+      executionId: "execution-1",
       command: "echo",
       args: ["hello"],
     });
@@ -125,6 +126,7 @@ describe("environment test harness", () => {
     const result = await harness.execute({
       ...BASE_PARAMS,
       lease,
+      executionId: "execution-failure-1",
       command: "failing-cmd",
     });
     expect(result.exitCode).toBe(1);
@@ -205,8 +207,18 @@ describe("environment test harness", () => {
     });
 
     const lease = await harness.acquireLease({ ...BASE_PARAMS, runId: "run-1" });
-    await harness.execute({ ...BASE_PARAMS, lease, command: "ls" });
-    await harness.execute({ ...BASE_PARAMS, lease, command: "pwd" });
+    await harness.execute({
+      ...BASE_PARAMS,
+      lease,
+      executionId: "execution-ls-1",
+      command: "ls",
+    });
+    await harness.execute({
+      ...BASE_PARAMS,
+      lease,
+      executionId: "execution-pwd-1",
+      command: "pwd",
+    });
     await harness.releaseLease({ ...BASE_PARAMS, providerLeaseId: lease.providerLeaseId });
 
     const execs = assertExecutionLifecycle(harness.environmentEvents, "env-1");

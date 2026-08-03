@@ -7,7 +7,7 @@ import { createAssetImageMetadataSchema } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { assetService, logActivity } from "../services/index.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
-import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { assertCompanyAccess, getAccessibleResource } from "./authz.js";
 const SVG_CONTENT_TYPE = "image/svg+xml";
 const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
   "image/png",
@@ -157,7 +157,6 @@ export function assetRoutes(db: Db, storage: StorageService) {
       return;
     }
 
-    const actor = getActorInfo(req);
     const stored = await storage.putFile({
       companyId,
       namespace: `assets/${namespaceSuffix}`,
@@ -173,17 +172,13 @@ export function assetRoutes(db: Db, storage: StorageService) {
       byteSize: stored.byteSize,
       sha256: stored.sha256,
       originalFilename: stored.originalFilename,
-      createdByAgentId: actor.agentId,
-      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      createdByUserId: req.actor.userId,
     });
 
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "asset.created",
       entityType: "asset",
       entityId: asset.id,
@@ -256,7 +251,6 @@ export function assetRoutes(db: Db, storage: StorageService) {
       return;
     }
 
-    const actor = getActorInfo(req);
     const stored = await storage.putFile({
       companyId,
       namespace: "assets/companies",
@@ -272,17 +266,13 @@ export function assetRoutes(db: Db, storage: StorageService) {
       byteSize: stored.byteSize,
       sha256: stored.sha256,
       originalFilename: stored.originalFilename,
-      createdByAgentId: actor.agentId,
-      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      createdByUserId: req.actor.userId,
     });
 
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "asset.created",
       entityType: "asset",
       entityId: asset.id,

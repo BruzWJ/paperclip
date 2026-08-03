@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import type { HeartbeatRun } from "@paperclipai/shared";
+import type { IssueExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunActivityChart, SuccessRateChart } from "./ActivityCharts";
 
@@ -33,54 +33,40 @@ function render(ui: ReactNode) {
   });
 }
 
-function createRun(overrides: Partial<HeartbeatRun> = {}): HeartbeatRun {
+function createRun(
+  overrides: Partial<IssueExecutionRunEnvelopeRecord> = {},
+): IssueExecutionRunEnvelopeRecord {
   return {
     id: "run-1",
     companyId: "company-1",
-    agentId: "agent-1",
-    responsibleUserId: null,
-    invocationSource: "on_demand",
-    triggerDetail: "manual",
+    issueId: "issue-1",
+    sessionId: "session-1",
+    executionScopeId: "scope-1",
+    kind: "productive",
     status: "succeeded",
-    startedAt: new Date("2026-04-20T11:58:00.000Z"),
-    finishedAt: new Date("2026-04-20T11:59:00.000Z"),
-    error: null,
-    wakeupRequestId: null,
-    exitCode: 0,
-    signal: null,
-    usageJson: null,
-    resultJson: null,
-    sessionIdBefore: null,
-    sessionIdAfter: null,
-    logStore: null,
-    logRef: null,
-    logBytes: null,
-    logSha256: null,
-    logCompressed: false,
-    lastOutputAt: null,
-    lastOutputSeq: 0,
-    lastOutputStream: null,
-    lastOutputBytes: null,
-    stdoutExcerpt: null,
-    stderrExcerpt: null,
-    errorCode: null,
-    externalRunId: null,
-    processPid: null,
-    processGroupId: null,
-    processStartedAt: null,
+    ownershipEpoch: 1,
+    targetAgentId: "agent-1",
+    adapterConfigRevisionId: "revision-1",
+    executionWorkspaceBindingId: "binding-1",
+    executionMode: "owner",
+    issueExecutionAuthorityId: null,
+    consultExecutionId: null,
+    compactionScopeKind: null,
+    parentRunId: null,
     retryOfRunId: null,
-    processLossRetryCount: 0,
-    scheduledRetryAt: null,
-    scheduledRetryAttempt: 0,
-    scheduledRetryReason: null,
-    livenessState: null,
-    livenessReason: null,
-    continuationAttempt: 0,
-    lastUsefulActionAt: null,
-    nextAction: null,
-    contextSnapshot: null,
-    createdAt: new Date("2026-04-20T11:58:00.000Z"),
-    updatedAt: new Date("2026-04-20T11:59:00.000Z"),
+    triggeredByRunId: null,
+    currentAttemptId: null,
+    currentLeaseId: null,
+    cancellationIntentId: null,
+    terminalFinalizationId: "finalization-1",
+    startedAt: "2026-04-20T11:58:00.000Z",
+    finishedAt: "2026-04-20T11:59:00.000Z",
+    terminalClassification: "succeeded",
+    terminalReasonCode: null,
+    processExitCode: 0,
+    processSignal: null,
+    createdAt: "2026-04-20T11:58:00.000Z",
+    updatedAt: "2026-04-20T11:59:00.000Z",
     ...overrides,
   };
 }
@@ -99,7 +85,12 @@ describe("ActivityCharts", () => {
       <RunActivityChart
         runs={[
           createRun({ id: "run-success", status: "succeeded" }),
-          createRun({ id: "run-failed", status: "failed", errorCode: "provider_quota" }),
+          createRun({
+            id: "run-failed",
+            status: "failed",
+            terminalClassification: "failed",
+            terminalReasonCode: "provider_quota",
+          }),
         ]}
       />,
     );

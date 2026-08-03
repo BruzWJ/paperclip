@@ -25,7 +25,6 @@ import {
   findActiveServerAdapter,
   listEnabledServerAdapters,
   registerServerAdapter,
-  resolveExternalAdapterRegistration,
   unregisterServerAdapter,
   isOverridePaused,
   setOverridePaused,
@@ -40,8 +39,11 @@ import {
   setAdapterDisabled,
 } from "../services/adapter-plugin-store.js";
 import type { AdapterPluginRecord } from "../services/adapter-plugin-store.js";
-import type { ServerAdapterModule, AdapterConfigSchema } from "../adapters/types.js";
-import { loadExternalAdapterPackage, getUiParserSource, getOrExtractUiParserSource, reloadExternalAdapter } from "../adapters/plugin-loader.js";
+import type {
+  ServerAdapterModule,
+} from "@paperclipai/adapter-utils";
+import { validateAdapterConfigSchema } from "@paperclipai/adapter-utils";
+import { loadExternalAdapterPackage, reloadExternalAdapter } from "../adapters/plugin-loader.js";
 import { logger } from "../middleware/logger.js";
 import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
 import { BUILTIN_ADAPTER_TYPES } from "../adapters/builtin-adapter-types.js";
@@ -62,12 +64,13 @@ interface AdapterInstallRequest {
 }
 
 interface AdapterCapabilities {
-  supportsInstructionsBundle: boolean;
-  supportsSkills: boolean;
-  supportsLocalAgentJwt: boolean;
-  requiresMaterializedRuntimeSkills: boolean;
   supportsModelProfiles: boolean;
-  supportsAcp: boolean;
+  contractVersion: "acp-subprocess/v1";
+  protocolVersion: 1;
+  resume: true;
+  cancel: true;
+  sessionConfig: true;
+  sessionScopedMcpReplacement: true;
 }
 
 interface AdapterInfo {
@@ -78,7 +81,10 @@ interface AdapterInfo {
   loaded: boolean;
   disabled: boolean;
   capabilities: AdapterCapabilities;
-  acp?: ServerAdapterModule["acp"];
+  registryName: string;
+  frontendPackage: string;
+  frontendVersion: string;
+  frontendDigest: string;
   /** True when an external plugin has replaced a built-in adapter of the same type. */
   overriddenBuiltin?: boolean;
   /** True when the external override for a builtin type is currently paused. */
@@ -118,12 +124,14 @@ function readAdapterPackageVersionFromDisk(record: AdapterPluginRecord): string 
 
 function buildAdapterCapabilities(adapter: ServerAdapterModule): AdapterCapabilities {
   return {
-    supportsInstructionsBundle: adapter.supportsInstructionsBundle ?? false,
-    supportsSkills: Boolean(adapter.listSkills || adapter.syncSkills),
-    supportsLocalAgentJwt: adapter.supportsLocalAgentJwt ?? false,
-    requiresMaterializedRuntimeSkills: adapter.requiresMaterializedRuntimeSkills ?? false,
-    supportsModelProfiles: Boolean(adapter.modelProfiles?.length || adapter.listModelProfiles),
-    supportsAcp: Boolean(adapter.acp),
+    supportsModelProfiles: adapter.definition.modelProfiles.length > 0,
+    contractVersion: adapter.definition.version,
+    protocolVersion: adapter.definition.readiness.protocolVersion,
+    resume: adapter.definition.readiness.resume,
+    cancel: adapter.definition.readiness.cancel,
+    sessionConfig: adapter.definition.readiness.sessionConfig,
+    sessionScopedMcpReplacement:
+      adapter.definition.readiness.sessionScopedMcpReplacement,
   };
 }
 
@@ -131,13 +139,19 @@ function buildAdapterInfo(adapter: ServerAdapterModule, externalRecord: AdapterP
   const fromDisk = externalRecord ? readAdapterPackageVersionFromDisk(externalRecord) : undefined;
   return {
     type: adapter.type,
-    label: adapter.type, // ServerAdapterModule doesn't have a separate "label" field; type serves as label
+    label: adapter.definition.ui.label,
     source: externalRecord ? "external" : "builtin",
-    modelsCount: (adapter.models ?? []).length,
+    modelsCount: adapter.definition.models.length,
     loaded: true, // If it's in the registry, it's loaded
     disabled: disabledSet.has(adapter.type),
     capabilities: buildAdapterCapabilities(adapter),
-    ...(adapter.acp ? { acp: adapter.acp } : {}),
+    registryName: adapter.definition.launchProfile.registryName,
+    frontendPackage:
+      adapter.definition.launchProfile.frontendPackage,
+    frontendVersion:
+      adapter.definition.launchProfile.frontendVersion,
+    frontendDigest:
+      adapter.definition.launchProfile.frontendDigest,
     overriddenBuiltin: externalRecord ? BUILTIN_ADAPTER_TYPES.has(adapter.type) : undefined,
     overridePaused: BUILTIN_ADAPTER_TYPES.has(adapter.type) ? isOverridePaused(adapter.type) : undefined,
     // Prefer on-disk package.json so the UI reflects bumps without relying on store-only fields.
@@ -174,17 +188,11 @@ async function normalizeLocalPath(rawPath: string): Promise<string> {
 }
 
 /**
- * Register an external adapter module into the server registry via the
- * hot-install path, resolving `sessionManagement` identically to how the
- * init-time IIFE does. Module-provided `sessionManagement` is honored first,
- * with fallback to the host registry by type for builtin-type overrides.
- *
- * Keeps the hot-install and init-time paths at parity so an adapter installed
- * via `POST /api/adapters/install` has the same shape in the registry as the
- * same adapter loaded on the next server restart.
+ * Register an external adapter module through the same validation path used
+ * during server startup.
  */
-function registerWithSessionManagement(adapter: ServerAdapterModule): void {
-  registerServerAdapter(resolveExternalAdapterRegistration(adapter));
+function registerExternalAdapter(adapter: ServerAdapterModule): void {
+  registerServerAdapter(adapter);
 }
 
 // ---------------------------------------------------------------------------
@@ -240,8 +248,7 @@ export function adapterRoutes() {
       return;
     }
 
-    // Strip version suffix if the UI sends "pkg@1.2.3" instead of separating it
-    // e.g. "@henkey/hermes-paperclip-adapter@0.3.0" → packageName + version
+    // Strip a version suffix if the UI sends "pkg@1.2.3" instead of separating it.
     let canonicalName = packageName;
     let explicitVersion = version;
     const versionSuffix = packageName.match(/@(\d+\.\d+\.\d+.*)$/);
@@ -316,7 +323,7 @@ export function adapterRoutes() {
       }
 
       // Register the new adapter
-      registerWithSessionManagement(adapterModule);
+      registerExternalAdapter(adapterModule);
 
       // Persist the record (use canonicalName without version suffix)
       const record: AdapterPluginRecord = {
@@ -408,7 +415,7 @@ export function adapterRoutes() {
    *
    * Pause or resume an external adapter's override of a builtin type.
    * When paused, the server returns the builtin adapter for all new requests
-   * (execute, listModels, config schema, etc.).  Already-running sessions
+   * (execute, static model catalog, config schema, etc.). Already-running sessions
    * keep the adapter they started with.
    */
   router.patch("/adapters/:type/override", async (req, res) => {
@@ -538,8 +545,7 @@ export function adapterRoutes() {
 
       // Swap in the reloaded module
       unregisterServerAdapter(type);
-      registerWithSessionManagement(newModule);
-      configSchemaCache.delete(type);
+      registerExternalAdapter(newModule);
 
       // Sync store.version from package.json (store may be missing version for local installs).
       const record = getAdapterPluginByType(type);
@@ -606,8 +612,7 @@ export function adapterRoutes() {
       }
 
       unregisterServerAdapter(type);
-      registerWithSessionManagement(newModule);
-      configSchemaCache.delete(type);
+      registerExternalAdapter(newModule);
 
       // Sync store version from disk
       let newVersion: string | undefined;
@@ -631,14 +636,7 @@ export function adapterRoutes() {
 
   // ── GET /api/adapters/:type/config-schema ────────────────────────────────
   // Serve a declarative config schema for an adapter's UI form fields.
-  // The adapter's getConfigSchema() resolves all options (static and dynamic)
-  // so the UI receives a fully hydrated schema in a single fetch.
-  const configSchemaCache = new Map<string, {
-    adapter: ServerAdapterModule;
-    schema: AdapterConfigSchema;
-    fetchedAt: number;
-  }>();
-  const CONFIG_SCHEMA_TTL_MS = 30_000;
+  // The closed adapter definition owns immutable UI form metadata.
 
   router.get("/adapters/:type/config-schema", async (req, res) => {
     // Config schemas are read-only form metadata used when org members create
@@ -651,46 +649,15 @@ export function adapterRoutes() {
       res.status(404).json({ error: `Adapter "${type}" is not registered.` });
       return;
     }
-    if (!adapter.getConfigSchema) {
-      res.status(404).json({ error: `Adapter "${type}" does not provide a config schema.` });
-      return;
+    const parsedSchema = validateAdapterConfigSchema(
+      adapter.definition.configSchema,
+    );
+    if (!parsedSchema.success) {
+      throw new Error(
+        `Registered adapter "${type}" has an invalid declarative schema`,
+      );
     }
-
-    const cached = configSchemaCache.get(type);
-    if (cached && cached.adapter === adapter && Date.now() - cached.fetchedAt < CONFIG_SCHEMA_TTL_MS) {
-      res.json(cached.schema);
-      return;
-    }
-
-    try {
-      const schema = await adapter.getConfigSchema();
-      configSchemaCache.set(type, { adapter, schema, fetchedAt: Date.now() });
-      res.json(schema);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error({ err, type }, "Failed to resolve config schema");
-      res.status(500).json({ error: `Failed to resolve config schema: ${message}` });
-    }
-  });
-
-  // ── GET /api/adapters/:type/ui-parser.js ─────────────────────────────────
-  // Serve the self-contained UI parser JS for an adapter type.
-  // This allows external adapters to provide custom run-log parsing
-  // without modifying Paperclip's source code.
-  //
-  // The adapter package must export a "./ui-parser" entry in package.json
-  // pointing to a self-contained ESM module with zero runtime dependencies.
-  router.get("/adapters/:type/ui-parser.js", (req, res) => {
-    // UI parsers are read-only assets for displaying existing run output.
-    // Runtime-changing adapter management routes above require instance admin.
-    assertBoardOrgAccess(req);
-    const { type } = req.params;
-    const source = getOrExtractUiParserSource(type);
-    if (!source) {
-      res.status(404).json({ error: `No UI parser available for adapter "${type}".` });
-      return;
-    }
-    res.type("application/javascript").send(source);
+    res.json(parsedSchema.data);
   });
 
   return router;

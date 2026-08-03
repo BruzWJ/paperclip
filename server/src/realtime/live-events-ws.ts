@@ -1,14 +1,19 @@
-import { createHash } from "node:crypto";
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { createRequire } from "node:module";
 import type { Duplex } from "node:stream";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agentApiKeys, companyMemberships, instanceUserRoles } from "@paperclipai/db";
-import type { DeploymentMode } from "@paperclipai/shared";
+import { companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
+import { isNonEmptyActorId } from "../http/request-actor.js";
 import { logger } from "../middleware/logger.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
+import {
+  RequestAuthorityError,
+  canonicalizeBrowserOrigin,
+  type RequestAuthority,
+  type RequestAuthorityBoundary,
+} from "../http/request-authority.js";
 
 interface WsSocket {
   readyState: number;
@@ -42,17 +47,13 @@ const { WebSocket, WebSocketServer } = require("ws") as {
 
 interface UpgradeContext {
   companyId: string;
-  actorType: "board" | "agent";
+  actorType: "board";
   actorId: string;
 }
 
 interface IncomingMessageWithContext extends IncomingMessage {
   paperclipWebSocketHandled?: boolean;
   paperclipUpgradeContext?: UpgradeContext;
-}
-
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
 }
 
 function isWritableUpgradeSocket(socket: Duplex) {
@@ -101,99 +102,67 @@ function parseBearerToken(rawAuth: string | string[] | undefined) {
   return token.length > 0 ? token : null;
 }
 
-function headersFromIncomingMessage(req: IncomingMessage): Headers {
-  const headers = new Headers();
-  for (const [key, raw] of Object.entries(req.headers)) {
-    if (!raw) continue;
-    if (Array.isArray(raw)) {
-      for (const value of raw) headers.append(key, value);
-      continue;
-    }
-    headers.set(key, raw);
-  }
-  return headers;
-}
-
 async function authorizeUpgrade(
   db: Db,
   req: IncomingMessage,
   companyId: string,
   url: URL,
   opts: {
-    deploymentMode: DeploymentMode;
     resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+    requestAuthorityBoundary: RequestAuthorityBoundary;
   },
 ): Promise<UpgradeContext | null> {
   const queryToken = url.searchParams.get("token")?.trim() ?? "";
   const authToken = parseBearerToken(req.headers.authorization);
   const token = authToken ?? (queryToken.length > 0 ? queryToken : null);
 
-  // Browser board context has no bearer token in local_trusted and authenticated modes.
-  if (!token) {
-    if (opts.deploymentMode === "local_trusted") {
-      return {
-        companyId,
-        actorType: "board",
-        actorId: "board",
-      };
-    }
-
-    if (opts.deploymentMode !== "authenticated" || !opts.resolveSessionFromHeaders) {
-      return null;
-    }
-
-    const session = await opts.resolveSessionFromHeaders(headersFromIncomingMessage(req));
-    const userId = session?.user?.id;
-    if (!userId) return null;
-
-    const [roleRow, memberships] = await Promise.all([
-      db
-        .select({ id: instanceUserRoles.id })
-        .from(instanceUserRoles)
-        .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({ companyId: companyMemberships.companyId })
-        .from(companyMemberships)
-        .where(
-          and(
-            eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, userId),
-            eq(companyMemberships.status, "active"),
-          ),
-        ),
-    ]);
-
-    const hasCompanyMembership = memberships.some((row) => row.companyId === companyId);
-    if (!roleRow && !hasCompanyMembership) return null;
-
-    return {
-      companyId,
-      actorType: "board",
-      actorId: userId,
-    };
-  }
-
-  const tokenHash = hashToken(token);
-  const key = await db
-    .select()
-    .from(agentApiKeys)
-    .where(and(eq(agentApiKeys.keyHash, tokenHash), isNull(agentApiKeys.revokedAt)))
-    .then((rows) => rows[0] ?? null);
-
-  if (!key || key.companyId !== companyId) {
+  // The live control-plane stream is board-authenticated. Generic bearer
+  // credentials, including run-interface and named-gateway tokens, are not
+  // accepted here.
+  if (token) return null;
+  if (!opts.resolveSessionFromHeaders) {
     return null;
   }
 
-  await db
-    .update(agentApiKeys)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(agentApiKeys.id, key.id));
+  const session = await opts.resolveSessionFromHeaders(
+    opts.requestAuthorityBoundary.headers(req),
+  );
+  if (
+    !(
+      isNonEmptyActorId(session?.user?.id)
+      && isNonEmptyActorId(session.session?.id)
+      && isNonEmptyActorId(session.session.userId)
+      && session.session.userId === session.user.id
+    )
+  ) {
+    return null;
+  }
+  const userId = session.user.id.trim();
 
+  const [roleRow, memberships] = await Promise.all([
+    db
+      .select({ id: instanceUserRoles.id })
+      .from(instanceUserRoles)
+      .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({ companyId: companyMemberships.companyId })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalUserId, userId),
+          eq(companyMemberships.status, "active"),
+        ),
+      ),
+  ]);
+
+  const hasCompanyMembership = memberships.some((row) => row.companyId === companyId);
+  if (!roleRow && !hasCompanyMembership) return null;
   return {
     companyId,
-    actorType: "agent",
-    actorId: key.agentId,
+    actorType: "board",
+    actorId: userId,
   };
 }
 
@@ -201,8 +170,8 @@ export function setupLiveEventsWebSocketServer(
   server: HttpServer,
   db: Db,
   opts: {
-    deploymentMode: DeploymentMode;
     resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+    requestAuthorityBoundary: RequestAuthorityBoundary;
   },
 ) {
   const wss = new WebSocketServer({ noServer: true });
@@ -276,16 +245,40 @@ export function setupLiveEventsWebSocketServer(
       return;
     }
 
-    const url = new URL(req.url, "http://localhost");
+    let authority: RequestAuthority;
+    try {
+      authority = opts.requestAuthorityBoundary.admit(req);
+    } catch (error) {
+      if (error instanceof RequestAuthorityError) {
+        rejectUpgrade(
+          socket,
+          error.status === 403 ? "403 Forbidden" : "400 Bad Request",
+          error.message,
+        );
+        return;
+      }
+      rejectUpgrade(socket, "400 Bad Request", "invalid request authority");
+      return;
+    }
+
+    const url = new URL(req.url, authority.origin);
     const companyId = parseCompanyId(url.pathname);
     if (!companyId) {
       closeUpgradeSocket(socket);
       return;
     }
+    const originHeader = req.headers.origin;
+    const browserOrigin = Array.isArray(originHeader)
+      ? null
+      : canonicalizeBrowserOrigin(originHeader);
+    if (browserOrigin !== authority.origin) {
+      rejectUpgrade(socket, "403 Forbidden", "websocket origin does not match request authority");
+      return;
+    }
 
     void authorizeUpgrade(db, req, companyId, url, {
-      deploymentMode: opts.deploymentMode,
       resolveSessionFromHeaders: opts.resolveSessionFromHeaders,
+      requestAuthorityBoundary: opts.requestAuthorityBoundary,
     })
       .then((context) => {
         if (!context) {

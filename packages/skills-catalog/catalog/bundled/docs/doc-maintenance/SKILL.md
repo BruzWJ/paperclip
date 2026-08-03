@@ -2,10 +2,6 @@
 name: doc-maintenance
 description: Keep project docs aligned with recent code and feature changes — detect drift, update affected pages, and add release-relevant notes without rewriting unchanged sections.
 key: paperclipai/bundled/docs/doc-maintenance
-recommendedForRoles:
-  - engineer
-  - product
-  - devrel
 tags:
   - docs
   - documentation

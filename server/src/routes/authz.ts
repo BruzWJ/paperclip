@@ -1,50 +1,54 @@
 import type { Request, Response } from "express";
-import { forbidden, HttpError, unauthorized } from "../errors.js";
-import { logger } from "../middleware/logger.js";
-import { responsibleUserAuthzShadowMode } from "../services/authorization.js";
+import { and, eq } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { authUsers, companyMemberships } from "@paperclipai/db";
+import { forbidden, unauthorized } from "../errors.js";
+import {
+  isBoardActor,
+  type BoardActor,
+  type RequestActor,
+} from "../http/request-actor.js";
 
-function throwOrShadowResponsibleUserCompanyAccessDeny(
+type RequestWithActor<TActor extends RequestActor> =
+  Request & { actor: TActor };
+
+export function assertAuthenticated(
   req: Request,
-  companyId: string,
-  code: "RESPONSIBLE_USER_UNAUTHORIZED" | "RESPONSIBLE_USER_UNAVAILABLE",
-  message: string,
-) {
-  logger.warn({
-    authzMode: responsibleUserAuthzShadowMode() ? "shadow" : "enforce",
-    code,
-    action: "company_access",
-    companyId,
-    actorAgentId: req.actor.agentId ?? null,
-    responsibleUserId: req.actor.onBehalfOfUserId ?? null,
-    method: req.method,
-  }, "responsible-user company access intersection denied");
-  if (responsibleUserAuthzShadowMode()) return;
-  throw new HttpError(403, message, { code });
-}
-
-export function assertAuthenticated(req: Request) {
+): asserts req is RequestWithActor<BoardActor> {
   if (req.actor.type === "none") {
     throw unauthorized();
   }
-}
-
-export function assertBoard(req: Request) {
-  if (req.actor.type !== "board") {
+  if (!isBoardActor(req.actor)) {
     throw forbidden("Board access required");
   }
+}
+
+export function assertBoard(
+  req: Request,
+): asserts req is RequestWithActor<BoardActor> {
+  if (!isBoardActor(req.actor)) {
+    throw forbidden("Board access required");
+  }
+}
+
+export function getBoardUserId(req: Request): string {
+  assertBoard(req);
+  return req.actor.userId;
 }
 
 export function hasBoardOrgAccess(req: Request) {
   if (req.actor.type !== "board") {
     return false;
   }
-  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
+  if (req.actor.isInstanceAdmin) {
     return true;
   }
   return Array.isArray(req.actor.companyIds) && req.actor.companyIds.length > 0;
 }
 
-export function assertBoardOrgAccess(req: Request) {
+export function assertBoardOrgAccess(
+  req: Request,
+): asserts req is RequestWithActor<BoardActor> {
   assertBoard(req);
   if (hasBoardOrgAccess(req)) {
     return;
@@ -52,71 +56,81 @@ export function assertBoardOrgAccess(req: Request) {
   throw forbidden("Company membership or instance admin access required");
 }
 
-export function assertBoardOrAgent(req: Request) {
-  if (req.actor.type === "agent") {
-    return;
-  }
-  if (req.actor.type === "board") {
-    assertBoardOrgAccess(req);
-    return;
-  }
-  throw forbidden("Board or agent access required");
-}
-
-export function assertInstanceAdmin(req: Request) {
+export function assertInstanceAdmin(
+  req: Request,
+): asserts req is RequestWithActor<BoardActor> {
   assertBoard(req);
-  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
+  if (req.actor.isInstanceAdmin) {
     return;
   }
   throw forbidden("Instance admin access required");
 }
 
-export function assertCompanyAccess(req: Request, companyId: string) {
+export function assertCompanyAccess(
+  req: Request,
+  companyId: string,
+): asserts req is RequestWithActor<BoardActor> {
   assertAuthenticated(req);
-  if (req.actor.type === "agent" && req.actor.companyId !== companyId) {
-    throw forbidden("Agent key cannot access another company");
+  const allowedCompanies = req.actor.companyIds;
+  if (!allowedCompanies.includes(companyId)) {
+    throw forbidden("User does not have access to this company");
   }
-  if (req.actor.type === "agent" && req.actor.onBehalfOfUserId?.trim()) {
-    const membership = req.actor.onBehalfOfMemberships?.find(
-      (item) => item.companyId === companyId && item.status === "active",
-    );
-    if (!membership) {
-      throwOrShadowResponsibleUserCompanyAccessDeny(
-        req,
-        companyId,
-        "RESPONSIBLE_USER_UNAVAILABLE",
-        "Responsible user is unavailable for this company",
-      );
-      return;
+  const method = typeof req.method === "string" ? req.method.toUpperCase() : "GET";
+  const isSafeMethod = ["GET", "HEAD", "OPTIONS"].includes(method);
+  if (!isSafeMethod && !req.actor.isInstanceAdmin) {
+    const membership = req.actor.memberships.find((item) => item.companyId === companyId);
+    if (!membership || membership.status !== "active") {
+      throw forbidden("User does not have active company access");
     }
-    const method = typeof req.method === "string" ? req.method.toUpperCase() : "GET";
-    const isSafeMethod = ["GET", "HEAD", "OPTIONS"].includes(method);
-    if (!isSafeMethod && membership.membershipRole === "viewer") {
-      throwOrShadowResponsibleUserCompanyAccessDeny(
-        req,
-        companyId,
-        "RESPONSIBLE_USER_UNAUTHORIZED",
-        "Responsible user is not authorized for write access",
-      );
+    if (membership.membershipRole === "viewer") {
+      throw forbidden("Viewer access is read-only");
     }
   }
-  if (req.actor.type === "board" && req.actor.source !== "local_implicit") {
-    const allowedCompanies = req.actor.companyIds ?? [];
-    if (!allowedCompanies.includes(companyId)) {
-      throw forbidden("User does not have access to this company");
-    }
-    const method = typeof req.method === "string" ? req.method.toUpperCase() : "GET";
-    const isSafeMethod = ["GET", "HEAD", "OPTIONS"].includes(method);
-    if (!isSafeMethod && !req.actor.isInstanceAdmin && Array.isArray(req.actor.memberships)) {
-      const membership = req.actor.memberships.find((item) => item.companyId === companyId);
-      if (!membership || membership.status !== "active") {
-        throw forbidden("User does not have active company access");
-      }
-      if (membership.membershipRole === "viewer") {
-        throw forbidden("Viewer access is read-only");
-      }
-    }
+}
+
+/**
+ * Canonical human-steering authorization shared by run-detail and reply
+ * routes. A board key is accepted only after middleware has resolved it to a
+ * real Better Auth user; raw/provider identities never satisfy this shape.
+ */
+export async function authorizeHumanIssueSteering(
+  db: Db,
+  req: Request,
+  companyId: string,
+): Promise<string> {
+  assertCompanyAccess(req, companyId);
+  assertBoard(req);
+  const userId = req.actor.userId.trim();
+  if (!userId) throw forbidden("Human steering requires a named user");
+  const [user, membership] = await Promise.all([
+    db
+      .select({ id: authUsers.id })
+      .from(authUsers)
+      .where(eq(authUsers.id, userId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        id: companyMemberships.id,
+        status: companyMemberships.status,
+        membershipRole: companyMemberships.membershipRole,
+      })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalUserId, userId),
+          eq(companyMemberships.status, "active"),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+  ]);
+  if (!user || !membership || membership.membershipRole === "viewer") {
+    throw forbidden("Human steering requires active comment permission");
   }
+  return userId;
 }
 
 /**
@@ -154,10 +168,7 @@ export function assertCompanyAccess(req: Request, companyId: string) {
  * get blanket access to companies they are not a member of.
  */
 export function hasCompanyAccess(req: Request, companyId: string): boolean {
-  if (req.actor.type === "none") return false;
-  if (req.actor.type === "agent") return req.actor.companyId === companyId;
-  if (req.actor.source === "local_implicit") return true;
-  return (req.actor.companyIds ?? []).includes(companyId);
+  return isBoardActor(req.actor) && req.actor.companyIds.includes(companyId);
 }
 
 /**
@@ -191,54 +202,4 @@ export async function getAccessibleResource<T extends { companyId: string }>(
   }
   assertCompanyAccess(req, resolved.companyId);
   return resolved;
-}
-
-export function getActorInfo(req: Request): (
-  {
-    actorType: "agent";
-    actorId: string;
-    agentId: string | null;
-    runId: string | null;
-    agentApiKeyId: string | null;
-    actorSource: "agent_key" | "agent_jwt";
-  }
-  | {
-    actorType: "user";
-    actorId: string;
-    sessionId: string | null;
-    agentId: null;
-    runId: string | null;
-    agentApiKeyId: null;
-    actorSource: "local_implicit" | "session" | "board_key" | "cloud_tenant";
-  }
-) {
-  assertAuthenticated(req);
-  if (req.actor.type === "agent") {
-    const actorSource = req.actor.source === "agent_jwt" ? "agent_jwt" : "agent_key";
-    return {
-      actorType: "agent" as const,
-      actorId: req.actor.agentId ?? "unknown-agent",
-      agentId: req.actor.agentId ?? null,
-      runId: req.actor.runId ?? null,
-      agentApiKeyId: req.actor.keyId ?? null,
-      actorSource,
-    };
-  }
-
-  const actorSource =
-    req.actor.source === "local_implicit" ||
-      req.actor.source === "board_key" ||
-      req.actor.source === "cloud_tenant"
-      ? req.actor.source
-      : "session";
-
-  return {
-    actorType: "user" as const,
-    actorId: req.actor.userId ?? "board",
-    sessionId: req.actor.sessionId ?? null,
-    agentId: null,
-    runId: req.actor.runId ?? null,
-    agentApiKeyId: null,
-    actorSource,
-  };
 }

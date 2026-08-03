@@ -38,8 +38,8 @@ export function formatExternalObjectMentionSourceLabel(source: ExternalObjectMen
   switch (source.sourceKind) {
     case "title":
       return "Title";
-    case "description":
-      return "Description";
+    case "request":
+      return "Request";
     case "comment":
       return "Comment";
     case "document":

@@ -35,8 +35,8 @@ function formatMentionSourceLabel(mention: ExternalObjectMention): string {
   switch (mention.sourceKind) {
     case "title":
       return "Title";
-    case "description":
-      return "Description";
+    case "request":
+      return "Request";
     case "comment":
       return "Comment";
     case "document":

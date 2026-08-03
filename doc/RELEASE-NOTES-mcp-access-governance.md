@@ -19,7 +19,7 @@ Agents that can call arbitrary MCP tools can also leak data, modify accounts, or
 - **Catalog with risk classification** — Every discovered tool gets a `read` / `write` / `destructive` risk level inferred from MCP annotations. Destructive tools and unexpected new write tools are auto-quarantined.
 - **Profiles + bindings** — Named bundles of include/exclude entries over the catalog, bound to a `company`, `agent`, `project`, `routine`, or `issue`. Narrowest binding wins.
 - **Policies** — `allow`, `block`, `require_approval`, `rate_limit`, and `trust_rule`. Deny beats allow. Policies stack with profiles and run in priority order.
-- **Approval flow** — High-risk calls open an action request with signed arguments and an expiry. Human approver decides; agent resumes on approval, fails cleanly on rejection or expiry.
+- **Approval flow** — High-risk calls atomically store their immutable private arguments, redacted review projection, policy/target snapshot, and expiry in PostgreSQL. An authenticated Better Auth user decides; the gateway claims and dispatches the stored request without waking or resuming an agent.
 - **Trust rules** — Promote an approval into a scoped allow rule tied to the canonical argument hash and the catalog schema hash. When schemas drift, trust rules stop applying and the gateway falls back to approval. Revocations are first-class and audited.
 - **Audit ledger** — Append-only call event log with decision, matched policy IDs, reason code, redaction plan, latency, and outcome. Per-run timelines available via `…/runs/:runId/decisions`.
 - **Runtime supervisor** — Stdio runtime slots have a real lifecycle (`starting`, `running`, `idle`, `failed`), idle eviction, restart suppression on storms, and a board health endpoint with alert recommendations.
@@ -37,7 +37,7 @@ Agents that can call arbitrary MCP tools can also leak data, modify accounts, or
 - **Catalog drift** (new write or destructive tool seen on a refresh): quarantine.
 - **Write tool, no policy match, no trust rule**: requires approval if the profile's default-action allows writes; otherwise denied.
 - **Destructive tool**: denied until an operator explicitly un-quarantines it.
-- **Local stdio in `authenticated/public`**: fails closed unless `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` is set on a designated trusted worker.
+- **Local stdio under public exposure**: fails closed unless `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` is set on a designated trusted worker.
 - **Agent-supplied stdio commands**: rejected. Always.
 
 ## Upgrade and migration
@@ -50,7 +50,10 @@ Upgrade steps for existing deployments:
 2. Confirm the Tools & Access tab appears in the UI for board users.
 3. From **Examples**, install `safe-read-only-todo-kv` and run the bundled smoke. Expect `ok: true` across all three checks (`allow_read_tool`, `deny_write_tool`, `audit_written`).
 4. For each existing agent runtime that previously called MCP servers directly: replace direct MCP wiring with a managed connection. Until you do, those agents have no governed tool access on this release.
-5. If you run `authenticated/public`, decide whether you want a trusted runtime worker for local stdio. If yes, set `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` on that worker and only that worker. If no, leave it unset — `remote_http` connections continue to work.
+5. Under public exposure, decide whether you want a trusted runtime worker for
+   local stdio. If yes, set `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` on that worker
+   and only that worker. If no, leave it unset—`remote_http` connections
+   continue to work.
 
 There is no downgrade path that preserves audit history. If you must roll back, archive any installed connections first so future audits do not surface orphan IDs.
 
@@ -93,7 +96,7 @@ Expected: `runtime-health.status` is `"ok"` (no firing alerts on a clean install
 - Operator guide: [doc/MCP-ACCESS-GOVERNANCE.md](./MCP-ACCESS-GOVERNANCE.md)
 - Runtime runbook: [doc/MCP-RUNTIME-OPERATIONS.md](./MCP-RUNTIME-OPERATIONS.md)
 - Demo script: [doc/MCP-DEMO-SCRIPT.md](./MCP-DEMO-SCRIPT.md)
-- Deployment modes (auth/exposure/bind): [doc/DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md)
+- Deployment reachability and authentication: [doc/DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ## Acknowledgements
 

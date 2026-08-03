@@ -7,7 +7,13 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AdapterRuntimeServiceReport } from "@paperclipai/adapter-utils";
 import type { Db } from "@paperclipai/db";
-import { executionWorkspaces, issueComments, issues, projectWorkspaces, workspaceRuntimeServices } from "@paperclipai/db";
+import {
+  executionWorkspaces,
+  issueExecutionWorkspaceBindings,
+  issues,
+  projectWorkspaces,
+  workspaceRuntimeServices,
+} from "@paperclipai/db";
 import {
   listWorkspaceServiceCommandDefinitions,
   type GitWorktreeBranchAncestryVerdict,
@@ -18,7 +24,12 @@ import {
   type WorkspaceRuntimeServiceStateMap,
 } from "@paperclipai/shared";
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
-import { asNumber, asString, parseObject, renderTemplate } from "../adapters/utils.js";
+import {
+  asNumber,
+  asString,
+  parseObject,
+  renderTemplate,
+} from "@paperclipai/adapter-utils/server-utils";
 import { resolveHomeAwarePath } from "../home-paths.js";
 import {
   createLocalServiceKey,
@@ -36,6 +47,7 @@ import type { WorkspaceOperationRecorder } from "./workspace-operations.js";
 import { executionWorkspaceService, readExecutionWorkspaceConfig } from "./execution-workspaces.js";
 import { logActivity } from "./activity-log.js";
 import { readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
+import { appendCanonicalControlNotice } from "./issue-session-producers.js";
 
 export function resolveShell(): string {
   const fallback = process.platform === "win32" ? "sh" : "/bin/sh";
@@ -47,7 +59,7 @@ export function resolveShell(): string {
 
 export interface ExecutionWorkspaceInput {
   baseCwd: string;
-  source: "project_primary" | "task_session" | "agent_home";
+  source: "project_primary" | "issue_execution";
   projectId: string | null;
   workspaceId: string | null;
   repoUrl: string | null;
@@ -881,7 +893,7 @@ async function assertGitIndexIsUnlocked(worktreePath: string) {
 }
 
 function fingerprintWorkspaceBranchIncoherence(input: {
-  sourceIssueId: string | null;
+  issueId: string | null;
   executionWorkspaceId: string | null;
   worktreePath: string;
   expectedBranch: string;
@@ -894,7 +906,7 @@ function fingerprintWorkspaceBranchIncoherence(input: {
     .update(stableStringify({
       version: 1,
       reason: GIT_WORKTREE_BRANCH_INCOHERENCE_REASON,
-      sourceIssueId: input.sourceIssueId,
+      issueId: input.issueId,
       executionWorkspaceId: input.executionWorkspaceId,
       worktreePath: path.resolve(input.worktreePath),
       expectedBranch: input.expectedBranch,
@@ -1037,7 +1049,7 @@ async function inspectGitWorktreeBranchIncoherence(input: {
           ? "expected branch and current HEAD differ"
           : "safe repair could not be proven";
   const fingerprint = fingerprintWorkspaceBranchIncoherence({
-    sourceIssueId: input.sourceIssue?.id ?? null,
+    issueId: input.sourceIssue?.id ?? null,
     executionWorkspaceId: input.executionWorkspaceId ?? null,
     worktreePath: input.worktreePath,
     expectedBranch: input.expectedBranchName,
@@ -1162,7 +1174,7 @@ async function writeDirtyQuarantineAuditComments(input: {
   rescueBranch: string;
   rescueCommitSha: string;
   fileCount: number;
-  heartbeatRunId: string | null;
+  runId: string | null;
 }): Promise<{ sourceAuditCommentId: string | null; claimantAuditCommentId: string | null }> {
   const body = formatDirtyQuarantineAuditComment({
     evidence: input.evidence,
@@ -1174,46 +1186,41 @@ async function writeDirtyQuarantineAuditComments(input: {
   });
   let sourceAuditCommentId: string | null = null;
   let claimantAuditCommentId: string | null = null;
-  const now = new Date();
   if (input.evidence.sourceIssueId) {
-    const [sourceComment] = await input.db
-      .insert(issueComments)
-      .values({
-        companyId: input.companyId,
-        issueId: input.evidence.sourceIssueId,
-        authorAgentId: null,
-        authorUserId: null,
-        authorType: "system",
-        createdByRunId: input.heartbeatRunId,
-        body,
-      })
-      .returning({ id: issueComments.id });
-    sourceAuditCommentId = sourceComment?.id ?? null;
-    await input.db
-      .update(issues)
-      .set({ updatedAt: now })
-      .where(eq(issues.id, input.evidence.sourceIssueId));
+    const sourceNotice = await appendCanonicalControlNotice(input.db, {
+      companyId: input.companyId,
+      issueId: input.evidence.sourceIssueId,
+      sourceKind: "workspace_dirty_quarantine",
+      immutableSourceKey:
+        `${input.evidence.fingerprint}:source:${input.rescueCommitSha}`,
+      sourceRecordId: input.evidence.fingerprint,
+      exactText: body,
+      comment: {
+        author: { kind: "system", source: "recovery" },
+        producingRun: null,
+      },
+      allowTerminal: true,
+    });
+    sourceAuditCommentId = sourceNotice.comment?.id ?? null;
   }
 
   const claimantIssueId = input.evidence.contention?.claimedByIssueId ?? null;
   if (claimantIssueId && claimantIssueId !== input.evidence.sourceIssueId) {
-    const [claimantComment] = await input.db
-      .insert(issueComments)
-      .values({
-        companyId: input.companyId,
-        issueId: claimantIssueId,
-        authorAgentId: null,
-        authorUserId: null,
-        authorType: "system",
-        createdByRunId: input.heartbeatRunId,
-        body,
-      })
-      .returning({ id: issueComments.id });
-    claimantAuditCommentId = claimantComment?.id ?? null;
-    await input.db
-      .update(issues)
-      .set({ updatedAt: now })
-      .where(eq(issues.id, claimantIssueId));
+    const claimantNotice = await appendCanonicalControlNotice(input.db, {
+      companyId: input.companyId,
+      issueId: claimantIssueId,
+      sourceKind: "workspace_dirty_quarantine",
+      immutableSourceKey:
+        `${input.evidence.fingerprint}:claimant:${claimantIssueId}:${input.rescueCommitSha}`,
+      sourceRecordId: input.evidence.fingerprint,
+      exactText: body,
+      comment: {
+        author: { kind: "system", source: "recovery" },
+        producingRun: null,
+      },
+      allowTerminal: true,
+    });
+    claimantAuditCommentId = claimantNotice.comment?.id ?? null;
   }
 
   return { sourceAuditCommentId, claimantAuditCommentId };
@@ -1226,7 +1233,7 @@ async function logDirtyQuarantineActivity(input: {
   rescueBranch: string;
   rescueCommitSha: string;
   fileCount: number;
-  heartbeatRunId: string | null;
+  runId: string | null;
   sourceAuditCommentId: string | null;
   claimantAuditCommentId: string | null;
 }) {
@@ -1234,7 +1241,7 @@ async function logDirtyQuarantineActivity(input: {
     companyId: input.companyId,
     actorType: "system",
     actorId: "workspace_runtime",
-    runId: input.heartbeatRunId,
+    runId: input.runId,
     action: "execution_workspace.dirty_worktree_quarantined",
     entityType: input.evidence.executionWorkspaceId ? "execution_workspace" : "issue",
     entityId: input.evidence.executionWorkspaceId ?? input.evidence.sourceIssueId ?? input.companyId,
@@ -1308,7 +1315,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
   expectedBranchName: string;
   sourceIssue: ExecutionWorkspaceIssueRef | null;
   executionWorkspaceId: string | null;
-  heartbeatRunId: string | null;
+  runId: string | null;
   evidence: GitWorktreeBranchIncoherenceEvidence;
   phase?: "worktree_prepare" | "workspace_finalize";
   recorder?: WorkspaceOperationRecorder | null;
@@ -1381,7 +1388,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
         "-m",
         [
           `Source-Issue: ${input.evidence.sourceIdentifier ?? input.evidence.sourceIssueId ?? "unknown"}`,
-          `Run-Id: ${input.heartbeatRunId ?? "unknown"}`,
+          `Run-Id: ${input.runId ?? "unknown"}`,
           `Recorded-Branch: ${input.expectedBranchName}`,
           `Live-Branch: ${formatBranchForMessage(input.evidence.actualBranch)}`,
           `Fingerprint: ${input.evidence.fingerprint}`,
@@ -1460,7 +1467,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
       rescueBranch,
       rescueCommitSha,
       fileCount,
-      heartbeatRunId: input.heartbeatRunId,
+      runId: input.runId,
     });
     await logDirtyQuarantineActivity({
       db: input.db,
@@ -1469,7 +1476,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
       rescueBranch,
       rescueCommitSha,
       fileCount,
-      heartbeatRunId: input.heartbeatRunId,
+      runId: input.runId,
       sourceAuditCommentId: comments.sourceAuditCommentId,
       claimantAuditCommentId: comments.claimantAuditCommentId,
     });
@@ -1518,7 +1525,6 @@ async function recordForwardBranchReconcileOperation(input: {
   ancestryVerdict: GitWorktreeBranchAncestryVerdict;
   mode: "record_updated" | "adopt_for_realize";
   auditCommentId?: string | null;
-  recoveryActionId?: string | null;
 }) {
   if (!input.recorder) return;
 
@@ -1539,7 +1545,6 @@ async function recordForwardBranchReconcileOperation(input: {
       actualHeadSha: input.actualHeadSha,
       ancestryVerdict: input.ancestryVerdict,
       auditCommentId: input.auditCommentId ?? null,
-      recoveryActionId: input.recoveryActionId ?? null,
     },
     run: async () => ({
       status: "succeeded",
@@ -1566,7 +1571,6 @@ async function logForwardBranchReconcileActivity(input: {
   ancestryVerdict: GitWorktreeBranchAncestryVerdict;
   fingerprint: string;
   auditCommentId: string | null;
-  recoveryActionId: string | null;
 }) {
   await logActivity(input.db, {
     companyId: input.companyId,
@@ -1587,7 +1591,6 @@ async function logForwardBranchReconcileActivity(input: {
       fingerprint: input.fingerprint,
       sourceIssueId: input.sourceIssueId,
       auditCommentId: input.auditCommentId,
-      recoveryActionId: input.recoveryActionId,
       actor: {
         type: "system",
         id: "workspace_runtime",
@@ -1600,8 +1603,9 @@ async function logForwardBranchReconcileActivity(input: {
 export async function reconcilePendingForwardBranchAfterPersistence(input: {
   db: Db;
   executionWorkspaceId: string;
+  issueId: string;
   pending: PendingForwardBranchReconcile;
-  heartbeatRunId?: string | null;
+  runId?: string | null;
   reconcileOperationPhase?: "worktree_prepare" | "workspace_finalize";
   recorder?: WorkspaceOperationRecorder | null;
 }) {
@@ -1609,13 +1613,12 @@ export async function reconcilePendingForwardBranchAfterPersistence(input: {
     input.executionWorkspaceId,
     {
       mode: "forward",
+      issueId: input.issueId,
       reason: input.pending.reason,
-      alternateRecoveryFingerprints: [input.pending.prePersistenceFingerprint],
       actor: {
         actorType: "system",
         actorId: "workspace_runtime",
-        agentId: null,
-        runId: input.heartbeatRunId ?? null,
+        runId: input.runId ?? null,
       },
     },
   );
@@ -1623,8 +1626,8 @@ export async function reconcilePendingForwardBranchAfterPersistence(input: {
     db: input.db,
     companyId: result.workspace.companyId,
     executionWorkspaceId: result.workspace.id,
-    sourceIssueId: result.workspace.sourceIssueId,
-    runId: input.heartbeatRunId ?? null,
+    sourceIssueId: result.boundIssueId,
+    runId: input.runId ?? null,
     mode: "forward",
     reason: input.pending.reason,
     fromBranch: result.inspection.fromBranch,
@@ -1634,7 +1637,6 @@ export async function reconcilePendingForwardBranchAfterPersistence(input: {
     ancestryVerdict: result.inspection.ancestryVerdict,
     fingerprint: result.inspection.fingerprint,
     auditCommentId: result.auditCommentId,
-    recoveryActionId: result.recoveryAction?.id ?? null,
   });
   await recordForwardBranchReconcileOperation({
     recorder: input.recorder,
@@ -1645,14 +1647,13 @@ export async function reconcilePendingForwardBranchAfterPersistence(input: {
     expectedBranchName: result.inspection.fromBranch,
     actualBranchName: result.inspection.toBranch,
     executionWorkspaceId: result.workspace.id,
-    sourceIssueId: result.workspace.sourceIssueId,
+    sourceIssueId: result.boundIssueId,
     fingerprint: result.inspection.fingerprint,
     expectedHeadSha: result.inspection.fromSha,
     actualHeadSha: result.inspection.toSha,
     ancestryVerdict: result.inspection.ancestryVerdict,
     mode: "adopt_for_realize",
     auditCommentId: result.auditCommentId,
-    recoveryActionId: result.recoveryAction?.id ?? null,
   });
   return result;
 }
@@ -1665,7 +1666,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   sourceIssue: ExecutionWorkspaceIssueRef | null;
   executionWorkspaceId?: string | null;
   actualBranchName?: string | null;
-  heartbeatRunId?: string | null;
+  runId?: string | null;
   enableWorkspaceBranchReconcileForward?: boolean;
   enableWorkspaceDirtyQuarantineRepair?: boolean;
   persistForwardReconcile?: boolean;
@@ -1725,7 +1726,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
       expectedBranchName,
       sourceIssue: input.sourceIssue,
       executionWorkspaceId: input.executionWorkspaceId ?? null,
-      heartbeatRunId: input.heartbeatRunId ?? null,
+      runId: input.runId ?? null,
       evidence,
       phase: input.reconcileOperationPhase,
       recorder: input.recorder ?? null,
@@ -1762,12 +1763,12 @@ export async function ensureGitWorktreeBranchCoherent(input: {
           input.executionWorkspaceId,
           {
             mode: "forward",
+            issueId: evidence.sourceIssueId,
             reason,
             actor: {
               actorType: "system",
               actorId: "workspace_runtime",
-              agentId: null,
-              runId: input.heartbeatRunId ?? null,
+              runId: input.runId ?? null,
             },
           },
         );
@@ -1775,8 +1776,8 @@ export async function ensureGitWorktreeBranchCoherent(input: {
           db: input.db,
           companyId: result.workspace.companyId,
           executionWorkspaceId: result.workspace.id,
-          sourceIssueId: result.workspace.sourceIssueId ?? evidence.sourceIssueId ?? null,
-          runId: input.heartbeatRunId ?? null,
+          sourceIssueId: result.boundIssueId,
+          runId: input.runId ?? null,
           mode: "forward",
           reason,
           fromBranch: result.inspection.fromBranch,
@@ -1786,7 +1787,6 @@ export async function ensureGitWorktreeBranchCoherent(input: {
           ancestryVerdict: result.inspection.ancestryVerdict,
           fingerprint: result.inspection.fingerprint,
           auditCommentId: result.auditCommentId,
-          recoveryActionId: result.recoveryAction?.id ?? null,
         });
         await recordForwardBranchReconcileOperation({
           recorder: input.recorder,
@@ -1797,14 +1797,13 @@ export async function ensureGitWorktreeBranchCoherent(input: {
           expectedBranchName: result.inspection.fromBranch,
           actualBranchName: result.inspection.toBranch,
           executionWorkspaceId: result.workspace.id,
-          sourceIssueId: result.workspace.sourceIssueId ?? evidence.sourceIssueId ?? null,
+          sourceIssueId: result.boundIssueId,
           fingerprint: result.inspection.fingerprint,
           expectedHeadSha: result.inspection.fromSha,
           actualHeadSha: result.inspection.toSha,
           ancestryVerdict: result.inspection.ancestryVerdict,
           mode: "record_updated",
           auditCommentId: result.auditCommentId,
-          recoveryActionId: result.recoveryAction?.id ?? null,
         });
         return { branchName: result.inspection.toBranch, reconciledForward: true, warnings: [] };
       } catch (error) {
@@ -1950,7 +1949,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
 
 // Resolve the authoritative base ref for a fresh worktree. A configured local
 // branch is mapped to its `origin/<branch>` counterpart so unpushed local
-// divergence never leaks into the task branch; remote-tracking refs, SHAs, and
+// divergence never leaks into the issue branch; remote-tracking refs, SHAs, and
 // tags are used verbatim, and an unset/`HEAD` base falls back to the detected
 // default branch (which already prefers `origin/master`).
 async function resolveAuthoritativeBaseRef(
@@ -1989,7 +1988,7 @@ async function resolveAuthoritativeBaseRef(
 }
 
 // Auto-refresh a reused worktree to the latest base only when it is provably
-// unstarted: no task commits past the base and a clean tree (including untracked
+// unstarted: no issue commits past the base and a clean tree (including untracked
 // files). This pulls an idle worktree forward to the freshest `origin/master`
 // after a long planning phase without ever destroying in-progress work. Only
 // remote-tracking bases are eligible; local-only bases keep warn-only drift.
@@ -2338,38 +2337,6 @@ function terminateChildProcess(child: ChildProcess) {
   }
 }
 
-function buildWorkspaceCommandEnv(input: {
-  base: ExecutionWorkspaceInput;
-  repoRoot: string;
-  worktreePath: string;
-  branchName: string;
-  issue: ExecutionWorkspaceIssueRef | null;
-  agent: ExecutionWorkspaceAgentRef;
-  created: boolean;
-}) {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  env.PAPERCLIP_WORKSPACE_CWD = input.worktreePath;
-  env.PAPERCLIP_WORKSPACE_PATH = input.worktreePath;
-  env.PAPERCLIP_WORKSPACE_WORKTREE_PATH = input.worktreePath;
-  env.PAPERCLIP_WORKSPACE_BRANCH = input.branchName;
-  env.PAPERCLIP_WORKSPACE_BASE_CWD = input.base.baseCwd;
-  env.PAPERCLIP_WORKSPACE_REPO_ROOT = input.repoRoot;
-  env.PAPERCLIP_WORKSPACE_SOURCE = input.base.source;
-  env.PAPERCLIP_WORKSPACE_REPO_REF = input.base.repoRef ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_URL = input.base.repoUrl ?? "";
-  env.PAPERCLIP_WORKSPACE_CREATED = input.created ? "true" : "false";
-  env.PAPERCLIP_PROJECT_ID = input.base.projectId ?? "";
-  env.PAPERCLIP_PROJECT_WORKSPACE_ID = input.base.workspaceId ?? "";
-  env.PAPERCLIP_AGENT_ID = input.agent.id ?? "";
-  env.PAPERCLIP_AGENT_NAME = input.agent.name;
-  env.PAPERCLIP_COMPANY_ID = input.agent.companyId;
-  env.PAPERCLIP_ISSUE_ID = input.issue?.id ?? "";
-  env.PAPERCLIP_ISSUE_IDENTIFIER = input.issue?.identifier ?? "";
-  env.PAPERCLIP_ISSUE_TITLE = input.issue?.title ?? "";
-  env.PAPERCLIP_ISSUE_WORK_MODE = input.issue?.workMode ?? "";
-  return env;
-}
-
 function quoteShellArg(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -2550,33 +2517,32 @@ async function recordWorkspaceCommandOperation(
 
 async function provisionExecutionWorktree(input: {
   strategy: Record<string, unknown>;
-  base: ExecutionWorkspaceInput;
   repoRoot: string;
   worktreePath: string;
   branchName: string;
-  issue: ExecutionWorkspaceIssueRef | null;
-  agent: ExecutionWorkspaceAgentRef;
   created: boolean;
   recorder?: WorkspaceOperationRecorder | null;
 }) {
   const provisionCommand = asString(input.strategy.provisionCommand, "").trim();
   if (!provisionCommand) return;
   const resolvedProvisionCommand = resolveRepoManagedWorkspaceCommand(provisionCommand, input.repoRoot);
+  const provisionEnv = sanitizeRuntimeServiceBaseEnv(process.env);
+  for (const key of [
+    "PAPERCLIP_CONFIG",
+    "PAPERCLIP_HOME",
+    "PAPERCLIP_INSTANCE_ID",
+    "PAPERCLIP_WORKTREES_DIR",
+  ] as const) {
+    const value = process.env[key];
+    if (value !== undefined) provisionEnv[key] = value;
+  }
 
   await recordWorkspaceCommandOperation(input.recorder, {
     phase: "workspace_provision",
     command: provisionCommand,
     resolvedCommand: resolvedProvisionCommand,
     cwd: input.worktreePath,
-    env: buildWorkspaceCommandEnv({
-      base: input.base,
-      repoRoot: input.repoRoot,
-      worktreePath: input.worktreePath,
-      branchName: input.branchName,
-      issue: input.issue,
-      agent: input.agent,
-      created: input.created,
-    }),
+    env: provisionEnv,
     label: `Execution workspace provision command "${provisionCommand}"`,
     metadata: {
       repoRoot: input.repoRoot,
@@ -2587,35 +2553,6 @@ async function provisionExecutionWorktree(input: {
     },
     successMessage: `Provisioned workspace at ${input.worktreePath}\n`,
   });
-}
-
-function buildExecutionWorkspaceCleanupEnv(input: {
-  workspace: {
-    cwd: string | null;
-    providerRef: string | null;
-    branchName: string | null;
-    repoUrl: string | null;
-    baseRef: string | null;
-    projectId: string | null;
-    projectWorkspaceId: string | null;
-    sourceIssueId: string | null;
-  };
-  projectWorkspaceCwd?: string | null;
-}) {
-  const env: NodeJS.ProcessEnv = sanitizeRuntimeServiceBaseEnv(process.env);
-  env.PAPERCLIP_WORKSPACE_CWD = input.workspace.cwd ?? "";
-  env.PAPERCLIP_WORKSPACE_PATH = input.workspace.cwd ?? "";
-  env.PAPERCLIP_WORKSPACE_WORKTREE_PATH =
-    input.workspace.providerRef ?? input.workspace.cwd ?? "";
-  env.PAPERCLIP_WORKSPACE_BRANCH = input.workspace.branchName ?? "";
-  env.PAPERCLIP_WORKSPACE_BASE_CWD = input.projectWorkspaceCwd ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_ROOT = input.projectWorkspaceCwd ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_URL = input.workspace.repoUrl ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_REF = input.workspace.baseRef ?? "";
-  env.PAPERCLIP_PROJECT_ID = input.workspace.projectId ?? "";
-  env.PAPERCLIP_PROJECT_WORKSPACE_ID = input.workspace.projectWorkspaceId ?? "";
-  env.PAPERCLIP_ISSUE_ID = input.workspace.sourceIssueId ?? "";
-  return env;
 }
 
 async function resolveGitRepoRootForWorkspaceCleanup(
@@ -2644,7 +2581,7 @@ export async function realizeExecutionWorkspace(input: {
   config: Record<string, unknown>;
   issue: ExecutionWorkspaceIssueRef | null;
   agent: ExecutionWorkspaceAgentRef;
-  heartbeatRunId?: string | null;
+  runId?: string | null;
   enableWorkspaceBranchReconcileForward?: boolean;
   enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
@@ -2737,12 +2674,9 @@ export async function realizeExecutionWorkspace(input: {
     }
     await provisionExecutionWorktree({
       strategy: rawStrategy,
-      base: input.base,
       repoRoot,
       worktreePath: reusablePath,
       branchName: effectiveBranchName,
-      issue: input.issue,
-      agent: input.agent,
       created: false,
       recorder: input.recorder ?? null,
     });
@@ -2775,7 +2709,7 @@ export async function realizeExecutionWorkspace(input: {
         actualBranchName: validation.actualBranchName ?? null,
         sourceIssue: input.issue,
         executionWorkspaceId: null,
-        heartbeatRunId: input.heartbeatRunId ?? null,
+        runId: input.runId ?? null,
         enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
         enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         reconcileOperationPhase: "worktree_prepare",
@@ -2872,12 +2806,9 @@ export async function realizeExecutionWorkspace(input: {
   }
   await provisionExecutionWorktree({
     strategy: rawStrategy,
-    base: input.base,
     repoRoot,
     worktreePath,
     branchName,
-    issue: input.issue,
-    agent: input.agent,
     created: true,
     recorder: input.recorder ?? null,
   });
@@ -2916,7 +2847,7 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
   };
   issue: ExecutionWorkspaceIssueRef | null;
   agent: ExecutionWorkspaceAgentRef;
-  heartbeatRunId?: string | null;
+  runId?: string | null;
   enableWorkspaceBranchReconcileForward?: boolean;
   enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
@@ -2927,7 +2858,7 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
   const strategy = input.workspace.strategyType === "git_worktree" ? "git_worktree" : "project_primary";
   const realized: RealizedExecutionWorkspace = {
     baseCwd: input.base.baseCwd,
-    source: input.workspace.mode === "shared_workspace" ? "project_primary" : "task_session",
+    source: input.workspace.mode === "shared_workspace" ? "project_primary" : "issue_execution",
     projectId: input.workspace.projectId ?? input.base.projectId,
     workspaceId: input.workspace.projectWorkspaceId ?? input.base.workspaceId,
     repoUrl: input.workspace.repoUrl ?? input.base.repoUrl,
@@ -2962,7 +2893,7 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
         expectedBranchName: realized.branchName,
         sourceIssue: input.issue,
         executionWorkspaceId: input.workspace.id ?? null,
-        heartbeatRunId: input.heartbeatRunId ?? null,
+        runId: input.runId ?? null,
         enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
         enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         persistForwardReconcile: false,
@@ -3025,12 +2956,9 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
           type: "git_worktree",
           provisionCommand,
         },
-        base: input.base,
         repoRoot,
         worktreePath: realized.worktreePath ?? cwd,
         branchName: realized.branchName ?? "",
-        issue: input.issue,
-        agent: input.agent,
         created: false,
         recorder: input.recorder ?? null,
       });
@@ -3111,12 +3039,9 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
       type: "git_worktree",
       ...(provisionCommand ? { provisionCommand } : {}),
     },
-    base: input.base,
     repoRoot,
     worktreePath,
     branchName,
-    issue: input.issue,
-    agent: input.agent,
     created,
     recorder: input.recorder ?? null,
   });
@@ -3164,10 +3089,7 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
       input.projectWorkspace?.cwd ?? null,
     )
     : null;
-  const cleanupEnv = buildExecutionWorkspaceCleanupEnv({
-    workspace: input.workspace,
-    projectWorkspaceCwd: input.projectWorkspace?.cwd ?? null,
-  });
+  const cleanupEnv = sanitizeRuntimeServiceBaseEnv(process.env);
   const createdByRuntime = input.workspace.metadata?.createdByRuntime === true;
   const cleanupCommands = [
     input.cleanupCommand ?? null,
@@ -3586,7 +3508,7 @@ function isPaperclipDevRuntimeService(input: { serviceName?: string | null; comm
   return (
     serviceName === "paperclip-dev"
     || serviceName === "paperclip-dev-once"
-    || (command.includes("dev:once") && command.includes("tailscale-auth"))
+    || command.includes("dev:once")
   );
 }
 
@@ -4486,7 +4408,7 @@ async function startRuntimeServicesForWorkspaceControlUnlocked(
       scopeId,
     };
 
-    // Manually controlled services are not tied to a heartbeat run lifecycle, so they do not
+    // Manually controlled services are not tied to an issue-execution run lifecycle, so they do not
     // retain a run lease and never persist a startedByRunId foreign key.
     const started = options?.deferReadiness
       ? await spawnLocalRuntimeService(startInput)
@@ -4920,9 +4842,56 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
   }
 
   const executionWorkspaceRows = await db
-    .select()
+    .select({
+      id: executionWorkspaces.id,
+      companyId: executionWorkspaces.companyId,
+      projectId: executionWorkspaces.projectId,
+      projectWorkspaceId: executionWorkspaces.projectWorkspaceId,
+      mode: executionWorkspaces.mode,
+      strategyType: executionWorkspaces.strategyType,
+      cwd: executionWorkspaces.cwd,
+      repoUrl: executionWorkspaces.repoUrl,
+      baseRef: executionWorkspaces.baseRef,
+      branchName: executionWorkspaces.branchName,
+      metadata: executionWorkspaces.metadata,
+    })
     .from(executionWorkspaces)
     .where(inArray(executionWorkspaces.status, ["active", "idle", "in_review", "cleanup_failed"]));
+  const currentBindingRows = executionWorkspaceRows.length === 0
+    ? []
+    : await db
+        .select({
+          executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
+          issueId: issues.id,
+          identifier: issues.identifier,
+          title: issues.title,
+        })
+        .from(issueExecutionWorkspaceBindings)
+        .innerJoin(
+          issues,
+          and(
+            eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+            eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+            eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+          ),
+        )
+        .where(inArray(
+          issueExecutionWorkspaceBindings.executionWorkspaceId,
+          executionWorkspaceRows.map((row) => row.id),
+        ))
+        .orderBy(
+          desc(issueExecutionWorkspaceBindings.createdAt),
+          desc(issueExecutionWorkspaceBindings.id),
+        );
+  const currentBoundIssueByWorkspaceId = new Map<string, ExecutionWorkspaceIssueRef>();
+  for (const binding of currentBindingRows) {
+    if (currentBoundIssueByWorkspaceId.has(binding.executionWorkspaceId)) continue;
+    currentBoundIssueByWorkspaceId.set(binding.executionWorkspaceId, {
+      id: binding.issueId,
+      identifier: binding.identifier,
+      title: binding.title,
+    });
+  }
 
   for (const row of executionWorkspaceRows) {
     const config = readExecutionWorkspaceConfig((row.metadata as Record<string, unknown> | null) ?? null);
@@ -4935,19 +4904,14 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
     if (config?.desiredState !== "running" || !effectiveRuntimeConfig || !row.cwd) continue;
 
     try {
+      const currentBoundIssue = currentBoundIssueByWorkspaceId.get(row.id) ?? null;
       const refs = await startRuntimeServicesForWorkspaceControl({
         db,
         actor: { id: null, name: "Paperclip", companyId: row.companyId },
-        issue: row.sourceIssueId
-          ? {
-              id: row.sourceIssueId,
-              identifier: null,
-              title: row.name,
-            }
-          : null,
+        issue: currentBoundIssue,
         workspace: {
           baseCwd: row.cwd,
-          source: row.mode === "shared_workspace" ? "project_primary" : "task_session",
+          source: row.mode === "shared_workspace" ? "project_primary" : "issue_execution",
           projectId: row.projectId,
           workspaceId: row.projectWorkspaceId ?? null,
           repoUrl: row.repoUrl ?? null,

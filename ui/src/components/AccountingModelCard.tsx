@@ -17,10 +17,10 @@ const SURFACES = [
     tone: "from-amber-500/14 via-amber-500/6 to-transparent",
   },
   {
-    title: "Live quotas",
-    description: "Provider or biller windows that can stop traffic in real time.",
+    title: "Budget controls",
+    description: "Paperclip-owned spend limits and rolling ledger windows.",
     icon: Gauge,
-    points: ["provider quota windows", "biller credit systems", "errors surfaced directly"],
+    points: ["company and issue budgets", "rolling spend windows", "auditable enforcement"],
     tone: "from-emerald-500/14 via-emerald-500/6 to-transparent",
   },
 ] as const;

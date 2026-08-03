@@ -1,5 +1,10 @@
 # Skills CLI And Catalog Contract
 
+> Historical implementation plan. The role-based `recommendedForRoles`
+> metadata, runtime operational-skill channel, and implicit agent attachment
+> described below were retired by the agent simplification cutover. Current
+> behavior uses explicit per-agent company-skill selections only.
+
 Status: Phase A engineering contract
 Date: 2026-05-26
 Source plan: approved Paperclip skills CLI and catalog plan
@@ -48,7 +53,7 @@ All skills commands use the existing client command stack:
 - Global client options: `--data-dir`, `--config`, `--context`, `--profile`,
   `--api-base`, `--api-key`, and `--json`.
 - Company-scoped commands also accept `-C, --company-id <id>` and otherwise use
-  `PAPERCLIP_COMPANY_ID` or the active context profile.
+  the active context profile.
 - Human output goes to stdout. Errors go to stderr.
 - `--json` prints pretty JSON and no decorative labels.
 - Successful commands exit `0`. Validation, API, or conflict errors exit `1`.
@@ -393,7 +398,7 @@ Use existing HTTP semantics:
 CLI messages should name the next useful correction, for example:
 
 - `Skill slug "review" is ambiguous. Use an id or key.`
-- `Company ID is required. Pass --company-id, set PAPERCLIP_COMPANY_ID, or set a context profile.`
+- `Company ID is required. Pass --company-id or set a context profile.`
 - `Catalog skill contains executable scripts and cannot be force-installed until security review semantics allow it.`
 
 ## Phase Acceptance Criteria
@@ -458,7 +463,7 @@ Phase H, UI:
 - Install preview shows source, trust, provenance, update state, and file
   inventory.
 - Agent attach/detach states are clear.
-- Frontend handoff includes screenshots or equivalent browser evidence.
+- Frontend transfer includes screenshots or equivalent browser evidence.
 
 Phase I, initial skill content:
 

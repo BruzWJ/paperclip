@@ -5,9 +5,9 @@ import {
   inferBindModeFromHost,
   isAllInterfacesHost,
   isLoopbackHost,
+  normalizePublicOrigin,
   type BindMode,
   type DeploymentExposure,
-  type DeploymentMode,
 } from "@paperclipai/shared";
 import type { AuthConfig, ServerConfig } from "./schema.js";
 
@@ -56,7 +56,6 @@ export function buildPresetServerConfig(
 
   return {
     server: {
-      deploymentMode: bind === "loopback" ? "local_trusted" : "authenticated",
       exposure: "private",
       bind,
       customBindHost: undefined,
@@ -66,19 +65,25 @@ export function buildPresetServerConfig(
       serveUi: input.serveUi,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
   };
 }
 
 export function buildCustomServerConfig(input: BaseServerInput & {
-  deploymentMode: DeploymentMode;
   exposure: DeploymentExposure;
   host: string;
   publicBaseUrl?: string;
 }): { server: ServerConfig; auth: AuthConfig } {
   const normalizedHost = input.host.trim();
+  const publicBaseUrl = input.publicBaseUrl
+    ? normalizePublicOrigin(input.publicBaseUrl)
+    : undefined;
+  if (input.exposure === "public" && !publicBaseUrl) {
+    throw new Error(
+      "auth.publicBaseUrl is required when server.exposure=public",
+    );
+  }
   const bind = isLoopbackHost(normalizedHost)
     ? "loopback"
     : isAllInterfacesHost(normalizedHost)
@@ -87,8 +92,7 @@ export function buildCustomServerConfig(input: BaseServerInput & {
 
   return {
     server: {
-      deploymentMode: input.deploymentMode,
-      exposure: input.deploymentMode === "local_trusted" ? "private" : input.exposure,
+      exposure: input.exposure,
       bind,
       customBindHost: bind === "custom" ? normalizedHost : undefined,
       host: normalizedHost,
@@ -97,14 +101,12 @@ export function buildCustomServerConfig(input: BaseServerInput & {
       serveUi: input.serveUi,
     },
     auth:
-      input.deploymentMode === "authenticated" && input.exposure === "public"
+      input.exposure === "public"
         ? {
-          baseUrlMode: "explicit",
           disableSignUp: false,
-          publicBaseUrl: input.publicBaseUrl,
+          publicBaseUrl,
         }
         : {
-          baseUrlMode: "auto",
           disableSignUp: false,
         },
   };
@@ -112,7 +114,6 @@ export function buildCustomServerConfig(input: BaseServerInput & {
 
 export function resolveQuickstartServerConfig(input: {
   bind?: BindMode | null;
-  deploymentMode?: DeploymentMode | null;
   exposure?: DeploymentExposure | null;
   host?: string | null;
   port: number;
@@ -123,7 +124,16 @@ export function resolveQuickstartServerConfig(input: {
   const trimmedHost = input.host?.trim();
   const explicitBind = input.bind ?? null;
 
-  if (explicitBind === "loopback" || explicitBind === "lan" || explicitBind === "tailnet") {
+  if (explicitBind === "tailnet" && input.exposure === "public") {
+    throw new Error(
+      "server.bind=tailnet is only supported when server.exposure=private",
+    );
+  }
+
+  if (
+    (explicitBind === "loopback" || explicitBind === "lan" || explicitBind === "tailnet") &&
+    input.exposure !== "public"
+  ) {
     return buildPresetServerConfig(explicitBind, {
       port: input.port,
       allowedHostnames: input.allowedHostnames,
@@ -133,7 +143,6 @@ export function resolveQuickstartServerConfig(input: {
 
   if (explicitBind === "custom") {
     return buildCustomServerConfig({
-      deploymentMode: input.deploymentMode ?? "authenticated",
       exposure: input.exposure ?? "private",
       host: trimmedHost || LOOPBACK_BIND_HOST,
       port: input.port,
@@ -145,7 +154,6 @@ export function resolveQuickstartServerConfig(input: {
 
   if (trimmedHost) {
     return buildCustomServerConfig({
-      deploymentMode: input.deploymentMode ?? (isLoopbackHost(trimmedHost) ? "local_trusted" : "authenticated"),
       exposure: input.exposure ?? "private",
       host: trimmedHost,
       port: input.port,
@@ -155,23 +163,19 @@ export function resolveQuickstartServerConfig(input: {
     });
   }
 
-  if (input.deploymentMode === "authenticated") {
-    if (input.exposure === "public") {
-      return buildCustomServerConfig({
-        deploymentMode: "authenticated",
-        exposure: "public",
-        host: ALL_INTERFACES_BIND_HOST,
-        port: input.port,
-        allowedHostnames: input.allowedHostnames,
-        serveUi: input.serveUi,
-        publicBaseUrl: input.publicBaseUrl,
-      });
-    }
-
-    return buildPresetServerConfig("lan", {
+  if (input.exposure === "public") {
+    return buildCustomServerConfig({
+      exposure: "public",
+      host:
+        explicitBind === "loopback"
+          ? LOOPBACK_BIND_HOST
+          : explicitBind === "tailnet"
+            ? (detectTailnetBindHost() ?? LOOPBACK_BIND_HOST)
+            : ALL_INTERFACES_BIND_HOST,
       port: input.port,
       allowedHostnames: input.allowedHostnames,
       serveUi: input.serveUi,
+      publicBaseUrl: input.publicBaseUrl,
     });
   }
 

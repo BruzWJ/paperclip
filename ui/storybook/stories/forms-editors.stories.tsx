@@ -175,12 +175,12 @@ const adapterSchema: JsonSchemaNode = {
 
 const validAdapterValues = {
   ...getDefaultValues(adapterSchema),
-  adapterName: "Codex",
+  adapterName: "External agent",
   mode: "implementation",
   apiKey: "secret:openai-api-key",
   concurrency: 2,
   dryRun: true,
-  notes: "Use the project worktree and post a concise task update before handoff.",
+  notes: "Use the project worktree and post a concise task update before completion.",
   allowedCommands: ["pnpm --filter @paperclipai/ui typecheck", "pnpm build-storybook"],
   advanced: { timeoutSeconds: 900, requireApproval: false },
 };

@@ -77,7 +77,7 @@ function sortProjects(projects: Project[], sortField: ProjectSortField, sortDir:
 }
 
 export function Projects() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompany, selectedCompanyId } = useCompany();
   const { openNewProject } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [sortField, setSortField] = useState<ProjectSortField>("name");
@@ -223,13 +223,13 @@ export function Projects() {
                           <div className="flex items-center gap-3">
                             <span
                               className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
-                              title={`${formatNumber(project.taskCount ?? 0)} task${(project.taskCount ?? 0) === 1 ? "" : "s"}`}
+                              title={`${formatNumber(project.issueCount ?? 0)} task${(project.issueCount ?? 0) === 1 ? "" : "s"}`}
                             >
-                              {formatNumber(project.taskCount ?? 0)} task{(project.taskCount ?? 0) === 1 ? "" : "s"}
+                              {formatNumber(project.issueCount ?? 0)} task{(project.issueCount ?? 0) === 1 ? "" : "s"}
                             </span>
-                            {project.budget && (
+                            {project.budget && selectedCompany && (
                               <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
-                                {formatProjectBudget(project.budget)}
+                                {formatProjectBudget(project.budget, selectedCompany.budgetCurrency)}
                               </span>
                             )}
                             {project.targetDate && (

@@ -25,20 +25,7 @@ function withStorybookTimelineDetails(data: WorkTimelineResult): WorkTimelineRes
     actors: data.actors.map((actor) => (
       actor.type === "user" ? { ...actor, avatar: STORYBOOK_USER_AVATAR } : actor
     )),
-    spans: data.spans.map((span, index) => {
-      const inputTokens = 42_000 + index * 137;
-      const cachedInputTokens = index % 3 === 0 ? 8_000 : 0;
-      const outputTokens = 5_400 + index * 29;
-      return {
-        ...span,
-        usage: span.usage ?? {
-          inputTokens,
-          cachedInputTokens,
-          outputTokens,
-          totalTokens: inputTokens + cachedInputTokens + outputTokens,
-        },
-      };
-    }),
+    spans: data.spans,
   };
 }
 

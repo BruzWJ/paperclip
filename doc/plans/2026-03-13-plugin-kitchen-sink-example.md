@@ -101,7 +101,7 @@ Surfaces defined in the SDK:
 - `sidebar`
 - `sidebarPanel`
 - `detailTab`
-- `taskDetailView`
+- `issueDetailView`
 - `projectSidebarItem`
 - `toolbarButton`
 - `contextMenuItem`
@@ -124,7 +124,7 @@ Need explicit validation before claiming full demo coverage:
 
 - `sidebar`
 - `sidebarPanel`
-- `taskDetailView`
+- `issueDetailView`
 - `toolbarButton` as direct slot, distinct from launcher placement
 - `contextMenuItem` as direct slot, distinct from comment menu and launcher placement
 
@@ -365,21 +365,9 @@ Demos:
 Demos:
 
 - list agents
-- invoke one agent with a test prompt
 - pause/resume where safe
 
 Agent mutation controls should be behind an explicit warning.
-
-### `ctx.agents.sessions`
-
-Demos:
-
-- create agent chat session
-- send message
-- stream events back to the UI
-- close session
-
-This is a strong candidate for the best "wow" demo on the plugin page.
 
 ### `ctx.goals`
 
@@ -402,7 +390,7 @@ Use throughout the plugin for all mutation-side bridge demos.
 Demos:
 
 - live event log stream
-- token-style stream from an agent session relay
+- live plugin-owned operation progress
 - fake progress stream for a long-running action
 
 ### `ctx.tools`
@@ -472,7 +460,7 @@ Then, after host validation, add if supported:
 
 - `sidebar`
 - `sidebarPanel`
-- `taskDetailView`
+- `issueDetailView`
 - `toolbarButton`
 - `contextMenuItem`
 
@@ -603,7 +591,7 @@ Default posture:
 - events
 - jobs
 - webhooks
-- agent sessions
+- callback-bound ordinary issues
 - tools
 
 ### Phase 5: Local trusted runtime demos
@@ -624,7 +612,7 @@ Validate whether the current host truly mounts:
 
 - `sidebar`
 - `sidebarPanel`
-- `taskDetailView`
+- `issueDetailView`
 - direct-slot `toolbarButton`
 - direct-slot `contextMenuItem`
 

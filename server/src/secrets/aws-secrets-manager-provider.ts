@@ -1,6 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { S3Client } from "@aws-sdk/client-s3";
-import type { DeploymentMode, SecretProviderConfigDiscoveryPreviewResult } from "@paperclipai/shared";
+import type { SecretProviderConfigDiscoveryPreviewResult } from "@paperclipai/shared";
 import { unprocessable } from "../errors.js";
 import type {
   PreparedSecretVersion,
@@ -1010,14 +1010,13 @@ export function createAwsSecretsManagerProvider(
 
   async function validateConfig(
     input?: {
-      deploymentMode?: DeploymentMode;
       strictMode?: boolean;
       providerConfig?: SecretProviderVaultRuntimeConfig | null;
     },
   ): Promise<SecretProviderValidationResult> {
     const warnings: string[] = [];
-    if (input?.deploymentMode === "authenticated" && input.strictMode !== true) {
-      warnings.push("Strict secret mode should be enabled for authenticated deployments");
+    if (input?.strictMode === false) {
+      warnings.push("Strict secret mode is disabled");
     }
     const config = resolveConfig(input?.providerConfig);
     if (!config.prefix) {
@@ -1028,7 +1027,6 @@ export function createAwsSecretsManagerProvider(
 
   async function healthCheck(
     input?: {
-      deploymentMode?: DeploymentMode;
       strictMode?: boolean;
       providerConfig?: SecretProviderVaultRuntimeConfig | null;
     },

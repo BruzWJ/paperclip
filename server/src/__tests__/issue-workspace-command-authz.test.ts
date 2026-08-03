@@ -1,17 +1,15 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 
 const mockIssueService = vi.hoisted(() => ({
   addComment: vi.fn(),
-  assertCheckoutOwner: vi.fn(),
   create: vi.fn(),
   findMentionedAgents: vi.fn(),
   getByIdentifier: vi.fn(),
   getById: vi.fn(),
   getRelationSummaries: vi.fn(),
-  getWakeableParentAfterChildCompletion: vi.fn(),
-  listWakeableBlockedDependents: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -34,14 +32,6 @@ const mockFeedbackService = vi.hoisted(() => ({
   saveIssueVote: vi.fn(),
 }));
 
-const mockHeartbeatService = vi.hoisted(() => ({
-  wakeup: vi.fn(),
-  reportRunActivity: vi.fn(),
-  getRun: vi.fn(),
-  getActiveRunForAgent: vi.fn(),
-  cancelRun: vi.fn(),
-}));
-
 const mockInstanceSettingsService = vi.hoisted(() => ({
   get: vi.fn(),
   listCompanyIds: vi.fn(),
@@ -55,7 +45,7 @@ const mockRoutineService = vi.hoisted(() => ({
 
 const mockDbSelectWhere = vi.hoisted(() => vi.fn(() => ({
   then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-    Promise.resolve([{ companyId: "company-1", agentId: "agent-1", contextSnapshot: null }]).then(
+    Promise.resolve([{ companyId: "company-1", agentId: "agent-1" }]).then(
       onFulfilled,
       onRejected,
     ),
@@ -87,10 +77,6 @@ function registerRouteMocks() {
     feedbackService: () => mockFeedbackService,
   }));
 
-  vi.doMock("../services/heartbeat.js", () => ({
-    heartbeatService: () => mockHeartbeatService,
-  }));
-
   vi.doMock("../services/instance-settings.js", () => ({
     instanceSettingsService: () => mockInstanceSettingsService,
   }));
@@ -107,6 +93,8 @@ function registerRouteMocks() {
     companyService: () => ({
       getById: vi.fn(async () => ({ id: "company-1", attachmentMaxBytes: 10 * 1024 * 1024 })),
     }),
+    companySearchService: () => ({}),
+    createOrdinaryIssueRuntime: () => ({}),
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
     companySkillService: () => ({
@@ -117,8 +105,11 @@ function registerRouteMocks() {
     executionWorkspaceService: () => mockExecutionWorkspaceService,
     feedbackService: () => mockFeedbackService,
     goalService: () => ({}),
-    heartbeatService: () => mockHeartbeatService,
-    instanceSettingsService: () => mockInstanceSettingsService,
+    instanceSettingsService: () => ({
+      ...mockInstanceSettingsService,
+      getExperimental: vi.fn(async () => ({})),
+      getGeneral: vi.fn(async () => ({})),
+    }),
     issueApprovalService: () => ({}),
     issueReferenceService: () => ({
       deleteDocumentSource: async () => undefined,
@@ -132,15 +123,6 @@ function registerRouteMocks() {
       syncComment: async () => undefined,
       syncDocument: async () => undefined,
       syncIssue: async () => undefined,
-    }),
-    issueRecoveryActionService: () => ({
-      getActiveForIssue: vi.fn(async () => null),
-      listActiveForIssues: vi.fn(async () => new Map()),
-    }),
-    issueThreadInteractionService: () => ({
-      listForIssue: vi.fn(async () => []),
-      expireRequestConfirmationsSupersededByComment: vi.fn(async () => []),
-      expireStaleRequestConfirmationsForIssueDocument: vi.fn(async () => []),
     }),
     issueService: () => mockIssueService,
     logActivity: mockLogActivity,
@@ -161,7 +143,13 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", issueRoutes(mockDb as any, {} as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use(
+    "/api",
+    issueRoutes(mockDb as any, {} as any, {
+      ordinaryIssues: {} as never,
+    }),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -196,7 +184,6 @@ describe("issue workspace command authorization", () => {
     vi.doUnmock("../services/agents.js");
     vi.doUnmock("../services/execution-workspaces.js");
     vi.doUnmock("../services/feedback.js");
-    vi.doUnmock("../services/heartbeat.js");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../services/instance-settings.js");
     vi.doUnmock("../services/issues.js");
@@ -212,9 +199,6 @@ describe("issue workspace command authorization", () => {
     mockIssueService.getById.mockResolvedValue(makeIssue());
     mockIssueService.getByIdentifier.mockResolvedValue(null);
     mockIssueService.getRelationSummaries.mockResolvedValue({ blockedBy: [], blocks: [] });
-    mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
-    mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);
-    mockIssueService.assertCheckoutOwner.mockResolvedValue({ adoptedFromRunId: null });
     mockIssueService.update.mockResolvedValue(makeIssue());
     mockAccessService.canUser.mockResolvedValue(true);
     mockAccessService.decide.mockResolvedValue({
@@ -236,11 +220,6 @@ describe("issue workspace command authorization", () => {
       consentEnabledNow: false,
       sharingEnabled: false,
     });
-    mockHeartbeatService.wakeup.mockResolvedValue(undefined);
-    mockHeartbeatService.reportRunActivity.mockResolvedValue(undefined);
-    mockHeartbeatService.getRun.mockResolvedValue(null);
-    mockHeartbeatService.getActiveRunForAgent.mockResolvedValue(null);
-    mockHeartbeatService.cancelRun.mockResolvedValue(null);
     mockInstanceSettingsService.get.mockResolvedValue({
       id: "instance-settings-1",
       general: {
@@ -255,46 +234,54 @@ describe("issue workspace command authorization", () => {
     mockDbSelectFrom.mockImplementation(() => ({ where: mockDbSelectWhere }));
     mockDbSelectWhere.mockImplementation(() => ({
       then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-        Promise.resolve([{ companyId: "company-1", agentId: "agent-1", contextSnapshot: null }]).then(
+        Promise.resolve([{ companyId: "company-1", agentId: "agent-1" }]).then(
           onFulfilled,
           onRejected,
         ),
     }));
   });
 
-  it("rejects agent callers that create issue workspace provision commands", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "agent_key",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .post("/api/companies/company-1/issues")
-      .send({
-        title: "Exploit",
-        executionWorkspaceSettings: {
-          workspaceStrategy: {
-            type: "git_worktree",
-            provisionCommand: "touch /tmp/paperclip-rce",
-          },
-        },
+  it(
+    "rejects agent callers at the generic issue-create boundary",
+    async () => {
+      const app = await createApp({
+        type: "agent",
+        agentId: "agent-1",
+        companyId: "company-1",
+        source: "internal",
+        runId: "run-1",
       });
 
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("host-executed workspace commands");
-    expect(mockIssueService.create).not.toHaveBeenCalled();
-  });
+      const res = await request(app)
+        .post("/api/companies/company-1/issues")
+        .send({
+          title: "Exploit",
+          executionWorkspaceSettings: {
+            workspaceStrategy: {
+              type: "git_worktree",
+              provisionCommand: "touch /tmp/paperclip-rce",
+            },
+          },
+        });
 
-  it("rejects agent callers that patch assignee adapter workspace teardown commands", async () => {
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({
+        error:
+          "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
+        code: "compiled_run_interface_required",
+      });
+      expect(mockIssueService.create).not.toHaveBeenCalled();
+    },
+    15_000,
+  );
+
+  it("rejects agent callers at the generic issue-update boundary", async () => {
     mockIssueService.getById.mockResolvedValue(makeIssue());
     const app = await createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -312,7 +299,11 @@ describe("issue workspace command authorization", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body).toEqual({
+      error:
+        "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
+      code: "compiled_run_interface_required",
+    });
     expect(mockIssueService.update).not.toHaveBeenCalled();
   });
 });

@@ -1,10 +1,15 @@
-import { and, desc, eq, inArray, not } from "drizzle-orm";
+import { and, eq, inArray, not } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, heartbeatRuns } from "@paperclipai/db";
+import { agents, approvals } from "@paperclipai/db";
 import type { SidebarBadges } from "@paperclipai/shared";
+import {
+  listIssueExecutionRunsForActivity,
+  type IssueExecutionRunEnvelope,
+  type IssueExecutionRunListCursor,
+} from "./issue-execution-run-service.js";
 
 const ACTIONABLE_APPROVAL_STATUSES = ["pending", "revision_requested"];
-const FAILED_HEARTBEAT_STATUSES = ["failed", "timed_out"];
+const FAILED_RUN_STATUSES = ["failed", "timed_out"];
 
 function normalizeTimestamp(value: Date | string | null | undefined): number {
   if (!value) return 0;
@@ -45,26 +50,40 @@ export function sidebarBadgeService(db: Db) {
           rows.filter((row) => !isDismissed(extra?.dismissals ?? new Map(), `approval:${row.id}`, row.updatedAt)).length
         );
 
-      const latestRunByAgent = await db
-        .selectDistinctOn([heartbeatRuns.agentId], {
-          id: heartbeatRuns.id,
-          runStatus: heartbeatRuns.status,
-          createdAt: heartbeatRuns.createdAt,
-        })
-        .from(heartbeatRuns)
-        .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
-        .where(
-          and(
-            eq(heartbeatRuns.companyId, companyId),
+      const activeAgentIds = new Set(
+        await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(
             eq(agents.companyId, companyId),
             not(eq(agents.status, "terminated")),
-          ),
-        )
-        .orderBy(heartbeatRuns.agentId, desc(heartbeatRuns.createdAt));
+          ))
+          .then((rows) => rows.map((row) => row.id)),
+      );
+      const latestRunByAgent = new Map<string, IssueExecutionRunEnvelope>();
+      let cursor: IssueExecutionRunListCursor | null = null;
+      do {
+        const page = await listIssueExecutionRunsForActivity(db, {
+          companyId,
+          cursor,
+          limit: 200,
+        });
+        for (const run of page.items) {
+          if (
+            (run.kind === "productive" || run.kind === "consult") &&
+            run.targetAgentId !== null &&
+            activeAgentIds.has(run.targetAgentId) &&
+            !latestRunByAgent.has(run.targetAgentId)
+          ) {
+            latestRunByAgent.set(run.targetAgentId, run);
+          }
+        }
+        cursor = page.nextCursor;
+      } while (cursor !== null);
 
-      const failedRuns = latestRunByAgent.filter((row) =>
-        FAILED_HEARTBEAT_STATUSES.includes(row.runStatus)
-        && !isDismissed(extra?.dismissals ?? new Map(), `run:${row.id}`, row.createdAt),
+      const failedRuns = [...latestRunByAgent.values()].filter((run) =>
+        FAILED_RUN_STATUSES.includes(run.status)
+        && !isDismissed(extra?.dismissals ?? new Map(), `run:${run.runId}`, run.createdAt),
       ).length;
 
       const joinRequests = (extra?.joinRequests ?? []).filter((row) =>

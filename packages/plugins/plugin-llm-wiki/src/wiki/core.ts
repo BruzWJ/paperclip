@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Agent, AgentSessionEvent, Issue, IssueComment, PluginContext, PluginEvent, PluginLocalFolderEntry, Project, ToolResult } from "@paperclipai/plugin-sdk";
-import type { IssueDocument, PluginIssueOriginKind, PluginManagedRoutineResolution, PluginManagedSkillResolution } from "@paperclipai/plugin-sdk/types";
+import type { Agent, Issue, PluginContext, PluginEvent, PluginLocalFolderEntry, Project, ToolResult } from "@paperclipai/plugin-sdk";
+import type { PluginManagedRoutineResolution, PluginManagedSkillResolution } from "@paperclipai/plugin-sdk/types";
 import {
   DEFAULT_MAX_SOURCE_BYTES,
   DEFAULT_MAX_PAPERCLIP_CURSOR_WINDOW_CHARS,
@@ -24,7 +24,8 @@ import {
 
 export const DEFAULT_WIKI_ID = "default";
 export const DEFAULT_SPACE_SLUG = "default";
-export const OPERATION_ORIGIN_KIND = `plugin:${PLUGIN_ID}:operation` as PluginIssueOriginKind;
+export const WIKI_CREATOR_CALLBACK_KEY = "wiki-operation";
+export const WIKI_CREATOR_CALLBACK_VERSION = "1";
 const EVENT_INGESTION_STATE_NAMESPACE = "llm-wiki";
 const EVENT_INGESTION_STATE_KEY = "event-ingestion";
 const EVENT_INGESTION_DEDUP_NAMESPACE = "llm-wiki-event-ingestion";
@@ -35,7 +36,7 @@ const MAX_PAPERCLIP_PROFILE_SELECTED_PROJECTS = 25;
 const MAX_PAPERCLIP_PROFILE_ROOT_ISSUES = 25;
 const PROTECTED_WIKI_CONTROL_FILES = new Set(["AGENTS.md", "IDEA.md"]);
 export const PUBLIC_DISTILLATION_AUTO_APPLY_RESTRICTION =
-  "Authenticated/public deployments always require manual review before wiki writes.";
+  "Public exposure always requires manual review before wiki writes.";
 
 export type WikiEventIngestionSource = "issues" | "comments" | "documents";
 export type PaperclipDistillationScope = "company" | "project" | "root_issue";
@@ -100,8 +101,6 @@ export type PaperclipIngestionProfileRead = {
 export type DistillationAutoApplyRestriction = {
   autoApplyAllowed: boolean;
   autoApplyRestriction: string | null;
-  deploymentMode: "local_trusted" | "authenticated" | null;
-  deploymentExposure: "private" | "public" | null;
 };
 
 type PaperclipIngestionPolicyPurpose =
@@ -169,7 +168,6 @@ export type WikiAgentResource = {
   resourceKey: string;
   agent: Agent | null;
   details: { name: string; status: string; adapterType: string | null; icon?: string | null; urlKey?: string | null } | null;
-  defaultDrift?: { entryFile: string; changedFiles: string[] } | null;
 };
 
 export type WikiProjectResource = {
@@ -260,7 +258,6 @@ type OperationInput = {
   operationType: "ingest" | "query" | "lint" | "file-as-page" | "index" | "distill" | "backfill";
   title?: string | null;
   prompt?: string | null;
-  useCheapModelProfile?: boolean;
 };
 
 type OperationSpaceContext = {
@@ -271,7 +268,7 @@ type OperationSpaceContext = {
   prompt?: string | null;
 };
 
-type QuerySessionInput = {
+type WikiQueryInput = {
   companyId: string;
   wikiId?: string | null;
   spaceSlug?: string | null;
@@ -385,7 +382,6 @@ type FileQueryAnswerInput = {
   companyId: string;
   wikiId?: string | null;
   spaceSlug?: string | null;
-  querySessionId?: string | null;
   question?: string | null;
   answer?: string | null;
   path: string;
@@ -1086,17 +1082,16 @@ export async function listPaperclipIngestionCandidates(ctx: PluginContext, input
     }));
   const issues = (await ctx.issues.list({
     companyId: input.companyId,
-    includePluginOperations: false,
     limit: 200,
   }))
     .filter((issue) => !issue.parentId)
-    .filter((issue) => !query || issue.title.toLowerCase().includes(query) || issue.identifier?.toLowerCase().includes(query))
+    .filter((issue) => !query || (issue.title ?? "").toLowerCase().includes(query) || issue.identifier?.toLowerCase().includes(query))
     .slice(0, 50)
     .map((issue) => ({
       id: issue.id,
       identifier: issue.identifier ?? null,
-      title: issue.title,
-      status: issue.status,
+      title: issue.title ?? issue.identifier ?? issue.id,
+      status: issue.lifecycleStatus,
       projectId: issue.projectId ?? null,
     }));
   return { projects, rootIssues: issues };
@@ -1597,7 +1592,6 @@ function agentResource(input: {
   status: WikiAgentResource["status"];
   source: WikiAgentResource["source"];
   agent: Agent | null;
-  defaultDrift?: WikiAgentResource["defaultDrift"];
 }): WikiAgentResource {
   return {
     status: input.status,
@@ -1606,7 +1600,6 @@ function agentResource(input: {
     resourceKey: `${PLUGIN_ID}:agent:${WIKI_MAINTAINER_AGENT_KEY}`,
     agent: input.agent,
     details: agentDetails(input.agent),
-    defaultDrift: input.defaultDrift ?? null,
   };
 }
 
@@ -1949,7 +1942,6 @@ export async function resolveWikiAgentResource(
       status: "resolved",
       source,
       agent: selectedAgent,
-      defaultDrift: managedResolution?.defaultDrift ?? null,
     });
   }
   if (binding?.resolvedId && !options.reconcileMissing) {
@@ -1969,7 +1961,7 @@ export async function resolveWikiAgentResource(
       metadata: { source: "managed-default", updatedBy: "resolve" },
     });
   }
-  return agentResource({ status: resolved.status, source: "managed", agent: resolved.agent, defaultDrift: resolved.defaultDrift ?? null });
+  return agentResource({ status: resolved.status, source: "managed", agent: resolved.agent });
 }
 
 export async function resolveWikiProjectResource(
@@ -2039,7 +2031,7 @@ export async function reconcileWikiAgentResource(ctx: PluginContext, companyId: 
       metadata: { source: "managed-default", updatedBy: "reconcile" },
     });
   }
-  return agentResource({ status: resolved.status, source: "managed", agent: resolved.agent, defaultDrift: resolved.defaultDrift ?? null });
+  return agentResource({ status: resolved.status, source: "managed", agent: resolved.agent });
 }
 
 export async function resetWikiAgentResource(ctx: PluginContext, companyId: string): Promise<WikiAgentResource> {
@@ -2054,7 +2046,7 @@ export async function resetWikiAgentResource(ctx: PluginContext, companyId: stri
       metadata: { source: "managed-default", updatedBy: "reset" },
     });
   }
-  return agentResource({ status: resolved.status, source: "managed", agent: resolved.agent, defaultDrift: resolved.defaultDrift ?? null });
+  return agentResource({ status: resolved.status, source: "managed", agent: resolved.agent });
 }
 
 export async function selectWikiAgentResource(ctx: PluginContext, input: { companyId: string; agentId: string }): Promise<WikiAgentResource> {
@@ -2285,12 +2277,6 @@ function operationBillingCode(wikiId: string, space: WikiSpace): string {
   return space.slug === DEFAULT_SPACE_SLUG ? `plugin-llm-wiki:${wikiId}` : `plugin-llm-wiki:${wikiId}:${space.slug}`;
 }
 
-function operationIssueOriginId(input: { wikiId: string; space: WikiSpace; operationId: string }): string {
-  return input.space.slug === DEFAULT_SPACE_SLUG
-    ? `wiki:${input.wikiId}:operation:${input.operationId}`
-    : `wiki:${input.wikiId}:space:${input.space.slug}:operation:${input.operationId}`;
-}
-
 function operationTitleWithSpace(title: string, space: WikiSpace): string {
   return `${title} [space: ${space.displayName} / ${space.slug}]`;
 }
@@ -2338,32 +2324,25 @@ export async function createOperationIssue(ctx: PluginContext, input: OperationI
   const managedProject = await resolveWikiProjectResource(ctx, input.companyId, { reconcileMissing: true });
   const operationId = randomUUID();
   const title = operationTitleWithSpace(input.title ?? `LLM Wiki ${input.operationType}`, space);
-  const originId = operationIssueOriginId({ wikiId, space, operationId });
   const operationContext = { wikiId, space, operationType: input.operationType, operationId, prompt: input.prompt };
-  const assignableAgentId =
-    managedAgent.agent &&
-    managedAgent.agent.status !== "pending_approval" &&
-    managedAgent.agent.status !== "terminated"
-      ? managedAgent.agent.id
-      : undefined;
+  const assignableAgentId = managedAgent.agent?.id ?? null;
+  if (!assignableAgentId) {
+    throw new Error("No configured Wiki Maintainer agent is available for this company.");
+  }
   const issue = await ctx.issues.create({
     companyId: input.companyId,
     projectId: managedProject.projectId ?? undefined,
     title,
-    description: operationPromptWithSpaceContext(operationContext),
-    status: "todo",
+    request: operationPromptWithSpaceContext(operationContext),
+    ownerAgentId: assignableAgentId,
+    callbackKey: WIKI_CREATOR_CALLBACK_KEY,
+    callbackVersion: WIKI_CREATOR_CALLBACK_VERSION,
     priority: input.operationType === "query" ? "medium" : "low",
-    assigneeAgentId: assignableAgentId,
-    assigneeAdapterOverrides: input.useCheapModelProfile ? { modelProfile: "cheap" } : null,
-    billingCode: operationBillingCode(wikiId, space),
-    surfaceVisibility: "plugin_operation",
-    originKind: `${OPERATION_ORIGIN_KIND}:${input.operationType}` as PluginIssueOriginKind,
-    originId,
   });
 
   await ctx.db.execute(
     `INSERT INTO ${tableName(ctx.db.namespace, "wiki_operations")}
-       (id, company_id, wiki_id, space_id, operation_type, status, hidden_issue_id, project_id, run_ids, cost_cents, warnings, metadata)
+       (id, company_id, wiki_id, space_id, operation_type, status, issue_id, project_id, run_ids, cost_cents, warnings, metadata)
      VALUES ($1, $2, $3, $8, $4, $5, $6, $7, '[]'::jsonb, 0, '[]'::jsonb, $9::jsonb)`,
     [
       operationId,
@@ -2376,7 +2355,6 @@ export async function createOperationIssue(ctx: PluginContext, input: OperationI
       space.id,
       jsonParam({
         ...operationMetadata(operationContext),
-        issueOriginId: originId,
         billingCode: operationBillingCode(wikiId, space),
       }),
     ],
@@ -2385,8 +2363,18 @@ export async function createOperationIssue(ctx: PluginContext, input: OperationI
   return { operationId, wikiId, spaceSlug: space.slug, issue };
 }
 
-function isLlmWikiOperationIssue(issue: Issue): boolean {
-  return typeof issue.originKind === "string" && issue.originKind.startsWith(OPERATION_ORIGIN_KIND);
+async function isLlmWikiOperationIssue(
+  ctx: PluginContext,
+  issue: Pick<Issue, "id" | "companyId">,
+): Promise<boolean> {
+  const rows = await ctx.db.query<{ found: boolean }>(
+    `SELECT true AS found
+       FROM ${tableName(ctx.db.namespace, "wiki_operations")}
+      WHERE company_id = $1 AND issue_id = $2
+      LIMIT 1`,
+    [issue.companyId, issue.id],
+  );
+  return rows.length > 0;
 }
 
 function paperclipDistillationScope(input: { projectId?: string | null; rootIssueId?: string | null }): PaperclipDistillationScope {
@@ -2583,29 +2571,44 @@ function issueInBackfillWindow(issue: Issue, input: Pick<PaperclipSourceBundleIn
 }
 
 async function listPaperclipBundleIssues(ctx: PluginContext, input: PaperclipSourceBundleInput): Promise<Issue[]> {
-  const filterAndSort = (issues: Issue[]) =>
-    issues
-      .filter((issue) => !isLlmWikiOperationIssue(issue))
-      .filter((issue) => issueInBackfillWindow(issue, input))
-      .sort((a, b) => issueSortKey(a).localeCompare(issueSortKey(b)));
-
-  if (input.rootIssueId) {
-    const subtree = await ctx.issues.getSubtree(input.rootIssueId, input.companyId, {
-      includeRoot: true,
-      includeRelations: true,
-      includeDocuments: true,
-      includeAssignees: true,
+  const collected: Issue[] = [];
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await ctx.issues.list({
+      companyId: input.companyId,
+      projectId: input.projectId ?? undefined,
+      limit: pageSize,
+      offset,
     });
-    return filterAndSort(subtree.issues);
+    collected.push(...page);
+    if (page.length < pageSize) break;
   }
 
-  const issues = await ctx.issues.list({
-    companyId: input.companyId,
-    projectId: input.projectId ?? undefined,
-    includePluginOperations: false,
-    limit: 500,
-  });
-  return filterAndSort(issues);
+  const operationRows = await ctx.db.query<{ issue_id: string }>(
+    `SELECT issue_id
+       FROM ${tableName(ctx.db.namespace, "wiki_operations")}
+      WHERE company_id = $1 AND issue_id IS NOT NULL`,
+    [input.companyId],
+  );
+  const operationIssueIds = new Set(operationRows.map((row) => row.issue_id));
+  const byId = new Map(collected.map((issue) => [issue.id, issue]));
+  const belongsToRoot = (issue: Issue): boolean => {
+    if (!input.rootIssueId) return true;
+    let current: Issue | undefined = issue;
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      if (current.id === input.rootIssueId) return true;
+      seen.add(current.id);
+      current = current.parentId ? byId.get(current.parentId) : undefined;
+    }
+    return false;
+  };
+
+  return collected
+    .filter((issue) => !operationIssueIds.has(issue.id))
+    .filter(belongsToRoot)
+    .filter((issue) => issueInBackfillWindow(issue, input))
+    .sort((a, b) => issueSortKey(a).localeCompare(issueSortKey(b)));
 }
 
 export async function assemblePaperclipSourceBundle(ctx: PluginContext, input: PaperclipSourceBundleInput): Promise<PaperclipSourceBundle> {
@@ -2615,8 +2618,8 @@ export async function assemblePaperclipSourceBundle(ctx: PluginContext, input: P
   const limits = await resolvePaperclipDistillationLimitsForSpace(ctx, { ...input, space });
   const maxCharacters = limits.maxCharacters;
   const perSourceLimit = limits.maxCharactersPerSource;
-  const includeComments = input.includeComments !== false;
-  const includeDocuments = input.includeDocuments !== false;
+  const includeComments = input.includeComments === true;
+  const includeDocuments = input.includeDocuments === true;
   const issues = await listPaperclipBundleIssues(ctx, input);
   const scope = paperclipCursorScopeMetadata(input);
   const sourceRefs: PaperclipSourceRef[] = [];
@@ -2644,13 +2647,13 @@ export async function assemblePaperclipSourceBundle(ctx: PluginContext, input: P
     const issueBody = [
       `- Issue ID: ${issue.id}`,
       issue.identifier ? `- Identifier: ${issue.identifier}` : null,
-      `- Status: ${issue.status}`,
+      `- Status: ${issue.lifecycleStatus}`,
       `- Priority: ${issue.priority}`,
       issue.parentId ? `- Parent issue ID: ${issue.parentId}` : null,
       issue.projectId ? `- Project ID: ${issue.projectId}` : null,
       `- Updated at: ${isoString(issue.updatedAt) ?? "unknown"}`,
       "",
-      issue.description?.trim() ? issue.description.trim() : "_No issue description._",
+      issue.request.trim() ? issue.request.trim() : "_No issue request._",
     ].filter((line): line is string => line !== null).join("\n");
     appendBoundedSection({
       lines,
@@ -2670,86 +2673,12 @@ export async function assemblePaperclipSourceBundle(ctx: PluginContext, input: P
       warnings,
     });
 
-    if (includeDocuments && remaining.value > 0) {
-      const documentSummaries = await ctx.issues.documents.list(issue.id, input.companyId);
-      for (const summary of [...documentSummaries].sort((a, b) => a.key.localeCompare(b.key))) {
-        const document = await ctx.issues.documents.get(issue.id, summary.key, input.companyId);
-        if (!document) continue;
-        const protectedDocument = protectDistillationSourceBody({
-          issue,
-          sourceKind: "document",
-          sourceId: document.key,
-          body: document.body,
-        });
-        if (protectedDocument.warning) warnings.push(protectedDocument.warning);
-        appendBoundedSection({
-          lines,
-          title: `Document: ${sourceTitleForIssue(issue)} / ${document.key}`,
-          body: [
-            `- Issue ID: ${issue.id}`,
-            issue.identifier ? `- Issue identifier: ${issue.identifier}` : null,
-            `- Document ID: ${document.id}`,
-            `- Document key: ${document.key}`,
-            `- Revision: ${document.latestRevisionNumber}`,
-            `- Updated at: ${isoString(document.updatedAt) ?? "unknown"}`,
-            "",
-            protectedDocument.body,
-          ].filter((line): line is string => line !== null).join("\n"),
-          refs: sourceRefs,
-          ref: {
-            kind: "document",
-            issueId: issue.id,
-            issueIdentifier: issue.identifier ?? null,
-            projectId: issue.projectId ?? null,
-            documentId: document.id,
-            documentKey: document.key,
-            updatedAt: isoString(document.updatedAt) ?? undefined,
-            ...protectedDocument.refPatch,
-          },
-          remaining,
-          perSourceLimit,
-          warnings,
-        });
-      }
-    }
+  }
 
-    if (includeComments && remaining.value > 0) {
-      const comments = await ctx.issues.listComments(issue.id, input.companyId);
-      for (const comment of [...comments].sort((a, b) => (isoString(a.createdAt) ?? "").localeCompare(isoString(b.createdAt) ?? ""))) {
-        const protectedComment = protectDistillationSourceBody({
-          issue,
-          sourceKind: "comment",
-          sourceId: comment.id,
-          body: comment.body,
-        });
-        if (protectedComment.warning) warnings.push(protectedComment.warning);
-        appendBoundedSection({
-          lines,
-          title: `Comment: ${sourceTitleForIssue(issue)} / ${comment.id}`,
-          body: [
-            `- Issue ID: ${issue.id}`,
-            issue.identifier ? `- Issue identifier: ${issue.identifier}` : null,
-            `- Comment ID: ${comment.id}`,
-            `- Created at: ${isoString(comment.createdAt) ?? "unknown"}`,
-            "",
-            protectedComment.body,
-          ].filter((line): line is string => line !== null).join("\n"),
-          refs: sourceRefs,
-          ref: {
-            kind: "comment",
-            issueId: issue.id,
-            issueIdentifier: issue.identifier ?? null,
-            projectId: issue.projectId ?? null,
-            commentId: comment.id,
-            createdAt: isoString(comment.createdAt) ?? undefined,
-            ...protectedComment.refPatch,
-          },
-          remaining,
-          perSourceLimit,
-          warnings,
-        });
-      }
-    }
+  if (includeComments || includeDocuments) {
+    warnings.push(
+      "Comment and document bodies are not copied through the plugin control plane; agents may read only the run-scoped context granted to their ordinary issue execution.",
+    );
   }
 
   const markdown = lines.join("\n").slice(0, maxCharacters);
@@ -2962,8 +2891,8 @@ function projectPageSlug(input: { project: Project | null; rootIssue: Issue | nu
   return slugify(input.project?.name ?? input.rootIssue?.title ?? "paperclip-project");
 }
 
-function issueDescription(issue: Issue): string {
-  return issue.description?.trim() ?? "";
+function issueRequest(issue: Issue): string {
+  return issue.request.trim();
 }
 
 function issueReference(identifier: string): string {
@@ -2976,17 +2905,18 @@ function issueReferenceFor(issue: Issue): string {
 }
 
 function issueConcept(issue: Issue): string {
-  const title = issue.title
+  const sourceTitle = issue.title ?? issue.identifier ?? issue.id;
+  const title = sourceTitle
     .replace(/^\s*(implement|add|update|fix|ship|write|create|publish|review|validate|investigate|design|refactor|support|make)\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
   const words = title.split(" ").filter(Boolean).slice(0, 5).join(" ");
-  return words || issue.title;
+  return words || sourceTitle;
 }
 
 function issueNarrative(issue: Issue, maxLength = 260): string {
-  const details = issueDescription(issue);
-  return excerpt(details || issue.title, maxLength);
+  const details = issueRequest(issue);
+  return excerpt(details || issue.title || issue.identifier || issue.id, maxLength);
 }
 
 function conceptBullet(issue: Issue): string {
@@ -3009,8 +2939,8 @@ function hasRiskSignal(value: string): boolean {
 
 function hasDurableSignal(bundle: PaperclipSourceBundle, issues: Issue[]): boolean {
   if (bundle.sourceRefs.some((ref) => ref.kind === "document" || ref.kind === "comment")) return true;
-  if (issues.some((issue) => issue.status !== "todo" || issueDescription(issue).length > 0)) return true;
-  return /\b(decision|approved|implemented|completed|blocked|risk|artifact|plan|handoff|merged|fixed)\b/i.test(bundle.markdown);
+  if (issues.some((issue) => issue.lifecycleStatus !== "open")) return true;
+  return /\b(decision|approved|implemented|completed|blocked|risk|artifact|plan|delivery|merged|fixed)\b/i.test(bundle.markdown);
 }
 
 function standupPageContents(input: {
@@ -3023,14 +2953,14 @@ function standupPageContents(input: {
 }): string {
   const currentAsOf = input.bundle.sourceWindowEnd ?? new Date().toISOString();
   const title = input.project?.name ?? input.rootIssue?.title ?? "Paperclip Project";
-  const activeIssues = input.issues.filter((issue) => !["done", "cancelled"].includes(issue.status));
+  const activeIssues = input.issues.filter((issue) => !["done", "cancelled"].includes(issue.lifecycleStatus));
   const recentlyChanged = [...input.issues]
     .sort((a, b) => (isoString(b.updatedAt) ?? "").localeCompare(isoString(a.updatedAt) ?? ""))
     .slice(0, 6);
-  const completedIssues = recentlyChanged.filter((issue) => issue.status === "done");
-  const advancedIssues = recentlyChanged.filter((issue) => issue.status !== "done" && issue.status !== "cancelled");
-  const decisionIssues = input.issues.filter((issue) => hasDecisionSignal(`${issue.title}\n${issueDescription(issue)}`)).slice(0, 6);
-  const riskIssues = input.issues.filter((issue) => issue.status === "blocked" || hasRiskSignal(`${issue.title}\n${issueDescription(issue)}`)).slice(0, 6);
+  const completedIssues = recentlyChanged.filter((issue) => issue.lifecycleStatus === "done");
+  const advancedIssues = recentlyChanged.filter((issue) => issue.lifecycleStatus !== "done" && issue.lifecycleStatus !== "cancelled");
+  const decisionIssues = input.issues.filter((issue) => hasDecisionSignal(`${issue.title}\n${issueRequest(issue)}`)).slice(0, 6);
+  const riskIssues = input.issues.filter((issue) => issue.lifecycleStatus === "blocked" || hasRiskSignal(`${issue.title}\n${issueRequest(issue)}`)).slice(0, 6);
   const nextActionIssues = activeIssues.slice(0, 6);
   const lead = activeIssues[0] ?? recentlyChanged[0] ?? null;
 
@@ -3094,13 +3024,13 @@ function projectPageContents(input: {
 }): string {
   const currentAsOf = input.bundle.sourceWindowEnd ?? new Date().toISOString();
   const title = input.project?.name ?? input.rootIssue?.title ?? "Paperclip Project";
-  const description = input.project?.description?.trim() || input.rootIssue?.description?.trim() || "";
-  const activeIssues = input.issues.filter((issue) => !["done", "cancelled"].includes(issue.status));
+  const description = input.project?.description?.trim() || input.rootIssue?.request.trim() || "";
+  const activeIssues = input.issues.filter((issue) => !["done", "cancelled"].includes(issue.lifecycleStatus));
   const recentIssues = [...input.issues]
     .sort((a, b) => (isoString(b.updatedAt) ?? "").localeCompare(isoString(a.updatedAt) ?? ""))
     .slice(0, 8);
-  const decisionIssues = input.issues.filter((issue) => hasDecisionSignal(`${issue.title}\n${issueDescription(issue)}`)).slice(0, 8);
-  const riskIssues = input.issues.filter((issue) => issue.status === "blocked" || hasRiskSignal(`${issue.title}\n${issueDescription(issue)}`)).slice(0, 8);
+  const decisionIssues = input.issues.filter((issue) => hasDecisionSignal(`${issue.title}\n${issueRequest(issue)}`)).slice(0, 8);
+  const riskIssues = input.issues.filter((issue) => issue.lifecycleStatus === "blocked" || hasRiskSignal(`${issue.title}\n${issueRequest(issue)}`)).slice(0, 8);
 
   return [
     "---",
@@ -3151,7 +3081,7 @@ function projectPageContents(input: {
 
 function decisionsPageContents(input: { project: Project | null; rootIssue: Issue | null; issues: Issue[]; bundle: PaperclipSourceBundle }): string {
   const title = input.project?.name ?? input.rootIssue?.title ?? "Paperclip Project";
-  const decisionIssues = input.issues.filter((issue) => hasDecisionSignal(`${issue.title}\n${issueDescription(issue)}`));
+  const decisionIssues = input.issues.filter((issue) => hasDecisionSignal(`${issue.title}\n${issueRequest(issue)}`));
   return [
     `# ${title} Decisions`,
     "",
@@ -3161,7 +3091,7 @@ function decisionsPageContents(input: { project: Project | null; rootIssue: Issu
       ? decisionIssues.map((issue) => [
         `## ${issueConcept(issue)}`,
         "",
-        issueDescription(issue) ? excerpt(issueDescription(issue), 900) : "_No decision details beyond the issue title._",
+        issueRequest(issue) ? excerpt(issueRequest(issue), 900) : "_No decision details beyond the issue title._",
         "",
         `Source: ${issueReferenceFor(issue)}`,
         "",
@@ -3318,18 +3248,10 @@ async function autoApplyEnabled(ctx: PluginContext, companyId: string, requested
 }
 
 export function getDistillationAutoApplyRestriction(): DistillationAutoApplyRestriction {
-  const rawMode = process.env.PAPERCLIP_DEPLOYMENT_MODE;
-  const rawExposure = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
-  const deploymentMode =
-    rawMode === "local_trusted" || rawMode === "authenticated" ? rawMode : null;
-  const deploymentExposure =
-    rawExposure === "private" || rawExposure === "public" ? rawExposure : null;
-  const blocked = deploymentMode === "authenticated" && deploymentExposure === "public";
+  const blocked = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE === "public";
   return {
     autoApplyAllowed: !blocked,
     autoApplyRestriction: blocked ? PUBLIC_DISTILLATION_AUTO_APPLY_RESTRICTION : null,
-    deploymentMode,
-    deploymentExposure,
   };
 }
 
@@ -3432,7 +3354,7 @@ export async function distillPaperclipProjectPage(ctx: PluginContext, input: Pap
   ];
 
   if (input.includeSupportingPages !== false) {
-    const hasDecisions = issues.some((issue) => hasDecisionSignal(`${issue.title}\n${issueDescription(issue)}`));
+    const hasDecisions = issues.some((issue) => hasDecisionSignal(`${issue.title}\n${issueRequest(issue)}`));
     if (hasDecisions) {
       const decisionsPath = assertPagePath(`${projectDir}/decisions.md`);
       const decisionsCurrent = await readCurrentWithHash(ctx, input.companyId, decisionsPath, space);
@@ -3551,7 +3473,8 @@ function eventPayload(event: PluginEvent): Record<string, unknown> {
 }
 
 function sourceTitleForIssue(issue: Issue): string {
-  return issue.identifier ? `${issue.identifier} ${issue.title}` : issue.title;
+  const title = issue.title ?? "Untitled issue";
+  return issue.identifier ? `${issue.identifier} ${title}` : title;
 }
 
 function rawPathForPaperclipEvent(input: {
@@ -3578,55 +3501,12 @@ function formatIssueEventSource(issue: Issue, event: PluginEvent, maxCharacters:
     `- Event type: ${event.eventType}`,
     `- Event ID: ${event.eventId}`,
     `- Event occurred at: ${event.occurredAt}`,
-    `- Status: ${issue.status}`,
+    `- Status: ${issue.lifecycleStatus}`,
     `- Priority: ${issue.priority}`,
     "",
     "## Issue",
     "",
-    issue.description?.trim() ? issue.description.trim() : "_No issue description._",
-  ].filter((line): line is string => line !== null).join("\n"), maxCharacters);
-}
-
-function formatCommentEventSource(issue: Issue, comment: IssueComment, event: PluginEvent, maxCharacters: number): string {
-  return truncateEventSource([
-    `# Paperclip comment on ${sourceTitleForIssue(issue)}`,
-    "",
-    "## Provenance",
-    "",
-    `- Company ID: ${issue.companyId}`,
-    `- Issue ID: ${issue.id}`,
-    issue.identifier ? `- Issue identifier: ${issue.identifier}` : null,
-    `- Comment ID: ${comment.id}`,
-    `- Event type: ${event.eventType}`,
-    `- Event ID: ${event.eventId}`,
-    `- Event occurred at: ${event.occurredAt}`,
-    "",
-    "## Comment",
-    "",
-    comment.body,
-  ].filter((line): line is string => line !== null).join("\n"), maxCharacters);
-}
-
-function formatDocumentEventSource(issue: Issue, document: IssueDocument, event: PluginEvent, maxCharacters: number): string {
-  return truncateEventSource([
-    `# Paperclip document: ${document.title ?? document.key}`,
-    "",
-    "## Provenance",
-    "",
-    `- Company ID: ${issue.companyId}`,
-    `- Issue ID: ${issue.id}`,
-    issue.identifier ? `- Issue identifier: ${issue.identifier}` : null,
-    `- Document ID: ${document.id}`,
-    `- Document key: ${document.key}`,
-    `- Event type: ${event.eventType}`,
-    `- Event ID: ${event.eventId}`,
-    `- Event occurred at: ${event.occurredAt}`,
-    `- Format: ${document.format}`,
-    `- Revision: ${document.latestRevisionNumber}`,
-    "",
-    "## Document",
-    "",
-    document.body,
+    issue.request.trim() ? issue.request.trim() : "_No issue request._",
   ].filter((line): line is string => line !== null).join("\n"), maxCharacters);
 }
 
@@ -3691,8 +3571,13 @@ async function paperclipProfileIncludesIssue(ctx: PluginContext, input: {
     if (scope.kind === "root_issues") {
       for (const rootIssueId of scope.issueIds) {
         if (input.issue.id === rootIssueId) return true;
-        const subtree = await ctx.issues.getSubtree(rootIssueId, input.companyId, { includeRoot: true });
-        if (subtree.issues.some((issue) => issue.id === input.issue.id)) return true;
+        let current: Issue | null = input.issue;
+        const seen = new Set<string>();
+        while (current?.parentId && !seen.has(current.id)) {
+          if (current.parentId === rootIssueId) return true;
+          seen.add(current.id);
+          current = await ctx.issues.get(current.parentId, input.companyId);
+        }
       }
     }
   }
@@ -3739,7 +3624,9 @@ export async function handlePaperclipEventIngestion(ctx: PluginContext, event: P
   if (!issueId) return { status: "skipped", reason: "unsupported_event" };
   const issue = await ctx.issues.get(issueId, companyId);
   if (!issue) return { status: "skipped", reason: "missing_issue" };
-  if (isLlmWikiOperationIssue(issue)) return { status: "skipped", reason: "plugin_operation" };
+  if (await isLlmWikiOperationIssue(ctx, issue)) {
+    return { status: "skipped", reason: "plugin_operation" };
+  }
 
   const payload = eventPayload(event);
   if (event.eventType === "issue.created" || event.eventType === "issue.updated") {
@@ -3781,10 +3668,6 @@ export async function handlePaperclipEventIngestion(ctx: PluginContext, event: P
   }
 
   return { status: "skipped", reason: "unsupported_event" };
-}
-
-function queryStreamChannel(operationId: string): string {
-  return `llm-wiki:query:${operationId}`;
 }
 
 function buildQueryPrompt(input: { companyId: string; wikiId: string; space: WikiSpace; question: string }): string {
@@ -3831,11 +3714,46 @@ async function markOperation(ctx: PluginContext, input: {
   );
 }
 
-function isTerminalSessionEvent(event: AgentSessionEvent): boolean {
-  return event.eventType === "done" || event.eventType === "error";
+export async function registerWikiCreatorCallback(ctx: PluginContext) {
+  return ctx.issues.registerCreatorCallback(
+    {
+      key: WIKI_CREATOR_CALLBACK_KEY,
+      version: WIKI_CREATOR_CALLBACK_VERSION,
+    },
+    async (delivery) => {
+      const status =
+        delivery.status === "open"
+          ? "running"
+          : delivery.status === "done"
+            ? "done"
+            : delivery.status;
+      await ctx.db.execute(
+        `UPDATE ${tableName(ctx.db.namespace, "wiki_operations")}
+            SET status = COALESCE($3, status),
+                metadata = metadata || $4::jsonb,
+                updated_at = now()
+          WHERE company_id = $1 AND issue_id = $2`,
+        [
+          delivery.companyId,
+          delivery.issueId,
+          status,
+          jsonParam({
+            lastCreatorDelivery: {
+              deliveryId: delivery.deliveryId,
+              updateId: delivery.updateId,
+              commentId: delivery.commentId,
+              committedSequence: delivery.committedSequence,
+              status: delivery.status,
+            },
+          }),
+        ],
+      );
+      return { deliveryId: delivery.deliveryId, accepted: true };
+    },
+  );
 }
 
-export async function startWikiQuerySession(ctx: PluginContext, input: QuerySessionInput) {
+export async function startWikiQuery(ctx: PluginContext, input: WikiQueryInput) {
   const question = requireString(input.question, "question");
   const wikiId = normalizeWikiId(input.wikiId);
   const space = await resolveSpace(ctx, { companyId: input.companyId, wikiId, spaceSlug: input.spaceSlug });
@@ -3845,143 +3763,20 @@ export async function startWikiQuerySession(ctx: PluginContext, input: QuerySess
     spaceSlug: space.slug,
     operationType: "query",
     title: input.title ?? `Query LLM Wiki: ${question.slice(0, 72)}`,
-    prompt: question,
-  });
-  const agentId = operation.issue.assigneeAgentId;
-  const channel = queryStreamChannel(operation.operationId);
-
-  if (!agentId) {
-    const warning = "No configured Wiki Maintainer agent is available for this company.";
-    await markOperation(ctx, {
+    prompt: buildQueryPrompt({
       companyId: input.companyId,
-      operationId: operation.operationId,
-      status: "blocked",
-      warning,
-    });
-    await ctx.issues.update(operation.issue.id, { status: "blocked" }, input.companyId);
-    await ctx.issues.createComment(operation.issue.id, warning, input.companyId);
-    throw new Error(warning);
-  }
-
-  const agent = await ctx.agents.get(agentId, input.companyId);
-  if (!agent || agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") {
-    const warning = agent
-      ? `Wiki Maintainer agent is not invokable while status is ${agent.status}.`
-      : "Wiki Maintainer agent could not be loaded.";
-    await markOperation(ctx, {
-      companyId: input.companyId,
-      operationId: operation.operationId,
-      status: "blocked",
-      warning,
-    });
-    await ctx.issues.update(operation.issue.id, { status: "blocked" }, input.companyId);
-    await ctx.issues.createComment(operation.issue.id, warning, input.companyId);
-    throw new Error(warning);
-  }
-
-  const session = await ctx.agents.sessions.create(agentId, input.companyId, {
-    taskKey: `plugin:${PLUGIN_ID}:session:wiki:${wikiId}:query:${operation.operationId}`,
-    reason: "LLM Wiki query session",
+      wikiId,
+      space,
+      question,
+    }),
   });
-  await ctx.db.execute(
-    `INSERT INTO ${tableName(ctx.db.namespace, "wiki_query_sessions")}
-       (id, company_id, wiki_id, space_id, hidden_issue_id, agent_session_id, status, filed_outputs)
-     VALUES ($1, $2, $3, $6, $4, $5, 'active', '[]'::jsonb)`,
-    [operation.operationId, input.companyId, wikiId, operation.issue.id, session.sessionId, space.id],
-  );
-
-  const prompt = buildQueryPrompt({ companyId: input.companyId, wikiId, space, question });
-  ctx.streams.open(channel, input.companyId);
-  ctx.streams.emit(channel, {
-    type: "query.started",
-    operationId: operation.operationId,
-    querySessionId: operation.operationId,
-    issueId: operation.issue.id,
-    sessionId: session.sessionId,
-    question,
-  });
-
-  let answer = "";
-  const sendResult = await ctx.agents.sessions.sendMessage(session.sessionId, input.companyId, {
-    prompt,
-    reason: "LLM Wiki query",
-    onEvent: (event) => {
-      if (event.eventType === "chunk" && event.stream !== "stderr" && event.message) {
-        answer += event.message;
-      }
-      ctx.streams.emit(channel, {
-        type: "agent.event",
-        operationId: operation.operationId,
-        querySessionId: operation.operationId,
-        eventType: event.eventType,
-        stream: event.stream,
-        message: event.message,
-        payload: event.payload,
-        runId: event.runId,
-        seq: event.seq,
-      });
-      if (isTerminalSessionEvent(event)) {
-        const finalStatus = event.eventType === "done" ? "done" : "failed";
-        ctx.streams.emit(channel, {
-          type: event.eventType === "done" ? "query.done" : "query.error",
-          operationId: operation.operationId,
-          querySessionId: operation.operationId,
-          issueId: operation.issue.id,
-          sessionId: session.sessionId,
-          runId: event.runId,
-          answer,
-          message: event.message,
-        });
-        ctx.streams.close(channel);
-        void markOperation(ctx, {
-          companyId: input.companyId,
-          operationId: operation.operationId,
-          status: finalStatus,
-          runId: event.runId,
-          warning: event.eventType === "error" ? event.message : null,
-          metadata: { answerLength: answer.length },
-        });
-        void ctx.db.execute(
-          `UPDATE ${tableName(ctx.db.namespace, "wiki_query_sessions")}
-              SET status = $3,
-                  updated_at = now()
-            WHERE company_id = $1 AND id = $2`,
-          [input.companyId, operation.operationId, finalStatus === "done" ? "completed" : "failed"],
-        );
-        void ctx.issues.createComment(
-          operation.issue.id,
-          event.eventType === "done"
-            ? `Query completed.\n\n${answer.trim() || "_No answer text was streamed._"}`
-            : `Query failed: ${event.message ?? "agent session ended with an error"}`,
-          input.companyId,
-        );
-        void ctx.issues.update(
-          operation.issue.id,
-          { status: event.eventType === "done" ? "done" : "blocked", originRunId: event.runId },
-          input.companyId,
-        );
-      }
-    },
-  });
-
-  await markOperation(ctx, {
-    companyId: input.companyId,
-    operationId: operation.operationId,
-    status: "running",
-    runId: sendResult.runId,
-  });
-  await ctx.issues.update(operation.issue.id, { originRunId: sendResult.runId }, input.companyId);
 
   return {
-    status: "running",
+    status: "queued",
     wikiId,
     spaceSlug: space.slug,
     operationId: operation.operationId,
-    querySessionId: operation.operationId,
     issue: operation.issue,
-    sessionId: session.sessionId,
-    runId: sendResult.runId,
-    channel,
   };
 }
 
@@ -4004,57 +3799,24 @@ export async function fileQueryAnswerAsPage(ctx: PluginContext, input: FileQuery
     spaceSlug: space.slug,
     operationType: "file-as-page",
     title: `File LLM Wiki answer as ${path}`,
-    prompt: input.question ?? answer ?? `Write ${path}`,
+    prompt: [
+      input.question ? `Question: ${input.question}` : null,
+      `Write the following reviewed answer to \`${path}\` in LLM Wiki space \`${space.slug}\`.`,
+      stringField(input.expectedHash)
+        ? `Require current content hash \`${stringField(input.expectedHash)}\` before replacing the page.`
+        : null,
+      "",
+      contents,
+    ].filter((line): line is string => line !== null).join("\n"),
   });
-  const result = await writeWikiPage(ctx, {
-    companyId: input.companyId,
-    wikiId,
-    spaceSlug: space.slug,
-    path,
-    contents,
-    expectedHash: stringField(input.expectedHash),
-    summary: `Filed query answer as ${path}`,
-    sourceRefs: input.querySessionId ? [{ querySessionId: input.querySessionId }] : [],
-    operationId: operation.operationId,
-  });
-  const affectedPage = {
-    path,
-    title: result.title,
-    pageType: result.pageType,
-    revisionId: result.revisionId,
-  };
-  await markOperation(ctx, {
-    companyId: input.companyId,
-    operationId: operation.operationId,
-    status: "done",
-    affectedPages: [affectedPage],
-    metadata: { querySessionId: input.querySessionId ?? null },
-  });
-  await ctx.issues.update(operation.issue.id, { status: "done" }, input.companyId);
-  await ctx.issues.createComment(
-    operation.issue.id,
-    `Filed query answer as \`${path}\`.`,
-    input.companyId,
-  );
-
-  if (input.querySessionId) {
-    await ctx.db.execute(
-      `UPDATE ${tableName(ctx.db.namespace, "wiki_query_sessions")}
-          SET filed_outputs = filed_outputs || $3::jsonb,
-              updated_at = now()
-        WHERE company_id = $1 AND id = $2`,
-      [input.companyId, input.querySessionId, jsonArrayParam([affectedPage])],
-    );
-  }
 
   return {
-    status: "ok",
+    status: "queued",
     wikiId,
     spaceSlug: space.slug,
     path,
     operationId: operation.operationId,
     issue: operation.issue,
-    page: affectedPage,
   };
 }
 
@@ -4313,10 +4075,18 @@ export type WikiOperationRow = {
   id: string;
   operationType: string;
   status: string;
-  hiddenIssueId: string | null;
-  hiddenIssueIdentifier: string | null;
-  hiddenIssueTitle: string | null;
-  hiddenIssueStatus: string | null;
+  issueId: string | null;
+  issueIdentifier: string | null;
+  issueTitle: string | null;
+  issueStatus: string | null;
+  queryQuestion: string | null;
+  comments: Array<{
+    id: string;
+    body: string;
+    authorType: "agent" | "user" | "system" | "plugin" | null;
+    projectedSequence: number | null;
+    createdAt: string;
+  }>;
   projectId: string | null;
   runIds: unknown[];
   costCents: number;
@@ -4326,6 +4096,14 @@ export type WikiOperationRow = {
   createdAt: string;
   updatedAt: string;
 };
+
+function queryQuestionFromRequest(request: string | null): string | null {
+  if (!request) return null;
+  const marker = "\n\nQuestion: ";
+  const markerIndex = request.lastIndexOf(marker);
+  if (markerIndex < 0) return null;
+  return stringField(request.slice(markerIndex + marker.length));
+}
 
 export async function listPages(ctx: PluginContext, input: {
   companyId: string;
@@ -4932,10 +4710,12 @@ export async function listOperations(ctx: PluginContext, input: {
     id: string;
     operation_type: string;
     status: string;
-    hidden_issue_id: string | null;
-    hidden_issue_identifier: string | null;
-    hidden_issue_title: string | null;
-    hidden_issue_status: string | null;
+    issue_id: string | null;
+    issue_identifier: string | null;
+    issue_title: string | null;
+    issue_status: string | null;
+    issue_request: string | null;
+    comments: unknown;
     project_id: string | null;
     run_ids: unknown;
     cost_cents: number;
@@ -4945,14 +4725,31 @@ export async function listOperations(ctx: PluginContext, input: {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT op.id, op.operation_type, op.status, op.hidden_issue_id, op.project_id,
+    `SELECT op.id, op.operation_type, op.status, op.issue_id, op.project_id,
             op.run_ids, op.cost_cents, op.warnings, op.affected_pages, op.metadata,
             op.created_at::text AS created_at, op.updated_at::text AS updated_at,
-            issue.identifier AS hidden_issue_identifier,
-            issue.title AS hidden_issue_title,
-            issue.status::text AS hidden_issue_status
+            issue.identifier AS issue_identifier,
+            issue.title AS issue_title,
+            issue.request AS issue_request,
+            issue.lifecycle_status::text AS issue_status,
+            COALESCE((
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'id', comment.id,
+                  'body', comment.body,
+                  'authorType', comment.author_type,
+                  'projectedSequence', comment.projected_event_seq,
+                  'createdAt', comment.created_at::text
+                )
+                ORDER BY comment.created_at, comment.projected_event_seq, comment.id
+              )
+              FROM public.issue_comments comment
+              WHERE comment.company_id = op.company_id
+                AND comment.issue_id = op.issue_id
+                AND comment.canonical_source_kind <> 'issue_request'
+            ), '[]'::jsonb) AS comments
        FROM ${tableName(ctx.db.namespace, "wiki_operations")} op
-       LEFT JOIN public.issues issue ON issue.id = op.hidden_issue_id
+       LEFT JOIN public.issues issue ON issue.id = op.issue_id
       WHERE op.company_id = $1 AND op.wiki_id = $2 AND op.space_id = $3${filterSql}
       ORDER BY op.created_at DESC
       LIMIT $${params.length}`,
@@ -4963,10 +4760,41 @@ export async function listOperations(ctx: PluginContext, input: {
       id: row.id,
       operationType: row.operation_type,
       status: row.status,
-      hiddenIssueId: row.hidden_issue_id,
-      hiddenIssueIdentifier: row.hidden_issue_identifier,
-      hiddenIssueTitle: row.hidden_issue_title,
-      hiddenIssueStatus: row.hidden_issue_status,
+      issueId: row.issue_id,
+      issueIdentifier: row.issue_identifier,
+      issueTitle: row.issue_title,
+      issueStatus: row.issue_status,
+      queryQuestion: queryQuestionFromRequest(row.issue_request),
+      comments: Array.isArray(row.comments)
+        ? row.comments.flatMap((entry) => {
+            const comment = jsonObject(entry);
+            const id = stringField(comment.id);
+            const body = typeof comment.body === "string" ? comment.body : null;
+            const createdAt = stringField(comment.createdAt);
+            if (!id || body === null || !createdAt) return [];
+            const authorType =
+              comment.authorType === "agent" ||
+              comment.authorType === "user" ||
+              comment.authorType === "system" ||
+              comment.authorType === "plugin"
+                ? comment.authorType
+                : null;
+            const projectedSequence =
+              typeof comment.projectedSequence === "number"
+                ? comment.projectedSequence
+                : typeof comment.projectedSequence === "string" &&
+                    Number.isFinite(Number(comment.projectedSequence))
+                  ? Number(comment.projectedSequence)
+                  : null;
+            return [{
+              id,
+              body,
+              authorType,
+              projectedSequence,
+              createdAt,
+            }];
+          })
+        : [],
       projectId: row.project_id,
       runIds: Array.isArray(row.run_ids) ? row.run_ids : [],
       costCents: Number(row.cost_cents ?? 0),

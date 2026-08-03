@@ -28,12 +28,12 @@ export interface IssueTreePreviewAgent {
 export interface IssueTreePreviewIssue {
   id: string;
   identifier: string | null;
-  title: string;
-  status: IssueStatus;
+  title: string | null;
+  boardPresentationStatus: IssueStatus;
   parentId: string | null;
   depth: number;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
   activeRun: IssueTreePreviewRun | null;
   activeHoldIds: string[];
   action: IssueTreeControlMode;
@@ -79,10 +79,10 @@ export interface IssueTreeHoldMember {
   parentIssueId: string | null;
   depth: number;
   issueIdentifier: string | null;
-  issueTitle: string;
+  issueTitle: string | null;
   issueStatus: IssueStatus;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
   activeRunId: string | null;
   activeRunStatus: string | null;
   skipped: boolean;

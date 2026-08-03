@@ -9,6 +9,7 @@ import {
   seedIssueDetailCache,
 } from "./issueDetailCache";
 import { queryKeys } from "./queryKeys";
+import { createTestIssue } from "../test-utils/issue";
 
 vi.mock("@/api/issues", () => ({
   issuesApi: {
@@ -17,38 +18,10 @@ vi.mock("@/api/issues", () => ({
 }));
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
+  return createTestIssue({
     identifier: "PAP-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title: "Fast link target",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
+    request: "Open the linked task detail.",
     createdAt: new Date("2026-04-11T00:00:00.000Z"),
     updatedAt: new Date("2026-04-11T00:00:00.000Z"),
     labels: [],
@@ -57,8 +30,7 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     lastExternalCommentAt: null,
     isUnreadForMe: false,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 describe("issueDetailCache", () => {
@@ -102,7 +74,7 @@ describe("issueDetailCache", () => {
       id: issue.id,
       identifier: issue.identifier,
       title: issue.title,
-      status: issue.status,
+      boardPresentationStatus: issue.boardPresentationStatus,
       priority: issue.priority,
     } as Issue;
     vi.mocked(issuesApi.get).mockResolvedValue(issue);
@@ -119,7 +91,7 @@ describe("issueDetailCache", () => {
       id: issue.id,
       identifier: issue.identifier,
       title: issue.title,
-      status: issue.status,
+      boardPresentationStatus: issue.boardPresentationStatus,
       priority: issue.priority,
     } as Issue;
 

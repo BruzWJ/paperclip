@@ -3,9 +3,19 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { executionWorkspaces, heartbeatRuns, issueComments, issues, projects, projectWorkspaces, workspaceRuntimeServices } from "@paperclipai/db";
+import {
+  agents,
+  executionWorkspaces,
+  issueExecutionWorkspaceBindings,
+  issueSessionContextEpochs,
+  issueSessions,
+  issues,
+  projects,
+  projectWorkspaces,
+  workspaceRuntimeServices,
+} from "@paperclipai/db";
 import type {
   ExecutionWorkspace,
   ExecutionWorkspaceSummary,
@@ -21,23 +31,40 @@ import type {
   WorkspaceOverviewPrimaryService,
   WorkspaceOverviewQuery,
   GitWorktreeBranchAncestryVerdict,
-  IssueRecoveryAction,
+  ExecutionWorkspaceMode,
+  IssueExecutionWorkspaceSettings,
 } from "@paperclipai/shared";
+import * as IssueSession from "@paperclipai/shared/issue-session";
 import { deriveProjectUrlKey, WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT } from "@paperclipai/shared";
+import { resolvePaperclipInstanceRoot } from "@paperclipai/shared/home-paths";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   applyIssueExecutionPolicyTransition,
   normalizeIssueExecutionPolicy,
   parseIssueExecutionState,
 } from "./issue-execution-policy.js";
-import { parseProjectExecutionWorkspacePolicy } from "./execution-workspace-policy.js";
-import { issueRecoveryActionService } from "./issue-recovery-actions.js";
+import {
+  isUnrunnableWorktreeCombo,
+  parseIssueExecutionWorkspaceSettings,
+  parseProjectExecutionWorkspacePolicy,
+  resolveEffectiveWorkspaceStrategyType,
+  resolveExecutionWorkspaceMode,
+  type ParsedExecutionWorkspaceMode,
+} from "./execution-workspace-policy.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import {
   listCurrentRuntimeServicesForExecutionWorkspaces,
   listCurrentRuntimeServicesForProjectWorkspaces,
 } from "./workspace-runtime-read-model.js";
+import { appendCanonicalControlNotice } from "./issue-session-producers.js";
+import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
+import { createIssueSessionRootInTx } from "./issue-session-root-postgres.js";
+import {
+  reserveIssueSessionEventSequence,
+  type IssueSessionDbTransaction,
+} from "./issue-session/event-store.js";
+import { publishIssueSessionEventInTx } from "./issue-session/publication.js";
 
 type ExecutionWorkspaceRow = typeof executionWorkspaces.$inferSelect;
 type WorkspaceRuntimeServiceRow = typeof workspaceRuntimeServices.$inferSelect;
@@ -45,16 +72,28 @@ type RuntimeServiceReadDb = Pick<Db, "select">;
 const execFileAsync = promisify(execFile);
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 const WORKSPACE_BRANCH_INCOHERENCE_REASON = "git_worktree_branch_incoherence";
-const WORKSPACE_VALIDATION_RECOVERY_CAUSE = "workspace_validation_failed";
+const REUSABLE_WORKSPACE_STATUSES = ["active", "idle", "in_review"] as const;
+const ISSUE_WORKSPACE_MODES = new Set<ExecutionWorkspaceMode>([
+  "inherit",
+  "shared_workspace",
+  "isolated_workspace",
+  "operator_branch",
+  "reuse_existing",
+  "agent_default",
+]);
 
 export type ExecutionWorkspaceBranchReconcileMode = "forward" | "override" | "quarantine_restore";
 
-export type ExecutionWorkspaceBranchReconcileActor = {
-  actorType: "agent" | "user" | "system";
-  actorId: string;
-  agentId: string | null;
-  runId: string | null;
-};
+export type ExecutionWorkspaceBranchReconcileActor =
+  | {
+      actorType: "user";
+      actorId: string;
+    }
+  | {
+      actorType: "system";
+      actorId: string;
+      runId: string | null;
+    };
 
 export type ExecutionWorkspaceBranchReconcileInspection = {
   fingerprint: string;
@@ -72,8 +111,9 @@ export type ExecutionWorkspaceBranchReconcileInspection = {
 
 export type ExecutionWorkspaceBranchReconcileResult = {
   workspace: ExecutionWorkspace;
+  boundIssueId: string;
+  boundOwnershipEpoch: number;
   inspection: ExecutionWorkspaceBranchReconcileInspection;
-  recoveryAction: IssueRecoveryAction | null;
   auditCommentId: string | null;
   rescueRef: {
     branchName: string;
@@ -85,10 +125,10 @@ export type ExecutionWorkspaceBranchReconcileResult = {
   restoredSourceIssue: {
     id: string;
     companyId: string;
-    status: string;
-    assigneeAgentId: string | null;
+    boardPresentationStatus: string;
+    ownerAgentId: string | null;
   } | null;
-  sourceIssueStatusChanged: boolean;
+  sourceIssueBoardPresentationStatusChanged: boolean;
 };
 
 export type ExecutionWorkspaceGitWorktreeContention = {
@@ -102,6 +142,21 @@ export type ExecutionWorkspaceGitWorktreeContention = {
     issueIdentifier: string | null;
   } | null;
 } | null;
+
+export type ExecutionWorkspaceCurrentBinding = {
+  id: string;
+  companyId: string;
+  issueId: string;
+  sessionId: string;
+  ownershipEpoch: number;
+  executionWorkspaceId: string;
+  bindingMode: string;
+  absoluteCwd: string;
+  issueIdentifier: string | null;
+  issueTitle: string | null;
+  issueStatus: string;
+  issueUpdatedAt: Date;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -118,31 +173,15 @@ function cloneRecord(value: unknown): Record<string, unknown> | null {
   return { ...value };
 }
 
-function assigneeMatchesExecutionPrincipal(input: {
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
-}, principal: { type: string; agentId?: string | null; userId?: string | null } | null): boolean {
-  if (!principal) return false;
-  if (principal.type === "agent") {
-    return input.assigneeAgentId === principal.agentId && input.assigneeUserId === null;
-  }
-  if (principal.type === "user") {
-    return input.assigneeAgentId === null && input.assigneeUserId === principal.userId;
-  }
-  return false;
-}
-
 function quarantineRestoreRequestedSourceStatus(input: {
-  status: string;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+  boardPresentationStatus: string;
   executionState: unknown;
 }): "todo" | undefined {
   const state = parseIssueExecutionState(input.executionState);
   if (
     state?.status === "pending" &&
-    input.status === "in_review" &&
-    assigneeMatchesExecutionPrincipal(input, state.currentParticipant)
+    input.boardPresentationStatus === "in_review" &&
+    state.currentParticipant !== null
   ) {
     return undefined;
   }
@@ -198,7 +237,7 @@ function formatBranchForMessage(branch: string | null | undefined) {
 }
 
 function fingerprintWorkspaceBranchIncoherence(input: {
-  sourceIssueId: string | null;
+  issueId: string;
   executionWorkspaceId: string | null;
   worktreePath: string;
   expectedBranch: string;
@@ -211,7 +250,7 @@ function fingerprintWorkspaceBranchIncoherence(input: {
     .update(stableStringify({
       version: 1,
       reason: WORKSPACE_BRANCH_INCOHERENCE_REASON,
-      sourceIssueId: input.sourceIssueId,
+      issueId: input.issueId,
       executionWorkspaceId: input.executionWorkspaceId,
       worktreePath: path.resolve(input.worktreePath),
       expectedBranch: input.expectedBranch,
@@ -265,7 +304,8 @@ function explainGitWorktreeBranchReconcileInspection(input: {
 }
 
 async function inspectExecutionWorkspaceBranchForReconcile(
-  workspace: Pick<ExecutionWorkspace, "id" | "sourceIssueId" | "cwd" | "providerRef" | "branchName">,
+  workspace: Pick<ExecutionWorkspace, "id" | "cwd" | "providerRef" | "branchName">,
+  issueId: string,
 ): Promise<ExecutionWorkspaceBranchReconcileInspection> {
   const fromBranch = readNullableString(workspace.branchName);
   if (!fromBranch) {
@@ -307,7 +347,7 @@ async function inspectExecutionWorkspaceBranchForReconcile(
 
   return {
     fingerprint: fingerprintWorkspaceBranchIncoherence({
-      sourceIssueId: workspace.sourceIssueId ?? null,
+      issueId,
       executionWorkspaceId: workspace.id,
       worktreePath,
       expectedBranch: fromBranch,
@@ -340,7 +380,6 @@ function formatBranchReconcileAuditComment(input: {
   reason: string | null;
   workspaceId: string;
   inspection: ExecutionWorkspaceBranchReconcileInspection;
-  recoveryActionId: string | null;
   rescueRef: ExecutionWorkspaceBranchReconcileResult["rescueRef"];
 }) {
   return [
@@ -354,7 +393,6 @@ function formatBranchReconcileAuditComment(input: {
     `- To SHA: \`${input.inspection.toSha ?? "unknown"}\``,
     `- Verdict: \`${input.inspection.ancestryVerdict}\``,
     `- Fingerprint: \`${input.inspection.fingerprint}\``,
-    `- Recovery action: ${input.recoveryActionId ? `\`${input.recoveryActionId}\`` : "none matched"}`,
     ...(input.rescueRef
       ? [
           `- Rescue ref: \`${input.rescueRef.branchName}\``,
@@ -433,7 +471,6 @@ function assertLockedBranchReconcileWorkspaceStillMatchesInspection(input: {
   const currentPath = lockedPath ? path.resolve(lockedPath) : null;
 
   if (
-    input.lockedRow.sourceIssueId !== input.inspectedRow.sourceIssueId ||
     input.lockedRow.projectWorkspaceId !== input.inspectedRow.projectWorkspaceId ||
     lockedBranch !== input.inspection.fromBranch ||
     currentPath !== input.inspection.worktreePath
@@ -442,14 +479,12 @@ function assertLockedBranchReconcileWorkspaceStillMatchesInspection(input: {
       workspaceId: input.lockedRow.id,
       expected: {
         status: input.inspectedRow.status,
-        sourceIssueId: input.inspectedRow.sourceIssueId,
         projectWorkspaceId: input.inspectedRow.projectWorkspaceId,
         branchName: input.inspection.fromBranch,
         worktreePath: input.inspection.worktreePath,
       },
       current: {
         status: input.lockedRow.status,
-        sourceIssueId: input.lockedRow.sourceIssueId,
         projectWorkspaceId: input.lockedRow.projectWorkspaceId,
         branchName: lockedBranch,
         worktreePath: currentPath,
@@ -460,7 +495,8 @@ function assertLockedBranchReconcileWorkspaceStillMatchesInspection(input: {
 
 async function quarantineRestoreDirtyWorkspaceBranch(input: {
   db: Db;
-  workspace: Pick<ExecutionWorkspace, "id" | "sourceIssueId">;
+  workspace: Pick<ExecutionWorkspace, "id">;
+  issueId: string;
   inspection: ExecutionWorkspaceBranchReconcileInspection;
   actor: ExecutionWorkspaceBranchReconcileActor;
 }): Promise<NonNullable<ExecutionWorkspaceBranchReconcileResult["rescueRef"]>> {
@@ -472,7 +508,7 @@ async function quarantineRestoreDirtyWorkspaceBranch(input: {
       workMode: issues.workMode,
     })
     .from(issues)
-    .where(eq(issues.id, input.workspace.sourceIssueId!))
+    .where(eq(issues.id, input.issueId))
     .then((rows) => rows[0] ?? null);
   if (!sourceIssue) throw notFound("Source issue not found");
 
@@ -486,7 +522,8 @@ async function quarantineRestoreDirtyWorkspaceBranch(input: {
       actualBranchName: input.inspection.toBranch,
       sourceIssue,
       executionWorkspaceId: input.workspace.id,
-      heartbeatRunId: input.actor.runId,
+      runId:
+        input.actor.actorType === "user" ? null : input.actor.runId,
       enableWorkspaceBranchReconcileForward: false,
       enableWorkspaceDirtyQuarantineRepair: true,
       persistForwardReconcile: false,
@@ -893,8 +930,976 @@ async function loadEffectiveRuntimeServicesByExecutionWorkspace(
   );
 }
 
+type WorkspaceReservationIssue = Pick<
+  typeof issues.$inferSelect,
+  | "id"
+  | "companyId"
+  | "parentId"
+  | "projectId"
+  | "projectWorkspaceId"
+  | "title"
+  | "identifier"
+  | "ownershipEpoch"
+  | "ownerAgentId"
+  | "executionWorkspacePreference"
+  | "executionWorkspaceSettings"
+>;
+
+export interface ReserveIssueExecutionWorkspaceBindingInput {
+  issue: WorkspaceReservationIssue;
+  session: {
+    id: string;
+    parentSessionId?: string | null;
+    now: Date;
+  };
+  explicitReusableWorkspaceId?: string | null;
+  provenance?: {
+    agentId?: string | null;
+    userId?: string | null;
+  };
+}
+
+export class IssueExecutionWorkspaceReservationRejected extends Error {
+  constructor(
+    message: string,
+    readonly reason: string,
+  ) {
+    super(message);
+    this.name = "IssueExecutionWorkspaceReservationRejected";
+  }
+}
+
+function rejectWorkspaceReservation(message: string, reason: string): never {
+  throw new IssueExecutionWorkspaceReservationRejected(message, reason);
+}
+
+function deterministicWorkspaceUuid(namespace: string, key: string): string {
+  const bytes = Buffer.from(
+    createHash("sha256")
+      .update(`${namespace}\0${key}`)
+      .digest("hex")
+      .slice(0, 32),
+    "hex",
+  );
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function workspaceReservationDigest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function normalizedIssueWorkspacePreference(
+  value: string | null,
+): ExecutionWorkspaceMode | null {
+  if (value === null || value === "") return null;
+  if (!ISSUE_WORKSPACE_MODES.has(value as ExecutionWorkspaceMode)) {
+    rejectWorkspaceReservation(
+      "Issue execution workspace preference is invalid",
+      "workspace_preference_invalid",
+    );
+  }
+  return value as ExecutionWorkspaceMode;
+}
+
+function effectiveWorkspaceStrategy(
+  mode: ParsedExecutionWorkspaceMode,
+  issueSettings: IssueExecutionWorkspaceSettings | null,
+  projectPolicy: ReturnType<typeof parseProjectExecutionWorkspacePolicy>,
+  reuseRequested = false,
+) {
+  if (!reuseRequested && mode === "shared_workspace") {
+    return "project_primary" as const;
+  }
+  if (!reuseRequested && mode === "agent_default") {
+    return "adapter_managed" as const;
+  }
+  return resolveEffectiveWorkspaceStrategyType(mode, {
+    workspaceStrategy:
+      issueSettings?.workspaceStrategy ??
+      projectPolicy?.workspaceStrategy ??
+      undefined,
+  });
+}
+
+function persistedStrategyMatches(
+  persisted: string,
+  expected: ReturnType<typeof effectiveWorkspaceStrategy>,
+): boolean {
+  if (expected === "project_primary") {
+    return persisted === "local_fs" || persisted === "project_primary";
+  }
+  return persisted === expected;
+}
+
+function persistedModeForReservation(
+  mode: ParsedExecutionWorkspaceMode,
+): string {
+  return mode === "agent_default" ? "adapter_managed" : mode;
+}
+
+function persistedStrategyForReservation(
+  strategy: ReturnType<typeof effectiveWorkspaceStrategy>,
+): string {
+  return strategy === "project_primary" ? "local_fs" : strategy;
+}
+
+function absoluteProjectWorkspaceCwd(
+  cwd: string | null | undefined,
+): string | null {
+  if (!cwd) return null;
+  if (!path.isAbsolute(cwd)) {
+    rejectWorkspaceReservation(
+      "Selected project workspace cwd must be absolute",
+      "project_workspace_cwd_invalid",
+    );
+  }
+  return path.resolve(cwd);
+}
+
+async function assertReusableWorkspaceLaunchable(
+  workspace: ExecutionWorkspaceRow,
+): Promise<void> {
+  if (!workspace.cwd || !path.isAbsolute(workspace.cwd)) {
+    rejectWorkspaceReservation(
+      "Reusable execution workspace cwd must be absolute",
+      "execution_workspace_cwd_invalid",
+    );
+  }
+  const absoluteCwd = path.resolve(workspace.cwd);
+  if (
+    workspace.providerType === "adapter_managed" ||
+    workspace.providerType === "cloud_sandbox"
+  ) {
+    await fs.mkdir(absoluteCwd, { recursive: true });
+    return;
+  }
+  let directory = false;
+  try {
+    directory = (await fs.stat(absoluteCwd)).isDirectory();
+  } catch {
+    directory = false;
+  }
+  if (!directory) {
+    rejectWorkspaceReservation(
+      "Reusable execution workspace cwd is not an available directory",
+      "execution_workspace_cwd_unavailable",
+    );
+  }
+  if (workspace.strategyType !== "git_worktree") return;
+  const insideWorktree = await readGitStdout(
+    ["rev-parse", "--is-inside-work-tree"],
+    absoluteCwd,
+  ).catch(() => null);
+  if (insideWorktree !== "true") {
+    rejectWorkspaceReservation(
+      "Reusable git-worktree workspace is not a valid Git checkout",
+      "execution_workspace_git_invalid",
+    );
+  }
+  if (workspace.branchName) {
+    const currentBranch = await readGitStdout(
+      ["branch", "--show-current"],
+      absoluteCwd,
+    ).catch(() => null);
+    if (currentBranch !== workspace.branchName) {
+      rejectWorkspaceReservation(
+        "Reusable git-worktree workspace branch does not match its persisted branch",
+        "execution_workspace_git_invalid",
+      );
+    }
+  }
+}
+
+async function realizeReservationGitWorktree(
+  tx: IssueSessionDbTransaction,
+  input: ReserveIssueExecutionWorkspaceBindingInput,
+  selectedProjectWorkspace: typeof projectWorkspaces.$inferSelect,
+  workspaceStrategy: NonNullable<
+    IssueExecutionWorkspaceSettings["workspaceStrategy"]
+  >,
+  mode: ParsedExecutionWorkspaceMode,
+) {
+  const baseCwd = absoluteProjectWorkspaceCwd(
+    selectedProjectWorkspace.cwd,
+  );
+  if (!baseCwd) {
+    rejectWorkspaceReservation(
+      "Git worktree selection requires a project workspace with an absolute repository cwd",
+      "workspace_worktree_base_missing",
+    );
+  }
+  const owner = input.issue.ownerAgentId
+    ? await tx
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.companyId, input.issue.companyId),
+            eq(agents.id, input.issue.ownerAgentId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null)
+    : null;
+  const configuredBranchTemplate =
+    workspaceStrategy.branchTemplate?.trim() ||
+    "{{issue.identifier}}-{{slug}}";
+  const epochScopedBranchTemplate =
+    mode === "isolated_workspace"
+      ? `${configuredBranchTemplate}-epoch-${input.issue.ownershipEpoch}`
+      : configuredBranchTemplate;
+
+  try {
+    // workspace-runtime owns the existing, thoroughly validated git
+    // realization primitive. The import stays dynamic because that module
+    // consumes the execution-workspace read/service surface in this module;
+    // reservation remains the sole mutating issue-binding owner.
+    const { realizeExecutionWorkspace } =
+      await import("./workspace-runtime.js");
+    return await realizeExecutionWorkspace({
+      db: tx as unknown as Db,
+      base: {
+        baseCwd,
+        source: "project_primary",
+        projectId: input.issue.projectId,
+        workspaceId: selectedProjectWorkspace.id,
+        repoUrl: selectedProjectWorkspace.repoUrl ?? null,
+        repoRef:
+          selectedProjectWorkspace.repoRef ??
+          selectedProjectWorkspace.defaultRef ??
+          null,
+      },
+      config: {
+        workspaceStrategy: {
+          ...workspaceStrategy,
+          type: "git_worktree",
+          branchTemplate: epochScopedBranchTemplate,
+        },
+      },
+      issue: {
+        id: input.issue.id,
+        identifier: input.issue.identifier,
+        title: input.issue.title,
+      },
+      agent: {
+        id: owner?.id ?? input.issue.ownerAgentId,
+        name: owner?.name ?? "Agent",
+        companyId: input.issue.companyId,
+      },
+    });
+  } catch (error) {
+    rejectWorkspaceReservation(
+      `Git worktree realization failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      "execution_workspace_realization_failed",
+    );
+  }
+}
+
+function reservationWorkspaceMetadata(input: {
+  issueSettings: IssueExecutionWorkspaceSettings | null;
+  projectPolicy: ReturnType<
+    typeof parseProjectExecutionWorkspacePolicy
+  >;
+  resolvedBaseRefSha?: string | null;
+}): Record<string, unknown> | null {
+  const strategy =
+    input.issueSettings?.workspaceStrategy ??
+    input.projectPolicy?.workspaceStrategy ??
+    null;
+  const seed = input.resolvedBaseRefSha
+    ? {
+        baseRefSnapshot: {
+          resolvedSha: input.resolvedBaseRefSha,
+        },
+      }
+    : null;
+  return mergeExecutionWorkspaceConfig(seed, {
+    environmentId:
+      input.issueSettings?.environmentId ??
+      input.projectPolicy?.environmentId ??
+      null,
+    provisionCommand: strategy?.provisionCommand ?? null,
+    teardownCommand: strategy?.teardownCommand ?? null,
+    cleanupCommand: null,
+    workspaceRuntime:
+      input.issueSettings?.workspaceRuntime ??
+      input.projectPolicy?.workspaceRuntime ??
+      null,
+    desiredState: null,
+    serviceStates: null,
+  });
+}
+
+async function currentContextGeneration(
+  tx: IssueSessionDbTransaction,
+  input: { companyId: string; issueId: string; sessionId: string },
+): Promise<number> {
+  const row = await tx
+    .select({ generation: issueSessionContextEpochs.generation })
+    .from(issueSessionContextEpochs)
+    .where(
+      and(
+        eq(issueSessionContextEpochs.companyId, input.companyId),
+        eq(issueSessionContextEpochs.issueId, input.issueId),
+        eq(issueSessionContextEpochs.sessionId, input.sessionId),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (!row) {
+    rejectWorkspaceReservation(
+      "Issue Session context epoch is missing",
+      "session_context_epoch_missing",
+    );
+  }
+  return row.generation;
+}
+
+async function resolveReservationParentSession(
+  tx: IssueSessionDbTransaction,
+  input: ReserveIssueExecutionWorkspaceBindingInput,
+): Promise<string | null> {
+  if (!input.issue.parentId) {
+    if (input.session.parentSessionId) {
+      rejectWorkspaceReservation(
+        "Root issue cannot have a parent Session",
+        "parent_session_invalid",
+      );
+    }
+    return null;
+  }
+  const parent = await tx
+    .select({ id: issueSessions.id })
+    .from(issueSessions)
+    .where(
+      and(
+        eq(issueSessions.companyId, input.issue.companyId),
+        eq(issueSessions.issueId, input.issue.parentId),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (!parent) {
+    rejectWorkspaceReservation(
+      "Parent issue has no canonical Session",
+      "parent_session_missing",
+    );
+  }
+  if (
+    input.session.parentSessionId !== undefined &&
+    input.session.parentSessionId !== parent.id
+  ) {
+    rejectWorkspaceReservation(
+      "Parent Session does not match the parent issue",
+      "parent_session_mismatch",
+    );
+  }
+  return parent.id;
+}
+
+async function publishSessionMovedForWorkspaceInTx(
+  tx: IssueSessionDbTransaction,
+  input: ReserveIssueExecutionWorkspaceBindingInput,
+  absoluteCwd: string,
+): Promise<void> {
+  const { seq } = await reserveIssueSessionEventSequence(tx, {
+    companyId: input.issue.companyId,
+    issueId: input.issue.id,
+    sessionId: input.session.id,
+  });
+  const sourceKey = [
+    "workspace-binding",
+    input.issue.id,
+    input.issue.ownershipEpoch,
+    absoluteCwd,
+  ].join(":");
+  const eventId = `evt_${workspaceReservationDigest(sourceKey).slice(0, 40)}`;
+  await publishIssueSessionEventInTx(tx, {
+    event: {
+      id: eventId,
+      sessionId: input.session.id,
+      seq,
+      type: IssueSession.Event.Moved.type,
+      data: {
+        sessionID: input.session.id,
+        timestamp: input.session.now.getTime(),
+        location: { directory: absoluteCwd },
+      },
+    },
+    envelope: {
+      companyId: input.issue.companyId,
+      issueId: input.issue.id,
+      runId: null,
+      ownershipEpoch: input.issue.ownershipEpoch,
+      agentId: input.issue.ownerAgentId,
+      adapterConfigRevisionId: null,
+      sourceKind: "workspace_binding_moved",
+      sourceId: eventId,
+      immutableSourceKey: sourceKey,
+      sourceRecordId: input.issue.id,
+      sourceIdentityDigest: workspaceReservationDigest(
+        `${sourceKey}:${eventId}`,
+      ),
+      createdAt: input.session.now,
+    },
+  });
+}
+
+/**
+ * Sole production mutating owner for an issue-execution workspace binding.
+ *
+ * Selection is resolved from the issue's persisted intent on every ownership
+ * epoch. Parent Sessions supply lineage only: neither a parent binding nor a
+ * prior epoch cwd is an implicit workspace source.
+ */
+export async function reserveIssueExecutionWorkspaceBinding(
+  tx: IssueSessionDbTransaction,
+  input: ReserveIssueExecutionWorkspaceBindingInput,
+) {
+  if (
+    !Number.isSafeInteger(input.issue.ownershipEpoch) ||
+    input.issue.ownershipEpoch < 1
+  ) {
+    rejectWorkspaceReservation(
+      "Issue ownership epoch must be positive",
+      "ownership_epoch_invalid",
+    );
+  }
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${[
+      "issue-workspace-reservation",
+      input.issue.companyId,
+      input.issue.id,
+      input.issue.ownershipEpoch,
+    ].join(":")}, 0))`,
+  );
+
+  const existingBinding = await tx
+    .select()
+    .from(issueExecutionWorkspaceBindings)
+    .where(
+      and(
+        eq(
+          issueExecutionWorkspaceBindings.companyId,
+          input.issue.companyId,
+        ),
+        eq(issueExecutionWorkspaceBindings.issueId, input.issue.id),
+        eq(
+          issueExecutionWorkspaceBindings.ownershipEpoch,
+          input.issue.ownershipEpoch,
+        ),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (existingBinding) {
+    if (
+      existingBinding.sessionId !== input.session.id ||
+      (input.explicitReusableWorkspaceId &&
+        existingBinding.executionWorkspaceId !==
+          input.explicitReusableWorkspaceId)
+    ) {
+      rejectWorkspaceReservation(
+        "Issue workspace reservation was retried with different immutable identity",
+        "workspace_binding_conflict",
+      );
+    }
+    const existingSession = await tx
+      .select()
+      .from(issueSessions)
+      .where(
+        and(
+          eq(issueSessions.companyId, input.issue.companyId),
+          eq(issueSessions.issueId, input.issue.id),
+          eq(issueSessions.id, input.session.id),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!existingSession) {
+      rejectWorkspaceReservation(
+        "Persisted workspace binding has no canonical Session",
+        "workspace_session_missing",
+      );
+    }
+    const existingWorkspace = await tx
+      .select({
+        projectWorkspaceId: executionWorkspaces.projectWorkspaceId,
+      })
+      .from(executionWorkspaces)
+      .where(
+        and(
+          eq(executionWorkspaces.companyId, input.issue.companyId),
+          eq(
+            executionWorkspaces.id,
+            existingBinding.executionWorkspaceId,
+          ),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!existingWorkspace) {
+      rejectWorkspaceReservation(
+        "Persisted workspace binding has no execution workspace",
+        "execution_workspace_missing",
+      );
+    }
+    return {
+      binding: existingBinding,
+      session: existingSession,
+      contextEpochGeneration: await currentContextGeneration(tx, {
+        companyId: input.issue.companyId,
+        issueId: input.issue.id,
+        sessionId: input.session.id,
+      }),
+      projectWorkspaceId: existingWorkspace.projectWorkspaceId,
+      moved: false,
+    };
+  }
+
+  const issueSettings = parseIssueExecutionWorkspaceSettings(
+    input.issue.executionWorkspaceSettings,
+    { includeEnvironmentId: true },
+  );
+  const issuePreference = normalizedIssueWorkspacePreference(
+    input.issue.executionWorkspacePreference,
+  );
+  const reuseRequested =
+    issuePreference === "reuse_existing" ||
+    issueSettings?.mode === "reuse_existing";
+  if (Boolean(input.explicitReusableWorkspaceId) !== reuseRequested) {
+    rejectWorkspaceReservation(
+      reuseRequested
+        ? "reuse_existing requires an explicit execution workspace"
+        : "An explicit execution workspace requires reuse_existing",
+      reuseRequested
+        ? "execution_workspace_missing"
+        : "execution_workspace_preference_invalid",
+    );
+  }
+
+  const project = input.issue.projectId
+    ? await tx
+        .select()
+        .from(projects)
+        .where(
+          and(
+            eq(projects.companyId, input.issue.companyId),
+            eq(projects.id, input.issue.projectId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null)
+    : null;
+  if (input.issue.projectId && !project) {
+    rejectWorkspaceReservation(
+      "Issue project is not in this company",
+      "project_invalid",
+    );
+  }
+  const parsedProjectPolicy = parseProjectExecutionWorkspacePolicy(
+    project?.executionWorkspacePolicy,
+  );
+  const projectPolicy = parsedProjectPolicy?.enabled
+    ? parsedProjectPolicy
+    : null;
+  const mode = resolveExecutionWorkspaceMode({
+    projectPolicy,
+    issueSettings,
+    issuePreference,
+  });
+  const strategy = effectiveWorkspaceStrategy(
+    mode,
+    issueSettings,
+    projectPolicy,
+    reuseRequested,
+  );
+
+  const selectedProjectWorkspaceId =
+    input.issue.projectWorkspaceId ??
+    projectPolicy?.defaultProjectWorkspaceId ??
+    null;
+  const selectedProjectWorkspace = input.issue.projectId
+    ? await tx
+        .select()
+        .from(projectWorkspaces)
+        .where(
+          and(
+            eq(projectWorkspaces.companyId, input.issue.companyId),
+            eq(projectWorkspaces.projectId, input.issue.projectId),
+            selectedProjectWorkspaceId
+              ? eq(projectWorkspaces.id, selectedProjectWorkspaceId)
+              : sql`true`,
+          ),
+        )
+        .orderBy(
+          sql`${projectWorkspaces.isPrimary} desc`,
+          asc(projectWorkspaces.createdAt),
+          asc(projectWorkspaces.id),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null)
+    : null;
+  if (selectedProjectWorkspaceId && !selectedProjectWorkspace) {
+    rejectWorkspaceReservation(
+      "Selected project workspace is not in the issue project",
+      "project_workspace_invalid",
+    );
+  }
+
+  let workspace: ExecutionWorkspaceRow;
+  if (input.explicitReusableWorkspaceId) {
+    const reusable = await tx
+      .select()
+      .from(executionWorkspaces)
+      .where(
+        and(
+          eq(executionWorkspaces.companyId, input.issue.companyId),
+          eq(
+            executionWorkspaces.id,
+            input.explicitReusableWorkspaceId,
+          ),
+        ),
+      )
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (
+      !reusable ||
+      !REUSABLE_WORKSPACE_STATUSES.includes(
+        reusable.status as (typeof REUSABLE_WORKSPACE_STATUSES)[number],
+      ) ||
+      reusable.closedAt !== null ||
+      reusable.projectId !== input.issue.projectId ||
+      reusable.projectWorkspaceId !==
+        (selectedProjectWorkspace?.id ?? null) ||
+      !persistedStrategyMatches(reusable.strategyType, strategy) ||
+      !reusable.cwd ||
+      !path.isAbsolute(reusable.cwd)
+    ) {
+      rejectWorkspaceReservation(
+        "Reusable execution workspace is not compatible with the issue selection",
+        "execution_workspace_invalid",
+      );
+    }
+    await assertReusableWorkspaceLaunchable(reusable);
+    const refreshed = await tx
+      .update(executionWorkspaces)
+      .set({
+        status: "active",
+        lastUsedAt: input.session.now,
+        updatedAt: input.session.now,
+      })
+      .where(eq(executionWorkspaces.id, reusable.id))
+      .returning()
+      .then((rows) => rows[0] ?? null);
+    if (!refreshed) {
+      rejectWorkspaceReservation(
+        "Reusable execution workspace could not be reserved",
+        "execution_workspace_reservation_failed",
+      );
+    }
+    workspace = refreshed;
+  } else {
+    if (
+      isUnrunnableWorktreeCombo({
+        issue: {
+          projectId: input.issue.projectId,
+          projectWorkspaceId: selectedProjectWorkspace?.id ?? null,
+        },
+        resolvedMode: mode,
+        resolvedStrategy: strategy,
+        reusableExecutionWorkspaceAvailable: false,
+      })
+    ) {
+      rejectWorkspaceReservation(
+        "Projectless git worktree selection requires an explicit compatible reusable workspace",
+        "workspace_worktree_requires_project",
+      );
+    }
+
+    const projectWorkspaceCwd = absoluteProjectWorkspaceCwd(
+      selectedProjectWorkspace?.cwd,
+    );
+    const perEpochRoot = path.join(
+      resolvePaperclipInstanceRoot(),
+      "issue-workspaces",
+      input.issue.companyId,
+      input.issue.id,
+      String(input.issue.ownershipEpoch),
+    );
+    let absoluteCwd: string;
+    let realizedBaseRef =
+      issueSettings?.workspaceStrategy?.baseRef ??
+      projectPolicy?.workspaceStrategy?.baseRef ??
+      selectedProjectWorkspace?.repoRef ??
+      selectedProjectWorkspace?.defaultRef ??
+      null;
+    let realizedBranchName: string | null = null;
+    let realizedProviderRef: string | null = null;
+    let metadata = reservationWorkspaceMetadata({
+      issueSettings,
+      projectPolicy,
+    });
+    if (strategy === "git_worktree") {
+      const workspaceStrategy =
+        issueSettings?.workspaceStrategy ??
+        projectPolicy?.workspaceStrategy;
+      if (
+        !selectedProjectWorkspace ||
+        workspaceStrategy?.type !== "git_worktree"
+      ) {
+        rejectWorkspaceReservation(
+          "Git worktree selection has no explicit project workspace strategy",
+          "workspace_worktree_base_missing",
+        );
+      }
+      const realized = await realizeReservationGitWorktree(
+        tx,
+        input,
+        selectedProjectWorkspace,
+        workspaceStrategy,
+        mode,
+      );
+      if (!path.isAbsolute(realized.cwd)) {
+        rejectWorkspaceReservation(
+          "Git worktree realization returned a non-absolute cwd",
+          "execution_workspace_cwd_invalid",
+        );
+      }
+      absoluteCwd = path.resolve(realized.cwd);
+      realizedBaseRef = realized.repoRef;
+      realizedBranchName = realized.branchName;
+      realizedProviderRef = realized.worktreePath;
+      metadata = reservationWorkspaceMetadata({
+        issueSettings,
+        projectPolicy,
+        resolvedBaseRefSha: realized.baseRefSha,
+      });
+    } else {
+      absoluteCwd =
+        mode === "shared_workspace" && projectWorkspaceCwd
+          ? projectWorkspaceCwd
+          : perEpochRoot;
+      await fs.mkdir(absoluteCwd, { recursive: true });
+    }
+
+    if (mode === "shared_workspace") {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${[
+          "shared-execution-workspace",
+          input.issue.companyId,
+          input.issue.projectId ?? "global",
+          selectedProjectWorkspace?.id ?? "projectless",
+          absoluteCwd,
+        ].join(":")}, 0))`,
+      );
+    }
+    const reusableShared =
+      mode === "shared_workspace"
+        ? await tx
+            .select()
+            .from(executionWorkspaces)
+            .where(
+              and(
+                eq(executionWorkspaces.companyId, input.issue.companyId),
+                input.issue.projectId
+                  ? eq(executionWorkspaces.projectId, input.issue.projectId)
+                  : isNull(executionWorkspaces.projectId),
+                selectedProjectWorkspace?.id
+                  ? eq(
+                      executionWorkspaces.projectWorkspaceId,
+                      selectedProjectWorkspace.id,
+                    )
+                  : isNull(executionWorkspaces.projectWorkspaceId),
+                eq(executionWorkspaces.mode, "shared_workspace"),
+                eq(executionWorkspaces.cwd, absoluteCwd),
+                inArray(
+                  executionWorkspaces.status,
+                  [...REUSABLE_WORKSPACE_STATUSES],
+                ),
+                isNull(executionWorkspaces.closedAt),
+              ),
+            )
+            .orderBy(asc(executionWorkspaces.createdAt))
+            .limit(1)
+            .then((rows) => rows[0] ?? null)
+        : null;
+    if (reusableShared) {
+      workspace = await tx
+        .update(executionWorkspaces)
+        .set({
+          status: "active",
+          lastUsedAt: input.session.now,
+          updatedAt: input.session.now,
+        })
+        .where(eq(executionWorkspaces.id, reusableShared.id))
+        .returning()
+        .then((rows) => rows[0] ?? reusableShared);
+    } else {
+      const inserted = await tx
+        .insert(executionWorkspaces)
+        .values({
+          companyId: input.issue.companyId,
+          projectId: input.issue.projectId,
+          projectWorkspaceId: selectedProjectWorkspace?.id ?? null,
+          workspaceClass: input.issue.projectId
+            ? "project"
+            : "projectless",
+          sourceIssueId: null,
+          mode: persistedModeForReservation(mode),
+          strategyType: persistedStrategyForReservation(strategy),
+          name:
+            input.issue.title?.trim() ||
+            input.issue.identifier?.trim() ||
+            `Issue ${input.issue.id}`,
+          status: "active",
+          cwd: absoluteCwd,
+          repoUrl: selectedProjectWorkspace?.repoUrl ?? null,
+          baseRef: realizedBaseRef,
+          branchName: realizedBranchName,
+          providerType:
+            strategy === "git_worktree"
+              ? "git_worktree"
+              : strategy === "adapter_managed"
+                ? "adapter_managed"
+                : strategy === "cloud_sandbox"
+                  ? "cloud_sandbox"
+                  : "local_fs",
+          providerRef: realizedProviderRef,
+          metadata,
+          openedAt: input.session.now,
+          lastUsedAt: input.session.now,
+          createdAt: input.session.now,
+          updatedAt: input.session.now,
+        })
+        .returning()
+        .then((rows) => rows[0] ?? null);
+      if (!inserted) {
+        rejectWorkspaceReservation(
+          "Execution workspace was not persisted",
+          "execution_workspace_reservation_failed",
+        );
+      }
+      workspace = inserted;
+    }
+  }
+
+  if (!workspace.cwd || !path.isAbsolute(workspace.cwd)) {
+    rejectWorkspaceReservation(
+      "Reserved execution workspace has no valid absolute cwd",
+      "execution_workspace_cwd_invalid",
+    );
+  }
+  const absoluteCwd = path.resolve(workspace.cwd);
+  const parentSessionId = await resolveReservationParentSession(tx, input);
+  const existingSession = await tx
+    .select()
+    .from(issueSessions)
+    .where(
+      and(
+        eq(issueSessions.companyId, input.issue.companyId),
+        eq(issueSessions.issueId, input.issue.id),
+        eq(issueSessions.id, input.session.id),
+      ),
+    )
+    .for("update")
+    .then((rows) => rows[0] ?? null);
+
+  let session: typeof issueSessions.$inferSelect;
+  let contextEpochGeneration: number;
+  let moved = false;
+  if (!existingSession) {
+    const root = await createIssueSessionRootInTx(tx, {
+      id: input.session.id,
+      companyId: input.issue.companyId,
+      issueId: input.issue.id,
+      parentSessionId,
+      projectId: input.issue.projectId ?? "global",
+      title: input.issue.title?.trim() || `Issue ${input.issue.id}`,
+      directory: absoluteCwd,
+      now: input.session.now,
+    });
+    session = root.session;
+    contextEpochGeneration = root.contextEpoch.generation;
+  } else {
+    if (existingSession.parentSessionId !== parentSessionId) {
+      rejectWorkspaceReservation(
+        "Existing Session parent does not match issue lineage",
+        "parent_session_mismatch",
+      );
+    }
+    if (path.resolve(existingSession.directory) !== absoluteCwd) {
+      await publishSessionMovedForWorkspaceInTx(tx, input, absoluteCwd);
+      moved = true;
+      const movedSession = await tx
+        .select()
+        .from(issueSessions)
+        .where(eq(issueSessions.id, input.session.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (!movedSession) {
+        rejectWorkspaceReservation(
+          "Moved Session projection is missing",
+          "workspace_session_missing",
+        );
+      }
+      session = movedSession;
+    } else {
+      session = existingSession;
+    }
+    contextEpochGeneration = await currentContextGeneration(tx, {
+      companyId: input.issue.companyId,
+      issueId: input.issue.id,
+      sessionId: input.session.id,
+    });
+  }
+
+  const binding = await tx
+    .insert(issueExecutionWorkspaceBindings)
+    .values({
+      id: deterministicWorkspaceUuid(
+        "issue-workspace-binding",
+        `${input.issue.companyId}:${input.issue.id}:${input.issue.ownershipEpoch}`,
+      ),
+      companyId: input.issue.companyId,
+      issueId: input.issue.id,
+      sessionId: input.session.id,
+      ownershipEpoch: input.issue.ownershipEpoch,
+      executionWorkspaceId: workspace.id,
+      bindingMode: workspace.mode,
+      absoluteCwd,
+      repositoryLocator: workspace.repoUrl,
+      repositoryRef: workspace.branchName ?? workspace.baseRef,
+      pullRequestSelector: null,
+      environmentSelector: issueSettings?.environmentId ?? null,
+      boundByAgentId: input.provenance?.agentId ?? null,
+      boundByUserId: input.provenance?.userId ?? null,
+      createdAt: input.session.now,
+    })
+    .returning()
+    .then((rows) => rows[0] ?? null);
+  if (!binding) {
+    rejectWorkspaceReservation(
+      "Issue execution workspace binding was not persisted",
+      "workspace_binding_missing",
+    );
+  }
+  return {
+    binding,
+    session,
+    contextEpochGeneration,
+    projectWorkspaceId: workspace.projectWorkspaceId,
+    moved,
+  };
+}
+
 type WorkspaceOverviewPageRow = ExecutionWorkspaceRow & {
-  projectName: string;
+  projectName: string | null;
   projectWorkspaceMetadata: Record<string, unknown> | null;
 };
 
@@ -903,7 +1908,83 @@ type WorkspaceOverviewIssueRow = WorkspaceOverviewLinkedIssue & {
 };
 
 export function executionWorkspaceService(db: Db) {
-  const recoveryActionsSvc = issueRecoveryActionService(db);
+  async function listCurrentBindingsForWorkspace(
+    executionWorkspaceId: string,
+    options: {
+      companyId?: string;
+      issueId?: string;
+      queryDb?: Db;
+    } = {},
+  ): Promise<ExecutionWorkspaceCurrentBinding[]> {
+    const queryDb = options.queryDb ?? db;
+    const conditions = [
+      eq(issueExecutionWorkspaceBindings.executionWorkspaceId, executionWorkspaceId),
+      eq(issueExecutionWorkspaceBindings.companyId, issues.companyId),
+      eq(issueExecutionWorkspaceBindings.issueId, issues.id),
+      eq(issueExecutionWorkspaceBindings.ownershipEpoch, issues.ownershipEpoch),
+    ];
+    if (options.companyId) {
+      conditions.push(eq(issueExecutionWorkspaceBindings.companyId, options.companyId));
+    }
+    if (options.issueId) {
+      conditions.push(eq(issueExecutionWorkspaceBindings.issueId, options.issueId));
+    }
+
+    return queryDb
+      .select({
+        id: issueExecutionWorkspaceBindings.id,
+        companyId: issueExecutionWorkspaceBindings.companyId,
+        issueId: issueExecutionWorkspaceBindings.issueId,
+        sessionId: issueExecutionWorkspaceBindings.sessionId,
+        ownershipEpoch: issueExecutionWorkspaceBindings.ownershipEpoch,
+        executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
+        bindingMode: issueExecutionWorkspaceBindings.bindingMode,
+        absoluteCwd: issueExecutionWorkspaceBindings.absoluteCwd,
+        issueIdentifier: issues.identifier,
+        issueTitle: issues.title,
+        issueStatus: issues.boardPresentationStatus,
+        issueUpdatedAt: issues.updatedAt,
+      })
+      .from(issueExecutionWorkspaceBindings)
+      .innerJoin(
+        issues,
+        and(
+          eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+          eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+          eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+        ),
+      )
+      .where(and(...conditions))
+      .orderBy(desc(issues.updatedAt), desc(issueExecutionWorkspaceBindings.createdAt));
+  }
+
+  async function resolveCurrentBindingForWorkspace(
+    executionWorkspaceId: string,
+    companyId: string,
+    issueId?: string | null,
+  ): Promise<ExecutionWorkspaceCurrentBinding> {
+    const bindings = await listCurrentBindingsForWorkspace(executionWorkspaceId, {
+      companyId,
+      ...(issueId ? { issueId } : {}),
+    });
+    if (bindings.length === 0) {
+      throw unprocessable(
+        issueId
+          ? "Execution workspace is not bound to the issue's current ownership epoch"
+          : "Execution workspace has no current ownership-epoch binding",
+      );
+    }
+    if (!issueId && bindings.length > 1) {
+      throw conflict(
+        "Execution workspace has multiple current issue bindings; select the issue whose ownership epoch should be reconciled",
+        {
+          executionWorkspaceId,
+          issueIds: bindings.map((binding) => binding.issueId),
+        },
+      );
+    }
+    return bindings[0]!;
+  }
 
   function buildListConditions(
     companyId: string,
@@ -920,7 +2001,33 @@ export function executionWorkspaceService(db: Db) {
     if (filters?.projectWorkspaceId) {
       conditions.push(eq(executionWorkspaces.projectWorkspaceId, filters.projectWorkspaceId));
     }
-    if (filters?.issueId) conditions.push(eq(executionWorkspaces.sourceIssueId, filters.issueId));
+    if (filters?.issueId) {
+      conditions.push(
+        exists(
+          db
+            .select({ id: issueExecutionWorkspaceBindings.id })
+            .from(issueExecutionWorkspaceBindings)
+            .innerJoin(
+              issues,
+              and(
+                eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+                eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+                eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+              ),
+            )
+            .where(
+              and(
+                eq(issueExecutionWorkspaceBindings.companyId, companyId),
+                eq(issueExecutionWorkspaceBindings.issueId, filters.issueId),
+                eq(
+                  issueExecutionWorkspaceBindings.executionWorkspaceId,
+                  executionWorkspaces.id,
+                ),
+              ),
+            ),
+        ),
+      );
+    }
     if (filters?.status) {
       const statuses = filters.status.split(",").map((value) => value.trim()).filter(Boolean);
       if (statuses.length === 1) conditions.push(eq(executionWorkspaces.status, statuses[0]!));
@@ -935,7 +2042,23 @@ export function executionWorkspaceService(db: Db) {
   }
 
   function buildOverviewConditions(companyId: string, filters: WorkspaceOverviewQuery) {
-    const conditions = [eq(executionWorkspaces.companyId, companyId)];
+    const conditions = [
+      eq(executionWorkspaces.companyId, companyId),
+      or(
+        isNull(executionWorkspaces.projectId),
+        exists(
+          db
+            .select({ id: projects.id })
+            .from(projects)
+            .where(
+              and(
+                eq(projects.companyId, companyId),
+                eq(projects.id, executionWorkspaces.projectId),
+              ),
+            ),
+        ),
+      )!,
+    ];
     if (filters.projectId) conditions.push(eq(executionWorkspaces.projectId, filters.projectId));
     if (filters.status && filters.status.length > 0) {
       if (filters.status.length === 1) conditions.push(eq(executionWorkspaces.status, filters.status[0]!));
@@ -958,7 +2081,7 @@ export function executionWorkspaceService(db: Db) {
         db
           .select({ count: sql<number>`count(*)::int` })
           .from(executionWorkspaces)
-          .innerJoin(
+          .leftJoin(
             projects,
             and(
               eq(projects.id, executionWorkspaces.projectId),
@@ -997,7 +2120,7 @@ export function executionWorkspaceService(db: Db) {
             projectWorkspaceMetadata: projectWorkspaces.metadata,
           })
           .from(executionWorkspaces)
-          .innerJoin(
+          .leftJoin(
             projects,
             and(
               eq(projects.id, executionWorkspaces.projectId),
@@ -1038,44 +2161,56 @@ export function executionWorkspaceService(db: Db) {
         loadEffectiveRuntimeServicesByExecutionWorkspace(db, companyId, pageRows),
         db
           .select({
-            executionWorkspaceId: issues.executionWorkspaceId,
+            executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
             count: sql<number>`count(*)::int`,
           })
-          .from(issues)
+          .from(issueExecutionWorkspaceBindings)
+          .innerJoin(
+            issues,
+            and(
+              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+              eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+            ),
+          )
           .where(
             and(
               eq(issues.companyId, companyId),
               visibleIssueCondition(),
-              inArray(issues.executionWorkspaceId, workspaceIds),
+              inArray(issueExecutionWorkspaceBindings.executionWorkspaceId, workspaceIds),
             ),
           )
-          .groupBy(issues.executionWorkspaceId),
+          .groupBy(issueExecutionWorkspaceBindings.executionWorkspaceId),
         db.execute(sql`
           select
             ranked.execution_workspace_id as "executionWorkspaceId",
             ranked.id,
             ranked.identifier,
             ranked.title,
-            ranked.status,
+            ranked.board_presentation_status as "boardPresentationStatus",
             ranked.priority,
             ranked.updated_at as "updatedAt"
           from (
             select
-              ${issues.executionWorkspaceId} as execution_workspace_id,
+              ${issueExecutionWorkspaceBindings.executionWorkspaceId} as execution_workspace_id,
               ${issues.id} as id,
               ${issues.identifier} as identifier,
               ${issues.title} as title,
-              ${issues.status} as status,
+              ${issues.boardPresentationStatus} as board_presentation_status,
               ${issues.priority} as priority,
               ${issues.updatedAt} as updated_at,
               row_number() over (
-                partition by ${issues.executionWorkspaceId}
+                partition by ${issueExecutionWorkspaceBindings.executionWorkspaceId}
                 order by ${issues.updatedAt} desc, ${issues.id} asc
               ) as row_number
-            from ${issues}
-            where ${issues.companyId} = ${companyId}
+            from ${issueExecutionWorkspaceBindings}
+            inner join ${issues}
+              on ${issues.companyId} = ${issueExecutionWorkspaceBindings.companyId}
+             and ${issues.id} = ${issueExecutionWorkspaceBindings.issueId}
+             and ${issues.ownershipEpoch} = ${issueExecutionWorkspaceBindings.ownershipEpoch}
+            where ${issueExecutionWorkspaceBindings.companyId} = ${companyId}
               and ${issues.hiddenAt} is null
-              and ${issues.executionWorkspaceId} in (${sql.join(workspaceIds.map((id) => sql`${id}`), sql`, `)})
+              and ${issueExecutionWorkspaceBindings.executionWorkspaceId} in (${sql.join(workspaceIds.map((id) => sql`${id}`), sql`, `)})
           ) ranked
           where ranked.row_number <= ${WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT}
           order by ranked.execution_workspace_id asc, ranked.row_number asc
@@ -1094,7 +2229,7 @@ export function executionWorkspaceService(db: Db) {
           id: issue.id,
           identifier: issue.identifier,
           title: issue.title,
-          status: issue.status,
+          boardPresentationStatus: issue.boardPresentationStatus,
           priority: issue.priority,
           updatedAt: issue.updatedAt,
         });
@@ -1118,7 +2253,10 @@ export function executionWorkspaceService(db: Db) {
           workspaceId: row.id,
           workspaceName: row.name,
           projectId: row.projectId,
-          projectUrlKey: deriveProjectUrlKey(row.projectName, row.projectId),
+          projectUrlKey:
+            row.projectId && row.projectName
+              ? deriveProjectUrlKey(row.projectName, row.projectId)
+              : null,
           projectName: row.projectName,
           mode: row.mode as WorkspaceOverviewItem["mode"],
           strategyType: row.strategyType as WorkspaceOverviewItem["strategyType"],
@@ -1224,17 +2362,8 @@ export function executionWorkspaceService(db: Db) {
           cwd: executionWorkspaces.cwd,
           providerRef: executionWorkspaces.providerRef,
           branchName: executionWorkspaces.branchName,
-          sourceIssueId: executionWorkspaces.sourceIssueId,
-          sourceIssueIdentifier: issues.identifier,
         })
         .from(executionWorkspaces)
-        .leftJoin(
-          issues,
-          and(
-            eq(issues.companyId, executionWorkspaces.companyId),
-            eq(issues.id, executionWorkspaces.sourceIssueId),
-          ),
-        )
         .where(and(
           eq(executionWorkspaces.companyId, input.companyId),
           isNull(executionWorkspaces.closedAt),
@@ -1253,72 +2382,88 @@ export function executionWorkspaceService(db: Db) {
         const matchesBranch = Boolean(input.liveBranchName && candidate.branchName === input.liveBranchName);
         if (!matchesPath && !matchesBranch) continue;
 
-        const linkedIssueConditions = [eq(issues.executionWorkspaceId, candidate.id)];
-        if (candidate.sourceIssueId) linkedIssueConditions.push(eq(issues.id, candidate.sourceIssueId));
-        const linkedIssueRows = await db
-          .select({
-            id: issues.id,
-            identifier: issues.identifier,
-            checkoutRunId: issues.checkoutRunId,
-            executionRunId: issues.executionRunId,
-          })
-          .from(issues)
-          .where(and(
-            eq(issues.companyId, input.companyId),
-            isNull(issues.hiddenAt),
-            linkedIssueConditions.length === 1 ? linkedIssueConditions[0]! : or(...linkedIssueConditions),
-          ))
-          .orderBy(desc(issues.updatedAt))
-          .limit(20);
-
-        const runToIssue = new Map<string, { id: string; identifier: string | null }>();
-        for (const issue of linkedIssueRows) {
-          if (issue.executionRunId) runToIssue.set(issue.executionRunId, { id: issue.id, identifier: issue.identifier ?? null });
-          if (issue.checkoutRunId) runToIssue.set(issue.checkoutRunId, { id: issue.id, identifier: issue.identifier ?? null });
-        }
+        const linkedIssueRows = await listCurrentBindingsForWorkspace(candidate.id, {
+          companyId: input.companyId,
+        });
 
         let activeRun: NonNullable<ExecutionWorkspaceGitWorktreeContention>["activeRun"] = null;
-        const runIds = [...runToIssue.keys()];
-        if (runIds.length > 0) {
-          const [row] = await db
-            .select({
-              id: heartbeatRuns.id,
-              status: heartbeatRuns.status,
-            })
-            .from(heartbeatRuns)
-            .where(and(
-              eq(heartbeatRuns.companyId, input.companyId),
-              inArray(heartbeatRuns.id, runIds),
-              inArray(heartbeatRuns.status, ["queued", "running"]),
-            ))
-            .orderBy(desc(heartbeatRuns.startedAt), desc(heartbeatRuns.createdAt))
-            .limit(1);
-          if (row && (row.status === "queued" || row.status === "running")) {
-            const issue = runToIssue.get(row.id) ?? null;
-            activeRun = {
-              id: row.id,
-              status: row.status,
-              issueId: issue?.id ?? null,
-              issueIdentifier: issue?.identifier ?? null,
-            };
-          }
+        const linkages = await resolveCurrentIssueOwnerRunLinkages(db, {
+          companyId: input.companyId,
+          issueIds: linkedIssueRows.map((issue) => issue.issueId),
+        });
+        const linkage = [...linkages.values()]
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+        if (linkage) {
+          const issue = linkedIssueRows.find((row) => row.issueId === linkage.issueId) ?? null;
+          activeRun = {
+            id: linkage.runId,
+            status: "running",
+            issueId: issue?.issueId ?? null,
+            issueIdentifier: issue?.issueIdentifier ?? null,
+          };
         }
 
-        const claimedIssue =
-          linkedIssueRows.find((issue) => issue.id === candidate.sourceIssueId)
-          ?? linkedIssueRows[0]
-          ?? null;
+        const claimedIssue = activeRun?.issueId
+          ? linkedIssueRows.find((issue) => issue.issueId === activeRun.issueId) ?? linkedIssueRows[0] ?? null
+          : linkedIssueRows[0] ?? null;
 
         return {
           claimedByWorkspaceId: candidate.id,
-          claimedByIssueId: claimedIssue?.id ?? candidate.sourceIssueId ?? null,
-          claimedByIssueIdentifier:
-            claimedIssue?.identifier ?? candidate.sourceIssueIdentifier ?? null,
+          claimedByIssueId: claimedIssue?.issueId ?? null,
+          claimedByIssueIdentifier: claimedIssue?.issueIdentifier ?? null,
           activeRun,
         };
       }
 
       return null;
+    },
+
+    listCurrentBindings: async (
+      executionWorkspaceId: string,
+      companyId?: string,
+    ): Promise<ExecutionWorkspaceCurrentBinding[]> =>
+      listCurrentBindingsForWorkspace(executionWorkspaceId, { companyId }),
+
+    getCurrentForIssue: async (companyId: string, issueId: string) => {
+      const binding = await db
+        .select({
+          executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
+        })
+        .from(issueExecutionWorkspaceBindings)
+        .innerJoin(
+          issues,
+          and(
+            eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+            eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+            eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+          ),
+        )
+        .where(
+          and(
+            eq(issueExecutionWorkspaceBindings.companyId, companyId),
+            eq(issueExecutionWorkspaceBindings.issueId, issueId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!binding) return null;
+
+      const row = await db
+        .select()
+        .from(executionWorkspaces)
+        .where(
+          and(
+            eq(executionWorkspaces.companyId, companyId),
+            eq(executionWorkspaces.id, binding.executionWorkspaceId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const runtimeServicesByWorkspaceId =
+        await loadEffectiveRuntimeServicesByExecutionWorkspace(db, companyId, [row]);
+      return toExecutionWorkspace(
+        row,
+        (runtimeServicesByWorkspaceId.get(row.id) ?? []).map(toRuntimeService),
+      );
     },
 
     getById: async (id: string) => {
@@ -1346,15 +2491,40 @@ export function executionWorkspaceService(db: Db) {
       const runtimeServicesByWorkspaceId = await loadEffectiveRuntimeServicesByExecutionWorkspace(db, workspace.companyId, [workspace]);
       const runtimeServices = (runtimeServicesByWorkspaceId.get(workspace.id) ?? []).map(toRuntimeService);
 
-      const linkedIssues = await db
-        .select({
-          id: issues.id,
-          identifier: issues.identifier,
-          title: issues.title,
-          status: issues.status,
-        })
-        .from(issues)
-        .where(and(eq(issues.companyId, workspace.companyId), eq(issues.executionWorkspaceId, workspace.id)));
+      const [linkedIssues, bindingCountRow] = await Promise.all([
+        db
+          .select({
+            id: issues.id,
+            identifier: issues.identifier,
+            title: issues.title,
+            boardPresentationStatus: issues.boardPresentationStatus,
+          })
+          .from(issueExecutionWorkspaceBindings)
+          .innerJoin(
+            issues,
+            and(
+              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+              eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+            ),
+          )
+          .where(
+            and(
+              eq(issueExecutionWorkspaceBindings.companyId, workspace.companyId),
+              eq(issueExecutionWorkspaceBindings.executionWorkspaceId, workspace.id),
+            ),
+          ),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(issueExecutionWorkspaceBindings)
+          .where(
+            and(
+              eq(issueExecutionWorkspaceBindings.companyId, workspace.companyId),
+              eq(issueExecutionWorkspaceBindings.executionWorkspaceId, workspace.id),
+            ),
+          )
+          .then((rows) => rows[0] ?? { count: 0 }),
+      ]);
 
       const projectWorkspace = workspace.projectWorkspaceId
         ? await db
@@ -1418,23 +2588,25 @@ export function executionWorkspaceService(db: Db) {
 
       const linkedIssueSummaries = linkedIssues.map((issue) => ({
         ...issue,
-        isTerminal: TERMINAL_ISSUE_STATUSES.has(issue.status),
+        isTerminal: TERMINAL_ISSUE_STATUSES.has(issue.boardPresentationStatus),
       }));
 
       const blockingIssues = linkedIssueSummaries.filter((issue) => !issue.isTerminal);
-      if (blockingIssues.length > 0) {
+      if (isSharedWorkspace && bindingCountRow.count > 0) {
+        blockingReasons.push(
+          bindingCountRow.count === 1
+            ? "This shared workspace still has an ownership-epoch binding and cannot be archived or cleaned up."
+            : `This shared workspace still has ${bindingCountRow.count} ownership-epoch bindings and cannot be archived or cleaned up.`,
+        );
+      } else if (blockingIssues.length > 0) {
         const linkedIssueMessage =
           blockingIssues.length === 1
             ? "This workspace is still linked to an open issue."
             : `This workspace is still linked to ${blockingIssues.length} open issues.`;
-        if (isSharedWorkspace) {
-          warnings.push(`${linkedIssueMessage} Archiving it will detach this shared workspace session from those issues, but keep the underlying project workspace available.`);
-        } else {
-          blockingReasons.push(linkedIssueMessage);
-        }
+        blockingReasons.push(linkedIssueMessage);
       }
 
-      if (isSharedWorkspace) {
+      if (isSharedWorkspace && bindingCountRow.count === 0) {
         warnings.push("This shared workspace session points at project workspace infrastructure. Archiving it only removes the session record.");
       }
 
@@ -1609,9 +2781,9 @@ export function executionWorkspaceService(db: Db) {
       id: string,
       input: {
         mode: ExecutionWorkspaceBranchReconcileMode;
+        issueId?: string | null;
         reason?: string | null;
         actor: ExecutionWorkspaceBranchReconcileActor;
-        alternateRecoveryFingerprints?: string[] | null;
       },
     ): Promise<ExecutionWorkspaceBranchReconcileResult> => {
       const existingRow = await db
@@ -1622,11 +2794,16 @@ export function executionWorkspaceService(db: Db) {
       if (!existingRow) throw notFound("Execution workspace not found");
 
       const existing = toExecutionWorkspace(existingRow);
-      if (!existing.sourceIssueId) {
-        throw unprocessable("Execution workspace needs a source issue before Paperclip can audit branch reconciliation");
-      }
+      const currentBinding = await resolveCurrentBindingForWorkspace(
+        existing.id,
+        existing.companyId,
+        input.issueId,
+      );
 
-      const inspection = await inspectExecutionWorkspaceBranchForReconcile(existing);
+      const inspection = await inspectExecutionWorkspaceBranchForReconcile(
+        existing,
+        currentBinding.issueId,
+      );
       if (input.mode === "forward" && inspection.ancestryVerdict !== "ancestor") {
         throw unprocessable(
           "Forward branch reconciliation requires the recorded branch to be an ancestor of the checked-out branch",
@@ -1653,6 +2830,7 @@ export function executionWorkspaceService(db: Db) {
             return quarantineRestoreDirtyWorkspaceBranch({
               db,
               workspace: existing,
+              issueId: currentBinding.issueId,
               inspection,
               actor: input.actor,
             });
@@ -1675,6 +2853,49 @@ export function executionWorkspaceService(db: Db) {
           .for("update")
           .then((rows) => rows[0] ?? null);
         if (!lockedRow) throw notFound("Execution workspace not found");
+
+        const lockedBinding = await tx
+          .select({
+            id: issueExecutionWorkspaceBindings.id,
+            companyId: issueExecutionWorkspaceBindings.companyId,
+            issueId: issueExecutionWorkspaceBindings.issueId,
+            sessionId: issueExecutionWorkspaceBindings.sessionId,
+            ownershipEpoch: issueExecutionWorkspaceBindings.ownershipEpoch,
+            executionWorkspaceId: issueExecutionWorkspaceBindings.executionWorkspaceId,
+          })
+          .from(issueExecutionWorkspaceBindings)
+          .innerJoin(
+            issues,
+            and(
+              eq(issues.companyId, issueExecutionWorkspaceBindings.companyId),
+              eq(issues.id, issueExecutionWorkspaceBindings.issueId),
+              eq(issues.ownershipEpoch, issueExecutionWorkspaceBindings.ownershipEpoch),
+            ),
+          )
+          .where(
+            and(
+              eq(issueExecutionWorkspaceBindings.id, currentBinding.id),
+              eq(issueExecutionWorkspaceBindings.companyId, lockedRow.companyId),
+              eq(issueExecutionWorkspaceBindings.issueId, currentBinding.issueId),
+              eq(issueExecutionWorkspaceBindings.executionWorkspaceId, lockedRow.id),
+            ),
+          )
+          .for("update")
+          .then((rows) => rows[0] ?? null);
+        if (
+          !lockedBinding
+          || lockedBinding.sessionId !== currentBinding.sessionId
+          || lockedBinding.ownershipEpoch !== currentBinding.ownershipEpoch
+        ) {
+          throw conflict(
+            "Execution workspace ownership binding changed during branch reconciliation; retry with the current issue epoch",
+            {
+              executionWorkspaceId: lockedRow.id,
+              issueId: currentBinding.issueId,
+              ownershipEpoch: currentBinding.ownershipEpoch,
+            },
+          );
+        }
 
         assertLockedBranchReconcileWorkspaceStillMatchesInspection({
           lockedRow,
@@ -1719,9 +2940,6 @@ export function executionWorkspaceService(db: Db) {
         );
         const lockedRuntimeServices = (lockedRuntimeServicesByWorkspaceId.get(lockedRow.id) ?? []).map(toRuntimeService);
         const lockedWorkspace = toExecutionWorkspace(lockedRow, lockedRuntimeServices);
-        if (!lockedWorkspace.sourceIssueId) {
-          throw unprocessable("Execution workspace needs a source issue before Paperclip can audit branch reconciliation");
-        }
 
         let updatedRow: ExecutionWorkspaceRow = lockedRow;
         if (input.mode !== "quarantine_restore") {
@@ -1780,64 +2998,33 @@ export function executionWorkspaceService(db: Db) {
           updatedRow = branchUpdatedRow;
         }
 
-        let recoveryAction = await recoveryActionsSvc.resolveActiveForIssue(
-          {
-            companyId: lockedWorkspace.companyId,
-            sourceIssueId: lockedWorkspace.sourceIssueId,
-            kind: "workspace_validation",
-            cause: WORKSPACE_VALIDATION_RECOVERY_CAUSE,
-            fingerprint: inspection.fingerprint,
-            status: "resolved",
-            outcome: "restored",
-            resolutionNote: input.mode === "quarantine_restore" && rescueRef
-              ? `Execution workspace dirty worktree quarantined on "${rescueRef.branchName}" and restored recorded branch "${inspection.fromBranch}".`
-              : `Execution workspace branch record reconciled from "${inspection.fromBranch}" to "${inspection.toBranch}".`,
-          },
-          tx,
-        );
-        if (!recoveryAction) {
-          for (const alternateFingerprint of input.alternateRecoveryFingerprints ?? []) {
-            if (!alternateFingerprint || alternateFingerprint === inspection.fingerprint) continue;
-            recoveryAction = await recoveryActionsSvc.resolveActiveForIssue(
-              {
-                companyId: existing.companyId,
-                sourceIssueId: existing.sourceIssueId!,
-                kind: "workspace_validation",
-                cause: WORKSPACE_VALIDATION_RECOVERY_CAUSE,
-                fingerprint: alternateFingerprint,
-                status: "resolved",
-                outcome: "restored",
-                resolutionNote: input.mode === "quarantine_restore" && rescueRef
-                  ? `Execution workspace dirty worktree quarantined on "${rescueRef.branchName}" and restored recorded branch "${inspection.fromBranch}".`
-                  : `Execution workspace branch record reconciled from "${inspection.fromBranch}" to "${inspection.toBranch}".`,
-              },
-              tx,
-            );
-            if (recoveryAction) break;
-          }
-        }
-
         let restoredSourceIssue: ExecutionWorkspaceBranchReconcileResult["restoredSourceIssue"] = null;
-        let sourceIssueStatusChanged = false;
+        let sourceIssueBoardPresentationStatusChanged = false;
         if (input.mode === "quarantine_restore") {
           const [sourceBefore] = await tx
             .select({
               id: issues.id,
               companyId: issues.companyId,
-              status: issues.status,
-              assigneeAgentId: issues.assigneeAgentId,
-              assigneeUserId: issues.assigneeUserId,
+              boardPresentationStatus: issues.boardPresentationStatus,
+              ownerKind: issues.ownerKind,
+              ownerAgentId: issues.ownerAgentId,
+              ownerUserId: issues.ownerUserId,
               executionPolicy: issues.executionPolicy,
               executionState: issues.executionState,
               monitorNextCheckAt: issues.monitorNextCheckAt,
-              monitorWakeRequestedAt: issues.monitorWakeRequestedAt,
               monitorLastTriggeredAt: issues.monitorLastTriggeredAt,
               monitorAttemptCount: issues.monitorAttemptCount,
               monitorNotes: issues.monitorNotes,
               monitorScheduledBy: issues.monitorScheduledBy,
             })
             .from(issues)
-            .where(eq(issues.id, lockedWorkspace.sourceIssueId))
+            .where(
+              and(
+                eq(issues.companyId, lockedBinding.companyId),
+                eq(issues.id, lockedBinding.issueId),
+                eq(issues.ownershipEpoch, lockedBinding.ownershipEpoch),
+              ),
+            )
             .for("update");
           if (!sourceBefore) throw notFound("Source issue not found");
 
@@ -1848,20 +3035,22 @@ export function executionWorkspaceService(db: Db) {
             policy,
             previousPolicy: policy,
             requestedStatus,
-            requestedAssigneePatch: {},
+            requestedOwnerPatch: {},
             actor: {
-              agentId: input.actor.agentId ?? null,
+              agentId: null,
               userId: input.actor.actorType === "user" ? input.actor.actorId : null,
             },
             commentBody: null,
           });
           const { issueService } = await import("./issues.js");
-          const updatedIssue = await issueService(db).update(
-            lockedWorkspace.sourceIssueId,
+          const updatedIssue = await issueService(db).updateControlState(
+            lockedBinding.issueId,
             {
-              ...(requestedStatus ? { status: requestedStatus } : {}),
+              ...(requestedStatus
+                ? { boardPresentationStatus: requestedStatus }
+                : {}),
               ...transition.patch,
-              actorAgentId: input.actor.agentId ?? null,
+              actorAgentId: null,
               actorUserId: input.actor.actorType === "user" ? input.actor.actorId : null,
             },
             tx,
@@ -1870,45 +3059,49 @@ export function executionWorkspaceService(db: Db) {
           restoredSourceIssue = {
             id: updatedIssue.id,
             companyId: updatedIssue.companyId,
-            status: updatedIssue.status,
-            assigneeAgentId: updatedIssue.assigneeAgentId,
+            boardPresentationStatus:
+              updatedIssue.boardPresentationStatus,
+            ownerAgentId: updatedIssue.ownerAgentId,
           };
-          sourceIssueStatusChanged = sourceBefore.status !== updatedIssue.status;
+          sourceIssueBoardPresentationStatusChanged =
+            sourceBefore.boardPresentationStatus !==
+            updatedIssue.boardPresentationStatus;
         }
 
-        const [auditComment] = await tx
-          .insert(issueComments)
-          .values({
-            companyId: lockedWorkspace.companyId,
-            issueId: lockedWorkspace.sourceIssueId,
-            authorAgentId: input.actor.actorType === "agent" ? input.actor.agentId : null,
-            authorUserId: input.actor.actorType === "user" ? input.actor.actorId : null,
-            authorType: input.actor.actorType,
-            createdByRunId: input.actor.runId,
-            body: formatBranchReconcileAuditComment({
-              mode: input.mode,
-              reason,
-              workspaceId: existing.id,
-              inspection,
-              recoveryActionId: recoveryAction?.id ?? null,
-              rescueRef,
-            }),
-          })
-          .returning({ id: issueComments.id });
-
-        await tx
-          .update(issues)
-          .set({ updatedAt: now })
-          .where(eq(issues.id, lockedWorkspace.sourceIssueId));
+        const auditNotice = await appendCanonicalControlNotice(db, {
+          companyId: lockedWorkspace.companyId,
+          issueId: lockedBinding.issueId,
+          sourceKind: "workspace_branch_reconciled",
+          immutableSourceKey: [inspection.fingerprint, input.mode].join(":"),
+          sourceRecordId: inspection.fingerprint,
+          exactText: formatBranchReconcileAuditComment({
+            mode: input.mode,
+            reason,
+            workspaceId: existing.id,
+            inspection,
+            rescueRef,
+          }),
+          comment: input.actor.actorType === "user"
+            ? {
+                author: { kind: "user", userId: input.actor.actorId },
+                producingRun: null,
+              }
+            : {
+                author: { kind: "system", source: "control" },
+                producingRun: null,
+              },
+          allowTerminal: true,
+        }, tx);
 
         return {
           workspace: toExecutionWorkspace(updatedRow, lockedRuntimeServices),
+          boundIssueId: lockedBinding.issueId,
+          boundOwnershipEpoch: lockedBinding.ownershipEpoch,
           inspection,
-          recoveryAction,
-          auditCommentId: auditComment?.id ?? null,
+          auditCommentId: auditNotice.comment?.id ?? null,
           rescueRef,
           restoredSourceIssue,
-          sourceIssueStatusChanged,
+          sourceIssueBoardPresentationStatusChanged,
         };
       });
     },

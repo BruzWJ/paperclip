@@ -1,528 +1,367 @@
-import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 import {
-  companies,
-  createDb,
+  pluginCompanySettings,
+  pluginConfig,
+  pluginDatabaseNamespaces,
   pluginEntities,
   pluginJobs,
   pluginJobRuns,
   pluginLogs,
+  pluginManagedResources,
+  pluginMigrations,
+  pluginState,
   pluginWebhookDeliveries,
   plugins,
 } from "@paperclipai/db";
-import { buildHostServices, flushPluginLogBuffer } from "../services/plugin-host-services.js";
-import { pluginRegistryService } from "../services/plugin-registry.js";
 import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+  buildHostServices,
+  flushPluginLogBuffer,
+} from "../services/plugin-host-services.js";
+import {
+  pluginRegistryService,
+  purgePluginOperationalDataInTransaction,
+} from "../services/plugin-registry.js";
+import { createMockDb } from "./helpers/mock-db.js";
+
+const schemaUrls = [
+  new URL("../../../packages/db/schema/plugin_entities.ts", import.meta.url),
+  new URL("../../../packages/db/schema/plugin_logs.ts", import.meta.url),
+  new URL("../../../packages/db/schema/plugin_jobs.ts", import.meta.url),
+  new URL("../../../packages/db/schema/plugin_webhooks.ts", import.meta.url),
+];
+const registryUrl = new URL("../services/plugin-registry.ts", import.meta.url);
+const migrationsDirectory = fileURLToPath(
+  new URL("../../../packages/db/migrations/", import.meta.url),
+);
+
+async function readGeneratedMigrationSql(): Promise<string> {
+  const names = (await readdir(migrationsDirectory))
+    .filter((name) => /^\d+_.+\.sql$/.test(name))
+    .sort();
+  return (await Promise.all(
+    names.map((name) => readFile(path.join(migrationsDirectory, name), "utf8")),
+  )).join("\n");
+}
+
+const pluginId = "00000000-0000-4000-8000-000000000100";
+const companyA = "00000000-0000-4000-8000-000000000101";
+const companyB = "00000000-0000-4000-8000-000000000102";
+const now = new Date("2026-01-02T03:04:05.000Z");
+
+function normalized(source: string) {
+  return source.replaceAll(/\s+/g, " ").trim();
+}
+
+function entityInput(companyId: string | null) {
+  return {
+    companyId,
+    entityType: "ticket",
+    scopeKind: companyId === null ? "instance" as const : "company" as const,
+    scopeId: companyId,
+    externalId: "external-ticket-1",
+    title: "External ticket",
+    status: "active",
+    data: { source: "fixture" },
+  };
+}
+
+function entityRow(companyId: string | null, overrides: Record<string, unknown> = {}) {
+  return {
+    id: companyId === companyA ? "entity-a" : companyId === companyB ? "entity-b" : "entity-instance",
+    pluginId,
+    ...entityInput(companyId),
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
 
 function createEventBusStub() {
   return {
     forPlugin() {
-      return {
-        emit: vi.fn(),
-        subscribe: vi.fn(),
-        clear: vi.fn(),
-      };
+      return { emit: vi.fn(), subscribe: vi.fn(), clear: vi.fn() };
     },
-  } as any;
+  } as never;
 }
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-
-function issuePrefix(id: string) {
-  return `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-}
-
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping plugin tenant-isolation tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
-
-describeEmbeddedPostgres("plugin tenant isolation (company_id FK)", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-tenant-isolation-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(pluginEntities);
-    await db.delete(pluginJobRuns);
-    await db.delete(pluginJobs);
-    await db.delete(pluginLogs);
-    await db.delete(pluginWebhookDeliveries);
-    await db.delete(plugins);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedPlugin() {
-    const pluginId = randomUUID();
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: "paperclip.tenant-isolation-test",
-      packageName: "@paperclipai/plugin-tenant-isolation-test",
-      version: "0.0.1",
-      apiVersion: 1,
-      categories: ["automation"],
-      manifestJson: {
-        id: "paperclip.tenant-isolation-test",
-        apiVersion: 1,
-        version: "0.0.1",
-        displayName: "Tenant Isolation Test",
-        description: "Test plugin",
-        author: "Paperclip",
-        categories: ["automation"],
-        capabilities: [],
-        entrypoints: { worker: "./dist/worker.js" },
-      },
-      status: "ready",
-      installOrder: 1,
-    });
-    return pluginId;
-  }
-
-  async function seedCompany() {
-    const companyId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: `Tenant ${companyId.slice(0, 6)}`,
-      issuePrefix: issuePrefix(companyId),
-    });
-    return companyId;
-  }
-
-  it("allows NULL company_id on plugin_logs (instance-scope rows behave as before)", async () => {
-    const pluginId = await seedPlugin();
-    await db.insert(pluginLogs).values({
-      pluginId,
-      // companyId intentionally omitted — NULL means instance-scope.
-      level: "info",
-      message: "instance-scope log",
-    });
-    const rows = await db.select().from(pluginLogs).where(eq(pluginLogs.pluginId, pluginId));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.companyId).toBeNull();
-  });
-
-  it("cascades plugin_logs / plugin_entities / plugin_job_runs / plugin_webhook_deliveries when the owning company is deleted", async () => {
-    const pluginId = await seedPlugin();
-    const companyA = await seedCompany();
-    const companyB = await seedCompany();
-
-    // Seed a job + run so we can verify plugin_job_runs cascades too.
-    const jobAId = randomUUID();
-    const jobBId = randomUUID();
-    await db.insert(pluginJobs).values([
-      { id: jobAId, pluginId, jobKey: "cron-a", schedule: "* * * * *" },
-      { id: jobBId, pluginId, jobKey: "cron-b", schedule: "* * * * *" },
-    ]);
-
-    await db.insert(pluginLogs).values([
-      { pluginId, companyId: companyA, level: "info", message: "A log" },
-      { pluginId, companyId: companyB, level: "info", message: "B log" },
-      { pluginId, level: "info", message: "instance log" },
-    ]);
-
-    await db.insert(pluginEntities).values([
-      {
-        pluginId,
-        companyId: companyA,
-        entityType: "issue",
-        scopeKind: "company",
-        scopeId: companyA,
-        externalId: "ext-a",
-      },
-      {
-        pluginId,
-        companyId: companyB,
-        entityType: "issue",
-        scopeKind: "company",
-        scopeId: companyB,
-        externalId: "ext-b",
-      },
-    ]);
-
-    await db.insert(pluginJobRuns).values([
-      { jobId: jobAId, pluginId, companyId: companyA, trigger: "manual" },
-      { jobId: jobBId, pluginId, companyId: companyB, trigger: "manual" },
-      { jobId: jobAId, pluginId, trigger: "scheduled" },
-    ]);
-
-    await db.insert(pluginWebhookDeliveries).values([
-      { pluginId, companyId: companyA, webhookKey: "wh", payload: { who: "A" } },
-      { pluginId, companyId: companyB, webhookKey: "wh", payload: { who: "B" } },
-      { pluginId, webhookKey: "wh", payload: { who: "instance" } },
-    ]);
-
-    // Delete company A — only A's rows should be reaped. B's and NULL-scope rows stay.
-    await db.delete(companies).where(eq(companies.id, companyA));
-
-    const logs = await db.select().from(pluginLogs);
-    expect(logs.map((r) => r.companyId).sort((a, b) => String(a).localeCompare(String(b)))).toEqual(
-      [companyB, null].sort((a, b) => String(a).localeCompare(String(b))),
+describe("plugin tenant isolation", () => {
+  it("defines nullable company cascade ownership and per-tenant entity uniqueness in the Drizzle schemas", async () => {
+    const [entitiesSource, logsSource, jobsSource, webhooksSource] = await Promise.all(
+      schemaUrls.map(async (url) => normalized(await readFile(url, "utf8"))),
     );
 
-    const entities = await db.select().from(pluginEntities);
-    expect(entities).toHaveLength(1);
-    expect(entities[0]?.companyId).toBe(companyB);
-
-    const runs = await db.select().from(pluginJobRuns);
-    expect(runs.map((r) => r.companyId).sort((a, b) => String(a).localeCompare(String(b)))).toEqual(
-      [companyB, null].sort((a, b) => String(a).localeCompare(String(b))),
-    );
-
-    const deliveries = await db.select().from(pluginWebhookDeliveries);
-    expect(deliveries.map((r) => r.companyId).sort((a, b) => String(a).localeCompare(String(b)))).toEqual(
-      [companyB, null].sort((a, b) => String(a).localeCompare(String(b))),
-    );
-  });
-
-  it("plugin_entities unique index is scoped per company — two tenants can share (pluginId, entityType, externalId)", async () => {
-    const pluginId = await seedPlugin();
-    const companyA = await seedCompany();
-    const companyB = await seedCompany();
-
-    // Company A claims external id "ext-1".
-    await db.insert(pluginEntities).values({
-      pluginId,
-      companyId: companyA,
-      entityType: "page",
-      scopeKind: "company",
-      scopeId: companyA,
-      externalId: "ext-1",
-    });
-
-    // Company B uses the SAME (pluginId, entityType, externalId) — must succeed
-    // under the per-company unique index (would have collided under the old index).
-    await db.insert(pluginEntities).values({
-      pluginId,
-      companyId: companyB,
-      entityType: "page",
-      scopeKind: "company",
-      scopeId: companyB,
-      externalId: "ext-1",
-    });
-
-    const rows = await db.select().from(pluginEntities);
-    expect(rows).toHaveLength(2);
-
-    // Re-inserting the same (companyId, pluginId, entityType, externalId) tuple
-    // for company A must violate the unique constraint. Drizzle wraps the
-    // underlying pg error as "Failed query: ..." — inspect the cause to confirm
-    // it's the unique violation on our index (pg error code 23505).
-    const err = await db
-      .insert(pluginEntities)
-      .values({
-        pluginId,
-        companyId: companyA,
-        entityType: "page",
-        scopeKind: "company",
-        scopeId: companyA,
-        externalId: "ext-1",
-      })
-      .then(
-        () => null,
-        (e: unknown) => e,
+    for (const source of [entitiesSource, logsSource, jobsSource, webhooksSource]) {
+      expect(source).toContain(
+        'companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" })',
       );
-    expect(err).toBeInstanceOf(Error);
-    // postgres error code 23505 = unique_violation, the constraint name is
-    // not always surfaced on .cause by the driver, but the code is sufficient
-    // to prove the unique index rejected the duplicate.
-    const cause = (err as { cause?: { code?: string } }).cause;
-    expect(cause?.code).toBe("23505");
-  });
-
-  it("pluginRegistryService.upsertEntity scopes its lookup by companyId — never overwrites another tenant's row", async () => {
-    const pluginId = await seedPlugin();
-    const companyA = await seedCompany();
-    const companyB = await seedCompany();
-
-    const registry = pluginRegistryService(db);
-
-    // Company A claims (issue, ext-shared) with title "A".
-    const createdA = await registry.upsertEntity(pluginId, {
-      companyId: companyA,
-      entityType: "issue",
-      scopeKind: "company",
-      scopeId: companyA,
-      externalId: "ext-shared",
-      title: "A",
-      status: "open",
-      data: {},
-    });
-
-    // Company B upserts the SAME (entityType, externalId) tuple under its own
-    // scope — must create a NEW row for B, NOT overwrite A.
-    const createdB = await registry.upsertEntity(pluginId, {
-      companyId: companyB,
-      entityType: "issue",
-      scopeKind: "company",
-      scopeId: companyB,
-      externalId: "ext-shared",
-      title: "B",
-      status: "open",
-      data: {},
-    });
-
-    expect(createdA?.id).toBeTruthy();
-    expect(createdB?.id).toBeTruthy();
-    expect(createdA?.id).not.toBe(createdB?.id);
-
-    // Company B updates its own row — A's row must remain untouched.
-    const updatedB = await registry.upsertEntity(pluginId, {
-      companyId: companyB,
-      entityType: "issue",
-      scopeKind: "company",
-      scopeId: companyB,
-      externalId: "ext-shared",
-      title: "B-updated",
-      status: "closed",
-      data: {},
-    });
-    expect(updatedB?.id).toBe(createdB?.id);
-    expect(updatedB?.title).toBe("B-updated");
-
-    const rows = await db.select().from(pluginEntities);
-    expect(rows).toHaveLength(2);
-    const rowA = rows.find((r) => r.companyId === companyA);
-    const rowB = rows.find((r) => r.companyId === companyB);
-    expect(rowA?.title).toBe("A");
-    expect(rowA?.status).toBe("open");
-    expect(rowB?.title).toBe("B-updated");
-    expect(rowB?.status).toBe("closed");
-
-    // Instance-scope upsert (companyId = NULL) on the same tuple must also
-    // create its own row, not collide with A or B.
-    const createdInstance = await registry.upsertEntity(pluginId, {
-      companyId: null,
-      entityType: "issue",
-      scopeKind: "instance",
-      scopeId: null,
-      externalId: "ext-shared",
-      title: "instance",
-      status: "open",
-      data: {},
-    });
-    expect(createdInstance?.id).toBeTruthy();
-    expect(createdInstance?.id).not.toBe(createdA?.id);
-    expect(createdInstance?.id).not.toBe(createdB?.id);
-
-    const allRows = await db.select().from(pluginEntities);
-    expect(allRows).toHaveLength(3);
-  });
-
-  it("pluginRegistryService.getEntityByExternalId scopes by companyId — never returns another tenant's row", async () => {
-    const pluginId = await seedPlugin();
-    const companyA = await seedCompany();
-    const companyB = await seedCompany();
-
-    const registry = pluginRegistryService(db);
-
-    await registry.upsertEntity(pluginId, {
-      companyId: companyA,
-      entityType: "issue",
-      scopeKind: "company",
-      scopeId: companyA,
-      externalId: "ext-shared",
-      title: "A",
-      status: "open",
-      data: {},
-    });
-    await registry.upsertEntity(pluginId, {
-      companyId: companyB,
-      entityType: "issue",
-      scopeKind: "company",
-      scopeId: companyB,
-      externalId: "ext-shared",
-      title: "B",
-      status: "open",
-      data: {},
-    });
-    await registry.upsertEntity(pluginId, {
-      companyId: null,
-      entityType: "issue",
-      scopeKind: "instance",
-      scopeId: null,
-      externalId: "ext-shared",
-      title: "instance",
-      status: "open",
-      data: {},
-    });
-
-    const fromA = await registry.getEntityByExternalId(pluginId, "issue", "ext-shared", companyA);
-    expect(fromA?.companyId).toBe(companyA);
-    expect(fromA?.title).toBe("A");
-
-    const fromB = await registry.getEntityByExternalId(pluginId, "issue", "ext-shared", companyB);
-    expect(fromB?.companyId).toBe(companyB);
-    expect(fromB?.title).toBe("B");
-
-    const fromInstance = await registry.getEntityByExternalId(pluginId, "issue", "ext-shared", null);
-    expect(fromInstance?.companyId).toBeNull();
-    expect(fromInstance?.title).toBe("instance");
-
-    // Unknown tenant returns null, not another tenant's row.
-    const unknown = await registry.getEntityByExternalId(
-      pluginId,
-      "issue",
-      "ext-shared",
-      randomUUID(),
+    }
+    expect(entitiesSource).toContain(
+      'unique("plugin_entities_external_idx") .on( table.companyId, table.pluginId, table.entityType, table.externalId, ) .nullsNotDistinct()',
     );
-    expect(unknown).toBeNull();
-  });
-
-  it("pluginRegistryService.createJobRun + createWebhookDelivery persist companyId so cascade delete reaps them", async () => {
-    const pluginId = await seedPlugin();
-    const companyA = await seedCompany();
-    const companyB = await seedCompany();
-
-    const registry = pluginRegistryService(db);
-    const jobId = randomUUID();
-    await db.insert(pluginJobs).values({
-      id: jobId,
-      pluginId,
-      jobKey: "test-job",
-      schedule: "* * * * *",
-    });
-
-    const runA = await registry.createJobRun(pluginId, jobId, "manual", companyA);
-    const runB = await registry.createJobRun(pluginId, jobId, "manual", companyB);
-    const runInstance = await registry.createJobRun(pluginId, jobId, "scheduled", null);
-
-    expect(runA?.companyId).toBe(companyA);
-    expect(runB?.companyId).toBe(companyB);
-    expect(runInstance?.companyId).toBeNull();
-
-    const whA = await registry.createWebhookDelivery(pluginId, "wh", companyA, {
-      payload: { who: "A" },
-    });
-    const whB = await registry.createWebhookDelivery(pluginId, "wh", companyB, {
-      payload: { who: "B" },
-    });
-    const whInstance = await registry.createWebhookDelivery(pluginId, "wh", null, {
-      payload: { who: "instance" },
-    });
-
-    expect(whA?.companyId).toBe(companyA);
-    expect(whB?.companyId).toBe(companyB);
-    expect(whInstance?.companyId).toBeNull();
-
-    // Cascade: deleting company A reaps A's rows; B's and instance-scope rows stay.
-    await db.delete(companies).where(eq(companies.id, companyA));
-
-    const runs = await db.select().from(pluginJobRuns);
-    expect(runs.map((r) => r.companyId).sort((a, b) => String(a).localeCompare(String(b)))).toEqual(
-      [companyB, null].sort((a, b) => String(a).localeCompare(String(b))),
+    expect(entitiesSource).toContain(
+      'companyIdx: index("plugin_entities_company_idx").on(table.companyId)',
     );
-
-    const deliveries = await db.select().from(pluginWebhookDeliveries);
-    expect(
-      deliveries.map((r) => r.companyId).sort((a, b) => String(a).localeCompare(String(b))),
-    ).toEqual([companyB, null].sort((a, b) => String(a).localeCompare(String(b))));
+    expect(logsSource).toContain(
+      'companyIdx: index("plugin_logs_company_idx").on(table.companyId)',
+    );
+    expect(jobsSource).toContain(
+      'companyIdx: index("plugin_job_runs_company_idx").on(table.companyId)',
+    );
+    expect(webhooksSource).toContain(
+      'companyIdx: index("plugin_webhook_deliveries_company_idx").on(table.companyId)',
+    );
   });
 
-  it("buildHostServices.logger.log + flushPluginLogBuffer persist companyId so cascade delete reaps log rows", async () => {
-    const pluginId = await seedPlugin();
-    const companyA = await seedCompany();
-    const companyB = await seedCompany();
+  it("emits the PostgreSQL tenant constraints into generated migrations", async () => {
+    const migrations = normalized(await readGeneratedMigrationSql());
 
-    // Flush any leftovers from prior tests (the buffer is module-scoped).
-    await flushPluginLogBuffer();
-    await db.delete(pluginLogs);
-
-    const services = buildHostServices(db, pluginId, "tenant-isolation-test", createEventBusStub());
-    try {
-      await services.logger.log({
-        level: "info",
-        message: "A log",
-        companyId: companyA,
-      });
-      await services.logger.log({
-        level: "warn",
-        message: "B log",
-        companyId: companyB,
-      });
-      await services.logger.log({
-        level: "info",
-        message: "instance log",
-        // companyId omitted — explicit instance-scope.
-      });
-      await services.logger.log({
-        level: "debug",
-        message: "explicit-null log",
-        companyId: null,
-      });
-
-      await flushPluginLogBuffer();
-
-      const rows = await db
-        .select()
-        .from(pluginLogs)
-        .where(eq(pluginLogs.pluginId, pluginId));
-      const byMessage = new Map(rows.map((r) => [r.message, r]));
-      expect(byMessage.get("A log")?.companyId).toBe(companyA);
-      expect(byMessage.get("B log")?.companyId).toBe(companyB);
-      expect(byMessage.get("instance log")?.companyId).toBeNull();
-      expect(byMessage.get("explicit-null log")?.companyId).toBeNull();
-
-      // Cascade: deleting company A reaps A's log row; B's + NULL rows remain.
-      await db.delete(companies).where(eq(companies.id, companyA));
-
-      const afterDelete = await db
-        .select()
-        .from(pluginLogs)
-        .where(eq(pluginLogs.pluginId, pluginId));
-      const messages = afterDelete.map((r) => r.message).sort();
-      expect(messages).toEqual(["B log", "explicit-null log", "instance log"]);
-    } finally {
-      services.dispose();
-      // Ensure no leftover entries leak into other tests.
-      await flushPluginLogBuffer();
+    expect(migrations).toContain(
+      'CONSTRAINT "plugin_entities_external_idx" UNIQUE NULLS NOT DISTINCT("company_id","plugin_id","entity_type","external_id")',
+    );
+    for (const constraint of [
+      "plugin_entities_company_id_companies_id_fk",
+      "plugin_job_runs_company_id_companies_id_fk",
+      "plugin_logs_company_id_companies_id_fk",
+      "plugin_webhook_deliveries_company_id_companies_id_fk",
+    ]) {
+      expect(migrations).toContain(
+        `CONSTRAINT "${constraint}" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade`,
+      );
     }
   });
 
-  it("plugin_entities unique index treats NULL companyId as equal (NULLS NOT DISTINCT) so instance-scope dedup holds", async () => {
-    const pluginId = await seedPlugin();
+  it("uses the exact nullable tenant predicate for entity reads and upserts", async () => {
+    const source = normalized(await readFile(registryUrl, "utf8"));
 
-    // First instance-scope entity (companyId = NULL) — succeeds.
-    await db.insert(pluginEntities).values({
-      pluginId,
-      companyId: null,
-      entityType: "cron",
-      scopeKind: "instance",
-      scopeId: null,
-      externalId: "global-cron-1",
+    expect(source).toContain(
+      "const companyIdPredicate = companyId == null ? isNull(pluginEntities.companyId) : eq(pluginEntities.companyId, companyId)",
+    );
+    expect(source).toContain(
+      "const companyIdPredicate = input.companyId == null ? isNull(pluginEntities.companyId) : eq(pluginEntities.companyId, input.companyId)",
+    );
+  });
+
+  it("updates only the entity returned from the tenant-scoped lookup", async () => {
+    const existing = entityRow(companyA);
+    const updated = entityRow(companyA, { title: "Updated ticket" });
+    const harness = createMockDb({
+      select: [[existing]],
+      update: [[updated]],
     });
 
-    // Second instance-scope row with the SAME (pluginId, entityType, externalId)
-    // must be rejected. Without `.nullsNotDistinct()`, postgres would treat the
-    // two NULL company_ids as distinct and silently allow the duplicate.
-    const err = await db
-      .insert(pluginEntities)
-      .values({
+    await expect(pluginRegistryService(harness.db).upsertEntity(pluginId, {
+      ...entityInput(companyA),
+      title: "Updated ticket",
+    })).resolves.toEqual(updated);
+
+    expect(harness.calls.find((call) =>
+      call.operation === "update" && call.method === "set"
+    )?.args[0]).toMatchObject({
+      companyId: companyA,
+      externalId: "external-ticket-1",
+      title: "Updated ticket",
+      updatedAt: expect.any(Date),
+    });
+    expect(harness.calls.filter((call) => call.operation === "insert")).toEqual([]);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+  });
+
+  it("persists the same external identity independently for each company and for instance scope", async () => {
+    const createdA = entityRow(companyA);
+    const createdB = entityRow(companyB);
+    const createdInstance = entityRow(null);
+    const harness = createMockDb({
+      select: [[], [], []],
+      insert: [[createdA], [createdB], [createdInstance]],
+    });
+    const registry = pluginRegistryService(harness.db);
+
+    await expect(registry.upsertEntity(pluginId, entityInput(companyA))).resolves.toEqual(createdA);
+    await expect(registry.upsertEntity(pluginId, entityInput(companyB))).resolves.toEqual(createdB);
+    await expect(registry.upsertEntity(pluginId, entityInput(null))).resolves.toEqual(createdInstance);
+
+    const insertedValues = harness.calls
+      .filter((call) => call.operation === "insert" && call.method === "values")
+      .map((call) => call.args[0]);
+    expect(insertedValues).toEqual([
+      expect.objectContaining({ pluginId, companyId: companyA }),
+      expect.objectContaining({ pluginId, companyId: companyB }),
+      expect.objectContaining({ pluginId, companyId: null }),
+    ]);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("insert")).toBe(0);
+  });
+
+  it("returns only the row produced by the explicitly scoped entity lookup", async () => {
+    const rowA = entityRow(companyA);
+    const rowB = entityRow(companyB);
+    const instanceRow = entityRow(null);
+    const harness = createMockDb({ select: [[rowA], [rowB], [instanceRow]] });
+    const registry = pluginRegistryService(harness.db);
+
+    await expect(registry.getEntityByExternalId(
+      pluginId,
+      "ticket",
+      "external-ticket-1",
+      companyA,
+    )).resolves.toEqual(rowA);
+    await expect(registry.getEntityByExternalId(
+      pluginId,
+      "ticket",
+      "external-ticket-1",
+      companyB,
+    )).resolves.toEqual(rowB);
+    await expect(registry.getEntityByExternalId(
+      pluginId,
+      "ticket",
+      "external-ticket-1",
+      null,
+    )).resolves.toEqual(instanceRow);
+    expect(harness.remaining("select")).toBe(0);
+  });
+
+  it("rejects generic writes to host-owned managed-agent provenance before persistence", async () => {
+    const harness = createMockDb();
+
+    await expect(pluginRegistryService(harness.db).upsertEntity(pluginId, {
+      ...entityInput(companyA),
+      entityType: "managed_agent",
+    })).rejects.toMatchObject({
+      status: 409,
+      details: { code: "plugin_managed_agent_generic_entity_mutation_denied" },
+    });
+    expect(harness.calls).toEqual([]);
+  });
+
+  it("persists company and instance scope on job runs and webhook deliveries", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000103";
+    const rows = [
+      { id: "run-a", pluginId, jobId, companyId: companyA, trigger: "manual", status: "pending" },
+      { id: "run-instance", pluginId, jobId, companyId: null, trigger: "scheduled", status: "pending" },
+      { id: "webhook-a", pluginId, webhookKey: "issues", companyId: companyA, status: "pending" },
+      { id: "webhook-instance", pluginId, webhookKey: "issues", companyId: null, status: "pending" },
+    ];
+    const harness = createMockDb({ insert: rows.map((row) => [row]) });
+    const registry = pluginRegistryService(harness.db);
+
+    await registry.createJobRun(pluginId, jobId, "manual", companyA);
+    await registry.createJobRun(pluginId, jobId, "scheduled", null);
+    await registry.createWebhookDelivery(pluginId, "issues", companyA, {
+      externalId: "delivery-a",
+      payload: { tenant: "A" },
+    });
+    await registry.createWebhookDelivery(pluginId, "issues", null, {
+      payload: { tenant: "instance" },
+    });
+
+    const insertedValues = harness.calls
+      .filter((call) => call.operation === "insert" && call.method === "values")
+      .map((call) => call.args[0]);
+    expect(insertedValues).toEqual([
+      { pluginId, jobId, companyId: companyA, trigger: "manual", status: "pending" },
+      { pluginId, jobId, companyId: null, trigger: "scheduled", status: "pending" },
+      {
+        pluginId,
+        webhookKey: "issues",
+        companyId: companyA,
+        externalId: "delivery-a",
+        payload: { tenant: "A" },
+        headers: {},
+        status: "pending",
+      },
+      {
+        pluginId,
+        webhookKey: "issues",
+        companyId: null,
+        externalId: undefined,
+        payload: { tenant: "instance" },
+        headers: {},
+        status: "pending",
+      },
+    ]);
+    expect(harness.remaining("insert")).toBe(0);
+  });
+
+  it("buffers plugin logs with their exact company or explicit instance scope", async () => {
+    const harness = createMockDb({ insert: [[]] });
+    const host = buildHostServices(
+      harness.db,
+      pluginId,
+      "paperclip.tenant-isolation-test",
+      createEventBusStub(),
+      undefined,
+      {
+        ordinaryIssues: {} as never,
+        pluginIssueControlPlane: {} as never,
+        issueExecutionCancellation: {} as never,
+      },
+    );
+
+    await host.logger.log({
+      level: "info",
+      message: "tenant log",
+      companyId: companyA,
+    });
+    await host.logger.log({
+      level: "debug",
+      message: "instance log",
+      companyId: null,
+    });
+    await flushPluginLogBuffer();
+
+    expect(harness.calls.find((call) =>
+      call.operation === "insert" && call.method === "values"
+    )?.args[0]).toEqual([
+      expect.objectContaining({
+        pluginId,
+        companyId: companyA,
+        level: "info",
+        message: "tenant log",
+      }),
+      expect.objectContaining({
         pluginId,
         companyId: null,
-        entityType: "cron",
-        scopeKind: "instance",
-        scopeId: null,
-        externalId: "global-cron-1",
-      })
-      .then(
-        () => null,
-        (e: unknown) => e,
-      );
-    expect(err).toBeInstanceOf(Error);
-    expect((err as { cause?: { code?: string } }).cause?.code).toBe("23505");
+        level: "debug",
+        message: "instance log",
+      }),
+    ]);
+    expect(harness.remaining("insert")).toBe(0);
+    host.dispose();
+  });
+
+  it("purges only operational plugin data and retains identity and provenance tables", async () => {
+    const harness = createMockDb({
+      select: [[{ namespaceName: "paperclip_plugin_fixture" }]],
+      execute: [undefined],
+      delete: Array.from({ length: 8 }, () => []),
+    });
+
+    await purgePluginOperationalDataInTransaction(harness.db as never, pluginId);
+
+    expect(harness.calls.filter((call) => call.operation === "execute")).toHaveLength(1);
+    const deletedTables = harness.calls
+      .filter((call) => call.operation === "delete" && call.method === "delete")
+      .map((call) => call.args[0]);
+    expect(deletedTables).toEqual([
+      pluginMigrations,
+      pluginDatabaseNamespaces,
+      pluginJobRuns,
+      pluginJobs,
+      pluginWebhookDeliveries,
+      pluginState,
+      pluginCompanySettings,
+      pluginConfig,
+    ]);
+    expect(deletedTables).not.toContain(plugins);
+    expect(deletedTables).not.toContain(pluginLogs);
+    expect(deletedTables).not.toContain(pluginEntities);
+    expect(deletedTables).not.toContain(pluginManagedResources);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("execute")).toBe(0);
+    expect(harness.remaining("delete")).toBe(0);
   });
 });

@@ -1,43 +1,62 @@
-import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import {
-  agents,
-  companies,
-  createDb,
-  projects,
-  routines,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const databaseMocks = vi.hoisted(() => ({
+  createDb: vi.fn(),
+  resolveDatabaseTarget: vi.fn(),
+  select: vi.fn(),
+  selectFrom: vi.fn(),
+  selectWhere: vi.fn(),
+  update: vi.fn(),
+  updateSet: vi.fn(),
+  updateWhere: vi.fn(),
+  end: vi.fn(),
+}));
+
+const drizzleMocks = vi.hoisted(() => ({
+  eq: vi.fn((field: unknown, value: unknown) => ({ operator: "eq", field, value })),
+  inArray: vi.fn((field: unknown, values: unknown[]) => ({
+    operator: "inArray",
+    field,
+    values,
+  })),
+}));
+
+vi.mock("@paperclipai/db", () => ({
+  createDb: databaseMocks.createDb,
+  resolveDatabaseTarget: databaseMocks.resolveDatabaseTarget,
+  routines: {
+    id: "routines.id",
+    companyId: "routines.companyId",
+    status: "routines.status",
+  },
+}));
+
+vi.mock("drizzle-orm", () => ({
+  eq: drizzleMocks.eq,
+  inArray: drizzleMocks.inArray,
+}));
+
 import { disableAllRoutinesInConfig } from "../commands/routines.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const ORIGINAL_ENV = { ...process.env };
+const TEST_DATABASE_URL = "postgresql://paperclip.invalid/paperclip_routines_test";
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const ACTIVE_ROUTINE_ID = "22222222-2222-4222-8222-222222222222";
+const PAUSED_ROUTINE_ID = "33333333-3333-4333-8333-333333333333";
+const ARCHIVED_ROUTINE_ID = "44444444-4444-4444-8444-444444444444";
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres routines CLI tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
-
-function writeTestConfig(configPath: string, tempRoot: string, connectionString: string) {
+function writeTestConfig(configPath: string, tempRoot: string) {
   const config = {
     $meta: {
       version: 1,
-      updatedAt: new Date().toISOString(),
+      updatedAt: "2026-08-02T00:00:00.000Z",
       source: "doctor" as const,
     },
     database: {
-      mode: "postgres" as const,
-      connectionString,
-      embeddedPostgresDataDir: path.join(tempRoot, "embedded-db"),
-      embeddedPostgresPort: 54329,
+      connectionString: TEST_DATABASE_URL,
       backup: {
         enabled: false,
         intervalMinutes: 60,
@@ -50,7 +69,6 @@ function writeTestConfig(configPath: string, tempRoot: string, connectionString:
       logDir: path.join(tempRoot, "logs"),
     },
     server: {
-      deploymentMode: "local_trusted" as const,
       exposure: "private" as const,
       host: "127.0.0.1",
       port: 3100,
@@ -58,7 +76,6 @@ function writeTestConfig(configPath: string, tempRoot: string, connectionString:
       serveUi: false,
     },
     auth: {
-      baseUrlMode: "auto" as const,
       disableSignUp: false,
     },
     storage: {
@@ -86,164 +103,72 @@ function writeTestConfig(configPath: string, tempRoot: string, connectionString:
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
-describeEmbeddedPostgres("disableAllRoutinesInConfig", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+describe("disableAllRoutinesInConfig", () => {
   let tempRoot = "";
   let configPath = "";
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-routines-cli-db-");
-    db = createDb(tempDb.connectionString);
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...ORIGINAL_ENV };
     tempRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-routines-cli-config-"));
     configPath = path.join(tempRoot, "config.json");
-    writeTestConfig(configPath, tempRoot, tempDb.connectionString);
-  }, 20_000);
+    writeTestConfig(configPath, tempRoot);
 
-  afterEach(async () => {
-    await db.delete(routines);
-    await db.delete(projects);
-    await db.delete(agents);
-    await db.delete(companies);
+    databaseMocks.resolveDatabaseTarget.mockReturnValue({
+      connectionString: TEST_DATABASE_URL,
+      source: "config",
+    });
+    databaseMocks.selectWhere.mockResolvedValue([
+      { id: ACTIVE_ROUTINE_ID, status: "active" },
+      { id: PAUSED_ROUTINE_ID, status: "paused" },
+      { id: ARCHIVED_ROUTINE_ID, status: "archived" },
+    ]);
+    databaseMocks.selectFrom.mockReturnValue({ where: databaseMocks.selectWhere });
+    databaseMocks.select.mockReturnValue({ from: databaseMocks.selectFrom });
+    databaseMocks.updateWhere.mockResolvedValue([]);
+    databaseMocks.updateSet.mockReturnValue({ where: databaseMocks.updateWhere });
+    databaseMocks.update.mockReturnValue({ set: databaseMocks.updateSet });
+    databaseMocks.end.mockResolvedValue(undefined);
+    databaseMocks.createDb.mockReturnValue({
+      select: databaseMocks.select,
+      update: databaseMocks.update,
+      $client: { end: databaseMocks.end },
+    });
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-    if (tempRoot) {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it("pauses only non-archived routines for the selected company", async () => {
-    const companyId = randomUUID();
-    const otherCompanyId = randomUUID();
-    const projectId = randomUUID();
-    const otherProjectId = randomUUID();
-    const agentId = randomUUID();
-    const otherAgentId = randomUUID();
-    const activeRoutineId = randomUUID();
-    const pausedRoutineId = randomUUID();
-    const archivedRoutineId = randomUUID();
-    const otherCompanyRoutineId = randomUUID();
-
-    await db.insert(companies).values([
-      {
-        id: companyId,
-        name: "Paperclip",
-        issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-      {
-        id: otherCompanyId,
-        name: "Other company",
-        issuePrefix: `T${otherCompanyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-    ]);
-
-    await db.insert(agents).values([
-      {
-        id: agentId,
-        companyId,
-        name: "Coder",
-        adapterType: "process",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: otherAgentId,
-        companyId: otherCompanyId,
-        name: "Other coder",
-        adapterType: "process",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-    ]);
-
-    await db.insert(projects).values([
-      {
-        id: projectId,
-        companyId,
-        name: "Project",
-        status: "in_progress",
-      },
-      {
-        id: otherProjectId,
-        companyId: otherCompanyId,
-        name: "Other project",
-        status: "in_progress",
-      },
-    ]);
-
-    await db.insert(routines).values([
-      {
-        id: activeRoutineId,
-        companyId,
-        projectId,
-        assigneeAgentId: agentId,
-        title: "Active routine",
-        status: "active",
-      },
-      {
-        id: pausedRoutineId,
-        companyId,
-        projectId,
-        assigneeAgentId: agentId,
-        title: "Paused routine",
-        status: "paused",
-      },
-      {
-        id: archivedRoutineId,
-        companyId,
-        projectId,
-        assigneeAgentId: agentId,
-        title: "Archived routine",
-        status: "archived",
-      },
-      {
-        id: otherCompanyRoutineId,
-        companyId: otherCompanyId,
-        projectId: otherProjectId,
-        assigneeAgentId: otherAgentId,
-        title: "Other company routine",
-        status: "active",
-      },
-    ]);
-
+  it("pauses only active routines selected for the requested company", async () => {
     const result = await disableAllRoutinesInConfig({
       config: configPath,
-      companyId,
+      companyId: COMPANY_ID,
     });
 
-    expect(result).toMatchObject({
-      companyId,
+    expect(result).toEqual({
+      companyId: COMPANY_ID,
       totalRoutines: 3,
       pausedCount: 1,
       alreadyPausedCount: 1,
       archivedCount: 1,
     });
-
-    const companyRoutines = await db
-      .select({
-        id: routines.id,
-        status: routines.status,
-      })
-      .from(routines)
-      .where(eq(routines.companyId, companyId));
-    const statusById = new Map(companyRoutines.map((routine) => [routine.id, routine.status]));
-
-    expect(statusById.get(activeRoutineId)).toBe("paused");
-    expect(statusById.get(pausedRoutineId)).toBe("paused");
-    expect(statusById.get(archivedRoutineId)).toBe("archived");
-
-    const otherCompanyRoutine = await db
-      .select({
-        status: routines.status,
-      })
-      .from(routines)
-      .where(eq(routines.id, otherCompanyRoutineId));
-    expect(otherCompanyRoutine[0]?.status).toBe("active");
+    expect(databaseMocks.createDb).toHaveBeenCalledWith(TEST_DATABASE_URL);
+    expect(databaseMocks.selectWhere).toHaveBeenCalledWith({
+      operator: "eq",
+      field: "routines.companyId",
+      value: COMPANY_ID,
+    });
+    expect(databaseMocks.updateSet).toHaveBeenCalledWith({
+      status: "paused",
+      updatedAt: expect.any(Date),
+    });
+    expect(databaseMocks.updateWhere).toHaveBeenCalledWith({
+      operator: "inArray",
+      field: "routines.id",
+      values: [ACTIVE_ROUTINE_ID],
+    });
+    expect(databaseMocks.end).toHaveBeenCalledWith({ timeout: 5 });
   });
 });

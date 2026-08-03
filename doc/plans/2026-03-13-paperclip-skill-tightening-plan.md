@@ -60,7 +60,7 @@ The core should cover only what is needed on nearly every wake:
 - `heartbeat-context` first
 - incremental comment retrieval rules
 - mention/self-assign exception
-- blocked-task dedup
+- blocked-issue dedup
 - status/comment/release expectations before exit
 
 ### 2. Normalize The Skill Around One Canonical Procedure
@@ -150,10 +150,10 @@ Run scenario checks for:
 
 - normal assigned heartbeat
 - comment-triggered wake
-- blocked-task dedup behavior
+- blocked-issue dedup behavior
 - approval-resolution wake
-- delegation/subtask creation
-- board handoff back to user
+- delegation/sub-issue creation
+- board transfer back to user
 - plan-request handling
 
 ### Phase 4. Decide Default Loading Strategy

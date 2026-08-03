@@ -1,55 +1,37 @@
 ---
 title: Deployment Overview
-summary: Deployment modes at a glance
+summary: Better Auth, network reachability, and exposure at a glance
 ---
 
-Paperclip supports three deployment configurations, from zero-friction local to internet-facing production.
+Paperclip has one human account and session lifecycle in every environment:
+signup and sign-in through Better Auth. Deployment choices affect reachability
+and transport hardening, never identity.
 
-## Deployment Modes
+## Quick comparison
 
-| Mode | Auth | Best For |
-|------|------|----------|
-| `local_trusted` | No login required | Single-operator local machine |
-| `authenticated` + `private` | Login required | Private network (Tailscale, VPN, LAN) |
-| `authenticated` + `public` | Login required | Internet-facing cloud deployment |
+| Environment | Bind | Exposure | Human account |
+| --- | --- | --- | --- |
+| Developer laptop | `loopback` | `private` | Better Auth signup/sign-in |
+| Tailnet, VPN, or LAN | `tailnet` or `lan` | `private` | Better Auth signup/sign-in |
+| Internet-facing service | Usually `loopback` behind a proxy | `public` | Better Auth signup/sign-in |
 
-## Quick Comparison
+Local development keeps the server on localhost. Private networks derive auth
+origin from each request and add hostname policy appropriate to the controlled
+network. Public exposure requires the sole `PAPERCLIP_PUBLIC_URL` (or the same
+persisted `auth.publicBaseUrl`) as an exact HTTPS origin, TLS/reverse-proxy configuration, strict
+secrets, secure cookies, and rate limiting.
 
-### Local Trusted (Default)
-
-- Loopback-only host binding (localhost)
-- No human login flow
-- Fastest local startup
-- Best for: solo development and experimentation
-
-### Authenticated + Private
-
-- Login required via Better Auth
-- Binds to all interfaces for network access
-- Auto base URL mode (lower friction)
-- Best for: team access over Tailscale or local network
-
-### Authenticated + Public
-
-- Login required
-- Explicit public URL required
-- Stricter security checks
-- Best for: cloud hosting, internet-facing deployment
-
-## Choosing a Mode
-
-- **Just trying Paperclip?** Use `local_trusted` (the default)
-- **Sharing with a team on private network?** Use `authenticated` + `private`
-- **Deploying to the cloud?** Use `authenticated` + `public` — see [AWS ECS Fargate guide](aws-ecs.md)
-
-Set the mode during onboarding:
+Choose bind and exposure during onboarding:
 
 ```sh
 pnpm paperclipai onboard
 ```
 
-Or update it later:
+Update them later without changing users or sessions:
 
 ```sh
 pnpm paperclipai configure --section server
 ```
+
+See [Exposure and Bind](exposure-and-bind.md), [Tailscale Private Access](tailscale-private-access.md),
+or the [AWS ECS Fargate guide](aws-ecs.md).

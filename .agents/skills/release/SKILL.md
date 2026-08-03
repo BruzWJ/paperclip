@@ -2,7 +2,7 @@
 name: release
 description: >
   Coordinate a full Paperclip release across engineering verification, npm,
-  GitHub, smoke testing, and announcement follow-up. Use when leadership asks
+  GitHub, artifact validation, and announcement follow-up. Use when leadership asks
   to ship a release, not merely to discuss versioning.
 ---
 
@@ -14,12 +14,11 @@ This skill coordinates:
 
 - stable changelog drafting via `release-changelog`
 - canary verification and publish status from `master`
-- Docker smoke testing via `scripts/docker-onboard-smoke.sh`
+- artifact-only release validation via `pnpm run test:release-smoke` and the canonical root `Dockerfile`
 - manual stable promotion from a chosen source ref
 - GitHub Release creation
 - website / announcement follow-up tasks
-- release-content Cases dogfood: a top-level `release` case with child
-  `blog_post` and `tweet_storm` cases, all linked to the release issue/run
+- aligned release-content handoff across changelog, launch-post, and social copy
 
 ## Trigger
 
@@ -40,9 +39,14 @@ Before proceeding, verify all of the following:
 4. The candidate SHA has passed the verification gate or is about to.
 5. If manifests changed, the CI-owned `pnpm-lock.yaml` refresh is already merged on `master`.
 6. npm publish rights are available through GitHub trusted publishing, or through local npm auth for emergency/manual use.
-7. If running through Paperclip, you have issue context for status updates and follow-up task creation.
+7. If running through Paperclip, the current compiled interface exposes any
+   issue updates or follow-up creation needed for the release.
 
 If any precondition fails, stop and report the blocker.
+
+Paperclip access is capability-bound. This skill grants no Paperclip access of
+its own: use only tools exposed in the current compiled interface, and report a
+handoff when the needed action is unavailable.
 
 ## Inputs
 
@@ -141,34 +145,41 @@ npm view paperclipai@canary version
 git tag --list 'canary/v*' --sort=-version:refname | head -5
 ```
 
-## Step 5 — Smoke Test the Canary
+## Step 5 — Validate the Canary Artifacts
 
-Run:
-
-```bash
-PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
-```
-
-Useful isolated variant:
+Run the source-side artifact contracts:
 
 ```bash
-HOST_PORT=3232 DATA_DIR=./data/release-smoke-canary PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
+pnpm build
+pnpm run test:release-registry
+pnpm run test:release-smoke
+docker build \
+  --build-arg USER_UID="$(id -u)" \
+  --build-arg USER_GID="$(id -g)" \
+  -f Dockerfile \
+  -t paperclip-release-artifact-smoke .
+docker image inspect paperclip-release-artifact-smoke
 ```
+
+Dispatch `.github/workflows/release-smoke.yml` with the candidate source ref and
+exact published version to inspect the published archive as well.
 
 Confirm:
 
-1. install succeeds
-2. onboarding completes without crashes
-3. the server boots
-4. the UI loads
-5. basic company creation and dashboard load work
+1. the published archive contains the expected metadata and entrypoints
+2. forbidden retired database artifacts are absent
+3. built entrypoints and the canonical root Docker image are valid artifacts
+4. missing external database configuration fails before startup
+5. the server/client lifecycle passes with explicit mocks
 
-If smoke testing fails:
+This validation does not launch Paperclip, a container, or a database service.
+
+If artifact validation fails:
 
 - stop the stable release
 - fix the issue on `master`
 - wait for the next automatic canary
-- rerun smoke testing
+- rerun artifact validation
 
 ## Step 6 — Preview or Publish Stable
 
@@ -216,78 +227,6 @@ Create or verify follow-up work for:
 
 These should reference the stable release, not the canary.
 
-## Step 8 — Emit Release-Content Cases
-
-When Cases are enabled, every stable release-content run must materialize a
-deterministic case tree. This is part of the release dogfood path, not an
-optional artifact. If the API returns `403 Cases are disabled`, stop and report
-that the operator must enable `experimental.enableCases`.
-
-Use the current release issue's `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_API_URL`,
-`PAPERCLIP_API_KEY`, and `PAPERCLIP_RUN_ID`. Include `X-Paperclip-Run-Id` on
-all writes so the case activity feed can attribute the run back to the issue.
-
-Create or upsert the parent `release` case first:
-
-```http
-POST /api/companies/:companyId/cases
-{
-  "caseType": "release",
-  "key": "paperclip-release:vYYYY.MDD.P",
-  "title": "Paperclip vYYYY.MDD.P release",
-  "summary": "Stable release content package for Paperclip vYYYY.MDD.P.",
-  "status": "in_progress",
-  "fields": {
-    "schema_version": 1,
-    "version": "vYYYY.MDD.P",
-    "release_date": "YYYY-MM-DD",
-    "source_ref": "git-sha-or-ref",
-    "stable": true,
-    "channels": ["changelog", "blog_post", "tweet_storm"],
-    "artifacts": {
-      "changelog_path": "releases/vYYYY.MDD.P.md",
-      "github_release_url": null
-    },
-    "verification": {
-      "typecheck": "unknown",
-      "tests": "unknown",
-      "build": "unknown",
-      "smoke": "unknown"
-    },
-    "notes": null
-  }
-}
-```
-
-The `fields` schema intentionally uses all generic JSON value types: strings,
-numbers, booleans, arrays, objects, and nulls. Send the complete fields object on
-each upsert because case fields replace as a whole object.
-
-Write the parent body document immediately after the upsert:
-
-```http
-PUT /api/cases/:releaseCaseId/documents/body
-{
-  "title": "Paperclip vYYYY.MDD.P release body",
-  "format": "markdown",
-  "body": "# Paperclip vYYYY.MDD.P\n\nRelease summary and links...",
-  "changeSummary": "Initial release case body"
-}
-```
-
-Then create or upsert these child cases with `parentCaseId` set to the release
-case id:
-
-- `blog_post`, key `paperclip-release:vYYYY.MDD.P:blog-post`, status
-  `in_progress`, body document key `body`
-- `tweet_storm`, key `paperclip-release:vYYYY.MDD.P:tweet-storm`, status
-  `in_progress`, body document key `body`
-
-Use deterministic keys exactly so rerunning the release-content flow upserts the
-same three cases instead of duplicating them. After the child body documents are
-written, list the resulting case identifiers and links in the release issue and
-in the parent acceptance issue when one exists.
-
 ## Failure Handling
 
 If the canary is bad:
@@ -315,9 +254,8 @@ When the skill completes, provide:
 - stable version, if promoted
 - verification status
 - npm status
-- smoke-test status
+- release-artifact validation status
 - git tag / GitHub Release status
 - website / announcement follow-up status
-- release-content case tree links: parent `release` case plus `blog_post` and
-  `tweet_storm` children
+- changelog, launch-post, and social-copy handoff status
 - rollback recommendation if anything is still partially complete

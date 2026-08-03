@@ -1,12 +1,24 @@
 import { createHash, randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { and, eq, inArray } from "drizzle-orm";
-import { builtInManagedResources, principalPermissionGrants, type Db } from "@paperclipai/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import {
+  agentAdapterConfigRevisions,
+  companies as companyRows,
+  environments,
+  issueCreateIdempotencyKeys,
+  issueExecutionRefs,
+  issueLabels,
+  issues as issueRows,
+  labels as labelRows,
+  principalPermissionGrants,
+  toolCatalogEntries,
+  type Db,
+} from "@paperclipai/db";
 import type {
   CompanyPortabilityAgentManifestEntry,
+  CompanyPortabilityAdapterOverride,
   CompanyPortabilityCollisionStrategy,
   CompanyPortabilityEnvInput,
   CompanyPortabilityExport,
@@ -32,11 +44,17 @@ import type {
   AgentEnvConfig,
   PermissionKey,
   RoutineVariable,
+  AgentVisibleIssueStatus,
+  IssueAttentionMask,
+  IssueDisposition,
+  IssueStatus,
 } from "@paperclipai/shared";
 import {
-  AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
   ISSUE_PRIORITIES,
   ISSUE_STATUSES,
+  PAPERCLIP_ACTION_KEYS,
   PROJECT_ICON_NAMES,
   PROJECT_STATUSES,
   ROUTINE_CATCH_UP_POLICIES,
@@ -44,26 +62,28 @@ import {
   ROUTINE_STATUSES,
   ROUTINE_TRIGGER_KINDS,
   ROUTINE_TRIGGER_SIGNING_MODES,
+  agentAdapterAcpConfigurationSchema,
+  companySkillChannelSchema,
+  decodeIssueDisposition,
   deriveProjectUrlKey,
   envConfigSchema,
   issueCommentAuthorTypeSchema,
   issueCommentMetadataSchema,
   issueCommentPresentationSchema,
+  isUuidLike,
+  normalizeIssueAttentionMask,
   normalizeAgentUrlKey,
+  parseBudgetCurrency,
+  parseMoneyAmount,
   PERMISSION_KEYS,
+  portabilityAgentManifestEntrySchema,
 } from "@paperclipai/shared";
-import {
-  readPaperclipSkillSyncPreference,
-  writePaperclipSkillSyncPreference,
-} from "@paperclipai/adapter-utils/server-utils";
-import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
-import { findServerAdapter } from "../adapters/index.js";
-import { forbidden, notFound, unprocessable } from "../errors.js";
+import { notFound, unprocessable } from "../errors.js";
+import type { AuthorizationActor } from "./authorization.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
 import type { StorageService } from "../storage/types.js";
 import { accessService } from "./access.js";
 import { agentService } from "./agents.js";
-import { agentInstructionsService } from "./agent-instructions.js";
 import { assetService } from "./assets.js";
 import { generateReadme } from "./company-export-readme.js";
 import { renderOrgChartPng, type OrgNode } from "../routes/org-chart-svg.js";
@@ -71,25 +91,42 @@ import { companySkillService } from "./company-skills.js";
 import { companyService } from "./companies.js";
 import { validateCron } from "./cron.js";
 import { issueService } from "./issues.js";
+import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
+import {
+  appendCanonicalControlNotice,
+  appendCanonicalUserComment,
+} from "./issue-session-producers.js";
 import { projectService } from "./projects.js";
 import { routineService } from "./routines.js";
-import { secretService } from "./secrets.js";
+import {
+  requireSecretMutationActor,
+  secretService,
+  type SecretMutationActor,
+} from "./secrets.js";
+import { validateRegisteredAdapterRuntimeConfiguration } from "./agent-adapter-config-revisions.js";
+import { createAgentAdapterConfigurationService } from "./agent-adapter-config-revisions.js";
+import { createAgentOperationalConfigurationService } from "./agent-operational-configuration.js";
+import { createRuntimeAgentConfigurationService } from "./runtime-agent-configuration.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
 import {
   PORTABLE_CATALOG_PROVENANCE_STRING_KEYS,
   readCatalogStringList,
   readPortableCatalogProvenance,
 } from "./catalog-provenance.js";
-import { readBuiltInAgentMarker } from "./built-in-agent-metadata.js";
 import { normalizePortablePath } from "./portable-path.js";
+import { persistCanonicalIssueAggregateInTx } from "./canonical-issue-aggregate.js";
+import {
+  IssueExecutionWorkspaceReservationRejected,
+} from "./execution-workspaces.js";
+import {
+  resolveInvokableIssueOwnerInTransaction,
+} from "./agent-invokability.js";
+import {
+  createIssueSessionAdmissionService,
+} from "./issue-session/admission.js";
 
 /** Build OrgNode tree from manifest agent list (slug + reportsToSlug). */
 function buildOrgTreeFromManifest(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
-  const ROLE_LABELS: Record<string, string> = {
-    ceo: "Chief Executive", cto: "Technology", cmo: "Marketing",
-    cfo: "Finance", coo: "Operations", vp: "VP", manager: "Manager",
-    engineer: "Engineer", agent: "Agent",
-  };
   const bySlug = new Map(agents.map((a) => [a.slug, a]));
   const childrenOf = new Map<string | null, typeof agents>();
   for (const a of agents) {
@@ -103,7 +140,7 @@ function buildOrgTreeFromManifest(agents: CompanyPortabilityManifest["agents"]):
     return members.map((m) => ({
       id: m.slug,
       name: m.name,
-      role: ROLE_LABELS[m.role] ?? m.role,
+      subtitle: m.title ?? "",
       status: "active",
       reports: build(m.slug),
     }));
@@ -119,7 +156,7 @@ function buildOrgTreeFromManifest(agents: CompanyPortabilityManifest["agents"]):
       tree.push({
         id: root.slug,
         name: root.name,
-        role: ROLE_LABELS[root.role] ?? root.role,
+        subtitle: root.title ?? "",
         status: "active",
         reports: build(root.slug),
       });
@@ -137,11 +174,10 @@ const DEFAULT_INCLUDE: CompanyPortabilityInclude = {
 };
 
 const DEFAULT_COLLISION_STRATEGY: CompanyPortabilityCollisionStrategy = "rename";
-const IMPORT_FORBIDDEN_ADAPTER_TYPES = new Set(["process", "http"]);
 const execFileAsync = promisify(execFile);
 let bundledSkillsCommitPromise: Promise<string | null> | null = null;
 
-function resolveImportMode(options?: ImportBehaviorOptions): ImportMode {
+function resolveImportMode(options?: ImportPreviewOptions): ImportMode {
   return options?.mode ?? "board_full";
 }
 
@@ -173,15 +209,12 @@ function collectAgentSafeImportPolicyErrors(
   if (include.issues) {
     for (const issue of manifest.issues) {
       if (issue.executionWorkspaceSettings !== null) {
-        errors.push(`Safe import does not allow task ${issue.slug} executionWorkspaceSettings.`);
-      }
-      if (issue.assigneeAdapterOverrides !== null) {
-        errors.push(`Safe import does not allow task ${issue.slug} assigneeAdapterOverrides.`);
+        errors.push(`Safe import does not allow issue ${issue.slug} executionWorkspaceSettings.`);
       }
       const triggers = issue.routine?.triggers ?? [];
       for (const trigger of triggers) {
         if (trigger.kind !== "schedule") {
-          errors.push(`Safe import does not allow routine task ${issue.slug} ${trigger.kind} triggers.`);
+          errors.push(`Safe import does not allow routine issue ${issue.slug} ${trigger.kind} triggers.`);
         }
       }
     }
@@ -197,7 +230,7 @@ function classifyPortableFileKind(pathValue: string): CompanyPortabilityExportPr
   if (normalized.startsWith("agents/")) return "agent";
   if (normalized.startsWith("skills/")) return "skill";
   if (normalized.startsWith("projects/")) return "project";
-  if (normalized.startsWith("tasks/")) return "issue";
+  if (normalized.startsWith("issues/")) return "issue";
   return "other";
 }
 
@@ -480,13 +513,8 @@ function normalizeProjectIconName(value: string | null | undefined): string | nu
   return value && PROJECT_ICON_NAMES.includes(value as typeof PROJECT_ICON_NAMES[number]) ? value : null;
 }
 
-function extractPortableScopedEnvInputs(
-  scope: {
-    label: string;
-    warningPrefix: string;
-    agentSlug: string | null;
-    projectSlug: string | null;
-  },
+function extractPortableProjectEnvInputs(
+  projectSlug: string,
   envValue: unknown,
   warnings: string[],
 ): CompanyPortabilityEnvInput[] {
@@ -496,16 +524,15 @@ function extractPortableScopedEnvInputs(
 
   for (const [key, binding] of Object.entries(env)) {
     if (key.toUpperCase() === "PATH") {
-      warnings.push(`${scope.warningPrefix} PATH override was omitted from export because it is system-dependent.`);
+      warnings.push(`Project ${projectSlug} PATH override was omitted from export because it is system-dependent.`);
       continue;
     }
 
     if (isPlainRecord(binding) && binding.type === "secret_ref") {
       inputs.push({
         key,
-        description: `Provide ${key} for ${scope.label}`,
-        agentSlug: scope.agentSlug,
-        projectSlug: scope.projectSlug,
+        description: `Provide ${key} for project ${projectSlug}`,
+        projectSlug,
         kind: "secret",
         requirement: "optional",
         defaultValue: "",
@@ -521,13 +548,12 @@ function extractPortableScopedEnvInputs(
         ? "system_dependent"
         : "portable";
       if (portability === "system_dependent") {
-        warnings.push(`${scope.warningPrefix} env ${key} default was exported as system-dependent.`);
+        warnings.push(`Project ${projectSlug} env ${key} default was exported as system-dependent.`);
       }
       inputs.push({
         key,
-        description: `Optional default for ${key} on ${scope.label}`,
-        agentSlug: scope.agentSlug,
-        projectSlug: scope.projectSlug,
+        description: `Optional default for ${key} on project ${projectSlug}`,
+        projectSlug,
         kind: isSensitive ? "secret" : "plain",
         requirement: "optional",
         defaultValue: isSensitive ? "" : defaultValue ?? "",
@@ -539,13 +565,12 @@ function extractPortableScopedEnvInputs(
     if (typeof binding === "string") {
       const portability = isAbsoluteCommand(binding) ? "system_dependent" : "portable";
       if (portability === "system_dependent") {
-        warnings.push(`${scope.warningPrefix} env ${key} default was exported as system-dependent.`);
+        warnings.push(`Project ${projectSlug} env ${key} default was exported as system-dependent.`);
       }
       inputs.push({
         key,
-        description: `Optional default for ${key} on ${scope.label}`,
-        agentSlug: scope.agentSlug,
-        projectSlug: scope.projectSlug,
+        description: `Optional default for ${key} on project ${projectSlug}`,
+        projectSlug,
         kind: isSensitiveEnvKey(key) ? "secret" : "plain",
         requirement: "optional",
         defaultValue: isSensitiveEnvKey(key) ? "" : binding,
@@ -577,9 +602,68 @@ type PaperclipExtensionDoc = {
   company?: Record<string, unknown> | null;
   agents?: Record<string, Record<string, unknown>> | null;
   projects?: Record<string, Record<string, unknown>> | null;
-  tasks?: Record<string, Record<string, unknown>> | null;
+  issues?: Record<string, Record<string, unknown>> | null;
   routines?: Record<string, Record<string, unknown>> | null;
 };
+
+const PAPERCLIP_EXTENSION_KEYS = [
+  "schema",
+  "company",
+  "sidebar",
+  "agents",
+  "projects",
+  "issues",
+  "routines",
+] as const;
+
+const PORTABLE_AGENT_EXTENSION_KEYS = [
+  "icon",
+  "capabilities",
+  "adapterRevision",
+  "contextGrants",
+  "actionGrants",
+  "mentionReachGrants",
+  "companyToolIds",
+  "governance",
+  "permissionGrants",
+  "budgetMonthlyAmount",
+  "metadata",
+  "reportsTo",
+  "reportsToExistingAgentId",
+  "reportsToExistingAgentSlug",
+] as const;
+const PORTABLE_AGENT_FRONTMATTER_KEYS = [
+  "name",
+  "title",
+  "slug",
+  "kind",
+  "reportsTo",
+  "skills",
+] as const;
+
+const PORTABLE_ISSUE_EXTENSION_KEYS = [
+  "identifier",
+  "lifecycleStatus",
+  "disposition",
+  "attentionMask",
+  "boardPresentationStatus",
+  "priority",
+  "labelIds",
+  "billingCode",
+  "projectWorkspaceKey",
+  "executionWorkspaceSettings",
+  "comments",
+  "metadata",
+] as const;
+const PORTABLE_ISSUE_FRONTMATTER_KEYS = [
+  "name",
+  "title",
+  "slug",
+  "kind",
+  "project",
+  "owner",
+  "recurring",
+] as const;
 
 type ProjectLike = {
   id: string;
@@ -612,18 +696,33 @@ type ProjectLike = {
 type IssueLike = {
   id: string;
   identifier: string | null;
-  title: string;
-  description: string | null;
+  title: string | null;
+  request: string | null;
   projectId: string | null;
   projectWorkspaceId: string | null;
-  assigneeAgentId: string | null;
+  ownerAgentId: string | null;
   status: string;
   priority: string;
   labelIds?: string[];
   billingCode: string | null;
   executionWorkspaceSettings: Record<string, unknown> | null;
-  assigneeAdapterOverrides: Record<string, unknown> | null;
 };
+
+function issueDisplayLabel(issue: Pick<IssueLike, "id" | "identifier" | "title" | "request">) {
+  if (issue.title) return issue.title;
+  if (issue.identifier) return issue.identifier;
+  const request = issue.request?.trim().replace(/\s+/g, " ");
+  if (!request) return `Issue ${issue.id}`;
+  return request.length <= 96 ? request : `${request.slice(0, 93).trimEnd()}...`;
+}
+
+function portableIssueDisplayLabel(issue: CompanyPortabilityIssueManifestEntry) {
+  if (issue.title) return issue.title;
+  if (issue.identifier) return issue.identifier;
+  const request = issue.request.trim().replace(/\s+/g, " ");
+  if (request) return request.length <= 96 ? request : `${request.slice(0, 93).trimEnd()}...`;
+  return `Issue ${issue.slug}`;
+}
 
 type RoutineLike = NonNullable<Awaited<ReturnType<ReturnType<typeof routineService>["getDetail"]>>>;
 
@@ -637,15 +736,20 @@ type ImportPlanInternal = {
 
 type ImportMode = "board_full" | "agent_safe";
 
-type ImportBehaviorOptions = {
+type ImportPreviewOptions = {
   mode?: ImportMode;
   sourceCompanyId?: string | null;
+  authorizationActor?: AuthorizationActor;
+};
+
+type ImportApplyOptions = ImportPreviewOptions & {
+  secretMutationActor: SecretMutationActor;
 };
 
 type AgentLike = {
   id: string;
   name: string;
-  adapterConfig: Record<string, unknown>;
+  adapterConfig: Record<string, unknown> | null;
 };
 
 type EnvInputRecord = {
@@ -666,48 +770,6 @@ const COMPANY_LOGO_CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
 
 const COMPANY_LOGO_FILE_NAME = "company-logo";
 
-const RUNTIME_DEFAULT_RULES: Array<{ path: string[]; value: unknown }> = [
-  { path: ["heartbeat", "cooldownSec"], value: 10 },
-  { path: ["heartbeat", "intervalSec"], value: 3600 },
-  { path: ["heartbeat", "wakeOnOnDemand"], value: true },
-  { path: ["heartbeat", "wakeOnAssignment"], value: true },
-  { path: ["heartbeat", "wakeOnAutomation"], value: true },
-  { path: ["heartbeat", "wakeOnDemand"], value: true },
-  { path: ["heartbeat", "maxConcurrentRuns"], value: AGENT_DEFAULT_MAX_CONCURRENT_RUNS },
-];
-
-const ADAPTER_DEFAULT_RULES_BY_TYPE: Record<string, Array<{ path: string[]; value: unknown }>> = {
-  codex_local: [
-    { path: ["timeoutSec"], value: 0 },
-    { path: ["graceSec"], value: 15 },
-  ],
-  gemini_local: [
-    { path: ["timeoutSec"], value: 0 },
-    { path: ["graceSec"], value: 15 },
-  ],
-  opencode_local: [
-    { path: ["timeoutSec"], value: 0 },
-    { path: ["graceSec"], value: 15 },
-  ],
-  cursor: [
-    { path: ["timeoutSec"], value: 0 },
-    { path: ["graceSec"], value: 15 },
-  ],
-  claude_local: [
-    { path: ["timeoutSec"], value: 0 },
-    { path: ["graceSec"], value: 15 },
-    { path: ["maxTurnsPerRun"], value: 1000 },
-  ],
-  openclaw_gateway: [
-    { path: ["timeoutSec"], value: 120 },
-    { path: ["waitTimeoutMs"], value: 120000 },
-    { path: ["sessionKeyStrategy"], value: "fixed" },
-    { path: ["sessionKey"], value: "paperclip" },
-    { path: ["role"], value: "operator" },
-    { path: ["scopes"], value: ["operator.admin"] },
-  ],
-};
-
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -718,8 +780,417 @@ function asString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function portableBudgetCurrency(value: unknown, subject: string) {
+  try {
+    return parseBudgetCurrency(value);
+  } catch {
+    throw unprocessable(`${subject} must be an exact supported budget currency`);
+  }
+}
+
+function portableMoneyAmount(value: unknown, subject: string) {
+  try {
+    return parseMoneyAmount(value);
+  } catch {
+    throw unprocessable(`${subject} must be a canonical decimal string`);
+  }
+}
+
 function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
+}
+
+function normalizePortableAttentionMask(
+  value: unknown,
+  subjectLabel: string,
+) {
+  try {
+    return normalizeIssueAttentionMask(value);
+  } catch {
+    throw unprocessable(
+      `${subjectLabel} attentionMask accepts only known boolean context-grant keys`,
+    );
+  }
+}
+
+function normalizePortableDisposition(
+  value: unknown,
+  lifecycleStatus: CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
+  subjectLabel: string,
+) {
+  const terminal =
+    lifecycleStatus === "done" ||
+    lifecycleStatus === "cancelled";
+  if (value == null) {
+    if (terminal) {
+      throw unprocessable(
+        `${subjectLabel} requires a disposition when lifecycleStatus is terminal`,
+      );
+    }
+    return null;
+  }
+  if (!terminal) {
+    throw unprocessable(
+      `${subjectLabel} cannot carry a disposition while lifecycleStatus is nonterminal`,
+    );
+  }
+  try {
+    return decodeIssueDisposition(value);
+  } catch {
+    throw unprocessable(
+      `${subjectLabel} disposition must contain only a non-empty message and optional structuredResult`,
+    );
+  }
+}
+
+function deterministicPortableUuid(namespace: string, key: string): string {
+  const bytes = Buffer.from(
+    createHash("sha256")
+      .update(`${namespace}\0${key}`)
+      .digest("hex")
+      .slice(0, 32),
+    "hex",
+  );
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function stablePortableSessionId(key: string): string {
+  return `ses_${createHash("sha256").update(key).digest("hex").slice(0, 40)}`;
+}
+
+async function withPortableWorkspaceReservationErrors<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof IssueExecutionWorkspaceReservationRejected) {
+      throw unprocessable(error.message, { code: error.reason });
+    }
+    throw error;
+  }
+}
+
+function canonicalPortableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalPortableJson).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map(
+      (key) =>
+        `${JSON.stringify(key)}:${canonicalPortableJson(record[key])}`,
+    )
+    .join(",")}}`;
+}
+
+interface PortableCanonicalIssueCreateInput {
+  companyId: string;
+  slug: string;
+  request: string;
+  title: string | null;
+  ownerAgentId: string;
+  creatorUserId: string;
+  projectId: string | null;
+  projectWorkspaceId: string | null;
+  lifecycleStatus: AgentVisibleIssueStatus;
+  boardPresentationStatus: IssueStatus;
+  disposition: IssueDisposition | null;
+  attentionMask: IssueAttentionMask | null;
+  priority: "critical" | "high" | "medium" | "low";
+  labelIds: string[];
+  billingCode: string | null;
+  executionWorkspaceSettings: Record<string, unknown> | null;
+}
+
+async function createPortableCanonicalIssue(
+  db: Db,
+  input: PortableCanonicalIssueCreateInput,
+) {
+  const rawIdempotencyKey =
+    `company-portability:${input.companyId}:${input.slug}`;
+  const aggregateKey =
+    `ordinary-issue-create:${input.companyId}:${rawIdempotencyKey}`;
+  const issueId = deterministicPortableUuid(
+    "ordinary-issue",
+    aggregateKey,
+  );
+  const sessionId = stablePortableSessionId(aggregateKey);
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${aggregateKey}, 0))`,
+    );
+    const existing = await tx
+      .select({ issue: issueRows })
+      .from(issueCreateIdempotencyKeys)
+      .innerJoin(
+        issueRows,
+        eq(issueRows.id, issueCreateIdempotencyKeys.issueId),
+      )
+      .where(
+        and(
+          eq(issueCreateIdempotencyKeys.companyId, input.companyId),
+          eq(
+            issueCreateIdempotencyKeys.idempotencyKey,
+            aggregateKey,
+          ),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]?.issue ?? null);
+    if (existing) {
+      const existingLabels = await tx
+        .select({ labelId: issueLabels.labelId })
+        .from(issueLabels)
+        .where(eq(issueLabels.issueId, existing.id));
+      const requestedLabels = [...new Set(input.labelIds)].sort();
+      const persistedLabels = existingLabels
+        .map((entry) => entry.labelId)
+        .sort();
+      if (
+        existing.id !== issueId ||
+        existing.request !== input.request ||
+        existing.title !== (input.title?.trim() || null) ||
+        existing.ownerKind !== "agent" ||
+        existing.ownerAgentId !== input.ownerAgentId ||
+        existing.creatorKind !== "user/board" ||
+        existing.creatorUserId !== input.creatorUserId ||
+        existing.projectId !== input.projectId ||
+        (input.projectWorkspaceId !== null &&
+          existing.projectWorkspaceId !== input.projectWorkspaceId) ||
+        existing.lifecycleStatus !== input.lifecycleStatus ||
+        existing.boardPresentationStatus !==
+          input.boardPresentationStatus ||
+        canonicalPortableJson(existing.disposition) !==
+          canonicalPortableJson(input.disposition) ||
+        canonicalPortableJson(existing.attentionMask) !==
+          canonicalPortableJson(input.attentionMask) ||
+        existing.priority !== input.priority ||
+        existing.billingCode !== input.billingCode ||
+        canonicalPortableJson(existing.executionWorkspaceSettings) !==
+          canonicalPortableJson(input.executionWorkspaceSettings) ||
+        canonicalPortableJson(persistedLabels) !==
+          canonicalPortableJson(requestedLabels)
+      ) {
+        throw unprocessable(
+          `Issue ${input.slug} import idempotency changed immutable input`,
+        );
+      }
+      const ref =
+        input.lifecycleStatus === "open"
+          ? await tx
+              .select()
+              .from(issueExecutionRefs)
+              .where(
+                and(
+                  eq(issueExecutionRefs.companyId, input.companyId),
+                  eq(
+                    issueExecutionRefs.deliveryIdempotencyKey,
+                    aggregateKey,
+                  ),
+                ),
+              )
+              .limit(1)
+              .then((rows) => rows[0] ?? null)
+          : null;
+      if (input.lifecycleStatus === "open" && !ref) {
+        throw unprocessable(
+          `Issue ${input.slug} import is missing its canonical execution ref`,
+        );
+      }
+      return { issue: existing, ref, retried: true };
+    }
+
+    const company = await tx
+      .select()
+      .from(companyRows)
+      .where(eq(companyRows.id, input.companyId))
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (
+      !company ||
+      company.status !== "active" ||
+      company.sessionIntegrityState !== "ready" ||
+      company.hardDeleteFencedAt !== null
+    ) {
+      throw unprocessable(
+        "Target company Session lifecycle is not ready for issue import",
+      );
+    }
+
+    const { owner, revisionId } =
+      await resolveInvokableIssueOwnerInTransaction(tx, {
+        companyId: input.companyId,
+        ownerAgentId: input.ownerAgentId,
+      });
+    const uniqueLabelIds = [...new Set(input.labelIds)];
+    if (uniqueLabelIds.length > 0) {
+      const labels = await tx
+        .select({ id: labelRows.id })
+        .from(labelRows)
+        .where(
+          and(
+            eq(labelRows.companyId, input.companyId),
+            inArray(labelRows.id, uniqueLabelIds),
+          ),
+        );
+      if (labels.length !== uniqueLabelIds.length) {
+        throw unprocessable(
+          `Issue ${input.slug} contains labels outside the target company`,
+        );
+      }
+    }
+
+    const now = new Date();
+    const maxIssueNumber = await tx
+      .select({
+        value: sql<number>`coalesce(max(${issueRows.issueNumber}), 0)`,
+      })
+      .from(issueRows)
+      .where(eq(issueRows.companyId, input.companyId))
+      .then((rows) => rows[0]?.value ?? 0);
+    const issueNumber =
+      Math.max(company.issueCounter, maxIssueNumber) + 1;
+    await tx
+      .update(companyRows)
+      .set({ issueCounter: issueNumber, updatedAt: now })
+      .where(eq(companyRows.id, input.companyId));
+    const identifier = `${company.issuePrefix}-${issueNumber}`;
+    const title = input.title?.trim() || null;
+    const authorityId = deterministicPortableUuid(
+      "issue-execution-authority",
+      `${issueId}:1:${owner.id}`,
+    );
+    const aggregate = await withPortableWorkspaceReservationErrors(() =>
+      persistCanonicalIssueAggregateInTx(tx, {
+      issue: {
+        id: issueId,
+        companyId: input.companyId,
+        projectId: input.projectId,
+        projectWorkspaceId: input.projectWorkspaceId,
+        goalId: null,
+        parentId: null,
+        title,
+        request: input.request,
+        boardPresentationStatus: input.boardPresentationStatus,
+        lifecycleStatus: input.lifecycleStatus,
+        disposition: input.disposition,
+        workMode: "standard",
+        harnessKind: null,
+        priority: input.priority,
+        ownerKind: "agent",
+        ownerAgentId: owner.id,
+        ownerUserId: null,
+        ownerAssignmentSource: null,
+        ownershipEpoch: 1,
+        creatorKind: "user/board",
+        creatorUserId: input.creatorUserId,
+        attentionMask: input.attentionMask,
+        responsibleUserId: null,
+        issueNumber,
+        identifier,
+        originKind: "manual",
+        originId: null,
+        originRunId: null,
+        originFingerprint: aggregateKey,
+        billingCode: input.billingCode,
+        requestDepth: 0,
+        executionWorkspacePreference: null,
+        executionWorkspaceSettings:
+          input.executionWorkspaceSettings,
+        completedAt:
+          input.lifecycleStatus === "done" ? now : null,
+        cancelledAt:
+          input.lifecycleStatus === "cancelled" ? now : null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      session: {
+        id: sessionId,
+        parentSessionId: null,
+        now,
+      },
+      workspaceReservation: {
+        explicitReusableWorkspaceId: null,
+        provenance: {
+          agentId: null,
+          userId: input.creatorUserId,
+        },
+      },
+      authority: {
+        id: authorityId,
+        agentId: owner.id,
+        auditAdapterConfigRevisionId: revisionId,
+        createdAt: now,
+      },
+      idempotency: { key: aggregateKey },
+      }),
+    );
+    const admission =
+      input.lifecycleStatus === "open"
+        ? await createIssueSessionAdmissionService(
+            db,
+          ).admitExecutionSource(
+            {
+              companyId: aggregate.issue.companyId,
+              issueId: aggregate.issue.id,
+              sessionId,
+              ownershipEpoch: 1,
+              targetAgentId: owner.id,
+              issueExecutionAuthorityId: authorityId,
+              consultExecutionId: null,
+              adapterConfigRevisionId: revisionId,
+              contextEpoch:
+                aggregate.sessionRoot.contextEpoch.generation,
+              mode: "owner",
+              sourceKind: "issue_request",
+              actor: {
+                kind: "user/board",
+                userId: input.creatorUserId,
+              },
+              immutableSourceKey: aggregateKey,
+              sourceRecordId: aggregate.issue.id,
+              exactText: input.request,
+              comment: {
+                author: {
+                  kind: "user",
+                  userId: input.creatorUserId,
+                },
+                producingRun: null,
+              },
+              idempotencyKey: aggregateKey,
+            },
+            tx,
+          )
+        : null;
+    if (input.lifecycleStatus === "open" && !admission?.ref) {
+      throw unprocessable(
+        `Issue ${input.slug} import did not persist its canonical execution ref`,
+      );
+    }
+    if (uniqueLabelIds.length > 0) {
+      await tx.insert(issueLabels).values(
+        uniqueLabelIds.map((labelId) => ({
+          issueId: aggregate.issue.id,
+          labelId,
+          companyId: input.companyId,
+        })),
+      );
+    }
+    return {
+      issue: aggregate.issue,
+      ref: admission?.ref ?? null,
+      retried: false,
+    };
+  });
 }
 
 type PortableAgentPermissionGrant = CompanyPortabilityAgentManifestEntry["permissionGrants"][number];
@@ -747,10 +1218,73 @@ function hasOwn(record: Record<string, unknown>, key: string) {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
-function readStringArray(value: unknown): string[] | null {
-  if (!Array.isArray(value)) return null;
-  const entries = value.filter((entry): entry is string => typeof entry === "string");
-  return entries.length === value.length ? entries : null;
+function assertExactPortableKeys(
+  record: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+) {
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(record)
+    .filter((key) => !allowedSet.has(key))
+    .sort();
+  if (unknown.length > 0) {
+    throw unprocessable(
+      `${label} contains unsupported fields: ${unknown.join(", ")}`,
+    );
+  }
+}
+
+function parseExactPortableBooleanMap<Key extends string>(
+  value: unknown,
+  keys: readonly Key[],
+  label: string,
+): Record<Key, boolean> {
+  if (!isPlainRecord(value)) {
+    throw unprocessable(`${label} must be an object`);
+  }
+  assertExactPortableKeys(value, keys, label);
+  const missing = keys.filter((key) => !hasOwn(value, key));
+  if (missing.length > 0) {
+    throw unprocessable(
+      `${label} is missing required fields: ${missing.join(", ")}`,
+    );
+  }
+  const result = {} as Record<Key, boolean>;
+  for (const key of keys) {
+    if (typeof value[key] !== "boolean") {
+      throw unprocessable(`${label}.${key} must be boolean`);
+    }
+    result[key] = value[key] as boolean;
+  }
+  return result;
+}
+
+function materializePortableBooleanMap<Key extends string>(
+  keys: readonly Key[],
+  value: Partial<Record<Key, boolean>>,
+): Record<Key, boolean> {
+  return Object.fromEntries(
+    keys.map((key) => [key, value[key] === true]),
+  ) as Record<Key, boolean>;
+}
+
+function parsePortableCompanyToolIds(
+  value: unknown,
+  label: string,
+): string[] {
+  if (!Array.isArray(value)) {
+    throw unprocessable(`${label} must be an array`);
+  }
+  const ids = value.map((entry) => {
+    if (typeof entry !== "string" || !isUuidLike(entry)) {
+      throw unprocessable(`${label} must contain only UUIDs`);
+    }
+    return entry;
+  });
+  if (new Set(ids).size !== ids.length) {
+    throw unprocessable(`${label} must not contain duplicates`);
+  }
+  return ids;
 }
 
 function derivePortableCommentAuthorType(value: Record<string, unknown>) {
@@ -803,34 +1337,6 @@ function readPortableIssueComments(
     });
   }
   return comments;
-}
-
-function appendCodexImportArg(adapterConfig: Record<string, unknown>, arg: string) {
-  const extraArgs = readStringArray(adapterConfig.extraArgs);
-  if (extraArgs) {
-    if (!extraArgs.includes(arg)) adapterConfig.extraArgs = [...extraArgs, arg];
-    return;
-  }
-
-  const legacyArgs = readStringArray(adapterConfig.args);
-  if (legacyArgs && legacyArgs.length > 0) {
-    if (!legacyArgs.includes(arg)) adapterConfig.args = [...legacyArgs, arg];
-    return;
-  }
-
-  if (legacyArgs?.includes(arg)) return;
-  adapterConfig.extraArgs = [arg];
-}
-
-function applyImportAdapterRunDefaults(
-  adapterType: string,
-  adapterConfig: Record<string, unknown>,
-) {
-  const next = { ...adapterConfig };
-  if (adapterType === "codex_local") {
-    appendCodexImportArg(next, "--skip-git-repo-check");
-  }
-  return next;
 }
 
 function normalizeRoutineTriggerExtension(value: unknown): CompanyPortabilityIssueRoutineTriggerManifestEntry | null {
@@ -886,6 +1392,10 @@ function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRouti
   const routine = {
     concurrencyPolicy: asString(value.concurrencyPolicy),
     catchUpPolicy: asString(value.catchUpPolicy),
+    attentionMask: normalizePortableAttentionMask(
+      value.attentionMask,
+      "Routine issue template",
+    ),
     variables,
     triggers,
   };
@@ -896,6 +1406,10 @@ function buildRoutineManifestFromLiveRoutine(routine: RoutineLike): CompanyPorta
   return {
     concurrencyPolicy: routine.concurrencyPolicy,
     catchUpPolicy: routine.catchUpPolicy,
+    attentionMask: normalizePortableAttentionMask(
+      routine.attentionMask,
+      `Routine ${routine.id}`,
+    ),
     variables: routine.variables,
     triggers: routine.triggers.map((trigger) => ({
       kind: trigger.kind,
@@ -931,22 +1445,8 @@ function clonePortableRecord(value: unknown) {
   return structuredClone(value) as Record<string, unknown>;
 }
 
-function parseFiniteNumberLike(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string") return null;
-  const parsed = Number(value.trim());
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function disableImportedTimerHeartbeat(runtimeConfig: unknown) {
-  const next = clonePortableRecord(runtimeConfig) ?? {};
-  const heartbeat = isPlainRecord(next.heartbeat) ? { ...next.heartbeat } : {};
-  heartbeat.enabled = false;
-  if (parseFiniteNumberLike(heartbeat.maxConcurrentRuns) == null) {
-    heartbeat.maxConcurrentRuns = AGENT_DEFAULT_MAX_CONCURRENT_RUNS;
-  }
-  next.heartbeat = heartbeat;
-  return next;
+function normalizeImportedRuntimeConfig(runtimeConfig: unknown) {
+  return clonePortableRecord(runtimeConfig) ?? {};
 }
 
 function normalizePortableProjectWorkspaceExtension(
@@ -1192,209 +1692,11 @@ async function buildPortableProjectWorkspaces(
   };
 }
 
-const WEEKDAY_TO_CRON: Record<string, string> = {
-  sunday: "0",
-  monday: "1",
-  tuesday: "2",
-  wednesday: "3",
-  thursday: "4",
-  friday: "5",
-  saturday: "6",
-};
-
-function readZonedDateParts(startsAt: string, timeZone: string) {
-  try {
-    const date = new Date(startsAt);
-    if (Number.isNaN(date.getTime())) return null;
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      weekday: "long",
-      month: "numeric",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-    });
-    const parts = Object.fromEntries(
-      formatter
-        .formatToParts(date)
-        .filter((entry) => entry.type !== "literal")
-        .map((entry) => [entry.type, entry.value]),
-    ) as Record<string, string>;
-    const weekday = WEEKDAY_TO_CRON[parts.weekday?.toLowerCase() ?? ""];
-    const month = Number(parts.month);
-    const day = Number(parts.day);
-    const hour = Number(parts.hour);
-    const minute = Number(parts.minute);
-    if (!weekday || !Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(hour) || !Number.isFinite(minute)) {
-      return null;
-    }
-    return { weekday, month, day, hour, minute };
-  } catch {
-    return null;
-  }
-}
-
-function normalizeCronList(values: string[]) {
-  return Array.from(new Set(values)).sort((left, right) => Number(left) - Number(right)).join(",");
-}
-
-function buildLegacyRoutineTriggerFromRecurrence(
-  issue: Pick<CompanyPortabilityIssueManifestEntry, "slug" | "legacyRecurrence">,
-  scheduleValue: unknown,
-) {
-  const warnings: string[] = [];
-  const errors: string[] = [];
-  if (!issue.legacyRecurrence || !isPlainRecord(issue.legacyRecurrence)) {
-    return { trigger: null, warnings, errors };
-  }
-
-  const schedule = isPlainRecord(scheduleValue) ? scheduleValue : null;
-  const frequency = asString(issue.legacyRecurrence.frequency);
-  const interval = asInteger(issue.legacyRecurrence.interval) ?? 1;
-  if (!frequency) {
-    errors.push(`Recurring task ${issue.slug} uses legacy recurrence without frequency; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-    return { trigger: null, warnings, errors };
-  }
-  if (interval < 1) {
-    errors.push(`Recurring task ${issue.slug} uses legacy recurrence with an invalid interval; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-    return { trigger: null, warnings, errors };
-  }
-
-  const timezone = asString(schedule?.timezone) ?? "UTC";
-  const startsAt = asString(schedule?.startsAt);
-  const zonedStartsAt = startsAt ? readZonedDateParts(startsAt, timezone) : null;
-  if (startsAt && !zonedStartsAt) {
-    errors.push(`Recurring task ${issue.slug} has an invalid legacy startsAt/timezone combination; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-    return { trigger: null, warnings, errors };
-  }
-
-  const time = isPlainRecord(issue.legacyRecurrence.time) ? issue.legacyRecurrence.time : null;
-  const hour = asInteger(time?.hour) ?? zonedStartsAt?.hour ?? 0;
-  const minute = asInteger(time?.minute) ?? zonedStartsAt?.minute ?? 0;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    errors.push(`Recurring task ${issue.slug} uses legacy recurrence with an invalid time; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-    return { trigger: null, warnings, errors };
-  }
-
-  if (issue.legacyRecurrence.until != null || issue.legacyRecurrence.count != null) {
-    warnings.push(`Recurring task ${issue.slug} uses legacy recurrence end bounds; Paperclip will import the routine trigger without those limits.`);
-  }
-
-  let cronExpression: string | null = null;
-
-  if (frequency === "hourly") {
-    const hourField = interval === 1
-      ? "*"
-      : zonedStartsAt
-        ? `${zonedStartsAt.hour}-23/${interval}`
-        : `*/${interval}`;
-    cronExpression = `${minute} ${hourField} * * *`;
-  } else if (frequency === "daily") {
-    if (Array.isArray(issue.legacyRecurrence.weekdays) || Array.isArray(issue.legacyRecurrence.monthDays) || Array.isArray(issue.legacyRecurrence.months)) {
-      errors.push(`Recurring task ${issue.slug} uses unsupported legacy daily recurrence constraints; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    const dayField = interval === 1 ? "*" : `*/${interval}`;
-    cronExpression = `${minute} ${hour} ${dayField} * *`;
-  } else if (frequency === "weekly") {
-    if (interval !== 1) {
-      errors.push(`Recurring task ${issue.slug} uses legacy weekly recurrence with interval > 1; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    const weekdays = Array.isArray(issue.legacyRecurrence.weekdays)
-      ? issue.legacyRecurrence.weekdays
-        .map((entry) => asString(entry))
-        .filter((entry): entry is string => Boolean(entry))
-      : [];
-    const cronWeekdays = weekdays
-      .map((entry) => WEEKDAY_TO_CRON[entry.toLowerCase()])
-      .filter((entry): entry is string => Boolean(entry));
-    if (cronWeekdays.length === 0 && zonedStartsAt?.weekday) {
-      cronWeekdays.push(zonedStartsAt.weekday);
-    }
-    if (cronWeekdays.length === 0) {
-      errors.push(`Recurring task ${issue.slug} uses legacy weekly recurrence without weekdays; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    cronExpression = `${minute} ${hour} * * ${normalizeCronList(cronWeekdays)}`;
-  } else if (frequency === "monthly") {
-    if (interval !== 1) {
-      errors.push(`Recurring task ${issue.slug} uses legacy monthly recurrence with interval > 1; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    if (Array.isArray(issue.legacyRecurrence.ordinalWeekdays) && issue.legacyRecurrence.ordinalWeekdays.length > 0) {
-      errors.push(`Recurring task ${issue.slug} uses legacy ordinal monthly recurrence; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    const monthDays = Array.isArray(issue.legacyRecurrence.monthDays)
-      ? issue.legacyRecurrence.monthDays
-        .map((entry) => asInteger(entry))
-        .filter((entry): entry is number => entry != null && entry >= 1 && entry <= 31)
-      : [];
-    if (monthDays.length === 0 && zonedStartsAt?.day) {
-      monthDays.push(zonedStartsAt.day);
-    }
-    if (monthDays.length === 0) {
-      errors.push(`Recurring task ${issue.slug} uses legacy monthly recurrence without monthDays; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    const months = Array.isArray(issue.legacyRecurrence.months)
-      ? issue.legacyRecurrence.months
-        .map((entry) => asInteger(entry))
-        .filter((entry): entry is number => entry != null && entry >= 1 && entry <= 12)
-      : [];
-    const monthField = months.length > 0 ? normalizeCronList(months.map(String)) : "*";
-    cronExpression = `${minute} ${hour} ${normalizeCronList(monthDays.map(String))} ${monthField} *`;
-  } else if (frequency === "yearly") {
-    if (interval !== 1) {
-      errors.push(`Recurring task ${issue.slug} uses legacy yearly recurrence with interval > 1; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    const months = Array.isArray(issue.legacyRecurrence.months)
-      ? issue.legacyRecurrence.months
-        .map((entry) => asInteger(entry))
-        .filter((entry): entry is number => entry != null && entry >= 1 && entry <= 12)
-      : [];
-    if (months.length === 0 && zonedStartsAt?.month) {
-      months.push(zonedStartsAt.month);
-    }
-    const monthDays = Array.isArray(issue.legacyRecurrence.monthDays)
-      ? issue.legacyRecurrence.monthDays
-        .map((entry) => asInteger(entry))
-        .filter((entry): entry is number => entry != null && entry >= 1 && entry <= 31)
-      : [];
-    if (monthDays.length === 0 && zonedStartsAt?.day) {
-      monthDays.push(zonedStartsAt.day);
-    }
-    if (months.length === 0 || monthDays.length === 0) {
-      errors.push(`Recurring task ${issue.slug} uses legacy yearly recurrence without month/monthDay anchors; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-      return { trigger: null, warnings, errors };
-    }
-    cronExpression = `${minute} ${hour} ${normalizeCronList(monthDays.map(String))} ${normalizeCronList(months.map(String))} *`;
-  } else {
-    errors.push(`Recurring task ${issue.slug} uses unsupported legacy recurrence frequency "${frequency}"; add .paperclip.yaml routines.${issue.slug}.triggers.`);
-    return { trigger: null, warnings, errors };
-  }
-
-  return {
-    trigger: {
-      kind: "schedule",
-      label: "Migrated legacy recurrence",
-      enabled: true,
-      cronExpression,
-      timezone,
-      signingMode: null,
-      replayWindowSec: null,
-    } satisfies CompanyPortabilityIssueRoutineTriggerManifestEntry,
-    warnings,
-    errors,
-  };
-}
-
 function resolvePortableRoutineDefinition(
-  issue: Pick<CompanyPortabilityIssueManifestEntry, "slug" | "recurring" | "routine" | "legacyRecurrence">,
-  scheduleValue: unknown,
+  issue: Pick<
+    CompanyPortabilityIssueManifestEntry,
+    "slug" | "recurring" | "routine"
+  >,
 ) {
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -1406,51 +1708,50 @@ function resolvePortableRoutineDefinition(
     ? {
       concurrencyPolicy: issue.routine.concurrencyPolicy,
       catchUpPolicy: issue.routine.catchUpPolicy,
+      attentionMask: issue.routine.attentionMask,
       variables: issue.routine.variables ?? null,
       triggers: [...issue.routine.triggers],
     }
     : {
       concurrencyPolicy: null,
       catchUpPolicy: null,
+      attentionMask: null,
       variables: null,
       triggers: [] as CompanyPortabilityIssueRoutineTriggerManifestEntry[],
     };
 
   if (routine.concurrencyPolicy && !ROUTINE_CONCURRENCY_POLICIES.includes(routine.concurrencyPolicy as any)) {
-    errors.push(`Recurring task ${issue.slug} uses unsupported routine concurrencyPolicy "${routine.concurrencyPolicy}".`);
+    errors.push(`Recurring issue ${issue.slug} uses unsupported routine concurrencyPolicy "${routine.concurrencyPolicy}".`);
   }
   if (routine.catchUpPolicy && !ROUTINE_CATCH_UP_POLICIES.includes(routine.catchUpPolicy as any)) {
-    errors.push(`Recurring task ${issue.slug} uses unsupported routine catchUpPolicy "${routine.catchUpPolicy}".`);
+    errors.push(`Recurring issue ${issue.slug} uses unsupported routine catchUpPolicy "${routine.catchUpPolicy}".`);
   }
 
   for (const trigger of routine.triggers) {
     if (!ROUTINE_TRIGGER_KINDS.includes(trigger.kind as any)) {
-      errors.push(`Recurring task ${issue.slug} uses unsupported trigger kind "${trigger.kind}".`);
+      errors.push(`Recurring issue ${issue.slug} uses unsupported trigger kind "${trigger.kind}".`);
       continue;
     }
     if (trigger.kind === "schedule") {
       if (!trigger.cronExpression || !trigger.timezone) {
-        errors.push(`Recurring task ${issue.slug} has a schedule trigger missing cronExpression/timezone.`);
+        errors.push(`Recurring issue ${issue.slug} has a schedule trigger missing cronExpression/timezone.`);
         continue;
       }
       const cronError = validateCron(trigger.cronExpression);
       if (cronError) {
-        errors.push(`Recurring task ${issue.slug} has an invalid schedule trigger: ${cronError}`);
+        errors.push(`Recurring issue ${issue.slug} has an invalid schedule trigger: ${cronError}`);
       }
       continue;
     }
     if (trigger.kind === "webhook" && trigger.signingMode && !ROUTINE_TRIGGER_SIGNING_MODES.includes(trigger.signingMode as any)) {
-      errors.push(`Recurring task ${issue.slug} uses unsupported webhook signingMode "${trigger.signingMode}".`);
+      errors.push(`Recurring issue ${issue.slug} uses unsupported webhook signingMode "${trigger.signingMode}".`);
     }
   }
 
-  if (routine.triggers.length === 0 && issue.legacyRecurrence) {
-    const migrated = buildLegacyRoutineTriggerFromRecurrence(issue, scheduleValue);
-    warnings.push(...migrated.warnings);
-    errors.push(...migrated.errors);
-    if (migrated.trigger) {
-      routine.triggers.push(migrated.trigger);
-    }
+  if (routine.triggers.length === 0) {
+    errors.push(
+      `Recurring issue ${issue.slug} requires at least one canonical routine trigger.`,
+    );
   }
 
   return { routine, warnings, errors };
@@ -1619,16 +1920,16 @@ function pickTextFiles(files: Record<string, CompanyPortabilityFileEntry>) {
 function collectSelectedExportSlugs(selectedFiles: Set<string>) {
   const agents = new Set<string>();
   const projects = new Set<string>();
-  const tasks = new Set<string>();
+  const issues = new Set<string>();
   for (const filePath of selectedFiles) {
     const agentMatch = filePath.match(/^agents\/([^/]+)\//);
     if (agentMatch) agents.add(agentMatch[1]!);
     const projectMatch = filePath.match(/^projects\/([^/]+)\//);
     if (projectMatch) projects.add(projectMatch[1]!);
-    const taskMatch = filePath.match(/^tasks\/([^/]+)\//);
-    if (taskMatch) tasks.add(taskMatch[1]!);
+    const issueMatch = filePath.match(/^issues\/([^/]+)\//);
+    if (issueMatch) issues.add(issueMatch[1]!);
   }
-  return { agents, projects, tasks, routines: new Set(tasks) };
+  return { agents, projects, issues, routines: new Set(issues) };
 }
 
 function normalizePortableSlugList(value: unknown) {
@@ -1686,7 +1987,7 @@ function sortAgentsBySidebarOrder<T extends { id: string; name: string; reportsT
 function filterPortableExtensionYaml(yaml: string, selectedFiles: Set<string>) {
   const selected = collectSelectedExportSlugs(selectedFiles);
   const parsed = parseYamlFile(yaml);
-  for (const section of ["agents", "projects", "tasks", "routines"] as const) {
+  for (const section of ["agents", "projects", "issues", "routines"] as const) {
     const sectionValue = parsed[section];
     if (!isPlainRecord(sectionValue)) continue;
     const sectionSlugs = selected[section];
@@ -1769,67 +2070,8 @@ function ensureMarkdownPath(pathValue: string) {
   return normalized;
 }
 
-function normalizePortableConfig(
-  value: unknown,
-): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
-  const input = value as Record<string, unknown>;
-  const next: Record<string, unknown> = {};
-
-  for (const [key, entry] of Object.entries(input)) {
-    if (
-      key === "cwd" ||
-      key === "instructionsFilePath" ||
-      key === "instructionsBundleMode" ||
-      key === "instructionsRootPath" ||
-      key === "instructionsEntryFile" ||
-      key === "promptTemplate" ||
-      key === "bootstrapPromptTemplate" || // deprecated — kept for backward compat
-      key === "paperclipSkillSync"
-    ) continue;
-    if (key === "env") continue;
-    next[key] = entry;
-  }
-
-  return next;
-}
-
 function isAbsoluteCommand(value: string) {
   return path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value);
-}
-
-function extractPortableEnvInputs(
-  agentSlug: string,
-  envValue: unknown,
-  warnings: string[],
-): CompanyPortabilityEnvInput[] {
-  return extractPortableScopedEnvInputs(
-    {
-      label: `agent ${agentSlug}`,
-      warningPrefix: `Agent ${agentSlug}`,
-      agentSlug,
-      projectSlug: null,
-    },
-    envValue,
-    warnings,
-  );
-}
-
-function extractPortableProjectEnvInputs(
-  projectSlug: string,
-  envValue: unknown,
-  warnings: string[],
-): CompanyPortabilityEnvInput[] {
-  return extractPortableScopedEnvInputs(
-    {
-      label: `project ${projectSlug}`,
-      warningPrefix: `Project ${projectSlug}`,
-      agentSlug: null,
-      projectSlug,
-    },
-    envValue,
-    warnings,
-  );
 }
 
 function jsonEqual(left: unknown, right: unknown): boolean {
@@ -1887,28 +2129,47 @@ function isEmptyArray(value: unknown): boolean {
   return Array.isArray(value) && value.length === 0;
 }
 
-function stripEmptyValues(value: unknown, opts?: { preserveEmptyStrings?: boolean }): unknown {
+function stripEmptyValues(
+  value: unknown,
+  opts?: {
+    preserveEmptyStrings?: boolean;
+    preserveEmptyCollections?: boolean;
+    preserveNullKeys?: readonly string[];
+  },
+): unknown {
   if (Array.isArray(value)) {
     const next = value
       .map((entry) => stripEmptyValues(entry, opts))
       .filter((entry) => entry !== undefined);
-    return next.length > 0 ? next : undefined;
+    return next.length > 0 || opts?.preserveEmptyCollections
+      ? next
+      : undefined;
   }
   if (isPlainRecord(value)) {
     const next: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
+      if (
+        entry === null &&
+        opts?.preserveNullKeys?.includes(key)
+      ) {
+        next[key] = null;
+        continue;
+      }
       const cleaned = stripEmptyValues(entry, opts);
       if (cleaned === undefined) continue;
       next[key] = cleaned;
     }
-    return Object.keys(next).length > 0 ? next : undefined;
+    return Object.keys(next).length > 0 ||
+      opts?.preserveEmptyCollections
+      ? next
+      : undefined;
   }
   if (
     value === undefined ||
     value === null ||
     (!opts?.preserveEmptyStrings && value === "") ||
-    isEmptyArray(value) ||
-    isEmptyObject(value)
+    (!opts?.preserveEmptyCollections &&
+      (isEmptyArray(value) || isEmptyObject(value)))
   ) {
     return undefined;
   }
@@ -1937,16 +2198,16 @@ const YAML_KEY_PRIORITY = [
   "tags",
   "includes",
   "requirements",
-  "role",
   "icon",
   "capabilities",
   "brandColor",
   "logoPath",
   "adapter",
   "runtime",
-  "permissions",
+  "governance",
   "permissionGrants",
-  "budgetMonthlyCents",
+  "budgetCurrency",
+  "budgetMonthlyAmount",
   "metadata",
 ] as const;
 
@@ -2021,8 +2282,7 @@ function renderYamlBlock(value: unknown, indentLevel: number): string[] {
 function renderFrontmatter(frontmatter: Record<string, unknown>) {
   const lines: string[] = ["---"];
   for (const [key, value] of orderedYamlEntries(frontmatter)) {
-    // Skip null/undefined values — don't export empty fields
-    if (value === null || value === undefined) continue;
+    if (value === undefined) continue;
     const scalar =
       typeof value === "string" ||
       typeof value === "boolean" ||
@@ -2104,6 +2364,13 @@ function applySelectedFilesToSource(source: ResolvedSource, selectedFiles?: stri
     companyMarkdown,
     normalizedSelection,
   );
+  const canonicalManifest = source.files[".paperclip.yaml"];
+  if (canonicalManifest === undefined) {
+    throw unprocessable(
+      "Company package is missing the canonical .paperclip.yaml manifest",
+    );
+  }
+  effectiveFiles[".paperclip.yaml"] = canonicalManifest;
 
   const filtered = buildManifestFromPackageFiles(effectiveFiles, {
     sourceLabel: source.manifest.source,
@@ -2356,7 +2623,14 @@ function parseYamlFile(raw: string): Record<string, unknown> {
   return parseYamlFrontmatter(raw);
 }
 
-function buildYamlFile(value: Record<string, unknown>, opts?: { preserveEmptyStrings?: boolean }) {
+function buildYamlFile(
+  value: Record<string, unknown>,
+  opts?: {
+    preserveEmptyStrings?: boolean;
+    preserveEmptyCollections?: boolean;
+    preserveNullKeys?: readonly string[];
+  },
+) {
   const cleaned = stripEmptyValues(value, opts);
   if (!isPlainRecord(cleaned)) return "{}\n";
   return renderYamlBlock(cleaned, 0).join("\n") + "\n";
@@ -2420,7 +2694,7 @@ function dedupeEnvInputs(values: CompanyPortabilityManifest["envInputs"]) {
   const seen = new Set<string>();
   const out: CompanyPortabilityManifest["envInputs"] = [];
   for (const value of values) {
-    const key = `${value.agentSlug ?? ""}:${value.projectSlug ?? ""}:${value.key.toUpperCase()}`;
+    const key = `${value.projectSlug ?? ""}:${value.key.toUpperCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);
@@ -2444,7 +2718,6 @@ function buildEnvInputMap(inputs: CompanyPortabilityEnvInput[]) {
 }
 
 function envInputScopedKey(input: CompanyPortabilityEnvInput) {
-  if (input.agentSlug) return `agent:${input.agentSlug}:${input.key}`;
   if (input.projectSlug) return `project:${input.projectSlug}:${input.key}`;
   return input.key;
 }
@@ -2458,20 +2731,16 @@ function envInputValue(input: CompanyPortabilityEnvInput, values: Record<string,
 }
 
 function importSecretLabel(input: CompanyPortabilityEnvInput) {
-  const scope = input.agentSlug
-    ? `agent ${input.agentSlug}`
-    : input.projectSlug
-      ? `project ${input.projectSlug}`
-      : "company import";
+  const scope = input.projectSlug
+    ? `project ${input.projectSlug}`
+    : "company import";
   return `${scope} ${input.key}`;
 }
 
 function importSecretKey(input: CompanyPortabilityEnvInput, suffix: string) {
-  const scope = input.agentSlug
-    ? `agent-${input.agentSlug}`
-    : input.projectSlug
-      ? `project-${input.projectSlug}`
-      : "company";
+  const scope = input.projectSlug
+    ? `project-${input.projectSlug}`
+    : "company";
   return `import-${scope}-${input.key}-${suffix}`;
 }
 
@@ -2480,16 +2749,6 @@ function writeManifestEnvBinding(
   input: CompanyPortabilityEnvInput,
   binding: AgentEnvConfig[string],
 ) {
-  if (input.agentSlug) {
-    const agent = manifest.agents.find((entry) => entry.slug === input.agentSlug);
-    if (!agent) return;
-    const adapterConfig = isPlainRecord(agent.adapterConfig) ? agent.adapterConfig : {};
-    const env = isPlainRecord(adapterConfig.env) ? { ...adapterConfig.env } : {};
-    env[input.key] = binding;
-    agent.adapterConfig = { ...adapterConfig, env };
-    return;
-  }
-
   if (input.projectSlug) {
     const project = manifest.projects.find((entry) => entry.slug === input.projectSlug);
     if (!project) return;
@@ -2519,30 +2778,6 @@ function readIncludeEntries(frontmatter: Record<string, unknown>): CompanyPackag
   });
 }
 
-function readAgentEnvInputs(
-  extension: Record<string, unknown>,
-  agentSlug: string,
-): CompanyPortabilityManifest["envInputs"] {
-  const inputs = isPlainRecord(extension.inputs) ? extension.inputs : null;
-  const env = inputs && isPlainRecord(inputs.env) ? inputs.env : null;
-  if (!env) return [];
-
-  return Object.entries(env).flatMap(([key, value]) => {
-    if (!isPlainRecord(value)) return [];
-    const record = value as EnvInputRecord;
-    return [{
-      key,
-      description: asString(record.description) ?? null,
-      agentSlug,
-      projectSlug: null,
-      kind: record.kind === "plain" ? "plain" : "secret",
-      requirement: record.requirement === "required" ? "required" : "optional",
-      defaultValue: typeof record.default === "string" ? record.default : null,
-      portability: record.portability === "system_dependent" ? "system_dependent" : "portable",
-    }];
-  });
-}
-
 function readProjectEnvInputs(
   extension: Record<string, unknown>,
   projectSlug: string,
@@ -2557,7 +2792,6 @@ function readProjectEnvInputs(
     return [{
       key,
       description: asString(record.description) ?? null,
-      agentSlug: null,
       projectSlug,
       kind: record.kind === "plain" ? "plain" : "secret",
       requirement: record.requirement === "required" ? "required" : "optional",
@@ -2600,14 +2834,32 @@ function buildManifestFromPackageFiles(
   const companyDoc = parseFrontmatterMarkdown(companyMarkdown);
   const companyFrontmatter = companyDoc.frontmatter;
   const paperclipExtensionPath = findPaperclipExtensionPath(normalizedFiles);
-  const paperclipExtension = paperclipExtensionPath
-    ? parseYamlFile(readPortableTextFile(normalizedFiles, paperclipExtensionPath) ?? "")
-    : {};
+  if (!paperclipExtensionPath) {
+    throw unprocessable(
+      "Company package is missing the canonical .paperclip.yaml manifest",
+    );
+  }
+  const paperclipExtension = parseYamlFile(
+    readPortableTextFile(
+      normalizedFiles,
+      paperclipExtensionPath,
+    ) ?? "",
+  );
+  assertExactPortableKeys(
+    paperclipExtension,
+    PAPERCLIP_EXTENSION_KEYS,
+    "Paperclip manifest",
+  );
+  if (paperclipExtension.schema !== "paperclip/v1") {
+    throw unprocessable(
+      "Paperclip manifest schema must be exactly paperclip/v1",
+    );
+  }
   const paperclipCompany = isPlainRecord(paperclipExtension.company) ? paperclipExtension.company : {};
   const paperclipSidebar = normalizePortableSidebarOrder(paperclipExtension.sidebar);
   const paperclipAgents = isPlainRecord(paperclipExtension.agents) ? paperclipExtension.agents : {};
   const paperclipProjects = isPlainRecord(paperclipExtension.projects) ? paperclipExtension.projects : {};
-  const paperclipTasks = isPlainRecord(paperclipExtension.tasks) ? paperclipExtension.tasks : {};
+  const paperclipIssues = isPlainRecord(paperclipExtension.issues) ? paperclipExtension.issues : {};
   const paperclipRoutines = isPlainRecord(paperclipExtension.routines) ? paperclipExtension.routines : {};
   const companyName =
     asString(companyFrontmatter.name)
@@ -2625,9 +2877,9 @@ function buildManifestFromPackageFiles(
   const referencedProjectPaths = includeEntries
     .map((entry) => resolvePortablePath(resolvedCompanyPath, entry.path))
     .filter((entry) => entry.endsWith("/PROJECT.md") || entry === "PROJECT.md");
-  const referencedTaskPaths = includeEntries
+  const referencedIssuePaths = includeEntries
     .map((entry) => resolvePortablePath(resolvedCompanyPath, entry.path))
-    .filter((entry) => entry.endsWith("/TASK.md") || entry === "TASK.md");
+    .filter((entry) => entry.endsWith("/ISSUE.md") || entry === "ISSUE.md");
   const referencedSkillPaths = includeEntries
     .map((entry) => resolvePortablePath(resolvedCompanyPath, entry.path))
     .filter((entry) => entry.endsWith("/SKILL.md") || entry === "SKILL.md");
@@ -2637,15 +2889,15 @@ function buildManifestFromPackageFiles(
   const discoveredProjectPaths = Object.keys(normalizedFiles).filter(
     (entry) => entry.endsWith("/PROJECT.md") || entry === "PROJECT.md",
   );
-  const discoveredTaskPaths = Object.keys(normalizedFiles).filter(
-    (entry) => entry.endsWith("/TASK.md") || entry === "TASK.md",
+  const discoveredIssuePaths = Object.keys(normalizedFiles).filter(
+    (entry) => entry.endsWith("/ISSUE.md") || entry === "ISSUE.md",
   );
   const discoveredSkillPaths = Object.keys(normalizedFiles).filter(
     (entry) => entry.endsWith("/SKILL.md") || entry === "SKILL.md",
   );
   const agentPaths = Array.from(new Set([...referencedAgentPaths, ...discoveredAgentPaths])).sort();
   const projectPaths = Array.from(new Set([...referencedProjectPaths, ...discoveredProjectPaths])).sort();
-  const taskPaths = Array.from(new Set([...referencedTaskPaths, ...discoveredTaskPaths])).sort();
+  const issuePaths = Array.from(new Set([...referencedIssuePaths, ...discoveredIssuePaths])).sort();
   const skillPaths = Array.from(new Set([...referencedSkillPaths, ...discoveredSkillPaths])).sort();
 
   const manifest: CompanyPortabilityManifest = {
@@ -2656,7 +2908,7 @@ function buildManifestFromPackageFiles(
       company: true,
       agents: true,
       projects: projectPaths.length > 0,
-      issues: taskPaths.length > 0,
+      issues: issuePaths.length > 0,
       skills: skillPaths.length > 0,
     },
     company: {
@@ -2665,6 +2917,14 @@ function buildManifestFromPackageFiles(
       description: asString(companyFrontmatter.description),
       brandColor: asString(paperclipCompany.brandColor),
       logoPath: asString(paperclipCompany.logoPath) ?? asString(paperclipCompany.logo),
+      budgetCurrency: portableBudgetCurrency(
+        paperclipCompany.budgetCurrency,
+        "Company budgetCurrency",
+      ),
+      budgetMonthlyAmount: portableMoneyAmount(
+        paperclipCompany.budgetMonthlyAmount,
+        "Company budgetMonthlyAmount",
+      ),
       attachmentMaxBytes:
         typeof paperclipCompany.attachmentMaxBytes === "number" && Number.isFinite(paperclipCompany.attachmentMaxBytes)
           ? Math.max(1, Math.floor(paperclipCompany.attachmentMaxBytes))
@@ -2706,18 +2966,104 @@ function buildManifestFromPackageFiles(
     }
     const agentDoc = parseFrontmatterMarkdown(markdownRaw);
     const frontmatter = agentDoc.frontmatter;
+    assertExactPortableKeys(
+      frontmatter,
+      PORTABLE_AGENT_FRONTMATTER_KEYS,
+      `Agent file ${agentPath}`,
+    );
+    if (agentDoc.body.trim().length > 0) {
+      throw unprocessable(
+        `Agent file ${agentPath} contains retired instruction content`,
+      );
+    }
     const fallbackSlug = normalizeAgentUrlKey(path.posix.basename(path.posix.dirname(agentPath))) ?? "agent";
     const slug = asString(frontmatter.slug) ?? fallbackSlug;
     const extension = isPlainRecord(paperclipAgents[slug]) ? paperclipAgents[slug] : {};
-    const extensionAdapter = isPlainRecord(extension.adapter) ? extension.adapter : null;
-    const extensionRuntime = isPlainRecord(extension.runtime) ? extension.runtime : null;
-    const extensionPermissions = isPlainRecord(extension.permissions) ? extension.permissions : null;
+    assertExactPortableKeys(
+      extension,
+      PORTABLE_AGENT_EXTENSION_KEYS,
+      `Agent ${slug} manifest`,
+    );
+    if (!hasOwn(frontmatter, "reportsTo")) {
+      throw unprocessable(
+        `Agent ${slug} must declare reportsTo explicitly, using null for a root agent`,
+      );
+    }
+    if (!Array.isArray(frontmatter.skills)) {
+      throw unprocessable(
+        `Agent ${slug} must declare skills explicitly as an array`,
+      );
+    }
+    const rawAdapterRevision = extension.adapterRevision;
+    if (!isPlainRecord(rawAdapterRevision)) {
+      throw unprocessable(
+        `Agent ${slug} requires an explicit adapterRevision`,
+      );
+    }
+    assertExactPortableKeys(
+      rawAdapterRevision,
+      [
+        "sourceRevisionId",
+        "adapterType",
+        "adapterConfig",
+        "runtimeConfig",
+        "sourceEnvironmentId",
+        "skillChannel",
+      ],
+      `Agent ${slug} adapterRevision`,
+    );
+    const sourceRevisionId = asString(
+      rawAdapterRevision.sourceRevisionId,
+    );
+    const adapterType = asString(rawAdapterRevision.adapterType);
+    const sourceEnvironmentId = asString(
+      rawAdapterRevision.sourceEnvironmentId,
+    );
+    if (!sourceRevisionId || !isUuidLike(sourceRevisionId)) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.sourceRevisionId must be a UUID`,
+      );
+    }
+    if (!adapterType) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.adapterType is required`,
+      );
+    }
+    if (!isPlainRecord(rawAdapterRevision.adapterConfig)) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.adapterConfig must be an object`,
+      );
+    }
+    const parsedAdapterConfig =
+      portabilityAgentManifestEntrySchema.shape.adapterRevision.shape.adapterConfig.safeParse(
+        rawAdapterRevision.adapterConfig,
+      );
+    if (!parsedAdapterConfig.success) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.adapterConfig contains retired or invalid fields`,
+      );
+    }
+    if (!isPlainRecord(rawAdapterRevision.runtimeConfig)) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.runtimeConfig must be an object`,
+      );
+    }
+    if (!sourceEnvironmentId || !isUuidLike(sourceEnvironmentId)) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.sourceEnvironmentId must be a UUID`,
+      );
+    }
+    const skillChannel = companySkillChannelSchema.safeParse(
+      rawAdapterRevision.skillChannel,
+    );
+    if (!skillChannel.success) {
+      throw unprocessable(
+        `Agent ${slug} adapterRevision.skillChannel must be isolated_skills_home or operator_native`,
+      );
+    }
+    const extensionGovernance = isPlainRecord(extension.governance) ? extension.governance : null;
     const extensionPermissionGrants = normalizePortablePermissionGrants(extension.permissionGrants);
     const extensionMetadata = isPlainRecord(extension.metadata) ? extension.metadata : null;
-    const adapterConfig = isPlainRecord(extensionAdapter?.config)
-      ? extensionAdapter.config
-      : {};
-    const runtimeConfig = extensionRuntime ?? {};
     const title = asString(frontmatter.title);
 
     manifest.agents.push({
@@ -2725,26 +3071,51 @@ function buildManifestFromPackageFiles(
       name: asString(frontmatter.name) ?? title ?? slug,
       path: agentPath,
       skills: readAgentSkillRefs(frontmatter),
-      role: asString(extension.role) ?? asString(frontmatter.role) ?? "agent",
       title,
       icon: asString(extension.icon),
       capabilities: asString(extension.capabilities),
       reportsToSlug: asString(frontmatter.reportsTo) ?? asString(extension.reportsTo),
       reportsToExistingAgentId: asString(extension.reportsToExistingAgentId),
       reportsToExistingAgentSlug: asString(extension.reportsToExistingAgentSlug),
-      adapterType: asString(extensionAdapter?.type) ?? "process",
-      adapterConfig,
-      runtimeConfig,
-      permissions: extensionPermissions ?? {},
+      adapterRevision: {
+        sourceRevisionId,
+        adapterType,
+        adapterConfig: {
+          ...parsedAdapterConfig.data,
+        },
+        runtimeConfig: {
+          ...rawAdapterRevision.runtimeConfig,
+        },
+        sourceEnvironmentId,
+        skillChannel: skillChannel.data,
+      },
+      contextGrants: parseExactPortableBooleanMap(
+        extension.contextGrants,
+        AGENT_CONTEXT_GRANT_KEYS,
+        `Agent ${slug} contextGrants`,
+      ),
+      actionGrants: parseExactPortableBooleanMap(
+        extension.actionGrants,
+        PAPERCLIP_ACTION_KEYS,
+        `Agent ${slug} actionGrants`,
+      ),
+      mentionReachGrants: parseExactPortableBooleanMap(
+        extension.mentionReachGrants,
+        AGENT_MENTION_REACH_GRANT_KEYS,
+        `Agent ${slug} mentionReachGrants`,
+      ),
+      companyToolIds: parsePortableCompanyToolIds(
+        extension.companyToolIds,
+        `Agent ${slug} companyToolIds`,
+      ),
+      governance: extensionGovernance ?? {},
       permissionGrants: extensionPermissionGrants,
-      budgetMonthlyCents:
-        typeof extension.budgetMonthlyCents === "number" && Number.isFinite(extension.budgetMonthlyCents)
-          ? Math.max(0, Math.floor(extension.budgetMonthlyCents))
-          : 0,
+      budgetMonthlyAmount: portableMoneyAmount(
+        extension.budgetMonthlyAmount,
+        `Agent ${slug} budgetMonthlyAmount`,
+      ),
       metadata: extensionMetadata,
     });
-
-    manifest.envInputs.push(...readAgentEnvInputs(extension, slug));
 
     if (frontmatter.kind && frontmatter.kind !== "agent") {
       warnings.push(`Agent markdown ${agentPath} does not declare kind: agent in frontmatter.`);
@@ -2893,43 +3264,80 @@ function buildManifestFromPackageFiles(
     }
   }
 
-  for (const taskPath of taskPaths) {
-    const markdownRaw = readPortableTextFile(normalizedFiles, taskPath);
+  for (const issuePath of issuePaths) {
+    const markdownRaw = readPortableTextFile(normalizedFiles, issuePath);
     if (typeof markdownRaw !== "string") {
-      warnings.push(`Referenced task file is missing from package: ${taskPath}`);
+      warnings.push(`Referenced issue file is missing from package: ${issuePath}`);
       continue;
     }
-    const taskDoc = parseFrontmatterMarkdown(markdownRaw);
-    const frontmatter = taskDoc.frontmatter;
-    const fallbackSlug = normalizeAgentUrlKey(path.posix.basename(path.posix.dirname(taskPath))) ?? "task";
+    const issueDoc = parseFrontmatterMarkdown(markdownRaw);
+    const frontmatter = issueDoc.frontmatter;
+    assertExactPortableKeys(
+      frontmatter,
+      PORTABLE_ISSUE_FRONTMATTER_KEYS,
+      `Issue file ${issuePath}`,
+    );
+    const fallbackSlug = normalizeAgentUrlKey(path.posix.basename(path.posix.dirname(issuePath))) ?? "issue";
     const slug = asString(frontmatter.slug) ?? fallbackSlug;
-    const extension = isPlainRecord(paperclipTasks[slug]) ? paperclipTasks[slug] : {};
+    const extension = isPlainRecord(paperclipIssues[slug]) ? paperclipIssues[slug] : {};
+    assertExactPortableKeys(
+      extension,
+      PORTABLE_ISSUE_EXTENSION_KEYS,
+      `Issue ${slug} manifest`,
+    );
     const routineExtension = normalizeRoutineExtension(paperclipRoutines[slug]);
-    const routineExtensionRaw = isPlainRecord(paperclipRoutines[slug]) ? paperclipRoutines[slug] : {};
-    const schedule = isPlainRecord(frontmatter.schedule) ? frontmatter.schedule : null;
-    const legacyRecurrence = schedule && isPlainRecord(schedule.recurrence)
-      ? schedule.recurrence
-      : isPlainRecord(extension.recurrence)
-        ? extension.recurrence
-        : null;
     const recurring =
       asBoolean(frontmatter.recurring) === true
-      || routineExtension !== null
-      || legacyRecurrence !== null;
+      || routineExtension !== null;
+    const ownerAgentSlug = asString(frontmatter.owner);
+    if (!ownerAgentSlug) {
+      throw unprocessable(
+        `Issue ${slug} requires an explicit owner`,
+      );
+    }
+    const lifecycleStatus = asString(extension.lifecycleStatus);
+    if (
+      !lifecycleStatus ||
+      !["open", "blocked", "done", "cancelled"].includes(
+        lifecycleStatus,
+      )
+    ) {
+      throw unprocessable(
+        `Issue ${slug} requires lifecycleStatus open, blocked, done, or cancelled`,
+      );
+    }
+    const boardPresentationStatus = asString(
+      extension.boardPresentationStatus,
+    );
+    if (!boardPresentationStatus) {
+      throw unprocessable(
+        `Issue ${slug} requires boardPresentationStatus`,
+      );
+    }
     manifest.issues.push({
       slug,
       identifier: asString(extension.identifier),
       title: asString(frontmatter.name) ?? asString(frontmatter.title) ?? slug,
-      path: taskPath,
+      path: issuePath,
       projectSlug: asString(frontmatter.project),
       projectWorkspaceKey: asString(extension.projectWorkspaceKey),
-      assigneeAgentSlug: asString(frontmatter.assignee),
-      description: taskDoc.body || asString(frontmatter.description),
+      ownerAgentSlug,
+      request: issueDoc.body,
       recurring,
       routine: routineExtension,
-      legacyRecurrence,
-      status: asString(extension.status) ?? asString(routineExtensionRaw.status),
-      priority: asString(extension.priority) ?? asString(routineExtensionRaw.priority),
+      lifecycleStatus:
+        lifecycleStatus as CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
+      disposition: normalizePortableDisposition(
+        extension.disposition,
+        lifecycleStatus as CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
+        `Issue ${slug}`,
+      ),
+      attentionMask: normalizePortableAttentionMask(
+        extension.attentionMask,
+        `Issue ${slug}`,
+      ),
+      boardPresentationStatus,
+      priority: asString(extension.priority),
       labelIds: Array.isArray(extension.labelIds)
         ? extension.labelIds.filter((entry): entry is string => typeof entry === "string")
         : [],
@@ -2937,14 +3345,11 @@ function buildManifestFromPackageFiles(
       executionWorkspaceSettings: isPlainRecord(extension.executionWorkspaceSettings)
         ? extension.executionWorkspaceSettings
         : null,
-      assigneeAdapterOverrides: isPlainRecord(extension.assigneeAdapterOverrides)
-        ? extension.assigneeAdapterOverrides
-        : null,
-      comments: readPortableIssueComments(extension.comments, warnings, `Task ${slug}`),
+      comments: readPortableIssueComments(extension.comments, warnings, `Issue ${slug}`),
       metadata: isPlainRecord(extension.metadata) ? extension.metadata : null,
     });
-    if (frontmatter.kind && frontmatter.kind !== "task") {
-      warnings.push(`Task markdown ${taskPath} does not declare kind: task in frontmatter.`);
+    if (frontmatter.kind && frontmatter.kind !== "issue") {
+      warnings.push(`Issue markdown ${issuePath} does not declare kind: issue in frontmatter.`);
     }
   }
 
@@ -3013,16 +3418,23 @@ export function parseGitHubSourceUrl(rawUrl: string) {
 }
 
 
-export function companyPortabilityService(db: Db, storage?: StorageService) {
+export function companyPortabilityService(
+  db: Db,
+  storage: StorageService | undefined,
+  ordinaryIssues: OrdinaryIssueRuntime,
+) {
   const companies = companyService(db);
   const agents = agentService(db);
   const assetRecords = assetService(db);
-  const instructions = agentInstructionsService();
   const access = accessService(db);
   const projects = projectService(db);
   const issues = issueService(db);
   const companySkills = companySkillService(db);
   const secrets = secretService(db);
+  const runtimeAgentConfigurations = createRuntimeAgentConfigurationService(db);
+  const adapterConfigurations = createAgentAdapterConfigurationService(db);
+  const operationalConfigurations =
+    createAgentOperationalConfigurationService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
   const defaultSecretProvider = getConfiguredSecretProvider();
 
@@ -3048,59 +3460,38 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
   }
 
   function assertKnownImportAdapterType(type: string | null | undefined): string {
-    const adapterType = typeof type === "string" ? type.trim() : "";
-    if (!adapterType) {
-      throw unprocessable("Adapter type is required");
+    if (
+      typeof type !== "string"
+      || type.length === 0
+      || type !== type.trim()
+    ) {
+      throw unprocessable("Adapter type must be an exact non-blank string");
     }
-    if (!findServerAdapter(adapterType)) {
-      throw unprocessable(`Unknown adapter type: ${adapterType}`);
-    }
-    return adapterType;
-  }
-
-  async function assertImportAdapterConfigConstraints(
-    adapterType: string,
-    adapterConfig: Record<string, unknown>,
-  ) {
-    if (adapterType !== "opencode_local") return;
-    try {
-      requireOpenCodeModelId(adapterConfig.model);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      throw unprocessable(`Invalid opencode_local adapterConfig: ${reason}`);
-    }
+    return type;
   }
 
   async function prepareImportedAgentAdapter(
-    companyId: string,
     adapterType: string | null | undefined,
     adapterConfig: Record<string, unknown>,
-    desiredSkills: string[],
-    mode: ImportMode,
   ) {
     const effectiveAdapterType = assertKnownImportAdapterType(adapterType);
-    if (mode === "agent_safe" && IMPORT_FORBIDDEN_ADAPTER_TYPES.has(effectiveAdapterType)) {
-      throw forbidden(`Adapter type "${effectiveAdapterType}" is not allowed in safe imports`);
+    const parsedAdapterConfig =
+      portabilityAgentManifestEntrySchema.shape.adapterRevision.shape.adapterConfig.safeParse(
+        adapterConfig,
+      );
+    if (!parsedAdapterConfig.success) {
+      throw unprocessable(
+        "Imported ACP adapter configuration contains retired provider, environment, or authentication fields",
+      );
     }
-    const nextAdapterConfig = writePaperclipSkillSyncPreference(
-      applyImportAdapterRunDefaults(effectiveAdapterType, adapterConfig),
-      desiredSkills,
-    );
-    delete nextAdapterConfig.promptTemplate;
-    delete nextAdapterConfig.bootstrapPromptTemplate;
-    delete nextAdapterConfig.instructionsFilePath;
-    delete nextAdapterConfig.instructionsBundleMode;
-    delete nextAdapterConfig.instructionsRootPath;
-    delete nextAdapterConfig.instructionsEntryFile;
-    const normalizedAdapterConfig = await secrets.normalizeAdapterConfigForPersistence(
-      companyId,
-      nextAdapterConfig,
-      { strictMode: strictSecretsMode, adapterType: effectiveAdapterType },
-    );
-    await assertImportAdapterConfigConstraints(effectiveAdapterType, normalizedAdapterConfig);
+    const explicitAdapterConfig = { ...parsedAdapterConfig.data };
+    await validateRegisteredAdapterRuntimeConfiguration({
+      adapterType: effectiveAdapterType,
+      adapterConfig: explicitAdapterConfig,
+    });
     return {
       adapterType: effectiveAdapterType,
-      adapterConfig: normalizedAdapterConfig,
+      adapterConfig: explicitAdapterConfig,
     };
   }
 
@@ -3109,9 +3500,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     manifest: CompanyPortabilityManifest,
     envInputs: CompanyPortabilityEnvInput[],
     secretValues: Record<string, string> | null | undefined,
-    actorUserId: string | null | undefined,
+    actor: SecretMutationActor,
     createdSecretIds: string[] = [],
   ) {
+    requireSecretMutationActor(actor);
     if (envInputs.length === 0) return;
     const missingRequired = envInputs.filter((input) => {
       if (input.requirement !== "required") return false;
@@ -3145,7 +3537,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           value,
           description: input.description ?? `Imported ${input.key} for ${label}.`,
         },
-        { userId: actorUserId ?? null, agentId: null },
+        actor,
       );
       createdSecretIds.push(secret.id);
       writeManifestEnvBinding(manifest, input, {
@@ -3156,28 +3548,28 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     }
   }
 
-  function resolveImportedAssigneeAgentId(
-    assigneeSlug: string | null | undefined,
+  function resolveImportedOwnerAgentId(
+    ownerSlug: string | null | undefined,
     importedSlugToAgentId: Map<string, string>,
     existingSlugToAgentId: Map<string, string>,
     agentStatusById: Map<string, string | null | undefined>,
     warnings: string[],
     subjectLabel: string,
   ) {
-    if (!assigneeSlug) return null;
-    const assigneeAgentId =
-      importedSlugToAgentId.get(assigneeSlug)
-      ?? existingSlugToAgentId.get(assigneeSlug)
+    if (!ownerSlug) return null;
+    const ownerAgentId =
+      importedSlugToAgentId.get(ownerSlug)
+      ?? existingSlugToAgentId.get(ownerSlug)
       ?? null;
-    if (!assigneeAgentId) return null;
-    const assigneeStatus = agentStatusById.get(assigneeAgentId) ?? null;
-    if (assigneeStatus === "pending_approval" || assigneeStatus === "terminated") {
+    if (!ownerAgentId) return null;
+    const ownerStatus = agentStatusById.get(ownerAgentId) ?? null;
+    if (ownerStatus === "pending_approval" || ownerStatus === "terminated") {
       warnings.push(
-        `${subjectLabel} assignee ${assigneeSlug} is ${assigneeStatus}; imported work was left unassigned.`,
+        `${subjectLabel} owner ${ownerSlug} is ${ownerStatus}; imported work was left without an owner.`,
       );
       return null;
     }
-    return assigneeAgentId;
+    return ownerAgentId;
   }
 
   async function resolveSource(source: CompanyPortabilityPreview["source"]): Promise<ResolvedSource> {
@@ -3298,48 +3690,20 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const rootPath = normalizeAgentUrlKey(company.name) ?? "company-package";
     let companyLogoPath: string | null = null;
 
-    const managedResourceRows = typeof (db as { select?: unknown }).select === "function"
-      ? await db
-        .select({
-          resourceKind: builtInManagedResources.resourceKind,
-          resourceId: builtInManagedResources.resourceId,
-        })
-        .from(builtInManagedResources)
-        .where(eq(builtInManagedResources.companyId, companyId))
-      : [];
-    const managedSkillIds = new Set(
-      managedResourceRows
-        .filter((row) => row.resourceKind === "skill")
-        .map((row) => row.resourceId),
-    );
-    const managedRoutineIds = new Set(
-      managedResourceRows
-        .filter((row) => row.resourceKind === "routine")
-        .map((row) => row.resourceId),
-    );
-
-    const allAgentRows = include.agents ? await agents.list(companyId, { includeTerminated: true }) : [];
+    const allAgentRows =
+      include.agents || include.projects || include.issues
+        ? await agents.list(companyId, { includeTerminated: true })
+        : [];
     const liveAgentRows = allAgentRows.filter((agent) => agent.status !== "terminated");
-    const builtInAgentRows = liveAgentRows.filter((agent) => readBuiltInAgentMarker(agent.metadata));
-    const portableAgentRows = liveAgentRows.filter((agent) => !readBuiltInAgentMarker(agent.metadata));
-    const companySkillRowsRaw = include.skills || include.agents ? await companySkills.listFull(companyId) : [];
-    const managedSkillRows = companySkillRowsRaw.filter((skill) => managedSkillIds.has(skill.id));
-    const companySkillRows = companySkillRowsRaw.filter((skill) => !managedSkillIds.has(skill.id));
+    const companySkillRows = include.skills || include.agents ? await companySkills.listFull(companyId) : [];
     if (include.agents) {
       const skipped = allAgentRows.length - liveAgentRows.length;
       if (skipped > 0) {
         warnings.push(`Skipped ${skipped} terminated agent${skipped === 1 ? "" : "s"} from export.`);
       }
-      if (builtInAgentRows.length > 0) {
-        warnings.push(`Skipped ${builtInAgentRows.length} built-in managed agent${builtInAgentRows.length === 1 ? "" : "s"} from export.`);
-      }
-    }
-    if (include.skills && managedSkillRows.length > 0) {
-      warnings.push(`Skipped ${managedSkillRows.length} built-in managed skill${managedSkillRows.length === 1 ? "" : "s"} from export.`);
     }
 
     const agentByReference = new Map<string, typeof liveAgentRows[number]>();
-    const builtInAgentByReference = new Map<string, typeof liveAgentRows[number]>();
     const addAgentReferences = (map: Map<string, typeof liveAgentRows[number]>, agent: typeof liveAgentRows[number]) => {
       map.set(agent.id, agent);
       map.set(agent.name, agent);
@@ -3348,11 +3712,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         map.set(normalizedName, agent);
       }
     };
-    for (const agent of portableAgentRows) {
+    for (const agent of liveAgentRows) {
       addAgentReferences(agentByReference, agent);
-    }
-    for (const agent of builtInAgentRows) {
-      addAgentReferences(builtInAgentByReference, agent);
     }
 
     const selectedAgents = new Map<string, typeof liveAgentRows[number]>();
@@ -3362,11 +3723,6 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       const normalized = normalizeAgentUrlKey(trimmed) ?? trimmed;
       const match = agentByReference.get(trimmed) ?? agentByReference.get(normalized);
       if (!match) {
-        const builtInMatch = builtInAgentByReference.get(trimmed) ?? builtInAgentByReference.get(normalized);
-        if (builtInMatch) {
-          warnings.push(`Agent selector "${selector}" is a built-in managed agent and was skipped.`);
-          continue;
-        }
         warnings.push(`Agent selector "${selector}" was not found and was skipped.`);
         continue;
       }
@@ -3374,7 +3730,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     }
 
     if (include.agents && selectedAgents.size === 0) {
-      for (const agent of portableAgentRows) {
+      for (const agent of liveAgentRows) {
         selectedAgents.set(agent.id, agent);
       }
     }
@@ -3384,7 +3740,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
     const usedSlugs = new Set<string>();
     const idToSlug = new Map<string, string>();
-    for (const agent of agentRows) {
+    for (const agent of [...liveAgentRows].sort((left, right) => left.name.localeCompare(right.name))) {
       const baseSlug = toSafeSlug(agent.name, "agent");
       const slug = uniqueSlug(baseSlug, usedSlugs);
       idToSlug.set(agent.id, slug);
@@ -3392,7 +3748,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const agentPermissionGrantRows = agentRows.length > 0 && typeof (db as { select?: unknown }).select === "function"
       ? await db
         .select({
-          principalId: principalPermissionGrants.principalId,
+          principalId: principalPermissionGrants.principalAgentId,
           permissionKey: principalPermissionGrants.permissionKey,
           scope: principalPermissionGrants.scope,
         })
@@ -3400,11 +3756,14 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         .where(and(
           eq(principalPermissionGrants.companyId, companyId),
           eq(principalPermissionGrants.principalType, "agent"),
-          inArray(principalPermissionGrants.principalId, agentRows.map((agent) => agent.id)),
+          inArray(principalPermissionGrants.principalAgentId, agentRows.map((agent) => agent.id)),
         ))
       : [];
     const permissionGrantsByAgentId = new Map<string, PortableAgentPermissionGrant[]>();
     for (const row of agentPermissionGrantRows) {
+      if (!row.principalId) {
+        throw new Error("Agent permission grant is missing its typed agent principal id");
+      }
       if (!VALID_PERMISSION_KEYS.has(row.permissionKey as PermissionKey)) continue;
       const grants = permissionGrantsByAgentId.get(row.principalId) ?? [];
       grants.push({
@@ -3419,19 +3778,11 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
     const projectsSvc = projectService(db);
     const issuesSvc = issueService(db);
-    const routinesSvc = routineService(db);
+    const routinesSvc = routineService(db, { ordinaryIssues });
     const allProjectsRaw = include.projects || include.issues ? await projectsSvc.list(companyId) : [];
     const allProjects = allProjectsRaw.filter((project) => !project.archivedAt);
     const allRoutinesRaw = include.issues ? await routinesSvc.list(companyId) : [];
-    const builtInRoutineRows = allRoutinesRaw.filter((routine) =>
-      managedRoutineIds.has(routine.id) || routine.originKind === "built_in_agent_bundle"
-    );
-    const allRoutines = allRoutinesRaw.filter((routine) =>
-      !managedRoutineIds.has(routine.id) && routine.originKind !== "built_in_agent_bundle"
-    );
-    if (include.issues && builtInRoutineRows.length > 0) {
-      warnings.push(`Skipped ${builtInRoutineRows.length} built-in managed routine${builtInRoutineRows.length === 1 ? "" : "s"} from export.`);
-    }
+    const allRoutines = allRoutinesRaw;
     const projectById = new Map(allProjects.map((project) => [project.id, project]));
     const projectByReference = new Map<string, typeof allProjects[number]>();
     for (const project of allProjects) {
@@ -3450,10 +3801,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       selectedProjects.set(match.id, match);
     }
 
-    const selectedIssues = new Map<string, Awaited<ReturnType<typeof issuesSvc.getById>>>();
+    type SelectedIssueRow =
+      | NonNullable<Awaited<ReturnType<typeof issuesSvc.getById>>>
+      | Awaited<ReturnType<typeof issuesSvc.list>>[number];
+    const selectedIssues = new Map<string, SelectedIssueRow>();
     const selectedRoutines = new Map<string, typeof allRoutines[number]>();
     const routineById = new Map(allRoutines.map((routine) => [routine.id, routine]));
-    const builtInRoutineById = new Map(builtInRoutineRows.map((routine) => [routine.id, routine]));
     const resolveIssueBySelector = async (selector: string) => {
       const trimmed = selector.trim();
       if (!trimmed) return null;
@@ -3464,10 +3817,6 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     for (const selector of input.issues ?? []) {
       const issue = await resolveIssueBySelector(selector);
       if (!issue || issue.companyId !== companyId) {
-        if (builtInRoutineById.has(selector.trim())) {
-          warnings.push(`Routine selector "${selector}" is a built-in managed routine and was skipped.`);
-          continue;
-        }
         const routine = routineById.get(selector.trim());
         if (routine) {
           selectedRoutines.set(routine.id, routine);
@@ -3533,23 +3882,23 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       .sort((left, right) => left.name.localeCompare(right.name));
     const selectedIssueRows = Array.from(selectedIssues.values())
       .filter((issue): issue is NonNullable<typeof issue> => issue != null)
-      .sort((left, right) => (left.identifier ?? left.title).localeCompare(right.identifier ?? right.title));
+      .sort((left, right) => issueDisplayLabel(left).localeCompare(issueDisplayLabel(right)));
     const selectedRoutineSummaries = Array.from(selectedRoutines.values())
       .sort((left, right) => left.title.localeCompare(right.title));
     const selectedRoutineRows = (
       await Promise.all(selectedRoutineSummaries.map((routine) => routinesSvc.getDetail(routine.id)))
     ).filter((routine): routine is RoutineLike => routine !== null);
 
-    const taskSlugByIssueId = new Map<string, string>();
-    const taskSlugByRoutineId = new Map<string, string>();
-    const usedTaskSlugs = new Set<string>();
+    const issueSlugByIssueId = new Map<string, string>();
+    const issueSlugByRoutineId = new Map<string, string>();
+    const usedIssueSlugs = new Set<string>();
     for (const issue of selectedIssueRows) {
-      const baseSlug = normalizeAgentUrlKey(issue.identifier ?? issue.title) ?? "task";
-      taskSlugByIssueId.set(issue.id, uniqueSlug(baseSlug, usedTaskSlugs));
+      const baseSlug = normalizeAgentUrlKey(issueDisplayLabel(issue)) ?? "issue";
+      issueSlugByIssueId.set(issue.id, uniqueSlug(baseSlug, usedIssueSlugs));
     }
     for (const routine of selectedRoutineRows) {
-      const baseSlug = normalizeAgentUrlKey(routine.title) ?? "task";
-      taskSlugByRoutineId.set(routine.id, uniqueSlug(baseSlug, usedTaskSlugs));
+      const baseSlug = normalizeAgentUrlKey(routine.title) ?? "issue";
+      issueSlugByRoutineId.set(routine.id, uniqueSlug(baseSlug, usedIssueSlugs));
     }
 
     const projectSlugById = new Map<string, string>();
@@ -3601,9 +3950,46 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
     const paperclipAgentsOut: Record<string, Record<string, unknown>> = {};
     const paperclipProjectsOut: Record<string, Record<string, unknown>> = {};
-    const paperclipTasksOut: Record<string, Record<string, unknown>> = {};
-    const unportableTaskWorkspaceRefs = new Map<string, { workspaceId: string; taskSlugs: string[] }>();
+    const paperclipIssuesOut: Record<string, Record<string, unknown>> = {};
+    const unportableIssueWorkspaceRefs = new Map<string, { workspaceId: string; issueSlugs: string[] }>();
     const paperclipRoutinesOut: Record<string, Record<string, unknown>> = {};
+    const runtimeConfigurationByAgentId = new Map(
+      await Promise.all(
+        agentRows.map(async (agent) => [
+          agent.id,
+          await runtimeAgentConfigurations.get({
+            companyId,
+            targetAgentId: agent.id,
+          }),
+        ] as const),
+      ),
+    );
+    const currentAdapterRevisionIds = agentRows.flatMap((agent) =>
+      agent.currentAdapterConfigRevisionId
+        ? [agent.currentAdapterConfigRevisionId]
+        : [],
+    );
+    const currentAdapterRevisionRows =
+      currentAdapterRevisionIds.length === 0
+        ? []
+        : await db
+            .select()
+            .from(agentAdapterConfigRevisions)
+            .where(
+              and(
+                eq(agentAdapterConfigRevisions.companyId, companyId),
+                inArray(
+                  agentAdapterConfigRevisions.id,
+                  currentAdapterRevisionIds,
+                ),
+              ),
+            );
+    const currentAdapterRevisionByAgentId = new Map(
+      currentAdapterRevisionRows.map((revision) => [
+        revision.agentId,
+        revision,
+      ]),
+    );
 
     const skillByReference = new Map<string, typeof companySkillRows[number]>();
     for (const skill of companySkillRows) {
@@ -3653,84 +4039,108 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     if (include.agents) {
       for (const agent of agentRows) {
         const slug = idToSlug.get(agent.id)!;
-        const exportedInstructions = await instructions.exportFiles(agent);
-        warnings.push(...exportedInstructions.warnings);
+        const currentAdapterRevision =
+          currentAdapterRevisionByAgentId.get(agent.id) ?? null;
+        if (
+          !agent.currentAdapterConfigRevisionId ||
+          !currentAdapterRevision ||
+          currentAdapterRevision.id !==
+            agent.currentAdapterConfigRevisionId
+        ) {
+          throw unprocessable(
+            `Agent ${slug} has no complete canonical adapter revision and cannot be exported.`,
+          );
+        }
+        const adapterType = currentAdapterRevision.adapterType;
+        const configuredAdapterConfig =
+          currentAdapterRevision.normalizedConfig;
+        const currentAcpConfiguration =
+          agentAdapterAcpConfigurationSchema.parse(
+            currentAdapterRevision.acpConfiguration,
+          );
+        const runtimeConfiguration =
+          runtimeConfigurationByAgentId.get(agent.id);
+        if (!runtimeConfiguration) {
+          throw unprocessable(
+            `Agent ${slug} has no canonical runtime configuration and cannot be exported.`,
+          );
+        }
 
-        const envInputsStart = envInputs.length;
-        const exportedEnvInputs = extractPortableEnvInputs(
-          slug,
-          (agent.adapterConfig as Record<string, unknown>).env,
-          warnings,
-        );
-        envInputs.push(...exportedEnvInputs);
-        const adapterDefaultRules = ADAPTER_DEFAULT_RULES_BY_TYPE[agent.adapterType] ?? [];
-        const portableAdapterConfig = pruneDefaultLikeValue(
-          normalizePortableConfig(agent.adapterConfig),
-          {
-            dropFalseBooleans: true,
-            defaultRules: adapterDefaultRules,
-          },
-        ) as Record<string, unknown>;
-        const portableRuntimeConfig = pruneDefaultLikeValue(
-          normalizePortableConfig(agent.runtimeConfig),
-          {
-            dropFalseBooleans: true,
-            defaultRules: RUNTIME_DEFAULT_RULES,
-          },
-        ) as Record<string, unknown>;
-        const portablePermissions = pruneDefaultLikeValue(agent.permissions ?? {}, { dropFalseBooleans: true }) as Record<string, unknown>;
+        const selectedCompanySkillKeys =
+          currentAcpConfiguration.companySkillPins.map(
+            (selection) => selection.key,
+          );
+        const parsedPortableAdapterConfig =
+          portabilityAgentManifestEntrySchema.shape.adapterRevision.shape.adapterConfig.safeParse(
+            configuredAdapterConfig,
+          );
+        if (!parsedPortableAdapterConfig.success) {
+          throw unprocessable(
+            `Agent ${slug} has non-portable provider configuration in its canonical adapter revision.`,
+          );
+        }
+        const portableAdapterConfig = {
+          ...parsedPortableAdapterConfig.data,
+        };
+        const portableRuntimeConfig =
+          (pruneDefaultLikeValue(
+            { ...currentAdapterRevision.runtimeConfig },
+            {
+              dropFalseBooleans: true,
+            },
+          ) as Record<string, unknown> | undefined) ?? {};
+        const portableGovernance = pruneDefaultLikeValue(agent.governance ?? {}, { dropFalseBooleans: true }) as Record<string, unknown>;
         const portablePermissionGrants = permissionGrantsByAgentId.get(agent.id) ?? [];
-        const agentEnvInputs = dedupeEnvInputs(
-          envInputs
-            .slice(envInputsStart)
-            .filter((inputValue) => inputValue.agentSlug === slug),
-        );
         const reportsToSlug = agent.reportsTo ? (idToSlug.get(agent.reportsTo) ?? null) : null;
-        const desiredSkills = readPaperclipSkillSyncPreference(
-          (agent.adapterConfig as Record<string, unknown>) ?? {},
-        ).desiredSkills;
+        files[`agents/${slug}/AGENTS.md`] = buildMarkdown(
+          {
+            name: agent.name,
+            title: agent.title ?? null,
+            reportsTo: reportsToSlug,
+            skills: selectedCompanySkillKeys,
+          },
+          "",
+        );
 
-        const commandValue = asString(portableAdapterConfig.command);
-        if (commandValue && isAbsoluteCommand(commandValue)) {
-          warnings.push(`Agent ${slug} command ${commandValue} was omitted from export because it is system-dependent.`);
-          delete portableAdapterConfig.command;
-        }
-        for (const [relativePath, content] of Object.entries(exportedInstructions.files)) {
-          const targetPath = `agents/${slug}/${relativePath}`;
-          if (relativePath === exportedInstructions.entryFile) {
-            files[targetPath] = buildMarkdown(
-              stripEmptyValues({
-                name: agent.name,
-                title: agent.title ?? null,
-                reportsTo: reportsToSlug,
-                skills: desiredSkills.length > 0 ? desiredSkills : undefined,
-              }) as Record<string, unknown>,
-              content,
-            );
-          } else {
-            files[targetPath] = content;
-          }
-        }
-
-        const extension = stripEmptyValues({
-          role: agent.role !== "agent" ? agent.role : undefined,
+        const optionalExtension = stripEmptyValues({
           icon: agent.icon ?? null,
           capabilities: agent.capabilities ?? null,
-          adapter: {
-            type: agent.adapterType,
-            config: portableAdapterConfig,
-          },
-          runtime: portableRuntimeConfig,
-          permissions: portablePermissions,
+          governance: portableGovernance,
           permissionGrants: portablePermissionGrants.length > 0 ? portablePermissionGrants : undefined,
-          budgetMonthlyCents: (agent.budgetMonthlyCents ?? 0) > 0 ? agent.budgetMonthlyCents : undefined,
+          budgetMonthlyAmount: agent.budgetMonthlyAmount,
           metadata: (agent.metadata as Record<string, unknown> | null) ?? null,
         });
-        if (isPlainRecord(extension) && agentEnvInputs.length > 0) {
-          extension.inputs = {
-            env: buildEnvInputMap(agentEnvInputs),
-          };
-        }
+        const extension: Record<string, unknown> = {
+          ...(isPlainRecord(optionalExtension)
+            ? optionalExtension
+            : {}),
+          capabilities: agent.capabilities ?? null,
+          adapterRevision: {
+            sourceRevisionId:
+              agent.currentAdapterConfigRevisionId,
+            adapterType,
+            adapterConfig: portableAdapterConfig,
+            runtimeConfig: portableRuntimeConfig,
+            sourceEnvironmentId:
+              currentAdapterRevision.defaultEnvironmentId,
+            skillChannel: currentAcpConfiguration.skillChannel,
+          },
+          contextGrants: materializePortableBooleanMap(
+            AGENT_CONTEXT_GRANT_KEYS,
+            runtimeConfiguration.contextGrants,
+          ),
+          actionGrants: materializePortableBooleanMap(
+            PAPERCLIP_ACTION_KEYS,
+            runtimeConfiguration.actionGrants,
+          ),
+          mentionReachGrants:
+            materializePortableBooleanMap(
+              AGENT_MENTION_REACH_GRANT_KEYS,
+              runtimeConfiguration.mentionReachGrants,
+            ),
+          companyToolIds:
+            runtimeConfiguration.companyToolIds,
+        };
         paperclipAgentsOut[slug] = isPlainRecord(extension) ? extension : {};
       }
     }
@@ -3779,44 +4189,58 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     }
 
     for (const issue of selectedIssueRows) {
-      const taskSlug = taskSlugByIssueId.get(issue.id)!;
+      if (!issue.request?.trim()) {
+        throw unprocessable(
+          `Issue ${issue.identifier ?? issue.id} has no canonical immutable request and cannot be exported`,
+        );
+      }
+      const issueSlug = issueSlugByIssueId.get(issue.id)!;
       const projectSlug = issue.projectId ? (projectSlugById.get(issue.projectId) ?? null) : null;
-      // All tasks go in top-level tasks/ folder, never nested under projects/
-      const taskPath = `tasks/${taskSlug}/TASK.md`;
-      const assigneeSlug = issue.assigneeAgentId ? (idToSlug.get(issue.assigneeAgentId) ?? null) : null;
+      // All issues go in top-level issues/ folder, never nested under projects/
+      const issuePath = `issues/${issueSlug}/ISSUE.md`;
+      const ownerSlug = issue.ownerAgentId ? (idToSlug.get(issue.ownerAgentId) ?? null) : null;
+      if (!ownerSlug) {
+        throw unprocessable(
+          `Issue ${issue.identifier ?? issue.id} has no portable agent owner and cannot be exported`,
+        );
+      }
       const projectWorkspaceKey = issue.projectId && issue.projectWorkspaceId
         ? projectWorkspaceKeyByProjectId.get(issue.projectId)?.get(issue.projectWorkspaceId) ?? null
         : null;
       if (issue.projectWorkspaceId && !projectWorkspaceKey) {
         const aggregateKey = `${issue.projectId ?? "no-project"}:${issue.projectWorkspaceId}`;
-        const existing = unportableTaskWorkspaceRefs.get(aggregateKey);
+        const existing = unportableIssueWorkspaceRefs.get(aggregateKey);
         if (existing) {
-          existing.taskSlugs.push(taskSlug);
+          existing.issueSlugs.push(issueSlug);
         } else {
-          unportableTaskWorkspaceRefs.set(aggregateKey, {
+          unportableIssueWorkspaceRefs.set(aggregateKey, {
             workspaceId: issue.projectWorkspaceId,
-            taskSlugs: [taskSlug],
+            issueSlugs: [issueSlug],
           });
         }
       }
       const comments = await issuesSvc.listComments(issue.id, { order: "asc" });
-      files[taskPath] = buildMarkdown(
+      files[issuePath] = buildMarkdown(
         {
           name: issue.title,
           project: projectSlug,
-          assignee: assigneeSlug,
+          owner: ownerSlug,
         },
-        issue.description ?? "",
+        issue.request,
       );
       const extension = stripEmptyValues({
         identifier: issue.identifier,
-        status: issue.status,
+        lifecycleStatus: issue.lifecycleStatus,
+        attentionMask: normalizePortableAttentionMask(
+          issue.attentionMask,
+          `Issue ${issue.identifier ?? issue.id}`,
+        ) ?? undefined,
+        boardPresentationStatus: issue.boardPresentationStatus,
         priority: issue.priority,
         labelIds: issue.labelIds ?? undefined,
         billingCode: issue.billingCode ?? null,
         projectWorkspaceKey: projectWorkspaceKey ?? undefined,
         executionWorkspaceSettings: issue.executionWorkspaceSettings ?? undefined,
-        assigneeAdapterOverrides: issue.assigneeAdapterOverrides ?? undefined,
         comments: comments.length > 0
           ? comments.map((comment) => ({
               body: comment.body,
@@ -3832,34 +4256,49 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             }))
           : undefined,
       });
-      paperclipTasksOut[taskSlug] = isPlainRecord(extension) ? extension : {};
+      if (isPlainRecord(extension) && issue.disposition != null) {
+        extension.disposition = decodeIssueDisposition(issue.disposition);
+      }
+      paperclipIssuesOut[issueSlug] = isPlainRecord(extension) ? extension : {};
     }
 
-    for (const { workspaceId, taskSlugs } of unportableTaskWorkspaceRefs.values()) {
-      const preview = taskSlugs.slice(0, 4).join(", ");
-      const remainder = taskSlugs.length > 4 ? ` and ${taskSlugs.length - 4} more` : "";
-      warnings.push(`Tasks ${preview}${remainder} reference workspace ${workspaceId}, but that workspace could not be exported portably.`);
+    for (const { workspaceId, issueSlugs } of unportableIssueWorkspaceRefs.values()) {
+      const preview = issueSlugs.slice(0, 4).join(", ");
+      const remainder = issueSlugs.length > 4 ? ` and ${issueSlugs.length - 4} more` : "";
+      warnings.push(`Issues ${preview}${remainder} reference workspace ${workspaceId}, but that workspace could not be exported portably.`);
     }
 
     for (const routine of selectedRoutineRows) {
-      const taskSlug = taskSlugByRoutineId.get(routine.id)!;
+      const issueSlug = issueSlugByRoutineId.get(routine.id)!;
       const projectSlug = routine.projectId ? (projectSlugById.get(routine.projectId) ?? null) : null;
-      const taskPath = `tasks/${taskSlug}/TASK.md`;
-      const assigneeSlug = routine.assigneeAgentId ? (idToSlug.get(routine.assigneeAgentId) ?? null) : null;
-      files[taskPath] = buildMarkdown(
+      const issuePath = `issues/${issueSlug}/ISSUE.md`;
+      const ownerSlug = routine.assigneeAgentId ? (idToSlug.get(routine.assigneeAgentId) ?? null) : null;
+      if (!ownerSlug) {
+        throw unprocessable(
+          `Routine ${routine.title} has no portable agent owner and cannot be exported`,
+        );
+      }
+      files[issuePath] = buildMarkdown(
         {
           name: routine.title,
           project: projectSlug,
-          assignee: assigneeSlug,
+          owner: ownerSlug,
           recurring: true,
         },
         routine.description ?? "",
       );
-      const extension = stripEmptyValues({
-        status: routine.status !== "active" ? routine.status : undefined,
+      const issueExtension = stripEmptyValues({
+        lifecycleStatus: "open",
+        boardPresentationStatus: routine.status,
         priority: routine.priority !== "medium" ? routine.priority : undefined,
+      });
+      const routineExtension = stripEmptyValues({
         concurrencyPolicy: routine.concurrencyPolicy !== "coalesce_if_active" ? routine.concurrencyPolicy : undefined,
         catchUpPolicy: routine.catchUpPolicy !== "skip_missed" ? routine.catchUpPolicy : undefined,
+        attentionMask: normalizePortableAttentionMask(
+          routine.attentionMask,
+          `Routine ${routine.id}`,
+        ) ?? undefined,
         variables: (routine.variables ?? []).length > 0 ? routine.variables : undefined,
         triggers: routine.triggers.map((trigger) => stripEmptyValues({
           kind: trigger.kind,
@@ -3873,7 +4312,14 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             : undefined,
         })),
       });
-      paperclipRoutinesOut[taskSlug] = isPlainRecord(extension) ? extension : {};
+      paperclipIssuesOut[issueSlug] = isPlainRecord(issueExtension)
+        ? issueExtension
+        : {};
+      paperclipRoutinesOut[issueSlug] = isPlainRecord(
+        routineExtension,
+      )
+        ? routineExtension
+        : {};
     }
 
     const paperclipExtensionPath = ".paperclip.yaml";
@@ -3883,8 +4329,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const paperclipProjects = Object.fromEntries(
       Object.entries(paperclipProjectsOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
     );
-    const paperclipTasks = Object.fromEntries(
-      Object.entries(paperclipTasksOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
+    const paperclipIssues = Object.fromEntries(
+      Object.entries(paperclipIssuesOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
     );
     const paperclipRoutines = Object.fromEntries(
       Object.entries(paperclipRoutinesOut).filter(([, value]) => isPlainRecord(value) && Object.keys(value).length > 0),
@@ -3895,6 +4341,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         company: stripEmptyValues({
           brandColor: company.brandColor ?? null,
           logoPath: companyLogoPath,
+          budgetCurrency: company.budgetCurrency,
+          budgetMonthlyAmount: company.budgetMonthlyAmount,
           attachmentMaxBytes: company.attachmentMaxBytes,
           requireBoardApprovalForNewAgents: company.requireBoardApprovalForNewAgents ? true : undefined,
           feedbackDataSharingEnabled: company.feedbackDataSharingEnabled ? true : undefined,
@@ -3905,10 +4353,14 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         sidebar: stripEmptyValues(sidebarOrder),
         agents: Object.keys(paperclipAgents).length > 0 ? paperclipAgents : undefined,
         projects: Object.keys(paperclipProjects).length > 0 ? paperclipProjects : undefined,
-        tasks: Object.keys(paperclipTasks).length > 0 ? paperclipTasks : undefined,
+        issues: Object.keys(paperclipIssues).length > 0 ? paperclipIssues : undefined,
         routines: Object.keys(paperclipRoutines).length > 0 ? paperclipRoutines : undefined,
       },
-      { preserveEmptyStrings: true },
+      {
+        preserveEmptyStrings: true,
+        preserveEmptyCollections: true,
+        preserveNullKeys: ["structuredResult"],
+      },
     );
 
     let finalFiles = filterExportFiles(files, input.selectedFiles, paperclipExtensionPath);
@@ -4009,7 +4461,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
   async function buildPreview(
     input: CompanyPortabilityPreview,
-    options?: ImportBehaviorOptions,
+    options?: ImportPreviewOptions,
   ): Promise<ImportPlanInternal> {
     const mode = resolveImportMode(options);
     const requestedInclude = normalizeInclude(input.include);
@@ -4050,6 +4502,151 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const selectedMissing = selectedSlugs.filter((slug) => !manifest.agents.some((agent) => agent.slug === slug));
     for (const missing of selectedMissing) {
       errors.push(`Selected agent slug not found in manifest: ${missing}`);
+    }
+
+    const adapterOverrides = input.adapterOverrides ?? {};
+    for (const slug of Object.keys(adapterOverrides)) {
+      if (!selectedAgents.some((agent) => agent.slug === slug)) {
+        errors.push(
+          `Adapter configuration targets an agent not selected for import: ${slug}.`,
+        );
+      }
+    }
+    for (const selectedAgent of selectedAgents) {
+      const slug = selectedAgent.slug;
+      const sourceRevision = selectedAgent.adapterRevision;
+      const sourceAdapterType = asString(
+        sourceRevision.adapterType,
+      );
+      const sourceAdapterConfig = isPlainRecord(
+        sourceRevision.adapterConfig,
+      )
+        ? sourceRevision.adapterConfig
+        : null;
+      if (
+        !isUuidLike(sourceRevision.sourceRevisionId) ||
+        !isUuidLike(sourceRevision.sourceEnvironmentId) ||
+        !sourceAdapterType ||
+        !sourceAdapterConfig ||
+        !isPlainRecord(sourceRevision.runtimeConfig)
+      ) {
+        errors.push(
+          `Selected imported agent ${slug} has an incomplete canonical adapter revision.`,
+        );
+        continue;
+      }
+      const override = adapterOverrides[slug];
+      if (!override) {
+        errors.push(
+          `Selected imported agent ${slug} requires an explicit target adapter override.`,
+        );
+        continue;
+      }
+      if (!isUuidLike(override.defaultEnvironmentId)) {
+        errors.push(
+          `Selected imported agent ${slug} requires an explicit target environment.`,
+        );
+        continue;
+      }
+      const effectiveAdapterConfig = { ...override.adapterConfig };
+      const parsedAdapterConfig =
+        portabilityAgentManifestEntrySchema.shape.adapterRevision.shape.adapterConfig.safeParse(
+          effectiveAdapterConfig,
+        );
+      if (!parsedAdapterConfig.success) {
+        errors.push(
+          `Invalid adapter configuration for imported agent ${slug}: retired provider, environment, or authentication fields are forbidden.`,
+        );
+        continue;
+      }
+      try {
+        await validateRegisteredAdapterRuntimeConfiguration({
+          adapterType: override.adapterType,
+          adapterConfig: parsedAdapterConfig.data,
+        });
+      } catch (error) {
+        errors.push(
+          `Invalid adapter configuration for imported agent ${slug}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    const overrideEnvironmentIds = Array.from(
+      new Set(
+        selectedAgents
+          .map(
+            (agent) =>
+              adapterOverrides[agent.slug]
+                ?.defaultEnvironmentId,
+          )
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    if (overrideEnvironmentIds.length > 0) {
+      const resolvedEnvironmentIds = new Set(
+        (
+          await db
+            .select({ id: environments.id })
+            .from(environments)
+            .where(
+              inArray(
+                environments.id,
+                overrideEnvironmentIds,
+              ),
+            )
+        ).map((row) => row.id),
+      );
+      for (const id of overrideEnvironmentIds) {
+        if (!resolvedEnvironmentIds.has(id)) {
+          errors.push(
+            `Target adapter environment does not exist: ${id}.`,
+          );
+        }
+      }
+    }
+
+    const requestedCompanyToolIds = Array.from(
+      new Set(
+        selectedAgents.flatMap(
+          (agent) => agent.companyToolIds,
+        ),
+      ),
+    );
+    if (requestedCompanyToolIds.length > 0) {
+      if (input.target.mode === "new_company") {
+        errors.push(
+          "A new-company import cannot resolve nonempty companyToolIds; create the company tools first and import into that existing company.",
+        );
+      } else {
+        const targetToolIds = new Set(
+          (
+            await db
+              .select({ id: toolCatalogEntries.id })
+              .from(toolCatalogEntries)
+              .where(
+                and(
+                  eq(
+                    toolCatalogEntries.companyId,
+                    input.target.companyId,
+                  ),
+                  inArray(
+                    toolCatalogEntries.id,
+                    requestedCompanyToolIds,
+                  ),
+                ),
+              )
+          ).map((row) => row.id),
+        );
+        for (const id of requestedCompanyToolIds) {
+          if (!targetToolIds.has(id)) {
+            errors.push(
+              `Target company tool does not exist: ${id}.`,
+            );
+          }
+        }
+      }
     }
 
     if (include.agents && selectedAgents.length === 0) {
@@ -4102,42 +4699,59 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       for (const issue of manifest.issues) {
         const markdown = readPortableTextFile(source.files, ensureMarkdownPath(issue.path));
         if (typeof markdown !== "string") {
-          errors.push(`Missing markdown file for task ${issue.slug}: ${issue.path}`);
+          errors.push(`Missing markdown file for issue ${issue.slug}: ${issue.path}`);
           continue;
         }
         const parsed = parseFrontmatterMarkdown(markdown);
-        if (parsed.frontmatter.kind && parsed.frontmatter.kind !== "task") {
-          warnings.push(`Task markdown ${issue.path} does not declare kind: task in frontmatter.`);
+        if (parsed.frontmatter.kind && parsed.frontmatter.kind !== "issue") {
+          warnings.push(`Issue markdown ${issue.path} does not declare kind: issue in frontmatter.`);
         }
         if (issue.projectWorkspaceKey) {
           const project = issue.projectSlug ? projectBySlug.get(issue.projectSlug) ?? null : null;
           if (!project) {
-            warnings.push(`Task ${issue.slug} references workspace key ${issue.projectWorkspaceKey}, but its project is not present in the package.`);
+            warnings.push(`Issue ${issue.slug} references workspace key ${issue.projectWorkspaceKey}, but its project is not present in the package.`);
           } else if (!project.workspaces.some((workspace) => workspace.key === issue.projectWorkspaceKey)) {
-            warnings.push(`Task ${issue.slug} references missing project workspace key ${issue.projectWorkspaceKey}.`);
+            warnings.push(`Issue ${issue.slug} references missing project workspace key ${issue.projectWorkspaceKey}.`);
           }
         }
         if (issue.recurring) {
           if (!issue.projectSlug) {
-            errors.push(`Recurring task ${issue.slug} must declare a project to import as a routine.`);
+            errors.push(`Recurring issue ${issue.slug} must declare a project to import as a routine.`);
           }
-          if (!issue.assigneeAgentSlug) {
-            errors.push(`Recurring task ${issue.slug} must declare an assignee to import as a routine.`);
+          if (!issue.ownerAgentSlug) {
+            errors.push(`Recurring issue ${issue.slug} must declare an owner to import as a routine.`);
           }
-          const resolvedRoutine = resolvePortableRoutineDefinition(issue, parsed.frontmatter.schedule);
+          const resolvedRoutine =
+            resolvePortableRoutineDefinition(issue);
           warnings.push(...resolvedRoutine.warnings);
           errors.push(...resolvedRoutine.errors);
+          if (
+            issue.lifecycleStatus !== "open" ||
+            !ROUTINE_STATUSES.includes(
+              issue.boardPresentationStatus as (typeof ROUTINE_STATUSES)[number],
+            )
+          ) {
+            errors.push(
+              `Recurring issue ${issue.slug} requires lifecycleStatus=open and a canonical routine boardPresentationStatus.`,
+            );
+          }
+        } else if (
+          !ISSUE_STATUSES.includes(
+            issue.boardPresentationStatus as IssueStatus,
+          )
+        ) {
+          errors.push(
+            `Issue ${issue.slug} requires a canonical issue boardPresentationStatus.`,
+          );
         }
       }
     }
 
     for (const envInput of manifest.envInputs) {
       if (envInput.portability === "system_dependent") {
-        const scope = envInput.agentSlug
-          ? ` for agent ${envInput.agentSlug}`
-          : envInput.projectSlug
-            ? ` for project ${envInput.projectSlug}`
-            : "";
+        const scope = envInput.projectSlug
+          ? ` for project ${envInput.projectSlug}`
+          : "";
         warnings.push(`Environment input ${envInput.key}${scope} is system-dependent and may need manual adjustment after import.`);
       }
     }
@@ -4214,7 +4828,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         manifestAgent.reportsToExistingAgentId
         && !existingAgentIds.has(manifestAgent.reportsToExistingAgentId)
       ) {
-        warnings.push(
+        errors.push(
           `Agent ${manifestAgent.slug} references existing manager id ${manifestAgent.reportsToExistingAgentId}, but that agent is not present in the target company.`,
         );
       }
@@ -4222,8 +4836,22 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         manifestAgent.reportsToExistingAgentSlug
         && !existingSlugToAgent.has(manifestAgent.reportsToExistingAgentSlug)
       ) {
-        warnings.push(
+        errors.push(
           `Agent ${manifestAgent.slug} references existing manager slug ${manifestAgent.reportsToExistingAgentSlug}, but that agent is not present in the target company.`,
+        );
+      }
+      if (
+        manifestAgent.reportsToSlug &&
+        !selectedAgents.some(
+          (candidate) =>
+            candidate.slug === manifestAgent.reportsToSlug,
+        ) &&
+        !existingSlugToAgent.has(
+          manifestAgent.reportsToSlug,
+        )
+      ) {
+        errors.push(
+          `Agent ${manifestAgent.slug} references unresolved manager ${manifestAgent.reportsToSlug}.`,
         );
       }
       const existing = existingSlugToAgent.get(manifestAgent.slug) ?? null;
@@ -4357,8 +4985,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         issuePlans.push({
           slug: manifestIssue.slug,
           action: "create",
-          plannedTitle: manifestIssue.title,
-          reason: manifestIssue.recurring ? "Recurring task will be imported as a routine." : null,
+          plannedTitle: portableIssueDisplayLabel(manifestIssue),
+          reason: manifestIssue.recurring ? "Recurring issue will be imported as a routine." : null,
         });
       }
     }
@@ -4397,7 +5025,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
   async function previewImport(
     input: CompanyPortabilityPreview,
-    options?: ImportBehaviorOptions,
+    options?: ImportPreviewOptions,
   ): Promise<CompanyPortabilityPreviewResult> {
     const plan = await buildPreview(input, options);
     return plan.preview;
@@ -4406,8 +5034,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
   async function importBundle(
     input: CompanyPortabilityImport,
     actorUserId: string | null | undefined,
-    options?: ImportBehaviorOptions,
+    options: ImportApplyOptions,
   ): Promise<CompanyPortabilityImportResult> {
+    const secretMutationActor = options.secretMutationActor;
+    requireSecretMutationActor(secretMutationActor);
     const mode = resolveImportMode(options);
     const plan = await buildPreview(input, options);
     if (plan.preview.errors.length > 0) {
@@ -4427,6 +5057,25 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const sourceManifest = plan.source.manifest;
     const warnings = [...plan.preview.warnings];
     const include = plan.include;
+    const boardAuthorization =
+      options.authorizationActor?.type === "board"
+        ? options.authorizationActor
+        : null;
+    if (include.agents && !boardAuthorization) {
+      throw unprocessable(
+        "Importing agents requires board authorization context.",
+      );
+    }
+    const boardActor = boardAuthorization
+      ? {
+          kind: "board" as const,
+          actorId:
+            asString(actorUserId)
+            ?? asString(boardAuthorization.userId)
+            ?? "board",
+          authorization: boardAuthorization,
+        }
+      : null;
 
     let targetCompany: {
       id: string;
@@ -4454,6 +5103,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       const created = await companies.create({
         name: companyName,
         description: include.company ? (sourceManifest.company?.description ?? null) : null,
+        budgetCurrency: include.company
+          ? sourceManifest.company?.budgetCurrency
+          : undefined,
+        budgetMonthlyAmount: include.company
+          ? sourceManifest.company?.budgetMonthlyAmount
+          : undefined,
         brandColor: include.company ? (sourceManifest.company?.brandColor ?? null) : null,
         attachmentMaxBytes: include.company
           ? (sourceManifest.company?.attachmentMaxBytes ?? undefined)
@@ -4473,13 +5128,13 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         feedbackDataSharingTermsVersion: include.company
           ? (sourceManifest.company?.feedbackDataSharingTermsVersion ?? null)
           : null,
-      });
+      }, actorUserId ?? null);
       if (mode === "agent_safe" && options?.sourceCompanyId) {
         await access.copyActiveUserMemberships(options.sourceCompanyId, created.id);
       } else {
         const ownerPrincipalId = actorUserId ?? "board";
         await access.ensureMembership(created.id, "user", ownerPrincipalId, "owner", "active");
-        await access.ensureRoleDefaultGrants(
+        await access.stampRoleGrants(
           created.id,
           ownerPrincipalId,
           "owner",
@@ -4512,20 +5167,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
     if (!targetCompany) throw notFound("Target company not found");
 
-    const importedAgentEnvSlugs = new Set(
-      plan.preview.plan.agentPlans
-        .filter((entry) => entry.action !== "skip")
-        .map((entry) => entry.slug),
-    );
     const importedProjectEnvSlugs = new Set(
       plan.preview.plan.projectPlans
         .filter((entry) => entry.action !== "skip")
         .map((entry) => entry.slug),
     );
     const importEnvInputs = (sourceManifest.envInputs ?? []).filter((inputValue) => {
-      if (inputValue.agentSlug) {
-        return include.agents && importedAgentEnvSlugs.has(inputValue.agentSlug);
-      }
       if (inputValue.projectSlug) {
         return include.projects && importedProjectEnvSlugs.has(inputValue.projectSlug);
       }
@@ -4538,7 +5185,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         sourceManifest,
         importEnvInputs,
         input.secretValues,
-        actorUserId,
+        secretMutationActor,
         createdImportSecretIds,
       );
 
@@ -4619,10 +5266,16 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             onConflict: resolveSkillConflictStrategy(mode, plan.collisionStrategy),
           })
         : [];
-      const desiredSkillRefMap = new Map<string, string>();
+      const selectedCompanySkillRefMap = new Map<string, string>();
       for (const importedSkill of importedSkills) {
-        desiredSkillRefMap.set(importedSkill.originalKey, importedSkill.skill.key);
-        desiredSkillRefMap.set(importedSkill.originalSlug, importedSkill.skill.key);
+        selectedCompanySkillRefMap.set(
+          importedSkill.originalKey,
+          importedSkill.skill.key,
+        );
+        selectedCompanySkillRefMap.set(
+          importedSkill.originalSlug,
+          importedSkill.skill.key,
+        );
         if (importedSkill.action === "skipped") {
           warnings.push(`Skipped skill ${importedSkill.originalSlug}; existing skill ${importedSkill.skill.slug} was kept.`);
         } else if (importedSkill.originalKey !== importedSkill.skill.key) {
@@ -4645,150 +5298,157 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             continue;
           }
 
-          const bundlePrefix = `agents/${manifestAgent.slug}/`;
-          const bundleFiles = Object.fromEntries(
-            Object.entries(plan.source.files)
-              .filter(([filePath]) => filePath.startsWith(bundlePrefix))
-              .flatMap(([filePath, content]) => typeof content === "string"
-                ? [[normalizePortablePath(filePath.slice(bundlePrefix.length)), content] as const]
-                : []),
-          );
-          const markdownRaw = bundleFiles["AGENTS.md"] ?? readPortableTextFile(plan.source.files, manifestAgent.path);
-          const entryRelativePath = normalizePortablePath(manifestAgent.path).startsWith(bundlePrefix)
-            ? normalizePortablePath(manifestAgent.path).slice(bundlePrefix.length)
-            : "AGENTS.md";
-          if (typeof markdownRaw === "string") {
-            const importedInstructionsBody = parseFrontmatterMarkdown(markdownRaw).body;
-            bundleFiles[entryRelativePath] = importedInstructionsBody;
-            if (entryRelativePath !== "AGENTS.md") {
-              bundleFiles["AGENTS.md"] = importedInstructionsBody;
-            }
-          }
-          const fallbackPromptTemplate = asString((manifestAgent.adapterConfig as Record<string, unknown>).promptTemplate) || "";
-          if (!markdownRaw && fallbackPromptTemplate) {
-            bundleFiles["AGENTS.md"] = fallbackPromptTemplate;
-          }
-          if (!markdownRaw && !fallbackPromptTemplate) {
-            warnings.push(`Missing AGENTS markdown for ${manifestAgent.slug}; imported with an empty managed bundle.`);
-          }
-
-          // Apply adapter overrides from request if present
           const adapterOverride = input.adapterOverrides?.[planAgent.slug];
-          const baseAdapterConfig = adapterOverride?.adapterConfig
-            ? { ...adapterOverride.adapterConfig }
-            : { ...manifestAgent.adapterConfig } as Record<string, unknown>;
-
-          const desiredSkills = (manifestAgent.skills ?? []).map((skillRef) => desiredSkillRefMap.get(skillRef) ?? skillRef);
-          const normalizedAdapter = await prepareImportedAgentAdapter(
-            targetCompany.id,
-            adapterOverride?.adapterType ?? manifestAgent.adapterType,
-            baseAdapterConfig,
-            desiredSkills,
-            mode,
-          );
-          const patch = {
-            name: planAgent.plannedName,
-            role: manifestAgent.role,
-            title: manifestAgent.title,
-            icon: manifestAgent.icon,
-            capabilities: manifestAgent.capabilities,
-            reportsTo: null,
-            adapterType: normalizedAdapter.adapterType,
-            adapterConfig: normalizedAdapter.adapterConfig,
-            runtimeConfig: disableImportedTimerHeartbeat(manifestAgent.runtimeConfig),
-            budgetMonthlyCents: manifestAgent.budgetMonthlyCents,
-            permissions: manifestAgent.permissions,
-            metadata: manifestAgent.metadata,
-          };
-
-          if (planAgent.action === "update" && planAgent.existingAgentId) {
-            let updated = await agents.update(planAgent.existingAgentId, patch);
-            if (!updated) {
-              warnings.push(`Skipped update for missing agent ${planAgent.existingAgentId}.`);
-              resultAgents.push({
-                slug: planAgent.slug,
-                id: null,
-                action: "skipped",
-                name: planAgent.plannedName,
-                reason: "Existing target agent not found.",
-              });
-              continue;
-            }
-            try {
-              const materialized = await instructions.materializeManagedBundle(updated, bundleFiles, {
-                clearLegacyPromptTemplate: true,
-                replaceExisting: true,
-              });
-              updated = await agents.update(updated.id, { adapterConfig: materialized.adapterConfig }) ?? updated;
-            } catch (err) {
-              warnings.push(`Failed to materialize instructions bundle for ${manifestAgent.slug}: ${err instanceof Error ? err.message : String(err)}`);
-            }
-            await applyImportedAgentPermissionGrants(
-              targetCompany.id,
-              updated.id,
-              manifestAgent.permissionGrants ?? [],
-              actorUserId ?? null,
+          if (!adapterOverride) {
+            throw unprocessable(
+              `Selected imported agent ${planAgent.slug} requires an explicit target adapter override.`,
             );
-            agentStatusById.set(updated.id, updated.status ?? agentStatusById.get(updated.id) ?? null);
-            await secrets.syncEnvBindingsForTarget?.(
-              targetCompany.id,
-              { targetType: "agent", targetId: updated.id },
-              isPlainRecord(updated.adapterConfig) ? updated.adapterConfig.env : undefined,
-            );
-            importedSlugToAgentId.set(planAgent.slug, updated.id);
-            existingSlugToAgentId.set(normalizeAgentUrlKey(updated.name) ?? updated.id, updated.id);
-            resultAgents.push({
-              slug: planAgent.slug,
-              id: updated.id,
-              action: "updated",
-              name: updated.name,
-              reason: planAgent.reason,
-            });
-            continue;
           }
 
-          const createdStatus = "idle";
-          let created = await agents.create(targetCompany.id, {
-            ...patch,
-            status: createdStatus,
+          const selectedCompanySkillKeys = (manifestAgent.skills ?? []).map(
+            (skillRef) =>
+              selectedCompanySkillRefMap.get(skillRef) ?? skillRef,
+          );
+          const selectedCompanySkillEntries = (
+            await companySkills.resolveRequestedSkillEntries(
+              targetCompany.id,
+              selectedCompanySkillKeys,
+            )
+          ).resolved;
+          const normalizedAdapter = adapterOverride
+            ? await prepareImportedAgentAdapter(
+              adapterOverride.adapterType,
+              { ...adapterOverride.adapterConfig },
+            )
+            : null;
+          if (!boardActor) {
+            throw unprocessable(
+              "Importing agents requires board authorization context.",
+            );
+          }
+
+          let importedAgentId: string;
+          let importedAction: "created" | "updated";
+          if (
+            planAgent.action === "update"
+            && planAgent.existingAgentId
+          ) {
+            await runtimeAgentConfigurations.update({
+              companyId: targetCompany.id,
+              targetAgentId: planAgent.existingAgentId,
+              actor: boardActor,
+              source: "board",
+              configuration: {
+                name: planAgent.plannedName,
+                title: manifestAgent.title,
+                capabilities: manifestAgent.capabilities,
+                reportsTo: null,
+                contextGrants: manifestAgent.contextGrants,
+                actionGrants: manifestAgent.actionGrants,
+                mentionReachGrants:
+                  manifestAgent.mentionReachGrants,
+                companyToolIds:
+                  manifestAgent.companyToolIds,
+              },
+            });
+            importedAgentId = planAgent.existingAgentId;
+            importedAction = "updated";
+          } else {
+            const identity =
+              await runtimeAgentConfigurations.create({
+                companyId: targetCompany.id,
+                actor: boardActor,
+                source: "board",
+                configuration: {
+                  name: planAgent.plannedName,
+                  title: manifestAgent.title,
+                  capabilities: manifestAgent.capabilities,
+                  reportsTo: null,
+                  contextGrants: manifestAgent.contextGrants,
+                  actionGrants: manifestAgent.actionGrants,
+                  mentionReachGrants:
+                    manifestAgent.mentionReachGrants,
+                  companyToolIds:
+                    manifestAgent.companyToolIds,
+                },
+              });
+            importedAgentId = identity.agentId;
+            importedAction = "created";
+          }
+
+          await operationalConfigurations.update({
+            companyId: targetCompany.id,
+            agentId: importedAgentId,
+            actorUserId: actorUserId ?? null,
+            configuration: {
+              icon: manifestAgent.icon,
+              budgetMonthlyAmount:
+                manifestAgent.budgetMonthlyAmount,
+            },
           });
-          await access.ensureMembership(targetCompany.id, "agent", created.id, "member", "active");
-          await access.setPrincipalPermission(
+          if (normalizedAdapter && adapterOverride) {
+            const importedPins =
+              selectedCompanySkillEntries.map((entry) => ({
+                key: entry.key,
+                versionId: entry.versionId,
+              }));
+            await adapterConfigurations.createRevision({
+              companyId: targetCompany.id,
+              agentId: importedAgentId,
+              configuration: {
+                adapterType: normalizedAdapter.adapterType,
+                adapterConfig: normalizedAdapter.adapterConfig,
+                defaultEnvironmentId:
+                  adapterOverride.defaultEnvironmentId,
+                runtimeConfig:
+                  normalizeImportedRuntimeConfig(
+                    manifestAgent.adapterRevision
+                      .runtimeConfig,
+                  ),
+                companySkillPins: importedPins,
+                skillChannel: adapterOverride.skillChannel,
+              },
+              actor: secretMutationActor,
+            });
+          }
+          const importedAgent =
+            await agents.getById(importedAgentId);
+          if (!importedAgent) {
+            throw unprocessable(
+              `Imported agent ${planAgent.slug} could not be loaded after configuration.`,
+            );
+          }
+          await access.ensureMembership(
             targetCompany.id,
             "agent",
-            created.id,
-            "tasks:assign",
-            true,
-            actorUserId ?? null,
+            importedAgent.id,
+            "member",
+            "active",
           );
-          try {
-            const materialized = await instructions.materializeManagedBundle(created, bundleFiles, {
-              clearLegacyPromptTemplate: true,
-              replaceExisting: true,
-            });
-            created = await agents.update(created.id, { adapterConfig: materialized.adapterConfig }) ?? created;
-          } catch (err) {
-            warnings.push(`Failed to materialize instructions bundle for ${manifestAgent.slug}: ${err instanceof Error ? err.message : String(err)}`);
-          }
           await applyImportedAgentPermissionGrants(
             targetCompany.id,
-            created.id,
+            importedAgent.id,
             manifestAgent.permissionGrants ?? [],
             actorUserId ?? null,
           );
-          agentStatusById.set(created.id, created.status ?? createdStatus);
-          await secrets.syncEnvBindingsForTarget?.(
-            targetCompany.id,
-            { targetType: "agent", targetId: created.id },
-            isPlainRecord(created.adapterConfig) ? created.adapterConfig.env : undefined,
+          agentStatusById.set(
+            importedAgent.id,
+            importedAgent.status ?? "idle",
           );
-          importedSlugToAgentId.set(planAgent.slug, created.id);
-          existingSlugToAgentId.set(normalizeAgentUrlKey(created.name) ?? created.id, created.id);
+          importedSlugToAgentId.set(
+            planAgent.slug,
+            importedAgent.id,
+          );
+          existingSlugToAgentId.set(
+            normalizeAgentUrlKey(importedAgent.name)
+              ?? importedAgent.id,
+            importedAgent.id,
+          );
           resultAgents.push({
             slug: planAgent.slug,
-            id: created.id,
-            action: "created",
-            name: created.name,
+            id: importedAgent.id,
+            action: importedAction,
+            name: importedAgent.name,
             reason: planAgent.reason,
           });
         }
@@ -4816,13 +5476,30 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
               : null);
           if (!managerId || managerId === agentId) continue;
           try {
-            await agents.update(agentId, { reportsTo: managerId });
-          } catch {
+            if (!boardActor) {
+              throw unprocessable(
+                "Importing agent reporting lines requires board authorization context.",
+              );
+            }
+            await runtimeAgentConfigurations.update({
+              companyId: targetCompany.id,
+              targetAgentId: agentId,
+              actor: boardActor,
+              source: "board",
+              configuration: { reportsTo: managerId },
+            });
+          } catch (error) {
             const managerRef =
               managerSlug
               ?? manifestAgent.reportsToExistingAgentSlug
               ?? manifestAgent.reportsToExistingAgentId;
-            warnings.push(`Could not assign manager ${managerRef} for imported agent ${manifestAgent.slug}.`);
+            throw unprocessable(
+              `Could not assign manager ${managerRef} for imported agent ${manifestAgent.slug}: ${
+                error instanceof Error
+                  ? error.message
+                  : String(error)
+              }`,
+            );
           }
         }
       }
@@ -4912,10 +5589,11 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
           if (!projectId) continue;
 
-          await secrets.syncEnvBindingsForTarget?.(
+          await secrets.syncEnvBindingsForTarget(
             targetCompany.id,
             { targetType: "project", targetId: projectId },
             normalizedProjectEnv ?? {},
+            { actor: secretMutationActor },
           );
 
           for (const workspace of manifestProject.workspaces) {
@@ -4954,18 +5632,18 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       }
 
       if (include.issues) {
-        const routines = routineService(db);
+        const routines = routineService(db, { ordinaryIssues });
         for (const manifestIssue of sourceManifest.issues) {
           const markdownRaw = readPortableTextFile(plan.source.files, manifestIssue.path);
           const parsed = markdownRaw ? parseFrontmatterMarkdown(markdownRaw) : null;
-          const description = parsed?.body || manifestIssue.description || null;
-          const assigneeAgentId = resolveImportedAssigneeAgentId(
-            manifestIssue.assigneeAgentSlug,
+          const request = parsed?.body || manifestIssue.request;
+          const ownerAgentId = resolveImportedOwnerAgentId(
+            manifestIssue.ownerAgentSlug,
             importedSlugToAgentId,
             existingSlugToAgentId,
             agentStatusById,
             warnings,
-            `Task ${manifestIssue.slug}`,
+            `Issue ${manifestIssue.slug}`,
           );
           const projectId = manifestIssue.projectSlug
             ? importedSlugToProjectId.get(manifestIssue.projectSlug)
@@ -4976,20 +5654,22 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             ? importedProjectWorkspaceIdByProjectSlug.get(manifestIssue.projectSlug)?.get(manifestIssue.projectWorkspaceKey) ?? null
             : null;
           if (manifestIssue.projectWorkspaceKey && !projectWorkspaceId) {
-            warnings.push(`Task ${manifestIssue.slug} references workspace key ${manifestIssue.projectWorkspaceKey}, but that workspace was not imported.`);
+            warnings.push(`Issue ${manifestIssue.slug} references workspace key ${manifestIssue.projectWorkspaceKey}, but that workspace was not imported.`);
           }
           if (manifestIssue.recurring) {
             if (!projectId) {
-              throw unprocessable(`Recurring task ${manifestIssue.slug} is missing the project required to create a routine.`);
+              throw unprocessable(`Recurring issue ${manifestIssue.slug} is missing the project required to create a routine.`);
             }
-            const resolvedRoutine = resolvePortableRoutineDefinition(manifestIssue, parsed?.frontmatter.schedule);
+            const resolvedRoutine =
+              resolvePortableRoutineDefinition(manifestIssue);
             if (resolvedRoutine.errors.length > 0) {
-              throw unprocessable(`Recurring task ${manifestIssue.slug} could not be imported as a routine: ${resolvedRoutine.errors.join("; ")}`);
+              throw unprocessable(`Recurring issue ${manifestIssue.slug} could not be imported as a routine: ${resolvedRoutine.errors.join("; ")}`);
             }
             warnings.push(...resolvedRoutine.warnings);
             const routineDefinition = resolvedRoutine.routine ?? {
               concurrencyPolicy: null,
               catchUpPolicy: null,
+              attentionMask: null,
               variables: null,
               triggers: [],
             };
@@ -4997,15 +5677,14 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
               projectId,
               goalId: null,
               parentIssueId: null,
-              title: manifestIssue.title,
-              description,
-              assigneeAgentId,
+              title: portableIssueDisplayLabel(manifestIssue),
+              description: request,
+              assigneeAgentId: ownerAgentId,
               priority: manifestIssue.priority && ISSUE_PRIORITIES.includes(manifestIssue.priority as any)
                 ? manifestIssue.priority as typeof ISSUE_PRIORITIES[number]
                 : "medium",
-              status: manifestIssue.status && ROUTINE_STATUSES.includes(manifestIssue.status as any)
-                ? manifestIssue.status as typeof ROUTINE_STATUSES[number]
-                : "active",
+              status: manifestIssue
+                .boardPresentationStatus as (typeof ROUTINE_STATUSES)[number],
               concurrencyPolicy:
                 routineDefinition.concurrencyPolicy && ROUTINE_CONCURRENCY_POLICIES.includes(routineDefinition.concurrencyPolicy as any)
                   ? routineDefinition.concurrencyPolicy as typeof ROUTINE_CONCURRENCY_POLICIES[number]
@@ -5014,11 +5693,9 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
                 routineDefinition.catchUpPolicy && ROUTINE_CATCH_UP_POLICIES.includes(routineDefinition.catchUpPolicy as any)
                   ? routineDefinition.catchUpPolicy as typeof ROUTINE_CATCH_UP_POLICIES[number]
                   : "skip_missed",
+              attentionMask: routineDefinition.attentionMask,
               variables: routineDefinition.variables ?? [],
-            }, {
-              agentId: null,
-              userId: actorUserId ?? null,
-            });
+            }, secretMutationActor);
             for (const trigger of routineDefinition.triggers) {
               if (trigger.kind === "schedule") {
                 await routines.createTrigger(createdRoutine.id, {
@@ -5027,10 +5704,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
                   enabled: trigger.enabled,
                   cronExpression: trigger.cronExpression!,
                   timezone: trigger.timezone!,
-                }, {
-                  agentId: null,
-                  userId: actorUserId ?? null,
-                });
+                }, secretMutationActor);
                 continue;
               }
               if (trigger.kind === "webhook") {
@@ -5043,71 +5717,141 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
                       ? trigger.signingMode as typeof ROUTINE_TRIGGER_SIGNING_MODES[number]
                       : "bearer",
                   replayWindowSec: trigger.replayWindowSec ?? 300,
-                }, {
-                  agentId: null,
-                  userId: actorUserId ?? null,
-                });
+                }, secretMutationActor);
                 continue;
               }
               await routines.createTrigger(createdRoutine.id, {
                 kind: "api",
                 label: trigger.label,
                 enabled: trigger.enabled,
-              }, {
-                agentId: null,
-                userId: actorUserId ?? null,
-              });
+              }, secretMutationActor);
             }
             continue;
           }
-          let issueStatus = manifestIssue.status && ISSUE_STATUSES.includes(manifestIssue.status as any)
-            ? manifestIssue.status as typeof ISSUE_STATUSES[number]
-            : "backlog";
-          if (!assigneeAgentId && issueStatus === "in_progress") {
-            warnings.push(`Task ${manifestIssue.slug} was downgraded to todo because its assignee could not be imported as assignable work.`);
-            issueStatus = "todo";
+          if (!actorUserId) {
+            throw unprocessable(
+              `Issue ${manifestIssue.slug} requires a named importing board user`,
+            );
           }
-          const createdIssue = await issues.create(targetCompany.id, {
-            projectId,
-            projectWorkspaceId,
-            title: manifestIssue.title,
-            description,
-            assigneeAgentId,
-            status: issueStatus,
-            priority: manifestIssue.priority && ISSUE_PRIORITIES.includes(manifestIssue.priority as any)
+          if (!ownerAgentId) {
+            throw unprocessable(
+              `Issue ${manifestIssue.slug} requires an invokable owner that exists in the target company`,
+            );
+          }
+          const priority =
+            manifestIssue.priority &&
+            ISSUE_PRIORITIES.includes(manifestIssue.priority as any)
               ? manifestIssue.priority as typeof ISSUE_PRIORITIES[number]
-              : "medium",
-            billingCode: manifestIssue.billingCode,
-            assigneeAdapterOverrides: manifestIssue.assigneeAdapterOverrides,
-            executionWorkspaceSettings: manifestIssue.executionWorkspaceSettings,
-            labelIds: manifestIssue.labelIds ?? [],
-          });
-          for (const comment of manifestIssue.comments ?? []) {
-            const authorAgentId = comment.authorType === "agent" && comment.authorAgentSlug
-              ? importedSlugToAgentId.get(comment.authorAgentSlug)
-                ?? existingSlugToAgentId.get(comment.authorAgentSlug)
-                ?? null
-              : null;
-            if (comment.authorType === "agent" && comment.authorAgentSlug && !authorAgentId) {
-              warnings.push(`Comment on task ${manifestIssue.slug} was imported as a system comment because author agent ${comment.authorAgentSlug} was not imported.`);
+              : "medium";
+          if (
+            !ISSUE_STATUSES.includes(
+              manifestIssue.boardPresentationStatus as IssueStatus,
+            )
+          ) {
+            throw unprocessable(
+              `Issue ${manifestIssue.slug} requires a canonical issue boardPresentationStatus`,
+            );
+          }
+          const boardPresentationStatus =
+            manifestIssue.boardPresentationStatus as IssueStatus;
+          const createdIssueResult =
+            manifestIssue.lifecycleStatus === "open" &&
+            boardPresentationStatus === "todo"
+              ? await ordinaryIssues.create({
+                  companyId: targetCompany.id,
+                  request,
+                  ownerAgentId,
+                  creator: {
+                    kind: "user/board",
+                    userId: actorUserId,
+                  },
+                  idempotencyKey:
+                    `company-portability:${targetCompany.id}:${manifestIssue.slug}`,
+                  sourceKind: "issue_request",
+                  projectId,
+                  projectWorkspaceId,
+                  title: manifestIssue.title,
+                  priority,
+                  labelIds: manifestIssue.labelIds ?? [],
+                  billingCode: manifestIssue.billingCode,
+                  executionWorkspaceSettings:
+                    manifestIssue.executionWorkspaceSettings,
+                  attentionMask: manifestIssue.attentionMask,
+                })
+              : await createPortableCanonicalIssue(db, {
+                  companyId: targetCompany.id,
+                  slug: manifestIssue.slug,
+                  request,
+                  title: manifestIssue.title,
+                  ownerAgentId,
+                  creatorUserId: actorUserId,
+                  projectId,
+                  projectWorkspaceId,
+                  lifecycleStatus: manifestIssue.lifecycleStatus,
+                  boardPresentationStatus,
+                  disposition: manifestIssue.disposition,
+                  attentionMask: manifestIssue.attentionMask,
+                  priority,
+                  labelIds: manifestIssue.labelIds ?? [],
+                  billingCode: manifestIssue.billingCode,
+                  executionWorkspaceSettings:
+                    manifestIssue.executionWorkspaceSettings,
+                });
+          const createdIssue = createdIssueResult.issue;
+          for (const [commentIndex, comment] of (manifestIssue.comments ?? []).entries()) {
+            if (comment.authorType === "agent") {
+              warnings.push(
+                `Comment on issue ${manifestIssue.slug} from agent ${comment.authorAgentSlug ?? "<unknown>"} was imported with system provenance because the portable comment does not include the producing run and adapter revision required for canonical agent attribution.`,
+              );
             }
             if (comment.authorType === "user" && !actorUserId) {
-              warnings.push(`Comment on task ${manifestIssue.slug} was imported as a system comment because no importing user was available.`);
+              warnings.push(`Comment on issue ${manifestIssue.slug} was imported as a system comment because no importing user was available.`);
             }
-            const authorType = authorAgentId
-              ? "agent"
-              : comment.authorType === "user" && actorUserId
+            const authorType =
+              comment.authorType === "user" && actorUserId
                 ? "user"
                 : "system";
-            await issues.addComment(createdIssue.id, comment.body, {
-              agentId: authorAgentId ?? undefined,
-              userId: authorType === "user" ? actorUserId ?? undefined : undefined,
-            }, {
-              authorType,
-              presentation: comment.presentation,
-              metadata: comment.metadata,
-              createdAt: comment.createdAt,
-            });
+            const sourceKey = createHash("sha256")
+              .update(JSON.stringify({
+                issueSlug: manifestIssue.slug,
+                commentIndex,
+                body: comment.body,
+                authorType,
+                authorAgentSlug:
+                  comment.authorType === "agent"
+                    ? comment.authorAgentSlug
+                    : null,
+                userId: authorType === "user" ? actorUserId : null,
+                createdAt: comment.createdAt,
+              }))
+              .digest("hex");
+            if (authorType === "user" && actorUserId) {
+              await appendCanonicalUserComment(db, {
+                companyId: targetCompany.id,
+                issueId: createdIssue.id,
+                sourceKind: "company_portability_import",
+                immutableSourceKey: sourceKey,
+                sourceRecordId: sourceKey,
+                exactText: comment.body,
+                userId: actorUserId,
+                occurredAt: comment.createdAt,
+              });
+            } else {
+              await appendCanonicalControlNotice(db, {
+                companyId: targetCompany.id,
+                issueId: createdIssue.id,
+                sourceKind: "company_portability_import",
+                immutableSourceKey: sourceKey,
+                sourceRecordId: sourceKey,
+                exactText: comment.body,
+                comment: {
+                  author: { kind: "system", source: "control" },
+                  producingRun: null,
+                },
+                occurredAt: comment.createdAt,
+                allowTerminal: true,
+              });
+            }
           }
         }
       }
@@ -5125,7 +5869,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       };
     } catch (error) {
       for (const secretId of createdImportSecretIds) {
-        await secrets.remove(secretId).catch(() => undefined);
+        await secrets.remove(secretId, secretMutationActor).catch(() => undefined);
       }
       throw error;
     }

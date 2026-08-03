@@ -11,7 +11,7 @@ Manage companies within your Paperclip instance.
 GET /api/companies
 ```
 
-Returns all companies the current user/agent has access to.
+Returns the companies available to the authenticated board user.
 
 ## Get Company
 
@@ -27,9 +27,15 @@ Returns company details including name, description, budget, and status.
 POST /api/companies
 {
   "name": "My AI Company",
-  "description": "An autonomous marketing agency"
+  "description": "An autonomous marketing agency",
+  "budgetCurrency": "USD",
+  "budgetMonthlyAmount": "1000"
 }
 ```
+
+`budgetCurrency` is the company's immutable AI budget denomination. It defaults
+to `USD` only when the company is created. Every money value is a canonical,
+nonnegative decimal string; JSON numbers and exponent notation are rejected.
 
 ## Update Company
 
@@ -38,9 +44,16 @@ PATCH /api/companies/{companyId}
 {
   "name": "Updated Name",
   "description": "Updated description",
-  "budgetMonthlyCents": 100000,
   "logoAssetId": "b9f5e911-6de5-4cd0-8dc6-a55a13bc02f6"
 }
+```
+
+Budget denomination and limits are not generic company fields. Update the
+monthly company limit through the dedicated budget endpoint:
+
+```
+PATCH /api/companies/{companyId}/budgets
+{ "budgetMonthlyAmount": "1250.75" }
 ```
 
 ## Upload Company Logo
@@ -83,6 +96,8 @@ Archives a company. Archived companies are hidden from default listings.
 | `status` | string | `active`, `paused`, `archived` |
 | `logoAssetId` | string | Optional asset id for the stored logo image |
 | `logoUrl` | string | Optional Paperclip asset content path for the stored logo image |
-| `budgetMonthlyCents` | number | Monthly budget limit |
+| `budgetCurrency` | string | Immutable uppercase ISO-4217 AI budget currency |
+| `budgetMonthlyAmount` | string | Canonical decimal-string monthly budget limit |
+| `knownSpendAmount` | string | Ledger-derived known spend in `budgetCurrency` |
 | `createdAt` | string | ISO timestamp |
 | `updatedAt` | string | ISO timestamp |

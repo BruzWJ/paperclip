@@ -16,10 +16,10 @@ lean-dev-shop/
 ├── projects/
 │   └── q2-launch/
 │       ├── PROJECT.md
-│       └── tasks/
-│           └── monday-review/TASK.md
-├── tasks/
-│   └── weekly-standup/TASK.md
+│       └── issues/
+│           └── monday-review/ISSUE.md
+├── issues/
+│   └── weekly-standup/ISSUE.md
 ├── skills/
 │   └── code-review/SKILL.md
 └── .paperclip.yaml
@@ -146,27 +146,17 @@ owner: cto
 Deliver all features planned for the Q2 launch, including the new dashboard and API improvements.
 ```
 
-## projects/q2-launch/tasks/monday-review/TASK.md
+## projects/q2-launch/issues/monday-review/ISSUE.md
 
 ```markdown
 ---
 name: Monday Review
-assignee: ceo
+owner: ceo
 project: q2-launch
-schedule:
-  timezone: America/Chicago
-  startsAt: 2026-03-16T09:00:00-05:00
-  recurrence:
-    frequency: weekly
-    interval: 1
-    weekdays:
-      - monday
-    time:
-      hour: 9
-      minute: 0
+recurring: true
 ---
 
-Review the status of Q2 Launch project. Check progress on all open tasks, identify blockers, and update priorities for the week.
+Review the status of Q2 Launch project. Check progress on all open issues, identify blockers, and update priorities for the week.
 ```
 
 ## skills/code-review/SKILL.md (with external reference)

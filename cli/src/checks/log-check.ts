@@ -8,7 +8,12 @@ export function logCheck(config: PaperclipConfig, configPath?: string): CheckRes
   const reportedDir = logDir;
 
   if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(reportedDir, { recursive: true });
+    return {
+      name: "Log directory",
+      status: "warn",
+      message: `Log directory does not exist yet: ${reportedDir}`,
+      guidance: "Paperclip will create it during first startup; doctor does not mutate deployment state",
+    };
   }
 
   try {
@@ -23,8 +28,7 @@ export function logCheck(config: PaperclipConfig, configPath?: string): CheckRes
       name: "Log directory",
       status: "fail",
       message: `Log directory is not writable: ${logDir}`,
-      canRepair: false,
-      repairHint: "Check file permissions on the log directory",
+      guidance: "Check file permissions on the log directory",
     };
   }
 }

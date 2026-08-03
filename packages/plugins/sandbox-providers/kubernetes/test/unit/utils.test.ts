@@ -50,11 +50,11 @@ describe("newRunUlidDns", () => {
 
 describe("paperclipLabels", () => {
   it("returns canonical label map", () => {
-    const labels = paperclipLabels({ runId: "r1", agentId: "a1", companyId: "c1", adapterType: "claude_local" });
+    const labels = paperclipLabels({ runId: "r1", agentId: "a1", companyId: "c1", adapterType: "codex" });
     expect(labels["paperclip.io/run-id"]).toBe("r1");
     expect(labels["paperclip.io/agent-id"]).toBe("a1");
     expect(labels["paperclip.io/company-id"]).toBe("c1");
-    expect(labels["paperclip.io/adapter"]).toBe("claude_local");
+    expect(labels["paperclip.io/adapter"]).toBe("codex");
     expect(labels["paperclip.io/managed-by"]).toBe("paperclip-k8s-plugin");
   });
 });

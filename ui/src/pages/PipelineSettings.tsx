@@ -1535,7 +1535,7 @@ export function PipelineSettings() {
       ).map((agent) => ({
         id: stageAssigneeOptionId(agent.id),
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
     [agentsQuery.data, recentAssigneeIds],
   );
@@ -1601,7 +1601,7 @@ export function PipelineSettings() {
       ).map((agent) => ({
         id: `agent:${agent.id}`,
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
     ],
     [agentsQuery.data, recentAssigneeIds, usersQuery.data?.users],

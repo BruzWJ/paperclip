@@ -7,7 +7,11 @@ import type {
   CompanyPortabilityImportResult,
   CompanyPortabilityPreviewRequest,
   CompanyPortabilityPreviewResult,
+  SessionCompactionSettings,
+  UpdateSessionCompactionSettings,
   UpdateCompanyBranding,
+  BudgetCurrency,
+  MoneyAmount,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -20,7 +24,8 @@ export const companiesApi = {
   create: (data: {
     name: string;
     description?: string | null;
-    budgetMonthlyCents?: number;
+    budgetCurrency?: BudgetCurrency;
+    budgetMonthlyAmount?: MoneyAmount;
   }) =>
     api.post<Company>("/companies", data),
   update: (
@@ -31,7 +36,6 @@ export const companiesApi = {
         | "name"
         | "description"
         | "status"
-        | "budgetMonthlyCents"
         | "attachmentMaxBytes"
         | "requireBoardApprovalForNewAgents"
         | "feedbackDataSharingEnabled"
@@ -42,6 +46,18 @@ export const companiesApi = {
   ) => api.patch<Company>(`/companies/${companyId}`, data),
   updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
     api.patch<Company>(`/companies/${companyId}/branding`, data),
+  getSessionCompactionSettings: (companyId: string) =>
+    api.get<SessionCompactionSettings>(
+      `/companies/${companyId}/session-compaction-settings`,
+    ),
+  updateSessionCompactionSettings: (
+    companyId: string,
+    data: UpdateSessionCompactionSettings,
+  ) =>
+    api.patch<SessionCompactionSettings>(
+      `/companies/${companyId}/session-compaction-settings`,
+      data,
+    ),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (

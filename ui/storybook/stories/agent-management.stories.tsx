@@ -4,14 +4,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Edit3, RotateCcw, Settings2 } from "lucide-react";
 import {
   AGENT_ICON_NAMES,
+  canonicalizeMoneyAmount,
   type Agent,
   type AgentRuntimeState,
   type CompanySecret,
-  type EnvBinding,
   type Environment,
 } from "@paperclipai/shared";
 import { ActiveAgentsPanel } from "@/components/ActiveAgentsPanel";
-import { AgentConfigForm, type CreateConfigValues } from "@/components/AgentConfigForm";
+import { AgentConfigForm } from "@/components/AgentConfigForm";
+import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { defaultCreateValues } from "@/components/agent-config-defaults";
 import {
   DraftInput,
@@ -22,11 +23,11 @@ import {
 } from "@/components/agent-config-primitives";
 import { AgentIcon, AgentIconPicker } from "@/components/AgentIconPicker";
 import { AgentProperties } from "@/components/AgentProperties";
-import { RunButton, PauseResumeButton } from "@/components/AgentActionButtons";
-import type { LiveRunForIssue } from "@/api/heartbeats";
+import { PauseResumeButton } from "@/components/AgentActionButtons";
+import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES } from "@/api/runs";
 import type { AdapterInfo } from "@/api/adapters";
 import { queryKeys } from "@/lib/queryKeys";
-import { cn } from "@/lib/utils";
+import { cn, formatMoneyAmount } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +39,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { storybookAgents, storybookIssues } from "../fixtures/paperclipData";
+import {
+  createIssueExecutionRun,
+  storybookAgents,
+  storybookIssues,
+} from "../fixtures/paperclipData";
 
 const COMPANY_ID = "company-storybook";
 const now = new Date("2026-04-20T12:00:00.000Z");
@@ -76,9 +81,9 @@ function agentWith(overrides: Partial<Agent>): Agent {
       ...storybookAgents[0]!.runtimeConfig,
       ...(overrides.runtimeConfig ?? {}),
     },
-    permissions: {
-      ...storybookAgents[0]!.permissions,
-      ...(overrides.permissions ?? {}),
+    governance: {
+      ...storybookAgents[0]!.governance,
+      ...(overrides.governance ?? {}),
     },
     metadata: overrides.metadata ?? storybookAgents[0]!.metadata,
   };
@@ -86,43 +91,19 @@ function agentWith(overrides: Partial<Agent>): Agent {
 
 const agentManagementAgents: Agent[] = [
   agentWith({
-    id: "agent-codex",
-    name: "CodexCoder",
-    urlKey: "codexcoder",
+    id: "agent-builder",
+    name: "Builder",
+    urlKey: "builder",
     status: "running",
     icon: "code",
-    role: "engineer",
     title: "Senior Product Engineer",
     reportsTo: "agent-cto",
     capabilities: "Owns full-stack product changes, Storybook coverage, and local verification loops.",
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {
-      command: "codex",
-      model: "gpt-5.4",
-      modelReasoningEffort: "high",
-      search: true,
-      dangerouslyBypassApprovalsAndSandbox: true,
-      promptTemplate:
-        "You are {{ agent.name }}. Work only on the checked-out issue, keep comments concise, and verify before handoff.",
-      instructionsFilePath: "agents/codexcoder/AGENTS.md",
-      extraArgs: ["--full-auto"],
-      env: {
-        OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
-        PAPERCLIP_TRACE: { type: "plain", value: "storybook" },
-      } satisfies Record<string, EnvBinding>,
-      timeoutSec: 7200,
-      graceSec: 20,
+      model: "gpt-5.6",
     },
-    runtimeConfig: {
-      heartbeat: {
-        enabled: true,
-        intervalSec: 900,
-        wakeOnDemand: true,
-        cooldownSec: 30,
-        maxConcurrentRuns: 2,
-      },
-    },
-    lastHeartbeatAt: recent(2),
+    runtimeConfig: {},
     updatedAt: recent(2),
   }),
   agentWith({
@@ -131,32 +112,14 @@ const agentManagementAgents: Agent[] = [
     urlKey: "qachecker",
     status: "idle",
     icon: "shield",
-    role: "qa",
     title: "QA Engineer",
     reportsTo: "agent-cto",
     capabilities: "Runs targeted browser checks, release smoke tests, and visual Storybook reviews.",
-    adapterType: "claude_local",
+    adapterType: "codex",
     adapterConfig: {
-      command: "claude",
-      model: "claude-sonnet-4.5",
-      effort: "medium",
-      dangerouslySkipPermissions: false,
-      chrome: true,
-      instructionsFilePath: "agents/qachecker/AGENTS.md",
-      env: {
-        PLAYWRIGHT_HEADLESS: { type: "plain", value: "false" },
-      } satisfies Record<string, EnvBinding>,
+      model: "gpt-5.6-sol",
     },
-    runtimeConfig: {
-      heartbeat: {
-        enabled: false,
-        intervalSec: 1800,
-        wakeOnDemand: true,
-        cooldownSec: 60,
-        maxConcurrentRuns: 1,
-      },
-    },
-    lastHeartbeatAt: recent(31),
+    runtimeConfig: {},
     updatedAt: recent(31),
   }),
   agentWith({
@@ -165,30 +128,17 @@ const agentManagementAgents: Agent[] = [
     urlKey: "cto",
     status: "paused",
     icon: "crown",
-    role: "cto",
     title: "CTO",
     reportsTo: null,
     capabilities: "Reviews engineering strategy, architecture risk, and high-impact implementation tradeoffs.",
-    adapterType: "codex_local",
+    adapterType: "codex",
     pauseReason: "manual",
     pausedAt: recent(18),
-    permissions: { canCreateAgents: true },
+    governance: {},
     adapterConfig: {
-      command: "codex",
-      model: "gpt-5.4",
-      modelReasoningEffort: "xhigh",
-      search: false,
+      model: "gpt-5.6",
     },
-    runtimeConfig: {
-      heartbeat: {
-        enabled: true,
-        intervalSec: 3600,
-        wakeOnDemand: false,
-        cooldownSec: 120,
-        maxConcurrentRuns: 1,
-      },
-    },
-    lastHeartbeatAt: recent(57),
+    runtimeConfig: {},
     updatedAt: recent(18),
   }),
   agentWith({
@@ -197,30 +147,16 @@ const agentManagementAgents: Agent[] = [
     urlKey: "opswatch",
     status: "error",
     icon: "radar",
-    role: "devops",
     title: "Runtime Operations Engineer",
     reportsTo: "agent-cto",
     capabilities: "Monitors local runners, workspace services, and stuck-run recovery signals.",
-    adapterType: "http",
+    adapterType: "codex",
     pauseReason: null,
     pausedAt: null,
     adapterConfig: {
-      webhookUrl: "https://ops.internal.example/heartbeat",
-      payloadTemplateJson: JSON.stringify({ channel: "paperclip-storybook", priority: "normal" }, null, 2),
-      env: {
-        OPS_WEBHOOK_TOKEN: { type: "secret_ref", secretId: "secret-ops-webhook", version: 3 },
-      } satisfies Record<string, EnvBinding>,
+      model: "gpt-5.6-sol",
     },
-    runtimeConfig: {
-      heartbeat: {
-        enabled: true,
-        intervalSec: 600,
-        wakeOnDemand: true,
-        cooldownSec: 45,
-        maxConcurrentRuns: 1,
-      },
-    },
-    lastHeartbeatAt: recent(9),
+    runtimeConfig: {},
     updatedAt: recent(9),
   }),
 ];
@@ -228,23 +164,14 @@ const agentManagementAgents: Agent[] = [
 const runtimeState: AgentRuntimeState = {
   agentId: "agent-codex",
   companyId: COMPANY_ID,
-  adapterType: "codex_local",
-  sessionId: "session-codex-storybook-management-20260420",
-  sessionDisplayId: "codex-storybook-20260420",
-  sessionParamsJson: {
-    issueIdentifier: "PAP-1670",
-    workspaceStrategy: "git_worktree",
-  },
-  stateJson: {
-    currentIssue: "PAP-1670",
-    workspace: "PAP-1641-create-super-detailed-storybooks-for-our-project",
-  },
+  adapterType: "codex",
   lastRunId: "run-agent-management-live",
   lastRunStatus: "running",
-  totalInputTokens: 286_400,
-  totalOutputTokens: 42_900,
-  totalCachedInputTokens: 113_200,
-  totalCostCents: 4320,
+  lastContextUsedTokens: 286_400,
+  lastContextWindowTokens: 400_000,
+  peakContextUsedTokens: 335_200,
+  aggregateKnownCostAmount: canonicalizeMoneyAmount("43.2"),
+  unpricedPromptCount: 1,
   lastError: "Previous run lost its Storybook Vite websocket after a local server restart.",
   createdAt: recent(8_000),
   updatedAt: recent(2),
@@ -252,13 +179,13 @@ const runtimeState: AgentRuntimeState = {
 
 const storybookSecrets: CompanySecret[] = [
 	  {
-	    id: "secret-openai",
+	    id: "secret-example",
 	    companyId: COMPANY_ID,
 	    scope: "company",
 	    ownerUserId: null,
 	    userSecretDefinitionId: null,
-	    key: "openai-api-key",
-	    name: "OPENAI_API_KEY",
+	    key: "example-api-key",
+	    name: "EXAMPLE_API_KEY",
 	    provider: "local_encrypted",
 	    status: "active",
 	    managedMode: "paperclip_managed",
@@ -303,128 +230,49 @@ const storybookSecrets: CompanySecret[] = [
 
 const adapterFixtures: AdapterInfo[] = [
   {
-    type: "codex_local",
+    type: "codex",
     label: "Codex",
-    source: "builtin",
-    modelsCount: 3,
-    loaded: true,
-    disabled: false,
-    capabilities: {
-      supportsInstructionsBundle: true,
-      supportsSkills: true,
-      supportsLocalAgentJwt: true,
-      requiresMaterializedRuntimeSkills: true,
-      supportsModelProfiles: true,
-      supportsAcp: true,
-    },
-  },
-  {
-    type: "claude_local",
-    label: "Claude Code",
-    source: "builtin",
     modelsCount: 2,
     loaded: true,
-    disabled: false,
     capabilities: {
-      supportsInstructionsBundle: true,
-      supportsSkills: true,
-      supportsLocalAgentJwt: true,
-      requiresMaterializedRuntimeSkills: true,
-      supportsModelProfiles: true,
-      supportsAcp: true,
-    },
-  },
-  {
-    type: "http",
-    label: "HTTP Webhook",
-    source: "builtin",
-    modelsCount: 0,
-    loaded: true,
-    disabled: false,
-    capabilities: {
-      supportsInstructionsBundle: false,
-      supportsSkills: false,
-      supportsLocalAgentJwt: false,
-      requiresMaterializedRuntimeSkills: false,
       supportsModelProfiles: false,
-      supportsAcp: false,
+      contractVersion: "acp-subprocess/v1",
+      protocolVersion: 1,
+      resume: true,
+      cancel: true,
+      sessionConfig: true,
+      sessionScopedMcpReplacement: true,
     },
+    registryName: "codex",
+    frontendPackage: "@agentclientprotocol/codex-acp",
+    frontendVersion: "1.1.7",
+    frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
   },
 ];
 
-const liveRuns: LiveRunForIssue[] = [
-  {
+const activeRuns = [
+  createIssueExecutionRun({
     id: "run-agent-management-live",
     status: "running",
-    invocationSource: "assignment",
-    triggerDetail: "issue_assigned",
     startedAt: recent(8).toISOString(),
     finishedAt: null,
     createdAt: recent(8).toISOString(),
-    agentId: "agent-codex",
-    agentName: "CodexCoder",
-    adapterType: "codex_local",
+    updatedAt: recent(1).toISOString(),
+    targetAgentId: "agent-codex",
     issueId: "issue-storybook-1",
-    livenessState: "advanced",
-    livenessReason: null,
-    continuationAttempt: 0,
-    lastUsefulActionAt: recent(1).toISOString(),
-    nextAction: "Run a targeted Storybook static build.",
-  },
-  {
+  }),
+  createIssueExecutionRun({
     id: "run-agent-management-queued",
     status: "queued",
-    invocationSource: "on_demand",
-    triggerDetail: "manual",
     startedAt: null,
     finishedAt: null,
     createdAt: recent(3).toISOString(),
-    agentId: "agent-qa",
-    agentName: "QAChecker",
-    adapterType: "claude_local",
+    updatedAt: recent(3).toISOString(),
+    targetAgentId: "agent-qa",
     issueId: "issue-storybook-3",
-    livenessState: null,
-    livenessReason: "Waiting for current visual review to finish.",
-    continuationAttempt: 0,
-    lastUsefulActionAt: null,
-    nextAction: "Open the Storybook preview and capture mobile screenshots.",
-  },
-  {
-    id: "run-agent-management-succeeded",
-    status: "succeeded",
-    invocationSource: "timer",
-    triggerDetail: "scheduler",
-    startedAt: recent(48).toISOString(),
-    finishedAt: recent(39).toISOString(),
-    createdAt: recent(48).toISOString(),
-    agentId: "agent-cto",
-    agentName: "CTO",
-    adapterType: "codex_local",
-    issueId: "issue-storybook-2",
-    livenessState: "completed",
-    livenessReason: null,
-    continuationAttempt: 0,
-    lastUsefulActionAt: recent(39).toISOString(),
-    nextAction: null,
-  },
-  {
-    id: "run-agent-management-failed",
-    status: "failed",
-    invocationSource: "automation",
-    triggerDetail: "routine",
-    startedAt: recent(76).toISOString(),
-    finishedAt: recent(70).toISOString(),
-    createdAt: recent(76).toISOString(),
-    agentId: "agent-observability",
-    agentName: "OpsWatch",
-    adapterType: "http",
-    issueId: null,
-    livenessState: "blocked",
-    livenessReason: "Webhook returned 503 during local runtime restart.",
-    continuationAttempt: 1,
-    lastUsefulActionAt: recent(72).toISOString(),
-    nextAction: "Retry after runtime service health check recovers.",
-  },
+    currentAttemptId: null,
+    currentLeaseId: null,
+  }),
 ];
 
 function StorybookQueryFixtures({ children }: { children: ReactNode }) {
@@ -435,22 +283,20 @@ function StorybookQueryFixtures({ children }: { children: ReactNode }) {
   queryClient.setQueryData(queryKeys.adapters.all, adapterFixtures);
   queryClient.setQueryData(queryKeys.issues.list(COMPANY_ID), storybookIssues);
   queryClient.setQueryData([...queryKeys.issues.list(COMPANY_ID), "with-routine-executions"], storybookIssues);
-  queryClient.setQueryData([...queryKeys.liveRuns(COMPANY_ID), "dashboard"], liveRuns);
+  queryClient.setQueryData(
+    [
+      ...queryKeys.runs(COMPANY_ID, {
+        status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+      }),
+      "dashboard",
+      4,
+    ],
+    { items: activeRuns, nextCursor: null },
+  );
   queryClient.setQueryData(queryKeys.instance.generalSettings, { censorUsernameInLogs: false });
-  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex_local"), [
-    { id: "gpt-5.4", label: "GPT-5.4" },
-    { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
-    { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-  ]);
-  queryClient.setQueryData(queryKeys.agents.detectModel(COMPANY_ID, "codex_local"), {
-    model: "gpt-5.4",
-    provider: "openai",
-    source: "config",
-    candidates: ["gpt-5.4", "gpt-5.4-mini"],
-  });
-  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "claude_local"), [
-    { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5" },
-    { id: "claude-opus-4.1", label: "Claude Opus 4.1" },
+  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex"), [
+    { id: "gpt-5.6", label: "GPT-5.6" },
+    { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ]);
 
   return children;
@@ -459,19 +305,8 @@ function StorybookQueryFixtures({ children }: { children: ReactNode }) {
 function AgentConfigFormStory() {
   const [values, setValues] = useState<CreateConfigValues>({
     ...defaultCreateValues,
-    adapterType: "codex_local",
-    command: "codex",
-    model: "gpt-5.4",
-    thinkingEffort: "high",
-    search: true,
-    dangerouslyBypassSandbox: true,
-    promptTemplate:
-      "You are {{ agent.name }}. Read the assigned issue, make a small verified change, and update the task.",
-    extraArgs: "--full-auto, --search",
-    envBindings: {
-      OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai", version: "latest" },
-      PAPERCLIP_TRACE: { type: "plain", value: "storybook" },
-    },
+    adapterType: "codex",
+    adapterSchemaValues: { model: "gpt-5.6" },
     runtimeServicesJson: JSON.stringify(
       [
         {
@@ -483,8 +318,6 @@ function AgentConfigFormStory() {
       null,
       2,
     ),
-    heartbeatEnabled: true,
-    intervalSec: 900,
   });
 
   return (
@@ -493,7 +326,6 @@ function AgentConfigFormStory() {
       values={values}
       onChange={(patch) => setValues((current) => ({ ...current, ...patch }))}
       sectionLayout="cards"
-      showAdapterTestEnvironmentButton={false}
     />
   );
 }
@@ -588,11 +420,9 @@ function AgentActionsMatrix() {
                 onResume={() => undefined}
                 disabled={agent.status === "running"}
               />
-              <RunButton
-                label={agent.status === "running" ? "Running" : "Run now"}
-                onClick={() => undefined}
-                disabled={runDisabled}
-              />
+              <Button size="sm" onClick={() => undefined} disabled={runDisabled}>
+                Assign task
+              </Button>
               <Button variant="outline" size="sm" disabled={restartDisabled}>
                 <RotateCcw className="h-3.5 w-3.5 sm:mr-1" />
                 <span className="hidden sm:inline">Restart</span>
@@ -610,7 +440,7 @@ function AgentActionsMatrix() {
 }
 
 function ConfigPrimitivesStory() {
-  const [textValue, setTextValue] = useState("gpt-5.4");
+  const [textValue, setTextValue] = useState("gpt-5.6");
   const [selectValue, setSelectValue] = useState("git_worktree");
   const [toggleValue, setToggleValue] = useState(true);
   const [jsonValue, setJsonValue] = useState(JSON.stringify({
@@ -623,7 +453,7 @@ function ConfigPrimitivesStory() {
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="space-y-4 rounded-xl border border-border bg-background/70 p-4">
-        <Field label="Text field" hint={help.model}>
+        <Field label="Text field" hint="Server-admitted configuration value.">
           <DraftInput
             value={textValue}
             onCommit={setTextValue}
@@ -639,13 +469,12 @@ function ConfigPrimitivesStory() {
             <SelectContent>
               <SelectItem value="project_primary">Project primary</SelectItem>
               <SelectItem value="git_worktree">Git worktree</SelectItem>
-              <SelectItem value="agent_home">Agent home</SelectItem>
             </SelectContent>
           </Select>
         </Field>
         <ToggleField
           label="Toggle field"
-          hint={help.wakeOnDemand}
+          hint={help.search}
           checked={toggleValue}
           onChange={setToggleValue}
         />
@@ -677,13 +506,13 @@ function AgentManagementStories() {
                 <h1 className="mt-2 text-3xl font-semibold tracking-tight">Agent details, controls, and config surfaces</h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
                   Management stories exercise the dense pieces of the agent lifecycle: status detail panels,
-                  adapter configuration, icon identity, run controls, live-agent cards, and the config-field primitives
+                  adapter configuration, icon identity, run controls, active-agent cards, and the config-field primitives
                   used inside the form.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline">adapter config</Badge>
-                <Badge variant="outline">runtime policy</Badge>
+                <Badge variant="outline">runtime state</Badge>
                 <Badge variant="outline">env bindings</Badge>
               </div>
             </div>
@@ -709,28 +538,30 @@ function AgentManagementStories() {
               </Card>
               <div className="rounded-xl border border-border bg-background/70 p-5">
                 <div className="mb-4 flex flex-wrap gap-2">
-                  <Badge variant="secondary">session populated</Badge>
+                  <Badge variant="secondary">accounting populated</Badge>
                   <Badge variant="secondary">last error shown</Badge>
                   <Badge variant="secondary">manager lookup seeded</Badge>
                 </div>
                 <div className="grid gap-3 text-sm md:grid-cols-2">
                   <div className="rounded-lg border border-border p-3">
                     <div className="text-xs text-muted-foreground">Budget</div>
-                    <div className="mt-1 font-mono">${(agentManagementAgents[0]!.budgetMonthlyCents / 100).toFixed(0)} / month</div>
-                  </div>
-                  <div className="rounded-lg border border-border p-3">
-                    <div className="text-xs text-muted-foreground">Spent</div>
-                    <div className="mt-1 font-mono">${(agentManagementAgents[0]!.spentMonthlyCents / 100).toFixed(0)}</div>
-                  </div>
-                  <div className="rounded-lg border border-border p-3">
-                    <div className="text-xs text-muted-foreground">Instructions</div>
-                    <div className="mt-1 break-all font-mono text-xs">
-                      {String(agentManagementAgents[0]!.adapterConfig.instructionsFilePath)}
+                    <div className="mt-1 font-mono">
+                      {formatMoneyAmount(agentManagementAgents[0]!.budgetMonthlyAmount, "USD")} / month
                     </div>
                   </div>
                   <div className="rounded-lg border border-border p-3">
-                    <div className="text-xs text-muted-foreground">Runtime policy</div>
-                    <div className="mt-1 font-mono text-xs">heartbeat / 900s / max 2</div>
+                    <div className="text-xs text-muted-foreground">Spent</div>
+                    <div className="mt-1 font-mono">
+                      {formatMoneyAmount(agentManagementAgents[0]!.knownSpendAmount, "USD")}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="text-xs text-muted-foreground">Model</div>
+                    <div className="mt-1 break-all font-mono text-xs">gpt-5.4</div>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="text-xs text-muted-foreground">Execution contract</div>
+                    <div className="mt-1 font-mono text-xs">ACP subprocess</div>
                   </div>
                 </div>
               </div>
@@ -751,7 +582,7 @@ function AgentManagementStories() {
             <AgentActionsMatrix />
           </Section>
 
-          <Section eyebrow="ActiveAgentsPanel" title="Mixed live, queued, succeeded, and failed agent runs">
+          <Section eyebrow="ActiveAgentsPanel" title="Running and queued agent runs">
             <ActiveAgentsPanel companyId={COMPANY_ID} />
           </Section>
 
@@ -773,7 +604,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Agent management stories cover detail, configuration, icon, action, live-run, and config primitive states using extended Paperclip fixtures.",
+          "Agent management stories cover detail, configuration, icon, action, canonical active run, and config primitive states using extended Paperclip fixtures.",
       },
     },
   },
@@ -795,7 +626,6 @@ const managedKubernetesEnvironment: Environment = {
   status: "active",
   config: {
     provider: "kubernetes",
-    backend: "job",
     inCluster: true,
     runtimeClassName: "gvisor",
     egressMode: "cilium",
@@ -825,7 +655,7 @@ function ForcedKubernetesFixtures({
     executionMode: "kubernetes",
   });
   queryClient.setQueryData(queryKeys.environments.list(COMPANY_ID), environmentFixtures);
-  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex_local"), [
+  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex"), [
     { id: "gpt-5.4", label: "GPT-5.4" },
     { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
   ]);

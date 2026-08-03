@@ -71,8 +71,8 @@ Required for live publishes:
 
 ```bash
 export AWS_REGION=us-east-1
-export PAPERCLIP_PAGE_BUCKET=paperclip-pages-prod
-export PAPERCLIP_PAGE_BASE_URL=https://pages.paperclip.ing
+export STATIC_PAGE_BUCKET=paperclip-pages-prod
+export STATIC_PAGE_BASE_URL=https://pages.paperclip.ing
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
 ```
@@ -80,8 +80,8 @@ export AWS_SECRET_ACCESS_KEY=...
 Optional:
 
 ```bash
-export PAPERCLIP_PAGE_DEFAULT_PREFIX=""
-export PAPERCLIP_PAGE_AWS_PROFILE=paperclip-page-uploader
+export STATIC_PAGE_DEFAULT_PREFIX=""
+export STATIC_PAGE_AWS_PROFILE=paperclip-page-uploader
 ```
 
 Recommended Paperclip secret names:
@@ -470,18 +470,18 @@ curl -I "https://$DOMAIN/404.html"
 Create secrets from environment variables so values do not land in shell history:
 
 ```bash
-export PAPERCLIP_PAGE_AWS_ACCESS_KEY_ID="$(jq -r '.AccessKey.AccessKeyId' /tmp/paperclip-page-uploader-key.json)"
-export PAPERCLIP_PAGE_AWS_SECRET_ACCESS_KEY="$(jq -r '.AccessKey.SecretAccessKey' /tmp/paperclip-page-uploader-key.json)"
+export STATIC_PAGE_AWS_ACCESS_KEY_ID="$(jq -r '.AccessKey.AccessKeyId' /tmp/paperclip-page-uploader-key.json)"
+export STATIC_PAGE_AWS_SECRET_ACCESS_KEY="$(jq -r '.AccessKey.SecretAccessKey' /tmp/paperclip-page-uploader-key.json)"
 
 pnpm paperclipai secrets create \
   --company-id <company-id> \
   --name paperclip-page-aws-access-key-id \
-  --value-env PAPERCLIP_PAGE_AWS_ACCESS_KEY_ID
+  --value-env STATIC_PAGE_AWS_ACCESS_KEY_ID
 
 pnpm paperclipai secrets create \
   --company-id <company-id> \
   --name paperclip-page-aws-secret-access-key \
-  --value-env PAPERCLIP_PAGE_AWS_SECRET_ACCESS_KEY
+  --value-env STATIC_PAGE_AWS_SECRET_ACCESS_KEY
 ```
 
 Bind runtime env to publishing agents:
@@ -499,9 +499,9 @@ Bind runtime env to publishing agents:
     "version": "latest"
   },
   "AWS_REGION": { "type": "plain", "value": "us-east-1" },
-  "PAPERCLIP_PAGE_BUCKET": { "type": "plain", "value": "paperclip-pages-prod" },
-  "PAPERCLIP_PAGE_BASE_URL": { "type": "plain", "value": "https://pages.paperclip.ing" },
-  "PAPERCLIP_PAGE_DEFAULT_PREFIX": { "type": "plain", "value": "" }
+  "STATIC_PAGE_BUCKET": { "type": "plain", "value": "paperclip-pages-prod" },
+  "STATIC_PAGE_BASE_URL": { "type": "plain", "value": "https://pages.paperclip.ing" },
+  "STATIC_PAGE_DEFAULT_PREFIX": { "type": "plain", "value": "" }
 }
 ```
 

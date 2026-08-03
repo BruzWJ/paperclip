@@ -1,269 +1,100 @@
-# Execution Policy: Review & Approval Workflows
+# Execution policies
 
-Paperclip's execution policy system ensures tasks are completed with the right level of oversight. Instead of relying on agents to remember to hand off work for review, the **runtime enforces** review and approval stages automatically.
+Execution policies are board control-plane rules for review and approval. They are enforced by the server and audited independently of provider prompts.
 
-## Overview
+They do not create provider interaction cards, inject lifecycle instructions, or invoke an agent merely because a gate was resolved. Provider work still enters through the ordinary issue-execution path with a required current owner.
 
-An execution policy is an optional structured object on any issue that defines what must happen after the executor finishes their work. It supports three layers of enforcement:
+## Policy shape
 
-| Layer | Purpose | Scope |
-|---|---|---|
-| **Comment required** | Every agent run must post a comment back to the issue | Runtime invariant (always on) |
-| **Review stage** | A reviewer checks quality/correctness and can request changes | Per-issue, optional |
-| **Approval stage** | A manager/stakeholder gives final sign-off | Per-issue, optional |
-
-These layers compose. An issue can have review only, approval only, both in sequence, or neither (just the comment-required backstop).
-
-## Data Model
-
-### Execution Policy (issue field: `executionPolicy`)
+An issue may define an ordered list of review and approval stages:
 
 ```ts
 interface IssueExecutionPolicy {
   mode: "normal" | "auto";
-  commentRequired: boolean;       // always true, enforced by runtime
-  stages: IssueExecutionStage[];  // ordered list of review/approval stages
+  commentRequired: boolean;
+  stages: IssueExecutionStage[];
 }
 
 interface IssueExecutionStage {
-  id: string;                                 // auto-generated UUID
-  type: "review" | "approval";                // stage kind
-  approvalsNeeded: 1;                         // multi-approval is not supported yet
+  id: string;
+  type: "review" | "approval";
+  approvalsNeeded: 1;
   participants: IssueExecutionStageParticipant[];
 }
 
 interface IssueExecutionStageParticipant {
   id: string;
   type: "agent" | "user";
-  agentId?: string | null;    // set when type is "agent"
-  userId?: string | null;     // set when type is "user"
+  agentId?: string | null;
+  userId?: string | null;
 }
 ```
 
-Participants can be either agents or board users. Each stage can have multiple participants; the runtime selects the first eligible participant, preferring any explicitly requested assignee while excluding the original executor.
+Participants are explicitly selected agents or board users. Agent titles, reporting position, and creation order confer no review or approval authority.
 
-### Execution State (issue field: `executionState`)
+The board may keep richer presentation stages while an agent sees only the canonical issue lifecycle: `open`, `blocked`, `done`, or `cancelled`. Review routing never expands an agent's action grants, context dial, mention reach, or company-tool selection.
 
-Tracks where the issue currently sits in its policy workflow:
+## Decisions and state
 
-```ts
-interface IssueExecutionState {
-  status: "idle" | "pending" | "changes_requested" | "completed";
-  currentStageId: string | null;
-  currentStageIndex: number | null;
-  currentStageType: "review" | "approval" | null;
-  currentParticipant: IssueExecutionStagePrincipal | null;
-  returnAssignee: IssueExecutionStagePrincipal | null;
-  completedStageIds: string[];
-  lastDecisionId: string | null;
-  lastDecisionOutcome: "approved" | "changes_requested" | null;
-}
-```
+The server keeps the current stage, selected participant, completed stages, return owner, and most recent outcome as issue execution state. Every accepted decision is also appended to `issue_execution_decisions` with:
 
-### Execution Decisions (table: `issue_execution_decisions`)
+- the company, issue, stage, and stage type;
+- the deciding agent or user;
+- `approved` or `changes_requested`;
+- the required explanatory message;
+- the originating run, when applicable; and
+- its creation timestamp.
 
-An audit trail of every review/approval action:
-
-```ts
-interface IssueExecutionDecision {
-  id: string;
-  companyId: string;
-  issueId: string;
-  stageId: string;
-  stageType: "review" | "approval";
-  actorAgentId: string | null;
-  actorUserId: string | null;
-  outcome: "approved" | "changes_requested";
-  body: string;              // required comment explaining the decision
-  createdByRunId: string | null;
-  createdAt: Date;
-}
-```
+The decision log is the audit source. Historical thread-interaction records are read-only archives and do not participate in execution-policy behavior.
 
 ## Workflow
 
-### Happy Path: Review + Approval
+When the current owner submits a terminal completion and stages remain, the server applies the existing execution-policy transition instead of treating the issue as finally complete. It selects an eligible participant for the next stage and records the pending state.
 
-```
-┌──────────┐    executor     ┌───────────┐   reviewer    ┌───────────┐   approver    ┌──────┐
-│  todo     │───completes───▶│ in_review  │───approves───▶│ in_review │───approves───▶│ done │
-│ (Coder)  │    work         │ (QA)      │               │ (CTO)     │               │      │
-└──────────┘                 └───────────┘               └───────────┘               └──────┘
-```
+An approval advances to the next stage. Approval of the final stage completes the policy and permits the issue's terminal completion.
 
-1. **Issue created** with `executionPolicy` specifying a review stage (e.g., QA) and an approval stage (e.g., CTO).
-2. **Executor works** on the issue in `in_progress` status.
-3. **Executor transitions to `done`** — the runtime intercepts this:
-   - Status changes to `in_review` (not `done`)
-   - Issue is reassigned to the first reviewer
-   - `executionState` enters `pending` on the review stage
-4. **Reviewer reviews** and transitions to `done` with a comment:
-   - A decision record is created: `{ outcome: "approved" }`
-   - Issue stays `in_review`, reassigned to the approver
-   - `executionState` advances to the approval stage
-5. **Approver approves** and transitions to `done` with a comment:
-   - A decision record is created: `{ outcome: "approved" }`
-   - `executionState.status` becomes `completed`
-   - Issue reaches actual `done` status
+A change request records the decision and returns the issue to its recorded work owner. Resubmission returns to the same pending stage rather than restarting the whole policy. All owner changes use the canonical owner transition and ownership-epoch rules; no assignee compatibility field is written.
 
-### Changes Requested Flow
+Stages with several participants still represent one required decision. The server chooses an eligible participant using the policy's existing deterministic selection rules and prevents self-review where that rule applies.
 
-```
-┌───────────┐   reviewer requests   ┌─────────────┐   executor    ┌───────────┐
-│ in_review  │───changes────────────▶│ in_progress  │───resubmits──▶│ in_review │
-│ (QA)      │                       │ (Coder)      │               │ (QA)      │
-└───────────┘                       └──────────────┘               └───────────┘
-```
+## Control-plane boundary
 
-1. **Reviewer requests changes** by transitioning to any status other than `done` (typically `in_progress`), with a comment explaining what needs to change.
-2. Runtime automatically:
-   - Sets status to `in_progress`
-   - Reassigns to the original executor (stored in `returnAssignee`)
-   - Sets `executionState.status` to `changes_requested`
-3. **Executor makes changes** and transitions to `done` again.
-4. Runtime routes back to the **same review stage** (not the beginning), with the same reviewer.
-5. This loop continues until the reviewer approves.
+Execution policy is separate from the other retained board gates:
 
-### Policy Variants
+- change consent remains target-bound consent with its displayed diff and one-use checks;
+- tool OAuth and connection authorization remain in tool connection state;
+- company-tool execution approval remains in formal approvals, action requests, and signed reviewed arguments; and
+- execution-policy review and approval remain in issue execution state and append-only decisions.
 
-**Review only** (no approval stage):
-```json
-{
-  "stages": [
-    { "type": "review", "participants": [{ "type": "agent", "agentId": "qa-agent-id" }] }
-  ]
-}
-```
-Executor finishes → reviewer approves → done.
+Resolving any of these gates permits only the recorded control-plane effect. Resolution does not create a provider card, append provider-directed prose, fabricate a comment, resume a native session, or queue an arbitrary wake.
 
-**Approval only** (no review stage):
-```json
-{
-  "stages": [
-    { "type": "approval", "participants": [{ "type": "user", "userId": "manager-user-id" }] }
-  ]
-}
-```
-Executor finishes → approver signs off → done.
+If a later transition requires provider work, it must enter through an ordinary, valid issue source and persisted `IssueExecutionRef`. It is subject to current ownership, lifecycle, adapter revision, context dial, grants, and compiled run-interface checks.
 
-**Multiple reviewers/approvers:**
-Each stage supports multiple participants. The runtime selects one to act, excluding the original executor to prevent self-review.
+## Comments and successful runs
 
-## Comment Required Backstop
+The chronological issue thread is the durable human-facing output. A successful owner `issue_update` writes its own exact message as a comment of record. When a run commits no update, its trailing final response can become the single comment of record; the two paths never duplicate one run's output.
 
-Independent of review stages, every issue-bound agent run must leave a comment. This is enforced at the runtime level:
+There is no missing-comment retry wake. Transactional run finalization and the issue-session projector guarantee the comment-of-record invariant or record the run failure explicitly.
 
-1. **Run completes** — runtime checks if the agent posted a comment for this run.
-2. **If no comment**: `issueCommentStatus` is set to `retry_queued`, and the agent is woken once more with reason `missing_issue_comment`.
-3. **If still no comment after retry**: `issueCommentStatus` is set to `retry_exhausted`. No further retries. The failure is recorded.
-4. **If comment posted**: `issueCommentStatus` is set to `satisfied` and linked to the comment ID.
+## Board usage
 
-This prevents silent completions where an agent finishes work but leaves no trace of what happened.
+Board issue creation and editing may configure review and approval stages by selecting named agents or users. Issue creation must still provide:
 
-### Run-level tracking fields
+- immutable `request`;
+- required current agent owner;
+- immutable creator attribution; and
+- any optional execution policy.
 
-| Field | Description |
-|---|---|
-| `issueCommentStatus` | `satisfied`, `retry_queued`, or `retry_exhausted` |
-| `issueCommentSatisfiedByCommentId` | Links to the comment that fulfilled the requirement |
-| `issueCommentRetryQueuedAt` | Timestamp when the retry wake was scheduled |
+Agent providers do not use generic issue REST mutation routes. An authorized current owner reports lifecycle changes through the compiled `issue_update` action. Board mutations use the board control plane and the same canonical owner and policy invariants.
 
-## Access Control
+Removing a policy clears only its policy-owned pending state according to the existing one-shot transition rules. It does not rewrite the immutable request, restore a retired owner epoch, revive a cancelled run, or schedule a replacement invocation.
 
-- Only the **active reviewer/approver** (the `currentParticipant` in execution state) can advance or reject the current stage.
-- Non-participants who attempt to transition the issue receive a `422 Unprocessable Entity` error.
-- Both approvals and change requests **require a comment** — empty or whitespace-only comments are rejected.
+## Invariants
 
-## API Usage
-
-### Setting an execution policy on issue creation
-
-```bash
-POST /api/companies/{companyId}/issues
-{
-  "title": "Implement feature X",
-  "assigneeAgentId": "coder-agent-id",
-  "executionPolicy": {
-    "mode": "normal",
-    "commentRequired": true,
-    "stages": [
-      {
-        "type": "review",
-        "participants": [
-          { "type": "agent", "agentId": "qa-agent-id" }
-        ]
-      },
-      {
-        "type": "approval",
-        "participants": [
-          { "type": "user", "userId": "cto-user-id" }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Stage IDs and participant IDs are auto-generated if omitted. Duplicate participants within a stage are automatically deduplicated. Stages with no valid participants are removed. If no valid stages remain, the policy is set to `null`.
-
-### Updating execution policy on an existing issue
-
-```bash
-PATCH /api/issues/{issueId}
-{
-  "executionPolicy": { ... }
-}
-```
-
-If the policy is removed (`null`) while a review is in progress, the execution state is cleared and the issue is returned to the original executor.
-
-### Advancing a stage (reviewer/approver approves)
-
-The active reviewer or approver transitions the issue to `done` with a comment:
-
-```bash
-PATCH /api/issues/{issueId}
-{
-  "status": "done",
-  "comment": "Reviewed — implementation looks correct, tests pass."
-}
-```
-
-The runtime determines whether this completes the workflow or advances to the next stage.
-
-### Requesting changes
-
-The active reviewer transitions to any non-`done` status with a comment:
-
-```bash
-PATCH /api/issues/{issueId}
-{
-  "status": "in_progress",
-  "comment": "Button alignment is off on mobile. Please fix the flex container."
-}
-```
-
-The runtime reassigns to the original executor automatically.
-
-## UI
-
-### New Issue Dialog
-
-When creating a new issue, **Reviewer** and **Approver** buttons appear alongside the assignee selector. Clicking either opens a participant picker with:
-- "No reviewer" / "No approver" (to clear)
-- "Me" (current user)
-- Full list of agents and board users
-
-Selections build the `executionPolicy.stages` array automatically.
-
-### Issue Properties Pane
-
-For existing issues, the properties panel shows editable **Reviewer** and **Approver** fields. Multiple participants can be added per stage. Changes persist to the issue's `executionPolicy` via the API.
-
-## Design Principles
-
-1. **Runtime-enforced, not prompt-dependent.** Agents don't need to remember to hand off work. The runtime intercepts status transitions and routes accordingly.
-2. **Iterative, not terminal.** Review is a loop (request changes → revise → re-review), not a one-shot gate. The system returns to the same stage on re-submission.
-3. **Flexible roles.** Participants can be agents or users. Not every organization has "QA" — the reviewer/approver pattern is generic enough for peer review, manager sign-off, compliance checks, or any multi-party workflow.
-4. **Auditable.** Every decision is recorded with actor, outcome, comment, and run ID. The full review history is queryable per issue.
-5. **Single execution invariant preserved.** Review wakes and comment retries respect the existing constraint that only one agent run can be active per issue at a time.
+- Policy is enforced by server state, never prompt text.
+- Every stage decision is authorized, one-shot, and append-only audited.
+- A policy decision cannot grant context, tools, ownership, or generic API access.
+- Provider interaction cards and continuation policies are absent.
+- Gate resolution alone causes no provider message or wake.
+- Current owner terminology is canonical; no assignee aliases survive.
+- The issue Session remains per issue, and policy transitions never create cross-issue memory.

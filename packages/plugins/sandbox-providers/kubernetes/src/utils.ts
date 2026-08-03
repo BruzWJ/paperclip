@@ -36,7 +36,7 @@ export function newRunUlidDns(now: () => number = Date.now): string {
     t = Math.floor(t / 32);
   }
   for (let i = 0; i < 16; i++) {
-    // crypto-strength randomness: these become Job/Sandbox CR names and the
+    // crypto-strength randomness: these become Sandbox CR names and the
     // providerLeaseId, so they must not be enumerable.
     out += ULID_ALPHABET[randomInt(32)];
   }

@@ -43,17 +43,7 @@ export function agentJoinGrantsFromDefaults(
   permissionKey: (typeof PERMISSION_KEYS)[number];
   scope: Record<string, unknown> | null;
 }> {
-  const grants = grantsFromDefaults(defaultsPayload, "agent");
-  if (grants.some((grant) => grant.permissionKey === "tasks:assign")) {
-    return grants;
-  }
-  return [
-    ...grants,
-    {
-      permissionKey: "tasks:assign",
-      scope: null,
-    },
-  ];
+  return grantsFromDefaults(defaultsPayload, "agent");
 }
 
 export function humanJoinGrantsFromDefaults(

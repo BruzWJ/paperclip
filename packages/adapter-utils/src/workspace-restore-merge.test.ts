@@ -31,13 +31,13 @@ describe("workspace restore merge", () => {
     const baseline = await captureDirectorySnapshot(targetDir, { exclude: [] });
 
     await writeFile(
-      path.join(sourceADir, "manual-qa", "environment-matrix", "ssh", "claude_local.md"),
-      "ssh claude\n",
+      path.join(sourceADir, "manual-qa", "environment-matrix", "ssh", "worker-a.md"),
+      "ssh worker-a\n",
       "utf8",
     );
     await writeFile(
-      path.join(sourceBDir, "manual-qa", "environment-matrix", "ssh", "codex_local.md"),
-      "ssh codex\n",
+      path.join(sourceBDir, "manual-qa", "environment-matrix", "ssh", "worker-b.md"),
+      "ssh worker-b\n",
       "utf8",
     );
 
@@ -53,11 +53,11 @@ describe("workspace restore merge", () => {
     });
 
     await expect(
-      readFile(path.join(targetDir, "manual-qa", "environment-matrix", "ssh", "claude_local.md"), "utf8"),
-    ).resolves.toBe("ssh claude\n");
+      readFile(path.join(targetDir, "manual-qa", "environment-matrix", "ssh", "worker-a.md"), "utf8"),
+    ).resolves.toBe("ssh worker-a\n");
     await expect(
-      readFile(path.join(targetDir, "manual-qa", "environment-matrix", "ssh", "codex_local.md"), "utf8"),
-    ).resolves.toBe("ssh codex\n");
+      readFile(path.join(targetDir, "manual-qa", "environment-matrix", "ssh", "worker-b.md"), "utf8"),
+    ).resolves.toBe("ssh worker-b\n");
   });
 
   it("ignores non-file entries when capturing snapshots", async () => {

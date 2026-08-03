@@ -1,6 +1,6 @@
-# Plugin Orchestration Smoke Example
+# Plugin Issue Runtime Smoke Example
 
-This first-party example validates the orchestration-grade plugin host surface.
+This first-party example validates the canonical plugin issue control plane.
 It is intentionally small and exists as an acceptance fixture rather than a
 product plugin.
 
@@ -9,9 +9,9 @@ product plugin.
 - `apiRoutes` under `/api/plugins/:pluginId/api/*`
 - restricted database migrations and runtime `ctx.db`
 - plugin-owned rows joined to `public.issues`
-- plugin-created child issues with namespaced origin metadata
-- billing codes, workspace inheritance, blocker relations, documents, wakeups,
-  and orchestration summaries
+- plugin-created ordinary child issues with a required invokable owner and
+  durable callback identity
+- canonical issue reads, creator messages, reassignment, and withdrawal
 - issue detail and settings UI slots that surface route, capability, namespace,
   and smoke status
 
@@ -41,8 +41,8 @@ After the plugin is ready, run the scoped route against an existing issue:
 ```bash
 curl -X POST http://127.0.0.1:3100/api/plugins/paperclipai.plugin-orchestration-smoke-example/api/issues/<issue-id>/smoke \
   -H "Content-Type: application/json" \
-  -d '{"assigneeAgentId":"<agent-id>"}'
+  -d '{"ownerAgentId":"<agent-id>"}'
 ```
 
-The route returns the generated child issue, resolved blocker, billing code,
-subtree ids, and wakeup result.
+The route returns the generated ordinary child issue, its owner, current
+status, and creator request.

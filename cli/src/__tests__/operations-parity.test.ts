@@ -32,8 +32,8 @@ async function run(args: string[]): Promise<void> {
 describe("operations parity commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
@@ -50,29 +50,76 @@ describe("operations parity commands", () => {
     await run(["cost", "by-agent", "--company-id", COMPANY_ID]);
     await run(["cost", "by-project", "--company-id", COMPANY_ID]);
     await run(["cost", "issue", ISSUE_ID]);
-    await run(["cost", "event:create", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
-    await run(["finance", "event:create", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
+    await run(["cost", "events", "--company-id", COMPANY_ID]);
+    await run([
+      "finance",
+      "event:create",
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      JSON.stringify({
+        eventKind: "manual_adjustment",
+        biller: "paperclip",
+        amount: "5",
+        currency: "USD",
+        occurredAt: "2026-07-31T00:00:00.000Z",
+      }),
+    ]);
     await run(["finance", "summary", "--company-id", COMPANY_ID]);
     await run(["budget", "overview", "--company-id", COMPANY_ID]);
-    await run(["budget", "policy:upsert", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
-    await run(["budget", "company:update", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
-    await run(["budget", "agent:update", AGENT_ID, "--payload-json", "{}"]);
-    await run(["budget", "incident:resolve", INCIDENT_ID, "--company-id", COMPANY_ID]);
+    await run([
+      "budget",
+      "policy:upsert",
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      JSON.stringify({ scopeType: "company", scopeId: COMPANY_ID, limitAmount: "250" }),
+    ]);
+    await run([
+      "budget",
+      "company:update",
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      JSON.stringify({ budgetMonthlyAmount: "250" }),
+    ]);
+    await run([
+      "budget",
+      "agent:update",
+      AGENT_ID,
+      "--payload-json",
+      JSON.stringify({ budgetMonthlyAmount: "250" }),
+    ]);
+    await run([
+      "budget",
+      "incident:resolve",
+      INCIDENT_ID,
+      "--company-id",
+      COMPANY_ID,
+      "--payload-json",
+      JSON.stringify({ action: "keep_paused" }),
+    ]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/summary`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/by-agent`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/by-project`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/cost-summary`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/cost-events`],
+      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/cost-events`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/finance-events`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/costs/finance-summary`],
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/budgets/overview`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/budgets/policies`],
       ["PATCH", `http://localhost:3100/api/companies/${COMPANY_ID}/budgets`],
-      ["PATCH", `http://localhost:3100/api/agents/${AGENT_ID}/budgets`],
+      [
+        "PATCH",
+        `http://localhost:3100/api/agents/${AGENT_ID}/operational-configuration`,
+      ],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/budget-incidents/${INCIDENT_ID}/resolve`],
     ]);
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[10]?.[1]?.body)),
+    ).toEqual({ budgetMonthlyAmount: "250" });
   });
 
   it("wraps org, execution workspace, environment, and project workspace endpoints", async () => {

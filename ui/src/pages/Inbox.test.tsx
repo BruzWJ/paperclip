@@ -4,13 +4,14 @@ import type { ComponentProps } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Issue } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyJoinRequest } from "../api/access";
 import {
   clearLocalInboxArchive,
   getLocalInboxArchiveIssueIds,
 } from "../lib/inboxArchiveCache";
+import { createTestIssue } from "../test-utils/issue";
 
 const routerMock = vi.hoisted(() => ({
   location: { pathname: "/", search: "", hash: "" },
@@ -30,8 +31,8 @@ const apiMocks = vi.hoisted(() => ({
   archiveFromInbox: vi.fn(),
   unarchiveFromInbox: vi.fn(),
   agentsList: vi.fn(),
-  heartbeatRunsList: vi.fn(),
-  liveRunsForCompany: vi.fn(),
+  runsList: vi.fn(),
+  activeRunsList: vi.fn(),
   experimentalSettings: vi.fn(),
   projectsList: vi.fn(),
 }));
@@ -41,7 +42,8 @@ vi.mock("../api/approvals", () => ({
 }));
 
 vi.mock("../api/access", async () => {
-  const actual = await vi.importActual<typeof import("../api/access")>("../api/access");
+  const actual =
+    await vi.importActual<typeof import("../api/access")>("../api/access");
   return {
     ...actual,
     accessApi: {
@@ -60,7 +62,9 @@ vi.mock("../api/dashboard", () => ({
 }));
 
 vi.mock("../api/execution-workspaces", () => ({
-  executionWorkspacesApi: { listSummaries: apiMocks.executionWorkspaceSummaries },
+  executionWorkspacesApi: {
+    listSummaries: apiMocks.executionWorkspaceSummaries,
+  },
 }));
 
 vi.mock("../api/issues", () => ({
@@ -80,12 +84,32 @@ vi.mock("../api/agents", () => ({
   agentsApi: { list: apiMocks.agentsList },
 }));
 
-vi.mock("../api/heartbeats", () => ({
-  heartbeatsApi: {
-    list: apiMocks.heartbeatRunsList,
-    liveRunsForCompany: apiMocks.liveRunsForCompany,
-  },
-}));
+vi.mock("../api/runs", async () => {
+  const actual = await vi.importActual<typeof import("../api/runs")>("../api/runs");
+  return {
+    ...actual,
+    runsApi: {
+      listForCompany: async (
+        companyId: string,
+        filters?: { status?: readonly string[] },
+      ) => {
+        const value = filters?.status
+          ? await apiMocks.activeRunsList(companyId, filters)
+          : await apiMocks.runsList(companyId, filters);
+        if (!Array.isArray(value)) return value;
+        return {
+          items: value.map((run) => ({
+            ...run,
+            issueId: run.issueId ?? "issue-unknown",
+            targetAgentId: run.targetAgentId ?? run.agentId ?? null,
+            terminalReasonCode: run.terminalReasonCode ?? run.errorCode ?? null,
+          })),
+          nextCursor: null,
+        };
+      },
+    },
+  };
+});
 
 vi.mock("../api/instanceSettings", () => ({
   instanceSettingsApi: { getExperimental: apiMocks.experimentalSettings },
@@ -137,7 +161,9 @@ import {
 
 vi.mock("@/lib/router", () => ({
   Link: ({ children, className, ...props }: ComponentProps<"a">) => (
-    <a className={className} {...props}>{children}</a>
+    <a className={className} {...props}>
+      {children}
+    </a>
   ),
   useLocation: () => routerMock.location,
   useNavigate: () => routerMock.navigate,
@@ -160,40 +186,10 @@ if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
 }
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
+  return createTestIssue({
     identifier: "PAP-904",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title: "Inbox item",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
     issueNumber: 904,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
-    createdAt: new Date("2026-03-11T00:00:00.000Z"),
-    updatedAt: new Date("2026-03-11T00:00:00.000Z"),
     labels: [],
     labelIds: [],
     myLastTouchAt: null,
@@ -201,8 +197,7 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     lastActivityAt: new Date("2026-03-11T00:00:00.000Z"),
     isUnreadForMe: false,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 function createDeferred<T>() {
@@ -231,9 +226,9 @@ function createJoinRequest(
     adapterType: null,
     capabilities: null,
     agentDefaultsPayload: null,
-    claimSecretExpiresAt: null,
-    claimSecretConsumedAt: null,
     createdAgentId: null,
+    approvedEnvironmentId: null,
+    createdAgentAdapterConfigRevisionId: null,
     approvedByUserId: null,
     approvedAt: null,
     rejectedByUserId: null,
@@ -263,23 +258,38 @@ function resetInboxApiMocks() {
   apiMocks.joinRequestsList.mockResolvedValue([]);
   apiMocks.userDirectoryList.mockResolvedValue({ users: [] });
   apiMocks.authSession.mockResolvedValue({
-    user: { id: "local-board" },
-    session: { userId: "local-board" },
+    user: { id: "user-1" },
+    session: { userId: "user-1" },
   });
   apiMocks.dashboardSummary.mockResolvedValue({
     agents: { error: 0 },
-    costs: { monthBudgetCents: 0, monthUtilizationPercent: 0 },
+    costs: {
+      budgetCurrency: "USD",
+      monthKnownSpendAmount: canonicalizeMoneyAmount("0"),
+      monthBudgetAmount: canonicalizeMoneyAmount("0"),
+      monthRemainingAmount: canonicalizeMoneyAmount("0"),
+      monthUtilizationPercent: 0,
+      unpricedPromptCount: 0,
+    },
   });
   apiMocks.executionWorkspaceSummaries.mockResolvedValue([]);
   apiMocks.issuesList.mockResolvedValue([]);
   apiMocks.issuesCount.mockResolvedValue({ count: 0 });
   apiMocks.issueLabels.mockResolvedValue([]);
-  apiMocks.archiveFromInbox.mockResolvedValue({ id: "issue-1", archivedAt: new Date() });
-  apiMocks.unarchiveFromInbox.mockResolvedValue({ id: "issue-1", archivedAt: new Date() });
+  apiMocks.archiveFromInbox.mockResolvedValue({
+    id: "issue-1",
+    archivedAt: new Date(),
+  });
+  apiMocks.unarchiveFromInbox.mockResolvedValue({
+    id: "issue-1",
+    archivedAt: new Date(),
+  });
   apiMocks.agentsList.mockResolvedValue([]);
-  apiMocks.heartbeatRunsList.mockResolvedValue([]);
-  apiMocks.liveRunsForCompany.mockResolvedValue([]);
-  apiMocks.experimentalSettings.mockResolvedValue({ enableIsolatedWorkspaces: false });
+  apiMocks.runsList.mockResolvedValue([]);
+  apiMocks.activeRunsList.mockResolvedValue([]);
+  apiMocks.experimentalSettings.mockResolvedValue({
+    enableIsolatedWorkspaces: false,
+  });
   apiMocks.projectsList.mockResolvedValue([]);
 }
 
@@ -314,13 +324,19 @@ describe("Inbox toolbar", () => {
       );
     });
 
-    expect(container.querySelector('input[placeholder="Search inbox…"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="inbox-blocked-tab-badge"]')).toBeNull();
+    expect(
+      container.querySelector('input[placeholder="Search inbox…"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="inbox-blocked-tab-badge"]'),
+    ).toBeNull();
     expect(container.querySelector('button[title="Filter"]')).not.toBeNull();
     expect(container.querySelector('button[title="Group"]')).not.toBeNull();
     expect(container.querySelector('button[title="Columns"]')).not.toBeNull();
     expect(container.querySelector('button[title="Sort"]')).not.toBeNull();
-    expect(container.querySelector('button[title="Enable parent-child nesting"]')).toBeNull();
+    expect(
+      container.querySelector('button[title="Enable parent-child nesting"]'),
+    ).toBeNull();
     expect(container.textContent).not.toContain("Mark all as read");
 
     act(() => {
@@ -330,7 +346,9 @@ describe("Inbox toolbar", () => {
 
   it("hides workspace grouping when isolated workspaces are disabled", async () => {
     routerMock.location.pathname = "/inbox/mine";
-    apiMocks.experimentalSettings.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    apiMocks.experimentalSettings.mockResolvedValue({
+      enableIsolatedWorkspaces: false,
+    });
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
@@ -345,14 +363,18 @@ describe("Inbox toolbar", () => {
       );
     });
 
-    const groupButton = container.querySelector<HTMLButtonElement>('button[title="Group"]');
+    const groupButton = container.querySelector<HTMLButtonElement>(
+      'button[title="Group"]',
+    );
     expect(groupButton).not.toBeNull();
 
     await act(async () => {
       groupButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const groupOptions = Array.from(document.body.querySelectorAll("button")).map((button) => button.textContent);
+    const groupOptions = Array.from(
+      document.body.querySelectorAll("button"),
+    ).map((button) => button.textContent);
     expect(groupOptions).not.toContain("Workspace");
 
     act(() => {
@@ -380,16 +402,14 @@ describe("Inbox toolbar", () => {
       expect(apiMocks.issuesList).toHaveBeenCalledTimes(3);
     });
 
-    expect(apiMocks.issuesList.mock.calls.map((call) => call[1]?.includeLiveDescendantSummary)).toEqual([
-      true,
-      true,
-      true,
-    ]);
-    expect(apiMocks.issuesList.mock.calls.map((call) => call[1]?.limit)).toEqual([
-      500,
-      500,
-      500,
-    ]);
+    expect(
+      apiMocks.issuesList.mock.calls.map(
+        (call) => call[1]?.includeLiveDescendantSummary,
+      ),
+    ).toEqual([true, true, true]);
+    expect(
+      apiMocks.issuesList.mock.calls.map((call) => call[1]?.limit),
+    ).toEqual([500, 500, 500]);
 
     act(() => {
       root.unmount();
@@ -398,8 +418,16 @@ describe("Inbox toolbar", () => {
 
   it("paints row hover via CSS only, without moving React selection state", async () => {
     routerMock.location.pathname = "/inbox/mine";
-    const issueA = createIssue({ id: "issue-a", identifier: "PAP-1001", title: "First inbox row" });
-    const issueB = createIssue({ id: "issue-b", identifier: "PAP-1002", title: "Second inbox row" });
+    const issueA = createIssue({
+      id: "issue-a",
+      identifier: "PAP-1001",
+      title: "First inbox row",
+    });
+    const issueB = createIssue({
+      id: "issue-b",
+      identifier: "PAP-1002",
+      title: "Second inbox row",
+    });
     apiMocks.issuesList.mockResolvedValue([issueA, issueB]);
 
     const queryClient = new QueryClient({
@@ -415,7 +443,9 @@ describe("Inbox toolbar", () => {
       );
     });
     await vi.waitFor(() => {
-      expect(container.querySelectorAll("[data-inbox-item]").length).toBeGreaterThanOrEqual(2);
+      expect(
+        container.querySelectorAll("[data-inbox-item]").length,
+      ).toBeGreaterThanOrEqual(2);
     });
 
     const rows = container.querySelectorAll("[data-inbox-item]");
@@ -482,17 +512,23 @@ describe("Inbox toolbar", () => {
     });
 
     const rows = Array.from(container.querySelectorAll("[data-inbox-item]"));
-    const rowFor = (text: string) => rows.find((row) => row.textContent?.includes(text));
-    const linkOf = (row: Element) => row.querySelector<HTMLAnchorElement>("a[data-inbox-issue-link]");
-    const markReadButton = (row: Element) => row.querySelector('button[aria-label="Mark as read"]');
+    const rowFor = (text: string) =>
+      rows.find((row) => row.textContent?.includes(text));
+    const linkOf = (row: Element) =>
+      row.querySelector<HTMLAnchorElement>("a[data-inbox-issue-link]");
+    const markReadButton = (row: Element) =>
+      row.querySelector('button[aria-label="Mark as read"]');
     // The empty spacer that reserves the chevron column on every leaf row.
     // Excludes the tree-guide span (`.self-stretch`), which only renders on
     // nested rows.
     const hasLeadingSpacer = (row: Element) =>
-      !!linkOf(row)?.querySelector("span.hidden.w-4.shrink-0.sm\\:block:not(.self-stretch)");
+      !!linkOf(row)?.querySelector(
+        "span.hidden.w-4.shrink-0.sm\\:block:not(.self-stretch)",
+      );
     // The reserved leading dot slot, present on read AND unread rows.
     const dotSlot = (row: Element) =>
-      linkOf(row)?.querySelector('[data-testid="issue-row-unread-slot"]') ?? null;
+      linkOf(row)?.querySelector('[data-testid="issue-row-unread-slot"]') ??
+      null;
 
     const unreadRow = rowFor("Unread inbox row")!;
     const readRow = rowFor("Read inbox row")!;
@@ -510,7 +546,9 @@ describe("Inbox toolbar", () => {
     expect(unreadSlot?.className).not.toContain("absolute");
     // Only the unread row carries the dot button; the read slot is empty.
     expect(markReadButton(unreadSlot!)).not.toBeNull();
-    expect(readSlot?.querySelector('button[aria-label="Mark as read"]')).toBeNull();
+    expect(
+      readSlot?.querySelector('button[aria-label="Mark as read"]'),
+    ).toBeNull();
     expect(hasLeadingSpacer(unreadRow)).toBe(true);
 
     // Read rows keep the same spacer, so both rows line up.
@@ -524,9 +562,21 @@ describe("Inbox toolbar", () => {
   it("keeps hover→j/k selection in sync after the list reshapes (PAP-9679)", async () => {
     routerMock.location.pathname = "/inbox/mine";
     generalSettingsMock.keyboardShortcutsEnabled = true;
-    const issueA = createIssue({ id: "issue-a", identifier: "PAP-2001", title: "Sync row A" });
-    const issueB = createIssue({ id: "issue-b", identifier: "PAP-2002", title: "Sync row B" });
-    const issueC = createIssue({ id: "issue-c", identifier: "PAP-2003", title: "Sync row C" });
+    const issueA = createIssue({
+      id: "issue-a",
+      identifier: "PAP-2001",
+      title: "Sync row A",
+    });
+    const issueB = createIssue({
+      id: "issue-b",
+      identifier: "PAP-2002",
+      title: "Sync row B",
+    });
+    const issueC = createIssue({
+      id: "issue-c",
+      identifier: "PAP-2003",
+      title: "Sync row C",
+    });
     apiMocks.issuesList.mockResolvedValue([issueA, issueB, issueC]);
 
     const queryClient = new QueryClient({
@@ -551,7 +601,9 @@ describe("Inbox toolbar", () => {
         );
       });
       await vi.waitFor(() => {
-        expect(container.querySelectorAll("[data-inbox-item]").length).toBeGreaterThanOrEqual(3);
+        expect(
+          container.querySelectorAll("[data-inbox-item]").length,
+        ).toBeGreaterThanOrEqual(3);
       });
 
       // Pointer physically moves, then hovers the middle row (index 1).
@@ -559,13 +611,19 @@ describe("Inbox toolbar", () => {
         window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
         const rows = container.querySelectorAll("[data-inbox-item]");
         rows[1]!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-        rows[1]!.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
+        rows[1]!.dispatchEvent(
+          new MouseEvent("mouseenter", { bubbles: false }),
+        );
       });
 
       // A poll reshapes the list (row B's title changes → new nav array) before
       // the keypress. This is what used to null the hovered index and strand
       // j/k back at the top.
-      apiMocks.issuesList.mockResolvedValue([issueA, { ...issueB, title: "Sync row B (updated)" }, issueC]);
+      apiMocks.issuesList.mockResolvedValue([
+        issueA,
+        { ...issueB, title: "Sync row B (updated)" },
+        issueC,
+      ]);
       await act(async () => {
         await queryClient.invalidateQueries();
       });
@@ -576,7 +634,9 @@ describe("Inbox toolbar", () => {
       // j must continue from the hovered row (index 1) → index 2, not jump to
       // the top of the list.
       await act(async () => {
-        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true }));
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "j", bubbles: true }),
+        );
       });
       expect(selectedRowIndex()).toBe(2);
     } finally {
@@ -589,12 +649,22 @@ describe("Inbox toolbar", () => {
 
   it("keeps other issue archive controls enabled while one archive is pending", async () => {
     routerMock.location.pathname = "/inbox/mine";
-    const issueA = createIssue({ id: "issue-a", identifier: "PAP-1001", title: "First inbox row" });
-    const issueB = createIssue({ id: "issue-b", identifier: "PAP-1002", title: "Second inbox row" });
+    const issueA = createIssue({
+      id: "issue-a",
+      identifier: "PAP-1001",
+      title: "First inbox row",
+    });
+    const issueB = createIssue({
+      id: "issue-b",
+      identifier: "PAP-1002",
+      title: "Second inbox row",
+    });
     apiMocks.issuesList.mockResolvedValue([issueA, issueB]);
     const archiveA = createDeferred<{ id: string; archivedAt: Date }>();
     apiMocks.archiveFromInbox.mockImplementation((id: string) =>
-      id === "issue-a" ? archiveA.promise : Promise.resolve({ id, archivedAt: new Date() }),
+      id === "issue-a"
+        ? archiveA.promise
+        : Promise.resolve({ id, archivedAt: new Date() }),
     );
 
     const queryClient = new QueryClient({
@@ -615,12 +685,16 @@ describe("Inbox toolbar", () => {
     });
 
     const initialArchiveButtons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button[aria-label="Archive"]'),
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label="Archive"]',
+      ),
     );
     expect(initialArchiveButtons.length).toBeGreaterThanOrEqual(2);
 
     await act(async () => {
-      initialArchiveButtons[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      initialArchiveButtons[0]!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     });
 
     await vi.waitFor(() => {
@@ -636,7 +710,9 @@ describe("Inbox toolbar", () => {
     expect(remainingArchiveButton?.disabled).toBe(false);
 
     await act(async () => {
-      remainingArchiveButton!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      remainingArchiveButton!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     });
 
     await vi.waitFor(() => {
@@ -677,11 +753,15 @@ describe("Inbox toolbar", () => {
       expect(container.textContent).toContain("Archived inbox row");
     });
 
-    const archiveButton = container.querySelector<HTMLButtonElement>('button[aria-label="Archive"]');
+    const archiveButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Archive"]',
+    );
     expect(archiveButton).not.toBeNull();
 
     await act(async () => {
-      archiveButton!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      archiveButton!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     });
     await vi.waitFor(() => {
       expect(apiMocks.archiveFromInbox).toHaveBeenCalledWith("issue-a");
@@ -729,10 +809,14 @@ describe("Inbox toolbar", () => {
         expect(container.textContent).toContain("Undoable inbox row");
       });
 
-      const archiveButton = container.querySelector<HTMLButtonElement>('button[aria-label="Archive"]');
+      const archiveButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Archive"]',
+      );
       expect(archiveButton).not.toBeNull();
       await act(async () => {
-        archiveButton!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        archiveButton!.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
       });
       await vi.waitFor(() => {
         expect(container.textContent).not.toContain("Undoable inbox row");
@@ -740,7 +824,9 @@ describe("Inbox toolbar", () => {
       });
 
       await act(async () => {
-        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "u", bubbles: true }));
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "u", bubbles: true }),
+        );
       });
       await vi.waitFor(() => {
         expect(apiMocks.unarchiveFromInbox).toHaveBeenCalledWith("issue-a");
@@ -770,47 +856,34 @@ describe("FailedRunInboxRow", () => {
     const run = {
       id: "run-1",
       companyId: "company-1",
-      agentId: "agent-1",
-      responsibleUserId: null,
-      invocationSource: "assignment",
-      triggerDetail: null,
+      issueId: "issue-1",
+      sessionId: "session-1",
+      executionScopeId: "scope-1",
+      kind: "productive",
       status: "failed",
-      error: "boom",
-      wakeupRequestId: null,
-      exitCode: null,
-      signal: null,
-      usageJson: null,
-      resultJson: null,
-      sessionIdBefore: null,
-      sessionIdAfter: null,
-      logStore: null,
-      logRef: null,
-      logBytes: null,
-      logSha256: null,
-      logCompressed: false,
-      lastOutputAt: null,
-      lastOutputSeq: 0,
-      lastOutputStream: null,
-      lastOutputBytes: null,
-      errorCode: null,
-      externalRunId: null,
-      processPid: null,
-      processGroupId: null,
-      processStartedAt: null,
+      ownershipEpoch: 1,
+      targetAgentId: "agent-1",
+      adapterConfigRevisionId: "revision-1",
+      executionWorkspaceBindingId: "binding-1",
+      executionMode: "owner",
+      issueExecutionAuthorityId: null,
+      consultExecutionId: null,
+      compactionScopeKind: null,
+      parentRunId: null,
       retryOfRunId: null,
-      processLossRetryCount: 0,
-      livenessState: null,
-      livenessReason: null,
-      continuationAttempt: 0,
-      lastUsefulActionAt: null,
-      nextAction: null,
-      stdoutExcerpt: null,
-      stderrExcerpt: null,
-      contextSnapshot: null,
-      startedAt: new Date("2026-03-11T00:00:00.000Z"),
+      triggeredByRunId: null,
+      currentAttemptId: null,
+      currentLeaseId: null,
+      cancellationIntentId: null,
+      terminalFinalizationId: "finalization-1",
+      startedAt: "2026-03-11T00:00:00.000Z",
       finishedAt: null,
-      createdAt: new Date("2026-03-11T00:00:00.000Z"),
-      updatedAt: new Date("2026-03-11T00:00:00.000Z"),
+      terminalClassification: "failed",
+      terminalReasonCode: "adapter_failed",
+      processExitCode: null,
+      processSignal: null,
+      createdAt: "2026-03-11T00:00:00.000Z",
+      updatedAt: "2026-03-11T00:00:00.000Z",
     } as const;
 
     act(() => {
@@ -821,8 +894,6 @@ describe("FailedRunInboxRow", () => {
           agentName="Agent"
           issueLinkState={null}
           onDismiss={() => {}}
-          onRetry={() => {}}
-          isRetrying={false}
           selected
         />,
       );
@@ -859,21 +930,28 @@ describe("InboxIssueMetaLeading", () => {
     });
 
     // The status glyph is an <svg> coloured from its --status-task-icon-* var.
-    const statusIcon = Array.from(container.querySelectorAll("svg")).find((svg) =>
-      (svg.getAttribute("style") ?? "").includes("--status-task-icon"),
+    const statusIcon = Array.from(container.querySelectorAll("svg")).find(
+      (svg) => (svg.getAttribute("style") ?? "").includes("--status-task-icon"),
     );
-    const liveBadge = container.querySelector('span[class*="px-1.5"][class*="bg-blue-500/10"]');
+    const liveBadge = container.querySelector(
+      'span[class*="px-1.5"][class*="bg-blue-500/10"]',
+    );
     const liveBadgeLabel = Array.from(container.querySelectorAll("span")).find(
       // The pill chassis is a Badge (itself a span with textContent "Live");
       // the label is the inner span without the rounded-full chassis class.
-      (node) => node.textContent === "Live" && node.className.includes("text-") && !node.className.includes("rounded-full"),
+      (node) =>
+        node.textContent === "Live" &&
+        node.className.includes("text-") &&
+        !node.className.includes("rounded-full"),
     );
     const liveDot = container.querySelector('span[class*="bg-blue-500"]');
     const pulseRing = container.querySelector('span[class*="animate-pulse"]');
 
     expect(statusIcon).not.toBeUndefined();
     // Status accent stays visible — not neutralized to muted.
-    expect(statusIcon?.getAttribute("class") ?? "").not.toContain("!text-muted-foreground");
+    expect(statusIcon?.getAttribute("class") ?? "").not.toContain(
+      "!text-muted-foreground",
+    );
     expect(liveBadge).not.toBeNull();
     expect(liveBadge?.className).toContain("bg-blue-500/10");
     expect(liveBadgeLabel).not.toBeNull();
@@ -910,7 +988,7 @@ describe("InboxIssueTrailingColumns", () => {
           projectName={null}
           projectColor={null}
           workspaceName={null}
-          assigneeName={null}
+          ownerName={null}
           currentUserId={null}
           parentIdentifier={null}
           parentTitle={null}
@@ -936,7 +1014,7 @@ describe("InboxIssueTrailingColumns", () => {
           projectName={null}
           projectColor={null}
           workspaceName={null}
-          assigneeName={null}
+          ownerName={null}
           currentUserId={null}
           parentIdentifier={null}
           parentTitle={null}
@@ -988,7 +1066,13 @@ describe("InboxGroupHeader", () => {
     const root = createRoot(container);
 
     act(() => {
-      root.render(<InboxGroupHeader label="Primary workspace (default)" collapsible collapsed={false} />);
+      root.render(
+        <InboxGroupHeader
+          label="Primary workspace (default)"
+          collapsible
+          collapsed={false}
+        />,
+      );
     });
 
     const button = container.querySelector("button");
@@ -1007,7 +1091,9 @@ describe("InboxGroupHeader", () => {
     const root = createRoot(container);
 
     act(() => {
-      root.render(<InboxGroupHeader label="Feature Branch" collapsible collapsed />);
+      root.render(
+        <InboxGroupHeader label="Feature Branch" collapsible collapsed />,
+      );
     });
 
     const button = container.querySelector("button");

@@ -3,9 +3,16 @@ import { randomUUID } from "node:crypto";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import {
+  buildCancelEnvironmentShellCommand,
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+  wrapCancellableEnvironmentShellCommand,
+} from "@paperclipai/plugin-sdk";
 import type {
   PluginEnvironmentAcquireLeaseParams,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
@@ -19,6 +26,8 @@ import type {
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
 } from "@paperclipai/plugin-sdk";
+
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
 interface ExeDevDriverConfig {
   apiKey: string | null;
@@ -73,12 +82,12 @@ const UUID_SECRET_REF_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 
 // exe.dev's `--setup-script` runs at VM init as the unprivileged `exedev` user, which
 // has passwordless sudo. The Paperclip sandbox callback bridge is a Node script, so
-// every Paperclip workload on this provider needs node on PATH before the bridge can
-// start. When the operator hasn't supplied their own setup script, install Node 20 via
-// nodesource so the VM comes up ready for Paperclip out of the box.
+// every Paperclip workload on this provider needs a supported node on PATH before the
+// bridge can start. When the operator hasn't supplied their own setup script, install
+// Node 22 via nodesource if the VM is below Paperclip's >=22.13.0 runtime floor.
 const DEFAULT_SETUP_SCRIPT =
-  "command -v node >/dev/null 2>&1 || " +
-  "(curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && " +
+  "node -e \"const v=process.versions.node.split('.').map(Number);const m=[22,13,0];for(let i=0;i<3;i++){if(v[i]!==m[i])process.exit(v[i]>m[i]?0:1)}\" >/dev/null 2>&1 || " +
+  "(curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && " +
   "sudo apt-get install -y nodejs)";
 
 class ExeDevApiError extends Error {
@@ -530,23 +539,35 @@ function buildLoginShellScript(input: {
       throw new Error(`Invalid exe.dev environment variable key: ${key}`);
     }
   }
-  const envArgs = Object.entries(env)
+  const configuredHome =
+    env.HOME?.trim() || env.USERPROFILE?.trim() || null;
+  const effectiveEnv = { ...env };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const envArgs = Object.entries(effectiveEnv)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
     .map(([key, value]) => `${key}=${shellQuote(value)}`);
   const commandParts = [shellQuote(input.command), ...input.args.map(shellQuote)].join(" ");
-  const finalLine = envArgs.length > 0
-    ? `exec env ${envArgs.join(" ")} ${commandParts}`
-    : `exec ${commandParts}`;
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const execPrefix = configuredHome ? "exec " : "";
+  const finalLine =
+    `${execPrefix}env -i PATH="$PATH"${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${commandParts}`;
   const lines = [
     'if [ -f /etc/profile ]; then . /etc/profile >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; elif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
   ];
   if (input.cwd) {
     lines.push(`cd ${shellQuote(input.cwd)}`);
+  }
+  if (!configuredHome) {
+    lines.push(
+      'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+      'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+    );
   }
   lines.push(finalLine);
   return lines.join(" && ");
@@ -898,65 +919,118 @@ const plugin = definePlugin({
   async onEnvironmentExecute(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
-    if (!params.lease.providerLeaseId) {
-      return {
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        stdout: "",
-        stderr: "No provider lease ID available for execution.",
-      };
-    }
-
     const config = parseDriverConfig(params.config);
     const vm = metadataVmRecord({
       providerLeaseId: params.lease.providerLeaseId,
       leaseMetadata: params.lease.metadata,
     });
-    if (!vm) {
-      return {
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        stdout: "",
-        stderr: "No exe.dev VM metadata available for execution.",
-      };
-    }
-
-    const command = buildLoginShellScript({
-      command: params.command,
-      args: params.args ?? [],
-      cwd: params.cwd ?? parseOptionalString(params.lease.metadata?.remoteCwd) ?? undefined,
-      env: params.env,
-    });
-    // `buildLoginShellScript` already explicitly sources `/etc/profile`,
-    // `~/.profile`, `~/.bash_profile`/`~/.bashrc`, and `~/.zprofile`. Wrapping
-    // the result in `sh -lc` (login shell) would source the same files a
-    // second time, which can cause `PATH` duplication or unexpected behavior
-    // on VMs whose profile init isn't idempotent. Use `sh -c` here so the
-    // explicit sourcing inside the script is the single source of truth.
-    const result = await runSshCommand(
-      config,
-      vm,
-      `sh -c ${shellQuote(command)}`,
-      { stdin: params.stdin, timeoutMs: params.timeoutMs ?? config.timeoutMs },
-    );
-
-    return {
-      exitCode: result.exitCode,
-      signal: result.signal,
-      timedOut: result.timedOut,
-      stdout: result.stdout,
-      stderr:
-        !result.timedOut && result.exitCode !== 0
-          ? formatSshFailure("execute commands on", vm.name, result)
-          : result.stderr,
-      metadata: {
-        provider: "exe-dev",
-        vmName: vm.name,
-        sshDest: vm.sshDest,
+    return await activeExecutions.execute(params, {
+      cancel: async () => {
+        if (!vm) return;
+        const result = await runSshCommand(
+          config,
+          vm,
+          `sh -c ${shellQuote(buildCancelEnvironmentShellCommand(params.executionId))}`,
+          { timeoutMs: Math.min(config.timeoutMs, 10_000) },
+        );
+        if (result.timedOut || result.exitCode !== 0) {
+          throw new Error(formatSshFailure("cancel exact command on", vm.name, result));
+        }
       },
-    };
+      execute: async () => {
+        if (!params.lease.providerLeaseId) {
+          return {
+            exitCode: 1,
+            signal: null,
+            timedOut: false,
+            stdout: "",
+            stderr: "No provider lease ID available for execution.",
+          };
+        }
+        if (!vm) {
+          return {
+            exitCode: 1,
+            signal: null,
+            timedOut: false,
+            stdout: "",
+            stderr: "No exe.dev VM metadata available for execution.",
+          };
+        }
+
+        const command = wrapCancellableEnvironmentShellCommand(
+          params.executionId,
+          buildLoginShellScript({
+            command: params.command,
+            args: params.args ?? [],
+            cwd: params.cwd ?? parseOptionalString(params.lease.metadata?.remoteCwd) ?? undefined,
+            env: params.env,
+          }),
+        );
+        const result = await runSshCommand(
+          config,
+          vm,
+          `sh -c ${shellQuote(command)}`,
+          { stdin: params.stdin, timeoutMs: params.timeoutMs ?? config.timeoutMs },
+        );
+
+        return {
+          exitCode: result.exitCode,
+          signal: result.signal,
+          timedOut: result.timedOut,
+          stdout: result.stdout,
+          stderr:
+            !result.timedOut && result.exitCode !== 0
+              ? formatSshFailure("execute commands on", vm.name, result)
+              : result.stderr,
+          metadata: {
+            provider: "exe-dev",
+            vmName: vm.name,
+            sshDest: vm.sshDest,
+          },
+        };
+      },
+    });
+  },
+
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async () => {
+        const config = parseDriverConfig(params.config);
+        const vm = metadataVmRecord({
+          providerLeaseId: params.lease.providerLeaseId,
+          leaseMetadata: params.lease.metadata,
+        });
+        if (!vm) return false;
+        const result = await runSshCommand(
+          config,
+          vm,
+          `sh -c ${shellQuote(
+            buildCancelEnvironmentShellCommand(
+              params.executionId,
+            ),
+          )}`,
+          {
+            timeoutMs: Math.min(
+              config.timeoutMs,
+              10_000,
+            ),
+          },
+        );
+        if (result.timedOut || result.exitCode !== 0) {
+          throw new Error(
+            formatSshFailure(
+              "cancel exact command on",
+              vm.name,
+              result,
+            ),
+          );
+        }
+        return true;
+      },
+    );
   },
 });
 

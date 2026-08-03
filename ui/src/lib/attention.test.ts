@@ -72,8 +72,8 @@ describe("attention group preference persistence", () => {
 });
 
 describe("isInlineResolvable", () => {
-  it("is true for approvals/interactions/join when server flags inlineResolvable", () => {
-    for (const kind of ["approval", "issue_thread_interaction", "join_request"] as AttentionSourceKind[]) {
+  it("is true for approvals and join requests when server flags inlineResolvable", () => {
+    for (const kind of ["approval", "join_request"] as AttentionSourceKind[]) {
       expect(isInlineResolvable(buildItem({ sourceKind: kind, inlineResolvable: true }))).toBe(true);
     }
   });
@@ -86,8 +86,8 @@ describe("isInlineResolvable", () => {
     expect(isInlineResolvable(buildItem({ sourceKind: "review", inlineResolvable: true }))).toBe(false);
   });
 
-  it("deep-links recovery/failure/budget rows rather than inlining", () => {
-    for (const kind of ["recovery_action", "failed_run", "budget_alert", "blocker_attention"] as AttentionSourceKind[]) {
+  it("deep-links failure/budget/blocker rows rather than inlining", () => {
+    for (const kind of ["failed_run", "budget_alert", "blocker_attention"] as AttentionSourceKind[]) {
       expect(isInlineResolvable(buildItem({ sourceKind: kind, inlineResolvable: true }))).toBe(false);
     }
   });
@@ -115,15 +115,13 @@ describe("sourceMeta + severityStyle", () => {
   it("labels every catalog source kind", () => {
     const kinds: AttentionSourceKind[] = [
       "approval",
-      "issue_thread_interaction",
       "join_request",
-      "recovery_action",
-      "productivity_review",
       "blocker_attention",
       "review",
       "failed_run",
       "budget_alert",
       "agent_error_alert",
+      "agent_liveness",
     ];
     for (const kind of kinds) {
       expect(sourceMeta(kind).label.length).toBeGreaterThan(0);
@@ -137,39 +135,16 @@ describe("sourceMeta + severityStyle", () => {
 });
 
 describe("attentionTone + attentionToneStyle (canonical color map §4)", () => {
-  it("colors plan approvals violet regardless of source kind", () => {
-    const fromApproval = buildItem({
-      sourceKind: "approval",
-      detail: { kind: "plan_approval", issueTitle: "I", planTitle: "P", summaryExcerpt: null, images: [] },
-    });
-    const fromInteraction = buildItem({
-      sourceKind: "issue_thread_interaction",
-      detail: { kind: "plan_approval", issueTitle: "I", planTitle: "P", summaryExcerpt: null, images: [] },
-    });
-    expect(attentionTone(fromApproval)).toBe("violet");
-    expect(attentionTone(fromInteraction)).toBe("violet");
-    expect(attentionToneStyle(fromApproval).accent).toContain("violet");
-  });
-
-  it("colors confirmations / questions / verdicts in the sky family", () => {
+  it("colors approvals in the sky family", () => {
     expect(attentionTone(buildItem({ sourceKind: "approval" }))).toBe("sky");
-    expect(attentionTone(buildItem({ sourceKind: "issue_thread_interaction" }))).toBe("sky");
-    expect(
-      attentionTone(
-        buildItem({
-          sourceKind: "issue_thread_interaction",
-          detail: { kind: "questions", questionCount: 2, firstQuestionText: "?", images: [] },
-        }),
-      ),
-    ).toBe("sky");
   });
 
-  it("colors failures rose and blocked/recovery/budget amber", () => {
+  it("colors failures rose and blocked/budget amber", () => {
     expect(attentionTone(buildItem({ sourceKind: "failed_run" }))).toBe("rose");
     expect(attentionTone(buildItem({ sourceKind: "agent_error_alert" }))).toBe("rose");
     expect(attentionTone(buildItem({ sourceKind: "blocker_attention" }))).toBe("amber");
-    expect(attentionTone(buildItem({ sourceKind: "recovery_action" }))).toBe("amber");
     expect(attentionTone(buildItem({ sourceKind: "budget_alert" }))).toBe("amber");
+    expect(attentionTone(buildItem({ sourceKind: "agent_liveness" }))).toBe("amber");
   });
 
   it("colors join requests neutral", () => {
@@ -197,26 +172,6 @@ describe("severityBadge", () => {
 });
 
 describe("attentionDetailLine (§7)", () => {
-  it("summarizes questions with a count and the first question", () => {
-    const line = attentionDetailLine(
-      buildItem({
-        detail: { kind: "questions", questionCount: 2, firstQuestionText: "Which auth provider?", images: [] },
-      }),
-    );
-    expect(line).toContain("2 questions");
-    expect(line).toContain("Which auth provider?");
-  });
-
-  it("singularizes a single suggested task", () => {
-    const line = attentionDetailLine(
-      buildItem({
-        detail: { kind: "suggested_tasks", taskCount: 1, firstTaskTitle: "Add index", images: [] },
-      }),
-    );
-    expect(line).toContain("1 suggested task");
-    expect(line).not.toContain("tasks");
-  });
-
   it("renders a failed run as agent — reason", () => {
     const line = attentionDetailLine(
       buildItem({

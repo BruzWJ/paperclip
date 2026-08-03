@@ -12,7 +12,7 @@ export interface WorkspaceOperation {
   id: string;
   companyId: string;
   executionWorkspaceId: string | null;
-  heartbeatRunId: string | null;
+  runId: string | null;
   issueId: string | null;
   phase: WorkspaceOperationPhase;
   command: string | null;

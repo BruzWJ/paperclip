@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentPermissionsSchema,
+  agentGovernancePolicySchema,
   type LowTrustBoundary,
   LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
   LOW_TRUST_REVIEW_PRESET,
@@ -43,7 +43,7 @@ describe("resolveCoreTrustPreset", () => {
   it("defaults to standard with no boundary", () => {
     const result = resolveCoreTrustPreset({
       companyId,
-      agent: { companyId, permissions: { canCreateAgents: false } },
+      agent: { companyId, governance: {} },
     });
 
     expect(result).toMatchObject({
@@ -58,7 +58,7 @@ describe("resolveCoreTrustPreset", () => {
       companyId,
       agent: {
         companyId,
-        permissions: {
+        governance: {
           trustPreset: LOW_TRUST_REVIEW_PRESET,
           authorizationPolicy: {
             managedBy: "core-trust-preset",
@@ -114,7 +114,7 @@ describe("resolveCoreTrustPreset", () => {
       companyId,
       agent: {
         companyId,
-        permissions: {
+        governance: {
           trustPreset: "trusted_but_weird",
         },
       },
@@ -132,7 +132,7 @@ describe("resolveCoreTrustPreset", () => {
       companyId,
       agent: {
         companyId,
-        permissions: {
+        governance: {
           trustPreset: LOW_TRUST_REVIEW_PRESET,
           authorizationPolicy: {
             trustBoundary: lowTrustBoundary({ allowedToolClasses: ["git.read"] }),
@@ -184,16 +184,15 @@ describe("resolveCoreTrustPreset", () => {
   });
 
   it("normalizes and preserves trust policy JSON alongside existing policy data", () => {
-    const permissions = agentPermissionsSchema.parse({
-      canCreateAgents: false,
+    const governance = agentGovernancePolicySchema.parse({
       trustPreset: LOW_TRUST_REVIEW_PRESET,
       authorizationPolicy: {
-        managedBy: "ee-permissions",
+        managedBy: "ee-governance",
         customEeField: { mode: "visualized" },
         trustBoundary: lowTrustBoundary({ rootIssueId }),
       },
     });
-    expect(permissions.authorizationPolicy?.customEeField).toEqual({ mode: "visualized" });
+    expect(governance.authorizationPolicy?.customEeField).toEqual({ mode: "visualized" });
 
     const executionPolicy = normalizeIssueExecutionPolicy({
       reviewPreset: {

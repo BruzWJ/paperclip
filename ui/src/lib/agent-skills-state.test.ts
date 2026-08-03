@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyAgentSkillSnapshot,
-  isReadOnlyUnmanagedSkillEntry,
+  applyAgentCompanySkillPins,
   sameSkillSelection,
   shouldScheduleSkillAutosave,
 } from "./agent-skills-state";
@@ -23,8 +22,8 @@ describe("shouldScheduleSkillAutosave", () => {
     // user's order. Same set → already saved, no re-fire (would loop otherwise).
     expect(
       shouldScheduleSkillAutosave({
-        draft: ["paperclip", "stale/removed/skill", "ascii-art"],
-        lastSaved: ["paperclip", "ascii-art", "stale/removed/skill"],
+        draft: ["code-review", "stale/removed/skill", "ascii-art"],
+        lastSaved: ["code-review", "ascii-art", "stale/removed/skill"],
         failedDraft: null,
       }),
     ).toBe(false);
@@ -33,8 +32,8 @@ describe("shouldScheduleSkillAutosave", () => {
   it("does not save when the draft already matches what was saved", () => {
     expect(
       shouldScheduleSkillAutosave({
-        draft: ["paperclip"],
-        lastSaved: ["paperclip"],
+        draft: ["code-review"],
+        lastSaved: ["code-review"],
         failedDraft: null,
       }),
     ).toBe(false);
@@ -43,19 +42,19 @@ describe("shouldScheduleSkillAutosave", () => {
   it("saves when the draft diverges from the last saved state", () => {
     expect(
       shouldScheduleSkillAutosave({
-        draft: ["paperclip", "ascii-art"],
-        lastSaved: ["paperclip"],
+        draft: ["code-review", "ascii-art"],
+        lastSaved: ["code-review"],
         failedDraft: null,
       }),
     ).toBe(true);
   });
 
   it("holds a payload that just failed to prevent a retry storm (PAP-13222)", () => {
-    const draft = ["paperclip", "stale/removed/skill"];
+    const draft = ["code-review", "stale/removed/skill"];
     expect(
       shouldScheduleSkillAutosave({
         draft,
-        lastSaved: ["paperclip"],
+        lastSaved: ["code-review"],
         failedDraft: [...draft],
       }),
     ).toBe(false);
@@ -64,98 +63,67 @@ describe("shouldScheduleSkillAutosave", () => {
   it("resumes saving once the user edits the draft after a failure", () => {
     expect(
       shouldScheduleSkillAutosave({
-        draft: ["paperclip", "ascii-art"],
-        lastSaved: ["paperclip"],
-        failedDraft: ["paperclip", "stale/removed/skill"],
+        draft: ["code-review", "ascii-art"],
+        lastSaved: ["code-review"],
+        failedDraft: ["code-review", "stale/removed/skill"],
       }),
     ).toBe(true);
   });
 });
 
-describe("applyAgentSkillSnapshot", () => {
-  it("hydrates the initial snapshot without arming autosave", () => {
-    const result = applyAgentSkillSnapshot(
+describe("applyAgentCompanySkillPins", () => {
+  it("hydrates the initial selection without arming autosave", () => {
+    const result = applyAgentCompanySkillPins(
       {
         draft: [],
         lastSaved: [],
         hasHydratedSnapshot: false,
       },
-      ["paperclip", "para-memory-files"],
+      ["code-review", "incident-triage"],
     );
 
     expect(result).toEqual({
-      draft: ["paperclip", "para-memory-files"],
-      lastSaved: ["paperclip", "para-memory-files"],
+      draft: ["code-review", "incident-triage"],
+      lastSaved: ["code-review", "incident-triage"],
       hasHydratedSnapshot: true,
       shouldSkipAutosave: true,
     });
   });
 
-  it("keeps unsaved local edits when a fresh snapshot arrives", () => {
-    const result = applyAgentSkillSnapshot(
+  it("keeps unsaved local edits when a fresh selection arrives", () => {
+    const result = applyAgentCompanySkillPins(
       {
-        draft: ["paperclip", "custom-skill"],
-        lastSaved: ["paperclip"],
+        draft: ["code-review", "custom-skill"],
+        lastSaved: ["code-review"],
         hasHydratedSnapshot: true,
       },
-      ["paperclip"],
+      ["code-review"],
     );
 
     expect(result).toEqual({
-      draft: ["paperclip", "custom-skill"],
-      lastSaved: ["paperclip"],
+      draft: ["code-review", "custom-skill"],
+      lastSaved: ["code-review"],
       hasHydratedSnapshot: true,
       shouldSkipAutosave: false,
     });
   });
 
   it("adopts server state after a successful save and skips the follow-up autosave pass", () => {
-    const result = applyAgentSkillSnapshot(
+    const result = applyAgentCompanySkillPins(
       {
-        draft: ["paperclip", "custom-skill"],
-        lastSaved: ["paperclip", "custom-skill"],
+        draft: ["code-review", "custom-skill"],
+        lastSaved: ["code-review", "custom-skill"],
         hasHydratedSnapshot: true,
       },
-      ["paperclip", "custom-skill"],
+      ["code-review", "custom-skill"],
     );
 
     expect(result).toEqual({
-      draft: ["paperclip", "custom-skill"],
-      lastSaved: ["paperclip", "custom-skill"],
+      draft: ["code-review", "custom-skill"],
+      lastSaved: ["code-review", "custom-skill"],
       hasHydratedSnapshot: true,
       shouldSkipAutosave: true,
     });
   });
 
-  it("treats user-installed entries outside the company library as read-only unmanaged skills", () => {
-    expect(isReadOnlyUnmanagedSkillEntry({
-      key: "crack-python",
-      runtimeName: "crack-python",
-      desired: false,
-      managed: false,
-      state: "external",
-      origin: "user_installed",
-    }, new Set(["paperclip"]))).toBe(true);
-  });
-
-  it("keeps company-library entries in the managed section even when the adapter reports an external conflict", () => {
-    expect(isReadOnlyUnmanagedSkillEntry({
-      key: "paperclip",
-      runtimeName: "paperclip",
-      desired: true,
-      managed: false,
-      state: "external",
-      origin: "company_managed",
-    }, new Set(["paperclip"]))).toBe(false);
-  });
-
-  it("falls back to legacy snapshots that only mark unmanaged external entries", () => {
-    expect(isReadOnlyUnmanagedSkillEntry({
-      key: "legacy-external",
-      runtimeName: "legacy-external",
-      desired: false,
-      managed: false,
-      state: "external",
-    }, new Set())).toBe(true);
-  });
 });

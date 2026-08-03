@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -44,7 +45,7 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", teamsCatalogRoutes({} as any));
+  app.use("/api", teamsCatalogRoutes({} as any, {} as never));
   app.use(errorHandler);
   return app;
 }
@@ -57,16 +58,16 @@ function catalogTeam(overrides: Record<string, unknown> = {}) {
     category: "software-development",
     slug: "product-engineering",
     name: "Product Engineering",
-    description: "A software development team with CTO, coder, and QA roles.",
+    description: "A software development team with an engineering lead, coder, and QA agent.",
     path: "catalog/bundled/software-development/product-engineering",
     entrypoint: "TEAM.md",
     schema: "agentcompanies/v1",
     defaultInstall: true,
     recommendedForCompanyTypes: ["software"],
     tags: ["engineering"],
-    counts: { agents: 3, projects: 1, tasks: 1, routines: 0, localSkills: 0, catalogSkills: 1, externalSkillSources: 0 },
-    rootAgentSlugs: ["cto"],
-    agentSlugs: ["cto", "senior-coder", "qa"],
+    counts: { agents: 3, projects: 1, issues: 1, routines: 0, localSkills: 0, catalogSkills: 1, externalSkillSources: 0 },
+    rootAgentSlugs: ["engineering-lead"],
+    agentSlugs: ["engineering-lead", "senior-coder", "qa"],
     projectSlugs: ["product-engineering"],
     requiredSkills: [],
     envInputs: [],
@@ -80,6 +81,7 @@ function catalogTeam(overrides: Record<string, unknown> = {}) {
 }
 
 const companyId = "11111111-1111-4111-8111-111111111111";
+const environmentId = "22222222-2222-4222-8222-222222222222";
 
 describe("teams catalog routes", () => {
   beforeEach(() => {
@@ -91,7 +93,7 @@ describe("teams catalog routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId,
-      permissions: { canCreateAgents: true },
+      governance: {},
     });
     mockCatalogModule.listCatalogTeams.mockReturnValue([catalogTeam()]);
     mockCatalogModule.getCatalogTeamOrThrow.mockReturnValue(catalogTeam());
@@ -140,13 +142,11 @@ describe("teams catalog routes", () => {
   });
 
   it("serves catalog listings, details, and files for authenticated actors", async () => {
-    const app = await createApp({
-      type: "board",
-      userId: "local-board",
+    const app = await createApp(testBoardSessionActor({
+      userId: "board-user",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: false,
-    });
+    }));
 
     const list = await request(app).get("/api/teams/catalog?kind=bundled&q=engineering");
     const detail = await request(app).get("/api/teams/catalog/product-engineering");
@@ -161,13 +161,11 @@ describe("teams catalog routes", () => {
   });
 
   it("returns server-computed installed-team state for actors with company access", async () => {
-    const app = await createApp({
-      type: "board",
-      userId: "local-board",
+    const app = await createApp(testBoardSessionActor({
+      userId: "board-user",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app).get(`/api/companies/${companyId}/teams/catalog/installed`);
 
@@ -184,13 +182,11 @@ describe("teams catalog routes", () => {
   });
 
   it("denies installed-team state to actors without company access", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "other",
       companyIds: ["22222222-2222-4222-8222-222222222222"],
-      source: "session",
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app).get(`/api/companies/${companyId}/teams/catalog/installed`);
 
@@ -212,19 +208,36 @@ describe("teams catalog routes", () => {
   });
 
   it("previews catalog teams with company access and actor/source policy context", async () => {
-    const app = await createApp({
-      type: "board",
-      userId: "local-board",
+    const app = await createApp(testBoardSessionActor({
+      userId: "board-user",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: false,
-      runId: "run-1",
-    });
+    }));
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/teams/catalog/ref/preview?ref=paperclipai%2Fbundled%2Fsoftware-development%2Fproduct-engineering`)
       .send({
         targetManagerSlug: "engineering-lead",
+        adapterOverrides: {
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+          "senior-coder": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+          qa: {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+        },
         sourcePolicy: { allowExternalSources: true },
       });
 
@@ -234,24 +247,55 @@ describe("teams catalog routes", () => {
       "paperclipai/bundled/software-development/product-engineering",
       expect.objectContaining({
         targetManagerSlug: "engineering-lead",
+        adapterOverrides: expect.objectContaining({
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+        }),
         sourcePolicy: { allowExternalSources: true },
         actor: expect.objectContaining({
           actorType: "user",
-          actorId: "local-board",
-          runId: "run-1",
+          actorId: "board-user",
+          userId: "board-user",
         }),
       }),
     );
   });
 
-  it("rejects catalog preview requests that try to include company metadata", async () => {
-    const app = await createApp({
-      type: "board",
-      userId: "local-board",
+  it("requires the same agents:create authorization for preview as install", async () => {
+    mockAccessService.canUser.mockResolvedValue(false);
+    const app = await createApp(testBoardSessionActor({
+      userId: "restricted-board",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: false,
-    });
+    }));
+
+    const res = await request(app)
+      .post(
+        `/api/companies/${companyId}/teams/catalog/product-engineering/preview`,
+      )
+      .send({});
+
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(
+      mockTeamsCatalogService.previewCatalogTeamImport,
+    ).not.toHaveBeenCalled();
+    expect(mockAccessService.canUser).toHaveBeenCalledWith(
+      companyId,
+      "restricted-board",
+      "agents:create",
+    );
+  });
+
+  it("rejects catalog preview requests that try to include company metadata", async () => {
+    const app = await createApp(testBoardSessionActor({
+      userId: "board-user",
+      companyIds: [companyId],
+      isInstanceAdmin: false,
+    }));
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/teams/catalog/product-engineering/preview`)
@@ -263,19 +307,38 @@ describe("teams catalog routes", () => {
     expect(mockTeamsCatalogService.previewCatalogTeamImport).not.toHaveBeenCalled();
   });
 
-  it("installs catalog teams only for actors that can create agents", async () => {
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId,
-      runId: "run-1",
-    });
+  it("installs catalog teams for authorized board actors", async () => {
+    const app = await createApp(testBoardSessionActor({
+      userId: "board-user",
+      companyIds: [companyId],
+      isInstanceAdmin: false,
+    }));
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/teams/catalog/product-engineering/install`)
       .send({
+        targetManagerAgentId: null,
         collisionStrategy: "rename",
-        secretValues: { "agent:cto:OPENAI_API_KEY": "sk-test" },
+        adapterOverrides: {
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+          "senior-coder": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+          qa: {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+        },
       });
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
@@ -284,12 +347,19 @@ describe("teams catalog routes", () => {
       "product-engineering",
       expect.objectContaining({
         collisionStrategy: "rename",
-        secretValues: { "agent:cto:OPENAI_API_KEY": "sk-test" },
+        targetManagerAgentId: null,
+        adapterOverrides: expect.objectContaining({
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId: environmentId,
+            skillChannel: "operator_native",
+          },
+        }),
         actor: expect.objectContaining({
-          actorType: "agent",
-          actorId: "agent-1",
-          agentId: "agent-1",
-          runId: "run-1",
+          actorType: "user",
+          actorId: "board-user",
+          userId: "board-user",
         }),
       }),
     );
@@ -299,7 +369,7 @@ describe("teams catalog routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId,
-      permissions: {},
+      governance: {},
     });
     mockAccessService.hasPermission.mockResolvedValue(false);
     const app = await createApp({

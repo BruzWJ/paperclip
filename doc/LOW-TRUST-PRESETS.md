@@ -15,8 +15,8 @@ Community Edition even when EE policy editing is unavailable.
 
 `low_trust_review` is resolved from existing JSON policy fields:
 
-- agent permissions: `permissions.trustPreset` and
-  `permissions.authorizationPolicy.trustBoundary`
+- agent governance: `governance.trustPreset` and
+  `governance.authorizationPolicy.trustBoundary`
 - project policy:
   `executionWorkspacePolicy.authorizationPolicy.trustBoundary`
 - issue/run policy: `executionPolicy.authorizationPolicy.trustBoundary`
@@ -56,4 +56,4 @@ runtime boundary:
 
 The Docker workflow in `doc/UNTRUSTED-PR-REVIEW.md` remains useful for manual
 local review, but Paperclip-managed low-trust execution requires a sandboxed
-environment instead of a host-local adapter process.
+execution target instead of a host-local provider subprocess.

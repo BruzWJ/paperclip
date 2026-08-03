@@ -15,7 +15,7 @@ function toWorkspaceOperation(row: WorkspaceOperationRow): WorkspaceOperation {
     id: row.id,
     companyId: row.companyId,
     executionWorkspaceId: row.executionWorkspaceId ?? null,
-    heartbeatRunId: row.heartbeatRunId ?? null,
+    runId: row.runId ?? null,
     issueId: row.issueId ?? null,
     phase: row.phase as WorkspaceOperationPhase,
     command: row.command ?? null,
@@ -88,7 +88,7 @@ export function workspaceOperationService(db: Db) {
 
     createRecorder(input: {
       companyId: string;
-      heartbeatRunId?: string | null;
+      runId?: string | null;
       executionWorkspaceId?: string | null;
       issueId?: string | null;
     }): WorkspaceOperationRecorder {
@@ -137,7 +137,7 @@ export function workspaceOperationService(db: Db) {
             id,
             companyId: input.companyId,
             executionWorkspaceId,
-            heartbeatRunId: input.heartbeatRunId ?? null,
+            runId: input.runId ?? null,
             issueId: input.issueId ?? null,
             phase: recordInput.phase,
             command: recordInput.command ?? null,
@@ -208,11 +208,11 @@ export function workspaceOperationService(db: Db) {
     },
 
     listForRun: async (runId: string, executionWorkspaceId?: string | null) => {
-      const conditions = [eq(workspaceOperations.heartbeatRunId, runId)];
+      const conditions = [eq(workspaceOperations.runId, runId)];
       if (executionWorkspaceId) {
         const cleanupCondition = and(
           eq(workspaceOperations.executionWorkspaceId, executionWorkspaceId)!,
-          isNull(workspaceOperations.heartbeatRunId),
+          isNull(workspaceOperations.runId),
         )!;
         if (cleanupCondition) conditions.push(cleanupCondition);
       }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { TOOL_MCP_GATEWAY_TOKEN_SUBJECT_TYPES } from "../constants.js";
 import {
-  connectionTokenRequestSchema,
   createToolConnectionSchema,
+  createToolMcpGatewayTokenSchema,
   startConnectionAuthorizationSchema,
   toolCredentialSecretRefSchema,
   toolRedactedValueSummarySchema,
@@ -9,16 +10,21 @@ import {
 } from "./tool-access.js";
 
 describe("tool access validators", () => {
-  it("defaults connection token subjects to app", () => {
-    expect(connectionTokenRequestSchema.parse({})).toEqual({ subject: { type: "app" } });
+  it("does not admit heartbeat runs as named gateway token subjects", () => {
+    expect(TOOL_MCP_GATEWAY_TOKEN_SUBJECT_TYPES).not.toContain("heartbeat_run");
+    expect(
+      createToolMcpGatewayTokenSchema.safeParse({
+        name: "Legacy run bearer",
+        subjectType: "heartbeat_run",
+        subjectId: "11111111-1111-4111-8111-111111111111",
+        clientLabel: "Legacy runtime",
+        ownerNote: "Must fail closed",
+        expiresAt: "2027-01-01T00:00:00Z",
+      }).success,
+    ).toBe(false);
   });
 
-  it("accepts user subjects, grant selection, and authorization input", () => {
-    const request = connectionTokenRequestSchema.parse({
-      subject: { type: "user", userId: "user-123" },
-      grantId: "11111111-1111-4111-8111-111111111111",
-    });
-    expect(request.subject).toEqual({ type: "user", userId: "user-123" });
+  it("accepts user authorization input", () => {
     expect(startConnectionAuthorizationSchema.parse({ subjectUserId: "user-123", scopes: ["read"] })).toEqual({
       subjectUserId: "user-123",
       scopes: ["read"],

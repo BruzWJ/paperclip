@@ -1,14 +1,11 @@
 import { useCallback, useState, type ReactNode } from "react";
-import { useNavigate } from "@/lib/router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Pause,
   Play,
   Plus,
   MoreHorizontal,
-  Loader2,
   Copy,
-  RotateCcw,
   Trash2,
   CheckCircle2,
 } from "lucide-react";
@@ -30,41 +27,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AgentStatusBadge } from "./StatusBadge";
 import { agentsApi } from "../api/agents";
-import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { agentRouteRef } from "../lib/utils";
 import { useDialogActions } from "../context/DialogContext";
 import { useToastActions } from "../context/ToastContext";
-import {
-  buildDuplicateAgentPayload,
-  duplicateAgentName,
-  type DuplicateInstructionsBundle,
-} from "../lib/duplicate-agent-payload";
-import type {
-  Agent,
-  AgentInstructionsBundle,
-  AgentInstructionsFileSummary,
-  HeartbeatRun,
-} from "@paperclipai/shared";
-
-export function RunButton({
-  onClick,
-  disabled,
-  label = "Run now",
-  size = "sm",
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  label?: string;
-  size?: "sm" | "default";
-}) {
-  return (
-    <Button variant="outline" size={size} onClick={onClick} disabled={disabled}>
-      <Play className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">{label}</span>
-    </Button>
-  );
-}
+import type { Agent } from "@paperclipai/shared";
 
 export function PauseResumeButton({
   isPaused,
@@ -120,50 +87,21 @@ export function ClearErrorButton({
   );
 }
 
-function duplicateInstructionFilePath(
-  _bundle: AgentInstructionsBundle,
-  summary: AgentInstructionsFileSummary,
-): string | null {
-  if (summary.deprecated || summary.virtual) return null;
-  return summary.path;
-}
-
-export async function loadDuplicateInstructionsBundle(
-  agentId: string,
-  companyId?: string,
-): Promise<DuplicateInstructionsBundle | null> {
-  const bundle = await agentsApi.instructionsBundle(agentId, companyId);
-  const files: Record<string, string> = {};
-
-  for (const summary of bundle.files) {
-    const path = duplicateInstructionFilePath(bundle, summary);
-    if (!path) continue;
-    const file = await agentsApi.instructionsFile(agentId, summary.path, companyId);
-    files[path] = file.content;
-  }
-
-  const entryFile = Object.prototype.hasOwnProperty.call(files, bundle.entryFile)
-    ? bundle.entryFile
-    : Object.keys(files)[0] ?? "AGENTS.md";
-  return Object.keys(files).length > 0 ? { entryFile, files } : null;
-}
-
 /**
  * Shared agent action cluster used by both the agent detail header and the
- * agents list rows. Encapsulates the invoke / pause / resume / terminate /
- * duplicate / reset-session mutations so callers do not diverge in behavior.
+ * agents list rows. Provider work starts only from an issue-execution source;
+ * this control therefore exposes configuration/lifecycle actions, not an
+ * issueless invoke or an agent-wide session reset.
  */
 export function AgentActionButtons({
   agent,
   companyId,
   size = "sm",
   assignLabel = "Assign Task",
-  runLabel = "Run now",
   showStatus = true,
   actionsDisabled = false,
   workActionsDisabled = false,
   workActionsDisabledReason,
-  navigateToRunOnInvoke = true,
   onActionError,
   pauseConfirm,
   hideTerminate = false,
@@ -174,18 +112,16 @@ export function AgentActionButtons({
   companyId?: string | null;
   size?: "sm" | "default";
   assignLabel?: string;
-  runLabel?: string;
   showStatus?: boolean;
   actionsDisabled?: boolean;
   workActionsDisabled?: boolean;
   workActionsDisabledReason?: string;
-  navigateToRunOnInvoke?: boolean;
   /**
-   * When set, pausing prompts a confirmation dialog first (e.g. for built-in
-   * agents that power a feature). Omit for the immediate-pause default.
+   * When set, pausing prompts a confirmation dialog first (for example when an
+   * agent powers a feature). Omit for the immediate-pause default.
    */
   pauseConfirm?: { title: string; description: ReactNode };
-  /** Hide the Terminate action (e.g. built-in agents are undeletable). */
+  /** Hide the Terminate action when lifecycle ownership lives on another surface. */
   hideTerminate?: boolean;
   /**
    * Optional inline error reporter. When provided it is used instead of a toast
@@ -197,7 +133,6 @@ export function AgentActionButtons({
   children?: React.ReactNode;
   className?: string;
 }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { openNewIssue } = useDialogActions();
   const { pushToast } = useToastActions();
@@ -224,87 +159,27 @@ export function AgentActionButtons({
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(canonicalAgentRef) });
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agent.id) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agent.id) });
     if (resolvedCompanyId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.liveRuns(resolvedCompanyId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(resolvedCompanyId, agent.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runs(resolvedCompanyId) });
     }
   }, [agent.id, canonicalAgentRef, queryClient, resolvedCompanyId]);
 
   const agentAction = useMutation({
-    mutationFn: async (action: "invoke" | "pause" | "resume" | "clear_error" | "approve" | "terminate") => {
+    mutationFn: async (action: "pause" | "resume" | "clear_error" | "terminate") => {
       switch (action) {
-        case "invoke": return agentsApi.invoke(agent.id, resolvedCompanyId ?? undefined);
         case "pause": return agentsApi.pause(agent.id, resolvedCompanyId ?? undefined);
         case "resume": return agentsApi.resume(agent.id, resolvedCompanyId ?? undefined);
         case "clear_error": return agentsApi.clearError(agent.id, resolvedCompanyId ?? undefined);
-        case "approve": return agentsApi.approve(agent.id, resolvedCompanyId ?? undefined);
         case "terminate": return agentsApi.terminate(agent.id, resolvedCompanyId ?? undefined);
       }
     },
-    onSuccess: (data, action) => {
+    onSuccess: () => {
       onActionError?.(null);
       invalidateAgent();
-      if (action === "invoke" && navigateToRunOnInvoke && data && typeof data === "object" && "id" in data) {
-        navigate(`/agents/${canonicalAgentRef}/runs/${(data as HeartbeatRun).id}`);
-      }
     },
     onError: (err) => {
       reportError(err instanceof Error ? err.message : "Action failed");
-    },
-  });
-
-  const duplicateAgent = useMutation({
-    mutationFn: async () => {
-      if (!resolvedCompanyId) {
-        throw new Error("Agent is not ready to duplicate");
-      }
-      const instructionsBundle = await loadDuplicateInstructionsBundle(agent.id, resolvedCompanyId);
-      const payload = buildDuplicateAgentPayload(agent, instructionsBundle);
-      try {
-        return await agentsApi.create(resolvedCompanyId, payload);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409 && error.message.includes("requires board approval")) {
-          const hire = await agentsApi.hire(resolvedCompanyId, payload);
-          return hire.agent;
-        }
-        throw error;
-      }
-    },
-    onSuccess: async (createdAgent) => {
-      onActionError?.(null);
-      if (resolvedCompanyId) {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
-      }
-      pushToast({ title: "Agent duplicated", body: createdAgent.name, tone: "success" });
-      navigate(`/agents/${agentRouteRef(createdAgent)}/dashboard`);
-    },
-    onError: (err) => {
-      const message = err instanceof Error ? err.message : "Failed to duplicate agent";
-      onActionError?.(message);
-      pushToast({ title: "Could not duplicate agent", body: message, tone: "error" });
-    },
-  });
-
-  const handleDuplicateAgent = useCallback(() => {
-    if (duplicateAgent.isPending) return;
-    const nextName = duplicateAgentName(agent.name);
-    const confirmed = window.confirm(`Duplicate ${agent.name} as ${nextName}?`);
-    setMoreOpen(false);
-    if (!confirmed) return;
-    duplicateAgent.mutate();
-  }, [agent.name, duplicateAgent]);
-
-  const resetTaskSession = useMutation({
-    mutationFn: () => agentsApi.resetSession(agent.id, null, resolvedCompanyId ?? undefined),
-    onSuccess: () => {
-      onActionError?.(null);
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agent.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agent.id) });
-    },
-    onError: (err) => {
-      reportError(err instanceof Error ? err.message : "Failed to reset session");
     },
   });
 
@@ -319,19 +194,13 @@ export function AgentActionButtons({
       <Button
         variant="outline"
         size={size}
-        onClick={() => openNewIssue({ assigneeAgentId: agent.id })}
+        onClick={() => openNewIssue({ ownerAgentId: agent.id })}
         disabled={assignAndRunDisabled}
         title={workActionsDisabled ? workActionsDisabledReason : undefined}
       >
         <Plus className="h-3.5 w-3.5 sm:mr-1" />
         <span className="hidden sm:inline">{assignLabel}</span>
       </Button>
-      <RunButton
-        onClick={() => agentAction.mutate("invoke")}
-        disabled={assignAndRunDisabled}
-        label={runLabel}
-        size={size}
-      />
       {isError ? (
         <ClearErrorButton
           onClick={() => agentAction.mutate("clear_error")}
@@ -380,18 +249,6 @@ export function AgentActionButtons({
         <PopoverContent className="w-44 p-1" align="end">
           <button
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-            disabled={duplicateAgent.isPending}
-            onClick={handleDuplicateAgent}
-          >
-            {duplicateAgent.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
-            Duplicate Agent
-          </button>
-          <button
-            className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
             onClick={() => {
               navigator.clipboard.writeText(agent.id);
               setMoreOpen(false);
@@ -399,16 +256,6 @@ export function AgentActionButtons({
           >
             <Copy className="h-3 w-3" />
             Copy Agent ID
-          </button>
-          <button
-            className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-            onClick={() => {
-              resetTaskSession.mutate();
-              setMoreOpen(false);
-            }}
-          >
-            <RotateCcw className="h-3 w-3" />
-            Reset Sessions
           </button>
           {!hideTerminate && (
             <button

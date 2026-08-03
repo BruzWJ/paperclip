@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanyPortabilityExportResult } from "@paperclipai/shared";
+import {
+  canonicalizeMoneyAmount,
+  type CompanyPortabilityExportResult,
+} from "@paperclipai/shared";
 import {
   assertDiscoveryCompatible,
   buildBundleFromLocalCompany,
@@ -212,6 +215,8 @@ function portabilityExport(): CompanyPortabilityExportResult {
         path: "company.json",
         name: "Local Company",
         description: null,
+        budgetCurrency: "USD",
+        budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
         brandColor: null,
         logoPath: null,
         attachmentMaxBytes: null,

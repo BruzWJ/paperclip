@@ -1,21 +1,21 @@
 import type {
   BudgetIncidentResolutionAction,
   BudgetIncidentStatus,
-  BudgetMetric,
   BudgetScopeType,
   BudgetThresholdType,
   BudgetWindowKind,
   PauseReason,
 } from "../constants.js";
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface BudgetPolicy {
   id: string;
   companyId: string;
+  budgetCurrency: BudgetCurrency;
   scopeType: BudgetScopeType;
   scopeId: string;
-  metric: BudgetMetric;
   windowKind: BudgetWindowKind;
-  amount: number;
+  limitAmount: MoneyAmount;
   warnPercent: number;
   hardStopEnabled: boolean;
   notifyEnabled: boolean;
@@ -29,14 +29,14 @@ export interface BudgetPolicy {
 export interface BudgetPolicySummary {
   policyId: string;
   companyId: string;
+  budgetCurrency: BudgetCurrency;
   scopeType: BudgetScopeType;
   scopeId: string;
   scopeName: string;
-  metric: BudgetMetric;
   windowKind: BudgetWindowKind;
-  amount: number;
-  observedAmount: number;
-  remainingAmount: number;
+  limitAmount: MoneyAmount;
+  observedAmount: MoneyAmount;
+  remainingAmount: MoneyAmount;
   utilizationPercent: number;
   warnPercent: number;
   hardStopEnabled: boolean;
@@ -52,17 +52,17 @@ export interface BudgetPolicySummary {
 export interface BudgetIncident {
   id: string;
   companyId: string;
+  budgetCurrency: BudgetCurrency;
   policyId: string;
   scopeType: BudgetScopeType;
   scopeId: string;
   scopeName: string;
-  metric: BudgetMetric;
   windowKind: BudgetWindowKind;
   windowStart: Date;
   windowEnd: Date;
   thresholdType: BudgetThresholdType;
-  amountLimit: number;
-  amountObserved: number;
+  limitAmount: MoneyAmount;
+  observedAmount: MoneyAmount;
   status: BudgetIncidentStatus;
   approvalId: string | null;
   approvalStatus: string | null;
@@ -73,6 +73,7 @@ export interface BudgetIncident {
 
 export interface BudgetOverview {
   companyId: string;
+  budgetCurrency: BudgetCurrency;
   policies: BudgetPolicySummary[];
   activeIncidents: BudgetIncident[];
   pausedAgentCount: number;
@@ -83,9 +84,8 @@ export interface BudgetOverview {
 export interface BudgetPolicyUpsertInput {
   scopeType: BudgetScopeType;
   scopeId: string;
-  metric?: BudgetMetric;
   windowKind?: BudgetWindowKind;
-  amount: number;
+  limitAmount: MoneyAmount;
   warnPercent?: number;
   hardStopEnabled?: boolean;
   notifyEnabled?: boolean;
@@ -94,6 +94,6 @@ export interface BudgetPolicyUpsertInput {
 
 export interface BudgetIncidentResolutionInput {
   action: BudgetIncidentResolutionAction;
-  amount?: number;
+  limitAmount?: MoneyAmount;
   decisionNote?: string | null;
 }

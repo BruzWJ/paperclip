@@ -31,10 +31,9 @@ export async function addAllowedHostname(host: string, opts: { config?: string }
     );
   }
 
-  if (!(config.server.deploymentMode === "authenticated" && config.server.exposure === "private")) {
+  if (config.server.exposure !== "private") {
     p.log.message(
-      pc.dim("Note: allowed hostnames are enforced only in authenticated/private mode."),
+      pc.dim("Note: allowed hostnames are enforced only for private exposure."),
     );
   }
 }
-

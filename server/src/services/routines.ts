@@ -6,16 +6,14 @@ import {
   activityLog,
   companies,
   companyMemberships,
-  companySecretBindings,
-  companySecretVersions,
   companySecrets,
   documentRevisions,
   documents,
   executionWorkspaces,
   folders,
   goals,
-  heartbeatRuns,
   issueInboxArchives,
+  issueExecutionRefs,
   issueReadStates,
   issues,
   pluginManagedResources,
@@ -26,6 +24,7 @@ import {
   routineDocuments,
   routines,
   routineTriggers,
+  summarySlots,
 } from "@paperclipai/db";
 import type {
   CreateRoutine,
@@ -52,6 +51,7 @@ import {
   interpolateRoutineTemplate,
   isValidRoutineDateString,
   pluginOperationIssueOriginKind,
+  normalizeIssueAttentionMask,
   stringifyRoutineVariableValue,
   syncRoutineVariablesWithTemplate,
 } from "@paperclipai/shared";
@@ -60,25 +60,30 @@ import { conflict, forbidden, notFound, unauthorized, unprocessable } from "../e
 import { logger } from "../middleware/logger.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
+import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
+import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
+import { terminalizeRoutineCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 import { issueService } from "./issues.js";
-import { assertAssignableAgent } from "./agent-assignability.js";
+import {
+  InvokableIssueOwnerRejected,
+  resolveInvokableIssueOwnerInTransaction,
+} from "./agent-invokability.js";
+import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
-import { secretService } from "./secrets.js";
-import { getSecretProvider } from "../secrets/provider-registry.js";
+import {
+  requireSecretMutationActor,
+  secretService,
+  type SecretMutationActor,
+} from "./secrets.js";
 import { parseCron, validateCron } from "./cron.js";
-import { heartbeatService } from "./heartbeat.js";
 import {
   instanceSettingsService,
   isTruthyRuntimeEnvValue,
   resolveWorktreeRunExecutionActivationState,
   type WorktreeRunExecutionActivationState,
 } from "./instance-settings.js";
-import { queueIssueAssignmentWakeup, type IssueAssignmentWakeupDeps } from "./issue-assignment-wakeup.js";
 import { logActivity } from "./activity-log.js";
-import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 
-const OPEN_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked"];
-const LIVE_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_retry"];
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 const MAX_CATCH_UP_RUNS = 25;
 const MAX_ROUTINE_REVISIONS = 100;
@@ -98,6 +103,23 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Sat: 6,
 };
 
+function routineOwnerConfigurationRejected(
+  error: unknown,
+  companyId: string,
+  assigneeAgentId: string,
+): never {
+  if (error instanceof InvokableIssueOwnerRejected) {
+    throw conflict("Routine assignee must be an invokable issue owner", {
+      code: "routine_assignee_not_invokable",
+      reason: error.reason,
+      companyId,
+      assigneeAgentId,
+      ...error.details,
+    });
+  }
+  throw error;
+}
+
 async function resolveCompanyDefaultResponsibleUserId(db: Db, companyId: string) {
   const company = await db
     .select({ defaultResponsibleUserId: companies.defaultResponsibleUserId })
@@ -107,7 +129,7 @@ async function resolveCompanyDefaultResponsibleUserId(db: Db, companyId: string)
   if (company?.defaultResponsibleUserId) return company.defaultResponsibleUserId;
 
   const owner = await db
-    .select({ userId: companyMemberships.principalId })
+    .select({ userId: companyMemberships.principalUserId })
     .from(companyMemberships)
     .where(
       and(
@@ -127,19 +149,86 @@ async function resolveRoutineResponsibleUserId(db: Db, companyId: string, actorU
   if (actorUserId) return actorUserId;
   if (parentIssueId) {
     const parent = await db
-      .select({ responsibleUserId: issues.responsibleUserId, createdByUserId: issues.createdByUserId })
+      .select({ responsibleUserId: issues.responsibleUserId, creatorUserId: issues.creatorUserId })
       .from(issues)
       .where(and(eq(issues.companyId, companyId), eq(issues.id, parentIssueId)))
       .then((rows) => rows[0] ?? null);
     if (parent?.responsibleUserId) return parent.responsibleUserId;
-    if (parent?.createdByUserId) return parent.createdByUserId;
+    if (parent?.creatorUserId) return parent.creatorUserId;
   }
   return resolveCompanyDefaultResponsibleUserId(db, companyId);
 }
 
-type Actor = { agentId?: string | null; userId?: string | null; runId?: string | null };
+export type RoutineMutationActor =
+  | {
+      type: "user";
+      userId: string;
+      agentId?: never;
+      runId?: never;
+    }
+  | {
+      type: "agent";
+      agentId: string;
+      userId?: never;
+      runId?: string | null;
+    }
+  | {
+      type: "system";
+      agentId?: never;
+      userId?: never;
+      runId?: never;
+    };
+type Actor = RoutineMutationActor;
 type RoutineRow = typeof routines.$inferSelect;
 type RoutineTriggerRow = typeof routineTriggers.$inferSelect;
+
+function routineSecretMutationActor(actor: unknown): SecretMutationActor {
+  if (typeof actor === "object" && actor !== null && !Array.isArray(actor)) {
+    const prototype = Object.getPrototypeOf(actor);
+    const keys = Reflect.ownKeys(actor);
+    const descriptors = Object.getOwnPropertyDescriptors(actor);
+    const typeDescriptor = descriptors.type;
+    const type =
+      typeDescriptor && "value" in typeDescriptor
+        ? typeDescriptor.value
+        : undefined;
+    if (
+      (prototype === Object.prototype || prototype === null) &&
+      keys.every((key): key is string => typeof key === "string") &&
+      type === "agent" &&
+      (keys.length === 2 || keys.length === 3) &&
+      keys.includes("type") &&
+      keys.includes("agentId") &&
+      (keys.length === 2 || keys.includes("runId"))
+    ) {
+      const agentIdDescriptor = descriptors.agentId;
+      const runIdDescriptor = descriptors.runId;
+      const agentId =
+        agentIdDescriptor && "value" in agentIdDescriptor
+          ? agentIdDescriptor.value
+          : undefined;
+      const runId =
+        runIdDescriptor && "value" in runIdDescriptor
+          ? runIdDescriptor.value
+          : undefined;
+      if (
+        typeof agentId === "string" &&
+        agentId.trim().length > 0 &&
+        (
+          !keys.includes("runId") ||
+          runId === null ||
+          (typeof runId === "string" && runId.trim().length > 0)
+        )
+      ) {
+        const candidate = { type: "agent", agentId } as const;
+        requireSecretMutationActor(candidate);
+        return candidate;
+      }
+    }
+  }
+  requireSecretMutationActor(actor);
+  return actor as SecretMutationActor;
+}
 
 const ROUTINE_DESCRIPTION_DOCUMENT_KEY = "description" as const;
 
@@ -147,8 +236,8 @@ interface RoutineTriggerSecretRestoreMaterial extends RoutineTriggerSecretMateri
   triggerId: string;
 }
 
-function routineWebhookSecretConfigPath(secretId: string) {
-  return `webhookSecret:${secretId}`;
+function routineWebhookSecretConfigPath(triggerId: string) {
+  return `webhookSecret:${triggerId}`;
 }
 
 function assertTimeZone(timeZone: string) {
@@ -483,6 +572,7 @@ function createRoutineDispatchFingerprint(input: {
   executionWorkspaceSettings?: Record<string, unknown> | null;
   title: string;
   description: string | null;
+  attentionMask: Routine["attentionMask"];
 }) {
   const canonical = JSON.stringify(normalizeRoutineDispatchFingerprintValue(input));
   return crypto.createHash("sha256").update(canonical).digest("hex");
@@ -519,6 +609,7 @@ function routineRevisionSnapshotRoutine(routine: RoutineRow): RoutineRevisionSna
     description: routine.description,
     assigneeAgentId: routine.assigneeAgentId,
     priority: routine.priority as RoutineRevisionSnapshotV1["routine"]["priority"],
+    attentionMask: routine.attentionMask ?? null,
     status: routine.status as RoutineRevisionSnapshotV1["routine"]["status"],
     concurrencyPolicy: routine.concurrencyPolicy as RoutineRevisionSnapshotV1["routine"]["concurrencyPolicy"],
     catchUpPolicy: routine.catchUpPolicy as RoutineRevisionSnapshotV1["routine"]["catchUpPolicy"],
@@ -617,21 +708,36 @@ function mapRoutineDescriptionDocument(row: {
   };
 }
 
+function routineWebhookUrl(
+  runtimeEnv: Record<string, string | undefined>,
+  publicId: string,
+): string {
+  const baseUrl = (
+    runtimeEnv.PAPERCLIP_PUBLIC_URL?.trim()
+    || runtimeEnv.PAPERCLIP_RUNTIME_API_URL?.trim()
+    || ""
+  ).replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw unprocessable(
+      "Routine webhook URLs require PAPERCLIP_PUBLIC_URL or PAPERCLIP_RUNTIME_API_URL",
+    );
+  }
+  return `${baseUrl}/api/routine-triggers/public/${publicId}/fire`;
+}
+
 export function routineService(
   db: Db,
   deps: {
-    heartbeat?: IssueAssignmentWakeupDeps;
-    pluginWorkerManager?: PluginWorkerManager;
     runtimeEnv?: Record<string, string | undefined>;
-  } = {},
+    ordinaryIssues: OrdinaryIssueRuntime;
+  },
 ) {
+  const ordinaryIssues = deps.ordinaryIssues;
   const issueSvc = issueService(db);
   const secretsSvc = secretService(db);
   const instanceSettings = instanceSettingsService(db);
   const runtimeEnv = deps.runtimeEnv ?? process.env;
-  const heartbeat = deps.heartbeat ?? heartbeatService(db, {
-    pluginWorkerManager: deps.pluginWorkerManager,
-  });
+  const canonicalSessions = createIssueSessionAdmissionService(db);
 
   async function getRoutineById(id: string) {
     return db
@@ -933,12 +1039,27 @@ export function routineService(
     return routine;
   }
 
+  async function assertInvokableRoutineAssigneeInTransaction(
+    tx: IssueSessionDbTransaction,
+    companyId: string,
+    assigneeAgentId: string | null | undefined,
+  ) {
+    if (!assigneeAgentId) return;
+    try {
+      await resolveInvokableIssueOwnerInTransaction(tx, {
+        companyId,
+        ownerAgentId: assigneeAgentId,
+      });
+    } catch (error) {
+      routineOwnerConfigurationRejected(error, companyId, assigneeAgentId);
+    }
+  }
+
   async function assertRestorableAssignee(
     companyId: string,
     assigneeAgentId: string | null | undefined,
     actor: Actor,
   ) {
-    await assertAssignableAgent(db, companyId, assigneeAgentId, { kind: "routine" });
     if (actor.agentId && assigneeAgentId !== actor.agentId) {
       throw forbidden("Agents can only restore routine revisions assigned to themselves");
     }
@@ -1027,7 +1148,7 @@ export function routineService(
         triggerLabel: routineTriggers.label,
         issueIdentifier: issues.identifier,
         issueTitle: issues.title,
-        issueStatus: issues.status,
+        issueBoardPresentationStatus: issues.boardPresentationStatus,
         issuePriority: issues.priority,
         issueUpdatedAt: issues.updatedAt,
       })
@@ -1062,7 +1183,8 @@ export function routineService(
             id: row.linkedIssueId,
             identifier: row.issueIdentifier,
             title: row.issueTitle ?? "Routine execution",
-            status: row.issueStatus ?? "todo",
+            boardPresentationStatus:
+              row.issueBoardPresentationStatus ?? "todo",
             priority: row.issuePriority ?? "medium",
             updatedAt: row.issueUpdatedAt ?? row.updatedAt,
           }
@@ -1081,87 +1203,36 @@ export function routineService(
 
   async function listLiveIssueByRoutineIds(companyId: string, routineIds: string[]) {
     if (routineIds.length === 0) return new Map<string, RoutineListItem["activeIssue"]>();
-    const executionBoundRows = await db
-      .selectDistinctOn([issues.originId], {
-        originId: issues.originId,
+    const rows = await db
+      .selectDistinctOn([issues.creatorRoutineId], {
+        routineId: issues.creatorRoutineId,
         id: issues.id,
         identifier: issues.identifier,
         title: issues.title,
-        status: issues.status,
+        boardPresentationStatus: issues.boardPresentationStatus,
         priority: issues.priority,
         updatedAt: issues.updatedAt,
       })
       .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.id, issues.executionRunId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-        ),
-      )
       .where(
         and(
           eq(issues.companyId, companyId),
-          eq(issues.originKind, "routine_execution"),
-          inArray(issues.originId, routineIds),
-          inArray(issues.status, OPEN_ISSUE_STATUSES),
+          eq(issues.creatorKind, "routine"),
+          inArray(issues.creatorRoutineId, routineIds),
+          inArray(issues.lifecycleStatus, ["open", "blocked"]),
           visibleIssueCondition(),
         ),
       )
-      .orderBy(issues.originId, desc(issues.updatedAt), desc(issues.createdAt));
-
-    const rowsByOriginId = new Map<string, (typeof executionBoundRows)[number]>();
-    for (const row of executionBoundRows) {
-      if (!row.originId) continue;
-      rowsByOriginId.set(row.originId, row);
-    }
-
-    const missingRoutineIds = routineIds.filter((routineId) => !rowsByOriginId.has(routineId));
-    if (missingRoutineIds.length > 0) {
-      const legacyRows = await db
-        .selectDistinctOn([issues.originId], {
-          originId: issues.originId,
-          id: issues.id,
-          identifier: issues.identifier,
-          title: issues.title,
-          status: issues.status,
-          priority: issues.priority,
-          updatedAt: issues.updatedAt,
-        })
-        .from(issues)
-        .innerJoin(
-          heartbeatRuns,
-          and(
-            eq(heartbeatRuns.companyId, issues.companyId),
-            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-            sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = cast(${issues.id} as text)`,
-          ),
-        )
-        .where(
-          and(
-            eq(issues.companyId, companyId),
-            eq(issues.originKind, "routine_execution"),
-            inArray(issues.originId, missingRoutineIds),
-            inArray(issues.status, OPEN_ISSUE_STATUSES),
-            visibleIssueCondition(),
-          ),
-        )
-        .orderBy(issues.originId, desc(issues.updatedAt), desc(issues.createdAt));
-
-      for (const row of legacyRows) {
-        if (!row.originId) continue;
-        rowsByOriginId.set(row.originId, row);
-      }
-    }
+      .orderBy(issues.creatorRoutineId, desc(issues.updatedAt), desc(issues.createdAt));
 
     const map = new Map<string, RoutineListItem["activeIssue"]>();
-    for (const row of rowsByOriginId.values()) {
-      if (!row.originId) continue;
-      map.set(row.originId, {
+    for (const row of rows) {
+      if (!row.routineId) continue;
+      map.set(row.routineId, {
         id: row.id,
         identifier: row.identifier,
         title: row.title,
-        status: row.status,
+        boardPresentationStatus: row.boardPresentationStatus,
         priority: row.priority,
         updatedAt: row.updatedAt,
       });
@@ -1250,12 +1321,12 @@ export function routineService(
           )
           or exists (
             select 1
-            from ${heartbeatRuns} activity_run
+            from ${issueExecutionRefs} activity_ref
             inner join ${issues} run_issue
-              on run_issue.company_id = ${routine.companyId}
-              and run_issue.id::text = activity_run.context_snapshot ->> 'issueId'
-            where activity_run.company_id = ${routine.companyId}
-              and activity_run.id = ${activityLog.runId}
+              on run_issue.company_id = activity_ref.company_id
+              and run_issue.id = activity_ref.issue_id
+            where activity_ref.company_id = ${routine.companyId}
+              and activity_ref.run_id = ${activityLog.runId}
               and run_issue.project_id = ${routine.projectId}
           )
           or exists (
@@ -1303,12 +1374,12 @@ export function routineService(
           )`,
           sql`not exists (
             select 1
-            from ${heartbeatRuns} own_run
+            from ${issueExecutionRefs} own_ref
             inner join ${issues} own_issue
-              on own_issue.company_id = ${routine.companyId}
-              and own_issue.id::text = own_run.context_snapshot ->> 'issueId'
-            where own_run.company_id = ${routine.companyId}
-              and own_run.id = ${activityLog.runId}
+              on own_issue.company_id = own_ref.company_id
+              and own_issue.id = own_ref.issue_id
+            where own_ref.company_id = ${routine.companyId}
+              and own_ref.run_id = ${activityLog.runId}
               and own_issue.origin_kind = 'routine_execution'
               and own_issue.origin_id = ${routine.id}
           )`,
@@ -1338,7 +1409,7 @@ export function routineService(
     details?: Record<string, unknown> | null;
   }) {
     const triggeredAt = new Date();
-    const run = await db.transaction(async (tx) => {
+    let run = await db.transaction(async (tx) => {
       const txDb = tx as unknown as Db;
       const [createdRun] = await txDb
         .insert(routineRuns)
@@ -1395,74 +1466,36 @@ export function routineService(
     return run;
   }
 
-  function routineExecutionFingerprintCondition(dispatchFingerprint?: string | null) {
-    if (!dispatchFingerprint) return null;
-    // The "default" arm preserves coalescing against pre-migration open issues.
-    // It becomes inert once those legacy routine execution issues drain out.
-    return or(
-      eq(issues.originFingerprint, dispatchFingerprint),
-      eq(issues.originFingerprint, "default"),
-    );
-  }
-
   async function findLiveExecutionIssue(
     routine: typeof routines.$inferSelect,
     executor: Db = db,
     dispatchFingerprint?: string | null,
-    origin?: { kind: string; id: string | null },
+    _origin?: { kind: string; id: string | null },
   ) {
-    const fingerprintCondition = routineExecutionFingerprintCondition(dispatchFingerprint);
-    const originKind = origin?.kind ?? "routine_execution";
-    const originId = origin?.id ?? routine.id;
-    const executionBoundIssue = await executor
+    const canonicalIssue = await executor
       .select()
       .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.id, issues.executionRunId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-        ),
-      )
       .where(
         and(
           eq(issues.companyId, routine.companyId),
-          eq(issues.originKind, originKind),
-          eq(issues.originId, originId),
-          inArray(issues.status, OPEN_ISSUE_STATUSES),
+          eq(issues.creatorKind, "routine"),
+          eq(issues.creatorRoutineId, routine.id),
+          dispatchFingerprint
+            ? eq(issues.originFingerprint, dispatchFingerprint)
+            : undefined,
+          inArray(issues.lifecycleStatus, ["open", "blocked"]),
           visibleIssueCondition(),
-          ...(fingerprintCondition ? [fingerprintCondition] : []),
         ),
       )
       .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
       .limit(1)
-      .then((rows) => rows[0]?.issues ?? null);
-    if (executionBoundIssue) return executionBoundIssue;
-
-    return executor
-      .select()
-      .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.companyId, issues.companyId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = cast(${issues.id} as text)`,
-        ),
-      )
-      .where(
-        and(
-          eq(issues.companyId, routine.companyId),
-          eq(issues.originKind, originKind),
-          eq(issues.originId, originId),
-          inArray(issues.status, OPEN_ISSUE_STATUSES),
-          visibleIssueCondition(),
-          ...(fingerprintCondition ? [fingerprintCondition] : []),
-        ),
-      )
-      .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
-      .limit(1)
-      .then((rows) => rows[0]?.issues ?? null);
+      .then((rows) => rows[0] ?? null);
+    return canonicalIssue
+      ? {
+          ...canonicalIssue,
+          status: canonicalIssue.boardPresentationStatus,
+        }
+      : null;
   }
 
   async function finalizeRun(runId: string, patch: Partial<typeof routineRuns.$inferInsert>, executor: Db = db) {
@@ -1480,76 +1513,30 @@ export function routineService(
   async function createWebhookSecret(
     companyId: string,
     routineId: string,
+    triggerId: string,
     actor: Actor,
-    executor?: Db,
   ) {
+    const secretMutationActor = routineSecretMutationActor(actor);
     const secretValue = crypto.randomBytes(24).toString("hex");
     const providerId = getConfiguredSecretProvider();
-    const input = {
-      name: `routine-${routineId}-${crypto.randomBytes(6).toString("hex")}`,
-      provider: providerId,
-      value: secretValue,
-      description: `Webhook auth for routine ${routineId}`,
-    };
-    const provider = getSecretProvider(input.provider);
-    const prepared = await provider.createSecret({
-      value: input.value,
-      externalRef: null,
-      context: {
-        companyId,
-        secretKey: input.name,
-        secretName: input.name,
-        version: 1,
+    const name =
+      `routine-${routineId}-${crypto.randomBytes(6).toString("hex")}`;
+    const secret = await secretsSvc.createBound(
+      companyId,
+      {
+        name,
+        key: name,
+        provider: providerId,
+        value: secretValue,
+        description: `Webhook auth for routine ${routineId}`,
       },
-    });
-
-    const insertSecret = async (secretDb: Db) => {
-      const secret = await secretDb
-        .insert(companySecrets)
-        .values({
-          companyId,
-          key: input.name,
-          name: input.name,
-          provider: input.provider,
-          status: "active",
-          managedMode: "paperclip_managed",
-          externalRef: prepared.externalRef,
-          providerMetadata: null,
-          latestVersion: 1,
-          description: input.description,
-          lastRotatedAt: new Date(),
-          createdByAgentId: actor.agentId ?? null,
-          createdByUserId: actor.userId ?? null,
-        })
-        .returning()
-        .then((rows) => rows[0]);
-
-      await secretDb.insert(companySecretVersions).values({
-        secretId: secret.id,
-        version: 1,
-        material: prepared.material,
-        valueSha256: prepared.valueSha256,
-        fingerprintSha256: prepared.fingerprintSha256 ?? prepared.valueSha256,
-        providerVersionRef: prepared.providerVersionRef ?? null,
-        status: "current",
-        createdByAgentId: actor.agentId ?? null,
-        createdByUserId: actor.userId ?? null,
-      });
-
-      await secretDb.insert(companySecretBindings).values({
-        companyId,
-        secretId: secret.id,
+      {
         targetType: "routine",
         targetId: routineId,
-        configPath: routineWebhookSecretConfigPath(secret.id),
-      });
-
-      return secret;
-    };
-
-    const secret = executor
-      ? await insertSecret(executor)
-      : await db.transaction(async (tx) => insertSecret(tx as unknown as Db));
+        configPath: routineWebhookSecretConfigPath(triggerId),
+      },
+      secretMutationActor,
+    );
     return { secret, secretValue };
   }
 
@@ -1566,7 +1553,7 @@ export function routineService(
       consumerId: trigger.routineId,
       actorType: "system",
       actorId: null,
-      configPath: routineWebhookSecretConfigPath(trigger.secretId),
+      configPath: routineWebhookSecretConfigPath(trigger.id),
     });
     return value;
   }
@@ -1621,7 +1608,6 @@ export function routineService(
     executionWorkspaceId?: string | null;
     executionWorkspacePreference?: string | null;
     executionWorkspaceSettings?: Record<string, unknown> | null;
-    descriptionAppendix?: string | null;
     nextRunAtOverride?: Date | null;
     actor?: Actor;
   }) {
@@ -1631,7 +1617,6 @@ export function routineService(
     if (!assigneeAgentId) {
       throw unprocessable("Default agent required");
     }
-    await assertAssignableAgent(db, input.routine.companyId, assigneeAgentId, { kind: "routine" });
     const automaticVariables: Record<string, string | number | boolean> = {};
     if (input.executionWorkspaceId && routineUsesWorkspaceBranch(input.routine)) {
       const workspace = await db
@@ -1656,20 +1641,49 @@ export function routineService(
       ...input,
       automaticVariables,
     });
+    if (!input.routine.latestRevisionId) {
+      throw conflict("Routine has no current revision");
+    }
+    const boundRevision = await db
+      .select({ snapshot: routineRevisions.snapshot })
+      .from(routineRevisions)
+      .where(
+        and(
+          eq(routineRevisions.companyId, input.routine.companyId),
+          eq(routineRevisions.routineId, input.routine.id),
+          eq(routineRevisions.id, input.routine.latestRevisionId),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!boundRevision) {
+      throw conflict("Routine current revision is unavailable");
+    }
+    const boundRoutineSnapshot = boundRevision.snapshot as RoutineRevisionSnapshotV1;
+    const boundAttentionMask = normalizeIssueAttentionMask(
+      boundRoutineSnapshot.routine.attentionMask,
+    );
     const allVariables = { ...getBuiltinRoutineVariableValues(), ...automaticVariables, ...resolvedVariables };
     const title = interpolateRoutineTemplate(input.routine.title, allVariables) ?? input.routine.title;
-    const baseDescription = interpolateRoutineTemplate(input.routine.description, allVariables);
-    const description = [baseDescription, input.descriptionAppendix]
-      .filter((part): part is string => Boolean(part && part.trim()))
-      .join("\n\n");
+    const description =
+      interpolateRoutineTemplate(input.routine.description, allVariables) ?? "";
     const triggerPayload = mergeRoutineRunPayload(input.payload, { ...automaticVariables, ...resolvedVariables });
     const managedRoutineBinding = await getManagedRoutineBinding(input.routine);
+    const summarySlotBinding = await db
+      .select({ id: summarySlots.id })
+      .from(summarySlots)
+      .where(
+        and(
+          eq(summarySlots.companyId, input.routine.companyId),
+          eq(summarySlots.routineId, input.routine.id),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
     const managedIssueTemplate = readManagedRoutineIssueTemplate(managedRoutineBinding?.defaultsJson);
     const issueOriginKind = managedIssueTemplate?.surfaceVisibility === "plugin_operation" && managedRoutineBinding
       ? pluginOperationIssueOriginKind(managedRoutineBinding.pluginKey)
       : "routine_execution";
     const issueOriginId = managedIssueTemplate?.originId ?? input.routine.id;
-    const issueBillingCode = managedIssueTemplate?.billingCode ?? null;
     const dispatchFingerprint = createRoutineDispatchFingerprint({
       payload: triggerPayload,
       projectId,
@@ -1682,8 +1696,11 @@ export function routineService(
       executionWorkspaceSettings: input.executionWorkspaceSettings ?? null,
       title,
       description,
+      attentionMask: boundAttentionMask,
     });
-    const run = await db.transaction(async (tx) => {
+    const manualRunnerUserId =
+      input.source === "manual" ? input.actor?.userId ?? null : null;
+    let run = await db.transaction(async (tx) => {
       const txDb = tx as unknown as Db;
       await tx.execute(
         sql`select id from ${routines} where ${routines.id} = ${input.routine.id} and ${routines.companyId} = ${input.routine.companyId} for update`,
@@ -1709,7 +1726,6 @@ export function routineService(
       }
 
       const triggeredAt = new Date();
-      const manualRunnerUserId = input.source === "manual" ? input.actor?.userId ?? null : null;
       const latestRevisionResponsibleUserId = input.routine.latestRevisionId
         ? await txDb
             .select({
@@ -1753,149 +1769,350 @@ export function routineService(
           ? nextCronTickInTimeZone(input.trigger.cronExpression, input.trigger.timezone, triggeredAt)
           : undefined;
 
-      let createdIssue: Awaited<ReturnType<typeof issueSvc.create>> | null = null;
-      try {
-        const activeIssue = await findLiveExecutionIssue(input.routine, txDb, dispatchFingerprint, {
+      const activeIssue = await findLiveExecutionIssue(
+        input.routine,
+        txDb,
+        dispatchFingerprint,
+        {
           kind: issueOriginKind,
           id: issueOriginId,
-        });
-        if (activeIssue && input.routine.concurrencyPolicy !== "always_enqueue") {
-          const status = input.routine.concurrencyPolicy === "skip_if_active" ? "skipped" : "coalesced";
-          if (manualRunnerUserId) {
-            await touchIssueForUserInbox(txDb, {
-              companyId: input.routine.companyId,
-              issueId: activeIssue.id,
-              userId: manualRunnerUserId,
-              touchedAt: triggeredAt,
-            });
-          }
-          const updated = await finalizeRun(createdRun.id, {
+        },
+      );
+      if (
+        activeIssue &&
+        input.routine.concurrencyPolicy !== "always_enqueue"
+      ) {
+        const status =
+          input.routine.concurrencyPolicy === "skip_if_active"
+            ? "skipped"
+            : "coalesced";
+        if (manualRunnerUserId) {
+          await touchIssueForUserInbox(txDb, {
+            companyId: input.routine.companyId,
+            issueId: activeIssue.id,
+            userId: manualRunnerUserId,
+            touchedAt: triggeredAt,
+          });
+        }
+        const updated = await finalizeRun(
+          createdRun.id,
+          {
             status,
             linkedIssueId: activeIssue.id,
-            coalescedIntoRunId: activeIssue.originRunId,
+            coalescedIntoRunId: activeIssue.creatorRoutineDispatchId,
             completedAt: triggeredAt,
-          }, txDb);
-          await updateRoutineTouchedState({
-            routineId: input.routine.id,
-            triggerId: input.trigger?.id ?? null,
-            triggeredAt,
-            status,
-            issueId: activeIssue.id,
-            nextRunAt,
-          }, txDb);
-          return updated ?? createdRun;
-        }
-
-        try {
-          createdIssue = await issueSvc.create(input.routine.companyId, {
-            projectId,
-            projectWorkspaceId,
-            goalId: input.routine.goalId,
-            parentId: input.routine.parentIssueId,
-            title,
-            description,
-            status: "todo",
-            priority: input.routine.priority,
-            assigneeAgentId,
-            createdByAgentId: input.source === "manual" ? input.actor?.agentId ?? null : null,
-            createdByUserId: manualRunnerUserId,
-            responsibleUserId,
-            trustExplicitResponsibleUserId: true,
-            originKind: issueOriginKind,
-            originId: issueOriginId,
-            originRunId: createdRun.id,
-            originFingerprint: dispatchFingerprint,
-            billingCode: issueBillingCode,
-            executionWorkspaceId: input.executionWorkspaceId ?? null,
-            executionWorkspacePreference: input.executionWorkspacePreference ?? null,
-            executionWorkspaceSettings: input.executionWorkspaceSettings ?? null,
-          });
-        } catch (error) {
-          const isOpenExecutionConflict =
-            !!error &&
-            typeof error === "object" &&
-            "code" in error &&
-            (error as { code?: string }).code === "23505" &&
-            "constraint" in error &&
-            (error as { constraint?: string }).constraint === "issues_open_routine_execution_uq";
-          if (!isOpenExecutionConflict || input.routine.concurrencyPolicy === "always_enqueue") {
-            throw error;
-          }
-
-          const existingIssue = await findLiveExecutionIssue(input.routine, txDb, dispatchFingerprint, {
-            kind: issueOriginKind,
-            id: issueOriginId,
-          });
-          if (!existingIssue) throw error;
-          const status = input.routine.concurrencyPolicy === "skip_if_active" ? "skipped" : "coalesced";
-          if (manualRunnerUserId) {
-            await touchIssueForUserInbox(txDb, {
-              companyId: input.routine.companyId,
-              issueId: existingIssue.id,
-              userId: manualRunnerUserId,
-              touchedAt: triggeredAt,
-            });
-          }
-          const updated = await finalizeRun(createdRun.id, {
-            status,
-            linkedIssueId: existingIssue.id,
-            coalescedIntoRunId: existingIssue.originRunId,
-            completedAt: triggeredAt,
-          }, txDb);
-          await updateRoutineTouchedState({
-            routineId: input.routine.id,
-            triggerId: input.trigger?.id ?? null,
-            triggeredAt,
-            status,
-            issueId: existingIssue.id,
-            nextRunAt,
-          }, txDb);
-          return updated ?? createdRun;
-        }
-
-        // Keep the dispatch lock until the issue is linked to a queued heartbeat run.
-        await queueIssueAssignmentWakeup({
-          heartbeat,
-          issue: createdIssue,
-          reason: "issue_assigned",
-          mutation: "create",
-          contextSource: "routine.dispatch",
-          requestedByActorType: input.source === "schedule" ? "system" : undefined,
-          rethrowOnError: true,
-        });
-        const updated = await finalizeRun(createdRun.id, {
-          status: "issue_created",
-          linkedIssueId: createdIssue.id,
-        }, txDb);
+          },
+          txDb,
+        );
         await updateRoutineTouchedState({
           routineId: input.routine.id,
           triggerId: input.trigger?.id ?? null,
           triggeredAt,
-          status: "issue_created",
-          issueId: createdIssue.id,
+          status,
+          issueId: activeIssue.id,
           nextRunAt,
         }, txDb);
+        if (summarySlotBinding) {
+          await txDb
+            .update(summarySlots)
+            .set({
+              status: "generating",
+              failureReason: null,
+              generatingIssueId: activeIssue.id,
+              updatedAt: triggeredAt,
+            })
+            .where(
+              and(
+                eq(summarySlots.id, summarySlotBinding.id),
+                eq(summarySlots.routineId, input.routine.id),
+              ),
+            );
+        }
         return updated ?? createdRun;
-      } catch (error) {
-        if (createdIssue) {
-          await txDb.delete(issues).where(eq(issues.id, createdIssue.id));
-        }
-        const failureReason = error instanceof Error ? error.message : String(error);
-        const failed = await finalizeRun(createdRun.id, {
-          status: "failed",
-          failureReason,
-          completedAt: new Date(),
-        }, txDb);
-        await updateRoutineTouchedState({
-          routineId: input.routine.id,
-          triggerId: input.trigger?.id ?? null,
-          triggeredAt,
-          status: "failed",
-          nextRunAt,
-        }, txDb);
-        return failed ?? createdRun;
       }
+      if (input.routine.concurrencyPolicy !== "always_enqueue") {
+        const pendingRun = await txDb
+          .select({ id: routineRuns.id })
+          .from(routineRuns)
+          .where(
+            and(
+              eq(routineRuns.companyId, input.routine.companyId),
+              eq(routineRuns.routineId, input.routine.id),
+              eq(routineRuns.dispatchFingerprint, dispatchFingerprint),
+              eq(routineRuns.status, "received"),
+              ne(routineRuns.id, createdRun.id),
+            ),
+          )
+          .orderBy(asc(routineRuns.createdAt), asc(routineRuns.id))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        if (pendingRun) {
+          return txDb
+            .update(routineRuns)
+            .set({
+              coalescedIntoRunId: pendingRun.id,
+              updatedAt: triggeredAt,
+            })
+            .where(eq(routineRuns.id, createdRun.id))
+            .returning()
+            .then((rows) => rows[0] ?? createdRun);
+        }
+      }
+      return createdRun;
     });
+
+    if (run.status === "received") {
+      const nextRunAt =
+        input.nextRunAtOverride !== undefined
+          ? input.nextRunAtOverride
+          : input.trigger?.kind === "schedule" &&
+              input.trigger.cronExpression &&
+              input.trigger.timezone
+            ? nextCronTickInTimeZone(
+                input.trigger.cronExpression,
+                input.trigger.timezone,
+                run.triggeredAt,
+              )
+            : undefined;
+      if (run.coalescedIntoRunId) {
+        let sourceRun: typeof routineRuns.$inferSelect | null = null;
+        for (let attempt = 0; attempt < 500; attempt += 1) {
+          sourceRun = await db
+            .select()
+            .from(routineRuns)
+            .where(eq(routineRuns.id, run.coalescedIntoRunId))
+            .then((rows) => rows[0] ?? null);
+          if (!sourceRun || sourceRun.status !== "received") break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        const sourceLinkedIssueId = sourceRun?.linkedIssueId ?? null;
+        if (
+          sourceLinkedIssueId &&
+          sourceRun &&
+          ["issue_created", "coalesced", "skipped"].includes(sourceRun.status)
+        ) {
+          const sourceRunId = sourceRun.id;
+          const status =
+            input.routine.concurrencyPolicy === "skip_if_active"
+              ? "skipped"
+              : "coalesced";
+          run = await db.transaction(async (tx) => {
+            const txDb = tx as unknown as Db;
+            if (manualRunnerUserId) {
+              await touchIssueForUserInbox(txDb, {
+                companyId: input.routine.companyId,
+                issueId: sourceLinkedIssueId,
+                userId: manualRunnerUserId,
+                touchedAt: run.triggeredAt,
+              });
+            }
+            const updated =
+              (await finalizeRun(
+                run.id,
+                {
+                  status,
+                  linkedIssueId: sourceLinkedIssueId,
+                  coalescedIntoRunId: sourceRunId,
+                  completedAt: new Date(),
+                },
+                txDb,
+              )) ?? run;
+            await updateRoutineTouchedState(
+              {
+                routineId: input.routine.id,
+                triggerId: input.trigger?.id ?? null,
+                triggeredAt: run.triggeredAt,
+                status,
+                issueId: sourceLinkedIssueId,
+                nextRunAt,
+              },
+              txDb,
+            );
+            if (summarySlotBinding) {
+              await txDb
+                .update(summarySlots)
+                .set({
+                  status: "generating",
+                  failureReason: null,
+                  generatingIssueId: sourceLinkedIssueId,
+                  updatedAt: new Date(),
+                })
+                .where(
+                  and(
+                    eq(summarySlots.id, summarySlotBinding.id),
+                    eq(summarySlots.routineId, input.routine.id),
+                  ),
+                );
+            }
+            return updated;
+          });
+        } else if (sourceRun?.status === "received") {
+          const failureReason =
+            "Concurrent routine dispatch did not reach durable issue admission";
+          run =
+            (await finalizeRun(run.id, {
+              status: "failed",
+              failureReason,
+              completedAt: new Date(),
+            })) ?? run;
+        } else {
+          run =
+            (await db
+              .update(routineRuns)
+              .set({ coalescedIntoRunId: null, updatedAt: new Date() })
+              .where(eq(routineRuns.id, run.id))
+              .returning()
+              .then((rows) => rows[0] ?? null)) ?? run;
+        }
+      }
+      if (run.status === "received") {
+      try {
+        const created = await ordinaryIssues.create({
+          companyId: input.routine.companyId,
+          request: description.trim() ? description : title,
+          ownerAgentId: assigneeAgentId,
+          creator: {
+            kind: "routine",
+            routineId: input.routine.id,
+            routineDispatchId: run.id,
+          },
+          idempotencyKey: `routine-dispatch:${run.id}`,
+          sourceKind: "routine_dispatch",
+          title,
+          projectId,
+          projectWorkspaceId,
+          executionWorkspaceId: input.executionWorkspaceId ?? null,
+          executionWorkspacePreference:
+            input.executionWorkspacePreference ?? null,
+          executionWorkspaceSettings:
+            input.executionWorkspaceSettings ?? null,
+          goalId: input.routine.goalId,
+          parentId: input.routine.parentIssueId,
+          priority: input.routine.priority as
+            | "critical"
+            | "high"
+            | "medium"
+            | "low",
+          responsibleUserId: run.responsibleUserId,
+          originKind: issueOriginKind,
+          originId: issueOriginId,
+          originRunId: run.id,
+          originFingerprint: dispatchFingerprint,
+          billingCode: managedIssueTemplate?.billingCode ?? null,
+          attentionMask: boundAttentionMask,
+          correlate: async (tx, persisted) => {
+            const txDb = tx as unknown as Db;
+            if (manualRunnerUserId) {
+              await touchIssueForUserInbox(txDb, {
+                companyId: input.routine.companyId,
+                issueId: persisted.issue.id,
+                userId: manualRunnerUserId,
+                touchedAt: run.triggeredAt,
+              });
+            }
+            run =
+              (await finalizeRun(
+                run.id,
+                {
+                  status: "issue_created",
+                  linkedIssueId: persisted.issue.id,
+                },
+                txDb,
+              )) ?? run;
+            await updateRoutineTouchedState(
+              {
+                routineId: input.routine.id,
+                triggerId: input.trigger?.id ?? null,
+                triggeredAt: run.triggeredAt,
+                status: "issue_created",
+                issueId: persisted.issue.id,
+                nextRunAt,
+              },
+              txDb,
+            );
+            if (summarySlotBinding) {
+              await tx
+                .update(summarySlots)
+                .set({
+                  status: "generating",
+                  failureReason: null,
+                  generatingIssueId: persisted.issue.id,
+                  updatedAt: new Date(),
+                })
+                .where(
+                  and(
+                    eq(summarySlots.id, summarySlotBinding.id),
+                    eq(summarySlots.routineId, input.routine.id),
+                  ),
+                );
+            }
+          },
+        });
+        if (run.linkedIssueId !== created.issue.id) {
+          throw new Error("Routine issue admission did not persist its dispatch correlation");
+        }
+      } catch (error) {
+        const failureReason =
+          error instanceof Error ? error.message : String(error);
+        const persistedRun = await db
+          .select()
+          .from(routineRuns)
+          .where(eq(routineRuns.id, run.id))
+          .then((rows) => rows[0] ?? null);
+        if (
+          persistedRun?.status === "issue_created" &&
+          persistedRun.linkedIssueId
+        ) {
+          // The issue, immutable input, ref, and routine correlation committed
+          // together. A post-commit dispatcher notification failure is
+          // recovered by the persisted-ref reconciler and cannot roll the
+          // accepted routine issue back into a failed dispatch.
+          run = persistedRun;
+        } else {
+          run =
+            (await db.transaction(async (tx) => {
+              const txDb = tx as unknown as Db;
+              const failed = await finalizeRun(
+                run.id,
+                {
+                  status: "failed",
+                  failureReason,
+                  completedAt: new Date(),
+                },
+                txDb,
+              );
+              await updateRoutineTouchedState(
+                {
+                  routineId: input.routine.id,
+                  triggerId: input.trigger?.id ?? null,
+                  triggeredAt: run.triggeredAt,
+                  status: "failed",
+                  nextRunAt,
+                },
+                txDb,
+              );
+              if (summarySlotBinding) {
+                await txDb
+                  .update(summarySlots)
+                  .set({
+                    status: "failed",
+                    failureReason,
+                    generatingIssueId: null,
+                    updatedAt: new Date(),
+                  })
+                  .where(
+                    and(
+                      eq(summarySlots.id, summarySlotBinding.id),
+                      eq(summarySlots.routineId, input.routine.id),
+                    ),
+                  );
+              }
+              return failed ?? run;
+            })) ?? run;
+        }
+      }
+      }
+    }
 
     if (input.source === "schedule" || input.source === "webhook") {
       const actorId = input.source === "schedule" ? "routine-scheduler" : "routine-webhook";
@@ -1983,7 +2200,20 @@ export function routineService(
         row.assigneeAgentId
           ? db.select().from(agents).where(eq(agents.id, row.assigneeAgentId)).then((rows) => rows[0] ?? null)
           : null,
-        row.parentIssueId ? issueSvc.getById(row.parentIssueId) : null,
+        row.parentIssueId
+          ? issueSvc.getById(row.parentIssueId).then((issue) =>
+              issue
+                ? {
+                    id: issue.id,
+                    identifier: issue.identifier,
+                    title: issue.title,
+                    boardPresentationStatus: issue.boardPresentationStatus,
+                    priority: issue.priority,
+                    updatedAt: issue.updatedAt,
+                  }
+                : null,
+            )
+          : null,
         getRoutineDescriptionDocument(row.id),
         db.select().from(routineTriggers).where(eq(routineTriggers.routineId, row.id)).orderBy(asc(routineTriggers.createdAt)),
         db
@@ -2009,7 +2239,7 @@ export function routineService(
             triggerLabel: routineTriggers.label,
             issueIdentifier: issues.identifier,
             issueTitle: issues.title,
-            issueStatus: issues.status,
+            issueBoardPresentationStatus: issues.boardPresentationStatus,
             issuePriority: issues.priority,
             issueUpdatedAt: issues.updatedAt,
           })
@@ -2043,7 +2273,8 @@ export function routineService(
                   id: run.linkedIssueId,
                   identifier: run.issueIdentifier,
                   title: run.issueTitle ?? "Routine execution",
-                  status: run.issueStatus ?? "todo",
+                  boardPresentationStatus:
+                    run.issueBoardPresentationStatus ?? "todo",
                   priority: run.issuePriority ?? "medium",
                   updatedAt: run.issueUpdatedAt ?? run.updatedAt,
                 }
@@ -2076,10 +2307,19 @@ export function routineService(
 
     getDescriptionDocument: async (routineId: string) => getRoutineDescriptionDocument(routineId),
 
-    create: async (companyId: string, input: CreateRoutine, actor: Actor): Promise<Routine> => {
+    create: async (
+      companyId: string,
+      input: CreateRoutine,
+      actor: Actor,
+      internal?: {
+        id: string;
+        originKind: string;
+        originId: string;
+      },
+    ): Promise<Routine> => {
+      const secretMutationActor = routineSecretMutationActor(actor);
       await assertProject(companyId, input.projectId ?? null);
       await assertRoutineFolder(companyId, input.folderId ?? null);
-      await assertAssignableAgent(db, companyId, input.assigneeAgentId ?? null, { kind: "routine" });
       if (input.goalId) await assertGoal(companyId, input.goalId);
       if (input.parentIssueId) await assertParentIssue(companyId, input.parentIssueId);
       const env = input.env === undefined || input.env === null
@@ -2100,9 +2340,15 @@ export function routineService(
       }
       const createdRoutine = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
+        await assertInvokableRoutineAssigneeInTransaction(
+          tx as unknown as IssueSessionDbTransaction,
+          companyId,
+          input.assigneeAgentId ?? null,
+        );
         const [created] = await txDb
           .insert(routines)
           .values({
+            ...(internal ? { id: internal.id } : {}),
             companyId,
             projectId: input.projectId ?? null,
             folderId: input.folderId ?? null,
@@ -2112,9 +2358,13 @@ export function routineService(
             description: input.description ?? null,
             assigneeAgentId: input.assigneeAgentId ?? null,
             priority: input.priority,
+            attentionMask:
+              normalizeIssueAttentionMask(input.attentionMask),
             status,
             concurrencyPolicy: input.concurrencyPolicy,
             catchUpPolicy: input.catchUpPolicy,
+            originKind: internal?.originKind ?? "manual",
+            originId: internal?.originId ?? null,
             variables,
             env,
             responsibleUserId,
@@ -2132,7 +2382,10 @@ export function routineService(
             companyId,
             { targetType: "routine", targetId: routine.id },
             env,
-            { db: tx },
+            {
+              actor: secretMutationActor,
+              db: tx,
+            },
           );
         }
         return routine;
@@ -2141,6 +2394,7 @@ export function routineService(
     },
 
     update: async (id: string, patch: UpdateRoutine, actor: Actor): Promise<Routine | null> => {
+      const secretMutationActor = routineSecretMutationActor(actor);
       const existing = await getRoutineById(id);
       if (!existing) return null;
       const nextProjectId = patch.projectId === undefined ? existing.projectId : patch.projectId;
@@ -2169,9 +2423,6 @@ export function routineService(
       );
       if (patch.projectId !== undefined) await assertProject(existing.companyId, nextProjectId);
       if (patch.folderId !== undefined) await assertRoutineFolder(existing.companyId, nextFolderId);
-      if (patch.assigneeAgentId !== undefined || patch.status === "active") {
-        await assertAssignableAgent(db, existing.companyId, nextAssigneeAgentId, { kind: "routine" });
-      }
       if (patch.goalId) await assertGoal(existing.companyId, patch.goalId);
       if (patch.parentIssueId) await assertParentIssue(existing.companyId, patch.parentIssueId);
       assertRoutineVariableDefinitions(nextVariables);
@@ -2199,7 +2450,7 @@ export function routineService(
       if (!responsibleUserId) {
         throw unprocessable("Routine requires a responsible user");
       }
-      const updatedRoutine = await db.transaction(async (tx) => {
+      const committed = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         await tx.execute(sql`select id from ${routines} where ${routines.id} = ${id} for update`);
         const locked = await txDb
@@ -2207,7 +2458,12 @@ export function routineService(
           .from(routines)
           .where(eq(routines.id, id))
           .then((rows) => rows[0] ?? null);
-        if (!locked) return null;
+        if (!locked) {
+          return {
+            routine: null,
+            dispatchRefIds: [] as string[],
+          };
+        }
 
         if (patch.baseRevisionId && patch.baseRevisionId !== locked.latestRevisionId) {
           throw conflict("Routine was updated by someone else", {
@@ -2225,6 +2481,10 @@ export function routineService(
           description: nextDescription,
           assigneeAgentId: nextAssigneeAgentId,
           priority: patch.priority ?? locked.priority,
+          attentionMask:
+            patch.attentionMask === undefined
+              ? locked.attentionMask
+              : normalizeIssueAttentionMask(patch.attentionMask),
           status: nextStatus,
           concurrencyPolicy: patch.concurrencyPolicy ?? locked.concurrencyPolicy,
           catchUpPolicy: patch.catchUpPolicy ?? locked.catchUpPolicy,
@@ -2235,9 +2495,22 @@ export function routineService(
           updatedByUserId: actor.userId ?? null,
         };
 
+        if (patch.assigneeAgentId !== undefined || patch.status === "active") {
+          await assertInvokableRoutineAssigneeInTransaction(
+            tx as unknown as IssueSessionDbTransaction,
+            candidate.companyId,
+            candidate.assigneeAgentId,
+          );
+        }
+
         const folderChanged = patch.folderId !== undefined && locked.folderId !== candidate.folderId;
         if (locked.latestRevisionId && routineCurrentFieldsMatch(locked, candidate)) {
-          if (!folderChanged) return locked;
+          if (!folderChanged) {
+            return {
+              routine: locked,
+              dispatchRefIds: [] as string[],
+            };
+          }
           const [updated] = await txDb
             .update(routines)
             .set({
@@ -2248,7 +2521,10 @@ export function routineService(
             })
             .where(eq(routines.id, id))
             .returning();
-          return updated ?? locked;
+          return {
+            routine: updated ?? locked,
+            dispatchRefIds: [] as string[],
+          };
         }
 
         const nextSnapshot = await buildRoutineRevisionSnapshot(txDb, candidate);
@@ -2270,10 +2546,16 @@ export function routineService(
                 locked.companyId,
                 { targetType: "routine", targetId: locked.id },
                 candidate.env,
-                { db: tx },
+                {
+                  actor: secretMutationActor,
+                  db: tx,
+                },
               );
             }
-            return locked;
+            return {
+              routine: locked,
+              dispatchRefIds: [] as string[],
+            };
           }
         }
 
@@ -2288,6 +2570,7 @@ export function routineService(
             description: candidate.description,
             assigneeAgentId: candidate.assigneeAgentId,
             priority: candidate.priority,
+            attentionMask: candidate.attentionMask,
             status: candidate.status,
             concurrencyPolicy: candidate.concurrencyPolicy,
             catchUpPolicy: candidate.catchUpPolicy,
@@ -2300,7 +2583,12 @@ export function routineService(
           })
           .where(eq(routines.id, id))
           .returning();
-        if (!updated) return null;
+        if (!updated) {
+          return {
+            routine: null,
+            dispatchRefIds: [] as string[],
+          };
+        }
         const { routine } = await appendRoutineRevision(txDb, updated, actor, {
           changeSummary: "Updated routine",
         });
@@ -2309,12 +2597,40 @@ export function routineService(
             routine.companyId,
             { targetType: "routine", targetId: routine.id },
             routine.env,
-            { db: tx },
+            {
+              actor: secretMutationActor,
+              db: tx,
+            },
           );
         }
-        return routine;
+        let dispatchRefIds: string[] = [];
+        if (
+          locked.status !== "archived" &&
+          routine.status === "archived"
+        ) {
+          const escalations =
+            await terminalizeRoutineCreatorEdgesInTransaction(
+              tx,
+              canonicalSessions,
+              {
+                companyId: routine.companyId,
+                routineId: routine.id,
+                sourceId: `routine-archived:${routine.id}`,
+                now: new Date(),
+              },
+            );
+          dispatchRefIds = escalations.flatMap((escalation) =>
+            escalation.dispatchRefId
+              ? [escalation.dispatchRefId]
+              : [],
+          );
+        }
+        return { routine, dispatchRefIds };
       });
-      return updatedRoutine;
+      for (const refId of committed.dispatchRefIds) {
+        await ordinaryIssues.dispatchRef(refId);
+      }
+      return committed.routine;
     },
 
     createTrigger: async (
@@ -2322,9 +2638,11 @@ export function routineService(
       input: CreateRoutineTrigger,
       actor: Actor,
     ): Promise<{ trigger: RoutineTrigger; secretMaterial: RoutineTriggerSecretMaterial | null; revision: RoutineRevision }> => {
+      const secretMutationActor = routineSecretMutationActor(actor);
       const routine = await getRoutineById(routineId);
       if (!routine) throw notFound("Routine not found");
 
+      const triggerId = crypto.randomUUID();
       let secretMaterial: RoutineTriggerSecretMaterial | null = null;
       let secretId: string | null = null;
       let publicId: string | null = null;
@@ -2341,51 +2659,64 @@ export function routineService(
 
       if (input.kind === "webhook") {
         publicId = crypto.randomBytes(12).toString("hex");
-        const created = await createWebhookSecret(routine.companyId, routine.id, actor);
+        const created = await createWebhookSecret(
+          routine.companyId,
+          routine.id,
+          triggerId,
+          actor,
+        );
         secretId = created.secret.id;
         secretMaterial = {
-          webhookUrl: `${process.env.PAPERCLIP_API_URL}/api/routine-triggers/public/${publicId}/fire`,
+          webhookUrl: routineWebhookUrl(runtimeEnv, publicId),
           webhookSecret: created.secretValue,
         };
       }
 
-      const { trigger, revision } = await db.transaction(async (tx) => {
-        const txDb = tx as unknown as Db;
-        await tx.execute(sql`select id from ${routines} where ${routines.id} = ${routine.id} for update`);
-        const [createdTrigger] = await txDb
-          .insert(routineTriggers)
-          .values({
-            companyId: routine.companyId,
-            routineId: routine.id,
-            kind: input.kind,
-            label: input.label ?? null,
-            enabled: input.enabled ?? true,
-            cronExpression: input.kind === "schedule" ? input.cronExpression : null,
-            timezone: input.kind === "schedule" ? (input.timezone || "UTC") : null,
-            nextRunAt,
-            publicId,
-            secretId,
-            signingMode: input.kind === "webhook" ? input.signingMode : null,
-            replayWindowSec: input.kind === "webhook" ? input.replayWindowSec : null,
-            lastRotatedAt: input.kind === "webhook" ? new Date() : null,
-            createdByAgentId: actor.agentId ?? null,
-            createdByUserId: actor.userId ?? null,
-            updatedByAgentId: actor.agentId ?? null,
-            updatedByUserId: actor.userId ?? null,
-          })
-          .returning();
-        const latestRoutine = await txDb.select().from(routines).where(eq(routines.id, routine.id)).then((rows) => rows[0] ?? routine);
-        const appended = await appendRoutineRevision(txDb, latestRoutine, actor, {
-          changeSummary: `Created ${input.kind} trigger`,
+      try {
+        const { trigger, revision } = await db.transaction(async (tx) => {
+          const txDb = tx as unknown as Db;
+          await tx.execute(sql`select id from ${routines} where ${routines.id} = ${routine.id} for update`);
+          const [createdTrigger] = await txDb
+            .insert(routineTriggers)
+            .values({
+              id: triggerId,
+              companyId: routine.companyId,
+              routineId: routine.id,
+              kind: input.kind,
+              label: input.label ?? null,
+              enabled: input.enabled ?? true,
+              cronExpression: input.kind === "schedule" ? input.cronExpression : null,
+              timezone: input.kind === "schedule" ? (input.timezone || "UTC") : null,
+              nextRunAt,
+              publicId,
+              secretId,
+              signingMode: input.kind === "webhook" ? input.signingMode : null,
+              replayWindowSec: input.kind === "webhook" ? input.replayWindowSec : null,
+              lastRotatedAt: input.kind === "webhook" ? new Date() : null,
+              createdByAgentId: actor.agentId ?? null,
+              createdByUserId: actor.userId ?? null,
+              updatedByAgentId: actor.agentId ?? null,
+              updatedByUserId: actor.userId ?? null,
+            })
+            .returning();
+          const latestRoutine = await txDb.select().from(routines).where(eq(routines.id, routine.id)).then((rows) => rows[0] ?? routine);
+          const appended = await appendRoutineRevision(txDb, latestRoutine, actor, {
+            changeSummary: `Created ${input.kind} trigger`,
+          });
+          return { trigger: createdTrigger, revision: appended.revision };
         });
-        return { trigger: createdTrigger, revision: appended.revision };
-      });
 
-      return {
-        trigger: trigger as RoutineTrigger,
-        secretMaterial,
-        revision,
-      };
+        return {
+          trigger: trigger as RoutineTrigger,
+          secretMaterial,
+          revision,
+        };
+      } catch (error) {
+        if (secretId) {
+          await secretsSvc.remove(secretId, secretMutationActor);
+        }
+        throw error;
+      }
     },
 
     updateTrigger: async (
@@ -2393,6 +2724,7 @@ export function routineService(
       patch: UpdateRoutineTrigger,
       actor: Actor,
     ): Promise<{ trigger: RoutineTrigger; revision: RoutineRevision } | null> => {
+      routineSecretMutationActor(actor);
       const existing = await getTriggerById(id);
       if (!existing) return null;
 
@@ -2456,7 +2788,8 @@ export function routineService(
       return result;
     },
 
-    deleteTrigger: async (id: string, actor: Actor = {}): Promise<{ deleted: boolean; revision: RoutineRevision | null }> => {
+    deleteTrigger: async (id: string, actor: Actor): Promise<{ deleted: boolean; revision: RoutineRevision | null }> => {
+      const secretMutationActor = routineSecretMutationActor(actor);
       const existing = await getTriggerById(id);
       if (!existing) return { deleted: false, revision: null };
       const result = await db.transaction(async (tx) => {
@@ -2472,18 +2805,14 @@ export function routineService(
         const appended = await appendRoutineRevision(txDb, routine, actor, {
           changeSummary: `Deleted ${existing.kind} trigger`,
         });
-        return { deleted: true, revision: appended.revision };
-      });
-      if (result.deleted && existing.secretId) {
-        try {
-          await secretsSvc.remove(existing.secretId);
-        } catch (err) {
-          logger.warn(
-            { err, routineId: existing.routineId, triggerId: existing.id, secretId: existing.secretId },
-            "failed to remove routine trigger webhook secret after trigger deletion",
+        if (existing.secretId) {
+          await secretService(txDb).remove(
+            existing.secretId,
+            secretMutationActor,
           );
         }
-      }
+        return { deleted: true, revision: appended.revision };
+      });
       return result;
     },
 
@@ -2491,6 +2820,7 @@ export function routineService(
       id: string,
       actor: Actor,
     ): Promise<{ trigger: RoutineTrigger; secretMaterial: RoutineTriggerSecretMaterial; revision: RoutineRevision }> => {
+      const secretMutationActor = routineSecretMutationActor(actor);
       const existing = await getTriggerById(id);
       if (!existing) throw notFound("Routine trigger not found");
       if (existing.kind !== "webhook" || !existing.publicId || !existing.secretId) {
@@ -2498,7 +2828,11 @@ export function routineService(
       }
 
       const secretValue = crypto.randomBytes(24).toString("hex");
-      await secretsSvc.rotate(existing.secretId, { value: secretValue }, actor);
+      await secretsSvc.rotate(
+        existing.secretId,
+        { value: secretValue },
+        secretMutationActor,
+      );
       const { trigger, revision } = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         await tx.execute(sql`select id from ${routines} where ${routines.id} = ${existing.routineId} for update`);
@@ -2527,7 +2861,7 @@ export function routineService(
       return {
         trigger: trigger as RoutineTrigger,
         secretMaterial: {
-          webhookUrl: `${process.env.PAPERCLIP_API_URL}/api/routine-triggers/public/${existing.publicId}/fire`,
+          webhookUrl: routineWebhookUrl(runtimeEnv, existing.publicId),
           webhookSecret: secretValue,
         },
         revision,
@@ -2557,6 +2891,7 @@ export function routineService(
       restoredFromRevisionNumber: number;
       secretMaterials: RoutineTriggerSecretRestoreMaterial[];
     }> => {
+      const secretMutationActor = routineSecretMutationActor(actor);
       const existingRoutine = await getRoutineById(routineId);
       if (!existingRoutine) throw notFound("Routine not found");
       const targetRevision = await db
@@ -2575,8 +2910,71 @@ export function routineService(
       const snapshot = targetRevision.snapshot as RoutineRevisionSnapshotV1;
       const routineSnapshot = snapshot.routine;
       await assertRestorableAssignee(existingRoutine.companyId, routineSnapshot.assigneeAgentId, actor);
+      if (existingRoutine.latestRevisionId === targetRevision.id) {
+        throw conflict("Selected revision is already the latest revision", {
+          currentRevisionId: existingRoutine.latestRevisionId,
+        });
+      }
 
-      const result = await db.transaction(async (tx) => {
+      const currentTriggersBeforeRestore = await db
+        .select()
+        .from(routineTriggers)
+        .where(
+          and(
+            eq(routineTriggers.companyId, existingRoutine.companyId),
+            eq(routineTriggers.routineId, existingRoutine.id),
+          ),
+        );
+      const currentTriggerIdsBeforeRestore = new Set(
+        currentTriggersBeforeRestore.map((trigger) => trigger.id),
+      );
+      const recreatedWebhookSecrets = new Map<string, {
+        publicId: string;
+        secretId: string;
+        secretMaterial: RoutineTriggerSecretRestoreMaterial;
+      }>();
+      try {
+        for (const trigger of snapshot.triggers) {
+          if (
+            trigger.kind !== "webhook" ||
+            currentTriggerIdsBeforeRestore.has(trigger.id)
+          ) {
+            continue;
+          }
+          const publicId = crypto.randomBytes(12).toString("hex");
+          const created = await createWebhookSecret(
+            existingRoutine.companyId,
+            existingRoutine.id,
+            trigger.id,
+            actor,
+          );
+          recreatedWebhookSecrets.set(trigger.id, {
+            publicId,
+            secretId: created.secret.id,
+            secretMaterial: {
+              triggerId: trigger.id,
+              webhookUrl: routineWebhookUrl(runtimeEnv, publicId),
+              webhookSecret: created.secretValue,
+            },
+          });
+        }
+      } catch (error) {
+        for (const entry of recreatedWebhookSecrets.values()) {
+          await secretsSvc.remove(entry.secretId, secretMutationActor);
+        }
+        throw error;
+      }
+
+      let result: {
+        routine: Routine;
+        revision: RoutineRevision;
+        restoredFromRevisionId: string;
+        restoredFromRevisionNumber: number;
+        secretMaterials: RoutineTriggerSecretRestoreMaterial[];
+        dispatchRefIds: string[];
+      };
+      try {
+        result = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         await tx.execute(sql`select id from ${routines} where ${routines.id} = ${existingRoutine.id} for update`);
         const locked = await txDb
@@ -2590,28 +2988,11 @@ export function routineService(
             currentRevisionId: locked.latestRevisionId,
           });
         }
-
-        const currentTriggers = await txDb
-          .select({ id: routineTriggers.id })
-          .from(routineTriggers)
-          .where(and(eq(routineTriggers.companyId, locked.companyId), eq(routineTriggers.routineId, locked.id)));
-        const currentTriggerIds = new Set(currentTriggers.map((trigger) => trigger.id));
-        const missingWebhookTriggers = snapshot.triggers
-          .filter((trigger) => trigger.kind === "webhook" && !currentTriggerIds.has(trigger.id));
-        const recreatedWebhookSecrets = new Map<string, { publicId: string; secretId: string; secretMaterial: RoutineTriggerSecretRestoreMaterial }>();
-        for (const trigger of missingWebhookTriggers) {
-          const publicId = crypto.randomBytes(12).toString("hex");
-          const created = await createWebhookSecret(locked.companyId, locked.id, actor, txDb);
-          recreatedWebhookSecrets.set(trigger.id, {
-            publicId,
-            secretId: created.secret.id,
-            secretMaterial: {
-              triggerId: trigger.id,
-              webhookUrl: `${process.env.PAPERCLIP_API_URL}/api/routine-triggers/public/${publicId}/fire`,
-              webhookSecret: created.secretValue,
-            },
-          });
-        }
+        await assertInvokableRoutineAssigneeInTransaction(
+          tx as unknown as IssueSessionDbTransaction,
+          locked.companyId,
+          routineSnapshot.assigneeAgentId,
+        );
 
         const now = new Date();
         const [restoredRoutine] = await txDb
@@ -2624,6 +3005,7 @@ export function routineService(
             description: routineSnapshot.description,
             assigneeAgentId: routineSnapshot.assigneeAgentId,
             priority: routineSnapshot.priority,
+            attentionMask: routineSnapshot.attentionMask,
             status: routineSnapshot.status,
             concurrencyPolicy: routineSnapshot.concurrencyPolicy,
             catchUpPolicy: routineSnapshot.catchUpPolicy,
@@ -2702,17 +3084,91 @@ export function routineService(
           locked.companyId,
           { targetType: "routine", targetId: locked.id },
           routineSnapshot.env,
-          { db: tx },
+          {
+            actor: secretMutationActor,
+            db: tx,
+          },
         );
+        let dispatchRefIds: string[] = [];
+        if (
+          locked.status !== "archived" &&
+          appended.routine.status === "archived"
+        ) {
+          const escalations =
+            await terminalizeRoutineCreatorEdgesInTransaction(
+              tx,
+              canonicalSessions,
+              {
+                companyId: locked.companyId,
+                routineId: locked.id,
+                sourceId: `routine-archived:${locked.id}`,
+                now,
+              },
+            );
+          dispatchRefIds = escalations.flatMap((escalation) =>
+            escalation.dispatchRefId
+              ? [escalation.dispatchRefId]
+              : [],
+          );
+        }
         return {
           routine: appended.routine,
           revision: appended.revision,
           restoredFromRevisionId: targetRevision.id,
           restoredFromRevisionNumber: targetRevision.revisionNumber,
           secretMaterials: [...recreatedWebhookSecrets.values()].map((entry) => entry.secretMaterial),
+          dispatchRefIds,
         };
       });
-      return result;
+      } catch (error) {
+        for (const entry of recreatedWebhookSecrets.values()) {
+          await secretsSvc.remove(entry.secretId, secretMutationActor);
+        }
+        throw error;
+      }
+      for (const refId of result.dispatchRefIds) {
+        await ordinaryIssues.dispatchRef(refId);
+      }
+
+      const restoredTriggers = await db
+        .select()
+        .from(routineTriggers)
+        .where(
+          and(
+            eq(routineTriggers.companyId, existingRoutine.companyId),
+            eq(routineTriggers.routineId, existingRoutine.id),
+          ),
+        );
+      const activeWebhookSecretIds = new Set(
+        restoredTriggers.flatMap((trigger) =>
+          trigger.kind === "webhook" && trigger.secretId
+            ? [trigger.secretId]
+            : [],
+        ),
+      );
+      const obsoleteSecretIds = new Set<string>();
+      for (const trigger of currentTriggersBeforeRestore) {
+        if (
+          trigger.kind === "webhook" &&
+          trigger.secretId &&
+          !activeWebhookSecretIds.has(trigger.secretId)
+        ) {
+          obsoleteSecretIds.add(trigger.secretId);
+        }
+      }
+      for (const entry of recreatedWebhookSecrets.values()) {
+        if (!activeWebhookSecretIds.has(entry.secretId)) {
+          obsoleteSecretIds.add(entry.secretId);
+        }
+      }
+      for (const secretId of obsoleteSecretIds) {
+        await secretsSvc.remove(secretId, secretMutationActor);
+      }
+      const {
+        dispatchRefIds: _dispatchRefIds,
+        ...restored
+      } = result;
+      return restored;
     },
 
     runRoutine: async (id: string, input: RunRoutine, actor?: Actor) => {
@@ -2720,8 +3176,6 @@ export function routineService(
       if (!routine) throw notFound("Routine not found");
       if (routine.status === "archived") throw conflict("Routine is archived");
       await assertProject(routine.companyId, input.projectId ?? null);
-      const assigneeAgentId = input.assigneeAgentId ?? routine.assigneeAgentId ?? null;
-      await assertAssignableAgent(db, routine.companyId, assigneeAgentId, { kind: "routine" });
       const trigger = input.triggerId ? await getTriggerById(input.triggerId) : null;
       if (trigger && trigger.routineId !== routine.id) throw forbidden("Trigger does not belong to routine");
       if (trigger && !trigger.enabled) throw conflict("Routine trigger is not active");
@@ -2743,13 +3197,11 @@ export function routineService(
       });
     },
 
-    runPipelineStageEntryRoutine: async (id: string, input: RunRoutine & { descriptionAppendix?: string | null }, actor?: Actor) => {
+    runPipelineStageEntryRoutine: async (id: string, input: RunRoutine, actor?: Actor) => {
       const routine = await getRoutineById(id);
       if (!routine) throw notFound("Routine not found");
       if (routine.status === "archived") throw conflict("Routine is archived");
       await assertProject(routine.companyId, input.projectId ?? null);
-      const assigneeAgentId = input.assigneeAgentId ?? routine.assigneeAgentId ?? null;
-      await assertAssignableAgent(db, routine.companyId, assigneeAgentId, { kind: "routine" });
       return dispatchRoutineRun({
         routine,
         trigger: null,
@@ -2764,7 +3216,6 @@ export function routineService(
         executionWorkspacePreference: input.executionWorkspacePreference ?? null,
         executionWorkspaceSettings:
           (input.executionWorkspaceSettings as Record<string, unknown> | null | undefined) ?? null,
-        descriptionAppendix: input.descriptionAppendix ?? null,
         actor,
       });
     },
@@ -2893,7 +3344,7 @@ export function routineService(
           triggerLabel: routineTriggers.label,
           issueIdentifier: issues.identifier,
           issueTitle: issues.title,
-          issueStatus: issues.status,
+          issueBoardPresentationStatus: issues.boardPresentationStatus,
           issuePriority: issues.priority,
           issueUpdatedAt: issues.updatedAt,
         })
@@ -2927,7 +3378,8 @@ export function routineService(
             id: row.linkedIssueId,
             identifier: row.issueIdentifier,
             title: row.issueTitle ?? "Routine execution",
-            status: row.issueStatus ?? "todo",
+            boardPresentationStatus:
+              row.issueBoardPresentationStatus ?? "todo",
             priority: row.issuePriority ?? "medium",
             updatedAt: row.issueUpdatedAt ?? row.updatedAt,
           }
@@ -3065,7 +3517,7 @@ export function routineService(
       const issue = await db
         .select({
           id: issues.id,
-          status: issues.status,
+          boardPresentationStatus: issues.boardPresentationStatus,
           originKind: issues.originKind,
           originRunId: issues.originRunId,
         })
@@ -3073,16 +3525,20 @@ export function routineService(
         .where(eq(issues.id, issueId))
         .then((rows) => rows[0] ?? null);
       if (!issue || issue.originKind !== "routine_execution" || !issue.originRunId) return null;
-      if (issue.status === "done") {
+      if (issue.boardPresentationStatus === "done") {
         return finalizeRun(issue.originRunId, {
           status: "completed",
           completedAt: new Date(),
         });
       }
-      if (issue.status === "blocked" || issue.status === "cancelled") {
+      if (
+        issue.boardPresentationStatus === "blocked" ||
+        issue.boardPresentationStatus === "cancelled"
+      ) {
         return finalizeRun(issue.originRunId, {
           status: "failed",
-          failureReason: `Execution issue moved to ${issue.status}`,
+          failureReason:
+            `Execution issue moved to ${issue.boardPresentationStatus}`,
           completedAt: new Date(),
         });
       }

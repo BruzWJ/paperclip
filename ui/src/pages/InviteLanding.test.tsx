@@ -20,7 +20,8 @@ const setSelectedCompanyIdMock = vi.hoisted(() => vi.fn());
 vi.mock("../api/access", () => ({
   accessApi: {
     getInvite: (token: string) => getInviteMock(token),
-    acceptInvite: (token: string, input: unknown) => acceptInviteMock(token, input),
+    acceptInvite: (token: string, input: unknown) =>
+      acceptInviteMock(token, input),
   },
 }));
 
@@ -114,7 +115,6 @@ describe("InviteLandingPage", () => {
     acceptInviteMock.mockReset();
     healthGetMock.mockResolvedValue({
       status: "ok",
-      deploymentMode: "authenticated",
     });
     listCompaniesMock.mockResolvedValue([]);
     getSessionMock.mockResolvedValue(null);
@@ -127,6 +127,92 @@ describe("InviteLandingPage", () => {
     container.remove();
     document.body.innerHTML = "";
     vi.clearAllMocks();
+  });
+
+  it("submits the canonical ACP adapter proposal without legacy transport choices", async () => {
+    getInviteMock.mockResolvedValue({
+      id: "invite-agent-1",
+      companyId: "company-1",
+      companyName: "Acme Robotics",
+      companyLogoUrl: null,
+      companyBrandColor: "#114488",
+      inviteType: "company_join",
+      allowedJoinTypes: "agent",
+      humanRole: null,
+      expiresAt: "2027-03-07T00:10:00.000Z",
+      inviteMessage: null,
+    });
+    acceptInviteMock.mockResolvedValue({
+      id: "join-agent-1",
+      companyId: "company-1",
+      requestType: "agent",
+      status: "pending_approval",
+      onboarding: {},
+    });
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/invite/pcp_invite_agent"]}>
+          <QueryClientProvider client={queryClient}>
+            <Routes>
+              <Route path="/invite/:token" element={<InviteLandingPage />} />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const adapterSelect = container.querySelector("select") as HTMLSelectElement | null;
+    expect(adapterSelect?.value).toBe("codex");
+    expect(
+      Array.from(adapterSelect?.options ?? []).map((option) => ({
+        value: option.value,
+        label: option.textContent,
+      })),
+    ).toEqual([{ value: "codex", label: "Codex" }]);
+    expect(container.textContent).not.toContain("Process");
+    expect(container.textContent).not.toContain("HTTP Session");
+
+    const agentNameInput = container.querySelector("input") as HTMLInputElement | null;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    expect(agentNameInput).not.toBeNull();
+    expect(inputValueSetter).toBeTypeOf("function");
+    await act(async () => {
+      inputValueSetter!.call(agentNameInput, "Acme Ops Agent");
+      agentNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const submitButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Submit request",
+    );
+    expect(submitButton).not.toBeUndefined();
+    await act(async () => {
+      submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_agent", {
+      requestType: "agent",
+      agentName: "Acme Ops Agent",
+      adapterType: "codex",
+      capabilities: null,
+      agentDefaultsPayload: {},
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 
   it("defaults invite auth to account creation and guides existing users back to sign in", async () => {
@@ -156,25 +242,40 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain("You've been invited to join Paperclip");
+    expect(container.textContent).toContain(
+      "You've been invited to join Paperclip",
+    );
     expect(container.textContent).toContain("Join Acme Robotics");
     expect(container.textContent).toContain("Create account");
     expect(container.textContent).toContain("I already have an account");
     expect(container.textContent).toContain("Message from inviter");
-    expect(container.querySelector('[data-testid="invite-inline-auth"]')).not.toBeNull();
-    expect(localStorage.getItem("paperclip:pending-invite-token")).toBe("pcp_invite_test");
+    expect(
+      container.querySelector('[data-testid="invite-inline-auth"]'),
+    ).not.toBeNull();
+    expect(localStorage.getItem("paperclip:pending-invite-token")).toBe(
+      "pcp_invite_test",
+    );
     const inviteLogo = container.querySelector('img[alt="Acme Robotics logo"]');
     expect(inviteLogo).not.toBeNull();
     expect(inviteLogo?.className).toContain("object-contain");
     expect(container.querySelector('input[name="name"]')).not.toBeNull();
 
-    const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement | null;
-    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement | null;
-    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement | null;
+    const nameInput = container.querySelector(
+      'input[name="name"]',
+    ) as HTMLInputElement | null;
+    const emailInput = container.querySelector(
+      'input[name="email"]',
+    ) as HTMLInputElement | null;
+    const passwordInput = container.querySelector(
+      'input[name="password"]',
+    ) as HTMLInputElement | null;
     expect(nameInput).not.toBeNull();
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
-    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
     expect(inputValueSetter).toBeTypeOf("function");
 
     await act(async () => {
@@ -189,11 +290,15 @@ describe("InviteLandingPage", () => {
       passwordInput!.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    const authForm = container.querySelector('[data-testid="invite-inline-auth"]') as HTMLFormElement | null;
+    const authForm = container.querySelector(
+      '[data-testid="invite-inline-auth"]',
+    ) as HTMLFormElement | null;
     expect(authForm).not.toBeNull();
 
     await act(async () => {
-      authForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      authForm?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     await flushReact();
     await flushReact();
@@ -204,10 +309,14 @@ describe("InviteLandingPage", () => {
       email: "jane@example.com",
       password: "supersecret",
     });
-    expect(container.textContent).toContain("An account already exists for jane@example.com. Sign in below to continue with this invite.");
+    expect(container.textContent).toContain(
+      "An account already exists for jane@example.com. Sign in below to continue with this invite.",
+    );
     expect(container.querySelector('input[name="name"]')).toBeNull();
     expect(container.textContent).toContain("Sign in to continue");
-    expect(localStorage.getItem("paperclip:pending-invite-token")).toBe("pcp_invite_test");
+    expect(localStorage.getItem("paperclip:pending-invite-token")).toBe(
+      "pcp_invite_test",
+    );
 
     await act(async () => {
       root.unmount();
@@ -234,9 +343,15 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement;
-    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
-    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+    const nameInput = container.querySelector(
+      'input[name="name"]',
+    ) as HTMLInputElement;
+    const emailInput = container.querySelector(
+      'input[name="email"]',
+    ) as HTMLInputElement;
+    const passwordInput = container.querySelector(
+      'input[name="password"]',
+    ) as HTMLInputElement;
     expect(nameInput).not.toBeNull();
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
@@ -291,18 +406,27 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
 
-    const existingAccountButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "I already have an account",
-    );
+    const existingAccountButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "I already have an account");
     await act(async () => {
-      existingAccountButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      existingAccountButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
     await flushReact();
 
-    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
-    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+    const emailInput = container.querySelector(
+      'input[name="email"]',
+    ) as HTMLInputElement;
+    const passwordInput = container.querySelector(
+      'input[name="password"]',
+    ) as HTMLInputElement;
 
     await act(async () => {
       inputValueSetter!.call(emailInput, "jane@example.com");
@@ -311,9 +435,13 @@ describe("InviteLandingPage", () => {
       passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    const authForm = container.querySelector('[data-testid="invite-inline-auth"]') as HTMLFormElement;
+    const authForm = container.querySelector(
+      '[data-testid="invite-inline-auth"]',
+    ) as HTMLFormElement;
     await act(async () => {
-      authForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      authForm.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     await flushReact();
     await flushReact();
@@ -366,21 +494,30 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
     expect(inputValueSetter).toBeTypeOf("function");
 
-    const existingAccountButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "I already have an account",
-    );
+    const existingAccountButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "I already have an account");
     expect(existingAccountButton).not.toBeNull();
 
     await act(async () => {
-      existingAccountButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      existingAccountButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
     await flushReact();
 
-    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement | null;
-    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement | null;
+    const emailInput = container.querySelector(
+      'input[name="email"]',
+    ) as HTMLInputElement | null;
+    const passwordInput = container.querySelector(
+      'input[name="password"]',
+    ) as HTMLInputElement | null;
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
 
@@ -393,11 +530,15 @@ describe("InviteLandingPage", () => {
       passwordInput!.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    const authForm = container.querySelector('[data-testid="invite-inline-auth"]') as HTMLFormElement | null;
+    const authForm = container.querySelector(
+      '[data-testid="invite-inline-auth"]',
+    ) as HTMLFormElement | null;
     expect(authForm).not.toBeNull();
 
     await act(async () => {
-      authForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      authForm?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     await flushReact();
     await flushReact();
@@ -457,12 +598,21 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
     expect(inputValueSetter).toBeTypeOf("function");
 
-    const nameInput = container.querySelector('input[name="name"]') as HTMLInputElement | null;
-    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement | null;
-    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement | null;
+    const nameInput = container.querySelector(
+      'input[name="name"]',
+    ) as HTMLInputElement | null;
+    const emailInput = container.querySelector(
+      'input[name="email"]',
+    ) as HTMLInputElement | null;
+    const passwordInput = container.querySelector(
+      'input[name="password"]',
+    ) as HTMLInputElement | null;
     expect(nameInput).not.toBeNull();
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
@@ -476,11 +626,15 @@ describe("InviteLandingPage", () => {
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    const authForm = container.querySelector('[data-testid="invite-inline-auth"]') as HTMLFormElement | null;
+    const authForm = container.querySelector(
+      '[data-testid="invite-inline-auth"]',
+    ) as HTMLFormElement | null;
     expect(authForm).not.toBeNull();
 
     await act(async () => {
-      authForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      authForm?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     await flushReact();
     await flushReact();
@@ -492,9 +646,16 @@ describe("InviteLandingPage", () => {
       email: "jane@example.com",
       password: "supersecret",
     });
-    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
-    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", { source: "manual" });
-    expect(queryClient.getQueryState(queryKeys.access.currentBoardAccess)?.isInvalidated).toBe(true);
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", {
+      requestType: "human",
+    });
+    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", {
+      source: "manual",
+    });
+    expect(
+      queryClient.getQueryState(queryKeys.access.currentBoardAccess)
+        ?.isInvalidated,
+    ).toBe(true);
     expect(queryClient.getQueryData(queryKeys.companies.all)).toMatchObject({
       companies: [],
       unauthorized: false,
@@ -544,14 +705,22 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", {
+      requestType: "human",
+    });
     expect(container.textContent).toContain("Request to join Acme Robotics");
-    expect(container.textContent).toContain("A company admin must approve your request to join.");
+    expect(container.textContent).toContain(
+      "A company admin must approve your request to join.",
+    );
     expect(container.textContent).toContain(
       "Ask them to visit Company Settings → Members to approve your request.",
     );
-    expect(container.querySelector('img[alt="Acme Robotics logo"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("http://localhost/company/settings/members");
+    expect(
+      container.querySelector('img[alt="Acme Robotics logo"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain(
+      "http://localhost/company/settings/members",
+    );
 
     // The "Company Settings → Members" guidance addresses the company admin,
     // not the requester. It must render as plain text so the requester cannot
@@ -628,9 +797,16 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
-    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", { source: "manual" });
-    expect(queryClient.getQueryState(queryKeys.access.currentBoardAccess)?.isInvalidated).toBe(true);
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", {
+      requestType: "human",
+    });
+    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", {
+      source: "manual",
+    });
+    expect(
+      queryClient.getQueryState(queryKeys.access.currentBoardAccess)
+        ?.isInvalidated,
+    ).toBe(true);
     expect(localStorage.getItem("paperclip:pending-invite-token")).toBeNull();
 
     await act(async () => {
@@ -674,9 +850,13 @@ describe("InviteLandingPage", () => {
     await flushReact();
 
     expect(acceptInviteMock).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-testid="invite-inline-auth"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="invite-inline-auth"]'),
+    ).not.toBeNull();
     expect(container.textContent).toContain("Create your account");
-    expect(container.querySelector('[data-testid="invite-pending-approval"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="invite-pending-approval"]'),
+    ).toBeNull();
 
     await act(async () => {
       root.unmount();
@@ -694,7 +874,9 @@ describe("InviteLandingPage", () => {
         image: null,
       },
     });
-    listCompaniesMock.mockResolvedValue([{ id: "company-1", name: "Acme Robotics" }]);
+    listCompaniesMock.mockResolvedValue([
+      { id: "company-1", name: "Acme Robotics" },
+    ]);
 
     const root = createRoot(container);
     const queryClient = new QueryClient({
@@ -715,21 +897,30 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const inputValueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
     expect(inputValueSetter).toBeTypeOf("function");
 
-    const existingAccountButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "I already have an account",
-    );
+    const existingAccountButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "I already have an account");
     expect(existingAccountButton).not.toBeNull();
 
     await act(async () => {
-      existingAccountButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      existingAccountButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
     await flushReact();
 
-    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement | null;
-    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement | null;
+    const emailInput = container.querySelector(
+      'input[name="email"]',
+    ) as HTMLInputElement | null;
+    const passwordInput = container.querySelector(
+      'input[name="password"]',
+    ) as HTMLInputElement | null;
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
 
@@ -740,11 +931,15 @@ describe("InviteLandingPage", () => {
       passwordInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    const authForm = container.querySelector('[data-testid="invite-inline-auth"]') as HTMLFormElement | null;
+    const authForm = container.querySelector(
+      '[data-testid="invite-inline-auth"]',
+    ) as HTMLFormElement | null;
     expect(authForm).not.toBeNull();
 
     await act(async () => {
-      authForm?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      authForm?.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
     });
     await flushReact();
     await flushReact();
@@ -754,7 +949,9 @@ describe("InviteLandingPage", () => {
       password: "supersecret",
     });
     expect(acceptInviteMock).not.toHaveBeenCalled();
-    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", { source: "manual" });
+    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", {
+      source: "manual",
+    });
     expect(queryClient.getQueryData(queryKeys.companies.all)).toMatchObject({
       companies: [{ id: "company-1", name: "Acme Robotics" }],
       unauthorized: false,
@@ -776,7 +973,9 @@ describe("InviteLandingPage", () => {
         image: null,
       },
     });
-    listCompaniesMock.mockResolvedValue([{ id: "company-1", name: "Acme Robotics" }]);
+    listCompaniesMock.mockResolvedValue([
+      { id: "company-1", name: "Acme Robotics" },
+    ]);
 
     const root = createRoot(container);
     const queryClient = new QueryClient({
@@ -799,7 +998,9 @@ describe("InviteLandingPage", () => {
 
     expect(container.textContent).toContain("Join Acme Robotics");
     expect(container.textContent).toContain("Already in this company");
-    expect(container.textContent).toContain("This account already belongs to Acme Robotics.");
+    expect(container.textContent).toContain(
+      "This account already belongs to Acme Robotics.",
+    );
     expect(acceptInviteMock).not.toHaveBeenCalled();
 
     const openButton = Array.from(container.querySelectorAll("button")).find(
@@ -812,7 +1013,9 @@ describe("InviteLandingPage", () => {
     });
     await flushReact();
 
-    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", { source: "manual" });
+    expect(setSelectedCompanyIdMock).toHaveBeenCalledWith("company-1", {
+      source: "manual",
+    });
 
     await act(async () => {
       root.unmount();
@@ -839,7 +1042,9 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const logo = container.querySelector('img[alt="Acme Robotics logo"]') as HTMLImageElement | null;
+    const logo = container.querySelector(
+      'img[alt="Acme Robotics logo"]',
+    ) as HTMLImageElement | null;
     expect(logo).not.toBeNull();
 
     await act(async () => {
@@ -896,7 +1101,9 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", {
+      requestType: "human",
+    });
     expect(container.textContent).toContain("Request to join Acme Robotics");
 
     await act(async () => {
@@ -905,7 +1112,8 @@ describe("InviteLandingPage", () => {
   });
 
   it("waits for the membership check before showing invite acceptance to signed-in users", async () => {
-    let resolveCompanies: ((value: Array<{ id: string; name: string }>) => void) | null = null;
+    let resolveCompanies:
+      ((value: Array<{ id: string; name: string }>) => void) | null = null;
     acceptInviteMock.mockResolvedValue({
       id: "join-1",
       companyId: "company-1",
@@ -957,7 +1165,9 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", {
+      requestType: "human",
+    });
     expect(container.textContent).toContain("Request to join Acme Robotics");
 
     await act(async () => {

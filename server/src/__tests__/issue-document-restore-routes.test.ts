@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const issueId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -26,10 +28,6 @@ const mockAgentService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
-const mockHeartbeatService = vi.hoisted(() => ({
-  wakeup: vi.fn(async () => undefined),
-  reportRunActivity: vi.fn(async () => undefined),
-}));
 const mockInstanceSettingsService = vi.hoisted(() => ({
   get: vi.fn(async () => ({
     id: "instance-settings-1",
@@ -44,10 +42,6 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
 }));
 const mockRoutineService = vi.hoisted(() => ({
   syncRunStatusForIssue: vi.fn(async () => undefined),
-}));
-const mockIssueThreadInteractionService = vi.hoisted(() => ({
-  expireRequestConfirmationsSupersededByComment: vi.fn(async () => []),
-  expireStaleRequestConfirmationsForIssueDocument: vi.fn(async () => []),
 }));
 
 const planDocument = {
@@ -93,10 +87,6 @@ function registerModuleMocks() {
     documentService: () => mockDocumentsService,
   }));
 
-  vi.doMock("../services/heartbeat.js", () => ({
-    heartbeatService: () => mockHeartbeatService,
-  }));
-
   vi.doMock("../services/instance-settings.js", () => ({
     instanceSettingsService: () => mockInstanceSettingsService,
   }));
@@ -123,7 +113,6 @@ function registerModuleMocks() {
     executionWorkspaceService: () => ({}),
     feedbackService: () => ({}),
     goalService: () => ({}),
-    heartbeatService: () => mockHeartbeatService,
     instanceSettingsService: () => mockInstanceSettingsService,
     issueApprovalService: () => ({}),
     issueReferenceService: () => ({
@@ -139,12 +128,7 @@ function registerModuleMocks() {
       syncDocument: async () => undefined,
       syncIssue: async () => undefined,
     }),
-    issueRecoveryActionService: () => ({
-      getActiveForIssue: vi.fn(async () => null),
-      listActiveForIssues: vi.fn(async () => new Map()),
-    }),
     issueService: () => mockIssueService,
-    issueThreadInteractionService: () => mockIssueThreadInteractionService,
     logActivity: mockLogActivity,
     projectService: () => ({}),
     routineService: () => mockRoutineService,
@@ -152,57 +136,36 @@ function registerModuleMocks() {
   }));
 }
 
-function createRunContextDb(contextSnapshot: Record<string, unknown>) {
-  return {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          then: async (resolve: (rows: unknown[]) => unknown) =>
-            resolve([{
-              id: "run-1",
-              companyId,
-              agentId: "agent-1",
-              contextSnapshot,
-            }]),
-        })),
-      })),
-    })),
-  };
-}
+let issueRoutes: typeof import("../routes/issues.js").issueRoutes;
+let errorHandler: typeof import("../middleware/index.js").errorHandler;
 
-async function createApp(
-  actor: Express.Request["actor"] = {
-    type: "board",
+function createApp(
+  actor: Express.Request["actor"] = testBoardSessionActor({
     userId: "board-user",
     companyIds: [companyId],
-    source: "local_implicit",
     isInstanceAdmin: false,
-  },
+  }),
   db: unknown = {},
 ) {
-  const [{ issueRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
-  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", issueRoutes(db as any, {} as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use("/api", issueRoutes(db as any, {} as any, { ordinaryIssues: {} as never }));
   app.use(errorHandler);
   return app;
 }
 
 describe("issue document revision routes", () => {
-  beforeEach(() => {
+  beforeAll(async () => {
     vi.resetModules();
     vi.doUnmock("../services/access.js");
     vi.doUnmock("../services/activity-log.js");
     vi.doUnmock("../services/agents.js");
     vi.doUnmock("../services/documents.js");
-    vi.doUnmock("../services/heartbeat.js");
     vi.doUnmock("../services/routines.js");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../services/instance-settings.js");
@@ -211,6 +174,15 @@ describe("issue document revision routes", () => {
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
+    [issueRoutes, errorHandler] = await Promise.all([
+      vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js")
+        .then((module) => module.issueRoutes),
+      vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js")
+        .then((module) => module.errorHandler),
+    ]);
+  }, 15_000);
+
+  beforeEach(() => {
     vi.clearAllMocks();
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
@@ -267,8 +239,6 @@ describe("issue document revision routes", () => {
         updatedAt: new Date("2026-03-26T12:10:00.000Z"),
       },
     });
-    mockHeartbeatService.wakeup.mockResolvedValue(undefined);
-    mockHeartbeatService.reportRunActivity.mockResolvedValue(undefined);
     mockInstanceSettingsService.get.mockResolvedValue({
       id: "instance-settings-1",
       general: {
@@ -284,7 +254,7 @@ describe("issue document revision routes", () => {
   });
 
   it("returns revision snapshots including title and format", async () => {
-    const res = await request(await createApp()).get(`/api/issues/${issueId}/documents/plan/revisions`);
+    const res = await request(createApp()).get(`/api/issues/${issueId}/documents/plan/revisions`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
@@ -298,14 +268,14 @@ describe("issue document revision routes", () => {
   });
 
   it("filters system documents by default on the document list route", async () => {
-    const res = await request(await createApp()).get(`/api/issues/${issueId}/documents`);
+    const res = await request(createApp()).get(`/api/issues/${issueId}/documents`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([expect.objectContaining({ key: "plan" })]);
   });
 
   it("passes includeSystem=true through for debug document listing", async () => {
-    const res = await request(await createApp()).get(
+    const res = await request(createApp()).get(
       `/api/issues/${issueId}/documents?includeSystem=true`,
     );
 
@@ -317,7 +287,7 @@ describe("issue document revision routes", () => {
   });
 
   it("restores a revision through the append-only route and logs the action", async () => {
-    const res = await request(await createApp())
+    const res = await request(createApp())
       .post(`/api/issues/${issueId}/documents/plan/revisions/revision-1/restore`)
       .send({});
 
@@ -326,7 +296,6 @@ describe("issue document revision routes", () => {
       issueId,
       key: "plan",
       revisionId: "revision-1",
-      createdByAgentId: null,
       createdByUserId: "board-user",
     });
     expect(mockLogActivity).toHaveBeenCalledWith(
@@ -348,42 +317,38 @@ describe("issue document revision routes", () => {
     }));
   });
 
-  it("blocks cheap status-only recovery runs from restoring issue documents", async () => {
+  it("rejects agent credentials at the generic issue API boundary", async () => {
     mockIssueService.getById.mockResolvedValueOnce({
       id: issueId,
       companyId,
       identifier: "PAP-881",
       title: "Document revisions",
       status: "todo",
-      assigneeAgentId: "agent-1",
+      ownerKind: "agent",
+      ownerAgentId: "agent-1",
+      ownerUserId: null,
+      ownershipEpoch: 1,
     });
 
-    const res = await request(await createApp(
-      {
-        type: "agent",
-        agentId: "agent-1",
-        companyId,
-        runId: "run-1",
-        source: "agent_jwt",
-      },
-      createRunContextDb({
-        modelProfile: "cheap",
-        recoveryIntent: "status_only",
-        allowDeliverableWork: false,
-        allowDocumentUpdates: false,
-        resumeRequiresNormalModel: true,
-      }),
-    ))
+    const res = await request(createApp({
+      type: "agent",
+      agentId: "agent-1",
+      companyId,
+      runId: "run-1",
+      source: "internal",
+    }))
       .post(`/api/issues/${issueId}/documents/plan/revisions/revision-1/restore`)
       .send({});
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Cheap status-only recovery runs cannot update issue documents");
+    expect(res.body.error).toBe(
+      "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
+    );
     expect(mockDocumentsService.restoreIssueDocumentRevision).not.toHaveBeenCalled();
   });
 
   it("rejects invalid document keys before attempting restore", async () => {
-    const res = await request(await createApp())
+    const res = await request(createApp())
       .post(`/api/issues/${issueId}/documents/INVALID KEY/revisions/revision-1/restore`)
       .send({});
 

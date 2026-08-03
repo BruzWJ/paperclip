@@ -139,7 +139,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
       suggestedDefaults: {},
     });
     listAgentsMock.mockResolvedValue([
-      { id: "agent-1", name: "Ada", title: "CTO", status: "active", icon: "Bot" },
+      { id: "agent-1", name: "Ada", title: "Architect", status: "active", icon: "Bot" },
       { id: "agent-2", name: "Grace", title: "Engineer", status: "active", icon: "Code" },
     ]);
   });

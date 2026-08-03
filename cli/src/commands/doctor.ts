@@ -3,11 +3,9 @@ import pc from "picocolors";
 import type { PaperclipConfig } from "../config/schema.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 import {
-  agentJwtSecretCheck,
   configCheck,
   databaseCheck,
-  deploymentAuthCheck,
-  llmCheck,
+  authCheck,
   logCheck,
   portCheck,
   secretsCheck,
@@ -25,8 +23,6 @@ const STATUS_ICON = {
 
 export async function doctor(opts: {
   config?: string;
-  repair?: boolean;
-  yes?: boolean;
 }): Promise<{ passed: number; warned: number; failed: number }> {
   printPaperclipCliBanner();
   p.intro(pc.bgCyan(pc.black(" paperclip doctor ")));
@@ -52,70 +48,39 @@ export async function doctor(opts: {
       name: "Config file",
       status: "fail",
       message: `Could not read config: ${err instanceof Error ? err.message : String(err)}`,
-      canRepair: false,
-      repairHint: "Run `paperclipai configure --section database` or `paperclipai onboard`",
+      guidance: "Run `paperclipai configure --section database` or create a fresh configuration with `paperclipai onboard`",
     };
     results.push(readResult);
     printResult(readResult);
     return printSummary(results);
   }
 
-  // 2. Deployment/auth mode check
-  const deploymentAuthResult = deploymentAuthCheck(config);
-  results.push(deploymentAuthResult);
-  printResult(deploymentAuthResult);
+  // 2. Canonical Better Auth check
+  const authResult = authCheck(config);
+  results.push(authResult);
+  printResult(authResult);
 
-  // 3. Agent JWT check
-  results.push(
-    await runRepairableCheck({
-      run: () => agentJwtSecretCheck(opts.config),
-      configPath,
-      opts,
-    }),
-  );
+  // 3. Secrets adapter check
+  const secretsResult = secretsCheck(config, configPath);
+  results.push(secretsResult);
+  printResult(secretsResult);
 
-  // 4. Secrets adapter check
-  results.push(
-    await runRepairableCheck({
-      run: () => secretsCheck(config, configPath),
-      configPath,
-      opts,
-    }),
-  );
+  // 4. Storage check
+  const storageResult = storageCheck(config, configPath);
+  results.push(storageResult);
+  printResult(storageResult);
 
-  // 5. Storage check
-  results.push(
-    await runRepairableCheck({
-      run: () => storageCheck(config, configPath),
-      configPath,
-      opts,
-    }),
-  );
+  // 5. Database check
+  const databaseResult = await databaseCheck(config, configPath);
+  results.push(databaseResult);
+  printResult(databaseResult);
 
-  // 6. Database check
-  results.push(
-    await runRepairableCheck({
-      run: () => databaseCheck(config, configPath),
-      configPath,
-      opts,
-    }),
-  );
+  // 6. Log directory check
+  const logResult = logCheck(config, configPath);
+  results.push(logResult);
+  printResult(logResult);
 
-  // 7. LLM check
-  const llmResult = await llmCheck(config);
-  results.push(llmResult);
-  printResult(llmResult);
-
-  // 8. Log directory check
-  results.push(
-    await runRepairableCheck({
-      run: () => logCheck(config, configPath),
-      configPath,
-      opts,
-    }),
-  );
-
-  // 9. Port check
+  // 7. Port check
   const portResult = await portCheck(config);
   results.push(portResult);
   printResult(portResult);
@@ -127,56 +92,9 @@ export async function doctor(opts: {
 function printResult(result: CheckResult): void {
   const icon = STATUS_ICON[result.status];
   p.log.message(`${icon} ${pc.bold(result.name)}: ${result.message}`);
-  if (result.status !== "pass" && result.repairHint) {
-    p.log.message(`  ${pc.dim(result.repairHint)}`);
+  if (result.status !== "pass" && result.guidance) {
+    p.log.message(`  ${pc.dim(result.guidance)}`);
   }
-}
-
-async function maybeRepair(
-  result: CheckResult,
-  opts: { repair?: boolean; yes?: boolean },
-): Promise<boolean> {
-  if (result.status === "pass" || !result.canRepair || !result.repair) return false;
-  if (!opts.repair) return false;
-
-  let shouldRepair = opts.yes;
-  if (!shouldRepair) {
-    const answer = await p.confirm({
-      message: `Repair "${result.name}"?`,
-      initialValue: true,
-    });
-    if (p.isCancel(answer)) return false;
-    shouldRepair = answer;
-  }
-
-  if (shouldRepair) {
-    try {
-      await result.repair();
-      p.log.success(`Repaired: ${result.name}`);
-      return true;
-    } catch (err) {
-      p.log.error(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-  return false;
-}
-
-async function runRepairableCheck(input: {
-  run: () => CheckResult | Promise<CheckResult>;
-  configPath: string;
-  opts: { repair?: boolean; yes?: boolean };
-}): Promise<CheckResult> {
-  let result = await input.run();
-  printResult(result);
-
-  const repaired = await maybeRepair(result, input.opts);
-  if (!repaired) return result;
-
-  // Repairs may create/update the adjacent .env file or other local resources.
-  loadPaperclipEnvFile(input.configPath);
-  result = await input.run();
-  printResult(result);
-  return result;
 }
 
 function printSummary(results: CheckResult[]): { passed: number; warned: number; failed: number } {

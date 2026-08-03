@@ -19,7 +19,7 @@ export type ResolveCoreTrustPresetInput = {
   companyId: string;
   agent?: {
     companyId?: string | null;
-    permissions?: unknown;
+    governance?: unknown;
   } | null;
   project?: {
     companyId?: string | null;
@@ -268,8 +268,14 @@ export function resolveCoreTrustPreset(input: ResolveCoreTrustPresetInput): Trus
   const sourcePresets: Partial<Record<TrustPresetPolicySource, TrustPreset>> = {};
   const sources: ParsedPolicySource[] = [];
 
-  const agentPermissions = asRecord(input.agent?.permissions);
-  const agent = parseSource("agent", input.agent?.companyId, agentPermissions, agentPermissions?.authorizationPolicy, sourcePresets);
+  const agentGovernance = asRecord(input.agent?.governance);
+  const agent = parseSource(
+    "agent",
+    input.agent?.companyId,
+    agentGovernance,
+    agentGovernance?.authorizationPolicy,
+    sourcePresets,
+  );
   if ("kind" in agent) return agent;
   sources.push(agent);
 

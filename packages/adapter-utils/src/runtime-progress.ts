@@ -1,6 +1,6 @@
 // Shared, throttled progress reporting for execution-target sync/restore.
 //
-// Transports (sandbox / SSH) own the byte counting and call `report()` as bytes
+// Transports (sandbox / plugin / SSH) own the byte counting and call `report()` as bytes
 // move; orchestrators own the per-phase label and direction. The reporter
 // throttles emits so a long transfer doesn't flood the log: a line is emitted
 // only when the percentage crosses a step boundary (default every 10%) or once
@@ -19,7 +19,7 @@ export type RuntimeProgressPhase =
 
 export type RuntimeProgressDirection = "to" | "from";
 
-export type RuntimeProgressTarget = "sandbox" | "ssh";
+export type RuntimeProgressTarget = "sandbox" | "plugin" | "ssh";
 
 export type RuntimeStatusPhase =
   | "git_sync"

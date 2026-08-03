@@ -1,17 +1,9 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import { updateResourceMembershipSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { getActorInfo } from "./authz.js";
+import { assertBoard } from "./authz.js";
 import { logActivity, resourceMembershipService } from "../services/index.js";
-
-function requireBoardUserId(req: Request, res: Response): string | null {
-  if (req.actor.type !== "board" || !req.actor.userId) {
-    res.status(403).json({ error: "Board user access required" });
-    return null;
-  }
-  return req.actor.userId;
-}
 
 async function logMembershipChange(
   db: Db,
@@ -27,14 +19,11 @@ async function logMembershipChange(
     policySource: string;
   },
 ) {
-  const actor = getActorInfo(req);
+  assertBoard(req);
   await logActivity(db, {
     companyId: input.companyId,
-    actorType: actor.actorType,
-    actorId: actor.actorId,
-    agentId: actor.agentId,
-    runId: actor.runId,
-    agentApiKeyId: actor.agentApiKeyId,
+    actorType: "user",
+    actorId: req.actor.userId,
     action: `resource_membership.${input.changeKind}`,
     entityType: input.resourceType,
     entityId: input.resourceId,
@@ -56,8 +45,8 @@ export function resourceMembershipRoutes(db: Db) {
 
   router.get("/companies/:companyId/resource-memberships/me", async (req, res) => {
     const companyId = req.params.companyId as string;
-    const userId = requireBoardUserId(req, res);
-    if (!userId) return;
+    assertBoard(req);
+    const userId = req.actor.userId;
     res.json(await svc.listForUser(companyId, userId, req.actor));
   });
 
@@ -67,8 +56,8 @@ export function resourceMembershipRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const projectId = req.params.projectId as string;
-      const userId = requireBoardUserId(req, res);
-      if (!userId) return;
+      assertBoard(req);
+      const userId = req.actor.userId;
       const result = await svc.updateProject({
         companyId,
         projectId,
@@ -100,8 +89,8 @@ export function resourceMembershipRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const agentId = req.params.agentId as string;
-      const userId = requireBoardUserId(req, res);
-      if (!userId) return;
+      assertBoard(req);
+      const userId = req.actor.userId;
       const result = await svc.updateAgent({
         companyId,
         agentId,

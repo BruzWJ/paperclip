@@ -15,6 +15,7 @@ interface InlineEntitySelectorProps {
   options: InlineEntityOption[];
   placeholder: string;
   noneLabel: string;
+  includeNone?: boolean;
   searchPlaceholder: string;
   emptyMessage: string;
   onChange: (id: string) => void;
@@ -38,6 +39,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       options,
       placeholder,
       noneLabel,
+      includeNone = true,
       searchPlaceholder,
       emptyMessage,
       onChange,
@@ -60,9 +62,11 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const isPointerDownRef = useRef(false);
 
     const allOptions = useMemo<InlineEntityOption[]>(() => {
-      const baseOptions = [{ id: "", label: noneLabel, searchText: noneLabel }, ...options];
+      const baseOptions = includeNone
+        ? [{ id: "", label: noneLabel, searchText: noneLabel }, ...options]
+        : options;
       return orderItemsBySelectedAndRecent(baseOptions, value, recentOptionIds);
-    }, [noneLabel, options, recentOptionIds, value]);
+    }, [includeNone, noneLabel, options, recentOptionIds, value]);
 
     const filteredOptions = useMemo(() => {
       const term = query.trim().toLowerCase();

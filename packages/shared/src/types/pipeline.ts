@@ -1,29 +1,26 @@
-import type { Issue } from "./issue.js";
 import type { RoutineEnvConfig } from "./routine.js";
 import type { ExecutionWorkspaceMode, IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
 import type { SourceTrustMetadata } from "../trust-policy.js";
 
-export type PipelineCaseConversationSourceReason =
-  | "producer_update"
-  | "producer_create"
-  | "automation_link"
-  | "conversation_link"
-  | "work_link";
+export const PIPELINE_CASE_ISSUE_LINK_ROLES = [
+  "origin",
+  "conversation",
+  "work",
+  "automation",
+] as const;
+export type PipelineCaseIssueLinkRole =
+  (typeof PIPELINE_CASE_ISSUE_LINK_ROLES)[number];
 
-export type PipelineCaseConversationSourceLinkRole = "automation" | "conversation" | "work";
-export type PipelineCaseConversationSourceKind =
-  | "explicit_conversation"
-  | "own_producer"
-  | "inherited_parent_producer";
-
-export interface PipelineCaseConversationSource {
-  issue: Issue;
-  kind: PipelineCaseConversationSourceKind;
-  isActive: boolean;
-  reason: PipelineCaseConversationSourceReason;
-  linkRole?: PipelineCaseConversationSourceLinkRole | null;
-  sourceRunId?: string | null;
-}
+export const PIPELINE_CASE_GENERIC_ISSUE_LINK_ROLES = [
+  "origin",
+  "work",
+  "automation",
+] as const satisfies readonly Exclude<
+  PipelineCaseIssueLinkRole,
+  "conversation"
+>[];
+export type PipelineCaseGenericIssueLinkRole =
+  (typeof PIPELINE_CASE_GENERIC_ISSUE_LINK_ROLES)[number];
 
 export interface PipelineStageAutomation {
   routineId: string;
@@ -62,8 +59,8 @@ export interface PipelineCaseLiveness {
   issue?: {
     id: string;
     identifier: string | null;
-    title: string;
-    status: string;
+    title: string | null;
+    boardPresentationStatus: string;
   } | null;
   blocker?: {
     caseId?: string | null;
@@ -107,7 +104,6 @@ export interface PipelineAutomationRetryRoutineRef {
   assigneeAgent: {
     id: string;
     name: string;
-    role: string;
     title: string | null;
   } | null;
 }
@@ -209,7 +205,7 @@ export interface PipelineCaseOutputSource {
   role: PipelineCaseOutputSourceRole;
   issueId: string;
   issueIdentifier: string | null;
-  issueTitle: string;
+  issueTitle: string | null;
   issueStatus: string;
   sourceTrust?: SourceTrustMetadata | null;
   createdByRunId: string | null;
@@ -223,7 +219,7 @@ export interface PipelineCaseOutputItemBase {
   sourceIssueId: string;
   sourceIssueIdentifier: string | null;
   sourceIssuePath: string;
-  sourceIssueTitle: string;
+  sourceIssueTitle: string | null;
   sourceIssueStatus: string;
   sourceRole: PipelineCaseOutputSourceRole;
   sourceTrust?: SourceTrustMetadata | null;
@@ -301,8 +297,8 @@ export interface PipelineCaseOutputContextSummaryItem {
   sourceIssue: {
     id: string;
     identifier: string | null;
-    title: string;
-    status: string;
+    title: string | null;
+    boardPresentationStatus: string;
     path: string;
     role: PipelineCaseOutputSourceRole;
   };

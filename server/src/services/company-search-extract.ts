@@ -158,7 +158,7 @@ export function companySearchExtractService(db: Db) {
       if (scopeIncludes(query.scope, "issues")) {
         scopeConditions.push(or(
           contentMatch(issues.title, query, containsPattern, urlPattern),
-          contentMatch(issues.description, query, containsPattern, urlPattern),
+          contentMatch(issues.request, query, containsPattern, urlPattern),
         )!);
       }
       if (scopeIncludes(query.scope, "comments")) {
@@ -167,7 +167,6 @@ export function companySearchExtractService(db: Db) {
           FROM issue_comments extract_comments
           WHERE extract_comments.company_id = ${companyId}
             AND extract_comments.issue_id = ${issues.id}
-            AND extract_comments.deleted_at IS NULL
             AND ${query.kind === "url"
               ? sql`extract_comments.body ~* ${urlPattern}`
               : sql`extract_comments.body ILIKE ${containsPattern}`}
@@ -198,7 +197,7 @@ export function companySearchExtractService(db: Db) {
         visibleIssueCondition(),
         or(...scopeConditions)!,
       ];
-      if (query.status.length > 0) conditions.push(inArray(issues.status, query.status));
+      if (query.status.length > 0) conditions.push(inArray(issues.boardPresentationStatus, query.status));
       const updatedWithin = updatedWithinStart(query.updatedWithin);
       if (updatedWithin) conditions.push(gte(issues.updatedAt, updatedWithin));
       if (query.updatedAfter) conditions.push(gte(issues.updatedAt, new Date(query.updatedAfter)));
@@ -208,9 +207,10 @@ export function companySearchExtractService(db: Db) {
           id: issues.id,
           identifier: issues.identifier,
           title: issues.title,
-          description: issues.description,
-          status: issues.status,
-          assigneeAgentId: issues.assigneeAgentId,
+          request: issues.request,
+          boardPresentationStatus: issues.boardPresentationStatus,
+          ownerAgentId: issues.ownerAgentId,
+          ownerUserId: issues.ownerUserId,
           updatedAt: issues.updatedAt,
         })
         .from(issues)
@@ -231,7 +231,7 @@ export function companySearchExtractService(db: Db) {
 
       if (scopeIncludes(query.scope, "issues")) {
         for (const row of pageRows) {
-          if (sourceOccurrences(row.title, query).length > 0) {
+          if (row.title && sourceOccurrences(row.title, query).length > 0) {
             addSource({
               issueId: row.id,
               field: "title",
@@ -240,12 +240,12 @@ export function companySearchExtractService(db: Db) {
               source: { type: "issue", issueId: row.id },
             });
           }
-          if (row.description && sourceOccurrences(row.description, query).length > 0) {
+          if (row.request && sourceOccurrences(row.request, query).length > 0) {
             addSource({
               issueId: row.id,
-              field: "description",
-              label: "Issue description",
-              text: row.description,
+              field: "request",
+              label: "Issue request",
+              text: row.request,
               source: { type: "issue", issueId: row.id },
             });
           }
@@ -259,7 +259,6 @@ export function companySearchExtractService(db: Db) {
           .where(and(
             eq(issueComments.companyId, companyId),
             inArray(issueComments.issueId, issueIds),
-            isNull(issueComments.deletedAt),
             contentMatch(issueComments.body, query, containsPattern, urlPattern),
           ))
           .orderBy(asc(issueComments.createdAt), asc(issueComments.id));
@@ -326,8 +325,11 @@ export function companySearchExtractService(db: Db) {
           issueId: row.id,
           identifier: row.identifier,
           title: row.title,
-          status: row.status as CompanySearchExtractIssueResult["status"],
-          assigneeAgentId: row.assigneeAgentId,
+          boardPresentationStatus:
+            row.boardPresentationStatus as CompanySearchExtractIssueResult["boardPresentationStatus"],
+          request: row.request ?? "",
+          ownerAgentId: row.ownerAgentId,
+          ownerUserId: row.ownerUserId,
           updatedAt: row.updatedAt.toISOString(),
           ...extracted,
         };

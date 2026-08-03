@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import type { Issue } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueRow } from "./IssueRow";
+import { createTestIssue } from "../test-utils/issue";
 
 vi.mock("@/lib/router", () => ({
   Link: ({
@@ -39,48 +40,15 @@ function act(callback: () => void) {
 }
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
-    identifier: "PAP-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
+  return createTestIssue({
     title: "Inbox item",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
-    createdAt: new Date("2026-03-11T00:00:00.000Z"),
-    updatedAt: new Date("2026-03-11T00:00:00.000Z"),
     labels: [],
     labelIds: [],
     myLastTouchAt: null,
     lastExternalCommentAt: null,
     isUnreadForMe: false,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 describe("IssueRow", () => {
@@ -99,7 +67,7 @@ describe("IssueRow", () => {
     const root = createRoot(container);
 
     act(() => {
-      root.render(<IssueRow issue={createIssue({ status: "in_progress" })} />);
+      root.render(<IssueRow issue={createIssue({ boardPresentationStatus: "in_progress" })} />);
     });
 
     const glyphs = container.querySelectorAll('svg[viewBox="0 0 24 24"]');
@@ -372,10 +340,10 @@ describe("IssueRow", () => {
           id: "blocker-1",
           identifier: "PAP-2",
           title: "Parked child",
-          status: "backlog",
+          boardPresentationStatus: "backlog",
           priority: "high",
-          assigneeAgentId: "agent-99",
-          assigneeUserId: null,
+          ownerAgentId: "agent-99",
+          ownerUserId: null,
         },
       ],
     });
@@ -401,10 +369,10 @@ describe("IssueRow", () => {
           id: "blocker-1",
           identifier: "PAP-2",
           title: "Active child",
-          status: "in_progress",
+          boardPresentationStatus: "in_progress",
           priority: "high",
-          assigneeAgentId: "agent-99",
-          assigneeUserId: null,
+          ownerAgentId: "agent-99",
+          ownerUserId: null,
         },
       ],
     });

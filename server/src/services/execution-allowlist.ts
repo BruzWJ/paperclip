@@ -11,7 +11,7 @@
  * The merged tree's environment model represents the Kubernetes sandbox as a
  * core `driver: "sandbox"` environment whose `config.provider` is the plugin's
  * `driverKey` ("kubernetes", `kind: "sandbox_provider"`). The local default is
- * `driver: "local"`. This module knows nothing about the DB or heartbeat — it
+ * `driver: "local"`. This module knows nothing about the DB or dispatcher — it
  * just maps (driver, provider, policy) -> allow/deny so it is trivially
  * unit-testable.
  */

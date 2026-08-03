@@ -5,6 +5,7 @@ import type {
   WorkspaceRuntimeService,
 } from "./workspace-runtime.js";
 import type { AgentEnvConfig } from "./secrets.js";
+import type { MoneyAmount } from "../money.js";
 
 export type ProjectWorkspaceSourceType = "local_path" | "git_repo" | "remote_managed" | "non_git_path";
 export type ProjectWorkspaceVisibility = "default" | "advanced";
@@ -16,12 +17,10 @@ export interface ProjectGoalRef {
 
 /**
  * Lightweight per-project budget summary surfaced on the projects list payload
- * (IA Phase 4 — PAP-60). Reflects the active `billed_cents` budget policy scoped
- * to the project, when one is set.
+ * Reflects the active canonical budget policy scoped to the project.
  */
 export interface ProjectBudgetSummary {
-  /** Budget limit in cents. */
-  amountCents: number;
+  limitAmount: MoneyAmount;
   windowKind: BudgetWindowKind;
 }
 
@@ -99,10 +98,10 @@ export interface Project {
   primaryWorkspace: ProjectWorkspace | null;
   managedByPlugin?: ProjectManagedByPlugin | null;
   /**
-   * Number of tasks (issues) in the project. Populated by the projects list
+   * Number of issues in the project. Populated by the projects list
    * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.
    */
-  taskCount?: number;
+  issueCount?: number;
   /**
    * Active budget for the project, when set. Populated by the projects list
    * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.

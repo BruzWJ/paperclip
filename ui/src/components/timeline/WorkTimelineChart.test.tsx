@@ -61,26 +61,26 @@ function timelineSample(): WorkTimelineResult {
     spans: [
       {
         actorId: "agent:codex",
-        laneHint: null,
         runId: "run-1",
+        kind: "productive",
         issueId: "issue-1",
         issueIdentifier: "PAP-12443",
         issueTitle: "Work Timeline sticky gutter",
         start: "2026-07-02T09:00:00.000Z",
         end: "2026-07-02T10:00:00.000Z",
-        status: "completed",
+        status: "succeeded",
         retryOfRunId: null,
       },
       {
         actorId: "agent:qa",
-        laneHint: null,
         runId: "run-2",
+        kind: "productive",
         issueId: "issue-2",
         issueIdentifier: "PAP-12426",
         issueTitle: "QA validation",
         start: "2026-07-02T11:00:00.000Z",
         end: "2026-07-02T11:30:00.000Z",
-        status: "completed",
+        status: "succeeded",
         retryOfRunId: null,
       },
     ],
@@ -206,30 +206,30 @@ describe("WorkTimelineChart", () => {
 
   it("keeps connectors hidden until hover, renders them orthogonally, and highlights the connected graph", async () => {
     const data = timelineSample();
-    data.actors.push({ id: "agent:cto", type: "agent", name: "CTO" });
+    data.actors.push({ id: "agent:architect", type: "agent", name: "Architect" });
     data.spans.push(
       {
-        actorId: "agent:cto",
-        laneHint: null,
+        actorId: "agent:architect",
         runId: "run-3",
+        kind: "productive",
         issueId: "issue-3",
         issueIdentifier: "PAP-12427",
         issueTitle: "Follow-up validation",
         start: "2026-07-02T11:45:00.000Z",
         end: "2026-07-02T12:00:00.000Z",
-        status: "completed",
+        status: "succeeded",
         retryOfRunId: null,
       },
       {
         actorId: "agent:codex",
-        laneHint: null,
         runId: "run-4",
+        kind: "productive",
         issueId: "issue-4",
         issueIdentifier: "PAP-12428",
         issueTitle: "Unrelated work",
         start: "2026-07-02T13:00:00.000Z",
         end: "2026-07-02T14:00:00.000Z",
-        status: "completed",
+        status: "succeeded",
         retryOfRunId: null,
       },
     );
@@ -243,7 +243,7 @@ describe("WorkTimelineChart", () => {
       },
       {
         fromActorId: "agent:qa",
-        toActorId: "agent:cto",
+        toActorId: "agent:architect",
         issueId: "issue-3",
         at: "2026-07-02T11:35:00.000Z",
         kind: "delegation",

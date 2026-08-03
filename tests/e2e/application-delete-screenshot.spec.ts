@@ -1,13 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 // One-off visual capture for PAP-10817. The retired Tools -> Applications
 // table now redirects into Apps, so capture the current app removal
 // confirmation on the app Advanced tab instead.
-test("captures the current app removal confirmations", async ({ page }) => {
-  const flags = await page.request.patch("/api/instance/settings/experimental", { data: { enableApps: true } });
+test("captures the current app removal confirmations", async ({ page, request }) => {
+  const flags = await request.patch("/api/instance/settings/experimental", { data: { enableApps: true } });
   expect(flags.ok(), `enable apps failed ${flags.status()}: ${await flags.text()}`).toBe(true);
 
-  const companyRes = await page.request.post("/api/companies", {
+  const companyRes = await request.post("/api/companies", {
     data: { name: `PAP-10817 remove app ${Date.now()}` },
   });
   expect(companyRes.ok(), `create company failed ${companyRes.status()}: ${await companyRes.text()}`).toBe(true);
@@ -15,7 +15,7 @@ test("captures the current app removal confirmations", async ({ page }) => {
   const companyId: string = company.id;
   const prefix: string = company.issuePrefix ?? company.prefix ?? company.urlKey ?? "E2E";
 
-  const created = await page.request.post(`/api/companies/${companyId}/tools/applications`, {
+  const created = await request.post(`/api/companies/${companyId}/tools/applications`, {
     data: { name: "Demo Notes", description: "Sample MCP application", type: "mcp_http" },
   });
   expect(created.ok(), `create failed ${created.status()}: ${await created.text()}`).toBe(true);
@@ -28,7 +28,7 @@ test("captures the current app removal confirmations", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Yes, remove it" })).toBeVisible();
   await page.screenshot({ path: "test-results/pap-10817-delete-dialog.png", fullPage: true });
 
-  const conn = await page.request.post(`/api/companies/${companyId}/tools/connections`, {
+  const conn = await request.post(`/api/companies/${companyId}/tools/connections`, {
     data: {
       applicationName: "Guarded MCP",
       name: "Primary connection",
@@ -45,5 +45,5 @@ test("captures the current app removal confirmations", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Yes, remove it" })).toBeVisible();
   await page.screenshot({ path: "test-results/pap-10817-delete-dialog-guarded.png", fullPage: true });
 
-  await page.request.delete(`/api/companies/${companyId}`).catch(() => undefined);
+  await request.delete(`/api/companies/${companyId}`).catch(() => undefined);
 });

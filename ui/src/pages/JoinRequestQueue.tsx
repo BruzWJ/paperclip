@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserPlus2 } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { JoinRequestApprovalControls } from "@/components/JoinRequestApprovalControls";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { useToast } from "@/context/ToastContext";
@@ -39,7 +39,16 @@ export function JoinRequestQueue() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (requestId: string) => accessApi.approveJoinRequest(selectedCompanyId!, requestId),
+    mutationFn: ({
+      requestId,
+      defaultEnvironmentId,
+    }: {
+      requestId: string;
+      defaultEnvironmentId?: string;
+    }) =>
+      accessApi.approveJoinRequest(selectedCompanyId!, requestId, {
+        defaultEnvironmentId,
+      }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId!, `${status}:${requestType}`) });
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.companyMembers(selectedCompanyId!) });
@@ -149,21 +158,17 @@ export function JoinRequestQueue() {
                 </div>
 
                 {request.status === "pending_approval" ? (
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => rejectMutation.mutate(request.id)}
-                      disabled={rejectMutation.isPending}
-                    >
-                      Reject
-                    </Button>
-                    <Button
-                      onClick={() => approveMutation.mutate(request.id)}
-                      disabled={approveMutation.isPending}
-                    >
-                      Approve
-                    </Button>
-                  </div>
+                  <JoinRequestApprovalControls
+                    companyId={selectedCompanyId}
+                    requestType={request.requestType}
+                    adapterType={request.adapterType}
+                    onApprove={({ defaultEnvironmentId }) =>
+                      approveMutation.mutate({ requestId: request.id, defaultEnvironmentId })
+                    }
+                    onReject={() => rejectMutation.mutate(request.id)}
+                    isPending={approveMutation.isPending || rejectMutation.isPending}
+                    className="flex max-w-sm flex-wrap items-end justify-end gap-2"
+                  />
                 ) : null}
               </div>
 

@@ -20,17 +20,24 @@ import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSh
 import { ActivityRow } from "../components/ActivityRow";
 import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
-import { cn, formatCents } from "../lib/utils";
+import { cn, formatMoneyAmount } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
+import { issueDisplayTitle } from "../lib/issue-display";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Card } from "@/components/ui/card";
-import type { Agent, Issue } from "@paperclipai/shared";
+import {
+  compareMoneyAmounts,
+  parseMoneyAmount,
+  type Agent,
+  type Issue,
+} from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
+const ZERO_AMOUNT = parseMoneyAmount("0");
 
 function getRecentIssues(issues: Issue[]): Issue[] {
   return [...issues]
@@ -39,7 +46,7 @@ function getRecentIssues(issues: Issue[]): Issue[] {
 
 export function Dashboard() {
   const { selectedCompanyId, companies } = useCompany();
-  const { openOnboarding } = useDialogActions();
+  const { openNewAgent, openOnboarding } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
   const seenActivityIdsRef = useRef<Set<string>>(new Set());
@@ -181,7 +188,7 @@ export function Dashboard() {
 
   const entityTitleMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, issueDisplayTitle(i));
     return map;
   }, [issues]);
 
@@ -225,7 +232,7 @@ export function Dashboard() {
             </p>
           </div>
           <button
-            onClick={() => openOnboarding({ initialStep: 2, companyId: selectedCompanyId! })}
+            onClick={openNewAgent}
             className="text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100 underline underline-offset-2 shrink-0"
           >
             Create one here
@@ -272,26 +279,29 @@ export function Dashboard() {
             />
             <MetricCard
               icon={CircleDot}
-              value={data.tasks.inProgress}
+              value={data.issues.inProgress}
               label="Tasks In Progress"
               to="/issues"
               description={
                 <span>
-                  {data.tasks.open} open{", "}
-                  {data.tasks.blocked} blocked
+                  {data.issues.open} open{", "}
+                  {data.issues.blocked} blocked
                 </span>
               }
             />
             <MetricCard
               icon={DollarSign}
-              value={formatCents(data.costs.monthSpendCents)}
+              value={formatMoneyAmount(
+                data.costs.monthKnownSpendAmount,
+                data.costs.budgetCurrency,
+              )}
               label="Month Spend"
               to="/costs"
               description={
                 <span>
-                  {data.costs.monthBudgetCents > 0
-                    ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
-                    : "Unlimited budget"}
+                  {compareMoneyAmounts(data.costs.monthBudgetAmount, ZERO_AMOUNT) > 0
+                    ? `${data.costs.monthUtilizationPercent}% of ${formatMoneyAmount(data.costs.monthBudgetAmount, data.costs.budgetCurrency)} budget`
+                    : `${data.costs.unpricedPromptCount} unpriced prompts`}
                 </span>
               }
             />
@@ -378,21 +388,21 @@ export function Dashboard() {
                       <div className="flex items-start gap-2 sm:items-center sm:gap-3">
                         {/* Status icon - left column on mobile */}
                         <span className="shrink-0 sm:hidden">
-                          <StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} />
+                          <StatusIcon status={issue.boardPresentationStatus} blockerAttention={issue.blockerAttention} />
                         </span>
 
                         {/* Right column on mobile: title + metadata stacked */}
                         <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
                           <span className="line-clamp-2 text-sm sm:order-2 sm:flex-1 sm:min-w-0 sm:line-clamp-none sm:truncate">
-                            {issue.title}
+                            {issueDisplayTitle(issue)}
                           </span>
                           <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
-                            <span className="hidden sm:inline-flex"><StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} /></span>
+                            <span className="hidden sm:inline-flex"><StatusIcon status={issue.boardPresentationStatus} blockerAttention={issue.blockerAttention} /></span>
                             <span className="text-xs font-mono text-muted-foreground">
                               {issue.identifier ?? issue.id.slice(0, 8)}
                             </span>
-                            {issue.assigneeAgentId && (() => {
-                              const name = agentName(issue.assigneeAgentId);
+                            {issue.ownerAgentId && (() => {
+                              const name = agentName(issue.ownerAgentId);
                               return name
                                 ? <span className="hidden sm:inline-flex"><Identity name={name} size="sm" /></span>
                                 : null;

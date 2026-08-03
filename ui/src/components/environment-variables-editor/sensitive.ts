@@ -1,8 +1,4 @@
-/**
- * Sensitive-value detection (plan §6.6). Kept in sync with the server-side
- * migration heuristic so the UI flags the same things the backend would.
- * Source of the key regex: `scripts/migrate-inline-env-secrets.ts:5`.
- */
+/** Sensitive-value detection for project environment declarations. */
 
 /** Env-var NAMES that conventionally hold credentials. */
 export const SENSITIVE_ENV_KEY_RE =

@@ -1,5 +1,5 @@
 import type {
-  GenerateSummarySlotResponse,
+  RefreshSummarySlotResponse,
   GetSummarySlotResponse,
   ListSummarySlotRevisionsResponse,
   SummarySlotKey,
@@ -30,9 +30,12 @@ export const summarySlotsApi = {
     api.get<GetSummarySlotResponse>(summarySlotPath(selector)),
   revisions: (selector: SummarySlotSelector) =>
     api.get<ListSummarySlotRevisionsResponse>(summarySlotPath(selector, "/revisions")),
-  generate: (selector: SummarySlotSelector) =>
-    api.post<GenerateSummarySlotResponse>(
-      summarySlotPath(selector, "/generate"),
-      { scopeId: selector.scopeId ?? null },
+  refresh: (selector: SummarySlotSelector, ownerAgentId?: string) =>
+    api.post<RefreshSummarySlotResponse>(
+      summarySlotPath(selector, "/refresh"),
+      {
+        scopeId: selector.scopeId ?? null,
+        ...(ownerAgentId ? { ownerAgentId } : {}),
+      },
     ),
 };

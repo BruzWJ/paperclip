@@ -125,6 +125,7 @@ describe("bridge routes", () => {
     const response = await handleBridgeRequest(
       bridgeRequest("/api/paperclip-sandbox/v1/exec", {
         providerLeaseId: "pc-run-1-abcd1234",
+        executionId: "execution-1",
         command: "echo",
         args: ["hello"],
         sessionStrategy: "named",

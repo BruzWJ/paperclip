@@ -1,49 +1,38 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 vi.unmock("http");
 vi.unmock("node:http");
 
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
-const keyId = "33333333-3333-4333-8333-333333333333";
 
 const baseAgent = {
   id: agentId,
   companyId,
   name: "Builder",
   urlKey: "builder",
-  role: "engineer",
   title: "Builder",
   icon: null,
   status: "idle",
   reportsTo: null,
   capabilities: null,
-  adapterType: "process",
-  adapterConfig: {},
+  adapterType: "codex",
+  adapterConfig: { model: "gpt-5.6" },
   runtimeConfig: {},
-  budgetMonthlyCents: 0,
-  spentMonthlyCents: 0,
+  budgetMonthlyAmount: "0",
+  knownSpendAmount: "0",
   pauseReason: null,
   pausedAt: null,
-  permissions: { canCreateAgents: false },
-  lastHeartbeatAt: null,
+  governance: {},
   metadata: null,
   createdAt: new Date("2026-04-11T00:00:00.000Z"),
   updatedAt: new Date("2026-04-11T00:00:00.000Z"),
 };
 
-const baseKey = {
-  id: keyId,
-  agentId,
-  companyId,
-  name: "exploit",
-  createdAt: new Date("2026-04-11T00:00:00.000Z"),
-  revokedAt: null,
-};
-
-let currentKeyAgentId = agentId;
 let currentAccessCanUser = false;
 
 const mockAgentService = vi.hoisted(() => ({
@@ -52,11 +41,6 @@ const mockAgentService = vi.hoisted(() => ({
   resume: vi.fn(),
   clearError: vi.fn(),
   terminate: vi.fn(),
-  remove: vi.fn(),
-  listKeys: vi.fn(),
-  createApiKey: vi.fn(),
-  getKeyById: vi.fn(),
-  revokeKey: vi.fn(),
 }));
 
 const mockAccessService = vi.hoisted(() => ({
@@ -78,8 +62,9 @@ const mockBudgetService = vi.hoisted(() => ({
   upsertPolicy: vi.fn(),
 }));
 
-const mockHeartbeatService = vi.hoisted(() => ({
-  cancelActiveForAgent: vi.fn(),
+const mockIssueExecutionCancellation = vi.hoisted(() => ({
+  requestAgentCancellationsInTransaction: vi.fn(),
+  reconcileRequestedAgentCancellations: vi.fn(),
 }));
 
 const mockIssueApprovalService = vi.hoisted(() => ({
@@ -95,18 +80,10 @@ const mockSecretService = vi.hoisted(() => ({
   resolveAdapterConfigForRuntime: vi.fn(),
 }));
 
-const mockAgentInstructionsService = vi.hoisted(() => ({
-  materializeManagedBundle: vi.fn(),
-}));
-
-const mockCompanySkillService = vi.hoisted(() => ({
-  listRuntimeSkillEntries: vi.fn(),
-  resolveRequestedSkillKeys: vi.fn(),
-}));
-
 const mockWorkspaceOperationService = vi.hoisted(() => ({}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
+const mockResolveInvokableIssueOwnerCatalogFromDb = vi.hoisted(() => vi.fn());
 
 vi.mock("@paperclipai/shared/telemetry", () => ({
   trackAgentCreated: vi.fn(),
@@ -115,6 +92,12 @@ vi.mock("@paperclipai/shared/telemetry", () => ({
 
 vi.mock("../telemetry.js", () => ({
   getTelemetryClient: mockGetTelemetryClient,
+}));
+
+vi.mock("../services/agent-invokability.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/agent-invokability.js")>()),
+  resolveInvokableIssueOwnerCatalogFromDb:
+    mockResolveInvokableIssueOwnerCatalogFromDb,
 }));
 
 vi.mock("../routes/authz.js", async () => {
@@ -136,7 +119,7 @@ vi.mock("../routes/authz.js", async () => {
     if (req.actor.type === "agent" && req.actor.companyId !== expectedCompanyId) {
       throw forbidden("Agent key cannot access another company");
     }
-    if (req.actor.type === "board" && req.actor.source !== "local_implicit") {
+    if (req.actor.type === "board") {
       const allowedCompanies = req.actor.companyIds ?? [];
       if (!allowedCompanies.includes(expectedCompanyId)) {
         throw forbidden("User does not have access to this company");
@@ -147,7 +130,6 @@ vi.mock("../routes/authz.js", async () => {
   function hasCompanyAccess(req: Express.Request, expectedCompanyId: string): boolean {
     if (req.actor.type === "none") return false;
     if (req.actor.type === "agent") return req.actor.companyId === expectedCompanyId;
-    if (req.actor.source === "local_implicit") return true;
     return (req.actor.companyIds ?? []).includes(expectedCompanyId);
   }
 
@@ -168,26 +150,8 @@ vi.mock("../routes/authz.js", async () => {
 
   function assertInstanceAdmin(req: Express.Request) {
     assertBoard(req);
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
+    if (req.actor.isInstanceAdmin) return;
     throw forbidden("Instance admin access required");
-  }
-
-  function getActorInfo(req: Express.Request) {
-    assertAuthenticated(req);
-    if (req.actor.type === "agent") {
-      return {
-        actorType: "agent" as const,
-        actorId: req.actor.agentId ?? "unknown-agent",
-        agentId: req.actor.agentId ?? null,
-        runId: req.actor.runId ?? null,
-      };
-    }
-    return {
-      actorType: "user" as const,
-      actorId: req.actor.userId ?? "board",
-      agentId: null,
-      runId: req.actor.runId ?? null,
-    };
   }
 
   return {
@@ -196,25 +160,21 @@ vi.mock("../routes/authz.js", async () => {
     assertCompanyAccess,
     assertInstanceAdmin,
     getAccessibleResource,
-    getActorInfo,
     hasCompanyAccess,
   };
 });
 
 vi.mock("../services/index.js", () => ({
+  agentCompanySkillSelectionService: () => ({}),
   agentService: () => mockAgentService,
-  agentInstructionsService: () => mockAgentInstructionsService,
   accessService: () => mockAccessService,
   approvalService: () => mockApprovalService,
-  builtInAgentService: () => ({ ensureCompanyDefaultAgentGrants: vi.fn() }),
-  companySkillService: () => mockCompanySkillService,
   budgetService: () => mockBudgetService,
-  heartbeatService: () => mockHeartbeatService,
+  createRuntimeAgentConfigurationService: () => ({}),
   issueApprovalService: () => mockIssueApprovalService,
   issueService: () => mockIssueService,
   logActivity: mockLogActivity,
   secretService: () => mockSecretService,
-  syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
   workspaceOperationService: () => mockWorkspaceOperationService,
 }));
 
@@ -250,7 +210,13 @@ async function createApp(actor: Record<string, unknown>) {
     };
     next();
   });
-  app.use("/api", agentRoutes({} as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use("/api", agentRoutes({} as any, {
+    ordinaryIssues: {
+      notifyCreatorDelivery: async () => undefined,
+    } as never,
+    issueExecutionCancellation: mockIssueExecutionCancellation as never,
+  }));
   app.use(errorHandler);
   return app;
 }
@@ -288,41 +254,24 @@ function resetMockDefaults() {
   for (const mock of Object.values(mockAccessService)) mock.mockReset();
   for (const mock of Object.values(mockApprovalService)) mock.mockReset();
   for (const mock of Object.values(mockBudgetService)) mock.mockReset();
-  for (const mock of Object.values(mockHeartbeatService)) mock.mockReset();
+  for (const mock of Object.values(mockIssueExecutionCancellation)) mock.mockReset();
   for (const mock of Object.values(mockIssueApprovalService)) mock.mockReset();
   for (const mock of Object.values(mockIssueService)) mock.mockReset();
   for (const mock of Object.values(mockSecretService)) mock.mockReset();
-  for (const mock of Object.values(mockAgentInstructionsService)) mock.mockReset();
-  for (const mock of Object.values(mockCompanySkillService)) mock.mockReset();
   mockLogActivity.mockReset();
   mockGetTelemetryClient.mockReset();
+  mockResolveInvokableIssueOwnerCatalogFromDb.mockReset();
   mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
-  currentKeyAgentId = agentId;
+  mockResolveInvokableIssueOwnerCatalogFromDb.mockResolvedValue(new Map());
   currentAccessCanUser = false;
   mockAgentService.getById.mockImplementation(async () => ({ ...baseAgent }));
   mockAgentService.pause.mockImplementation(async () => ({ ...baseAgent }));
   mockAgentService.resume.mockImplementation(async () => ({ ...baseAgent }));
   mockAgentService.clearError.mockImplementation(async () => ({ ...baseAgent, status: "idle" }));
   mockAgentService.terminate.mockImplementation(async () => ({ ...baseAgent }));
-  mockAgentService.remove.mockImplementation(async () => ({ ...baseAgent }));
-  mockAgentService.listKeys.mockImplementation(async () => []);
-  mockAgentService.createApiKey.mockImplementation(async () => ({
-    id: keyId,
-    name: baseKey.name,
-    token: "pcp_test_token",
-    createdAt: baseKey.createdAt,
-  }));
-  mockAgentService.getKeyById.mockImplementation(async () => ({
-    ...baseKey,
-    agentId: currentKeyAgentId,
-  }));
-  mockAgentService.revokeKey.mockImplementation(async () => ({
-    ...baseKey,
-    revokedAt: new Date("2026-04-11T00:05:00.000Z"),
-  }));
   mockAccessService.canUser.mockImplementation(async () => currentAccessCanUser);
   mockAccessService.decide.mockImplementation(async (input: { actor?: { type?: string; source?: string }; action?: string }) => {
-    const allowed = input.actor?.type === "board" && input.actor.source === "local_implicit"
+    const allowed = input.actor?.type === "board" && input.actor.source === "session"
       ? true
       : currentAccessCanUser;
     return {
@@ -337,7 +286,16 @@ function resetMockDefaults() {
   mockAccessService.listPrincipalGrants.mockImplementation(async () => []);
   mockAccessService.ensureMembership.mockImplementation(async () => undefined);
   mockAccessService.setPrincipalPermission.mockImplementation(async () => undefined);
-  mockHeartbeatService.cancelActiveForAgent.mockImplementation(async () => undefined);
+  mockIssueExecutionCancellation.requestAgentCancellationsInTransaction.mockImplementation(
+    async (_transaction, input) => ({
+      companyId: input.companyId,
+      agentIds: input.agentIds,
+      reason: input.reason,
+      fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+      requests: [],
+    }),
+  );
+  mockIssueExecutionCancellation.reconcileRequestedAgentCancellations.mockImplementation(async () => undefined);
   mockLogActivity.mockImplementation(async () => undefined);
 }
 
@@ -346,44 +304,102 @@ describe.sequential("agent cross-tenant route authorization", () => {
     resetMockDefaults();
   });
 
-  it("enforces company boundaries before mutating or reading agent keys", async () => {
-    const crossTenantActor = {
-      type: "board",
+  it(
+    "does not expose a second DELETE agent lifecycle command",
+    async () => {
+      const app = await createApp(testBoardSessionActor({
+        userId: "board-user",
+        companyIds: [companyId],
+        isInstanceAdmin: true,
+      }));
+
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl).delete(`/api/agents/${agentId}`),
+      );
+
+      expect(res.status).toBe(404);
+      expect(mockAgentService.terminate).not.toHaveBeenCalled();
+    },
+    15_000,
+  );
+
+  it("returns only safe fields from the canonical invokable issue-owner catalog", async () => {
+    mockResolveInvokableIssueOwnerCatalogFromDb.mockResolvedValue(new Map([
+      [agentId, {
+        owner: {
+          ...baseAgent,
+          title: "Build lead",
+          icon: "hammer",
+          currentAdapterConfigRevisionId:
+            "33333333-3333-4333-8333-333333333333",
+        },
+        revision: {
+          id: "33333333-3333-4333-8333-333333333333",
+          companyId,
+          agentId,
+          adapterType: "codex",
+          implementationIdentity: "private-implementation-identity",
+          implementationAvailable: true,
+        },
+        revisionId: "33333333-3333-4333-8333-333333333333",
+      }],
+    ]));
+    const app = await createApp(testBoardSessionActor({
+      userId: "board-user",
+      companyIds: [companyId],
+      isInstanceAdmin: false,
+    }));
+
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl).get(`/api/companies/${companyId}/issue-owner-catalog`),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{
+      id: agentId,
+      name: "Builder",
+      title: "Build lead",
+      icon: "hammer",
+    }]);
+    expect(mockResolveInvokableIssueOwnerCatalogFromDb).toHaveBeenCalledWith(
+      expect.anything(),
+      { companyId },
+    );
+  });
+
+  it("does not resolve the issue-owner catalog outside company authorization", async () => {
+    const app = await createApp(testBoardSessionActor({
+      userId: "outside-user",
+      companyIds: [],
+      isInstanceAdmin: false,
+    }));
+
+    const res = await requestApp(app, (baseUrl) =>
+      request(baseUrl).get(`/api/companies/${companyId}/issue-owner-catalog`),
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockResolveInvokableIssueOwnerCatalogFromDb).not.toHaveBeenCalled();
+  });
+
+  it("enforces company boundaries before mutating agents", async () => {
+    const crossTenantActor = testBoardSessionActor({
       userId: "mallory",
       companyIds: [],
-      source: "session",
       isInstanceAdmin: false,
-    };
+    });
     const deniedCases = [
       {
         label: "pause",
         request: (app: express.Express) =>
           requestApp(app, (baseUrl) => request(baseUrl).post(`/api/agents/${agentId}/pause`).send({})),
-        untouched: [mockAgentService.pause, mockHeartbeatService.cancelActiveForAgent],
+        untouched: [mockAgentService.pause],
       },
       {
         label: "clear error",
         request: (app: express.Express) =>
           requestApp(app, (baseUrl) => request(baseUrl).post(`/api/agents/${agentId}/clear-error`).send({})),
         untouched: [mockAgentService.clearError],
-      },
-      {
-        label: "list keys",
-        request: (app: express.Express) =>
-          requestApp(app, (baseUrl) => request(baseUrl).get(`/api/agents/${agentId}/keys`)),
-        untouched: [mockAgentService.listKeys],
-      },
-      {
-        label: "create key",
-        request: (app: express.Express) =>
-          requestApp(app, (baseUrl) => request(baseUrl).post(`/api/agents/${agentId}/keys`).send({ name: "exploit" })),
-        untouched: [mockAgentService.createApiKey],
-      },
-      {
-        label: "revoke key",
-        request: (app: express.Express) =>
-          requestApp(app, (baseUrl) => request(baseUrl).delete(`/api/agents/${agentId}/keys/${keyId}`)),
-        untouched: [mockAgentService.getKeyById, mockAgentService.revokeKey],
       },
     ];
 
@@ -400,27 +416,9 @@ describe.sequential("agent cross-tenant route authorization", () => {
       }
     }
 
-    resetMockDefaults();
-    currentKeyAgentId = "44444444-4444-4444-8444-444444444444";
-    currentAccessCanUser = true;
+  }, 15_000);
 
-    const app = await createApp({
-      type: "board",
-      userId: "board-user",
-      companyIds: [companyId],
-      source: "session",
-      isInstanceAdmin: false,
-    });
-
-    const res = await requestApp(app, (baseUrl) => request(baseUrl).delete(`/api/agents/${agentId}/keys/${keyId}`));
-
-    expect(res.status).toBe(404);
-    expect(res.body.error).toContain("Key not found");
-    expect(mockAgentService.getKeyById).toHaveBeenCalledWith(keyId);
-    expect(mockAgentService.revokeKey).not.toHaveBeenCalled();
-  });
-
-  it("requires board access before clearing an agent error", async () => {
+  it("rejects agent credentials at the generic agent API boundary", async () => {
     const app = await createApp({
       type: "agent",
       agentId,
@@ -433,7 +431,9 @@ describe.sequential("agent cross-tenant route authorization", () => {
     );
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Board access required");
+    expect(res.body.error).toBe(
+      "Agent credentials cannot access the generic REST API; use the run-scoped compiled interface",
+    );
     expect(mockAgentService.clearError).not.toHaveBeenCalled();
   });
 
@@ -452,13 +452,11 @@ describe.sequential("agent cross-tenant route authorization", () => {
       pausedAt: null,
       updatedAt: new Date("2026-04-11T00:03:00.000Z"),
     }));
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: true,
-    });
+    }));
 
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl).post(`/api/agents/${agentId}/clear-error`).send({}),
@@ -492,13 +490,11 @@ describe.sequential("agent cross-tenant route authorization", () => {
         repairGuidance: "Repair the reporting chain first.",
       },
     }));
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: true,
-    });
+    }));
 
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl).post(`/api/agents/${agentId}/clear-error`).send({}),
@@ -516,13 +512,11 @@ describe.sequential("agent cross-tenant route authorization", () => {
     mockAgentService.clearError.mockImplementation(async () => {
       throw conflict("Only agents in error status can have their error cleared");
     });
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
       companyIds: [companyId],
-      source: "local_implicit",
       isInstanceAdmin: true,
-    });
+    }));
 
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl).post(`/api/agents/${agentId}/clear-error`).send({}),

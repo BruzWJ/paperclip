@@ -77,7 +77,12 @@ describe("pluginLifecycleManager.restartWorker", () => {
 
     const lifecycle = pluginLifecycleManager(
       {} as never,
-      { loader: loader as PluginLoader, workerManager },
+      {
+        loader: loader as PluginLoader,
+        workerManager,
+        dispatchRef: async () => undefined,
+        notifyCreatorDelivery: async () => undefined,
+      },
     );
     const stopped = vi.fn();
     const started = vi.fn();
@@ -109,7 +114,12 @@ describe("pluginLifecycleManager.restartWorker", () => {
 
     const lifecycle = pluginLifecycleManager(
       {} as never,
-      { loader: loader as PluginLoader, workerManager },
+      {
+        loader: loader as PluginLoader,
+        workerManager,
+        dispatchRef: async () => undefined,
+        notifyCreatorDelivery: async () => undefined,
+      },
     );
     const stopped = vi.fn();
     const started = vi.fn();

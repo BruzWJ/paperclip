@@ -10,6 +10,7 @@ import type {
 } from "../constants.js";
 import type { EnvBinding } from "./secrets.js";
 import type { ExecutionWorkspaceMode, IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
+import type { IssueAttentionMask } from "../issue-runtime.js";
 
 export interface RoutineDescriptionDocument {
   id: string;
@@ -40,7 +41,6 @@ export interface RoutineProjectSummary {
 export interface RoutineAgentSummary {
   id: string;
   name: string;
-  role: string;
   title: string | null;
   urlKey?: string | null;
 }
@@ -48,8 +48,8 @@ export interface RoutineAgentSummary {
 export interface RoutineIssueSummary {
   id: string;
   identifier: string | null;
-  title: string;
-  status: string;
+  title: string | null;
+  boardPresentationStatus: string;
   priority: string;
   updatedAt: Date;
 }
@@ -78,6 +78,7 @@ export interface Routine {
   description: string | null;
   assigneeAgentId: string | null;
   priority: string;
+  attentionMask: IssueAttentionMask | null;
   status: string;
   concurrencyPolicy: string;
   catchUpPolicy: string;
@@ -121,6 +122,7 @@ export interface RoutineRevisionSnapshotRoutineV1 {
   description: string | null;
   assigneeAgentId: string | null;
   priority: IssuePriority;
+  attentionMask: IssueAttentionMask | null;
   status: RoutineStatus;
   concurrencyPolicy: RoutineConcurrencyPolicy;
   catchUpPolicy: RoutineCatchUpPolicy;

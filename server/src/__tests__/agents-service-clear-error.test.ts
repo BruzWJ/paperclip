@@ -1,238 +1,146 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import {
-  agents,
-  agentRuntimeState,
-  companies,
-  createDb,
-  heartbeatRunEvents,
-  heartbeatRuns,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { agentService } from "../services/agents.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { agentRuntimeState, agents } from "@paperclipai/db";
+import { parseMoneyAmount } from "@paperclipai/shared";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const budgetMocks = vi.hoisted(() => ({
+  getAgentMonthlyKnownSpend: vi.fn(),
+}));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres agent service tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+vi.mock("../services/budgets.js", () => ({
+  budgetService: vi.fn(() => budgetMocks),
+}));
+
+import { agentService } from "../services/agents.js";
+
+type AgentRow = typeof agents.$inferSelect;
+
+function agentRow(status: string, id = randomUUID()): AgentRow {
+  const now = new Date("2026-06-07T00:00:00.000Z");
+  return {
+    id,
+    companyId: randomUUID(),
+    name: "CodexCoder",
+    title: null,
+    icon: null,
+    status,
+    reportsTo: null,
+    capabilities: null,
+    adapterType: "codex",
+    adapterConfig: { model: "gpt-5.6" },
+    currentAdapterConfigRevisionId: null,
+    runtimeConfig: {},
+    defaultEnvironmentId: null,
+    budgetMonthlyAmount: parseMoneyAmount("0"),
+    pauseReason: status === "error" ? "system" : null,
+    pausedAt: status === "error" ? now : null,
+    errorReason:
+      status === "error"
+        ? "Secret is not bound to agent at env.ANTHROPIC_API_KEY"
+        : null,
+    permissions: {},
+    metadata: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
-describeEmbeddedPostgres("agent service clearError", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-clear-error-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(heartbeatRunEvents);
-    await db.delete(agentRuntimeState);
-    await db.delete(heartbeatRuns);
-    await db.delete(agents);
-    await db.delete(companies);
+describe("agent service clearError", () => {
+  beforeEach(() => {
+    budgetMocks.getAgentMonthlyKnownSpend.mockReset();
+    budgetMocks.getAgentMonthlyKnownSpend.mockImplementation(
+      async (_companyId: string, agentIds: readonly string[]) =>
+        new Map(agentIds.map((agentId) => [agentId, parseMoneyAmount("0")])),
+    );
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  it("moves an error agent to idle without deleting run history or runtime diagnostics", async () => {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    const runId = randomUUID();
-    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix,
-      requireBoardApprovalForNewAgents: false,
+  it("moves an error agent to idle without deleting runtime diagnostics", async () => {
+    const existing = agentRow("error");
+    const updated: AgentRow = {
+      ...existing,
+      status: "idle",
+      pauseReason: null,
+      pausedAt: null,
+      errorReason: null,
+      updatedAt: new Date("2026-06-07T00:01:00.000Z"),
+    };
+    const { db, calls, remaining } = createMockDb({
+      // getById before and after the guarded update: row + company graph.
+      select: [[existing], [existing], [updated], [updated]],
+      update: [[updated]],
     });
 
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "CodexCoder",
-      role: "engineer",
-      status: "error",
-      pauseReason: "system",
-      pausedAt: new Date("2026-06-07T00:00:00.000Z"),
-      errorReason: "Secret is not bound to agent at env.ANTHROPIC_API_KEY",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    });
-
-    await db.insert(heartbeatRuns).values({
-      id: runId,
-      companyId,
-      agentId,
-      invocationSource: "on_demand",
-      status: "failed",
-      error: "Adapter exited with code 1",
-      stdoutExcerpt: "stdout stays inspectable",
-      stderrExcerpt: "stderr stays inspectable",
-      logStore: "local_disk",
-      logRef: "runs/failed.log",
-      resultJson: { sessionId: "codex-session-1" },
-      finishedAt: new Date("2026-06-07T00:01:00.000Z"),
-    });
-
-    await db.insert(heartbeatRunEvents).values({
-      companyId,
-      runId,
-      agentId,
-      seq: 1,
-      eventType: "transcript",
-      stream: "stderr",
-      message: "transcript stays inspectable",
-      payload: { itemType: "error" },
-    });
-
-    await db.insert(agentRuntimeState).values({
-      agentId,
-      companyId,
-      adapterType: "codex_local",
-      sessionId: "codex-session-1",
-      stateJson: { taskKey: "issue:test" },
-      lastRunId: runId,
-      lastRunStatus: "failed",
-      lastError: "Adapter exited with code 1",
-    });
-
-    const cleared = await agentService(db).clearError(agentId);
+    const cleared = await agentService(db).clearError(existing.id);
 
     expect(cleared).toMatchObject({
-      id: agentId,
+      id: existing.id,
+      status: "idle",
+      pauseReason: null,
+      pausedAt: null,
+      errorReason: null,
+    });
+    expect(
+      calls.find(
+        (call) => call.operation === "update" && call.method === "set",
+      )?.args[0],
+    ).toMatchObject({
       status: "idle",
       pauseReason: null,
       pausedAt: null,
       errorReason: null,
     });
 
-    const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
-    expect(run).toMatchObject({
-      id: runId,
-      status: "failed",
-      error: "Adapter exited with code 1",
-      stdoutExcerpt: "stdout stays inspectable",
-      stderrExcerpt: "stderr stays inspectable",
-      logStore: "local_disk",
-      logRef: "runs/failed.log",
-    });
-
-    const transcriptEvents = await db
-      .select()
-      .from(heartbeatRunEvents)
-      .where(eq(heartbeatRunEvents.runId, runId));
-    expect(transcriptEvents).toHaveLength(1);
-    expect(transcriptEvents[0]).toMatchObject({
-      runId,
-      eventType: "transcript",
-      stream: "stderr",
-      message: "transcript stays inspectable",
-      payload: { itemType: "error" },
-    });
-
-    const [runtimeState] = await db
-      .select()
-      .from(agentRuntimeState)
-      .where(eq(agentRuntimeState.agentId, agentId));
-    expect(runtimeState).toMatchObject({
-      agentId,
-      sessionId: "codex-session-1",
-      stateJson: { taskKey: "issue:test" },
-      lastRunId: runId,
-      lastRunStatus: "failed",
-      lastError: "Adapter exited with code 1",
-    });
+    const updateTargets = calls
+      .filter(
+        (call) => call.operation === "update" && call.method === "update",
+      )
+      .map((call) => call.args[0]);
+    expect(updateTargets).toEqual([agents]);
+    expect(updateTargets).not.toContain(agentRuntimeState);
+    expect(calls.some((call) => call.operation === "delete")).toBe(false);
+    expect(remaining("select")).toBe(0);
+    expect(remaining("update")).toBe(0);
   });
 
   it("rejects non-error agents with a 409 conflict", async () => {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix,
-      requireBoardApprovalForNewAgents: false,
+    const existing = agentRow("idle");
+    const { db, calls, remaining } = createMockDb({
+      select: [[existing], [existing]],
     });
 
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "CodexCoder",
-      role: "engineer",
-      status: "idle",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    });
-
-    await expect(agentService(db).clearError(agentId)).rejects.toMatchObject({
+    await expect(agentService(db).clearError(existing.id)).rejects.toMatchObject({
       status: 409,
       message: "Only agents in error status can have their error cleared",
     });
+
+    expect(calls.some((call) => call.operation === "update")).toBe(false);
+    expect(remaining("select")).toBe(0);
   });
 
   it("keeps resume-style terminal and pending-approval protections", async () => {
-    const companyId = randomUUID();
-    const terminatedAgentId = randomUUID();
-    const pendingAgentId = randomUUID();
-    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix,
-      requireBoardApprovalForNewAgents: false,
-    });
-
-    await db.insert(agents).values([
+    const protectedCases = [
       {
-        id: terminatedAgentId,
-        companyId,
-        name: "Terminated",
-        role: "engineer",
-        status: "terminated",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
+        row: agentRow("terminated"),
+        message: "Cannot clear error on terminated agent",
       },
       {
-        id: pendingAgentId,
-        companyId,
-        name: "Pending",
-        role: "engineer",
-        status: "pending_approval",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
+        row: agentRow("pending_approval"),
+        message: "Pending approval agents cannot have errors cleared",
       },
-    ]);
+    ];
 
-    await expect(agentService(db).clearError(terminatedAgentId)).rejects.toMatchObject({
-      status: 409,
-      message: "Cannot clear error on terminated agent",
-    });
-    await expect(agentService(db).clearError(pendingAgentId)).rejects.toMatchObject({
-      status: 409,
-      message: "Pending approval agents cannot have errors cleared",
-    });
+    for (const { row, message } of protectedCases) {
+      const { db, calls, remaining } = createMockDb({
+        select: [[row], [row]],
+      });
+
+      await expect(agentService(db).clearError(row.id)).rejects.toMatchObject({
+        status: 409,
+        message,
+      });
+      expect(calls.some((call) => call.operation === "update")).toBe(false);
+      expect(remaining("select")).toBe(0);
+    }
   });
 });

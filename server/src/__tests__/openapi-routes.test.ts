@@ -18,13 +18,13 @@ const apiPrefixes: Record<string, string> = {
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
-  "auth.ts": "/api/auth",
   "board-chat.ts": "/api",
   "built-in-agents.ts": "/api",
   "cloud-upstreams.ts": "/api",
   "companies.ts": "/api/companies",
   "company-skills.ts": "/api",
   "company-skill-policy.ts": "/api",
+  "change-consents.ts": "/api",
   "costs.ts": "/api",
   "dashboard.ts": "/api",
   "decision-training.ts": "/api",
@@ -40,6 +40,7 @@ const apiPrefixes: Record<string, string> = {
   "instance-settings.ts": "/api",
   "issues.ts": "/api",
   "issue-tree-control.ts": "/api",
+  "issue-ingress.ts": "/api",
   "llms.ts": "/api",
   "openapi.ts": "/api",
   "plugin-ui-static.ts": "/api",
@@ -47,10 +48,13 @@ const apiPrefixes: Record<string, string> = {
   "projects.ts": "/api",
   "resource-memberships.ts": "/api",
   "routines.ts": "/api",
+  "run-tools.ts": "/api",
+  "runs.ts": "/api",
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
   "summary-slots.ts": "/api",
+  "session-compactions.ts": "/api",
   "teams-catalog.ts": "/api",
   "tool-access.ts": "/api",
   "tool-gateway.ts": "/api",
@@ -67,6 +71,10 @@ const explicitOpenApiCoverageExclusions = new Set([
   "cases.ts",
   // Smoke lab routes are experimental and not yet represented in the public OpenAPI document.
   "smoke-lab.ts",
+]);
+const betterAuthOwnedRuntimeRoutes = new Set([
+  "GET /api/auth/get-session",
+  "POST /api/auth/update-user",
 ]);
 
 function createApp() {
@@ -93,14 +101,13 @@ function resolveMountedPath(file: string, prefix: string, routePath: string) {
   if (file === "companies.ts" || file === "health.ts") {
     return `${prefix}${routePath}`;
   }
-  if (file === "auth.ts") {
-    return `${prefix}${routePath === "/" ? "" : routePath}`;
-  }
   return `${prefix}${routePath}`;
 }
 
 function loadActualRoutes() {
-  const routes = new Set<string>();
+  // Better Auth owns the wildcard mounted by app.ts. These documented
+  // operations intentionally have no competing Paperclip route module.
+  const routes = new Set<string>(betterAuthOwnedRuntimeRoutes);
   const unknownRouteFiles: string[] = [];
 
   for (const file of fs.readdirSync(ROUTES_DIR).filter((entry) => entry.endsWith(".ts"))) {
@@ -152,12 +159,191 @@ describe("openapi routes", () => {
     expect(res.body.info.title).toBe("Paperclip API");
     expect(res.body.paths["/api/openapi.json"].get.summary).toBe("Get the generated OpenAPI document");
     expect(res.body.paths["/api/companies/{companyId}/agents"].get.summary).toBe("List agents in a company");
-    expect(res.body.paths["/api/agents/{id}/keys"].post.summary).toBe("Create an agent API key");
+    expect(
+      res.body.paths["/api/companies/{companyId}/runtime-agents"].post
+        .requestBody.content["application/json"].schema.required,
+    ).toEqual(expect.arrayContaining([
+      "name",
+      "title",
+      "capabilities",
+      "reportsTo",
+      "contextGrants",
+      "actionGrants",
+      "mentionReachGrants",
+      "companyToolIds",
+    ]));
+    const createToolOptionsSchema =
+      res.body.paths[
+        "/api/companies/{companyId}/runtime-agent-tool-options"
+      ].get.responses["200"].content["application/json"].schema;
+    expect(createToolOptionsSchema.items).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: expect.arrayContaining([
+        "catalogEntryId",
+        "connectionId",
+        "connectionName",
+        "title",
+        "description",
+        "catalogVersionHash",
+      ]),
+    });
+    expect(
+      createToolOptionsSchema.items.properties,
+    ).not.toHaveProperty("connectionInstallId");
+    expect(
+      res.body.paths[
+        "/api/agents/{id}/runtime-configuration/tool-options"
+      ].get["x-paperclip-authorization"],
+    ).toEqual({ actor: "board" });
+    expect(
+      res.body.paths["/api/agents/{id}/adapter-config-revisions"].post
+        ["x-paperclip-authorization"],
+    ).toEqual({ actor: "board" });
+    const companySkillPinsPath =
+      res.body.paths["/api/agents/{id}/company-skill-pins"];
+    expect(companySkillPinsPath.get["x-paperclip-authorization"]).toEqual({
+      actor: "board",
+    });
+    expect(companySkillPinsPath.put["x-paperclip-authorization"]).toEqual({
+      actor: "board",
+    });
+    const companySkillPinsSchema =
+      companySkillPinsPath.get.responses["200"].content[
+        "application/json"
+      ].schema;
+    expect(companySkillPinsSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["entries", "skillChannel"],
+      properties: {
+        entries: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["key", "versionId"],
+          },
+        },
+        skillChannel: {
+          type: "string",
+          enum: ["isolated_skills_home", "operator_native"],
+        },
+      },
+    });
+    expect(
+      companySkillPinsPath.put.requestBody.content["application/json"]
+        .schema,
+    ).toEqual(companySkillPinsSchema);
+    const adapterInfoSchema =
+      res.body.paths["/api/adapters/{type}"].get.responses["200"].content[
+        "application/json"
+      ].schema;
+    expect(adapterInfoSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: expect.arrayContaining([
+        "type",
+        "label",
+        "source",
+        "modelsCount",
+        "loaded",
+        "disabled",
+        "capabilities",
+        "registryName",
+        "frontendPackage",
+        "frontendVersion",
+        "frontendDigest",
+      ]),
+      properties: {
+        capabilities: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "supportsModelProfiles",
+            "contractVersion",
+            "protocolVersion",
+            "resume",
+            "cancel",
+            "sessionConfig",
+            "sessionScopedMcpReplacement",
+          ],
+          properties: {
+            supportsModelProfiles: { type: "boolean" },
+            contractVersion: {
+              type: "string",
+              enum: ["acp-subprocess/v1"],
+            },
+            protocolVersion: { type: "number", enum: [1] },
+            resume: { type: "boolean", enum: [true] },
+            cancel: { type: "boolean", enum: [true] },
+            sessionConfig: { type: "boolean", enum: [true] },
+            sessionScopedMcpReplacement: {
+              type: "boolean",
+              enum: [true],
+            },
+          },
+        },
+      },
+    });
+    expect(
+      res.body.paths["/api/adapters"].get.responses["200"].content[
+        "application/json"
+      ].schema.items,
+    ).toEqual(adapterInfoSchema);
+
+    const adapterRevisionSchema =
+      res.body.paths[
+        "/api/agents/{id}/adapter-config-revisions/current"
+      ].get.responses["200"].content["application/json"].schema;
+    expect(adapterRevisionSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        acpConfiguration: expect.any(Object),
+      },
+      required: expect.arrayContaining(["acpConfiguration"]),
+    });
+    expect(
+      res.body.paths[
+        "/api/agents/{id}/adapter-config-revisions"
+      ].get.responses["200"].content["application/json"].schema.items,
+    ).toEqual(adapterRevisionSchema);
+    const createRevisionSchema =
+      res.body.paths[
+        "/api/agents/{id}/adapter-config-revisions"
+      ].post.responses["201"].content["application/json"].schema;
+    expect(createRevisionSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        revision: adapterRevisionSchema,
+      },
+      required: ["revision", "current", "appended"],
+    });
+    for (const schema of [
+      adapterInfoSchema,
+      adapterRevisionSchema,
+      createRevisionSchema,
+    ]) {
+      const serialized = JSON.stringify(schema);
+      expect(serialized).not.toContain("nativeCorrelationKind");
+      expect(serialized).not.toContain("nativeCorrelation");
+      expect(serialized).not.toContain("issue-execution-native/v1");
+      expect(serialized).not.toContain("providerSelectors");
+      expect(serialized).not.toContain("providerInputKind");
+    }
+    expect(
+      res.body.paths["/api/agents/{id}/operational-configuration"].patch
+        ["x-paperclip-authorization"],
+    ).toEqual({ actor: "board" });
+    expect(res.body.paths["/api/agents/{id}/keys"]).toBeUndefined();
+    expect(res.body.paths["/api/join-requests/{requestId}/claim-api-key"]).toBeUndefined();
     expect(res.body.components.securitySchemes).toMatchObject({
       BoardSessionAuth: { type: "apiKey", in: "cookie" },
       BoardApiKeyAuth: { type: "http", scheme: "bearer" },
-      AgentBearerAuth: { type: "http", scheme: "bearer" },
     });
+    expect(res.body.components.securitySchemes.AgentBearerAuth).toBeUndefined();
     expect(res.body.paths["/api/health"].get.security).toEqual([]);
     expect(res.body.paths["/mcp/gateways/{gatewayPublicId}"].post.security).toEqual([]);
     expect(res.body.paths["/api/mcp/gateways/{gatewayPublicId}"]).toBeUndefined();
@@ -179,18 +365,15 @@ describe("openapi routes", () => {
       },
       required: expect.arrayContaining(["candidates"]),
     });
-    expect(res.body.paths["/api/agents/{id}/keys"].post.requestBody.content["application/json"].schema).toMatchObject({
-      type: "object",
-      properties: {
-        name: { type: "string" },
-      },
-    });
     expect(res.body.paths["/api/companies/{companyId}/folders"].post.responses["201"]).toBeDefined();
     expect(res.body.paths["/api/companies/{companyId}/folders/items/move"].post.summary).toBe(
       "Move an item into or out of a folder",
     );
-    expect(JSON.stringify(res.body.paths["/api/tool-gateway/tools"].get)).not.toContain("sessionToken");
-    expect(JSON.stringify(res.body.paths["/api/tool-gateway/tools/call"].post)).not.toContain("sessionToken");
+    // PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: /api/tool-gateway/sessions, /api/tool-gateway/sessions/{sessionId}/revoke
+    expect(res.body.paths["/api/tool-gateway/sessions"]).toBeUndefined();
+    expect(res.body.paths["/api/tool-gateway/sessions/{sessionId}/revoke"]).toBeUndefined();
+    expect(res.body.paths["/api/tool-gateway/tools"]).toBeUndefined();
+    expect(res.body.paths["/api/tool-gateway/tools/call"]).toBeUndefined();
   });
 
   it("covers the mounted server routes exactly", () => {
@@ -226,8 +409,11 @@ describe("openapi routes", () => {
     expect(spec.paths["/api/execution-workspaces/{id}/reconcile-branch"].post["x-paperclip-authorization"]).toEqual({
       actor: "board",
     });
-    expect(spec.paths["/api/companies/{companyId}/cost-events"].post.responses["201"]).toBeDefined();
-    expect(spec.paths["/api/companies/{companyId}/cost-events"].post.responses["403"]).toBeDefined();
+    const costEventsPath =
+      spec.paths["/api/companies/{companyId}/cost-events"];
+    expect(costEventsPath.get.responses["200"]).toBeDefined();
+    expect(costEventsPath.get.responses["401"]).toBeDefined();
+    expect(costEventsPath.post).toBeUndefined();
     expect(spec.paths["/api/instance/database-backups"].post.responses["201"]).toBeDefined();
     expect(spec.paths["/api/invites/{token}/accept"].post.responses["202"]).toBeDefined();
     expect(spec.paths["/api/board-api-keys"].post.responses["201"]).toBeDefined();

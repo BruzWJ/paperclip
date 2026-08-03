@@ -1,5 +1,7 @@
 # Issue Documents Plan
 
+> Historical only. References to provider-exposed Paperclip operational skills and generic agent REST access were retired by the issue-execution cutover; they have no runtime reader or supported installation path.
+
 Status: Draft  
 Owner: Backend + UI + Agent Protocol  
 Date: 2026-03-13  
@@ -418,11 +420,11 @@ type ArtifactKind =
 
 Files:
 
-- `packages/db/src/schema/documents.ts`
-- `packages/db/src/schema/document_revisions.ts`
-- `packages/db/src/schema/issue_documents.ts`
-- `packages/db/src/schema/index.ts`
-- `packages/db/src/migrations/*`
+- `packages/db/schema/documents.ts`
+- `packages/db/schema/document_revisions.ts`
+- `packages/db/schema/issue_documents.ts`
+- `packages/db/schema/index.ts`
+- `packages/db/migrations/*`
 - `packages/shared/src/types/issue.ts`
 - `packages/shared/src/validators/issue.ts` or new document validator file
 - `packages/shared/src/index.ts`

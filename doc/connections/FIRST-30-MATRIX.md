@@ -110,8 +110,8 @@ Every provider ticket in Batch A must cover:
 - **Configure:** operator can set provider-specific resource filters, health
   checks, read/write mode, and risk defaults.
 - **Grant:** selected actors see only allowed tools and resource scopes.
-- **Execute:** allowed read and narrow write actions run through the broker or
-  gateway with activity tied to issue/run context.
+- **Execute:** allowed read and narrow write actions run through the gateway or
+  runtime supervisor with activity tied to issue/run context.
 - **Revoke:** revocation disables grants and blocks tool listing/execution
   immediately.
 - **Activity:** connect, config change, grant change, tool execution, denial,

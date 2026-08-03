@@ -10,8 +10,6 @@ const listMembersMock = vi.hoisted(() => vi.fn());
 const listJoinRequestsMock = vi.hoisted(() => vi.fn());
 const updateMemberMock = vi.hoisted(() => vi.fn());
 const archiveMemberMock = vi.hoisted(() => vi.fn());
-const listAgentsMock = vi.hoisted(() => vi.fn());
-const listIssuesMock = vi.hoisted(() => vi.fn());
 const mockUsePluginSlots = vi.hoisted(() => vi.fn());
 const mockNavigate = vi.hoisted(() => vi.fn());
 
@@ -23,22 +21,10 @@ vi.mock("@/api/access", () => ({
       updateMemberMock(companyId, memberId, input),
     updateMemberPermissions: vi.fn(),
     updateMemberAccess: vi.fn(),
-    archiveMember: (companyId: string, memberId: string, input: unknown) =>
-      archiveMemberMock(companyId, memberId, input),
+    archiveMember: (companyId: string, memberId: string) =>
+      archiveMemberMock(companyId, memberId),
     approveJoinRequest: vi.fn(),
     rejectJoinRequest: vi.fn(),
-  },
-}));
-
-vi.mock("@/api/agents", () => ({
-  agentsApi: {
-    list: (companyId: string) => listAgentsMock(companyId),
-  },
-}));
-
-vi.mock("@/api/issues", () => ({
-  issuesApi: {
-    list: (companyId: string, filters: unknown) => listIssuesMock(companyId, filters),
   },
 }));
 
@@ -152,7 +138,7 @@ describe("CompanyAccess", () => {
         requestType: "agent",
         createdAt: "2026-04-10T00:00:00.000Z",
         agentName: "Codex Worker",
-        adapterType: "codex_local",
+        adapterType: "codex",
         capabilities: "Implements code changes",
         invite: {
           allowedJoinTypes: "agent",
@@ -161,23 +147,7 @@ describe("CompanyAccess", () => {
       },
     ]);
     updateMemberMock.mockResolvedValue({});
-    archiveMemberMock.mockResolvedValue({ reassignedIssueCount: 1 });
-    listAgentsMock.mockResolvedValue([
-      {
-        id: "agent-1",
-        name: "Codex Worker",
-        role: "engineer",
-        status: "active",
-      },
-    ]);
-    listIssuesMock.mockResolvedValue([
-      {
-        id: "issue-1",
-        identifier: "PAP-1",
-        title: "Assigned to removed user",
-        status: "todo",
-      },
-    ]);
+    archiveMemberMock.mockResolvedValue({ archived: true });
     mockUsePluginSlots.mockReturnValue({
       slots: [],
       isLoading: false,
@@ -289,7 +259,7 @@ describe("CompanyAccess", () => {
     });
   });
 
-  it("removes a member with an issue reassignment target", async () => {
+  it("archives a member without an assignment cleanup flow", async () => {
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -316,14 +286,8 @@ describe("CompanyAccess", () => {
     await flushReact();
 
     expect(document.body.textContent).toContain("Remove member");
-    expect(document.body.textContent).toContain("Assigned to removed user");
-
-    const reassignmentSelect = document.body.querySelector("select");
-    expect(reassignmentSelect).toBeTruthy();
-    await act(async () => {
-      reassignmentSelect!.value = "user:user-2";
-      reassignmentSelect!.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    expect(document.body.textContent).toContain("Archive Codex Coder and revoke their company access");
+    expect(document.body.querySelector("select")).toBeNull();
 
     const confirmButton = Array.from(document.body.querySelectorAll("button")).find(
       (button) => button.textContent === "Remove member",
@@ -335,9 +299,7 @@ describe("CompanyAccess", () => {
     });
     await flushReact();
 
-    expect(archiveMemberMock).toHaveBeenCalledWith("company-1", "member-1", {
-      reassignment: { assigneeAgentId: null, assigneeUserId: "user-2" },
-    });
+    expect(archiveMemberMock).toHaveBeenCalledExactlyOnceWith("company-1", "member-1");
 
     await act(async () => {
       root.unmount();

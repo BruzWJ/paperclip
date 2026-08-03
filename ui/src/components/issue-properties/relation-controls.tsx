@@ -14,6 +14,7 @@ import {
 import { X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { StatusIcon } from "../StatusIcon";
+import { issueDisplayTitle, issueReferenceLabel } from "../../lib/issue-display";
 
 export function RemovableIssueReferencePill({
   issue,
@@ -23,8 +24,11 @@ export function RemovableIssueReferencePill({
   onRemove: (issueId: string) => void;
 }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const issueLabel = issue.identifier ?? issue.title;
-  const confirmLabel = issue.identifier ? `${issue.identifier}: ${issue.title}` : issue.title;
+  const issueLabel = issueReferenceLabel(issue);
+  const displayTitle = issueDisplayTitle(issue);
+  const confirmLabel = issue.identifier && issue.identifier !== displayTitle
+    ? `${issue.identifier}: ${displayTitle}`
+    : displayTitle;
   const chipClassName = cn(
     "paperclip-mention-chip paperclip-mention-chip--issue",
     "inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs no-underline",
@@ -32,7 +36,7 @@ export function RemovableIssueReferencePill({
   );
   const content = (
     <>
-      <StatusIcon status={issue.status} className="h-3 w-3 shrink-0" />
+      <StatusIcon status={issue.boardPresentationStatus} className="h-3 w-3 shrink-0" />
       <span className="truncate">{issueLabel}</span>
     </>
   );
@@ -64,8 +68,8 @@ export function RemovableIssueReferencePill({
             to={`/issues/${issueLabel}`}
             data-mention-kind="issue"
             className={chipClassName}
-            title={issue.title}
-            aria-label={`Task ${issueLabel}: ${issue.title}`}
+            title={displayTitle}
+            aria-label={`Task ${issueLabel}: ${displayTitle}`}
           >
             {content}
           </Link>
@@ -73,8 +77,8 @@ export function RemovableIssueReferencePill({
           <span
             data-mention-kind="issue"
             className={chipClassName}
-            title={issue.title}
-            aria-label={`Task: ${issue.title}`}
+            title={displayTitle}
+            aria-label={`Task: ${displayTitle}`}
           >
             {content}
           </span>

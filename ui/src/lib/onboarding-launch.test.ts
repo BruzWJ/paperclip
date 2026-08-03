@@ -109,22 +109,22 @@ describe("onboarding launch payloads", () => {
     expect(
       buildOnboardingIssuePayload({
         title: "  Hire your first engineer  ",
-        description: "  Kick off the hiring plan  ",
-        assigneeAgentId: "agent-1",
+        request: "  Kick off the hiring plan  ",
+        ownerAgentId: "agent-1",
         projectId: "project-1",
         goalId: "goal-1",
       }),
     ).toEqual({
       title: "Hire your first engineer",
-      description: "Kick off the hiring plan",
-      assigneeAgentId: "agent-1",
+      request: "  Kick off the hiring plan  ",
+      ownerAgentId: "agent-1",
+      idempotencyKey: "onboarding:project-1:agent-1",
       projectId: "project-1",
       goalId: "goal-1",
-      status: "todo",
     });
   });
 
-  it("omits goal links when no default company goal exists", () => {
+  it("omits goal links and blank optional titles without synthesizing provider input", () => {
     expect(buildOnboardingProjectPayload(null)).toEqual({
       name: "Onboarding",
       status: "in_progress",
@@ -132,17 +132,84 @@ describe("onboarding launch payloads", () => {
 
     expect(
       buildOnboardingIssuePayload({
-        title: "Task",
-        description: "",
-        assigneeAgentId: "agent-1",
+        title: "   ",
+        request: "The exact ordinary issue request",
+        ownerAgentId: "agent-1",
         projectId: "project-1",
         goalId: null,
       }),
     ).toEqual({
-      title: "Task",
-      assigneeAgentId: "agent-1",
+      request: "The exact ordinary issue request",
+      ownerAgentId: "agent-1",
+      idempotencyKey: "onboarding:project-1:agent-1",
       projectId: "project-1",
-      status: "todo",
+    });
+  });
+
+  it("rejects blank requests even when display title metadata is present", () => {
+    for (const request of ["", " \n\t "]) {
+      expect(() =>
+        buildOnboardingIssuePayload({
+          title: "A display title cannot become provider input",
+          request,
+          ownerAgentId: "agent-1",
+          projectId: "project-1",
+          goalId: null,
+        }),
+      ).toThrow(/request must contain non-whitespace text/i);
+    }
+  });
+
+  it("preserves request bytes independently of title changes and retry", () => {
+    const request = "  Keep the leading space.\n\nKeep the trailing space.  ";
+    const base = {
+      request,
+      ownerAgentId: "agent-1",
+      projectId: "project-1",
+      goalId: null,
+    };
+
+    const first = buildOnboardingIssuePayload({
+      ...base,
+      title: "First display title",
+    });
+    const retry = buildOnboardingIssuePayload({
+      ...base,
+      title: "Changed display title",
+    });
+
+    expect(first.request).toBe(request);
+    expect(retry.request).toBe(request);
+    expect(first.idempotencyKey).toBe(retry.idempotencyKey);
+    expect(first.title).toBe("First display title");
+    expect(retry.title).toBe("Changed display title");
+  });
+
+  it("canonicalizes the first issue attention mask to sparse false-only cells", () => {
+    expect(
+      buildOnboardingIssuePayload({
+        title: "Start with focused context",
+        request: "Execute the focused onboarding issue",
+        ownerAgentId: "agent-1",
+        projectId: "project-1",
+        goalId: null,
+        attentionMask: {
+          carry_context: true,
+          read_issue_comments: false,
+          list_company_issues: true,
+          read_company_issue_agent_run: false,
+        },
+      }),
+    ).toEqual({
+      title: "Start with focused context",
+      request: "Execute the focused onboarding issue",
+      ownerAgentId: "agent-1",
+      idempotencyKey: "onboarding:project-1:agent-1",
+      projectId: "project-1",
+      attentionMask: {
+        read_issue_comments: false,
+        read_company_issue_agent_run: false,
+      },
     });
   });
 });

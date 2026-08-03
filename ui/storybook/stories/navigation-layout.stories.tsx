@@ -31,7 +31,11 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { Tabs } from "@/components/ui/tabs";
-import { BreadcrumbProvider, useBreadcrumbs, type Breadcrumb } from "@/context/BreadcrumbContext";
+import {
+  BreadcrumbProvider,
+  useBreadcrumbs,
+  type Breadcrumb,
+} from "@/context/BreadcrumbContext";
 import { useNavigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import {
@@ -75,7 +79,12 @@ function SidebarShell({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div className="h-[520px] overflow-hidden border border-border bg-background">
       <div className="flex h-full min-h-0">
-        <div className={cn("overflow-hidden transition-[width]", collapsed ? "w-0" : "w-60")}>
+        <div
+          className={cn(
+            "overflow-hidden transition-[width]",
+            collapsed ? "w-0" : "w-60",
+          )}
+        >
           <Sidebar />
         </div>
       </div>
@@ -128,7 +137,10 @@ function MobileBottomNavActiveStateMatrix() {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {mobileNavItems.map((activeItem) => (
-        <div key={activeItem.label} className="overflow-hidden border border-border bg-background">
+        <div
+          key={activeItem.label}
+          className="overflow-hidden border border-border bg-background"
+        >
           <div className="grid h-16 grid-cols-5 px-1">
             {mobileNavItems.map((item) => {
               const Icon = item.icon;
@@ -142,7 +154,12 @@ function MobileBottomNavActiveStateMatrix() {
                   )}
                 >
                   <span className="relative">
-                    <Icon className={cn("h-[18px] w-[18px]", active && "stroke-[2.3]")} />
+                    <Icon
+                      className={cn(
+                        "h-[18px] w-[18px]",
+                        active && "stroke-[2.3]",
+                      )}
+                    />
                     {item.badge ? (
                       <span className="absolute -right-2 -top-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] leading-none text-primary-foreground">
                         {item.badge}
@@ -163,7 +180,11 @@ function MobileBottomNavActiveStateMatrix() {
 function CommandResultsSurface() {
   return (
     <Command className="rounded-none border border-border">
-      <CommandInput value="story" readOnly placeholder="Search issues, agents, projects..." />
+      <CommandInput
+        value="story"
+        readOnly
+        placeholder="Search issues, agents, projects..."
+      />
       <CommandList className="max-h-none">
         <CommandGroup heading="Actions">
           <CommandItem>
@@ -177,9 +198,11 @@ function CommandResultsSurface() {
           {storybookIssues.slice(0, 2).map((issue) => (
             <CommandItem key={issue.id}>
               <CircleDot className="mr-2 h-4 w-4" />
-              <span className="mr-2 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
+              <span className="mr-2 font-mono text-xs text-muted-foreground">
+                {issue.identifier}
+              </span>
               <span className="flex-1 truncate">{issue.title}</span>
-              <StatusBadge status={issue.status} />
+              <StatusBadge status={issue.boardPresentationStatus} />
             </CommandItem>
           ))}
         </CommandGroup>
@@ -189,7 +212,11 @@ function CommandResultsSurface() {
             <CommandItem key={agent.id}>
               <Bot className="mr-2 h-4 w-4" />
               {agent.name}
-              <span className="ml-2 text-xs text-muted-foreground">{agent.role}</span>
+              {agent.title ? (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {agent.title}
+                </span>
+              ) : null}
             </CommandItem>
           ))}
         </CommandGroup>
@@ -210,7 +237,11 @@ function CommandResultsSurface() {
 function CommandEmptySurface() {
   return (
     <Command className="rounded-none border border-border">
-      <CommandInput value="no matching command" readOnly placeholder="Search issues, agents, projects..." />
+      <CommandInput
+        value="no matching command"
+        readOnly
+        placeholder="Search issues, agents, projects..."
+      />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
       </CommandList>
@@ -226,11 +257,16 @@ function NavigationLayoutStories() {
         <section className="paperclip-story__frame p-6">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
-              <div className="paperclip-story__label">Navigation and layout</div>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight">Sidebar, command, tabs, and mobile chrome</h1>
+              <div className="paperclip-story__label">
+                Navigation and layout
+              </div>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+                Sidebar, command, tabs, and mobile chrome
+              </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Fixture-backed navigation states for the board shell: company switching, dense work navigation,
-                breadcrumbs, command discovery, and mobile entry points.
+                Fixture-backed navigation states for the board shell: company
+                switching, dense work navigation, breadcrumbs, command
+                discovery, and mobile entry points.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -248,12 +284,14 @@ function NavigationLayoutStories() {
           </div>
         </Section>
 
-        <Section eyebrow="Menus" title="Account, company, and switcher menus in open state">
+        <Section
+          eyebrow="Menus"
+          title="Account, company, and switcher menus in open state"
+        >
           <div className="grid gap-5 xl:grid-cols-3">
             <div className="relative h-[440px] overflow-hidden border border-border bg-background">
               <div className="absolute bottom-0 left-0 w-72">
                 <SidebarAccountMenu
-                  deploymentMode="authenticated"
                   open
                   onOpenChange={() => undefined}
                   version="0.3.1"
@@ -271,9 +309,14 @@ function NavigationLayoutStories() {
           </div>
         </Section>
 
-        <Section eyebrow="Breadcrumbs" title="Home, project issue, and agent run depth levels">
+        <Section
+          eyebrow="Breadcrumbs"
+          title="Home, project issue, and agent run depth levels"
+        >
           <div className="grid gap-4">
-            <BreadcrumbSnapshot breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }]} />
+            <BreadcrumbSnapshot
+              breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }]}
+            />
             <BreadcrumbSnapshot
               breadcrumbs={[
                 { label: "Projects", href: "/projects" },
@@ -294,7 +337,11 @@ function NavigationLayoutStories() {
         <Section eyebrow="Page tabs" title="Active and overflow tab bars">
           <div className="space-y-5">
             <Tabs value="issues" className="overflow-x-auto">
-              <PageTabBar items={tabItems.slice(0, 4)} value="issues" align="start" />
+              <PageTabBar
+                items={tabItems.slice(0, 4)}
+                value="issues"
+                align="start"
+              />
             </Tabs>
             <Tabs value="activity" className="overflow-x-auto">
               <PageTabBar items={tabItems} value="activity" align="start" />
@@ -302,7 +349,10 @@ function NavigationLayoutStories() {
           </div>
         </Section>
 
-        <Section eyebrow="Mobile bottom nav" title="Actual mobile bar and all active item states">
+        <Section
+          eyebrow="Mobile bottom nav"
+          title="Actual mobile bar and all active item states"
+        >
           <div className="space-y-5">
             <div className="relative h-24 max-w-sm overflow-hidden border border-border bg-background [&>nav]:!absolute [&>nav]:!bottom-0 [&>nav]:!left-0 [&>nav]:!right-0 [&>nav]:!z-0 [&>nav]:!block">
               <MobileBottomNav visible />
@@ -311,7 +361,10 @@ function NavigationLayoutStories() {
           </div>
         </Section>
 
-        <Section eyebrow="Command palette" title="Open command results and empty state">
+        <Section
+          eyebrow="Command palette"
+          title="Open command results and empty state"
+        >
           <CommandPalette />
           <div className="grid gap-5 xl:grid-cols-2">
             <CommandResultsSurface />
@@ -319,7 +372,10 @@ function NavigationLayoutStories() {
           </div>
         </Section>
 
-        <Section eyebrow="Keyboard shortcuts" title="Rendered shortcuts cheatsheet">
+        <Section
+          eyebrow="Keyboard shortcuts"
+          title="Rendered shortcuts cheatsheet"
+        >
           <div className="max-w-md overflow-hidden border border-border bg-background">
             <div className="px-5 pb-3 pt-5">
               <h3 className="text-base font-semibold">Keyboard shortcuts</h3>

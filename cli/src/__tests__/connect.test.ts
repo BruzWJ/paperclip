@@ -21,7 +21,6 @@ vi.mock("../client/board-auth.js", () => ({
 }));
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
-const AGENT_ID = "33333333-3333-4333-8333-333333333333";
 const API_BASE = "http://127.0.0.1:3197";
 
 function createProgram(): Command {
@@ -96,8 +95,6 @@ describe("connect command", () => {
 
     await createProgram().parseAsync([
       "connect",
-      "--persona",
-      "board",
       "--profile",
       "cli-board",
       "--token-name",
@@ -125,7 +122,6 @@ describe("connect command", () => {
         "cli-board": {
           apiBase: API_BASE,
           companyId: COMPANY_ID,
-          persona: "board",
           tokenId: "board-key-1",
           tokenName: "connect-board-token",
         },
@@ -133,65 +129,4 @@ describe("connect command", () => {
     });
   });
 
-  it("drives the interactive agent profile flow through prompts and context writes", async () => {
-    const contextPath = createTempContextPath();
-    vi.mocked(prompts.text).mockResolvedValue(API_BASE);
-    vi.mocked(prompts.select).mockResolvedValue(AGENT_ID);
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/api/health") return jsonResponse({ status: "ok" });
-      if (url.pathname === "/api/companies") {
-        return jsonResponse([{ id: COMPANY_ID, name: "Connect Co" }]);
-      }
-      if (url.pathname === `/api/companies/${COMPANY_ID}/agents`) {
-        return jsonResponse([{ id: AGENT_ID, name: "Connect Agent", role: "Operator" }]);
-      }
-      if (url.pathname === `/api/agents/${AGENT_ID}/keys` && init?.method === "POST") {
-        return jsonResponse({
-          id: "agent-key-1",
-          name: "connect-agent-token",
-          token: "pcp_agent_created",
-          createdAt: "2026-05-24T12:00:00.000Z",
-        });
-      }
-      return jsonResponse({ error: `Unexpected ${init?.method ?? "GET"} ${url.pathname}` }, { status: 500 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await createProgram().parseAsync([
-      "connect",
-      "--persona",
-      "agent",
-      "--profile",
-      "cli-agent",
-      "--token-name",
-      "connect-agent-token",
-      "--context",
-      contextPath,
-      "--api-base",
-      API_BASE,
-      "--json",
-    ], { from: "user" });
-
-    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", new URL(String(call[0])).pathname])).toEqual([
-      ["GET", "/api/health"],
-      ["GET", "/api/companies"],
-      ["GET", `/api/companies/${COMPANY_ID}/agents`],
-      ["POST", `/api/agents/${AGENT_ID}/keys`],
-    ]);
-    expect(readContext(contextPath)).toMatchObject({
-      currentProfile: "cli-agent",
-      profiles: {
-        "cli-agent": {
-          apiBase: API_BASE,
-          companyId: COMPANY_ID,
-          persona: "agent",
-          agentId: AGENT_ID,
-          agentName: "Connect Agent",
-          tokenId: "agent-key-1",
-          tokenName: "connect-agent-token",
-        },
-      },
-    });
-  });
 });

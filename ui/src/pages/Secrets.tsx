@@ -66,8 +66,6 @@ import { accessApi, type CompanyUserDirectoryEntry } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { envKeyFromSecretName } from "../components/environment-variables-editor/model";
 import {
-  AGENT_ACCESS_CONFIG_PATH_PREFIX,
-  aliasFromConfigPath,
   consumerTypeLabel,
   deliveryModeForConfigPath,
   deliveryModeLabel,
@@ -761,14 +759,6 @@ export function Secrets() {
   const selectedDefinition = useMemo(
     () => userDefinitions.find((definition) => definition.id === selectedDefinitionId) ?? null,
     [selectedDefinitionId, userDefinitions],
-  );
-  const selectedSecretAccessReference = useMemo<AgentAccessReference | null>(
-    () => selectedSecret ? { kind: "company", secret: selectedSecret } : null,
-    [selectedSecret],
-  );
-  const selectedDefinitionAccessReference = useMemo<AgentAccessReference | null>(
-    () => selectedDefinition ? { kind: "user", definition: selectedDefinition } : null,
-    [selectedDefinition],
   );
   const selectedDefinitionMyEntry = useMemo(() => {
     if (!selectedDefinition) return null;
@@ -2252,10 +2242,6 @@ export function Secrets() {
                 <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
                   <TabsContent value="details">
                     <div className="space-y-3">
-                      <AgentAccessSection
-                        companyId={selectedCompanyId}
-                        reference={selectedSecretAccessReference!}
-                      />
                       <SecretDetailsTab
                         secret={selectedSecret}
                         providers={providers}
@@ -2391,10 +2377,6 @@ export function Secrets() {
                 <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
                   <TabsContent value="details">
                     <div className="space-y-3">
-                      <AgentAccessSection
-                        companyId={selectedCompanyId}
-                        reference={selectedDefinitionAccessReference!}
-                      />
                       <UserSecretDetailsTab
                         companyId={selectedCompanyId}
                         definition={selectedDefinition}
@@ -4210,295 +4192,6 @@ function UserSecretAccessEventsTab() {
   );
 }
 
-type AgentAccessReference =
-  | { kind: "company"; secret: CompanySecret }
-  | { kind: "user"; definition: UserSecretDefinition };
-
-const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/** Env keys in an agent's env config that resolve to this secret/definition. */
-function envKeysReferencingSecret(env: unknown, reference: AgentAccessReference): string[] {
-  if (typeof env !== "object" || env === null || Array.isArray(env)) return [];
-  return Object.entries(env as Record<string, unknown>)
-    .filter(([, binding]) => {
-      if (typeof binding !== "object" || binding === null) return false;
-      const record = binding as Record<string, unknown>;
-      return reference.kind === "company"
-        ? record.type === "secret_ref" && record.secretId === reference.secret.id
-        : record.type === "user_secret_ref" && record.key === reference.definition.key;
-    })
-    .map(([key]) => key)
-    .sort();
-}
-
-/**
- * Top-level `access.<ALIAS>` keys in an agent's adapter config that resolve to
- * this secret (API-access delivery). Only company secrets support API access;
- * user secrets remain env-only.
- */
-function apiAliasesReferencingSecret(adapterConfig: unknown, reference: AgentAccessReference): string[] {
-  if (reference.kind !== "company") return [];
-  if (typeof adapterConfig !== "object" || adapterConfig === null || Array.isArray(adapterConfig)) return [];
-  return Object.entries(adapterConfig as Record<string, unknown>)
-    .filter(([key, binding]) => {
-      if (!key.startsWith(AGENT_ACCESS_CONFIG_PATH_PREFIX)) return false;
-      if (typeof binding !== "object" || binding === null) return false;
-      const record = binding as Record<string, unknown>;
-      return record.type === "secret_ref" && record.secretId === reference.secret.id;
-    })
-    .map(([key]) => key.slice(AGENT_ACCESS_CONFIG_PATH_PREFIX.length))
-    .sort();
-}
-
-function AgentAccessSection({
-  companyId,
-  reference,
-}: {
-  companyId: string;
-  reference: AgentAccessReference;
-}) {
-  const queryClient = useQueryClient();
-  const { pushToast } = useToastActions();
-  const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [envKey, setEnvKey] = useState("");
-  const [envKeyDirty, setEnvKeyDirty] = useState(false);
-  const [accessError, setAccessError] = useState<string | null>(null);
-
-  const referenceId = reference.kind === "company" ? reference.secret.id : reference.definition.id;
-  const referenceName = reference.kind === "company" ? reference.secret.name : reference.definition.name;
-
-  const agentsQuery = useQuery({
-    queryKey: queryKeys.agents.list(companyId),
-    queryFn: () => agentsApi.list(companyId),
-    staleTime: 30_000,
-  });
-  const agents = useMemo(
-    () => (agentsQuery.data ?? []).filter((agent) => agent.status !== "terminated"),
-    [agentsQuery.data],
-  );
-  const agentAccess = useMemo(
-    () =>
-      agents
-        .map((agent) => {
-          const adapterConfig = (agent.adapterConfig as Record<string, unknown> | null) ?? null;
-          return {
-            agent,
-            envKeys: envKeysReferencingSecret(adapterConfig?.env, reference),
-            apiAliases: apiAliasesReferencingSecret(adapterConfig, reference),
-          };
-        })
-        .filter((entry) => entry.envKeys.length > 0 || entry.apiAliases.length > 0),
-    [agents, reference],
-  );
-  const grantableAgents = useMemo(
-    () => agents.filter((agent) => !agentAccess.some((entry) => entry.agent.id === agent.id)),
-    [agents, agentAccess],
-  );
-
-  const effectiveEnvKey = envKeyDirty
-    ? envKey
-    : reference.kind === "user"
-      ? reference.definition.key
-      : envKeyFromSecretName(referenceName);
-
-  useEffect(() => {
-    setSelectedAgentId("");
-    setEnvKey("");
-    setEnvKeyDirty(false);
-    setAccessError(null);
-  }, [referenceId]);
-
-  function invalidateAfterChange(agentId: string) {
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
-    if (reference.kind === "company") {
-      queryClient.invalidateQueries({ queryKey: queryKeys.secrets.usage(reference.secret.id) });
-    }
-  }
-
-  const grantMutation = useMutation({
-    mutationFn: async ({ agentId, key }: { agentId: string; key: string }) => {
-      // Re-fetch right before patching so we merge into the freshest env config.
-      const detail = await agentsApi.get(agentId, companyId);
-      const adapterConfig = { ...((detail.adapterConfig ?? {}) as Record<string, unknown>) };
-      const env = { ...((adapterConfig.env ?? {}) as Record<string, unknown>) };
-      if (env[key] !== undefined) {
-        throw new Error(`${detail.name} already has an env var named ${key}.`);
-      }
-      env[key] =
-        reference.kind === "company"
-          ? { type: "secret_ref", secretId: reference.secret.id }
-          : { type: "user_secret_ref", key: reference.definition.key };
-      return agentsApi.update(
-        agentId,
-        { adapterConfig: { ...adapterConfig, env }, replaceAdapterConfig: true },
-        companyId,
-      );
-    },
-    onSuccess: (agent, variables) => {
-      setSelectedAgentId("");
-      setEnvKey("");
-      setEnvKeyDirty(false);
-      setAccessError(null);
-      invalidateAfterChange(variables.agentId);
-      pushToast({ title: "Access granted", body: `${agent.name} now receives ${variables.key}`, tone: "success" });
-    },
-    onError: (error) => setAccessError(readableErrorMessage(error)),
-  });
-
-  const revokeMutation = useMutation({
-    mutationFn: async ({ agentId }: { agentId: string }) => {
-      const detail = await agentsApi.get(agentId, companyId);
-      const adapterConfig = { ...((detail.adapterConfig ?? {}) as Record<string, unknown>) };
-      const env = { ...((adapterConfig.env ?? {}) as Record<string, unknown>) };
-      const keys = envKeysReferencingSecret(env, reference);
-      const aliases = apiAliasesReferencingSecret(adapterConfig, reference);
-      if (keys.length === 0 && aliases.length === 0) return detail;
-      for (const key of keys) delete env[key];
-      for (const alias of aliases) delete adapterConfig[`${AGENT_ACCESS_CONFIG_PATH_PREFIX}${alias}`];
-      return agentsApi.update(
-        agentId,
-        { adapterConfig: { ...adapterConfig, env }, replaceAdapterConfig: true },
-        companyId,
-      );
-    },
-    onSuccess: (agent, variables) => {
-      setAccessError(null);
-      invalidateAfterChange(variables.agentId);
-      pushToast({ title: "Access removed", body: agent.name, tone: "info" });
-    },
-    onError: (error) => setAccessError(readableErrorMessage(error)),
-  });
-
-  const envKeyValid = ENV_KEY_PATTERN.test(effectiveEnvKey);
-  const canGrant = Boolean(selectedAgentId) && envKeyValid && !grantMutation.isPending;
-
-  return (
-    <section className="rounded-md border border-border bg-muted/20 p-3">
-      <div className="flex items-center gap-1.5">
-        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-medium text-foreground">Agent access</h3>
-      </div>
-      <p className="mt-0.5 text-(length:--text-micro) text-muted-foreground">
-        {reference.kind === "company"
-          ? "Add here to inject this secret as an environment variable at run start. API-access grants (fetched on demand, no env var) are managed from each agent's Secret access settings and shown below."
-          : "These agents resolve the responsible user's value as an environment variable at run start."}
-      </p>
-      {agentsQuery.isPending ? (
-        <p className="mt-2 text-(length:--text-micro) text-muted-foreground">Loading agents…</p>
-      ) : agentsQuery.isError ? (
-        <p className="mt-2 text-(length:--text-micro) text-muted-foreground">
-          Agent list unavailable. Manage access from each agent&apos;s configuration instead.
-        </p>
-      ) : (
-        <>
-          {agentAccess.length > 0 ? (
-            <ul className="mt-2 space-y-1">
-              {agentAccess.map(({ agent, envKeys, apiAliases }) => (
-                <li
-                  key={agent.id}
-                  className="flex items-center gap-2 rounded border border-border/60 bg-background px-2 py-1"
-                >
-                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{agent.name}</span>
-                  <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                    {envKeys.length > 0 ? (
-                      <Badge
-                        variant="outline"
-                        className="h-5 px-1.5 text-(length:--text-nano) font-normal border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                      >
-                        Env · {envKeys.join(", ")}
-                      </Badge>
-                    ) : null}
-                    {apiAliases.length > 0 ? (
-                      <Badge
-                        variant="outline"
-                        className="h-5 px-1.5 text-(length:--text-nano) font-normal border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300"
-                      >
-                        API · {apiAliases.join(", ")}
-                      </Badge>
-                    ) : null}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 shrink-0 p-0 text-muted-foreground"
-                    aria-label={`Remove access for ${agent.name}`}
-                    disabled={revokeMutation.isPending}
-                    onClick={() => revokeMutation.mutate({ agentId: agent.id })}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-(length:--text-micro) text-muted-foreground">No agents have access yet.</p>
-          )}
-          <div className="mt-2 flex items-end gap-2">
-            <div className="min-w-0 flex-1">
-              <label
-                className="text-(length:--text-micro) font-medium text-muted-foreground"
-                htmlFor="agent-access-agent"
-              >
-                Agent
-              </label>
-              <AgentSelect
-                id="agent-access-agent"
-                agents={grantableAgents}
-                value={selectedAgentId}
-                onChange={setSelectedAgentId}
-                triggerClassName="h-8 text-xs"
-                emptyMessage="No agents available."
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <label
-                className="text-(length:--text-micro) font-medium text-muted-foreground"
-                htmlFor="agent-access-env-key"
-              >
-                Env var
-              </label>
-              <Input
-                id="agent-access-env-key"
-                value={effectiveEnvKey}
-                onChange={(event) => {
-                  setEnvKeyDirty(true);
-                  setEnvKey(event.target.value.toUpperCase());
-                }}
-                className="h-8 font-mono text-xs"
-                placeholder="MY_SECRET"
-              />
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              className="h-8 shrink-0"
-              disabled={!canGrant}
-              onClick={() => grantMutation.mutate({ agentId: selectedAgentId, key: effectiveEnvKey })}
-            >
-              {grantMutation.isPending ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="mr-1 h-3.5 w-3.5" />
-              )}
-              Add
-            </Button>
-          </div>
-          {effectiveEnvKey && !envKeyValid ? (
-            <p className="mt-1 text-(length:--text-micro) text-destructive">
-              Env keys use letters, digits, and underscores, and cannot start with a digit.
-            </p>
-          ) : null}
-          {accessError ? (
-            <p className="mt-1 text-(length:--text-micro) text-destructive">{accessError}</p>
-          ) : null}
-        </>
-      )}
-    </section>
-  );
-}
-
 function SecretDetailsTab({
   secret,
   providers,
@@ -4588,9 +4281,7 @@ export function SecretUsageTab({ loading, bindings }: { loading: boolean; bindin
                   variant="outline"
                   className={cn(
                     "h-5 px-1.5 text-(length:--text-nano) font-normal",
-                    deliveryMode === "api"
-                      ? "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300"
-                      : deliveryMode === "env"
+                    deliveryMode === "env"
                         ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
                         : null,
                   )}
@@ -4618,11 +4309,7 @@ export function SecretUsageTab({ loading, bindings }: { loading: boolean; bindin
               {binding.targetId}
             </div>
             <div className="text-(length:--text-micro) text-muted-foreground">
-              {deliveryMode === "api" ? (
-                <>API alias <span className="font-mono">{aliasFromConfigPath(binding.configPath)}</span></>
-              ) : (
-                <span className="font-mono">{binding.configPath}</span>
-              )}{" "}
+              <span className="font-mono">{binding.configPath}</span>{" "}
               {binding.required ? "· required" : "· optional"}
             </div>
           </div>

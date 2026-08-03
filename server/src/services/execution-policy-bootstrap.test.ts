@@ -30,7 +30,7 @@ function env(overrides: Record<string, string | undefined>): ExecutionPolicyBoot
 
 const bootstrap: ExecutionPolicyBootstrap = {
   executionMode: "kubernetes",
-  kubernetesConfig: { inCluster: true, backend: "job" },
+  kubernetesConfig: { inCluster: true },
 };
 
 // `applyExecutionPolicyBootstrap` constructs its services internally from the
@@ -48,11 +48,10 @@ describe("parseExecutionPolicyBootstrapEnv", () => {
     ).toBeNull();
   });
 
-  it("parses the forced kubernetes policy with a job/gvisor/cilium config", () => {
+  it("parses the forced kubernetes policy with a gvisor/cilium config", () => {
     const parsed = parseExecutionPolicyBootstrapEnv(
       env({
         PAPERCLIP_EXECUTION_MODE: "kubernetes",
-        PAPERCLIP_K8S_BACKEND: "job",
         PAPERCLIP_K8S_IN_CLUSTER: "true",
         PAPERCLIP_K8S_RUNTIME_CLASS_NAME: "gvisor",
         PAPERCLIP_K8S_EGRESS_MODE: "cilium",
@@ -63,7 +62,6 @@ describe("parseExecutionPolicyBootstrapEnv", () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.executionMode).toBe("kubernetes");
     expect(parsed?.kubernetesConfig).toMatchObject({
-      backend: "job",
       inCluster: true,
       runtimeClassName: "gvisor",
       egressMode: "cilium",
@@ -92,12 +90,12 @@ describe("parseExecutionPolicyBootstrapEnv", () => {
       env({
         PAPERCLIP_EXECUTION_MODE: "kubernetes",
         PAPERCLIP_ADAPTERS: JSON.stringify([
-          { adapterType: "opencode_local", runtimeImage: "img", envKeys: ["ANTHROPIC_API_KEY"], allowFqdns: [], probeCommand: ["opencode", "--version"], defaultEnv: { ANTHROPIC_BASE_URL: "http://bifrost:8080" } },
+          { adapterType: "codex", runtimeImage: "img", allowFqdns: [], probeCommand: ["codex-acp", "--version"] },
         ]),
       }),
     );
     expect(parsed?.kubernetesConfig.adapters).toHaveLength(1);
-    expect(parsed?.kubernetesConfig.adapters?.[0].adapterType).toBe("opencode_local");
+    expect(parsed?.kubernetesConfig.adapters?.[0].adapterType).toBe("codex");
   });
 
   it("leaves adapters undefined when PAPERCLIP_ADAPTERS is absent", () => {
@@ -131,6 +129,28 @@ describe("parseExecutionPolicyBootstrapEnv", () => {
         env({ PAPERCLIP_EXECUTION_MODE: "kubernetes", PAPERCLIP_K8S_RPC_TIMEOUT_MS: "abc" }),
       ),
     ).toThrow(/PAPERCLIP_K8S_RPC_TIMEOUT_MS/);
+  });
+
+  it("preserves an exact Kubernetes adapter identity and rejects whitespace variants", () => {
+    expect(
+      parseExecutionPolicyBootstrapEnv(
+        env({
+          PAPERCLIP_EXECUTION_MODE: "kubernetes",
+          PAPERCLIP_K8S_ADAPTER_TYPE: "codex",
+        }),
+      )?.kubernetesConfig.adapterType,
+    ).toBe("codex");
+
+    for (const adapterType of ["", "   ", " codex", "codex "]) {
+      expect(() =>
+        parseExecutionPolicyBootstrapEnv(
+          env({
+            PAPERCLIP_EXECUTION_MODE: "kubernetes",
+            PAPERCLIP_K8S_ADAPTER_TYPE: adapterType,
+          }),
+        ),
+      ).toThrow(/exact non-blank adapter type/);
+    }
   });
 });
 

@@ -93,24 +93,34 @@ export const queryKeys = {
   },
   agents: {
     list: (companyId: string) => ["agents", companyId] as const,
+    issueOwnerCatalog: (companyId: string) =>
+      ["agents", companyId, "issue-owner-catalog"] as const,
     detail: (id: string) => ["agents", "detail", id] as const,
+    createRuntimeToolOptions: (companyId: string) =>
+      ["agents", companyId, "runtime-tool-options", "create"] as const,
+    runtimeToolOptions: (agentId: string) =>
+      ["agents", agentId, "runtime-tool-options", "edit"] as const,
     runtimeState: (id: string) => ["agents", "runtime-state", id] as const,
-    taskSessions: (id: string) => ["agents", "task-sessions", id] as const,
-    skills: (id: string) => ["agents", "skills", id] as const,
-    instructionsBundle: (id: string) => ["agents", "instructions-bundle", id] as const,
-    instructionsFile: (id: string, relativePath: string) =>
-      ["agents", "instructions-bundle", id, "file", relativePath] as const,
-    keys: (agentId: string) => ["agents", "keys", agentId] as const,
-    configRevisions: (agentId: string) => ["agents", "config-revisions", agentId] as const,
-    adapterModels: (companyId: string, adapterType: string, environmentId?: string | null) =>
-      ["agents", companyId, "adapter-models", adapterType, environmentId ?? null] as const,
+    companySkillPins: (id: string) =>
+      ["agents", "company-skill-pins", id] as const,
+    adapterConfigRevisions: (agentId: string) =>
+      ["agents", "adapter-config-revisions", agentId] as const,
+    currentAdapterConfigRevisionRoot: (agentId: string) =>
+      ["agents", "adapter-config-revision-current", agentId] as const,
+    currentAdapterConfigRevision: (
+      agentId: string,
+      revisionId: string | null,
+    ) =>
+      [
+        "agents",
+        "adapter-config-revision-current",
+        agentId,
+        revisionId ?? "__unconfigured__",
+      ] as const,
+    adapterModels: (companyId: string, adapterType: string) =>
+      ["agents", companyId, "adapter-models", adapterType] as const,
     adapterModelProfiles: (companyId: string, adapterType: string) =>
       ["agents", companyId, "adapter-model-profiles", adapterType] as const,
-    detectModel: (companyId: string, adapterType: string) =>
-      ["agents", companyId, "detect-model", adapterType] as const,
-  },
-  builtInAgents: {
-    list: (companyId: string) => ["built-in-agents", companyId] as const,
   },
   summarySlots: {
     detail: (companyId: string, scopeKind: string, slotKey: string, scopeId?: string | null) =>
@@ -143,9 +153,6 @@ export const queryKeys = {
     detail: (id: string) => ["issues", "detail", id] as const,
     comments: (issueId: string) => ["issues", "comments", issueId] as const,
     commentsList: (issueId: string) => ["issues", "comments", issueId, "list"] as const,
-    interactions: (issueId: string) => ["issues", "interactions", issueId] as const,
-    acceptedPlanDecompositions: (issueId: string) =>
-      ["issues", "accepted-plan-decompositions", issueId] as const,
     feedbackVotes: (issueId: string) => ["issues", "feedback-votes", issueId] as const,
     costSummary: (issueId: string, options: { excludeRoot?: boolean } = {}) =>
       options.excludeRoot
@@ -159,10 +166,9 @@ export const queryKeys = {
     documentAnnotations: (issueId: string, key: string, status: "open" | "resolved" | "all" = "all") =>
       ["issues", "document-annotations", issueId, key, status] as const,
     activity: (issueId: string) => ["issues", "activity", issueId] as const,
-    runs: (issueId: string) => ["issues", "runs", issueId] as const,
+    runs: (issueId: string, status?: readonly string[]) =>
+      ["issues", "runs", issueId, status?.join(",") ?? "all"] as const,
     approvals: (issueId: string) => ["issues", "approvals", issueId] as const,
-    liveRuns: (issueId: string) => ["issues", "live-runs", issueId] as const,
-    activeRun: (issueId: string) => ["issues", "active-run", issueId] as const,
     workProducts: (issueId: string) => ["issues", "work-products", issueId] as const,
     fileResources: (
       issueId: string,
@@ -324,7 +330,6 @@ export const queryKeys = {
   instance: {
     settings: ["instance", "settings"] as const,
     generalSettings: ["instance", "general-settings"] as const,
-    schedulerHeartbeats: ["instance", "scheduler-heartbeats"] as const,
     experimentalSettings: ["instance", "experimental-settings"] as const,
   },
   cloudUpstreams: (companyId: string) => ["cloud-upstreams", companyId] as const,
@@ -372,14 +377,16 @@ export const queryKeys = {
     ["finance-events", companyId, from, to, limit] as const,
   usageWindowSpend: (companyId: string) =>
     ["usage-window-spend", companyId] as const,
-  usageQuotaWindows: (companyId: string) =>
-    ["usage-quota-windows", companyId] as const,
-  heartbeats: (companyId: string, agentId?: string) =>
-    ["heartbeats", companyId, agentId] as const,
-  runDetail: (runId: string) => ["heartbeat-run", runId] as const,
-  runWorkspaceOperations: (runId: string) => ["heartbeat-run", runId, "workspace-operations"] as const,
-  liveRuns: (companyId: string) => ["live-runs", companyId] as const,
-  runIssues: (runId: string) => ["run-issues", runId] as const,
+  runs: (
+    companyId: string,
+    filters?: { agentId?: string; status?: readonly string[] },
+  ) => [
+    "runs",
+    companyId,
+    filters?.agentId ?? "all-agents",
+    filters?.status?.join(",") ?? "all-statuses",
+  ] as const,
+  runDetail: (runId: string) => ["runs", "detail", runId] as const,
   org: (companyId: string) => ["org", companyId] as const,
   skills: {
     available: ["skills", "available"] as const,

@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { isLoopbackHost, type BindMode } from "@paperclipai/shared";
+import { isLoopbackHost, normalizePublicOrigin, type BindMode } from "@paperclipai/shared";
 import type { AuthConfig, ServerConfig } from "../config/schema.js";
 import { parseHostnameCsv } from "../config/hostnames.js";
 import { buildCustomServerConfig, buildPresetServerConfig, inferConfiguredBind } from "../config/server-bind.js";
@@ -25,8 +25,8 @@ export async function promptServer(opts?: {
     options: [
       {
         value: "loopback" as const,
-        label: "Trusted local",
-        hint: "Recommended for first run: localhost only, no login friction",
+        label: "This machine",
+        hint: "Recommended for first run: loopback-only access",
       },
       {
         value: "lan" as const,
@@ -36,12 +36,12 @@ export async function promptServer(opts?: {
       {
         value: "tailnet" as const,
         label: "Tailnet",
-        hint: "Private authenticated access using the machine's detected Tailscale address",
+        hint: "Private access using the machine's detected Tailscale address",
       },
       {
         value: "custom" as const,
         label: "Custom",
-        hint: "Choose exact auth mode, exposure, and host manually",
+        hint: "Choose exact exposure and host manually",
       },
     ],
     initialValue: currentBind,
@@ -105,68 +105,43 @@ export async function promptServer(opts?: {
     return preset;
   }
 
-  const deploymentModeSelection = await p.select({
-    message: "Auth mode",
+  const exposureSelection = await p.select({
+    message: "Exposure profile",
     options: [
       {
-        value: "local_trusted",
-        label: "Local trusted",
-        hint: "No login required; only safe with loopback-only or similarly trusted access",
+        value: "private",
+        label: "Private network",
+        hint: "Private access only, with automatic URL handling",
       },
       {
-        value: "authenticated",
-        label: "Authenticated",
-        hint: "Login required; supports both private-network and public deployments",
+        value: "public",
+        label: "Public internet",
+        hint: "Internet-facing deployment with explicit public URL requirements",
       },
     ],
-    initialValue: currentServer?.deploymentMode ?? "authenticated",
+    initialValue: currentServer?.exposure ?? "private",
   });
 
-  if (p.isCancel(deploymentModeSelection)) cancelled();
-  const deploymentMode = deploymentModeSelection as ServerConfig["deploymentMode"];
-
-  let exposure: ServerConfig["exposure"] = "private";
-  if (deploymentMode === "authenticated") {
-    const exposureSelection = await p.select({
-      message: "Exposure profile",
-      options: [
-        {
-          value: "private",
-          label: "Private network",
-          hint: "Private access only, with automatic URL handling",
-        },
-        {
-          value: "public",
-          label: "Public internet",
-          hint: "Internet-facing deployment with explicit public URL requirements",
-        },
-      ],
-      initialValue: currentServer?.exposure ?? "private",
-    });
-    if (p.isCancel(exposureSelection)) cancelled();
-    exposure = exposureSelection as ServerConfig["exposure"];
-  }
+  if (p.isCancel(exposureSelection)) cancelled();
+  const exposure = exposureSelection as ServerConfig["exposure"];
 
   const defaultHost =
     currentServer?.customBindHost ??
     currentServer?.host ??
-    (deploymentMode === "local_trusted" ? "127.0.0.1" : "0.0.0.0");
+    (exposure === "public" ? "0.0.0.0" : "127.0.0.1");
   const host = await p.text({
     message: "Bind host",
     defaultValue: defaultHost,
     placeholder: defaultHost,
     validate: (val) => {
       if (!val.trim()) return "Host is required";
-      if (deploymentMode === "local_trusted" && !isLoopbackHost(val.trim())) {
-        return "Local trusted mode requires a loopback host such as 127.0.0.1";
-      }
     },
   });
 
   if (p.isCancel(host)) cancelled();
 
   let allowedHostnames: string[] = [];
-  if (deploymentMode === "authenticated" && exposure === "private") {
+  if (exposure === "private") {
     const allowedHostnamesInput = await p.text({
       message: "Allowed private hostnames (comma-separated, optional)",
       defaultValue: (currentServer?.allowedHostnames ?? []).join(", "),
@@ -186,31 +161,27 @@ export async function promptServer(opts?: {
   }
 
   let publicBaseUrl: string | undefined;
-  if (deploymentMode === "authenticated" && exposure === "public") {
+  if (exposure === "public") {
     const urlInput = await p.text({
       message: "Public base URL",
       defaultValue: currentAuth?.publicBaseUrl ?? "",
       placeholder: "https://paperclip.example.com",
       validate: (val) => {
         const candidate = val.trim();
-        if (!candidate) return "Public base URL is required for public exposure";
+        if (!candidate) return "Public HTTPS origin is required for public exposure";
         try {
-          const url = new URL(candidate);
-          if (url.protocol !== "http:" && url.protocol !== "https:") {
-            return "URL must start with http:// or https://";
-          }
+          normalizePublicOrigin(candidate);
           return;
-        } catch {
-          return "Enter a valid URL";
+        } catch (error) {
+          return error instanceof Error ? error.message : "Enter a valid origin";
         }
       },
     });
     if (p.isCancel(urlInput)) cancelled();
-    publicBaseUrl = urlInput.trim().replace(/\/+$/, "");
+    publicBaseUrl = normalizePublicOrigin(urlInput);
   }
 
   return buildCustomServerConfig({
-    deploymentMode,
     exposure,
     host: host.trim(),
     port,

@@ -19,6 +19,7 @@ declare module "e2b" {
     stdout: string;
     stderr: string;
     wait(): Promise<SandboxRunResult>;
+    kill(): Promise<boolean>;
   }
 
   export class Sandbox {

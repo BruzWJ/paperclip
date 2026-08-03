@@ -21,7 +21,7 @@ import {
 } from "../lib/issue-filters";
 import { externalObjectIconForCategory } from "../lib/external-objects";
 import { externalObjectStatusIcon } from "../lib/status-colors";
-import { formatAssigneeUserLabel } from "../lib/assignees";
+import { formatOwnerUserLabel } from "../lib/issue-owners";
 
 type AgentOption = {
   id: string;
@@ -104,7 +104,7 @@ export function IssueFiltersPopover({
       const userId = creatorId.startsWith("user:") ? creatorId.slice("user:".length) : creatorId;
       return {
         id: creatorId,
-        label: formatAssigneeUserLabel(userId, currentUserId) ?? userId.slice(0, 5),
+        label: formatOwnerUserLabel(userId, currentUserId) ?? userId.slice(0, 5),
         kind: "user" as const,
       };
     }),
@@ -210,20 +210,20 @@ export function IssueFiltersPopover({
 
             <div className="min-w-0 space-y-3">
               <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">Responsible</span>
+                <span className="text-xs text-muted-foreground">Owner</span>
                 <div className="max-h-32 space-y-0.5 overflow-y-auto">
                   <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                     <Checkbox
-                      checked={state.assignees.includes("__unassigned")}
-                      onCheckedChange={() => onChange({ assignees: toggleIssueFilterValue(state.assignees, "__unassigned") })}
+                      checked={state.owners.includes("__board")}
+                      onCheckedChange={() => onChange({ owners: toggleIssueFilterValue(state.owners, "__board") })}
                     />
-                    <span className="text-sm">No responsible</span>
+                    <span className="text-sm">Board escalation</span>
                   </label>
                   {currentUserId ? (
                     <label className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                       <Checkbox
-                        checked={state.assignees.includes("__me")}
-                        onCheckedChange={() => onChange({ assignees: toggleIssueFilterValue(state.assignees, "__me") })}
+                        checked={state.owners.includes("__me")}
+                        onCheckedChange={() => onChange({ owners: toggleIssueFilterValue(state.owners, "__me") })}
                       />
                       <User className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm">Me</span>
@@ -232,8 +232,8 @@ export function IssueFiltersPopover({
                   {(agents ?? []).map((agent) => (
                     <label key={agent.id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
                       <Checkbox
-                        checked={state.assignees.includes(agent.id)}
-                        onCheckedChange={() => onChange({ assignees: toggleIssueFilterValue(state.assignees, agent.id) })}
+                        checked={state.owners.includes(agent.id)}
+                        onCheckedChange={() => onChange({ owners: toggleIssueFilterValue(state.owners, agent.id) })}
                       />
                       <span className="text-sm">{agent.name}</span>
                     </label>

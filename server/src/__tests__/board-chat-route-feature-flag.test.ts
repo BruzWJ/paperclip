@@ -1,158 +1,216 @@
 import express from "express";
-import { EventEmitter } from "node:events";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetExperimental = vi.hoisted(() => vi.fn());
-const mockIssueService = vi.hoisted(() => ({
-  list: vi.fn(),
+const mockOrdinaryIssues = vi.hoisted(() => ({
   create: vi.fn(),
-  addComment: vi.fn(),
-  listComments: vi.fn(),
 }));
-const mockSpawn = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
   instanceSettingsService: () => ({ getExperimental: mockGetExperimental }),
-  issueService: () => mockIssueService,
 }));
 
-vi.mock("node:child_process", () => ({ spawn: mockSpawn }));
-
 vi.mock("../routes/authz.js", () => ({
-  getActorInfo: () => ({ actorId: "user-1", agentId: null, runId: null }),
+  assertBoard: (req: Express.Request) => {
+    req.actor = {
+      type: "board",
+      userId: "user-1",
+      companyIds: ["company-1"],
+      memberships: [],
+      isInstanceAdmin: false,
+      source: "session",
+    };
+  },
   assertCompanyAccess: () => {},
 }));
 
-async function createApp(deploymentMode: "local_trusted" | "authenticated" = "local_trusted") {
+async function createApp() {
   const { boardChatRoutes } = await import("../routes/board-chat.js");
   const app = express();
   app.use(express.json());
-  app.use("/api", boardChatRoutes({} as any, { deploymentMode }));
+  app.use(
+    "/api",
+    boardChatRoutes({} as never, {
+      ordinaryIssues: mockOrdinaryIssues as never,
+    }),
+  );
   return app;
 }
 
-describe("POST /api/board/chat/stream feature flag guard (PAP-137)", () => {
+describe("POST /api/board/chat/messages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("returns 403 FEATURE_DISABLED when enableConferenceRoomChat is off", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: false });
+  it("returns 403 FEATURE_DISABLED before creating an issue", async () => {
+    mockGetExperimental.mockResolvedValue({
+      enableConferenceRoomChat: false,
+    });
     const app = await createApp();
 
     const res = await request(app)
-      .post("/api/board/chat/stream")
-      .send({ companyId: "company-1", message: "hello" });
+      .post("/api/board/chat/messages")
+      .send({
+        companyId: "company-1",
+        agentId: "agent-1",
+        message: "hello",
+      });
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({
       error: "Conference Room Chat is not enabled",
       code: "FEATURE_DISABLED",
     });
-    // The guard must fire before anything is persisted.
-    expect(mockIssueService.addComment).not.toHaveBeenCalled();
-    expect(mockIssueService.create).not.toHaveBeenCalled();
+    expect(mockOrdinaryIssues.create).not.toHaveBeenCalled();
   });
 
-  it("returns 403 DEPLOYMENT_MODE_UNSUPPORTED outside local_trusted even with the flag on", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
-    const app = await createApp("authenticated");
+  it("validates the ordinary issue form after the feature gate", async () => {
+    mockGetExperimental.mockResolvedValue({
+      enableConferenceRoomChat: true,
+    });
+    const app = await createApp();
 
     const res = await request(app)
-      .post("/api/board/chat/stream")
-      .send({ companyId: "company-1", message: "hello" });
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("DEPLOYMENT_MODE_UNSUPPORTED");
-    expect(mockIssueService.addComment).not.toHaveBeenCalled();
-  });
-
-  it("lets requests past the guard when the flag is on (400 on missing body, not 403)", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
-    const app = await createApp();
-
-    // Omit the body so the request stops at validation — proves the guard
-    // admitted it without spawning the chat subprocess.
-    const res = await request(app).post("/api/board/chat/stream").send({});
+      .post("/api/board/chat/messages")
+      .send({});
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "companyId and message are required" });
-  });
-});
-
-describe("board-chat client disconnect", () => {
-  function makeFakeProc() {
-    const proc = new EventEmitter() as any;
-    proc.stdout = new EventEmitter();
-    proc.stderr = new EventEmitter();
-    proc.stdin = { write: vi.fn(), end: vi.fn() };
-    proc.exitCode = null;
-    proc.killed = false;
-    proc.kill = vi.fn(() => {
-      proc.killed = true;
+    expect(res.body).toEqual({
+      error: "companyId, agentId, and message are required",
     });
-    return proc;
-  }
+  });
 
-  it("kills the spawned subprocess when the client disconnects mid-stream", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
-    mockIssueService.list.mockResolvedValue([
-      { id: "issue-1", title: "Board Operations", status: "todo" },
-    ]);
-    mockIssueService.addComment.mockResolvedValue({ id: "comment-1" });
-    mockIssueService.listComments.mockResolvedValue([]);
-    const fakeProc = makeFakeProc();
-    mockSpawn.mockReturnValue(fakeProc);
+  it("creates one ordinary issue and preserves the exact request bytes", async () => {
+    mockGetExperimental.mockResolvedValue({
+      enableConferenceRoomChat: true,
+    });
+    const rawMessage = "  Keep these boundary spaces.\n";
+    mockOrdinaryIssues.create.mockResolvedValue({
+      issue: {
+        id: "issue-1",
+        companyId: "company-1",
+        request: rawMessage,
+      },
+      ref: { id: "ref-1" },
+      retried: false,
+    });
     const app = await createApp();
 
-    const req = request(app)
-      .post("/api/board/chat/stream")
-      .send({ companyId: "company-1", message: "hello" });
-    // Start the request without awaiting the (never-ending) SSE response.
-    const pending = req.then(
-      () => undefined,
-      () => undefined,
-    );
+    const res = await request(app)
+      .post("/api/board/chat/messages")
+      .send({
+        companyId: "company-1",
+        agentId: "agent-1",
+        message: rawMessage,
+        idempotencyKey: "chat-request-1",
+      });
 
-    await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalled());
-    expect(fakeProc.kill).not.toHaveBeenCalled();
-
-    // Client walks away mid-stream.
-    req.abort();
-    await vi.waitFor(() => expect(fakeProc.kill).toHaveBeenCalledWith("SIGTERM"));
-
-    // Let the subprocess close handler run so the slot is released.
-    fakeProc.exitCode = 143;
-    fakeProc.emit("close", 143);
-    await pending;
+    expect(res.status).toBe(201);
+    expect(mockOrdinaryIssues.create).toHaveBeenCalledWith({
+      companyId: "company-1",
+      request: rawMessage,
+      ownerAgentId: "agent-1",
+      creator: {
+        kind: "user/board",
+        userId: "user-1",
+      },
+      idempotencyKey: "chat-request-1",
+      sourceKind: "board_chat",
+      title: "Board Chat",
+      priority: "medium",
+      attentionMask: null,
+    });
+    expect(res.body).toMatchObject({
+      issueId: "issue-1",
+      refId: "ref-1",
+      retried: false,
+    });
   });
-});
 
-describe("board-chat history role classification", () => {
-  it("treats only board-concierge comments as assistant turns", async () => {
-    const { isConciergeReply } = await import("../routes/board-chat.js");
+  it("normalizes the initial issue attention mask and rejects malformed masks", async () => {
+    mockGetExperimental.mockResolvedValue({
+      enableConferenceRoomChat: true,
+    });
+    mockOrdinaryIssues.create.mockResolvedValue({
+      issue: { id: "issue-1", companyId: "company-1" },
+      ref: { id: "ref-1" },
+      retried: false,
+    });
+    const app = await createApp();
 
-    // The relay's own persisted replies.
-    expect(
-      isConciergeReply({ authorAgentId: null, authorUserId: "board-concierge" }),
-    ).toBe(true);
+    await request(app)
+      .post("/api/board/chat/messages")
+      .send({
+        companyId: "company-1",
+        agentId: "agent-1",
+        message: "hello",
+        attentionMask: {
+          carry_context: true,
+          read_issue_comments: false,
+        },
+      })
+      .expect(201);
 
-    // A human board user.
-    expect(isConciergeReply({ authorAgentId: null, authorUserId: "user-1" })).toBe(
-      false,
+    expect(mockOrdinaryIssues.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attentionMask: { read_issue_comments: false },
+      }),
     );
 
-    // An agent commenting on the standing issue is NOT this assistant — its
-    // words must not be serialized as the assistant's own prior turns.
-    expect(
-      isConciergeReply({ authorAgentId: "agent-1", authorUserId: null }),
-    ).toBe(false);
+    const malformed = await request(app)
+      .post("/api/board/chat/messages")
+      .send({
+        companyId: "company-1",
+        agentId: "agent-1",
+        message: "hello",
+        attentionMask: { unknown_context: false },
+      });
+    expect(malformed.status).toBe(400);
+    expect(mockOrdinaryIssues.create).toHaveBeenCalledTimes(1);
+  });
 
-    // Defensive: an agent comment can never impersonate the concierge even if
-    // both author fields are somehow set.
-    expect(
-      isConciergeReply({ authorAgentId: "agent-1", authorUserId: "board-concierge" }),
-    ).toBe(false);
+  it("rejects follow-ups because the special route is creation-only", async () => {
+    mockGetExperimental.mockResolvedValue({
+      enableConferenceRoomChat: true,
+    });
+    const app = await createApp();
+
+    const res = await request(app)
+      .post("/api/board/chat/messages")
+      .send({
+        companyId: "company-1",
+        agentId: "agent-1",
+        issueId: "issue-1",
+        message: "\nFollow up exactly.\n",
+        idempotencyKey: "chat-follow-up-1",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: "Board Chat accepts creation fields only",
+      code: "BOARD_CHAT_CREATION_ONLY",
+    });
+    expect(mockOrdinaryIssues.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an attention mask on a follow-up", async () => {
+    mockGetExperimental.mockResolvedValue({
+      enableConferenceRoomChat: true,
+    });
+    const app = await createApp();
+
+    const res = await request(app)
+      .post("/api/board/chat/messages")
+      .send({
+        companyId: "company-1",
+        agentId: "agent-1",
+        issueId: "issue-1",
+        message: "follow up",
+        attentionMask: { carry_context: false },
+      });
+
+    expect(res.status).toBe(400);
+    expect(mockOrdinaryIssues.create).not.toHaveBeenCalled();
   });
 });

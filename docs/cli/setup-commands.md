@@ -37,7 +37,7 @@ If Paperclip is already configured, rerunning `onboard` keeps the existing confi
 
 First prompt:
 
-1. `Quickstart` (recommended): local defaults (embedded database, no LLM provider, local disk storage, default secrets)
+1. `Quickstart` (recommended): external PostgreSQL URL, local disk storage, default secrets
 2. `Advanced setup`: full interactive configuration
 
 Start immediately after onboarding:
@@ -72,6 +72,9 @@ Validates:
 - Storage configuration
 - Missing key files
 
+`doctor` does not inspect provider credentials, call provider APIs, or probe a
+provider-native home. Adapter readiness is structural and target-scoped.
+
 ## `paperclipai configure`
 
 Update configuration sections:
@@ -101,7 +104,7 @@ This now includes bind-oriented deployment settings such as `PAPERCLIP_BIND` and
 
 ## `paperclipai allowed-hostname`
 
-Allow a private hostname for authenticated/private mode:
+Allow a hostname for private exposure:
 
 ```sh
 pnpm paperclipai allowed-hostname my-tailscale-host

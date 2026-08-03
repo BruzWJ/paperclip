@@ -15,25 +15,15 @@ import {
   remoteExecutionSessionMatches,
 } from "./remote-managed-runtime.js";
 import {
-  createCommandManagedSandboxCallbackBridgeQueueClient,
-  createSandboxCallbackBridgeAsset,
-  createSandboxCallbackBridgeToken,
-  DEFAULT_SANDBOX_CALLBACK_BRIDGE_MAX_BODY_BYTES,
-  sandboxCallbackBridgeDirectories,
-  startSandboxCallbackBridgeServer,
-  startSandboxCallbackBridgeWorker,
-} from "./sandbox-callback-bridge.js";
-import {
-  createSandboxRunLogTailFactory,
-  type SandboxRunLogTailFactory,
-} from "./sandbox-run-log-stream.js";
-import { createSshCommandManagedRuntimeRunner, parseSshRemoteExecutionSpec, runSshCommand, shellQuote } from "./ssh.js";
+  createCommandManagedFileQueue,
+  type CommandManagedFileQueue,
+} from "./command-managed-file-queue.js";
+import { parseSshRemoteExecutionSpec, runSshCommand, shellQuote } from "./ssh.js";
 import {
   ensureCommandResolvable,
   resolveCommandForLogs,
   runChildProcess,
   type RunProcessResult,
-  type TerminalResultCleanupOptions,
 } from "./server-utils.js";
 import { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 import { preferredShellForSandbox, shellCommandArgs } from "./sandbox-shell.js";
@@ -57,37 +47,40 @@ export interface AdapterSshExecutionTarget {
   spec: SshRemoteExecutionSpec;
 }
 
-export interface AdapterSandboxExecutionTarget {
+export interface AdapterCommandManagedExecutionTarget {
   kind: "remote";
-  transport: "sandbox";
-  providerKey?: string | null;
   shellCommand?: "bash" | "sh" | null;
   environmentId?: string | null;
   leaseId?: string | null;
   remoteCwd: string;
   timeoutMs?: number | null;
   runner?: CommandManagedRuntimeRunner;
-  /**
-   * Sandbox-backed adapter runs stream the agent CLI's stdout/stderr
-   * incrementally via a log-tail loop beside the callback bridge instead of
-   * waiting for the batched provider result. Streaming is ON by default;
-   * set to `false` to explicitly opt out back to batch-at-end delivery.
-   */
-  streamRunLogs?: boolean | null;
+}
+
+export interface AdapterSandboxExecutionTarget
+  extends AdapterCommandManagedExecutionTarget {
+  transport: "sandbox";
+  providerKey?: string | null;
+}
+
+export interface AdapterPluginExecutionTarget
+  extends AdapterCommandManagedExecutionTarget {
+  transport: "plugin";
+  pluginKey: string;
+  driverKey: string;
 }
 
 export type AdapterExecutionTarget =
   | AdapterLocalExecutionTarget
   | AdapterSshExecutionTarget
-  | AdapterSandboxExecutionTarget;
+  | AdapterSandboxExecutionTarget
+  | AdapterPluginExecutionTarget;
 
 export type AdapterRemoteExecutionSpec = SshRemoteExecutionSpec;
 
-// The adapter-facing managed-runtime asset type. Aliased to the sandbox/command
-// asset descriptor so the per-asset lifecycle contributions (`provision` /
-// `restore`) declared on the sandbox core are load-bearing all the way from the
-// adapter call site through to the sandbox runtime. The SSH transport consumes
-// the subset of fields it understands and ignores the rest.
+// The adapter-facing managed-runtime asset type. Assets are copied into the
+// execution target as static directories and are never copied back to mutate
+// their host source.
 export type AdapterManagedRuntimeAsset = CommandManagedRuntimeAsset;
 
 export interface PreparedAdapterExecutionTargetRuntime {
@@ -102,18 +95,12 @@ export interface AdapterExecutionTargetProcessOptions {
   cwd: string;
   env: Record<string, string>;
   stdin?: string;
+  abortSignal?: AbortSignal;
   timeoutSec: number;
   graceSec: number;
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   onRuntimeProgress?: RuntimeStatusSink;
   onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
-  terminalResultCleanup?: TerminalResultCleanupOptions;
-  /**
-   * Sandbox-only: factory from the Paperclip bridge handle that streams the
-   * CLI's stdout/stderr during the run. When provided, the batched provider
-   * onLog is suppressed and incremental chunks flow through `onLog` instead.
-   */
-  runLogTail?: SandboxRunLogTailFactory | null;
   localProcessSandbox?: LocalProcessSandboxOptions | null;
 }
 
@@ -125,15 +112,65 @@ export interface AdapterExecutionTargetShellOptions {
   onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
 }
 
-export interface AdapterExecutionTargetPaperclipBridgeHandle {
-  env: Record<string, string>;
-  /**
-   * Present when the sandbox target opted into run-log streaming
-   * (`streamRunLogs`). Create one handle per CLI attempt and pass it to
-   * `runAdapterExecutionTargetProcess` via `options.runLogTail`.
-   */
-  runLogTail?: SandboxRunLogTailFactory | null;
-  stop(): Promise<void>;
+export interface ResolveAdapterExecutionTargetExecutableInput {
+  readonly runId: string;
+  readonly target: AdapterExecutionTarget;
+  /** Exact PATH selector from the immutable adapter launch profile. */
+  readonly selector: string;
+  /** Exact target-side Node already identity-probed by the caller. */
+  readonly targetNodeExecutable: string;
+  readonly cwd: string;
+  readonly timeoutSec?: number;
+}
+
+export const ADAPTER_TARGET_NATIVE_IDENTITY_ENVIRONMENT_KEYS = Object.freeze([
+  "HOME",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "XDG_STATE_HOME",
+] as const);
+
+export type AdapterTargetNativeIdentityEnvironmentKey =
+  (typeof ADAPTER_TARGET_NATIVE_IDENTITY_ENVIRONMENT_KEYS)[number];
+
+/**
+ * Selects the complete non-secret identity-root environment for a native CLI.
+ *
+ * A local execution target is the current process host, so its operator-native
+ * home/config roots are carried byte-for-byte. Remote targets own their own
+ * identity defaults and never receive host roots. Provider-prefixed variables,
+ * credentials, tokens, and tool-specific homes are intentionally outside this
+ * closed allowlist.
+ */
+export function resolveAdapterExecutionTargetNativeIdentityEnvironment(
+  target: AdapterExecutionTarget,
+  baseEnvironment: NodeJS.ProcessEnv = process.env,
+): Readonly<
+  Partial<Record<AdapterTargetNativeIdentityEnvironmentKey, string>>
+> {
+  if (target.kind !== "local") return Object.freeze({});
+  const identity: Partial<
+    Record<AdapterTargetNativeIdentityEnvironmentKey, string>
+  > = {};
+  for (const key of ADAPTER_TARGET_NATIVE_IDENTITY_ENVIRONMENT_KEYS) {
+    const value = baseEnvironment[key];
+    if (value === undefined) continue;
+    if (
+      value.length === 0 ||
+      value !== value.trim() ||
+      !path.isAbsolute(value)
+    ) {
+      throw new Error(
+        `Target-native identity environment ${key} must be an exact absolute path`,
+      );
+    }
+    identity[key] = value;
+  }
+  return Object.freeze(identity);
 }
 
 export interface AdapterExecutionTargetProcessSessionBridgeHandle {
@@ -145,8 +182,8 @@ export { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 
 // 4-hour wall-clock backstop for sandbox-backed adapter runs. This is a
 // last-resort kill switch, not the primary hang detector: genuinely hung runs
-// are caught much earlier by the adapters' output-inactivity monitors (e.g.
-// codex-local's 7-minute monitor). The value intentionally matches the
+// are caught much earlier by adapter-owned output-inactivity monitors. The
+// value intentionally matches the
 // recovery watchdog's ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS (4h) in
 // server/src/services/recovery/service.ts so healthy long runs are never
 // killed by the adapter before the watchdog would even consider them stuck.
@@ -166,34 +203,21 @@ function readStringMeta(parsed: Record<string, unknown>, key: string): string | 
   return readString(parsed[key]);
 }
 
-function resolveHostForUrl(rawHost: string): string {
-  const host = rawHost.trim();
-  if (!host || host === "0.0.0.0" || host === "::") return "localhost";
-  if (host.includes(":") && !host.startsWith("[") && !host.endsWith("]")) return `[${host}]`;
-  return host;
-}
-
-function resolveDefaultPaperclipApiUrl(): string {
-  const runtimeHost = resolveHostForUrl(
-    process.env.PAPERCLIP_LISTEN_HOST ?? process.env.HOST ?? "localhost",
-  );
-  // 3100 matches the default Paperclip dev server port when the runtime does not provide one.
-  const runtimePort = process.env.PAPERCLIP_LISTEN_PORT ?? process.env.PORT ?? "3100";
-  return `http://${runtimeHost}:${runtimePort}`;
-}
-
-function isBridgeDebugEnabled(env: NodeJS.ProcessEnv): boolean {
-  const value = env.PAPERCLIP_BRIDGE_DEBUG?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes";
-}
 
 function isAdapterExecutionTargetInstance(value: unknown): value is AdapterExecutionTarget {
   const parsed = parseObject(value);
   if (parsed.kind === "local") return true;
   if (parsed.kind !== "remote") return false;
   if (parsed.transport === "ssh") return parseSshRemoteExecutionSpec(parseObject(parsed.spec)) !== null;
-  if (parsed.transport !== "sandbox") return false;
-  return readStringMeta(parsed, "remoteCwd") !== null;
+  if (parsed.transport === "sandbox") {
+    return readStringMeta(parsed, "remoteCwd") !== null;
+  }
+  return (
+    parsed.transport === "plugin" &&
+    readStringMeta(parsed, "remoteCwd") !== null &&
+    readStringMeta(parsed, "pluginKey") !== null &&
+    readStringMeta(parsed, "driverKey") !== null
+  );
 }
 
 export function adapterExecutionTargetToRemoteSpec(
@@ -208,10 +232,13 @@ export function adapterExecutionTargetIsRemote(
   return target?.kind === "remote";
 }
 
-export function adapterExecutionTargetUsesManagedHome(
+export function adapterExecutionTargetIsCommandManaged(
   target: AdapterExecutionTarget | null | undefined,
-): boolean {
-  return target?.kind === "remote" && target.transport === "sandbox";
+): target is AdapterSandboxExecutionTarget | AdapterPluginExecutionTarget {
+  return (
+    target?.kind === "remote" &&
+    (target.transport === "sandbox" || target.transport === "plugin")
+  );
 }
 
 export function adapterExecutionTargetRemoteCwd(
@@ -259,11 +286,6 @@ export function resolveAdapterExecutionTargetCwd(
   return adapterExecutionTargetRemoteCwd(target, localFallbackCwd);
 }
 
-export function adapterExecutionTargetUsesPaperclipBridge(
-  target: AdapterExecutionTarget | null | undefined,
-): boolean {
-  return target?.kind === "remote";
-}
 
 export function describeAdapterExecutionTarget(
   target: AdapterExecutionTarget | null | undefined,
@@ -272,7 +294,10 @@ export function describeAdapterExecutionTarget(
   if (target.transport === "ssh") {
     return `SSH environment ${target.spec.username}@${target.spec.host}:${target.spec.port}`;
   }
-  return `sandbox environment${target.providerKey ? ` (${target.providerKey})` : ""}`;
+  if (target.transport === "sandbox") {
+    return `sandbox environment${target.providerKey ? ` (${target.providerKey})` : ""}`;
+  }
+  return `plugin environment (${target.pluginKey}:${target.driverKey})`;
 }
 
 export type AdapterExecutionTargetTimeoutSource =
@@ -378,39 +403,45 @@ export function formatAdapterExecutionTimeoutStartLogLine(
   );
 }
 
-function requireSandboxRunner(target: AdapterSandboxExecutionTarget): CommandManagedRuntimeRunner {
-  if (target.runner) return target.runner;
+type CancellableCommandManagedRuntimeRunner = CommandManagedRuntimeRunner & {
+  cancelExecution(input: {
+    executionId: string;
+    reason: string;
+  }): Promise<{ executionId: string; cancelled: boolean }>;
+};
+
+type AdapterCommandManagedTarget =
+  | AdapterSandboxExecutionTarget
+  | AdapterPluginExecutionTarget;
+
+function commandManagedTargetLabel(target: AdapterCommandManagedTarget): string {
+  return target.transport === "sandbox"
+    ? "Sandbox"
+    : `Plugin (${target.pluginKey}:${target.driverKey})`;
+}
+
+function requireCommandManagedRunner(
+  target: AdapterCommandManagedTarget,
+): CancellableCommandManagedRuntimeRunner {
+  if (target.runner?.cancelExecution) {
+    return target.runner as CancellableCommandManagedRuntimeRunner;
+  }
+  if (target.runner) {
+    throw new Error(
+      `${commandManagedTargetLabel(target)} execution target does not support exact command cancellation. ` +
+      "The environment provider must implement cancelExecution before it is execution-ready.",
+    );
+  }
   throw new Error(
-    "Sandbox execution target is missing its provider runtime runner. Sandbox commands must execute through the environment runtime.",
+    `${commandManagedTargetLabel(target)} execution target is missing its provider runtime runner. ` +
+    "Command-managed targets must execute through the environment runtime.",
   );
 }
 
-function preferredSandboxShell(target: AdapterSandboxExecutionTarget): "bash" | "sh" {
+function preferredCommandManagedShell(target: AdapterCommandManagedTarget): "bash" | "sh" {
   return preferredShellForSandbox(target.shellCommand);
 }
 
-type AdapterCommandCapableExecutionTarget = AdapterSshExecutionTarget | AdapterSandboxExecutionTarget;
-
-function adapterExecutionTargetCommandRunner(target: AdapterCommandCapableExecutionTarget): CommandManagedRuntimeRunner {
-  if (target.transport === "ssh") {
-    return createSshCommandManagedRuntimeRunner({
-      spec: target.spec,
-      defaultCwd: target.remoteCwd,
-      maxBufferBytes: DEFAULT_SANDBOX_CALLBACK_BRIDGE_MAX_BODY_BYTES * 4,
-    });
-  }
-  return requireSandboxRunner(target);
-}
-
-function adapterExecutionTargetShellCommand(target: AdapterCommandCapableExecutionTarget): "bash" | "sh" {
-  return target.transport === "ssh" ? "sh" : preferredSandboxShell(target);
-}
-
-function adapterExecutionTargetTimeoutMs(
-  target: AdapterCommandCapableExecutionTarget,
-): number | null | undefined {
-  return target.transport === "sandbox" ? target.timeoutMs : undefined;
-}
 
 export async function ensureAdapterExecutionTargetCommandResolvable(
   command: string,
@@ -419,8 +450,8 @@ export async function ensureAdapterExecutionTargetCommandResolvable(
   env: NodeJS.ProcessEnv,
   options: { installCommand?: string | null; timeoutSec?: number | null } = {},
 ) {
-  if (target?.kind === "remote" && target.transport === "sandbox") {
-    await ensureSandboxCommandResolvable(
+  if (adapterExecutionTargetIsCommandManaged(target)) {
+    await ensureCommandManagedCommandResolvable(
       command,
       target,
       options.installCommand?.trim() || null,
@@ -428,16 +459,56 @@ export async function ensureAdapterExecutionTargetCommandResolvable(
     );
     return;
   }
+  if (target?.kind === "remote" && target.transport === "ssh") {
+    try {
+      await runSshCommand(
+        target.spec,
+        `cd ${shellQuote(target.remoteCwd)} && command -v ${shellQuote(command)} >/dev/null 2>&1`,
+        {
+          env: sanitizeRemoteExecutionEnv(
+            Object.fromEntries(
+              Object.entries(env).filter(
+                (entry): entry is [string, string] => typeof entry[1] === "string",
+              ),
+            ),
+          ),
+          timeoutMs:
+            typeof options.timeoutSec === "number" &&
+            Number.isFinite(options.timeoutSec) &&
+            options.timeoutSec > 0
+              ? Math.floor(options.timeoutSec * 1000)
+              : 15_000,
+        },
+      );
+      return;
+    } catch (error) {
+      const failure = error as {
+        code?: unknown;
+        killed?: unknown;
+      };
+      if (failure.code === "ENOENT") {
+        throw new Error('Command not found in PATH: "ssh"');
+      }
+      if (failure.code === "ETIMEDOUT" || failure.killed === true) {
+        throw new Error(
+          `Timed out checking command "${command}" on ssh target.`,
+        );
+      }
+      throw new Error(
+        `Command "${command}" is not installed or not on PATH in the ssh environment.`,
+      );
+    }
+  }
   await ensureCommandResolvable(command, cwd, env, {
-    remoteExecution: adapterExecutionTargetToRemoteSpec(target),
+    remoteExecution: null,
   });
 }
 
-async function probeSandboxCommandResolvable(
+async function probeCommandManagedCommandResolvable(
   command: string,
-  target: AdapterSandboxExecutionTarget,
+  target: AdapterCommandManagedTarget,
 ): Promise<{ resolved: boolean; timedOut: boolean; stderr: string }> {
-  const runner = requireSandboxRunner(target);
+  const runner = requireCommandManagedRunner(target);
   const probeScript = `command -v ${shellQuote(command)}`;
   const result = await runner.execute({
     command: "sh",
@@ -452,32 +523,34 @@ async function probeSandboxCommandResolvable(
   };
 }
 
-async function ensureSandboxCommandResolvable(
+async function ensureCommandManagedCommandResolvable(
   command: string,
-  target: AdapterSandboxExecutionTarget,
+  target: AdapterCommandManagedTarget,
   installCommand: string | null,
   timeoutSec?: number | null,
 ): Promise<void> {
-  // Probe whether the binary is resolvable inside the sandbox. We previously
-  // short-circuited this for sandbox targets, which let the caller report a
+  // Probe whether the binary is resolvable inside the command-managed target.
+  // We previously short-circuited this for sandbox targets, which let the caller report a
   // success message even when the CLI was missing from the image. Now we run
-  // a real `command -v` through the same runner the hello probe will use, so
-  // the first step honestly reflects whether the binary is on PATH. The
-  // sandbox provider is responsible for sourcing login profiles (e2b mirrors
-  // SSH's buildSshSpawnTarget) so this and the hello probe agree on PATH.
-  let probe = await probeSandboxCommandResolvable(command, target);
+  // a real `command -v` through the same runner provider execution will use,
+  // so startup honestly reflects whether the binary is on PATH. The sandbox
+  // provider is responsible for sourcing login profiles (e2b mirrors SSH's
+  // buildSshSpawnTarget) so command resolution and execution agree on PATH.
+  let probe = await probeCommandManagedCommandResolvable(command, target);
   if (probe.resolved) return;
   if (probe.timedOut) {
-    throw new Error(`Timed out checking command "${command}" on sandbox target.`);
+    throw new Error(
+      `Timed out checking command "${command}" on ${target.transport} target.`,
+    );
   }
 
   // If the caller supplied an install command, attempt the install once via
-  // the sandbox runner (which the sandbox provider wraps in a login shell)
+  // the exact target runner (whose provider owns its login-shell behavior)
   // and re-probe before reporting failure. This lets fresh sandbox leases
-  // bring up the CLI before the resolvability gate, mirroring the test path.
+  // bring up the CLI before the resolvability gate.
   let installFailureDetail: string | null = null;
   if (installCommand) {
-    const runner = requireSandboxRunner(target);
+    const runner = requireCommandManagedRunner(target);
     const installTimeoutMs =
       typeof timeoutSec === "number" && Number.isFinite(timeoutSec) && timeoutSec > 0
         ? Math.floor(timeoutSec * 1000)
@@ -500,17 +573,19 @@ async function ensureSandboxCommandResolvable(
     } catch (err) {
       installFailureDetail = `install command threw: ${err instanceof Error ? err.message : String(err)}`;
     }
-    probe = await probeSandboxCommandResolvable(command, target);
+    probe = await probeCommandManagedCommandResolvable(command, target);
     if (probe.resolved) return;
     if (probe.timedOut) {
-      throw new Error(`Timed out checking command "${command}" on sandbox target.`);
+      throw new Error(
+        `Timed out checking command "${command}" on ${target.transport} target.`,
+      );
     }
   }
 
   const probeStderr = probe.stderr.length > 0 ? ` probe stderr: ${probe.stderr}` : "";
   const installDetail = installFailureDetail ? `; ${installFailureDetail}` : "";
   throw new Error(
-    `Command "${command}" is not installed or not on PATH in the sandbox environment${installDetail}.${probeStderr}`,
+    `Command "${command}" is not installed or not on PATH in the ${target.transport} environment${installDetail}.${probeStderr}`,
   );
 }
 
@@ -520,8 +595,12 @@ export async function resolveAdapterExecutionTargetCommandForLogs(
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<string> {
-  if (target?.kind === "remote" && target.transport === "sandbox") {
-    return `sandbox://${target.providerKey ?? "provider"}/${target.leaseId ?? "lease"}/${target.remoteCwd} :: ${command}`;
+  if (adapterExecutionTargetIsCommandManaged(target)) {
+    const provider =
+      target.transport === "sandbox"
+        ? target.providerKey ?? "provider"
+        : `${target.pluginKey}:${target.driverKey}`;
+    return `${target.transport}://${provider}/${target.leaseId ?? "lease"}/${target.remoteCwd} :: ${command}`;
   }
   return await resolveCommandForLogs(command, cwd, env, {
     remoteExecution: adapterExecutionTargetToRemoteSpec(target),
@@ -535,44 +614,87 @@ export async function runAdapterExecutionTargetProcess(
   args: string[],
   options: AdapterExecutionTargetProcessOptions,
 ): Promise<RunProcessResult> {
-  if (target?.kind === "remote" && target.transport === "sandbox") {
-    const runner = requireSandboxRunner(target);
+  if (options.abortSignal?.aborted) {
+    const error = new Error("Adapter execution was cancelled");
+    error.name = "AbortError";
+    throw error;
+  }
+  if (adapterExecutionTargetIsCommandManaged(target)) {
+    const runner = requireCommandManagedRunner(target);
     const env = sanitizeRemoteExecutionEnv(options.env);
     await options.onRuntimeProgress?.({
       phase: "adapter_startup",
-      message: "Starting adapter in sandbox",
+      message: `Starting adapter in ${target.transport} environment`,
     });
-    const runLogTail = options.runLogTail?.create() ?? null;
-    let execCommand = command;
-    let execArgs = args;
-    if (runLogTail) {
-      ({ command: execCommand, args: execArgs } = runLogTail.wrapCommand(command, args));
-      runLogTail.start(options.onLog);
-    }
+    const cancellationReason = () => {
+      const reason = options.abortSignal?.reason;
+      if (reason instanceof Error && reason.message.trim().length > 0) return reason.message;
+      if (typeof reason === "string" && reason.trim().length > 0) return reason.trim();
+      return "Adapter execution was cancelled";
+    };
+    const abortError = () => {
+      const error = new Error(cancellationReason());
+      error.name = "AbortError";
+      return error;
+    };
+    let rejectForAbort: ((error: Error) => void) | null = null;
+    const abortFence = new Promise<never>((_resolve, reject) => {
+      rejectForAbort = reject;
+    });
+    let cancellation: Promise<{ executionId: string; cancelled: boolean }> | null = null;
+    const requestCancellation = () => {
+      cancellation ??= runner.cancelExecution({
+        executionId: runId,
+        reason: cancellationReason(),
+      });
+      return cancellation;
+    };
+    const onAbort = () => {
+      void requestCancellation().then(
+        () => rejectForAbort?.(abortError()),
+        (error) => rejectForAbort?.(
+          error instanceof Error ? error : new Error(String(error)),
+        ),
+      );
+    };
     try {
-      const result = await runner.execute({
-        command: execCommand,
-        args: execArgs,
+      const execution = runner.execute({
+        executionId: runId,
+        command,
+        args,
         cwd: target.remoteCwd,
         env,
         stdin: options.stdin,
         timeoutMs: options.timeoutSec > 0 ? options.timeoutSec * 1000 : target.timeoutMs ?? undefined,
-        // The tail loop already streams incremental chunks; suppress the
-        // runner's end-of-run batched onLog to avoid duplicate log bytes.
-        onLog: runLogTail ? undefined : options.onLog,
+        abortSignal: options.abortSignal,
+        onLog: options.onLog,
         onSpawn: options.onSpawn
           ? async (meta) => options.onSpawn?.({ ...meta, processGroupId: null })
           : undefined,
       });
-      if (runLogTail) {
-        await runLogTail.finish({ stdout: result.stdout, stderr: result.stderr });
+      // If cancellation acknowledgement wins, return control immediately and
+      // fence any later provider success. The detached catch prevents a late
+      // provider rejection from becoming unhandled after the abort path exits.
+      execution.catch(() => undefined);
+      options.abortSignal?.addEventListener("abort", onAbort, { once: true });
+      if (options.abortSignal?.aborted) {
+        onAbort();
+      }
+      const result = options.abortSignal
+        ? await Promise.race([execution, abortFence])
+        : await execution;
+      if (options.abortSignal?.aborted) {
+        await requestCancellation();
+        throw abortError();
       }
       return result;
     } catch (error) {
-      if (runLogTail) {
-        await runLogTail.abort();
+      if (options.abortSignal?.aborted) {
+        await requestCancellation();
       }
       throw error;
+    } finally {
+      options.abortSignal?.removeEventListener("abort", onAbort);
     }
   }
 
@@ -585,11 +707,11 @@ export async function runAdapterExecutionTargetProcess(
     cwd: options.cwd,
     env,
     stdin: options.stdin,
+    abortSignal: options.abortSignal,
     timeoutSec: options.timeoutSec,
     graceSec: options.graceSec,
     onLog: options.onLog,
     onSpawn: options.onSpawn,
-    terminalResultCleanup: options.terminalResultCleanup,
     localProcessSandbox: target?.kind === "local" || !target ? options.localProcessSandbox : null,
     remoteExecution: adapterExecutionTargetToRemoteSpec(target),
   });
@@ -665,8 +787,8 @@ export async function runAdapterExecutionTargetShellCommand(
       }
     }
 
-    const shellCommand = preferredSandboxShell(target);
-    return await requireSandboxRunner(target).execute({
+    const shellCommand = preferredCommandManagedShell(target);
+    return await requireCommandManagedRunner(target).execute({
       command: shellCommand,
       args: shellCommandArgs(command),
       cwd: target.remoteCwd,
@@ -680,7 +802,7 @@ export async function runAdapterExecutionTargetShellCommand(
     runId,
     target,
     "sh",
-    ["-lc", command],
+    shellCommandArgs(command),
     {
       cwd: options.cwd,
       env: options.env,
@@ -691,109 +813,95 @@ export async function runAdapterExecutionTargetShellCommand(
   );
 }
 
-export interface AdapterSandboxInstallCommandCheck {
-  code: string;
-  level: "info" | "warn" | "error";
-  message: string;
-  detail?: string;
-  hint?: string;
-}
+const TARGET_EXECUTABLE_SELECTOR = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const TARGET_EXECUTABLE_CANONICALIZER = [
+  'const { constants, realpathSync, statSync, accessSync } = require("node:fs");',
+  'const executable = realpathSync(process.argv[1]);',
+  'if (!statSync(executable).isFile()) process.exit(66);',
+  'accessSync(executable, constants.X_OK);',
+  'process.stdout.write(executable);',
+].join("\n");
 
-// Best-effort run of an adapter-supplied install command on a sandbox target
-// before the resolvability + hello probe. Returns null for non-sandbox
-// targets so callers can no-op. Returns a structured check otherwise — never
-// throws — so the rest of the test still runs and reports the post-install
-// state honestly. Caller pushes the check into its result array; the test
-// report shows whether install was attempted and what came back.
-export async function maybeRunSandboxInstallCommand(input: {
-  runId: string;
-  target: AdapterExecutionTarget | null | undefined;
-  adapterKey: string;
-  installCommand: string;
-  /** When provided, skip the install if `command -v <detectCommand>` succeeds. */
-  detectCommand?: string | null;
-  env?: Record<string, string>;
-  timeoutSec?: number;
-}): Promise<AdapterSandboxInstallCommandCheck | null> {
-  const { target, adapterKey, installCommand } = input;
-  if (!target || target.kind !== "remote" || target.transport !== "sandbox") {
-    return null;
+/**
+ * Resolves one immutable adapter selector inside the selected target. The
+ * result is a canonical absolute executable, never an inherited provider
+ * override or a host-side fallback.
+ */
+export async function resolveAdapterExecutionTargetExecutable(
+  input: ResolveAdapterExecutionTargetExecutableInput,
+): Promise<string> {
+  if (
+    input.selector.length === 0 ||
+    input.selector !== input.selector.trim() ||
+    !TARGET_EXECUTABLE_SELECTOR.test(input.selector)
+  ) {
+    throw new Error("Execution-target executable selector must be exact and path-free");
   }
-  const trimmed = installCommand.trim();
-  if (trimmed.length === 0) return null;
+  const timeoutSec = input.timeoutSec ?? 15;
+  if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
+    throw new Error("Execution-target executable probe timeout must be positive");
+  }
+  const selected = await runAdapterExecutionTargetShellCommand(
+    input.runId,
+    input.target,
+    `command -v ${input.selector}`,
+    { cwd: input.cwd, env: {}, timeoutSec },
+  );
+  if (selected.timedOut || selected.exitCode !== 0) {
+    throw new Error(
+      `Execution target does not expose required executable ${JSON.stringify(input.selector)}`,
+    );
+  }
+  const match = /^([^\r\n]+)\r?\n?$/.exec(selected.stdout);
+  const candidate = match?.[1] ?? "";
+  const remote = input.target.kind === "remote";
+  if (
+    candidate.length === 0 ||
+    candidate !== candidate.trim() ||
+    !(remote ? path.posix.isAbsolute(candidate) : path.isAbsolute(candidate))
+  ) {
+    throw new Error("Execution target returned an ambiguous executable path");
+  }
 
-  const code = `${adapterKey}_install_command_run`;
-
-  // Skip install when the binary is already on PATH. Avoids running
-  // network-dependent installers (e.g. `curl ... | bash`) on every test
-  // probe when the CLI is preinstalled on the lease/template.
-  const detectCommand = input.detectCommand?.trim();
-  if (detectCommand) {
-    try {
-      const probe = await runAdapterExecutionTargetShellCommand(
+  const canonicalized = remote
+    ? await runAdapterExecutionTargetShellCommand(
         input.runId,
-        target,
-        `command -v ${shellQuote(detectCommand)} >/dev/null 2>&1`,
+        input.target,
+        [
+          shellQuote(input.targetNodeExecutable),
+          "-e",
+          shellQuote(TARGET_EXECUTABLE_CANONICALIZER),
+          shellQuote(candidate),
+        ].join(" "),
+        { cwd: input.cwd, env: {}, timeoutSec },
+      )
+    : await runAdapterExecutionTargetProcess(
+        input.runId,
+        input.target,
+        input.targetNodeExecutable,
+        ["-e", TARGET_EXECUTABLE_CANONICALIZER, candidate],
         {
-          cwd: target.remoteCwd,
-          env: input.env ?? {},
-          timeoutSec: 30,
-          graceSec: 5,
+          cwd: input.cwd,
+          env: {},
+          timeoutSec,
+          graceSec: 2,
+          onLog: async () => {},
         },
       );
-      if (!probe.timedOut && probe.exitCode === 0) {
-        return {
-          code,
-          level: "info",
-          message: `${detectCommand} already on PATH; skipped install.`,
-        };
-      }
-    } catch {
-      // Fall through to actually running the install — failure to probe
-      // is not a reason to skip the install gate.
-    }
+  if (canonicalized.timedOut || canonicalized.exitCode !== 0) {
+    throw new Error("Execution-target executable canonicalization failed");
   }
-
-  let result;
-  try {
-    result = await runAdapterExecutionTargetShellCommand(input.runId, target, trimmed, {
-      cwd: target.remoteCwd,
-      env: input.env ?? {},
-      timeoutSec: input.timeoutSec ?? 240,
-      graceSec: 10,
-    });
-  } catch (err) {
-    return {
-      code,
-      level: "warn",
-      message: "Install command threw before completion.",
-      detail: err instanceof Error ? err.message : String(err),
-    };
+  const executable = canonicalized.stdout;
+  if (
+    executable.length === 0 ||
+    executable !== executable.trim() ||
+    executable.includes("\n") ||
+    executable.includes("\r") ||
+    !(remote ? path.posix.isAbsolute(executable) : path.isAbsolute(executable))
+  ) {
+    throw new Error("Execution target returned an ambiguous canonical executable path");
   }
-  const tail = (text: string) =>
-    text.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(-3).join(" | ").slice(0, 480);
-  if (result.timedOut) {
-    return {
-      code,
-      level: "warn",
-      message: `Install command timed out: ${trimmed}`,
-      detail: tail(result.stderr || result.stdout),
-    };
-  }
-  if ((result.exitCode ?? 1) === 0) {
-    return {
-      code,
-      level: "info",
-      message: `Install command ran: ${trimmed}`,
-      ...(tail(result.stdout) ? { detail: tail(result.stdout) } : {}),
-    };
-  }
-  return {
-    code,
-    level: "warn",
-    message: `Install command exited ${result.exitCode}: ${trimmed}`,
-    detail: tail(result.stderr || result.stdout),
-  };
+  return executable;
 }
 
 export async function readAdapterExecutionTargetHomeDir(
@@ -823,7 +931,7 @@ export async function ensureAdapterExecutionTargetRuntimeCommandInstalled(input:
   onLog?: AdapterExecutionTargetShellOptions["onLog"];
 }): Promise<void> {
   const installCommand = input.installCommand?.trim();
-  if (!installCommand || input.target?.kind !== "remote" || input.target.transport !== "sandbox") {
+  if (!installCommand || !adapterExecutionTargetIsCommandManaged(input.target)) {
     return;
   }
 
@@ -974,8 +1082,13 @@ export function adapterExecutionTargetSessionIdentity(
   if (!target || target.kind === "local") return null;
   if (target.transport === "ssh") return buildRemoteExecutionSessionIdentity(target.spec);
   return {
-    transport: "sandbox",
-    providerKey: target.providerKey ?? null,
+    transport: target.transport,
+    ...(target.transport === "sandbox"
+      ? { providerKey: target.providerKey ?? null }
+      : {
+          pluginKey: target.pluginKey,
+          driverKey: target.driverKey,
+        }),
     environmentId: target.environmentId ?? null,
     leaseId: target.leaseId ?? null,
     remoteCwd: target.remoteCwd,
@@ -994,7 +1107,12 @@ export function adapterExecutionTargetSessionMatches(
   const parsedSaved = parseObject(saved);
   return (
     readStringMeta(parsedSaved, "transport") === current?.transport &&
-    readStringMeta(parsedSaved, "providerKey") === current?.providerKey &&
+    (target.transport === "sandbox"
+      ? readStringMeta(parsedSaved, "providerKey") === current?.providerKey
+      : (
+          readStringMeta(parsedSaved, "pluginKey") === current?.pluginKey &&
+          readStringMeta(parsedSaved, "driverKey") === current?.driverKey
+        )) &&
     readStringMeta(parsedSaved, "environmentId") === current?.environmentId &&
     readStringMeta(parsedSaved, "leaseId") === current?.leaseId &&
     readStringMeta(parsedSaved, "remoteCwd") === current?.remoteCwd
@@ -1037,27 +1155,27 @@ export function parseAdapterExecutionTarget(value: unknown): AdapterExecutionTar
       leaseId: readStringMeta(parsed, "leaseId"),
       remoteCwd,
       timeoutMs: typeof parsed.timeoutMs === "number" ? parsed.timeoutMs : null,
-      streamRunLogs: typeof parsed.streamRunLogs === "boolean" ? parsed.streamRunLogs : null,
     };
   }
 
-  return null;
-}
-
-export function adapterExecutionTargetFromRemoteExecution(
-  remoteExecution: unknown,
-  metadata: Pick<AdapterLocalExecutionTarget, "environmentId" | "leaseId"> = {},
-): AdapterExecutionTarget | null {
-  const parsed = parseObject(remoteExecution);
-  const ssh = parseSshRemoteExecutionSpec(parsed);
-  if (ssh) {
+  if (kind === "remote" && readStringMeta(parsed, "transport") === "plugin") {
+    const remoteCwd = readStringMeta(parsed, "remoteCwd");
+    const pluginKey = readStringMeta(parsed, "pluginKey");
+    const driverKey = readStringMeta(parsed, "driverKey");
+    if (!remoteCwd || !pluginKey || !driverKey) return null;
     return {
       kind: "remote",
-      transport: "ssh",
-      environmentId: metadata.environmentId ?? null,
-      leaseId: metadata.leaseId ?? null,
-      remoteCwd: ssh.remoteCwd,
-      spec: ssh,
+      transport: "plugin",
+      pluginKey,
+      driverKey,
+      shellCommand:
+        parsed.shellCommand === "bash" || parsed.shellCommand === "sh"
+          ? parsed.shellCommand
+          : null,
+      environmentId: readStringMeta(parsed, "environmentId"),
+      leaseId: readStringMeta(parsed, "leaseId"),
+      remoteCwd,
+      timeoutMs: typeof parsed.timeoutMs === "number" ? parsed.timeoutMs : null,
     };
   }
 
@@ -1066,15 +1184,11 @@ export function adapterExecutionTargetFromRemoteExecution(
 
 export function readAdapterExecutionTarget(input: {
   executionTarget?: unknown;
-  legacyRemoteExecution?: unknown;
 }): AdapterExecutionTarget | null {
   if (isAdapterExecutionTargetInstance(input.executionTarget)) {
     return input.executionTarget;
   }
-  return (
-    parseAdapterExecutionTarget(input.executionTarget) ??
-    adapterExecutionTargetFromRemoteExecution(input.legacyRemoteExecution)
-  );
+  return parseAdapterExecutionTarget(input.executionTarget);
 }
 
 export async function prepareAdapterExecutionTargetRuntime(input: {
@@ -1128,9 +1242,13 @@ export async function prepareAdapterExecutionTargetRuntime(input: {
   }
 
   const prepared = await prepareCommandManagedRuntime({
-    runner: requireSandboxRunner(target),
+    runner: requireCommandManagedRunner(target),
     spec: {
-      providerKey: target.providerKey,
+      targetKind: target.transport,
+      providerKey:
+        target.transport === "sandbox"
+          ? target.providerKey
+          : `${target.pluginKey}:${target.driverKey}`,
       shellCommand: target.shellCommand,
       leaseId: target.leaseId,
       remoteCwd: target.remoteCwd,
@@ -1167,59 +1285,18 @@ export function runtimeAssetDir(
   return prepared.assetDirs[key] ?? path.posix.join(fallbackRemoteCwd, ".paperclip-runtime", key);
 }
 
-function buildBridgeResponseHeaders(response: Response): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const key of ["content-type", "etag", "last-modified"]) {
-    const value = response.headers.get(key);
-    if (value && value.trim().length > 0) out[key] = value.trim();
-  }
-  return out;
-}
-
-function buildBridgeForwardUrl(baseUrl: string, request: { path: string; query: string }): URL {
-  const url = new URL(request.path, baseUrl);
-  const query = request.query.trim();
-  url.search = query.startsWith("?") ? query.slice(1) : query;
-  return url;
-}
-
-function bridgeResponseBodyLimitError(maxBodyBytes: number): Error {
-  return new Error(`Bridge response body exceeded the configured size limit of ${maxBodyBytes} bytes.`);
-}
-
-async function readBridgeForwardResponseBody(response: Response, maxBodyBytes: number): Promise<string> {
-  const rawContentLength = response.headers.get("content-length");
-  if (rawContentLength) {
-    const contentLength = Number.parseInt(rawContentLength, 10);
-    if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
-      throw bridgeResponseBodyLimitError(maxBodyBytes);
-    }
-  }
-
-  if (!response.body) {
-    return "";
-  }
-
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    totalBytes += value.byteLength;
-    if (totalBytes > maxBodyBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw bridgeResponseBodyLimitError(maxBodyBytes);
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return Buffer.concat(chunks, totalBytes).toString("utf8");
-}
 
 const PROCESS_SESSION_PROXY_SCRIPT = "paperclip-process-session-proxy.mjs";
 const PROCESS_SESSION_REMOTE_SCRIPT = "paperclip-process-session-remote.mjs";
 const PROCESS_SESSION_AUTH_TIMEOUT_MS = 5_000;
+const PROCESS_SESSION_STOP_GRACE_MS = 1_000;
+
+interface ProcessSessionTerminalEvent {
+  type?: string;
+  code?: number | null;
+  signal?: string | null;
+  message?: string;
+}
 
 function jsonLine(value: unknown): string {
   return `${JSON.stringify(value)}\n`;
@@ -1238,14 +1315,14 @@ async function writeProcessSessionProxyScript(dir: string, port: number, token: 
 }
 
 async function syncProcessSessionRemoteScript(input: {
-  client: ReturnType<typeof createCommandManagedSandboxCallbackBridgeQueueClient>;
+  client: CommandManagedFileQueue;
   remoteScriptPath: string;
 }): Promise<void> {
   await input.client.writeTextFile(input.remoteScriptPath, getProcessSessionRemoteSource());
 }
 
 async function readRemoteJsonFiles(input: {
-  client: ReturnType<typeof createCommandManagedSandboxCallbackBridgeQueueClient>;
+  client: CommandManagedFileQueue;
   dir: string;
 }): Promise<Array<{ name: string; body: string }>> {
   const names = await input.client.listJsonFiles(input.dir);
@@ -1286,14 +1363,14 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   timeoutSec?: number | null;
   onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
 }): Promise<AdapterExecutionTargetProcessSessionBridgeHandle | null> {
-  if (!input.target || input.target.kind !== "remote" || input.target.transport !== "sandbox") {
+  if (!adapterExecutionTargetIsCommandManaged(input.target)) {
     return null;
   }
 
   const target = input.target;
   const onLog = input.onLog ?? (async () => {});
-  const runner = requireSandboxRunner(target);
-  const shellCommand = preferredSandboxShell(target);
+  const runner = requireCommandManagedRunner(target);
+  const shellCommand = preferredCommandManagedShell(target);
   const timeoutMs =
     typeof input.timeoutSec === "number" && Number.isFinite(input.timeoutSec) && input.timeoutSec > 0
       ? Math.trunc(input.timeoutSec * 1000)
@@ -1307,7 +1384,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   const stdinDir = path.posix.join(sessionDir, "stdin");
   const eventsDir = path.posix.join(sessionDir, "events");
   const remoteScriptPath = path.posix.join(bridgeRuntimeDir, PROCESS_SESSION_REMOTE_SCRIPT);
-  const client = createCommandManagedSandboxCallbackBridgeQueueClient({
+  const client = createCommandManagedFileQueue({
     runner,
     remoteCwd: target.remoteCwd,
     timeoutMs,
@@ -1325,7 +1402,14 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
     env: sanitizeRemoteExecutionEnv(input.env),
   }), "utf8").toString("base64");
 
-  await onLog("stdout", `[paperclip] Starting ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`);
+  const targetIdentity =
+    target.transport === "sandbox"
+      ? target.providerKey ?? "provider"
+      : `${target.pluginKey}:${target.driverKey}`;
+  await onLog(
+    "stdout",
+    `[paperclip] Starting ACP process session bridge in ${target.transport} (${targetIdentity}).\n`,
+  );
   const startResult = await runner.execute({
     command: shellCommand,
     args: shellCommandArgs(
@@ -1338,19 +1422,31 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       ].join("\n"),
     ),
     cwd: target.remoteCwd,
-    env: {
-      PAPERCLIP_SANDBOX_EXEC_CHANNEL: "bridge",
-    },
+    env:
+      target.transport === "sandbox"
+        ? { PAPERCLIP_SANDBOX_EXEC_CHANNEL: "bridge" }
+        : {},
     timeoutMs,
   });
   if (startResult.timedOut || (startResult.exitCode ?? 1) !== 0) {
-    throw new Error(`Failed to start sandbox ACP process session bridge: ${startResult.stderr || startResult.stdout}`);
+    throw new Error(
+      `Failed to start ${target.transport} ACP process session bridge: ${startResult.stderr || startResult.stdout}`,
+    );
   }
 
   let socket: net.Socket | null = null;
   let stopping = false;
   let stdinSeq = 0;
   let pollTimer: NodeJS.Timeout | null = null;
+  let stopPromise: Promise<void> | null = null;
+  let remoteTerminalEvent: ProcessSessionTerminalEvent | null = null;
+  let resolveRemoteTerminal:
+    | ((event: ProcessSessionTerminalEvent) => void)
+    | null = null;
+  const remoteTerminal = new Promise<ProcessSessionTerminalEvent>((resolve) => {
+    resolveRemoteTerminal = resolve;
+  });
+  let remoteInputWrites = Promise.resolve();
   const pendingRemoteEvents: Array<{
     type?: string;
     stream?: "stdout" | "stderr";
@@ -1359,7 +1455,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
     signal?: string | null;
     message?: string;
   }> = [];
-  const token = createSandboxCallbackBridgeToken(18);
+  const token = randomUUID();
   const proxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-proxy-"));
 
   const writeRemoteEventToSocket = (event: (typeof pendingRemoteEvents)[number]) => {
@@ -1376,6 +1472,14 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   };
 
   const deliverRemoteEvent = (event: (typeof pendingRemoteEvents)[number]) => {
+    if (
+      (event.type === "exit" || event.type === "error") &&
+      !remoteTerminalEvent
+    ) {
+      remoteTerminalEvent = event;
+      resolveRemoteTerminal?.(event);
+      resolveRemoteTerminal = null;
+    }
     if (socket) {
       writeRemoteEventToSocket(event);
       return;
@@ -1384,6 +1488,22 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
     if (event.type === "exit" || event.type === "error") {
       stopping = true;
     }
+  };
+
+  const enqueueRemoteInput = (message: {
+    type: "stdin" | "stdinEnd" | "signal";
+    data?: string;
+    signal?: "SIGTERM" | "SIGKILL" | "SIGINT";
+  }) => {
+    remoteInputWrites = remoteInputWrites.then(async () => {
+      stdinSeq += 1;
+      const name = `${String(stdinSeq).padStart(12, "0")}.json`;
+      await client.writeTextFile(
+        path.posix.join(stdinDir, name),
+        jsonLine(message),
+      );
+    });
+    return remoteInputWrites;
   };
 
   const flushPendingRemoteEvents = () => {
@@ -1438,17 +1558,21 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
           socket = nextSocket;
           flushPendingRemoteEvents();
         }
-        void (async () => {
-          if (message.type === "stdin" && typeof message.data === "string") {
-            stdinSeq += 1;
-            const name = `${String(stdinSeq).padStart(12, "0")}.json`;
-            await client.writeTextFile(path.posix.join(stdinDir, name), jsonLine({ type: "stdin", data: message.data }));
-          } else if (message.type === "stdinEnd") {
-            stdinSeq += 1;
-            const name = `${String(stdinSeq).padStart(12, "0")}.json`;
-            await client.writeTextFile(path.posix.join(stdinDir, name), jsonLine({ type: "stdinEnd" }));
-          }
-        })().catch((error) => {
+        const queued =
+          message.type === "stdin" && typeof message.data === "string"
+            ? enqueueRemoteInput({ type: "stdin", data: message.data })
+            : message.type === "stdinEnd"
+              ? enqueueRemoteInput({ type: "stdinEnd" })
+              : message.type === "signal" &&
+                  (message.data === "SIGTERM" ||
+                    message.data === "SIGKILL" ||
+                    message.data === "SIGINT")
+                ? enqueueRemoteInput({
+                    type: "signal",
+                    signal: message.data,
+                  })
+                : Promise.resolve();
+        void queued.catch((error) => {
           nextSocket.write(jsonLine({ type: "error", message: error instanceof Error ? error.message : String(error) }));
           nextSocket.destroy();
         });
@@ -1490,19 +1614,87 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   pollTimer = setTimeout(() => void poll(), 100);
   pollTimer.unref?.();
 
+  const waitForRemoteTerminal = async (timeoutMs: number) => {
+    if (remoteTerminalEvent) return remoteTerminalEvent;
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      return await Promise.race([
+        remoteTerminal,
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   return {
     agentCommand,
-    stop: async () => {
-      stopping = true;
-      if (pollTimer) clearTimeout(pollTimer);
-      for (const liveSocket of liveSockets) liveSocket.destroy();
-      await new Promise<void>((resolve) => server.close(() => resolve())).catch(() => undefined);
-      await client.writeTextFile(
-        path.posix.join(stdinDir, `${String(stdinSeq + 1).padStart(12, "0")}.json`),
-        jsonLine({ type: "stdinEnd" }),
-      ).catch(() => undefined);
-      await client.remove(sessionDir).catch(() => undefined);
-      await fs.rm(proxyDir, { recursive: true, force: true }).catch(() => undefined);
+    stop: () => {
+      stopPromise ??= (async () => {
+        const failures: unknown[] = [];
+        if (!remoteTerminalEvent) {
+          try {
+            await enqueueRemoteInput({
+              type: "signal",
+              signal: "SIGTERM",
+            });
+            if (!(await waitForRemoteTerminal(PROCESS_SESSION_STOP_GRACE_MS))) {
+              await enqueueRemoteInput({
+                type: "signal",
+                signal: "SIGKILL",
+              });
+              if (!(await waitForRemoteTerminal(PROCESS_SESSION_STOP_GRACE_MS))) {
+                failures.push(
+                  new Error(
+                    `${target.transport} ACP process bridge did not report process-group termination`,
+                  ),
+                );
+              }
+            }
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        stopping = true;
+        if (pollTimer) clearTimeout(pollTimer);
+        for (const liveSocket of liveSockets) liveSocket.destroy();
+        try {
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+              if (error) reject(error);
+              else resolve();
+            });
+          });
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          await remoteInputWrites;
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          await client.remove(sessionDir);
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          await fs.rm(proxyDir, { recursive: true, force: true });
+        } catch (error) {
+          failures.push(error);
+        }
+        if (failures.length === 1) throw failures[0];
+        if (failures.length > 1) {
+          throw new AggregateError(
+            failures,
+            `${target.transport} ACP process bridge cleanup failed`,
+          );
+        }
+      })();
+      return stopPromise;
     },
   };
 }
@@ -1515,15 +1707,24 @@ const socket = net.createConnection({ host: "127.0.0.1", port: ${input.port} });
 const token = ${JSON.stringify(input.token)};
 let buffer = "";
 let exiting = false;
+let signalForwarded = false;
 
 function send(message) {
   socket.write(JSON.stringify({ token, ...message }) + "\\n");
+}
+
+function forwardSignal(signal) {
+  if (exiting || signalForwarded) return;
+  signalForwarded = true;
+  send({ type: "signal", data: signal });
 }
 
 socket.on("connect", () => send({ type: "hello" }));
 process.stdin.on("data", (chunk) => send({ type: "stdin", data: Buffer.from(chunk).toString("base64") }));
 process.stdin.on("end", () => send({ type: "stdinEnd" }));
 process.stdin.resume();
+process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+process.on("SIGINT", () => forwardSignal("SIGINT"));
 
 socket.setEncoding("utf8");
 socket.on("data", (chunk) => {
@@ -1585,18 +1786,53 @@ function writeEvent(event) {
   return write;
 }
 
+const configuredEnv = Object.fromEntries(
+  Object.entries(config.env || {}).filter(([, value]) => typeof value === "string"),
+);
+const configuredHome = configuredEnv.HOME || configuredEnv.USERPROFILE || null;
+const invocationHome = configuredHome || path.posix.join(sessionDir, "home");
+if (!configuredHome) {
+  await fs.mkdir(invocationHome, { recursive: true, mode: 0o700 });
+}
 const child = spawn(config.command, Array.isArray(config.args) ? config.args : [], {
-  cwd: config.cwd || process.cwd(),
-  env: { ...process.env, ...(config.env || {}) },
+  cwd: config.cwd,
+  env: {
+    PATH: configuredEnv.PATH || "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin",
+    ...configuredEnv,
+    HOME: configuredEnv.HOME || invocationHome,
+    USERPROFILE: configuredEnv.USERPROFILE || invocationHome,
+  },
+  detached: process.platform !== "win32",
   stdio: ["pipe", "pipe", "pipe"],
 });
 
+function signalChild(signal) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {}
+  }
+  try {
+    child.kill(signal);
+  } catch {}
+}
+
 child.stdout.on("data", (chunk) => void writeEvent({ type: "data", stream: "stdout", data: Buffer.from(chunk).toString("base64") }));
 child.stderr.on("data", (chunk) => void writeEvent({ type: "data", stream: "stderr", data: Buffer.from(chunk).toString("base64") }));
-child.on("error", (error) => void writeEvent({ type: "error", message: error.message }));
+child.on("error", (error) => {
+  stdinClosed = true;
+  void writeEvent({ type: "error", message: error.message });
+});
 // "close" (not "exit") so stdout/stderr fully drain before the exit event;
 // the write chain then guarantees the exit file lands after every data file.
-child.on("close", (code, signal) => void writeEvent({ type: "exit", code, signal }));
+child.on("close", (code, signal) => {
+  stdinClosed = true;
+  void writeEvent({ type: "exit", code, signal });
+});
+process.on("SIGTERM", () => signalChild("SIGTERM"));
+process.on("SIGINT", () => signalChild("SIGINT"));
 
 async function pollStdin() {
   while (!stdinClosed) {
@@ -1613,6 +1849,13 @@ async function pollStdin() {
         stdinClosed = true;
         child.stdin.end();
         break;
+      } else if (
+        message.type === "signal" &&
+        (message.signal === "SIGTERM" ||
+          message.signal === "SIGKILL" ||
+          message.signal === "SIGINT")
+      ) {
+        signalChild(message.signal);
       }
     }
     if (!stdinClosed) await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1621,164 +1864,4 @@ async function pollStdin() {
 
 void pollStdin().catch((error) => void writeEvent({ type: "error", message: error instanceof Error ? error.message : String(error) }));
 `;
-}
-
-export async function startAdapterExecutionTargetPaperclipBridge(input: {
-  runId: string;
-  target: AdapterExecutionTarget | null | undefined;
-  runtimeRootDir: string | null | undefined;
-  adapterKey: string;
-  timeoutSec?: number | null;
-  hostApiToken: string | null | undefined;
-  hostApiUrl?: string | null;
-  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
-  maxBodyBytes?: number | null;
-}): Promise<AdapterExecutionTargetPaperclipBridgeHandle | null> {
-  if (!adapterExecutionTargetUsesPaperclipBridge(input.target)) {
-    return null;
-  }
-  if (!input.target || input.target.kind !== "remote") {
-    return null;
-  }
-
-  const target = input.target;
-  const onLog = input.onLog ?? (async () => {});
-  const hostApiToken = input.hostApiToken?.trim() ?? "";
-  if (hostApiToken.length === 0) {
-    throw new Error("Sandbox bridge mode requires a host-side Paperclip API token.");
-  }
-
-  const runtimeRootDir =
-    input.runtimeRootDir?.trim().length
-      ? input.runtimeRootDir.trim()
-      : path.posix.join(target.remoteCwd, ".paperclip-runtime", input.adapterKey);
-  const bridgeRuntimeDir = path.posix.join(runtimeRootDir, "paperclip-bridge");
-  const queueDir = path.posix.join(bridgeRuntimeDir, "queue");
-  const assetRemoteDir = path.posix.join(bridgeRuntimeDir, "server");
-  const bridgeToken = createSandboxCallbackBridgeToken();
-  const maxBodyBytes =
-    typeof input.maxBodyBytes === "number" && Number.isFinite(input.maxBodyBytes) && input.maxBodyBytes > 0
-      ? Math.trunc(input.maxBodyBytes)
-      : DEFAULT_SANDBOX_CALLBACK_BRIDGE_MAX_BODY_BYTES;
-  const hostApiUrl =
-    input.hostApiUrl?.trim() ||
-    process.env.PAPERCLIP_RUNTIME_API_URL?.trim() ||
-    process.env.PAPERCLIP_API_URL?.trim() ||
-    resolveDefaultPaperclipApiUrl();
-  const shellCommand = adapterExecutionTargetShellCommand(target);
-  const runner = adapterExecutionTargetCommandRunner(target);
-  const bridgeTimeoutMs =
-    typeof input.timeoutSec === "number" && Number.isFinite(input.timeoutSec) && input.timeoutSec > 0
-      ? Math.trunc(input.timeoutSec * 1000)
-      : adapterExecutionTargetTimeoutMs(target);
-
-  await onLog(
-    "stdout",
-    `[paperclip] Starting sandbox callback bridge for ${input.adapterKey} in ${bridgeRuntimeDir}.\n`,
-  );
-
-  const bridgeAsset = await createSandboxCallbackBridgeAsset();
-  let server: Awaited<ReturnType<typeof startSandboxCallbackBridgeServer>> | null = null;
-  let worker: Awaited<ReturnType<typeof startSandboxCallbackBridgeWorker>> | null = null;
-  try {
-    const client = createCommandManagedSandboxCallbackBridgeQueueClient({
-      runner,
-      remoteCwd: target.remoteCwd,
-      timeoutMs: bridgeTimeoutMs,
-      shellCommand,
-    });
-    // PAPERCLIP_BRIDGE_DEBUG opts into verbose stdout logs of every bridge
-    // proxy request/response. The query string is logged verbatim, so callers
-    // who pass auth tokens or other sensitive values as query parameters
-    // should be aware those values appear in the host process's stdout when
-    // this flag is enabled. Only intended for active debugging in trusted
-    // environments.
-    const bridgeDebugEnabled = isBridgeDebugEnabled(process.env);
-    worker = await startSandboxCallbackBridgeWorker({
-      client,
-      queueDir,
-      maxBodyBytes,
-      handleRequest: async (request) => {
-        const method = request.method.trim().toUpperCase() || "GET";
-        if (bridgeDebugEnabled) {
-          await onLog(
-            "stdout",
-            `[paperclip] Bridge proxy ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
-          );
-        }
-        const headers = new Headers();
-        for (const [key, value] of Object.entries(request.headers)) {
-          if (value.trim().length === 0) continue;
-          headers.set(key, value);
-        }
-        headers.set("authorization", `Bearer ${hostApiToken}`);
-        headers.set("x-paperclip-run-id", input.runId);
-        const response = await fetch(buildBridgeForwardUrl(hostApiUrl, request), {
-          method,
-          headers,
-          ...(method === "GET" || method === "HEAD" ? {} : { body: request.body }),
-          signal: AbortSignal.timeout(30_000),
-        });
-        if (bridgeDebugEnabled) {
-          await onLog(
-            "stdout",
-            `[paperclip] Bridge proxy response ${response.status} for ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
-          );
-        }
-        return {
-          status: response.status,
-          headers: buildBridgeResponseHeaders(response),
-          body: await readBridgeForwardResponseBody(response, maxBodyBytes),
-        };
-      },
-    });
-    server = await startSandboxCallbackBridgeServer({
-      runner,
-      remoteCwd: target.remoteCwd,
-      assetRemoteDir,
-      queueDir,
-      bridgeToken,
-      bridgeAsset,
-      timeoutMs: bridgeTimeoutMs,
-      maxBodyBytes,
-      shellCommand,
-    });
-  } catch (error) {
-    await Promise.allSettled([
-      server?.stop(),
-      worker?.stop(),
-      bridgeAsset.cleanup(),
-    ]);
-    throw error;
-  }
-
-  let runLogTail: SandboxRunLogTailFactory | null = null;
-  if (target.transport === "sandbox" && target.streamRunLogs !== false) {
-    runLogTail = createSandboxRunLogTailFactory({
-      runner,
-      remoteCwd: target.remoteCwd,
-      logsDir: sandboxCallbackBridgeDirectories(queueDir).logsDir,
-      shellCommand,
-    });
-    await onLog("stdout", "[paperclip] Sandbox run log streaming enabled for this run.\n");
-  }
-
-  return {
-    env: {
-      PAPERCLIP_API_URL: server.baseUrl,
-      PAPERCLIP_API_KEY: bridgeToken,
-      PAPERCLIP_API_BRIDGE_MODE: "queue_v1",
-      PAPERCLIP_BRIDGE_QUEUE_DIR: queueDir,
-    },
-    runLogTail,
-    stop: async () => {
-      await Promise.allSettled([
-        server?.stop(),
-      ]);
-      await Promise.allSettled([
-        worker?.stop(),
-        bridgeAsset.cleanup(),
-      ]);
-    },
-  };
 }

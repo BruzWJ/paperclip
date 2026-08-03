@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   documentAnnotationAnchorSnapshots,
@@ -23,6 +23,7 @@ import {
   UpdateDocumentAnnotationThread,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { issueReferenceService } from "./issue-references.js";
 
 type ActorInput = {
   actorType: "agent" | "user";
@@ -125,6 +126,8 @@ function snapshotFromThread(thread: Pick<DocumentAnnotationThread, "selectedText
 }
 
 export function documentAnnotationService(db: Db) {
+  const issueReferences = issueReferenceService(db);
+
   async function getIssueDocument(issueId: string, key: string, dbOrTx: any = db): Promise<IssueDocumentRow | null> {
     return dbOrTx
       .select({
@@ -273,7 +276,7 @@ export function documentAnnotationService(db: Db) {
         issueId: issueComments.issueId,
       })
       .from(issueComments)
-      .where(and(eq(issueComments.id, commentId), isNull(issueComments.deletedAt)))
+      .where(eq(issueComments.id, commentId))
       .then((rows: Array<{ id: string; companyId: string; issueId: string }>) => rows[0] ?? null);
     if (!comment || comment.issueId !== issueId) {
       throw unprocessable("Linked issue comment must belong to this issue");
@@ -491,6 +494,7 @@ export function documentAnnotationService(db: Db) {
           updatedAt: now,
         })
         .returning(commentSelect);
+      await issueReferences.syncAnnotationComment(comment.id, tx);
 
       return { ...thread, comments: [comment] };
     }),
@@ -701,6 +705,7 @@ export function documentAnnotationService(db: Db) {
           updatedAt: now,
         })
         .returning(commentSelect);
+      await issueReferences.syncAnnotationComment(comment.id, tx);
       await tx
         .update(documentAnnotationThreads)
         .set({ updatedAt: now })
@@ -782,71 +787,6 @@ export function documentAnnotationService(db: Db) {
         .where(eq(documentAnnotationThreads.id, thread.id));
       return comment;
     }),
-
-    cleanupForIssueCommentDeletion: async (
-      issueId: string,
-      issueCommentId: string,
-      actor: ActorInput,
-      dbOrTx: any = db,
-    ) => {
-      const runCleanup = async (tx: any) => {
-        const linkedComments: Array<Pick<DocumentAnnotationComment, "id" | "threadId">> = await tx
-          .select({
-            id: documentAnnotationComments.id,
-            threadId: documentAnnotationComments.threadId,
-          })
-          .from(documentAnnotationComments)
-          .where(and(
-            eq(documentAnnotationComments.issueId, issueId),
-            eq(documentAnnotationComments.issueCommentId, issueCommentId),
-          ));
-        if (linkedComments.length === 0) {
-          return { deletedCommentIds: [], resolvedThreadIds: [] };
-        }
-
-        const deletedCommentIds = linkedComments.map((comment) => comment.id);
-        const threadIds = [...new Set(linkedComments.map((comment) => comment.threadId))];
-        const now = new Date();
-
-        await tx
-          .delete(documentAnnotationComments)
-          .where(inArray(documentAnnotationComments.id, deletedCommentIds));
-
-        const remainingRows: Array<{ threadId: string; count: number }> = await tx
-          .select({
-            threadId: documentAnnotationComments.threadId,
-            count: sql<number>`count(*)::int`,
-          })
-          .from(documentAnnotationComments)
-          .where(inArray(documentAnnotationComments.threadId, threadIds))
-          .groupBy(documentAnnotationComments.threadId);
-        const remainingByThreadId = new Map(remainingRows.map((row) => [row.threadId, Number(row.count)]));
-        const emptyThreadIds = threadIds.filter((threadId) => (remainingByThreadId.get(threadId) ?? 0) === 0);
-
-        if (emptyThreadIds.length > 0) {
-          const resolvedRows: Array<{ id: string }> = await tx
-            .update(documentAnnotationThreads)
-            .set({
-              status: "resolved",
-              resolvedByAgentId: actor.actorType === "agent" ? actor.agentId ?? null : null,
-              resolvedByUserId: actor.actorType === "user" ? actor.userId ?? null : null,
-              resolvedAt: now,
-              updatedAt: now,
-            })
-            .where(and(
-              inArray(documentAnnotationThreads.id, emptyThreadIds),
-              eq(documentAnnotationThreads.status, "open"),
-            ))
-            .returning({ id: documentAnnotationThreads.id });
-
-          return { deletedCommentIds, resolvedThreadIds: resolvedRows.map((row) => row.id) };
-        }
-
-        return { deletedCommentIds, resolvedThreadIds: [] };
-      };
-
-      return dbOrTx === db ? db.transaction(runCleanup) : runCleanup(dbOrTx);
-    },
 
     updateThread: async (
       issueId: string,

@@ -1,12 +1,7 @@
-import type { Agent, FeedbackVote } from "@paperclipai/shared";
-import type { LiveRunForIssue } from "../api/heartbeats";
+import { canonicalizeMoneyAmount, type Agent, type FeedbackVote } from "@paperclipai/shared";
 import type { InlineEntityOption } from "../components/InlineEntitySelector";
 import type { MentionOption } from "../components/MarkdownEditor";
-import type {
-  IssueChatComment,
-  IssueChatLinkedRun,
-  IssueChatTranscriptEntry,
-} from "../lib/issue-chat-messages";
+import type { IssueChatComment } from "../lib/issue-chat-messages";
 import type { IssueTimelineEvent } from "../lib/issue-timeline-events";
 
 function createAgent(
@@ -21,24 +16,23 @@ function createAgent(
     companyId: "company-ux",
     name,
     urlKey,
-    role: "engineer",
     title: null,
     icon,
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
+    currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    lastHeartbeatAt: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     metadata: null,
     createdAt: now,
     updatedAt: now,
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
+    governance: {},
   };
 }
 
@@ -92,7 +86,7 @@ export const issueChatUxMentions: MentionOption[] = [
   },
 ];
 
-export const issueChatUxReassignOptions: InlineEntityOption[] = [
+export const issueChatUxOwnerOptions: InlineEntityOption[] = [
   {
     id: `agent:${primaryAgent.id}`,
     label: primaryAgent.name,
@@ -128,6 +122,22 @@ export const issueChatUxLiveComments: IssueChatComment[] = [
     runAgentId: primaryAgent.id,
   }),
   createComment({
+    id: "comment-live-progress",
+    authorAgentId: primaryAgent.id,
+    authorUserId: null,
+    body: "",
+    presentation: {
+      kind: "run_progress",
+      tone: "neutral",
+      detailsDefaultOpen: false,
+    },
+    runId: "run-live-1",
+    runAgentId: primaryAgent.id,
+    runState: "working",
+    createdAt: new Date("2026-04-06T12:04:00.000Z"),
+    updatedAt: new Date("2026-04-06T12:04:00.000Z"),
+  }),
+  createComment({
     id: "comment-live-queued",
     body: "Can you also make a dedicated review page that shows every chat state side by side?",
     createdAt: new Date("2026-04-06T12:05:30.000Z"),
@@ -145,7 +155,7 @@ export const issueChatUxLiveEvents: IssueTimelineEvent[] = [
     createdAt: new Date("2026-04-06T11:54:00.000Z"),
     actorType: "user",
     actorId: "user-1",
-    statusChange: {
+    lifecycleStatusChange: {
       from: "done",
       to: "todo",
     },
@@ -155,127 +165,12 @@ export const issueChatUxLiveEvents: IssueTimelineEvent[] = [
     createdAt: new Date("2026-04-06T11:54:30.000Z"),
     actorType: "user",
     actorId: "user-1",
-    assigneeChange: {
-      from: { agentId: null, userId: null },
-      to: { agentId: primaryAgent.id, userId: null },
+    ownerChange: {
+      from: { ownerKind: "board", ownerAgentId: null, ownerUserId: null },
+      to: { ownerKind: "agent", ownerAgentId: primaryAgent.id, ownerUserId: null },
     },
   },
 ];
-
-export const issueChatUxLiveRuns: LiveRunForIssue[] = [
-  {
-    id: "run-live-1",
-    status: "running",
-    invocationSource: "manual",
-    triggerDetail: null,
-    startedAt: "2026-04-06T12:04:00.000Z",
-    finishedAt: null,
-    createdAt: "2026-04-06T12:04:00.000Z",
-    agentId: primaryAgent.id,
-    agentName: primaryAgent.name,
-    adapterType: "codex_local",
-    issueId: "issue-ux",
-  },
-];
-
-export const issueChatUxLinkedRuns: IssueChatLinkedRun[] = [
-  {
-    runId: "run-history-1",
-    status: "succeeded",
-    agentId: primaryAgent.id,
-    createdAt: new Date("2026-04-06T11:58:00.000Z"),
-    startedAt: new Date("2026-04-06T11:58:00.000Z"),
-    finishedAt: new Date("2026-04-06T12:00:00.000Z"),
-  },
-  {
-    runId: "run-review-1",
-    status: "failed",
-    agentId: reviewAgent.id,
-    createdAt: new Date("2026-04-06T12:31:00.000Z"),
-    startedAt: new Date("2026-04-06T12:31:00.000Z"),
-    finishedAt: new Date("2026-04-06T12:33:00.000Z"),
-  },
-];
-
-export const issueChatUxTranscriptsByRunId = new Map<string, readonly IssueChatTranscriptEntry[]>([
-  [
-    "run-history-1",
-    [
-      {
-        kind: "thinking",
-        ts: "2026-04-06T11:58:03.000Z",
-        text: "Reviewing the issue thread to see where transcript noise still leaks into the conversation.",
-      },
-      {
-        kind: "tool_call",
-        ts: "2026-04-06T11:58:07.000Z",
-        name: "read_file",
-        toolUseId: "tool-history-1",
-        input: { path: "ui/src/lib/issue-chat-messages.ts" },
-      },
-      {
-        kind: "tool_result",
-        ts: "2026-04-06T11:58:11.000Z",
-        toolUseId: "tool-history-1",
-        content: "Found the run projection path that decides whether transcript output survives after completion.",
-        isError: false,
-      },
-      {
-        kind: "assistant",
-        ts: "2026-04-06T11:59:24.000Z",
-        text: "Kept the completed run context attached to the chat timeline so the reasoning can stay folded instead of disappearing.",
-      },
-    ],
-  ],
-  [
-    "run-live-1",
-    [
-      {
-        kind: "assistant",
-        ts: "2026-04-06T12:04:02.000Z",
-        text: "I am reshaping the issue page so the thread reads like a conversation instead of a run log.",
-      },
-      {
-        kind: "thinking",
-        ts: "2026-04-06T12:04:05.000Z",
-        text: "Need to remove the internal scrollbox first, otherwise the page still feels like a nested console.",
-      },
-      {
-        kind: "tool_call",
-        ts: "2026-04-06T12:04:08.000Z",
-        name: "read_file",
-        toolUseId: "tool-read-1",
-        input: { path: "ui/src/components/IssueChatThread.tsx" },
-      },
-      {
-        kind: "tool_result",
-        ts: "2026-04-06T12:04:11.000Z",
-        toolUseId: "tool-read-1",
-        content: "Loaded the current chat surface and found the max-h viewport constraint.",
-        isError: false,
-      },
-      {
-        kind: "tool_call",
-        ts: "2026-04-06T12:04:14.000Z",
-        name: "apply_patch",
-        toolUseId: "tool-edit-1",
-        input: { file: "ui/src/components/IssueChatThread.tsx", action: "remove scroll pane" },
-      },
-      {
-        kind: "tool_result",
-        ts: "2026-04-06T12:04:22.000Z",
-        toolUseId: "tool-edit-1",
-        content: "Updated layout classes and swapped Jump to latest to page-level scrolling.",
-        isError: false,
-      },
-      {
-        kind: "stderr",
-        ts: "2026-04-06T12:04:24.000Z",
-        text: "vite warm-up: rebuilding route chunks",
-      },
-    ],
-  ],
-]);
 
 export const issueChatUxSubmittingComments: IssueChatComment[] = [
   createComment({
@@ -331,9 +226,9 @@ export const issueChatUxReviewEvents: IssueTimelineEvent[] = [
     createdAt: new Date("2026-04-06T12:27:00.000Z"),
     actorType: "user",
     actorId: "user-1",
-    assigneeChange: {
-      from: { agentId: primaryAgent.id, userId: null },
-      to: { agentId: reviewAgent.id, userId: null },
+    ownerChange: {
+      from: { ownerKind: "agent", ownerAgentId: primaryAgent.id, ownerUserId: null },
+      to: { ownerKind: "agent", ownerAgentId: reviewAgent.id, ownerUserId: null },
     },
   },
 ];

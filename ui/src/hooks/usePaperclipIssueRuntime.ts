@@ -6,15 +6,15 @@ import {
   type ExternalStoreAdapter,
 } from "@assistant-ui/react";
 
-export interface PaperclipIssueRuntimeReassignment {
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+export interface PaperclipIssueRuntimeOwnerChange {
+  ownerAgentId: string;
 }
 
 export interface PaperclipIssueRuntimeSendOptions {
   body: string;
-  reopen?: boolean;
-  reassignment?: PaperclipIssueRuntimeReassignment;
+  ownerChange?: PaperclipIssueRuntimeOwnerChange;
+  mentionAgentId?: string;
+  replyToCommentId?: string;
 }
 
 interface UsePaperclipIssueRuntimeOptions {
@@ -33,8 +33,7 @@ function readTextContent(message: AppendMessage) {
   return message.content
     .filter((part): part is Extract<(typeof message.content)[number], { type: "text" }> => part.type === "text")
     .map((part) => part.text)
-    .join("")
-    .trim();
+    .join("");
 }
 
 export function usePaperclipIssueRuntime({
@@ -59,25 +58,30 @@ export function usePaperclipIssueRuntime({
     isRunning,
     onNew: async (message) => {
       const body = readTextContent(message);
-      if (!body) return;
+      if (!body.trim()) return;
 
       const custom = asRecord(message.runConfig?.custom);
-      const reassignmentRecord = asRecord(custom?.reassignment);
-      const reassignment =
-        reassignmentRecord &&
-        ("assigneeAgentId" in reassignmentRecord || "assigneeUserId" in reassignmentRecord)
-          ? {
-              assigneeAgentId:
-                typeof reassignmentRecord.assigneeAgentId === "string" ? reassignmentRecord.assigneeAgentId : null,
-              assigneeUserId:
-                typeof reassignmentRecord.assigneeUserId === "string" ? reassignmentRecord.assigneeUserId : null,
-            }
+      const ownerChangeRecord = asRecord(custom?.ownerChange);
+      const ownerChange =
+        ownerChangeRecord &&
+        typeof ownerChangeRecord.ownerAgentId === "string" &&
+        ownerChangeRecord.ownerAgentId.length > 0
+          ? { ownerAgentId: ownerChangeRecord.ownerAgentId }
+          : undefined;
+      const mentionAgentId =
+        typeof custom?.mentionAgentId === "string" && custom.mentionAgentId.length > 0
+          ? custom.mentionAgentId
+          : undefined;
+      const replyToCommentId =
+        typeof custom?.replyToCommentId === "string" && custom.replyToCommentId.length > 0
+          ? custom.replyToCommentId
           : undefined;
 
       await onSendRef.current({
         body,
-        reopen: custom?.reopen === true ? true : undefined,
-        reassignment,
+        ownerChange,
+        mentionAgentId,
+        replyToCommentId,
       });
     },
     ...(onCancel ? {

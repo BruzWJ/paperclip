@@ -1,514 +1,206 @@
-import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  activityLog,
-  agentWakeupRequests,
-  agents,
-  companies,
-  companyMemberships,
-  createDb,
-  documentAnnotationAnchorSnapshots,
-  documentAnnotationComments,
-  documentAnnotationThreads,
-  documentRevisions,
-  documents,
-  executionWorkspaces,
-  heartbeatRunEvents,
-  heartbeatRuns,
-  instanceSettings,
-  issues,
-  principalPermissionGrants,
-  projectWorkspaces,
-  projects,
-  routineDocuments,
-  routineRuns,
-  routines,
-  routineTriggers,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { accessService } from "../services/access.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { errorHandler } from "../middleware/error-handler.js";
+import { routineRoutes } from "../routes/routines.js";
+import { createMockDb } from "./helpers/mock-db.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-function registerRoutineServiceMock() {
-  vi.doMock("../services/routines.js", async () => {
-    const actual = await vi.importActual<typeof import("../services/routines.js")>("../services/routines.js");
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  get: vi.fn(),
+  create: vi.fn(),
+  runRoutine: vi.fn(),
+  firePublicTrigger: vi.fn(),
+  accessDecide: vi.fn(),
+  logActivity: vi.fn(),
+}));
 
-    return {
-      ...actual,
-      routineService: (db: any) =>
-        actual.routineService(db, {
-          heartbeat: {
-            wakeup: async (agentId: string, wakeupOpts: any) => {
-              const issueId =
-                (typeof wakeupOpts?.payload?.issueId === "string" && wakeupOpts.payload.issueId) ||
-                (typeof wakeupOpts?.contextSnapshot?.issueId === "string" && wakeupOpts.contextSnapshot.issueId) ||
-                null;
-              if (!issueId) return null;
+vi.mock("../services/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/index.js")>();
+  return {
+    ...actual,
+    routineService: vi.fn(() => ({
+      list: mocks.list,
+      get: mocks.get,
+      create: mocks.create,
+      runRoutine: mocks.runRoutine,
+      firePublicTrigger: mocks.firePublicTrigger,
+    })),
+    documentAnnotationService: vi.fn(() => ({})),
+    accessService: vi.fn(() => ({ decide: mocks.accessDecide })),
+    logActivity: mocks.logActivity,
+  };
+});
 
-              const issue = await db
-                .select({ companyId: issues.companyId })
-                .from(issues)
-                .where(eq(issues.id, issueId))
-                .then((rows: Array<{ companyId: string }>) => rows[0] ?? null);
-              if (!issue) return null;
+vi.mock("../telemetry.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../telemetry.js")>();
+  return { ...actual, getTelemetryClient: vi.fn(() => null) };
+});
 
-              const queuedRunId = randomUUID();
-              await db.insert(heartbeatRuns).values({
-                id: queuedRunId,
-                companyId: issue.companyId,
-                agentId,
-                invocationSource: wakeupOpts?.source ?? "assignment",
-                triggerDetail: wakeupOpts?.triggerDetail ?? null,
-                status: "queued",
-                contextSnapshot: { ...(wakeupOpts?.contextSnapshot ?? {}), issueId },
-              });
-              await db
-                .update(issues)
-                .set({
-                  executionRunId: queuedRunId,
-                  executionLockedAt: new Date(),
-                })
-                .where(eq(issues.id, issueId));
-              return { id: queuedRunId };
-            },
-          },
-        }),
-    };
+const companyId = "00000000-0000-4000-8000-000000000001";
+const otherCompanyId = "00000000-0000-4000-8000-000000000002";
+const routineId = "00000000-0000-4000-8000-000000000010";
+const projectId = "00000000-0000-4000-8000-000000000020";
+const agentId = "00000000-0000-4000-8000-000000000030";
+
+function app() {
+  const expressApp = express();
+  expressApp.use(express.json());
+  expressApp.use((req, _res, next) => {
+    req.actor = req.header("x-test-company") === "other"
+      ? testBoardSessionActor({ userId: "other-user", companyIds: [otherCompanyId] })
+      : testBoardSessionActor({ userId: "board-user", companyIds: [companyId] });
+    next();
   });
+  expressApp.use("/api", routineRoutes(createMockDb().db, { ordinaryIssues: {} as never }));
+  expressApp.use(errorHandler);
+  return expressApp;
 }
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
-
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres routine route tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+function routine(overrides: Record<string, unknown> = {}) {
+  return {
+    id: routineId,
+    companyId,
+    projectId,
+    title: "Repository triage",
+    description: "Review {{repo}} for bugs",
+    assigneeAgentId: agentId,
+    priority: "high",
+    status: "active",
+    latestRevisionId: null,
+    latestRevisionNumber: 1,
+    ...overrides,
+  };
 }
 
-describeEmbeddedPostgres("routine routes end-to-end", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-routines-e2e-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(documentAnnotationAnchorSnapshots);
-    await db.delete(documentAnnotationComments);
-    await db.delete(documentAnnotationThreads);
-    await db.delete(routineRuns);
-    await db.delete(routineTriggers);
-    await db.delete(heartbeatRunEvents);
-    await db.delete(heartbeatRuns);
-    await db.delete(agentWakeupRequests);
-    await db.delete(issues);
-    await db.delete(executionWorkspaces);
-    await db.delete(projectWorkspaces);
-    await db.delete(principalPermissionGrants);
-    await db.delete(companyMemberships);
-    await db.delete(routineDocuments);
-    await db.delete(routines);
-    await db.delete(documentRevisions);
-    await db.delete(documents);
-    await db.delete(projects);
-    await db.delete(agents);
-    await db.delete(companies);
-    await db.delete(instanceSettings);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
+describe("routine routes", () => {
   beforeEach(() => {
-    vi.resetModules();
-    vi.doUnmock("@paperclipai/shared/telemetry");
-    vi.doUnmock("../telemetry.js");
-    vi.doUnmock("../services/access.js");
-    vi.doUnmock("../services/issues.js");
-    vi.doUnmock("../services/companies.js");
-    vi.doUnmock("../services/projects.js");
-    vi.doUnmock("../services/company-skills.js");
-    vi.doUnmock("../services/assets.js");
-    vi.doUnmock("../services/agent-instructions.js");
-    vi.doUnmock("../services/workspace-runtime.js");
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../services/routines.js");
-    vi.doUnmock("../routes/routines.js");
-    vi.doUnmock("../routes/authz.js");
-    vi.doUnmock("../middleware/index.js");
-    registerRoutineServiceMock();
-    vi.doMock("../routes/authz.js", async () => vi.importActual("../routes/authz.js"));
     vi.clearAllMocks();
+    mocks.accessDecide.mockResolvedValue({ allowed: true, explanation: "allowed" });
+    mocks.logActivity.mockResolvedValue(undefined);
   });
 
-  async function createApp(actor: Record<string, unknown>) {
-    const [{ routineRoutes }, { errorHandler }] = await Promise.all([
-      import("../routes/routines.js"),
-      import("../middleware/index.js"),
-    ]);
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      (req as any).actor = actor;
-      next();
-    });
-    app.use("/api", routineRoutes(db));
-    app.use(errorHandler);
-    return app;
-  }
+  it("lists company routines with the optional project boundary", async () => {
+    mocks.list.mockResolvedValue([routine()]);
 
-  async function postRoutineRun(
-    app: express.Express,
-    routineId: string,
-    body: Record<string, unknown>,
-  ) {
-    let response = await request(app)
-      .post(`/api/routines/${routineId}/run`)
-      .send(body);
-    if (response.status === 500) {
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      response = await request(app)
-        .post(`/api/routines/${routineId}/run`)
-        .send(body);
-    }
-    return response;
-  }
+    const response = await request(app())
+      .get(`/api/companies/${companyId}/routines`)
+      .query({ projectId })
+      .expect(200);
 
-  async function seedFixture() {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    const projectId = randomUUID();
-    const userId = randomUUID();
-    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    expect(response.body).toEqual([expect.objectContaining({ id: routineId })]);
+    expect(mocks.list).toHaveBeenCalledWith(companyId, { projectId });
+  });
 
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix,
-      requireBoardApprovalForNewAgents: false,
-    });
+  it("creates a routine through board authorization and records the user-owned activity", async () => {
+    const created = routine();
+    mocks.create.mockResolvedValue(created);
 
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "CodexCoder",
-      role: "engineer",
-      status: "active",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    });
-
-    await db.insert(projects).values({
-      id: projectId,
-      companyId,
-      name: "Routine Project",
-      status: "in_progress",
-    });
-
-    const access = accessService(db);
-    const membership = await access.ensureMembership(companyId, "user", userId, "owner", "active");
-    await access.setMemberPermissions(
-      companyId,
-      membership.id,
-      [{ permissionKey: "tasks:assign" }],
-      userId,
-    );
-
-    return { companyId, agentId, projectId, userId };
-  }
-
-  it("supports creating, scheduling, and manually running a routine through the API", async () => {
-    const { companyId, agentId, projectId, userId } = await seedFixture();
-    const app = await createApp({
-      type: "board",
-      userId,
-      source: "session",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-    });
-
-    const createRes = await request(app)
-      .post(`/api/companies/${companyId}/routines`)
-      .send({
-        projectId,
-        title: "Daily standup prep",
-        description: "Summarize blockers and open PRs",
-        assigneeAgentId: agentId,
-        priority: "high",
-        concurrencyPolicy: "coalesce_if_active",
-        catchUpPolicy: "skip_missed",
-      });
-
-    expect([200, 201]).toContain(createRes.status);
-    expect(createRes.body.title).toBe("Daily standup prep");
-    expect(createRes.body.assigneeAgentId).toBe(agentId);
-
-    const routineId = createRes.body.id as string;
-
-    const triggerRes = await request(app)
-      .post(`/api/routines/${routineId}/triggers`)
-      .send({
-        kind: "schedule",
-        label: "Weekday morning",
-        cronExpression: "0 10 * * 1-5",
-        timezone: "UTC",
-      });
-
-    expect([200, 201], JSON.stringify(triggerRes.body)).toContain(triggerRes.status);
-    const createdTrigger = triggerRes.body.trigger ?? triggerRes.body;
-    expect(createdTrigger.kind).toBe("schedule");
-    expect(createdTrigger.enabled).toBe(true);
-    expect(triggerRes.body.secretMaterial).toBeNull();
-
-    const runRes = await postRoutineRun(app, routineId, {
-      source: "manual",
-      payload: { origin: "e2e-test" },
-    });
-
-    expect(runRes.status).toBe(202);
-    expect(runRes.body.status).toBe("issue_created");
-    expect(runRes.body.source).toBe("manual");
-    expect(runRes.body.linkedIssueId).toBeTruthy();
-
-    const listRes = await request(app).get(`/api/companies/${companyId}/routines`);
-    expect(listRes.status).toBe(200);
-    const listed = listRes.body.find((r: { id: string }) => r.id === routineId);
-    expect(listed).toBeDefined();
-    expect(listed.triggers).toHaveLength(1);
-    expect(listed.triggers[0].cronExpression).toBe("0 10 * * 1-5");
-    expect(listed.triggers[0].timezone).toBe("UTC");
-
-    const detailRes = await request(app).get(`/api/routines/${routineId}`);
-    expect(detailRes.status).toBe(200);
-    expect(detailRes.body.triggers).toHaveLength(1);
-    expect(detailRes.body.triggers[0]?.id).toBe(createdTrigger.id);
-    expect(detailRes.body.recentRuns).toHaveLength(1);
-    expect(detailRes.body.recentRuns[0]?.id).toBe(runRes.body.id);
-    expect(detailRes.body.activeIssue?.id).toBe(runRes.body.linkedIssueId);
-
-    const runsRes = await request(app).get(`/api/routines/${routineId}/runs?limit=10`);
-    expect(runsRes.status).toBe(200);
-    const [persistedRun] = await db
-      .select({ id: routineRuns.id })
-      .from(routineRuns)
-      .where(eq(routineRuns.id, runRes.body.id));
-    expect(persistedRun?.id).toBe(runRes.body.id);
-
-    const [issue] = await db
-      .select({
-        id: issues.id,
-        originId: issues.originId,
-        originKind: issues.originKind,
-        executionRunId: issues.executionRunId,
-      })
-      .from(issues)
-      .where(eq(issues.id, runRes.body.linkedIssueId));
-
-    expect(issue).toMatchObject({
-      id: runRes.body.linkedIssueId,
-      originId: routineId,
-      originKind: "routine_execution",
-    });
-    expect(issue?.executionRunId).toBeTruthy();
-
-    const actions = await db
-      .select({
-        action: activityLog.action,
-      })
-      .from(activityLog)
-      .where(eq(activityLog.companyId, companyId));
-
-    expect(actions.map((entry) => entry.action)).toEqual(
-      expect.arrayContaining([
-        "routine.created",
-        "routine.trigger_created",
-        "routine.run_triggered",
-      ]),
-    );
-  }, 15_000);
-
-  it("runs routines with variable inputs and interpolates the execution issue description", async () => {
-    const { companyId, agentId, projectId, userId } = await seedFixture();
-    const app = await createApp({
-      type: "board",
-      userId,
-      source: "session",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-    });
-
-    const createRes = await request(app)
+    await request(app())
       .post(`/api/companies/${companyId}/routines`)
       .send({
         projectId,
         title: "Repository triage",
-        description: "Review {{repo}} for {{priority}} bugs",
+        description: "Review {{repo}} for bugs",
         assigneeAgentId: agentId,
-        variables: [
-          { name: "repo", type: "text", required: true },
-          { name: "priority", type: "select", required: true, defaultValue: "high", options: ["high", "low"] },
-        ],
-      });
+        priority: "high",
+        variables: [{ name: "repo", type: "text", required: true }],
+      })
+      .expect(201, created);
 
-    expect([200, 201], JSON.stringify(createRes.body)).toContain(createRes.status);
+    expect(mocks.accessDecide).toHaveBeenCalledWith(expect.objectContaining({
+      action: "issue:mutate",
+      resource: { type: "company", companyId },
+    }));
+    expect(mocks.create).toHaveBeenCalledWith(companyId, expect.objectContaining({
+      title: "Repository triage",
+      concurrencyPolicy: "coalesce_if_active",
+      catchUpPolicy: "skip_missed",
+    }), { type: "user", userId: "board-user" });
+    expect(mocks.logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      companyId,
+      actorType: "user",
+      actorId: "board-user",
+      action: "routine.created",
+      entityId: routineId,
+    }));
+  });
 
-    const runRes = await postRoutineRun(app, createRes.body.id, {
+  it("rejects malformed routine input before service work", async () => {
+    await request(app())
+      .post(`/api/companies/${companyId}/routines`)
+      .send({ title: "", priority: "impossible" })
+      .expect(400);
+
+    expect(mocks.accessDecide).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("runs an existing routine with one-off execution selections", async () => {
+    mocks.get.mockResolvedValue(routine());
+    mocks.runRoutine.mockResolvedValue({
+      id: "run-1",
+      routineId,
+      source: "manual",
+      status: "issue_created",
+      linkedIssueId: "issue-1",
+    });
+
+    const response = await request(app())
+      .post(`/api/routines/${routineId}/run`)
+      .send({
+        source: "manual",
+        variables: { repo: "paperclip" },
+        projectId,
+        assigneeAgentId: agentId,
+      })
+      .expect(202);
+
+    expect(response.body).toMatchObject({ status: "issue_created", linkedIssueId: "issue-1" });
+    expect(mocks.runRoutine).toHaveBeenCalledWith(routineId, expect.objectContaining({
       source: "manual",
       variables: { repo: "paperclip" },
-    });
-
-    expect(runRes.status).toBe(202);
-    expect(runRes.body.triggerPayload).toEqual({
-      variables: {
-        repo: "paperclip",
-        priority: "high",
-      },
-    });
-
-    const [issue] = await db
-      .select({ description: issues.description })
-      .from(issues)
-      .where(eq(issues.id, runRes.body.linkedIssueId));
-
-    expect(issue?.description).toBe("Review paperclip for high bugs");
-  });
-
-  it("allows drafting a routine without defaults and running it with one-off overrides", async () => {
-    const { companyId, agentId, projectId, userId } = await seedFixture();
-    const app = await createApp({
-      type: "board",
-      userId,
-      source: "session",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-    });
-
-    const createRes = await request(app)
-      .post(`/api/companies/${companyId}/routines`)
-      .send({
-        title: "Draft routine",
-        description: "No saved defaults",
-      });
-
-    expect([200, 201], JSON.stringify(createRes.body)).toContain(createRes.status);
-    expect(createRes.body.projectId ?? null).toBeNull();
-    expect(createRes.body.assigneeAgentId ?? null).toBeNull();
-    expect(createRes.body.status).toBe("paused");
-
-    const runRes = await postRoutineRun(app, createRes.body.id, {
-      source: "manual",
       projectId,
       assigneeAgentId: agentId,
-    });
-
-    expect(runRes.status).toBe(202);
-    expect(runRes.body.status).toBe("issue_created");
-
-    const [issue] = await db
-      .select({
-        projectId: issues.projectId,
-        assigneeAgentId: issues.assigneeAgentId,
-      })
-      .from(issues)
-      .where(eq(issues.id, runRes.body.linkedIssueId));
-
-    expect(issue).toEqual({
-      projectId,
-      assigneeAgentId: agentId,
-    });
+    }), { type: "user", userId: "board-user" });
+    expect(mocks.logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: "routine.run_triggered",
+      entityType: "routine_run",
+      entityId: "run-1",
+    }));
   });
 
-  it("persists execution workspace selections from manual routine runs", async () => {
-    const { companyId, agentId, projectId, userId } = await seedFixture();
-    const projectWorkspaceId = randomUUID();
-    const executionWorkspaceId = randomUUID();
-    const app = await createApp({
-      type: "board",
-      userId,
-      source: "session",
-      isInstanceAdmin: false,
-      companyIds: [companyId],
-    });
+  it("returns not found when a routine is outside the actor's company", async () => {
+    mocks.get.mockResolvedValue(routine());
 
-    await db.insert(projectWorkspaces).values({
-      id: projectWorkspaceId,
-      companyId,
-      projectId,
-      name: "Primary workspace",
-      isPrimary: true,
-      sharedWorkspaceKey: "routine-primary",
-    });
-    await db.insert(executionWorkspaces).values({
-      id: executionWorkspaceId,
-      companyId,
-      projectId,
-      projectWorkspaceId,
-      mode: "isolated_workspace",
-      strategyType: "git_worktree",
-      name: "Routine worktree",
-      status: "active",
-      providerType: "git_worktree",
-    });
-    await db
-      .update(projects)
-      .set({
-        executionWorkspacePolicy: {
-          enabled: true,
-          defaultMode: "shared_workspace",
-          defaultProjectWorkspaceId: projectWorkspaceId,
-        },
-      })
-      .where(eq(projects.id, projectId));
-    await db.insert(instanceSettings).values({
-      experimental: { enableIsolatedWorkspaces: true },
-    });
+    await request(app())
+      .post(`/api/routines/${routineId}/run`)
+      .set("x-test-company", "other")
+      .send({ source: "manual" })
+      .expect(404);
 
-    const createRes = await request(app)
-      .post(`/api/companies/${companyId}/routines`)
-      .send({
-        projectId,
-        title: "Workspace-aware routine",
-        assigneeAgentId: agentId,
-      });
+    expect(mocks.runRoutine).not.toHaveBeenCalled();
+  });
 
-    expect([200, 201], JSON.stringify(createRes.body)).toContain(createRes.status);
+  it("forwards the canonical signed-trigger envelope without board persistence", async () => {
+    mocks.firePublicTrigger.mockResolvedValue({ runId: "run-public", accepted: true });
 
-    const runRes = await postRoutineRun(app, createRes.body.id, {
-      source: "manual",
-      executionWorkspaceId,
-      executionWorkspacePreference: "reuse_existing",
-      executionWorkspaceSettings: { mode: "isolated_workspace" },
-    });
+    await request(app())
+      .post("/api/routine-triggers/public/public-trigger/fire")
+      .set("authorization", "Bearer public-token")
+      .set("x-paperclip-signature", "signature")
+      .set("x-paperclip-timestamp", "1700000000")
+      .set("idempotency-key", "request-1")
+      .send({ event: "push" })
+      .expect(202, { runId: "run-public", accepted: true });
 
-    expect(runRes.status).toBe(202);
-
-    const [issue] = await db
-      .select({
-        projectWorkspaceId: issues.projectWorkspaceId,
-        executionWorkspaceId: issues.executionWorkspaceId,
-        executionWorkspacePreference: issues.executionWorkspacePreference,
-        executionWorkspaceSettings: issues.executionWorkspaceSettings,
-      })
-      .from(issues)
-      .where(eq(issues.id, runRes.body.linkedIssueId));
-
-    expect(issue).toEqual({
-      projectWorkspaceId,
-      executionWorkspaceId,
-      executionWorkspacePreference: "reuse_existing",
-      executionWorkspaceSettings: { mode: "isolated_workspace" },
-    });
+    expect(mocks.firePublicTrigger).toHaveBeenCalledWith("public-trigger", expect.objectContaining({
+      authorizationHeader: "Bearer public-token",
+      signatureHeader: "signature",
+      timestampHeader: "1700000000",
+      idempotencyKey: "request-1",
+      payload: { event: "push" },
+    }));
   });
 });

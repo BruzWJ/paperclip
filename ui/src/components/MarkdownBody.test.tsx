@@ -54,7 +54,7 @@ afterEach(() => {
 
 function renderMarkdown(
   children: string,
-  seededIssues: Array<{ identifier: string; status: string; title?: string }> = [],
+  seededIssues: Array<{ identifier: string; boardPresentationStatus: string; title?: string }> = [],
   props: Partial<ComponentProps<typeof MarkdownBody>> = {},
 ) {
   const queryClient = new QueryClient({
@@ -69,7 +69,7 @@ function renderMarkdown(
     queryClient.setQueryData(queryKeys.issues.detail(issue.identifier), {
       id: issue.identifier,
       identifier: issue.identifier,
-      status: issue.status,
+      boardPresentationStatus: issue.boardPresentationStatus,
       title: issue.title,
     });
   }
@@ -230,7 +230,7 @@ describe("MarkdownBody", () => {
 
   it("linkifies bare issue identifiers in markdown text", () => {
     const html = renderMarkdown("Depends on PAP-1271 for the hover state.", [
-      { identifier: "PAP-1271", status: "done" },
+      { identifier: "PAP-1271", boardPresentationStatus: "done" },
     ]);
 
     expect(html).toContain('href="/issues/PAP-1271"');
@@ -243,8 +243,8 @@ describe("MarkdownBody", () => {
 
   it("uses concise issue aria labels until a distinct title is available", () => {
     const html = renderMarkdown("Depends on PAP-1271 and PAP-1272.", [
-      { identifier: "PAP-1271", status: "done" },
-      { identifier: "PAP-1272", status: "blocked", title: "Fix hover state" },
+      { identifier: "PAP-1271", boardPresentationStatus: "done" },
+      { identifier: "PAP-1272", boardPresentationStatus: "blocked", title: "Fix hover state" },
     ]);
 
     expect(html).toContain('aria-label="Issue PAP-1271"');
@@ -255,7 +255,7 @@ describe("MarkdownBody", () => {
   it("preserves absolute issue URLs as external links", () => {
     const url = "http://remote.example.test:3103/PAPA/issues/PAPA-115#comment-850083f3-24de-43e7-a8cd-bc01f7cc9f0d";
     const html = renderMarkdown(`See ${url}.`, [
-      { identifier: "PAPA-115", status: "blocked" },
+      { identifier: "PAPA-115", boardPresentationStatus: "blocked" },
     ]);
 
     expect(html).toContain(`href="${url}"`);
@@ -267,8 +267,8 @@ describe("MarkdownBody", () => {
 
   it("linkifies plain internal issue paths in markdown text", () => {
     const html = renderMarkdown("See /issues/PAP-1179 and /PAP/issues/pap-1180 for context.", [
-      { identifier: "PAP-1179", status: "blocked" },
-      { identifier: "PAP-1180", status: "done" },
+      { identifier: "PAP-1179", boardPresentationStatus: "blocked" },
+      { identifier: "PAP-1180", boardPresentationStatus: "done" },
     ]);
 
     expect(html).toContain('href="/issues/PAP-1179"');
@@ -290,8 +290,8 @@ describe("MarkdownBody", () => {
 
   it("rewrites issue scheme links to internal issue links", () => {
     const html = renderMarkdown("See issue://PAP-1310 and issue://:PAP-1311.", [
-      { identifier: "PAP-1310", status: "done" },
-      { identifier: "PAP-1311", status: "blocked" },
+      { identifier: "PAP-1310", boardPresentationStatus: "done" },
+      { identifier: "PAP-1311", boardPresentationStatus: "blocked" },
     ]);
 
     expect(html).toContain('href="/issues/PAP-1310"');
@@ -304,7 +304,7 @@ describe("MarkdownBody", () => {
 
   it("linkifies issue identifiers inside inline code spans", () => {
     const html = renderMarkdown("Reference `PAP-1271` here.", [
-      { identifier: "PAP-1271", status: "done" },
+      { identifier: "PAP-1271", boardPresentationStatus: "done" },
     ]);
 
     expect(html).toContain('href="/issues/PAP-1271"');
@@ -315,8 +315,8 @@ describe("MarkdownBody", () => {
 
   it("renders linked inline-code workspace paths as file viewer links before issue links", () => {
     const html = renderMarkdown(
-      "- **MP4**: [`videos/90-days-paperclip/out/90-days-paperclip-1x1.mp4`](/PAP/issues/PAP-10306 \"Publish handoff\")",
-      [{ identifier: "PAP-10306", status: "in_review", title: "Publish handoff" }],
+      "- **MP4**: [`videos/90-days-paperclip/out/90-days-paperclip-1x1.mp4`](/PAP/issues/PAP-10306 \"Publish deliverable\")",
+      [{ identifier: "PAP-10306", boardPresentationStatus: "in_review", title: "Publish deliverable" }],
       { linkWorkspaceFileRefs: true },
     );
 
@@ -330,9 +330,9 @@ describe("MarkdownBody", () => {
 
   it("keeps trailing punctuation outside auto-linked issue references", () => {
     const html = renderMarkdown("See PAP-1271: /issues/PAP-1272] and issue://PAP-1273.", [
-      { identifier: "PAP-1271", status: "done" },
-      { identifier: "PAP-1272", status: "blocked" },
-      { identifier: "PAP-1273", status: "todo" },
+      { identifier: "PAP-1271", boardPresentationStatus: "done" },
+      { identifier: "PAP-1272", boardPresentationStatus: "blocked" },
+      { identifier: "PAP-1273", boardPresentationStatus: "todo" },
     ]);
 
     expect(html).toContain('<a href="/issues/PAP-1271"');
@@ -512,7 +512,7 @@ describe("MarkdownBody", () => {
   });
 
   it("keeps fenced code blocks width-bounded and horizontally scrollable", () => {
-    const html = renderMarkdown("```text\nGET /heartbeat-runs/ca5d23fc-c15b-4826-8ff1-2b6dd11be096/log?offset=2062357&limitBytes=256000\n```");
+    const html = renderMarkdown("```text\nGET /runs/ca5d23fc-c15b-4826-8ff1-2b6dd11be096?limit=200\n```");
 
     expect(html).toContain("<pre");
     expect(html).toContain('style="max-width:100%;overflow-x:auto"');
@@ -549,8 +549,8 @@ describe("MarkdownBody", () => {
 
   it("renders internal issue links and bare identifiers as inline issue refs", () => {
     const html = renderMarkdown(`See PAP-42 and [linked task](${buildIssueReferenceHref("PAP-77")}) for follow-up.`, [
-      { identifier: "PAP-42", status: "done" },
-      { identifier: "PAP-77", status: "blocked" },
+      { identifier: "PAP-42", boardPresentationStatus: "done" },
+      { identifier: "PAP-77", boardPresentationStatus: "blocked" },
     ]);
 
     expect(html).toContain('href="/issues/PAP-42"');
@@ -564,8 +564,8 @@ describe("MarkdownBody", () => {
     mockUseOptionalCompany.mockReturnValue({ companies: [{ issuePrefix: "PAP" }] });
 
     const html = renderMarkdown("Depends on PAP-1271 and blocked by JIRA-2.", [
-      { identifier: "PAP-1271", status: "done" },
-      { identifier: "JIRA-2", status: "done" },
+      { identifier: "PAP-1271", boardPresentationStatus: "done" },
+      { identifier: "JIRA-2", boardPresentationStatus: "done" },
     ]);
 
     // Known prefix links; foreign tracker key stays as plain text.
@@ -578,7 +578,7 @@ describe("MarkdownBody", () => {
     mockUseOptionalCompany.mockReturnValue({ companies: [] });
 
     const html = renderMarkdown("See JIRA-2 for context.", [
-      { identifier: "JIRA-2", status: "done" },
+      { identifier: "JIRA-2", boardPresentationStatus: "done" },
     ]);
 
     expect(html).toContain('href="/issues/JIRA-2"');
@@ -586,7 +586,7 @@ describe("MarkdownBody", () => {
 
   it("renders the inline mention status glyph at lg (20px / h-5 w-5)", () => {
     const html = renderMarkdown("See PAP-1271 for context.", [
-      { identifier: "PAP-1271", status: "in_progress" },
+      { identifier: "PAP-1271", boardPresentationStatus: "in_progress" },
     ]);
 
     // Unified glyph at 20px, with the h-5 w-5 class override so the Tailwind
@@ -608,7 +608,7 @@ describe("MarkdownBody", () => {
     mockUseOptionalCompany.mockReturnValue({ companies: [{ issuePrefix: "PAP" }] });
 
     const html = renderMarkdown("See /ACME/issues/ACME-1 for the writeup.", [
-      { identifier: "ACME-1", status: "done" },
+      { identifier: "ACME-1", boardPresentationStatus: "done" },
     ]);
 
     expect(html).toContain('href="/issues/ACME-1"');

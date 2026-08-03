@@ -56,9 +56,15 @@ test('scanCITampering: ignores removed workflow files', () => {
 
 // ── scanBuildScripts ─────────────────────────────────────────────────────────
 
-test('scanBuildScripts: flags changes to release.sh', () => {
-  const files = [{ filename: 'scripts/release.sh', status: 'modified' }];
-  assert.ok(scanBuildScripts(files).length > 0);
+test('scanBuildScripts: flags protected release scripts', () => {
+  const files = [
+    { filename: 'scripts/release.sh', status: 'modified' },
+    { filename: 'scripts/run-release-smoke.mjs', status: 'modified' },
+  ];
+  assert.deepEqual(scanBuildScripts(files), [
+    { check: 'build-script-change', file: 'scripts/release.sh' },
+    { check: 'build-script-change', file: 'scripts/run-release-smoke.mjs' },
+  ]);
 });
 
 test('scanBuildScripts: ignores non-CI scripts', () => {

@@ -22,6 +22,10 @@ const INVOCATION_SCOPE_WORKER_ENTRYPOINT = path.join(
   "plugin-worker-invocation-scope.cjs",
 );
 const TERMINATED_WORKER_ENTRYPOINT = path.join(FIXTURES_DIR, "plugin-worker-terminated.cjs");
+const RPC_OPERATION_WORKER_ENTRYPOINT = path.join(
+  FIXTURES_DIR,
+  "plugin-worker-rpc-operation.cjs",
+);
 
 const TEST_MANIFEST: PaperclipPluginManifestV1 = {
   id: "test.plugin",
@@ -219,7 +223,6 @@ describe("plugin-worker-manager stderr failure context", () => {
         },
         actorContext: {
           type: "agent",
-          userId: null,
           agentId: "agent-1",
           runId: "run-1",
           companyId: "company-a",
@@ -231,7 +234,10 @@ describe("plugin-worker-manager stderr failure context", () => {
       });
       expect(companiesGet).toHaveBeenCalledWith(
         { companyId: "company-a" },
-        { invocationScope: { companyId: "company-a" } },
+        expect.objectContaining({
+          invocationScope: { companyId: "company-a" },
+          rpcOperationId: expect.stringMatching(/^pc_plugin_rpc_op_v1_/),
+        }),
       );
     } finally {
       await handle.stop().catch(() => undefined);
@@ -268,7 +274,10 @@ describe("plugin-worker-manager stderr failure context", () => {
 
       expect(companiesGet).toHaveBeenCalledWith(
         { companyId: "company-1" },
-        { invocationScope: { companyId: "company-1" } },
+        expect.objectContaining({
+          invocationScope: { companyId: "company-1" },
+          rpcOperationId: expect.stringMatching(/^pc_plugin_rpc_op_v1_/),
+        }),
       );
     } finally {
       await handle.stop().catch(() => undefined);
@@ -308,7 +317,6 @@ describe("plugin-worker-manager stderr failure context", () => {
         },
         actorContext: {
           type: "agent",
-          userId: null,
           agentId: "agent-1",
           runId: "run-1",
           companyId: "company-a",
@@ -357,7 +365,6 @@ describe("plugin-worker-manager stderr failure context", () => {
         },
         actorContext: {
           type: "agent",
-          userId: null,
           agentId: "agent-1",
           runId: "run-1",
           companyId: "company-a",
@@ -413,6 +420,72 @@ describe("plugin-worker-manager stderr failure context", () => {
       }
 
       expect(companiesGet).not.toHaveBeenCalled();
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it("assigns one opaque operation identity to an exact worker RPC replay and a different identity to a distinct call", async () => {
+    const withdraw = vi.fn(async (
+      _params: unknown,
+      context?: { rpcOperationId?: string },
+    ) => ({
+      operationId: context?.rpcOperationId,
+      issue: {
+        id: "issue-1",
+        lifecycleStatus: "closed",
+        boardPresentationStatus: "cancelled",
+      },
+      retried: withdraw.mock.calls.length > 1,
+    }));
+    const handle = createPluginWorkerHandle("test.plugin", {
+      entrypointPath: RPC_OPERATION_WORKER_ENTRYPOINT,
+      manifest: TEST_MANIFEST,
+      config: {},
+      instanceInfo: {
+        instanceId: "instance-1",
+        hostVersion: "1.0.0",
+      },
+      apiVersion: 1,
+      hostHandlers: {
+        "issues.withdraw": withdraw as never,
+      },
+    });
+
+    try {
+      await handle.start();
+
+      const result = await handle.call("getData", {
+        key: "rpc-operation",
+        companyId: "company-1",
+        params: {},
+      } as HostToWorkerMethods["getData"][0]) as {
+        operationIds: string[];
+      };
+
+      expect(withdraw).toHaveBeenCalledTimes(3);
+      expect(withdraw.mock.calls.map(([params]) => params)).toEqual([
+        {
+          issueId: "issue-1",
+          companyId: "company-1",
+          message: "Withdraw this exact issue.",
+        },
+        {
+          issueId: "issue-1",
+          companyId: "company-1",
+          message: "Withdraw this exact issue.",
+        },
+        {
+          issueId: "issue-1",
+          companyId: "company-1",
+          message: "Withdraw this exact issue.",
+        },
+      ]);
+      expect(result.operationIds[0]).toBe(result.operationIds[1]);
+      expect(result.operationIds[2]).not.toBe(result.operationIds[0]);
+      expect(result.operationIds.every((id) =>
+        id.startsWith("pc_plugin_rpc_op_v1_")
+      )).toBe(true);
     } finally {
       await handle.stop().catch(() => undefined);
     }
@@ -499,7 +572,6 @@ describe("plugin host company context guards", () => {
           },
           actorContext: {
             type: "agent",
-            userId: null,
             agentId: "agent-1",
             runId: "run-1",
             companyId: "company-a",

@@ -11,18 +11,14 @@ describe("instance settings service", () => {
     expect(normalizeExperimentalSettings({
       enableEnvironments: true,
       enableIsolatedWorkspaces: true,
-      enableIssuePlanDecompositions: true,
       enableExperimentalFileViewer: true,
-      enableTaskWatchdogs: true,
+      enableIssueWatchdogs: true,
       enableCloudSync: true,
-      enableBuiltInAgents: true,
       enableGoalsSidebarLink: true,
       enableServerInfoDebugView: true,
       autoRestartDevServerWhenIdle: true,
-      enableIssueGraphLivenessAutoRecovery: true,
       enableWorkspaceBranchReconcileForward: true,
       enableWorkspaceDirtyQuarantineRepair: false,
-      issueGraphLivenessAutoRecoveryLookbackHours: 48,
       enableNewestFirstIssueThread: true,
     })).toEqual({
       enableEnvironments: true,
@@ -34,24 +30,19 @@ describe("instance settings service", () => {
       enableSmokeLab: false,
       enablePipelines: false,
       enableCases: false,
-      enableIssuePlanDecompositions: true,
       enableExperimentalFileViewer: true,
-      enableTaskWatchdogs: true,
+      enableIssueWatchdogs: true,
       enableCloudSync: true,
-      enableSmokeLab: false,
-      enableBuiltInAgents: true,
       enableSummaries: false,
       enableDecisions: false,
       enableGoalsSidebarLink: true,
       enableServerInfoDebugView: true,
       autoRestartDevServerWhenIdle: true,
-      enableIssueGraphLivenessAutoRecovery: true,
       enableWorkspaceBranchReconcileForward: true,
       enableWorkspaceDirtyQuarantineRepair: false,
       enableWorktreeRunExecution: false,
       worktreeRunExecutionActivatedAt: null,
       worktreeRunExecutionActivationInstanceId: null,
-      issueGraphLivenessAutoRecoveryLookbackHours: 48,
     });
   });
 
@@ -70,11 +61,11 @@ describe("instance settings service", () => {
     ).toBe(false);
   });
 
-  it("defaults enableTaskWatchdogs to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableTaskWatchdogs).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableTaskWatchdogs).toBe(false);
+  it("defaults enableIssueWatchdogs to false for empty and legacy stored settings", () => {
+    expect(normalizeExperimentalSettings(undefined).enableIssueWatchdogs).toBe(false);
+    expect(normalizeExperimentalSettings({}).enableIssueWatchdogs).toBe(false);
     expect(
-      normalizeExperimentalSettings({ enableExperimentalFileViewer: true }).enableTaskWatchdogs,
+      normalizeExperimentalSettings({ enableExperimentalFileViewer: true }).enableIssueWatchdogs,
     ).toBe(false);
   });
 
@@ -114,7 +105,7 @@ describe("instance settings service", () => {
     expect(normalizeExperimentalSettings(undefined).enableWorkspaceBranchReconcileForward).toBe(true);
     expect(normalizeExperimentalSettings({}).enableWorkspaceBranchReconcileForward).toBe(true);
     expect(
-      normalizeExperimentalSettings({ enableIssueGraphLivenessAutoRecovery: true })
+      normalizeExperimentalSettings({ enableIssueWatchdogs: true })
         .enableWorkspaceBranchReconcileForward,
     ).toBe(true);
     expect(normalizeExperimentalSettings(undefined).enableWorkspaceDirtyQuarantineRepair).toBe(true);
@@ -142,12 +133,6 @@ describe("instance settings service", () => {
     expect(
       normalizeExperimentalSettings({ enableConferenceRoomChat: "yes" }).enableConferenceRoomChat,
     ).toBe(false);
-  });
-
-  it("defaults enableBuiltInAgents to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableBuiltInAgents).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableBuiltInAgents).toBe(false);
-    expect(normalizeExperimentalSettings({ enableExternalObjects: true }).enableBuiltInAgents).toBe(false);
   });
 
   it("sets worktree run execution activation fields on a false to true transition", () => {

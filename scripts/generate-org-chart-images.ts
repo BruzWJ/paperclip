@@ -18,7 +18,7 @@ import * as path from "path";
 
 interface OrgNode {
   name: string;
-  role: string;
+  descriptor: string;
   icon?: string;
   tag: string;
   children?: OrgNode[];
@@ -26,87 +26,87 @@ interface OrgNode {
 
 const ORGS: Record<string, OrgNode> = {
   sm: {
-    name: "CEO",
-    role: "Chief Executive",
+    name: "Atlas",
+    descriptor: "Company Lead",
     icon: "👑",
-    tag: "ceo",
+    tag: "root",
     children: [
-      { name: "Engineer", role: "Engineer", icon: "⌨️", tag: "eng" },
-      { name: "Designer", role: "Design", icon: "🪄", tag: "des" },
+      { name: "Engineer", descriptor: "Engineer", icon: "⌨️", tag: "eng" },
+      { name: "Designer", descriptor: "Design", icon: "🪄", tag: "des" },
     ],
   },
   med: {
-    name: "CEO",
-    role: "Chief Executive",
+    name: "Atlas",
+    descriptor: "Company Lead",
     icon: "👑",
-    tag: "ceo",
+    tag: "root",
     children: [
       {
-        name: "CTO",
-        role: "Technology",
+        name: "Engineering Lead",
+        descriptor: "Technology",
         icon: "💻",
-        tag: "cto",
+        tag: "tech",
         children: [
-          { name: "ClaudeCoder", role: "Engineer", tag: "eng" },
-          { name: "CodexCoder", role: "Engineer", tag: "eng" },
-          { name: "SparkCoder", role: "Engineer", tag: "eng" },
-          { name: "CursorCoder", role: "Engineer", tag: "eng" },
-          { name: "QA", role: "Quality", tag: "qa" },
+          { name: "ClaudeCoder", descriptor: "Engineer", tag: "eng" },
+          { name: "CodexCoder", descriptor: "Engineer", tag: "eng" },
+          { name: "SparkCoder", descriptor: "Engineer", tag: "eng" },
+          { name: "CursorCoder", descriptor: "Engineer", tag: "eng" },
+          { name: "QA", descriptor: "Quality", tag: "qa" },
         ],
       },
       {
-        name: "CMO",
-        role: "Marketing",
+        name: "Growth Lead",
+        descriptor: "Marketing",
         icon: "🌐",
-        tag: "cmo",
-        children: [{ name: "Designer", role: "Design", tag: "des" }],
+        tag: "growth",
+        children: [{ name: "Designer", descriptor: "Design", tag: "des" }],
       },
     ],
   },
   lg: {
-    name: "CEO",
-    role: "Chief Executive",
+    name: "Atlas",
+    descriptor: "Company Lead",
     icon: "👑",
-    tag: "ceo",
+    tag: "root",
     children: [
       {
-        name: "CTO",
-        role: "Technology",
+        name: "Engineering Lead",
+        descriptor: "Technology",
         icon: "💻",
-        tag: "cto",
+        tag: "tech",
         children: [
-          { name: "Eng 1", role: "Eng", tag: "eng" },
-          { name: "Eng 2", role: "Eng", tag: "eng" },
-          { name: "Eng 3", role: "Eng", tag: "eng" },
-          { name: "QA", role: "QA", tag: "qa" },
+          { name: "Eng 1", descriptor: "Eng", tag: "eng" },
+          { name: "Eng 2", descriptor: "Eng", tag: "eng" },
+          { name: "Eng 3", descriptor: "Eng", tag: "eng" },
+          { name: "QA", descriptor: "QA", tag: "qa" },
         ],
       },
       {
-        name: "CMO",
-        role: "Marketing",
+        name: "Growth Lead",
+        descriptor: "Marketing",
         icon: "🌐",
-        tag: "cmo",
+        tag: "growth",
         children: [
-          { name: "Designer", role: "Design", tag: "des" },
-          { name: "Content", role: "Writer", tag: "eng" },
+          { name: "Designer", descriptor: "Design", tag: "des" },
+          { name: "Content", descriptor: "Writer", tag: "eng" },
         ],
       },
       {
-        name: "CFO",
-        role: "Finance",
+        name: "Finance Lead",
+        descriptor: "Finance",
         icon: "📊",
         tag: "fin",
-        children: [{ name: "Analyst", role: "Finance", tag: "fin" }],
+        children: [{ name: "Analyst", descriptor: "Finance", tag: "fin" }],
       },
       {
-        name: "COO",
-        role: "Operations",
+        name: "Operations Lead",
+        descriptor: "Operations",
         icon: "⚙️",
         tag: "ops",
         children: [
-          { name: "Ops 1", role: "Ops", tag: "ops" },
-          { name: "Ops 2", role: "Ops", tag: "ops" },
-          { name: "DevOps", role: "Infra", tag: "ops" },
+          { name: "Ops 1", descriptor: "Ops", tag: "ops" },
+          { name: "Ops 2", descriptor: "Ops", tag: "ops" },
+          { name: "DevOps", descriptor: "Infra", tag: "ops" },
         ],
       },
     ],
@@ -115,12 +115,12 @@ const ORGS: Record<string, OrgNode> = {
 
 // OG collapsed org
 const OG_ORG: OrgNode = {
-  name: "CEO",
-  role: "Chief Executive",
-  tag: "ceo",
+  name: "Atlas",
+  descriptor: "Company Lead",
+  tag: "root",
   children: [
-    { name: "CTO", role: "×5 reports", tag: "cto" },
-    { name: "CMO", role: "×1 report", tag: "cmo" },
+    { name: "Engineering Lead", descriptor: "×5 reports", tag: "tech" },
+    { name: "Growth Lead", descriptor: "×1 report", tag: "growth" },
   ],
 };
 
@@ -219,13 +219,13 @@ body {
   position: relative;
 }
 .org-card .name { white-space: nowrap; }
-.org-card .role { white-space: nowrap; }
+.org-card .descriptor { white-space: nowrap; }
 .org-card .icon-wrap { margin-bottom: 8px; font-size: 18px; line-height: 1; }
 
 /* OG compact overrides */
 .og-compact .org-card { padding: 10px 14px !important; min-width: 80px !important; }
 .og-compact .org-card .name { font-size: 11px !important; }
-.og-compact .org-card .role { font-size: 9px !important; }
+.og-compact .org-card .descriptor { font-size: 9px !important; }
 .og-compact .org-card .icon-wrap { font-size: 14px !important; margin-bottom: 5px !important; }
 .og-compact .org-card .avatar { width: 24px !important; height: 24px !important; font-size: 11px !important; margin-bottom: 6px !important; }
 .og-compact .org-children { padding-top: 20px !important; gap: 8px !important; }
@@ -266,7 +266,7 @@ body { background: #18181b; }
   font-size: 14px; font-weight: 600; color: #fafafa;
   letter-spacing: -0.01em; margin-bottom: 3px;
 }
-.org-card .role {
+.org-card .descriptor {
   font-size: 10px; color: #71717a;
   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;
 }
@@ -278,7 +278,7 @@ body { background: #18181b; }
         node.icon && !isOg
           ? `<div class="icon-wrap">${node.icon}</div>`
           : "";
-      return `<div class="org-card">${icon}<div class="name">${node.name}</div><div class="role">${node.role}</div></div>`;
+      return `<div class="org-card">${icon}<div class="name">${node.name}</div><div class="descriptor">${node.descriptor}</div></div>`;
     },
   },
   {
@@ -317,7 +317,7 @@ body { background: #0f0c29; }
 .org-card .name {
   font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 3px;
 }
-.org-card .role {
+.org-card .descriptor {
   font-size: 10px; color: rgba(255,255,255,0.45);
   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;
 }
@@ -329,7 +329,7 @@ body { background: #0f0c29; }
         node.icon && !isOg
           ? `<div class="icon-wrap">${node.icon}</div>`
           : "";
-      return `<div class="org-card">${icon}<div class="name">${node.name}</div><div class="role">${node.role}</div></div>`;
+      return `<div class="org-card">${icon}<div class="name">${node.name}</div><div class="descriptor">${node.descriptor}</div></div>`;
     },
   },
   {
@@ -359,7 +359,7 @@ body { background: #0c0c0e; }
   font-size: 13px; font-weight: 600; color: #e4e4e7;
   margin-bottom: 3px; letter-spacing: -0.005em;
 }
-.org-card .role {
+.org-card .descriptor {
   font-size: 10px; color: #6366f1;
   text-transform: uppercase; letter-spacing: 0.07em; font-weight: 500;
 }
@@ -367,12 +367,12 @@ body { background: #0c0c0e; }
 .watermark svg { stroke: rgba(99,102,241,0.3); }
 `,
     renderCard: (node, isOg) => {
-      const cls = node.tag === "ceo" ? " chief" : "";
+      const cls = node.tag === "root" ? " chief" : "";
       const icon =
         node.icon && !isOg
           ? `<div class="icon-wrap">${node.icon}</div>`
           : "";
-      return `<div class="org-card${cls}">${icon}<div class="name">${node.name}</div><div class="role">${node.role}</div></div>`;
+      return `<div class="org-card${cls}">${icon}<div class="name">${node.name}</div><div class="descriptor">${node.descriptor}</div></div>`;
     },
   },
   {
@@ -401,9 +401,9 @@ body { background: #fafaf9; }
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; line-height: 1;
 }
-.org-card .avatar.r-ceo { background: #fef3c7; }
-.org-card .avatar.r-cto { background: #dbeafe; }
-.org-card .avatar.r-cmo { background: #dcfce7; }
+.org-card .avatar.r-root { background: #fef3c7; }
+.org-card .avatar.r-tech { background: #dbeafe; }
+.org-card .avatar.r-growth { background: #dcfce7; }
 .org-card .avatar.r-eng { background: #f3e8ff; }
 .org-card .avatar.r-qa  { background: #ffe4e6; }
 .org-card .avatar.r-des { background: #fce7f3; }
@@ -412,7 +412,7 @@ body { background: #fafaf9; }
 .org-card .name {
   font-size: 14px; font-weight: 600; color: #1c1917; margin-bottom: 2px;
 }
-.org-card .role {
+.org-card .descriptor {
   font-size: 11px; color: #78716c; font-weight: 500;
 }
 .watermark { color: rgba(0,0,0,0.25); }
@@ -420,9 +420,9 @@ body { background: #fafaf9; }
 `,
     renderCard: (node, isOg) => {
       const icons: Record<string, string> = {
-        ceo: "👑",
-        cto: "💻",
-        cmo: "🌐",
+        root: "👑",
+        tech: "💻",
+        growth: "🌐",
         eng: "⌨️",
         qa: "🔬",
         des: "🪄",
@@ -434,7 +434,7 @@ body { background: #fafaf9; }
         ? "width:24px;height:24px;font-size:11px;margin-bottom:6px;"
         : "";
       const avatar = `<div class="avatar r-${node.tag}" style="${sizeStyle}">${ic}</div>`;
-      return `<div class="org-card">${avatar}<div class="name">${node.name}</div><div class="role">${node.role}</div></div>`;
+      return `<div class="org-card">${avatar}<div class="name">${node.name}</div><div class="descriptor">${node.descriptor}</div></div>`;
     },
   },
   {
@@ -470,9 +470,9 @@ body { background: #0d1117; }
   height: 2px;
   border-radius: 4px 4px 0 0;
 }
-.org-card.t-ceo::after { background: #f0883e; }
-.org-card.t-cto::after { background: #58a6ff; }
-.org-card.t-cmo::after { background: #3fb950; }
+.org-card.t-root::after { background: #f0883e; }
+.org-card.t-tech::after { background: #58a6ff; }
+.org-card.t-growth::after { background: #3fb950; }
 .org-card.t-eng::after { background: #bc8cff; }
 .org-card.t-qa::after  { background: #f778ba; }
 .org-card.t-des::after { background: #79c0ff; }
@@ -481,17 +481,17 @@ body { background: #0d1117; }
 .org-card .name {
   font-size: 12px; font-weight: 600; color: #c9d1d9; margin-bottom: 2px;
 }
-.org-card .role {
+.org-card .descriptor {
   font-size: 10px; color: #8b949e; letter-spacing: 0.02em;
 }
 .watermark { color: rgba(139,148,158,0.3); font-family: 'JetBrains Mono', monospace; }
 .watermark svg { stroke: rgba(139,148,158,0.3); }
 `,
     renderCard: (node, isOg) => {
-      const schemaRoles: Record<string, string> = {
-        ceo: "chief_executive",
-        cto: "chief_technology",
-        cmo: "chief_marketing",
+      const schemaDescriptors: Record<string, string> = {
+        root: "company_lead",
+        tech: "engineering_lead",
+        growth: "growth_lead",
         eng: "engineer",
         qa: "quality",
         des: "designer",
@@ -502,13 +502,13 @@ body { background: #0d1117; }
         node.icon && !isOg
           ? `<div class="icon-wrap">${node.icon}</div>`
           : "";
-      const roleText =
+      const descriptorText =
         isOg
-          ? node.role
+          ? node.descriptor
           : node.children
-            ? node.role
-            : schemaRoles[node.tag] || node.role;
-      return `<div class="org-card t-${node.tag}">${icon}<div class="name">${node.name}</div><div class="role">${roleText}</div></div>`;
+            ? node.descriptor
+            : schemaDescriptors[node.tag] || node.descriptor;
+      return `<div class="org-card t-${node.tag}">${icon}<div class="name">${node.name}</div><div class="descriptor">${descriptorText}</div></div>`;
     },
   },
 ];

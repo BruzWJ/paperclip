@@ -17,7 +17,7 @@ import { parseStatusFilter } from "../services/issues.ts";
  *   4. Mixed array + CSV    — `?status=todo,in_progress&status=done`
  *
  * Pre-fix, case 3 returned HTTP 500 with `TypeError: filters.status.split is
- * not a function`. We don't spin embedded-postgres here; the helper itself is
+ * not a function`. This is a focused route/unit contract; the helper itself is
  * unit-tested in `parse-status-filter.test.ts`, and the route→helper contract
  * is what regresses if anyone reverts the fix.
  */

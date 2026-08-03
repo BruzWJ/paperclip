@@ -1,156 +1,157 @@
 ---
 title: Agents
-summary: Agent lifecycle, configuration, keys, and heartbeat invocation
+summary: Board-operated agent identity, grants, ACP configuration, lifecycle, and run readiness
 ---
 
-Manage AI agents (employees) within a company.
+Agent endpoints are board/operator control-plane routes. Productive ACP
+subprocesses cannot call them and have no self-profile route or generic
+Paperclip credential.
 
-## List Agents
+## List and get
 
-```
+```http
 GET /api/companies/{companyId}/agents
-```
-
-Returns all agents in the company.
-
-This route does not accept query filters. Unsupported query parameters return `400`.
-
-## Get Agent
-
-```
+GET /api/companies/{companyId}/issue-owner-catalog
 GET /api/agents/{agentId}
-```
-
-Returns agent details including chain of command.
-
-## Get Current Agent
-
-```
-GET /api/agents/me
-```
-
-Returns the agent record for the currently authenticated agent.
-
-**Response:**
-
-```json
-{
-  "id": "agent-42",
-  "name": "BackendEngineer",
-  "role": "engineer",
-  "title": "Senior Backend Engineer",
-  "companyId": "company-1",
-  "reportsTo": "mgr-1",
-  "capabilities": "Node.js, PostgreSQL, API design",
-  "status": "running",
-  "budgetMonthlyCents": 5000,
-  "spentMonthlyCents": 1200,
-  "chainOfCommand": [
-    { "id": "mgr-1", "name": "EngineeringLead", "role": "manager" },
-    { "id": "ceo-1", "name": "CEO", "role": "ceo" }
-  ]
-}
-```
-
-## Create Agent
-
-```
-POST /api/companies/{companyId}/agents
-{
-  "name": "Engineer",
-  "role": "engineer",
-  "title": "Software Engineer",
-  "reportsTo": "{managerAgentId}",
-  "capabilities": "Full-stack development",
-  "adapterType": "claude_local",
-  "adapterConfig": { ... }
-}
-```
-
-## Update Agent
-
-```
-PATCH /api/agents/{agentId}
-{
-  "adapterConfig": { ... },
-  "budgetMonthlyCents": 10000
-}
-```
-
-## Pause Agent
-
-```
-POST /api/agents/{agentId}/pause
-```
-
-Temporarily stops heartbeats for the agent.
-
-## Resume Agent
-
-```
-POST /api/agents/{agentId}/resume
-```
-
-Resumes heartbeats for a paused agent.
-
-## Clear Agent Error
-
-```
-POST /api/agents/{agentId}/clear-error
-```
-
-Moves an agent from `error` back to `idle` without deleting run history or runtime diagnostics.
-Only agents currently in `error` can be cleared.
-
-## Terminate Agent
-
-```
-POST /api/agents/{agentId}/terminate
-```
-
-Permanently deactivates the agent. **Irreversible.**
-
-## Create API Key
-
-```
-POST /api/agents/{agentId}/keys
-```
-
-Returns a long-lived API key for the agent. Store it securely — the full value is only shown once.
-
-## Invoke Heartbeat
-
-```
-POST /api/agents/{agentId}/heartbeat/invoke
-```
-
-Manually triggers a heartbeat for the agent.
-
-## Org Chart
-
-```
 GET /api/companies/{companyId}/org
 ```
 
-Returns the full organizational tree for the company.
+Agent identity contains name, optional display title, capabilities, and
+optional `reportsTo`. There is no role field, chain-of-command authority, or
+privileged first/root agent.
 
-## List Adapter Models
+The company-authorized issue-owner catalog is the picker projection for new
+ownership. It returns only `id`, `name`, `title`, and `icon`, and omits any
+paused, pending-approval, terminated, invalid-reporting-chain,
+missing-revision, or unavailable-implementation agent through the canonical
+invokable-owner resolver. It is presentation, not an authorization lease:
+creation and reassignment resolve the selected owner again while locking the
+write transaction.
 
+## Create an ordinary agent
+
+```http
+POST /api/companies/{companyId}/runtime-agents
+Content-Type: application/json
+
+{
+  "name": "Engineer",
+  "title": "Software Engineer",
+  "reportsTo": "00000000-0000-4000-8000-000000000001",
+  "capabilities": "Full-stack development",
+  "contextGrants": {
+    "carry_context": false,
+    "read_issue_comments": false,
+    "read_issue_agent_run": false,
+    "list_sub_issues": false,
+    "read_sub_issue_comments": false,
+    "read_sub_issue_agent_run": false,
+    "list_company_issues": false,
+    "read_company_issue_comments": false,
+    "read_company_issue_agent_run": false
+  },
+  "actionGrants": {
+    "issue_create": false,
+    "issue_assign": false,
+    "issue_update": false,
+    "mention_agent": false,
+    "agent_hire": false,
+    "agent_configure": false
+  },
+  "mentionReachGrants": {
+    "mention_any_descendant": false,
+    "mention_any_ancestor": false
+  },
+  "companyToolIds": []
+}
 ```
+
+Creation is explicit and does not accept adapter/provider configuration. It
+does not mint a Paperclip credential, install an operational skill, create an
+agent-wide session, or stamp role-derived grants. The complete context/action
+and mention-reach maps make the all-false baseline unambiguous.
+
+## Runtime identity and grants
+
+```http
+GET /api/agents/{agentId}/runtime-configuration
+PATCH /api/agents/{agentId}/runtime-configuration
+GET /api/agents/{agentId}/runtime-configuration/tool-options
+```
+
+Runtime configuration owns only identity, reporting structure, context/action
+grants, mention reach, and explicit company-tool selection. Adapter, budget,
+lifecycle, and provider-native state are separate owners.
+
+## Immutable ACP adapter revisions
+
+```http
+GET /api/agents/{agentId}/adapter-config-revisions
+GET /api/agents/{agentId}/adapter-config-revisions/current
+POST /api/agents/{agentId}/adapter-config-revisions
+```
+
+Example for the initial conformance-approved built-in adapter:
+
+```json
+{
+  "adapterType": "codex",
+  "adapterConfig": {
+    "model": "gpt-5.6"
+  },
+  "defaultEnvironmentId": "00000000-0000-4000-8000-000000000002",
+  "runtimeConfig": {},
+  "companySkillPins": [],
+  "skillChannel": "operator_native"
+}
+```
+
+The server resolves this data through the exact installed declarative
+`acp-subprocess/v1` definition and stores an immutable non-secret revision.
+The adapter definition selects an approved ACPX registry launch; Paperclip's
+common official-SDK client owns all ACP process/session/event behavior. A
+request cannot supply a command, argv, endpoint, provider payload, response
+parser, native-session selector, or provider credential.
+
+Provider authentication stays in the selected CLI's native login state on the
+execution target. Paperclip neither stores nor probes it. There is no default
+adapter inference or fallback to another registered name.
+
+## Operational configuration
+
+```http
+PATCH /api/agents/{agentId}/operational-configuration
+```
+
+Display icon and monthly budget belong to this board-only contract. Adapter
+revisions, runtime grants, lifecycle, spend, and Session state are not generic
+agent-patch fields.
+
+## Lifecycle
+
+```http
+POST /api/agents/{agentId}/pause
+POST /api/agents/{agentId}/resume
+POST /api/agents/{agentId}/clear-error
+POST /api/agents/{agentId}/terminate
+```
+
+Termination preserves the immutable issue/Session/run/comment audit. It
+cancels live work and follows canonical creator recovery for open owned issues.
+
+There is no generic invoke/wake endpoint, agent API-key endpoint, agent-wide
+runtime reset, or conversational-session endpoint. Work begins only through a
+canonical issue-execution source.
+
+## Models and structural readiness
+
+```http
 GET /api/companies/{companyId}/adapters/{adapterType}/models
 ```
 
-Returns selectable models for an adapter type.
-
-- For `codex_local`, models are merged with OpenAI discovery when available.
-- For `opencode_local`, models are discovered from `opencode models` and returned in `provider/model` format.
-- `opencode_local` does not return static fallback models; if discovery is unavailable, this list can be empty.
-
-## Config Revisions
-
-```
-GET /api/agents/{agentId}/config-revisions
-POST /api/agents/{agentId}/config-revisions/{revisionId}/rollback
-```
-
-View and roll back agent configuration changes.
+The response is the exact model catalog declared by that registered data-only
+ACP adapter. Structural readiness requires the approved registry entry and
+frontend revision, execution-target/workspace binding, legal stable ACP
+configuration selections, selected-tool/skill integrity, and the agent's live
+eligibility/budget state. It never starts a model conversation or tests login
+by sending a prompt.

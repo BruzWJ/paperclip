@@ -11,7 +11,10 @@ import {
 } from "../api/routines";
 import { secretsApi } from "../api/secrets";
 import { type RoutineHistoryDirtyFieldDescriptor } from "../components/RoutineHistoryTab";
-import { heartbeatsApi } from "../api/heartbeats";
+import {
+  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  runsApi,
+} from "../api/runs";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { accessApi } from "../api/access";
@@ -29,10 +32,10 @@ import {
   RoutineRunVariablesDialog,
   type RoutineRunDialogSubmitData,
 } from "../components/RoutineRunVariablesDialog";
-import { RunButton } from "../components/AgentActionButtons";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   RoutineSubSidebar,
   RoutineSectionPicker,
@@ -66,6 +69,7 @@ import type {
   RoutineEnvConfig,
   RoutineVariable,
 } from "@paperclipai/shared";
+import { normalizeIssueAttentionMask } from "@paperclipai/shared";
 
 const LAST_SECTION_STORAGE_KEY = "paperclip.routineLastSection";
 
@@ -164,6 +168,7 @@ export function RoutineDetail() {
     priority: "medium",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
+    attentionMask: null,
     variables: [],
     env: null,
   });
@@ -185,13 +190,19 @@ export function RoutineDetail() {
     enabled: !!routineId,
   });
   const activeIssueId = routine?.activeIssue?.id;
-  const { data: liveRuns } = useQuery({
-    queryKey: queryKeys.issues.liveRuns(activeIssueId!),
-    queryFn: () => heartbeatsApi.liveRunsForIssue(activeIssueId!),
+  const { data: activeRunPage } = useQuery({
+    queryKey: queryKeys.issues.runs(
+      activeIssueId!,
+      ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+    ),
+    queryFn: () => runsApi.listForIssue(activeIssueId!, {
+      status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+      limit: 200,
+    }),
     enabled: !!activeIssueId,
     refetchInterval: 3000,
   });
-  const hasLiveRun = (liveRuns ?? []).length > 0;
+  const hasLiveRun = (activeRunPage?.items.length ?? 0) > 0;
   const { data: routineRuns } = useQuery({
     queryKey: queryKeys.routines.runs(routineId!),
     queryFn: () => routinesApi.listRuns(routineId!),
@@ -256,6 +267,7 @@ export function RoutineDetail() {
             priority: routine.priority,
             concurrencyPolicy: routine.concurrencyPolicy,
             catchUpPolicy: routine.catchUpPolicy,
+            attentionMask: routine.attentionMask ?? null,
             variables: routine.variables,
             env: routine.env ?? null,
           }
@@ -283,6 +295,16 @@ export function RoutineDetail() {
     }
     if (editDraft.catchUpPolicy !== routineDefaults.catchUpPolicy) {
       result.push({ key: "catchUpPolicy", label: "the catch-up policy" });
+    }
+    if (
+      JSON.stringify(
+        normalizeIssueAttentionMask(editDraft.attentionMask),
+      ) !==
+      JSON.stringify(
+        normalizeIssueAttentionMask(routineDefaults.attentionMask),
+      )
+    ) {
+      result.push({ key: "attentionMask", label: "the issue attention mask" });
     }
     if (JSON.stringify(editDraft.variables) !== JSON.stringify(routineDefaults.variables)) {
       result.push({ key: "variables", label: "the variables" });
@@ -562,7 +584,7 @@ export function RoutineDetail() {
       ).map((agent) => ({
         id: agent.id,
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
     [agents, recentAssigneeIds],
   );
@@ -641,6 +663,7 @@ export function RoutineDetail() {
         priority: response.routine.priority,
         concurrencyPolicy: response.routine.concurrencyPolicy,
         catchUpPolicy: response.routine.catchUpPolicy,
+        attentionMask: response.routine.attentionMask ?? null,
         variables: response.routine.variables as RoutineVariable[],
         env: (response.routine.env ?? null) as RoutineEnvConfig | null,
       });
@@ -815,7 +838,16 @@ export function RoutineDetail() {
             ) : null}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            <RunButton onClick={() => setRunVariablesOpen(true)} disabled={runRoutine.isPending} />
+            <Button
+              size="sm"
+              onClick={() => setRunVariablesOpen(true)}
+              disabled={runRoutine.isPending}
+            >
+              <Repeat className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">
+                {runRoutine.isPending ? "Starting…" : "Run routine"}
+              </span>
+            </Button>
             <div className="flex items-center gap-2">
               <ToggleSwitch
                 size="default"

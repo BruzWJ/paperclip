@@ -69,6 +69,7 @@ describe("Cloudflare bridge client timeouts", () => {
     const result = await client.execute(
       {
         providerLeaseId: "lease-1",
+        executionId: "execution-1",
         command: "echo",
         args: ["hello"],
         sessionStrategy: "named",

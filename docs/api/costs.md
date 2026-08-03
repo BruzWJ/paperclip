@@ -3,23 +3,15 @@ title: Costs
 summary: Cost events, summaries, and budget management
 ---
 
-Track token usage and spending across agents, projects, and the company.
+Track protocol-settled ACP cost and budget state across agents, projects, and
+the company.
 
-## Report Cost Event
+## Cost Event Ownership
 
-```
-POST /api/companies/{companyId}/cost-events
-{
-  "agentId": "{agentId}",
-  "provider": "anthropic",
-  "model": "claude-sonnet-4-20250514",
-  "inputTokens": 15000,
-  "outputTokens": 3000,
-  "costCents": 12
-}
-```
-
-Typically reported automatically by adapters after each heartbeat.
+Paperclip writes one cost event internally for every protocol-settled ACP
+prompt. A known event exposes `knownDeltaAmount` as a canonical decimal string
+in the owning company's `budgetCurrency`; unavailable observations expose a
+typed reason and no invented amount. There is no public cost-event write API.
 
 ## Company Cost Summary
 
@@ -50,22 +42,22 @@ Returns per-project cost breakdown for the current month.
 ### Set Company Budget
 
 ```
-PATCH /api/companies/{companyId}
-{ "budgetMonthlyCents": 100000 }
+PATCH /api/companies/{companyId}/budgets
+{ "budgetMonthlyAmount": "1000" }
 ```
 
 ### Set Agent Budget
 
 ```
-PATCH /api/agents/{agentId}
-{ "budgetMonthlyCents": 5000 }
+PATCH /api/agents/{agentId}/operational-configuration
+{ "budgetMonthlyAmount": "50" }
 ```
 
 ## Budget Enforcement
 
 | Threshold | Effect |
 |-----------|--------|
-| 80% | Soft alert — agent should focus on critical tasks |
-| 100% | Hard stop — agent is auto-paused |
+| 80% | Soft alert — the board can review remaining budget |
+| 100% | Hard stop — the scope is budget-paused and new provider attempts are denied |
 
 Budget windows reset on the first of each month (UTC).

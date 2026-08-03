@@ -70,7 +70,7 @@ Paperclip plugin design is based on the following assumptions:
 1. Paperclip is single-tenant and self-hosted.
 2. Plugin installation is global to the instance.
 3. "Companies" remain core Paperclip business objects, but they are not plugin trust boundaries.
-4. Board governance, approval gates, budget hard-stops, and core task invariants remain owned by Paperclip core.
+4. Board governance, approval gates, budget hard-stops, and core issue invariants remain owned by Paperclip core.
 5. Projects already have a real workspace model via `project_workspaces`, and local/runtime plugins should build on that instead of inventing a separate workspace abstraction.
 
 ## 3. Goals
@@ -353,7 +353,7 @@ export interface PaperclipPluginManifestV1 {
     slots: Array<{
       type: "page"
         | "detailTab"
-        | "taskDetailView"
+        | "issueDetailView"
         | "dashboardWidget"
         | "sidebar"
         | "routeSidebar"
@@ -667,7 +667,11 @@ Plugins that need filesystem, git, terminal, or process operations handle those 
 
 ## 14.1 Issue Orchestration APIs
 
-Trusted orchestration plugins can create and update Paperclip issues through `ctx.issues` instead of importing server internals. The public issue contract includes parent/project/goal links, board or agent assignees, blocker IDs, labels, billing code, request depth, execution workspace inheritance, and plugin origin metadata.
+Trusted orchestration plugins create ordinary Paperclip issues through
+`ctx.issues` instead of importing server internals. Creation requires an
+immutable non-empty request, explicit invokable agent owner, and registered
+versioned creator callback. Optional metadata is limited to title,
+parent/project/goal, priority, and the false-only write-once attention mask.
 
 Plugins that perform durable work should declare managed Paperclip resources rather than using private plugin state:
 
@@ -685,29 +689,16 @@ managed agent, attach reusable prompt/tool guidance as managed skills, keep
 operation issues in a managed project, and drive recurring work through managed
 routines.
 
-Origin rules:
+Provider work starts only through `ctx.issues.create` with an explicit
+eligible owner. Creator updates are either an exact message or reassignment to
+another invokable agent. Creator cancellation uses `ctx.issues.withdraw`, which
+is limited to the plugin's own nonterminal issue and produces no callback or
+provider run.
 
-- Built-in core issues keep built-in origins such as `manual` and `routine_execution`.
-- Plugin-managed issues use `plugin:<pluginKey>` or a sub-kind such as `plugin:<pluginKey>:feature`.
-- The host derives the default plugin origin from the installed plugin key and rejects attempts to set `plugin:<otherPluginKey>` origins.
-- `originId` is plugin-defined and should be stable for idempotent generated work.
-
-Relation and read helpers:
-
-- `ctx.issues.relations.get(issueId, companyId)`
-- `ctx.issues.relations.setBlockedBy(issueId, blockerIssueIds, companyId)`
-- `ctx.issues.relations.addBlockers(issueId, blockerIssueIds, companyId)`
-- `ctx.issues.relations.removeBlockers(issueId, blockerIssueIds, companyId)`
-- `ctx.issues.getSubtree(issueId, companyId, options)`
-- `ctx.issues.summaries.getOrchestration({ issueId, companyId, includeSubtree, billingCode })`
-
-Governance helpers:
-
-- `ctx.issues.assertCheckoutOwner({ issueId, companyId, actorAgentId, actorRunId })` lets plugin actions preserve agent-run checkout ownership.
-- `ctx.issues.requestWakeup(issueId, companyId, options)` requests assignment wakeups through host heartbeat semantics, including terminal-status, blocker, assignee, and budget hard-stop checks.
-- `ctx.issues.requestWakeups(issueIds, companyId, options)` applies the same host-owned wakeup semantics to a batch and may use an idempotency key prefix for stable coordinator retries.
-
-Plugin-originated issue, relation, document, comment, and wakeup mutations must write activity entries with `actorType: "plugin"` and details fields for `sourcePluginId`, `sourcePluginKey`, `initiatingActorType`, `initiatingActorId`, and `initiatingRunId` when a user or agent run initiated the plugin work.
+The host records the installed plugin/callback identity as immutable creator
+provenance. A plugin cannot supply origin aliases, own an issue, generically
+patch lifecycle/request/title/metadata, mutate blocker relationships through
+this surface, or invoke an agent directly.
 
 Scoped API routes:
 
@@ -809,12 +800,10 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 
 - `issues.create`
 - `issues.update`
-- `issue.comments.create`
-- `issue.interactions.create`
 - `issue.documents.write`
 - `issue.relations.write`
 - `issues.checkout`
-- `issues.wakeup`
+- `issues.withdraw`
 - `activity.log.write`
 - `metrics.write`
 - `telemetry.track`
@@ -830,11 +819,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `agents.managed`
 - `agents.pause`
 - `agents.resume`
-- `agents.invoke`
-- `agent.sessions.create`
-- `agent.sessions.list`
-- `agent.sessions.send`
-- `agent.sessions.close`
 
 ### Plugin State
 
@@ -904,9 +888,6 @@ Minimum event set:
 - `issue.document.updated`
 - `issue.document.deleted`
 - `issue.relations.updated`
-- `issue.checked_out`
-- `issue.released`
-- `issue.assignment_wakeup_requested`
 - `agent.created`
 - `agent.updated`
 - `agent.status_changed`
@@ -972,7 +953,7 @@ Job rules:
 3. The host prevents overlapping execution of the same plugin/job combination unless explicitly allowed later.
 4. Every job run is recorded in Postgres.
 5. Failed jobs are retryable.
-6. For recurring business workflows that should create visible Paperclip work, prefer managed routines and managed resources over jobs. Jobs remain useful for private plugin-runtime maintenance tasks.
+6. For recurring business workflows that should create visible Paperclip work, prefer managed routines and managed resources over jobs. Jobs remain useful for private plugin-runtime maintenance jobs.
 
 ## 18. Webhooks
 
@@ -1174,7 +1155,7 @@ The host SDK ships shared components that plugins can import to quickly build UI
 | `Spinner` | Loading indicator | Data fetch states |
 | `FileTree` | Host-styled file/directory tree | Wiki pages, workspace files, import previews |
 | `IssuesList` | Host issue list | Plugin pages that need a native issue view |
-| `AssigneePicker` | Host assignee picker for agents and board users | Creating issues, assigning routines, filtering work |
+| `OwnerPicker` | Agent-only canonical issue-owner picker | Creating and reassigning ordinary plugin issues |
 | `ProjectPicker` | Host project picker | Creating issues, scoping dashboards, filtering work |
 | `ManagedRoutinesList` | Host routine list | Plugin settings pages that manage routines |
 
@@ -1506,11 +1487,10 @@ When a plugin is uninstalled, the host must handle plugin-owned data explicitly.
 ### 25.1 Uninstall Process
 
 1. The host sends `shutdown()` to the worker and follows the graceful shutdown policy.
-2. The host marks the plugin status `uninstalled` in the `plugins` table (soft delete).
-3. Plugin-owned data (`plugin_state`, `plugin_entities`, `plugin_jobs`, `plugin_job_runs`, `plugin_webhook_deliveries`, `plugin_config`) is retained for a configurable grace period (default: 30 days).
-4. During the grace period, the operator can reinstall the same plugin and recover its state.
-5. After the grace period, the host purges all plugin-owned data for the uninstalled plugin.
-6. The operator may force-purge immediately via CLI: `pnpm paperclipai plugin purge <plugin-id>`.
+2. In one locked database transaction, the host pauses active managed-agent bindings into board triage, terminalizes creator edges and deliveries with their escalation/fallback effects, and marks the installation `uninstalled`.
+3. The installation row remains an immutable tombstone. Creator/callback/withdrawal/comment/log/audit provenance, plugin entities, and managed-resource binding history retain that installation id.
+4. Reinstalling the same plugin key creates a new installation row and id. It never reactivates the tombstone or inherits its runtime namespace.
+5. An explicit purge removes only operational configuration, settings, state, jobs/runs, webhooks, migration ledgers, and the installation-scoped custom database namespace.
 
 ### 25.2 Upgrade Data Considerations
 
@@ -1555,7 +1535,7 @@ When a plugin is uninstalled at runtime:
 1. The host sends `shutdown()` and follows the graceful shutdown policy (Section 12.5).
 2. The host removes the plugin's event subscriptions, job schedules, webhook endpoints, and agent tool declarations from the live routing tables.
 3. The host removes the plugin's UI bundle from the extension slot registry. Any currently mounted plugin UI components are unmounted and replaced with a placeholder or removed entirely.
-4. The host marks the plugin `uninstalled` and starts the data retention grace period (Section 25.1).
+4. The host commits the installation tombstone and its managed-agent/creator-delivery invariants (Section 25.1).
 
 No server restart is needed.
 
@@ -1788,7 +1768,7 @@ When a new SDK version is released:
 - plugin logging and health dashboard
 - `@paperclipai/plugin-test-harness`
 - `create-paperclip-plugin` starter template
-- uninstall with data retention grace period
+- uninstall with immutable installation tombstones and explicit operational-data purge
 - hot plugin lifecycle (install, uninstall, upgrade, config change without server restart)
 - SDK versioning with multi-version host support and deprecation policy
 

@@ -14,7 +14,6 @@ import {
   Clock3,
   ExternalLink,
   FlaskConical,
-  KeyRound,
   Link2,
   Loader2,
   MailPlus,
@@ -339,10 +338,8 @@ function AgentRequestPreview() {
       </label>
       <label className="block text-sm">
         <span className="mb-1 block text-zinc-400">Adapter type</span>
-        <select className={fieldClassName} defaultValue="codex_local" disabled>
-          <option value="codex_local">Codex</option>
-          <option value="claude_local">Claude Code</option>
-          <option value="cursor">Cursor</option>
+        <select className={fieldClassName} defaultValue="codex" disabled>
+          <option value="codex">Codex</option>
         </select>
       </label>
       <label className="block text-sm">
@@ -397,13 +394,11 @@ function AcceptInvitePreview({
 function InviteResultPreview({
   title,
   description,
-  claimSecret,
   onboardingTextUrl,
   joinedNow = false,
 }: {
   title: string;
   description: string;
-  claimSecret?: string;
   onboardingTextUrl?: string;
   joinedNow?: boolean;
 }) {
@@ -437,13 +432,6 @@ function InviteResultPreview({
             </p>
           </>
         )}
-        {claimSecret ? (
-          <div className="space-y-1 border border-zinc-800 p-3 text-xs text-zinc-400">
-            <div className="text-zinc-200">Claim secret</div>
-            <div className="font-mono break-all">{claimSecret}</div>
-            <div className="font-mono break-all">POST /api/agents/claim-api-key</div>
-          </div>
-        ) : null}
         {onboardingTextUrl ? (
           <div className="text-xs text-zinc-400">
             Onboarding: <span className="font-mono break-all">{onboardingTextUrl}</span>
@@ -769,7 +757,7 @@ export function InviteUxLab() {
             body="Shown after sign-in while the app verifies whether the current user already belongs to the invited company."
           />
           <StatusCard
-            icon={<KeyRound className="h-4 w-4" />}
+            icon={<ShieldCheck className="h-4 w-4" />}
             title="Invalid invite token"
             body="The token is missing entirely, so the page short-circuits before any invite lookup."
             tone="error"
@@ -783,7 +771,7 @@ export function InviteUxLab() {
           <StatusCard
             icon={<ShieldCheck className="h-4 w-4" />}
             title="Bootstrap complete"
-            body="Result screen for bootstrap CEO invites after setup has been accepted successfully."
+            body="Result screen for bootstrap admin invites after setup has been accepted successfully."
             tone="success"
           />
           <StatusCard
@@ -799,7 +787,7 @@ export function InviteUxLab() {
           <StatusCard
             icon={<UserPlus className="h-4 w-4" />}
             title="Invite result surfaces"
-            body="Both pending-approval and joined-now confirmations are included below with claim and onboarding extras."
+            body="Both pending-approval and joined-now confirmations are included below with onboarding guidance."
             tone="success"
           />
         </div>
@@ -885,14 +873,13 @@ export function InviteUxLab() {
       <LabSection
         eyebrow="Result states"
         title="Approval and completion screens"
-        description="These are the post-submit states returned from invite acceptance, including optional claim and onboarding metadata."
+        description="These are the post-submit states returned from invite acceptance, including optional onboarding metadata."
         accentClassName="bg-[linear-gradient(180deg,rgba(16,185,129,0.06),transparent_30%),var(--background)]"
       >
         <div className="grid gap-5 xl:grid-cols-3">
           <InviteResultPreview
             title="Request to join Acme Robotics"
             description="Board User must approve your request to join."
-            claimSecret="pcp_claim_secret_demo"
             onboardingTextUrl="/api/invites/pcp_invite_test/onboarding.txt"
           />
           <InviteResultPreview

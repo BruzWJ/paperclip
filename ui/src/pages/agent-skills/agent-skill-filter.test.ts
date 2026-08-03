@@ -16,13 +16,13 @@ const ROWS = [
     categories: ["automation", "web"],
   },
   {
-    key: "para-memory-files",
-    name: "para-memory-files",
-    slug: "para",
-    author: "Tiago",
-    tagline: "PARA method memory",
+    key: "incident-triage",
+    name: "incident-triage",
+    slug: "incident-triage",
+    author: "Riley",
+    tagline: "Triage operational incidents",
     description: null,
-    categories: ["memory"],
+    categories: ["operations"],
   },
 ];
 
@@ -52,7 +52,7 @@ describe("agentSkillMatchesSearch", () => {
     expect(agentSkillMatchesSearch(ROWS[0], "BROWSER")).toBe(true);
     expect(agentSkillMatchesSearch(ROWS[0], "automation")).toBe(true);
     expect(agentSkillMatchesSearch(ROWS[0], "web pages")).toBe(true);
-    expect(agentSkillMatchesSearch(ROWS[1], "tiago")).toBe(true);
+    expect(agentSkillMatchesSearch(ROWS[1], "riley")).toBe(true);
   });
 
   it("does not match unrelated queries", () => {
@@ -67,10 +67,10 @@ describe("filterAgentSkills", () => {
   });
 
   it("filters by the shared haystack fields and preserves order", () => {
-    expect(filterAgentSkills(ROWS, "memory").map((r) => r.key)).toEqual(["para-memory-files"]);
+    expect(filterAgentSkills(ROWS, "triage").map((r) => r.key)).toEqual(["incident-triage"]);
     expect(filterAgentSkills(ROWS, "a").map((r) => r.key)).toEqual([
       "agent-browser",
-      "para-memory-files",
+      "incident-triage",
     ]);
     expect(filterAgentSkills(ROWS, "nonexistent")).toEqual([]);
   });

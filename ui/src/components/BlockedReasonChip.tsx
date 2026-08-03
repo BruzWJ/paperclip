@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock, Pause, User, Wrench } from "lucide-react";
+import { AlertTriangle, Clock, User } from "lucide-react";
 import type { ComponentType } from "react";
 import type { IssueBlockedInboxSeverity } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
@@ -21,25 +21,19 @@ type IconComponent = ComponentType<{ className?: string; "aria-hidden"?: boolean
 const VARIANT_STYLES: Record<BlockedReasonVariant, string> = {
   needs_decision:
     "border-violet-300/70 bg-violet-50 text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
-  recovery_required:
-    "border-cyan-300/70 bg-cyan-50 text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-300",
   stalled:
     "border-amber-400/70 bg-amber-100 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200",
   needs_attention:
     "border-amber-300/70 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300",
   external_wait:
     "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-500/30 dark:bg-slate-500/15 dark:text-slate-300",
-  owner_paused:
-    "border-red-300/70 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
 };
 
 const VARIANT_ICONS: Record<BlockedReasonVariant, IconComponent> = {
   needs_decision: Clock,
-  recovery_required: Wrench,
   stalled: AlertTriangle,
   needs_attention: AlertTriangle,
   external_wait: User,
-  owner_paused: Pause,
 };
 
 const SEVERITY_DOT: Partial<Record<IssueBlockedInboxSeverity, string>> = {

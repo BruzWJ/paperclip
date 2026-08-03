@@ -3,9 +3,6 @@ import type {
   DocumentAnnotationAnchorState,
   DocumentAnnotationThreadStatus,
   IssueCommentAuthorType,
-  IssueThreadInteractionContinuationPolicy,
-  IssueThreadInteractionKind,
-  IssueThreadInteractionStatus,
 } from "../constants.js";
 
 export interface DocumentTextPosition {
@@ -181,40 +178,12 @@ export interface PlanReviewContextThread {
   updatedAt: string;
 }
 
-export interface PlanReviewInteractionTargetContext {
-  issueId: string;
-  documentId: string | null;
-  key: string;
-  revisionId: string | null;
-  revisionNumber: number | null;
-}
-
-export interface PlanReviewInteractionResultContext {
-  outcome: string | null;
-  reason: string | null;
-  commentId: string | null;
-}
-
-export interface PlanReviewInteractionContext {
-  id: string;
-  kind: IssueThreadInteractionKind | string;
-  status: IssueThreadInteractionStatus | string;
-  continuationPolicy: IssueThreadInteractionContinuationPolicy | string;
-  sourceCommentId: string | null;
-  sourceRunId: string | null;
-  target: PlanReviewInteractionTargetContext | null;
-  acceptedTargetRevision: PlanReviewInteractionTargetContext | null;
-  result: PlanReviewInteractionResultContext | null;
-  resolvedAt: string | null;
-}
-
 export interface PlanReviewContext {
   documentKey: "plan";
   issueId: string;
   latestRevisionId: string | null;
   latestRevisionNumber: number | null;
   threads: PlanReviewContextThread[];
-  interaction: PlanReviewInteractionContext | null;
   totals: {
     openThreadCount: number;
     includedThreadCount: number;

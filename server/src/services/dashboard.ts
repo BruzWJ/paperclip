@@ -1,9 +1,15 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, costEvents, heartbeatRuns, issues } from "@paperclipai/db";
+import { agents, approvals, companies, issues } from "@paperclipai/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
+import { costService } from "./costs.js";
+import {
+  listIssueExecutionRunsForActivity,
+  type IssueExecutionRunEnvelope,
+  type IssueExecutionRunListCursor,
+} from "./issue-execution-run-service.js";
 
 const DASHBOARD_RUN_ACTIVITY_DAYS = 14;
 
@@ -25,6 +31,7 @@ function getRecentUtcDateKeys(now: Date, days: number): string[] {
 
 export function dashboardService(db: Db) {
   const budgets = budgetService(db);
+  const costs = costService(db);
   return {
     summary: async (companyId: string) => {
       const company = await db
@@ -41,11 +48,11 @@ export function dashboardService(db: Db) {
         .where(eq(agents.companyId, companyId))
         .groupBy(agents.status);
 
-      const taskRows = await db
-        .select({ status: issues.status, count: sql<number>`count(*)` })
+      const issueRows = await db
+        .select({ status: issues.boardPresentationStatus, count: sql<number>`count(*)` })
         .from(issues)
         .where(and(eq(issues.companyId, companyId), visibleIssueCondition()))
-        .groupBy(issues.status);
+        .groupBy(issues.boardPresentationStatus);
 
       const pendingApprovals = await db
         .select({ count: sql<number>`count(*)` })
@@ -66,72 +73,47 @@ export function dashboardService(db: Db) {
         agentCounts[bucket] = (agentCounts[bucket] ?? 0) + count;
       }
 
-      const taskCounts: Record<string, number> = {
+      const issueCounts: Record<string, number> = {
         open: 0,
         inProgress: 0,
         blocked: 0,
         done: 0,
       };
-      for (const row of taskRows) {
+      for (const row of issueRows) {
         const count = Number(row.count);
-        if (row.status === "in_progress") taskCounts.inProgress += count;
-        if (row.status === "blocked") taskCounts.blocked += count;
-        if (row.status === "done") taskCounts.done += count;
-        if (row.status !== "done" && row.status !== "cancelled") taskCounts.open += count;
+        if (row.status === "in_progress") issueCounts.inProgress += count;
+        if (row.status === "blocked") issueCounts.blocked += count;
+        if (row.status === "done") issueCounts.done += count;
+        if (row.status !== "done" && row.status !== "cancelled") issueCounts.open += count;
       }
 
       const now = new Date();
-      const monthStart = getUtcMonthStart(now);
       const runActivityDays = getRecentUtcDateKeys(now, DASHBOARD_RUN_ACTIVITY_DAYS);
       const runActivityStart = new Date(`${runActivityDays[0]}T00:00:00.000Z`);
-      const [{ monthSpend }] = await db
-        .select({
-          monthSpend: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::double precision`,
-        })
-        .from(costEvents)
-        .where(
-          and(
-            eq(costEvents.companyId, companyId),
-            gte(costEvents.occurredAt, monthStart),
-          ),
-        );
-
-      const monthSpendCents = Number(monthSpend);
-      // Per-day run breakdown. A run is "recovered" when its retry chain later
-      // succeeded (recovered_runs = all ancestors of a succeeded retry), so a
-      // restart-killed run whose retry succeeded is pulled out of the headline
-      // failed count. error_code is carried through so a failure spike can be
-      // attributed to an error class (e.g. process_lost, provider_quota).
-      const runActivityRows = (await db.execute(sql`
-        WITH RECURSIVE recovered_runs(id) AS (
-          SELECT parent.id
-          FROM ${heartbeatRuns} AS child
-          JOIN ${heartbeatRuns} AS parent ON parent.id = child.retry_of_run_id
-          WHERE child.company_id = ${companyId}
-            AND child.status = 'succeeded'
-          UNION
-          SELECT parent.id
-          FROM recovered_runs rr
-          JOIN ${heartbeatRuns} AS child ON child.id = rr.id
-          JOIN ${heartbeatRuns} AS parent ON parent.id = child.retry_of_run_id
-        )
-        SELECT
-          to_char(run.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
-          run.status AS status,
-          run.error_code AS error_code,
-          (run.id IN (SELECT id FROM recovered_runs)) AS recovered,
-          count(*)::double precision AS count
-        FROM ${heartbeatRuns} AS run
-        WHERE run.company_id = ${companyId}
-          AND run.created_at >= ${runActivityStart.toISOString()}::timestamptz
-        GROUP BY date, run.status, run.error_code, recovered
-      `)) as unknown as Iterable<{
-        date: string;
-        status: string;
-        error_code: string | null;
-        recovered: boolean | string;
-        count: number | string;
-      }>;
+      const costSummary = await costs.summary(companyId);
+      const companyRuns: IssueExecutionRunEnvelope[] = [];
+      let runCursor: IssueExecutionRunListCursor | null = null;
+      do {
+        const page = await listIssueExecutionRunsForActivity(db, {
+          companyId,
+          cursor: runCursor,
+          limit: 200,
+        });
+        companyRuns.push(...page.items);
+        runCursor = page.nextCursor;
+      } while (runCursor !== null);
+      const runById = new Map(companyRuns.map((run) => [run.runId, run]));
+      const recoveredRunIds = new Set<string>();
+      for (const run of companyRuns) {
+        if (run.status !== "succeeded") continue;
+        let ancestorId = run.retryOfRunId;
+        const visited = new Set<string>();
+        while (ancestorId && !visited.has(ancestorId)) {
+          visited.add(ancestorId);
+          recoveredRunIds.add(ancestorId);
+          ancestorId = runById.get(ancestorId)?.retryOfRunId ?? null;
+        }
+      }
 
       const runActivity = new Map(
         runActivityDays.map((date) => [
@@ -147,36 +129,29 @@ export function dashboardService(db: Db) {
           },
         ]),
       );
-      for (const row of runActivityRows) {
-        const bucket = runActivity.get(String(row.date));
+      for (const run of companyRuns) {
+        if (run.createdAt < runActivityStart) continue;
+        const bucket = runActivity.get(formatUtcDateKey(run.createdAt));
         if (!bucket) continue;
-        const count = Number(row.count);
-        const status = String(row.status);
-        // Postgres booleans can arrive as JS boolean or "t"/"true" depending on driver.
-        const recovered = row.recovered === true || row.recovered === "t" || row.recovered === "true";
-        if (status === "succeeded") {
-          bucket.succeeded += count;
-        } else if (status === "failed" || status === "timed_out") {
-          if (recovered) {
-            bucket.recovered += count;
+        if (run.status === "succeeded") {
+          bucket.succeeded += 1;
+        } else if (run.status === "failed" || run.status === "timed_out") {
+          if (recoveredRunIds.has(run.runId)) {
+            bucket.recovered += 1;
           } else {
-            bucket.failed += count;
+            bucket.failed += 1;
             const code =
-              typeof row.error_code === "string" && row.error_code.length > 0
-                ? row.error_code
+              run.terminalReasonCode && run.terminalReasonCode.length > 0
+                ? run.terminalReasonCode
                 : "unknown";
-            bucket.failedByErrorCode[code] = (bucket.failedByErrorCode[code] ?? 0) + count;
+            bucket.failedByErrorCode[code] = (bucket.failedByErrorCode[code] ?? 0) + 1;
           }
         } else {
-          bucket.other += count;
+          bucket.other += 1;
         }
-        bucket.total += count;
+        bucket.total += 1;
       }
 
-      const utilization =
-        company.budgetMonthlyCents > 0
-          ? (monthSpendCents / company.budgetMonthlyCents) * 100
-          : 0;
       const budgetOverview = await budgets.overview(companyId);
 
       return {
@@ -187,11 +162,14 @@ export function dashboardService(db: Db) {
           paused: agentCounts.paused,
           error: agentCounts.error,
         },
-        tasks: taskCounts,
+        issues: issueCounts,
         costs: {
-          monthSpendCents,
-          monthBudgetCents: company.budgetMonthlyCents,
-          monthUtilizationPercent: Number(utilization.toFixed(2)),
+          budgetCurrency: costSummary.budgetCurrency,
+          monthKnownSpendAmount: costSummary.knownSpendAmount,
+          monthBudgetAmount: costSummary.budgetMonthlyAmount,
+          monthRemainingAmount: costSummary.remainingAmount,
+          monthUtilizationPercent: costSummary.utilizationPercent,
+          unpricedPromptCount: costSummary.unpricedPromptCount,
         },
         pendingApprovals,
         budgets: {

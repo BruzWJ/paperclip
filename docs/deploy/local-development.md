@@ -3,17 +3,20 @@ title: Local Development
 summary: Set up Paperclip for local development
 ---
 
-Run Paperclip locally with zero external dependencies.
+Run Paperclip locally against a provisioned PostgreSQL server.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js >=22.13.0
 - pnpm 9+
 
 ## Start Dev Server
 
 ```sh
+docker compose -f docker/docker-compose.yml up -d db
+export DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip
 pnpm install
+pnpm db:migrate
 pnpm dev
 ```
 
@@ -22,7 +25,8 @@ This starts:
 - **API server** at `http://localhost:3100`
 - **UI** served by the API server in dev middleware mode (same origin)
 
-No Docker or external database required. Paperclip uses embedded PostgreSQL automatically.
+The database target is required. Paperclip validates it before startup and
+never creates a local database process.
 
 ## One-Command Bootstrap
 
@@ -35,14 +39,15 @@ pnpm paperclipai run
 This does:
 
 1. Auto-onboards if config is missing
-2. Runs `paperclipai doctor` with repair enabled
+2. Runs `paperclipai doctor` checks
 3. Starts the server when checks pass
 
 ## Bind Presets In Dev
 
-Default `pnpm dev` stays in `local_trusted` with loopback-only binding.
+Default `pnpm dev` uses loopback-only binding. Open the UI and create or sign
+in to a Better Auth account before using the board.
 
-To open Paperclip to a private network with login enabled:
+To open Paperclip to a private network:
 
 ```sh
 pnpm dev --bind lan
@@ -52,13 +57,6 @@ For Tailscale-only binding on a detected tailnet address:
 
 ```sh
 pnpm dev --bind tailnet
-```
-
-Legacy aliases still work and map to the older broad private-network behavior:
-
-```sh
-pnpm dev --tailscale-auth
-pnpm dev --authenticated-private
 ```
 
 Allow additional private hostnames:
@@ -84,20 +82,17 @@ curl http://localhost:3100/api/companies
 For safer parallel local experiments, initialize a dedicated worktree instance instead of reusing your main checkout:
 
 ```sh
-pnpm paperclipai worktree:make local-lab --seed-mode minimal
+pnpm paperclipai worktree:make local-lab \
+  --database-url postgres://paperclip:secret@db.example.test:5432/paperclip_local_lab
 cd ~/paperclip-local-lab
-pnpm paperclipai worktree env                       # inspect generated env exports
-eval "$(pnpm paperclipai worktree env)"             # bash/zsh
 pnpm paperclipai run
 pnpm paperclipai doctor
 ```
 
-If the experiment gets noisy, repair or reseed the worktree without touching the main branch:
-
-```sh
-pnpm paperclipai worktree repair --branch paperclip-local-lab
-pnpm paperclipai worktree reseed --from . --to paperclip-local-lab
-```
+The target must be a newly provisioned empty PostgreSQL database. Worktree
+creation writes a pinned database URL and a distinct Better Auth secret. If
+creation or later identity validation fails, discard the target and create a
+new worktree with another empty database.
 
 When done, shut it down and remove the isolated state explicitly:
 
@@ -105,21 +100,18 @@ When done, shut it down and remove the isolated state explicitly:
 pnpm paperclipai worktree:cleanup local-lab --force
 ```
 
-## Reset Dev Data
+## Start With A New Database
 
-To wipe local data and start fresh:
-
-```sh
-rm -rf ~/.paperclip/instances/default/db
-pnpm dev
-```
+Paperclip does not clear or rebuild an existing database. Provision a new empty
+external PostgreSQL database, update `DATABASE_URL` (or
+`database.connectionString`), and start Paperclip once against that target.
 
 ## Data Locations
 
 | Data | Path |
 |------|------|
 | Config | `~/.paperclip/instances/default/config.json` |
-| Database | `~/.paperclip/instances/default/db` |
+| Database | Externally provisioned PostgreSQL target selected by `DATABASE_URL` or configuration |
 | Storage | `~/.paperclip/instances/default/data/storage` |
 | Secrets key | `~/.paperclip/instances/default/secrets/master.key` |
 | Logs | `~/.paperclip/instances/default/logs` |

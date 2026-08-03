@@ -1,426 +1,565 @@
 import express from "express";
-import os from "node:os";
-import path from "node:path";
 import request from "supertest";
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import type { ServerAdapterModule } from "../adapters/index.js";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+} from "@paperclipai/shared";
+import { agentRoutes } from "../routes/agents.js";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { errorHandler } from "../middleware/index.js";
+import {
+  CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
+  CANONICAL_TEST_ADAPTER_TYPE,
+} from "./helpers/adapter-implementation.js";
+import { canonicalTestAgentAdapterRevision } from "./helpers/agent-execution-target.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const mockAgentService = vi.hoisted(() => ({
+const agentId = "11111111-1111-4111-8111-111111111111";
+const revisionId = "22222222-2222-4222-8222-222222222222";
+const environmentId = "44444444-4444-4444-8444-444444444444";
+
+const mockRuntimeAgentConfiguration = vi.hoisted(() => ({
   create: vi.fn(),
-  getById: vi.fn(),
+  get: vi.fn(),
+  update: vi.fn(),
+  listCreateCompanyToolOptions: vi.fn(),
+  listAgentCompanyToolOptions: vi.fn(),
+}));
+const mockAdapterConfigurations = vi.hoisted(() => ({
+  listRevisions: vi.fn(),
+  getCurrentRevision: vi.fn(),
+  getCompanySkillPins: vi.fn(),
+  replaceCompanySkillPins: vi.fn(),
+  createRevision: vi.fn(),
+}));
+const mockOperationalConfigurations = vi.hoisted(() => ({
   update: vi.fn(),
 }));
-
-const mockAccessService = vi.hoisted(() => ({
-  canUser: vi.fn(),
-  decide: vi.fn(),
-  hasPermission: vi.fn(),
-  ensureMembership: vi.fn(),
-  setPrincipalPermission: vi.fn(),
-}));
-
-const mockCompanySkillService = vi.hoisted(() => ({
-  listRuntimeSkillEntries: vi.fn(),
-  resolveRequestedSkillKeys: vi.fn(),
-}));
-
-const mockSecretService = vi.hoisted(() => ({
-  normalizeAdapterConfigForPersistence: vi.fn(async (_companyId: string, config: Record<string, unknown>) => config),
-  resolveAdapterConfigForRuntime: vi.fn(async (_companyId: string, config: Record<string, unknown>) => ({ config })),
-  syncEnvBindingsForTarget: vi.fn(),
-}));
-
-const mockAgentInstructionsService = vi.hoisted(() => ({
-  materializeManagedBundle: vi.fn(),
-  getBundle: vi.fn(),
-  readFile: vi.fn(),
-  updateBundle: vi.fn(),
-  writeFile: vi.fn(),
-  deleteFile: vi.fn(),
-  exportFiles: vi.fn(),
-  ensureManagedBundle: vi.fn(),
-}));
-
-const mockBudgetService = vi.hoisted(() => ({
-  upsertPolicy: vi.fn(),
-}));
-
-const mockHeartbeatService = vi.hoisted(() => ({
-  cancelActiveForAgent: vi.fn(),
-}));
-
-const mockIssueApprovalService = vi.hoisted(() => ({
-  linkManyForApproval: vi.fn(),
-}));
-
-const mockApprovalService = vi.hoisted(() => ({
-  create: vi.fn(),
+const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
-
-const mockInstanceSettingsService = vi.hoisted(() => ({
-  getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })),
+const mockAccessService = vi.hoisted(() => ({
+  decide: vi.fn(),
+  getMembership: vi.fn(),
+  listPrincipalGrants: vi.fn(),
 }));
-
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
+  agentCompanySkillSelectionService: () => ({
+    getSet: vi.fn(),
+    replaceForAgent: vi.fn(),
+  }),
   agentService: () => mockAgentService,
-  agentInstructionsService: () => mockAgentInstructionsService,
   accessService: () => mockAccessService,
-  approvalService: () => mockApprovalService,
-  builtInAgentService: () => ({ ensureCompanyDefaultAgentGrants: vi.fn() }),
-  companySkillService: () => mockCompanySkillService,
-  budgetService: () => mockBudgetService,
-  heartbeatService: () => mockHeartbeatService,
-  issueApprovalService: () => mockIssueApprovalService,
+  approvalService: () => ({
+    findOpenHireApprovalForAgent: vi.fn(),
+    reject: vi.fn(),
+  }),
   issueService: () => ({}),
-  logActivity: mockLogActivity,
-  secretService: () => mockSecretService,
-  syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
   workspaceOperationService: () => ({}),
+  createRuntimeAgentConfigurationService: () =>
+    mockRuntimeAgentConfiguration,
+  logActivity: mockLogActivity,
+}));
+
+vi.mock(
+  "../services/agent-adapter-config-revisions.js",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../services/agent-adapter-config-revisions.js")
+    >()),
+    createAgentAdapterConfigurationService: () =>
+      mockAdapterConfigurations,
+  }),
+);
+
+vi.mock("../services/agent-operational-configuration.js", () => ({
+  createAgentOperationalConfigurationService: () =>
+    mockOperationalConfigurations,
+}));
+
+vi.mock("../services/plugin-managed-agents.js", () => ({
+  getPluginManagedAgentBinding: vi.fn(async () => null),
+  adoptPluginManagedAgentFromBoard: vi.fn(),
+  terminatePluginManagedAgentFromBoard: vi.fn(),
+  terminateAgentForHireRejectionInTransaction: vi.fn(),
 }));
 
 vi.mock("../services/instance-settings.js", () => ({
-  instanceSettingsService: () => mockInstanceSettingsService,
+  instanceSettingsService: () => ({
+    getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })),
+  }),
 }));
 
-vi.mock("../services/secrets.js", () => ({
-  secretService: () => mockSecretService,
-}));
-
-function registerModuleMocks() {
-  vi.doMock("../services/index.js", () => ({
-    agentService: () => mockAgentService,
-    agentInstructionsService: () => mockAgentInstructionsService,
-    accessService: () => mockAccessService,
-    approvalService: () => mockApprovalService,
-    builtInAgentService: () => ({ ensureCompanyDefaultAgentGrants: vi.fn() }),
-    companySkillService: () => mockCompanySkillService,
-    budgetService: () => mockBudgetService,
-    heartbeatService: () => mockHeartbeatService,
-    issueApprovalService: () => mockIssueApprovalService,
-    issueService: () => ({}),
-    logActivity: mockLogActivity,
-    secretService: () => mockSecretService,
-    syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
-    workspaceOperationService: () => ({}),
-  }));
-
-  vi.doMock("../services/instance-settings.js", () => ({
-    instanceSettingsService: () => mockInstanceSettingsService,
-  }));
-
-  vi.doMock("../services/secrets.js", () => ({
-    secretService: () => mockSecretService,
-  }));
+function fullGrantMap(keys: readonly string[]) {
+  return Object.fromEntries(keys.map((key) => [key, false]));
 }
 
-const externalAdapter: ServerAdapterModule = {
-  type: "external_test",
-  execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-  testEnvironment: async () => ({
-    adapterType: "external_test",
-    status: "pass",
-    checks: [],
-    testedAt: new Date(0).toISOString(),
-  }),
-};
+function runtimeConfiguration() {
+  return {
+    name: "Explicit agent",
+    title: null,
+    capabilities: null,
+    reportsTo: null,
+    contextGrants: fullGrantMap(AGENT_CONTEXT_GRANT_KEYS),
+    actionGrants: fullGrantMap(PAPERCLIP_ACTION_KEYS),
+    mentionReachGrants: fullGrantMap(
+      AGENT_MENTION_REACH_GRANT_KEYS,
+    ),
+    companyToolIds: [],
+  };
+}
 
-const missingAdapterType = "missing_adapter_validation_test";
+function agent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: agentId,
+    companyId: "company-1",
+    name: "Explicit agent",
+    title: null,
+    icon: null,
+    status: "idle",
+    reportsTo: null,
+    capabilities: null,
+    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
+    adapterConfig: { model: "gpt-5.6" },
+    currentAdapterConfigRevisionId: revisionId,
+    runtimeConfig: {},
+    defaultEnvironmentId: environmentId,
+    budgetMonthlyAmount: "0",
+    knownSpendAmount: "0",
+    pauseReason: null,
+    pausedAt: null,
+    errorReason: null,
+    permissions: {},
+    metadata: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
 
-async function createApp() {
-  const [{ agentRoutes }, { errorHandler }] = await Promise.all([
-    vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
-  ]);
+function revision(overrides: Record<string, unknown> = {}) {
+  const canonicalConfiguration = canonicalTestAgentAdapterRevision({
+    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
+    implementationIdentity:
+      CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
+    defaultEnvironmentId: environmentId,
+    executionTargetDriver: "local",
+    executionTargetDigest: "a".repeat(64),
+  });
+  return {
+    id: revisionId,
+    companyId: "company-1",
+    agentId,
+    revisionNumber: 1,
+    runtimeConfig: {},
+    ...canonicalConfiguration,
+    parentRevisionId: null,
+    createdByAgentId: null,
+    createdByUserId: "board-user",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function createApp(actorType: "board" | "agent" = "board") {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "local-board",
-      companyIds: ["company-1"],
-      source: "local_implicit",
-      isInstanceAdmin: false,
-    };
+    (req as any).actor = actorType === "board"
+      ? testBoardSessionActor({
+          userId: "board-user",
+          companyIds: ["company-1"],
+          isInstanceAdmin: false,
+        })
+      : {
+          type: "agent",
+          agentId,
+          companyId: "company-1",
+          runId: "run-1",
+          source: "internal",
+        };
     next();
   });
-  const db = {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(async () => [
-          {
-            id: "company-1",
-            requireBoardApprovalForNewAgents: false,
-          },
-        ]),
-      })),
-    })),
-  };
-  app.use("/api", agentRoutes(db as any));
+  app.use("/api", denyGenericAgentRest("control-plane"));
+  app.use("/api", agentRoutes({} as never, {
+    ordinaryIssues: {
+      notifyCreatorDelivery: async () => undefined,
+    } as never,
+  }));
   app.use(errorHandler);
   return app;
 }
 
-async function requestApp(
-  app: express.Express,
-  buildRequest: (baseUrl: string) => request.Test,
-) {
-  const { createServer } = await vi.importActual<typeof import("node:http")>("node:http");
-  const server = createServer(app);
-  try {
-    await new Promise<void>((resolve) => {
-      server.listen(0, "127.0.0.1", resolve);
-    });
-    const address = server.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected HTTP server to listen on a TCP port");
-    }
-    return await buildRequest(`http://127.0.0.1:${address.port}`);
-  } finally {
-    if (server.listening) {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-    }
-  }
-}
-
-async function unregisterTestAdapter(type: string) {
-  const { unregisterServerAdapter } = await import("../adapters/index.js");
-  unregisterServerAdapter(type);
-}
-
-describe("agent routes adapter validation", () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    vi.doUnmock("../routes/agents.js");
-    vi.doUnmock("../routes/authz.js");
-    vi.doUnmock("../middleware/index.js");
-    vi.doUnmock("../routes/agents.js");
-    registerModuleMocks();
+describe("agent control-plane routes", () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    mockCompanySkillService.listRuntimeSkillEntries.mockResolvedValue([]);
-    mockCompanySkillService.resolveRequestedSkillKeys.mockResolvedValue([]);
-    mockAccessService.canUser.mockResolvedValue(true);
+    mockAgentService.getById.mockResolvedValue(agent());
     mockAccessService.decide.mockResolvedValue({
       allowed: true,
       reason: "allow_explicit_grant",
       explanation: "Allowed by test grant",
     });
-    mockAccessService.hasPermission.mockResolvedValue(true);
-    mockAccessService.ensureMembership.mockResolvedValue(undefined);
-    mockAccessService.setPrincipalPermission.mockResolvedValue(undefined);
+    mockAccessService.getMembership.mockResolvedValue(null);
+    mockAccessService.listPrincipalGrants.mockResolvedValue([]);
     mockLogActivity.mockResolvedValue(undefined);
-    mockSecretService.syncEnvBindingsForTarget.mockResolvedValue(undefined);
-    mockAgentInstructionsService.materializeManagedBundle.mockImplementation(async (agent: { adapterConfig: unknown }) => ({
-      adapterConfig: agent.adapterConfig,
-    }));
-    mockAgentService.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
-      id: String(input.id ?? "11111111-1111-4111-8111-111111111111"),
+    mockRuntimeAgentConfiguration.create.mockResolvedValue({
+      agentId,
       companyId: "company-1",
-      name: String(input.name ?? "Agent"),
-      urlKey: "agent",
-      role: String(input.role ?? "general"),
-      title: null,
-      icon: null,
-      status: "idle",
-      reportsTo: null,
-      capabilities: null,
-      adapterType: String(input.adapterType ?? "process"),
-      adapterConfig: (input.adapterConfig as Record<string, unknown> | undefined) ?? {},
-      runtimeConfig: (input.runtimeConfig as Record<string, unknown> | undefined) ?? {},
-      budgetMonthlyCents: 0,
-      spentMonthlyCents: 0,
-      pauseReason: null,
-      pausedAt: null,
-      permissions: { canCreateAgents: false },
-      lastHeartbeatAt: null,
-      metadata: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
-    mockAgentService.getById.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
-      companyId: "company-1",
-      name: "Codex",
-      urlKey: "codex",
-      role: "engineer",
-      title: null,
-      icon: null,
-      status: "idle",
-      reportsTo: null,
-      capabilities: null,
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      budgetMonthlyCents: 0,
-      spentMonthlyCents: 0,
-      pauseReason: null,
-      pausedAt: null,
-      permissions: { canCreateAgents: false },
-      lastHeartbeatAt: null,
-      metadata: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      configuration: runtimeConfiguration(),
+      auditId: "audit-1",
+      retried: false,
     });
-    mockAgentService.update.mockImplementation(async (_id: string, patch: Record<string, unknown>) => ({
-      ...(await mockAgentService.getById()),
-      ...patch,
-    }));
-    await unregisterTestAdapter("external_test");
-    await unregisterTestAdapter(missingAdapterType);
-  });
-
-  afterEach(async () => {
-    await unregisterTestAdapter("external_test");
-    await unregisterTestAdapter(missingAdapterType);
-  });
-
-  it("creates agents for dynamically registered external adapter types", async () => {
-    const { registerServerAdapter } = await import("../adapters/index.js");
-    registerServerAdapter(externalAdapter);
-
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .post("/api/companies/company-1/agents")
-        .send({
-          name: "External Agent",
-          adapterType: "external_test",
-        }),
+    mockRuntimeAgentConfiguration.get.mockResolvedValue(
+      runtimeConfiguration(),
     );
-
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    expect(res.body.adapterType).toBe("external_test");
+    mockRuntimeAgentConfiguration.update.mockResolvedValue({
+      agentId,
+      companyId: "company-1",
+      configuration: runtimeConfiguration(),
+      auditId: "audit-2",
+      retried: false,
+    });
+    const toolOptions = [
+      {
+        catalogEntryId:
+          "55555555-5555-4555-8555-555555555555",
+        connectionId:
+          "66666666-6666-4666-8666-666666666666",
+        connectionName: "Records",
+        title: "Lookup record",
+        description: "Look up a record",
+        catalogVersionHash: "catalog-v1",
+      },
+    ];
+    mockRuntimeAgentConfiguration.listCreateCompanyToolOptions
+      .mockResolvedValue(toolOptions);
+    mockRuntimeAgentConfiguration.listAgentCompanyToolOptions
+      .mockResolvedValue(toolOptions);
+    mockAdapterConfigurations.createRevision.mockResolvedValue({
+      revision: revision(),
+      current: agent({
+        adapterConfig: revision().normalizedConfig,
+      }),
+      appended: true,
+    });
+    mockAdapterConfigurations.listRevisions.mockResolvedValue([
+      revision({ revisionNumber: 2, id: revisionId }),
+      revision({
+        revisionNumber: 1,
+        id: "33333333-3333-4333-8333-333333333333",
+      }),
+    ]);
+    mockAdapterConfigurations.getCurrentRevision.mockResolvedValue(
+      revision(),
+    );
+    mockAdapterConfigurations.getCompanySkillPins.mockResolvedValue({
+      entries: [
+        {
+          key: "code-review",
+          versionId:
+            "55555555-5555-4555-8555-555555555555",
+        },
+      ],
+      skillChannel: "operator_native",
+    });
+    mockAdapterConfigurations.replaceCompanySkillPins.mockResolvedValue({
+      entries: [
+        {
+          key: "research",
+          versionId:
+            "66666666-6666-4666-8666-666666666666",
+        },
+      ],
+      skillChannel: "isolated_skills_home",
+      revision: revision({ revisionNumber: 2 }),
+      current: agent(),
+      appended: true,
+    });
+    mockOperationalConfigurations.update.mockResolvedValue({
+      agent: agent({ budgetMonthlyAmount: "25" }),
+    });
   });
 
-  it("does not inject CODEX_HOME or OPENAI_API_KEY when creating a keyless codex_local agent", async () => {
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .post("/api/companies/company-1/agents")
-        .send({
-          name: "Codex Agent",
-          adapterType: "codex_local",
-          adapterConfig: {},
-        }),
-    );
+  it("creates only through the explicit runtime-agent contract", async () => {
+    const configuration = runtimeConfiguration();
+    const response = await request(createApp())
+      .post("/api/companies/company-1/runtime-agents")
+      .set("Idempotency-Key", "create-explicit-agent")
+      .send(configuration);
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
-    const env = (adapterConfig.env as Record<string, unknown> | undefined) ?? {};
-    expect(env.OPENAI_API_KEY).toBeUndefined();
-    expect(env.CODEX_HOME).toBeUndefined();
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      agent: expect.objectContaining({ id: agentId }),
+      configuration,
+      auditId: "audit-1",
+      retried: false,
+    });
+    expect(mockRuntimeAgentConfiguration.create).toHaveBeenCalledWith({
+      companyId: "company-1",
+      actor: expect.objectContaining({
+        kind: "board",
+        actorId: "board-user",
+      }),
+      source: "board",
+      configuration,
+      idempotencyKey: "create-explicit-agent",
+    });
   });
 
-  it("does not re-inject CODEX_HOME or OPENAI_API_KEY when updating a keyless codex_local agent", async () => {
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .patch("/api/agents/11111111-1111-4111-8111-111111111111")
-        .send({
-          adapterConfig: { model: "gpt-5.4" },
-        }),
-    );
+  it("rejects partial create payloads before the transaction", async () => {
+    const response = await request(createApp())
+      .post("/api/companies/company-1/runtime-agents")
+      .send({ name: "Implicit defaults are forbidden" });
 
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    const patch = mockAgentService.update.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const adapterConfig = patch.adapterConfig as Record<string, unknown>;
-    const env = (adapterConfig.env as Record<string, unknown> | undefined) ?? {};
-    expect(env.OPENAI_API_KEY).toBeUndefined();
-    expect(env.CODEX_HOME).toBeUndefined();
+    expect(response.status).toBe(400);
+    expect(mockRuntimeAgentConfiguration.create).not.toHaveBeenCalled();
   });
 
-  it("isolates CODEX_HOME when updating a codex_local agent to set its own OPENAI_API_KEY", async () => {
-    const agentId = "11111111-1111-4111-8111-111111111111";
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .patch(`/api/agents/${agentId}`)
-        .send({
-          adapterConfig: {
-            env: {
-              OPENAI_API_KEY: "sk-test-key",
-            },
-          },
-        }),
+  it("serves disjoint create and exact-agent company-tool option catalogs", async () => {
+    const app = createApp();
+    const createOptions = await request(app).get(
+      "/api/companies/company-1/runtime-agent-tool-options",
     );
-
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    const patch = mockAgentService.update.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const adapterConfig = patch.adapterConfig as Record<string, unknown>;
-    const env = adapterConfig.env as Record<string, unknown>;
-    expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    const editOptions = await request(app).get(
+      `/api/agents/${agentId}/runtime-configuration/tool-options`,
+    );
+    expect(createOptions.status).toBe(200);
+    expect(editOptions.status).toBe(200);
+    expect(createOptions.body).toEqual(editOptions.body);
+    expect(createOptions.body[0]).not.toHaveProperty(
+      "connectionInstallId",
+    );
+    expect(
+      mockRuntimeAgentConfiguration.listCreateCompanyToolOptions,
+    ).toHaveBeenCalledWith("company-1");
+    expect(
+      mockRuntimeAgentConfiguration.listAgentCompanyToolOptions,
+    ).toHaveBeenCalledWith({
+      companyId: "company-1",
+      agentId,
+    });
   });
 
-  it("allows codex_local agents to share the host Codex home", async () => {
-    const app = await createApp();
-    const sharedHome = path.join(os.homedir(), ".codex");
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .post("/api/companies/company-1/agents")
-        .send({
-          name: "Shared Codex",
-          adapterType: "codex_local",
-          adapterConfig: {
-            env: {
-              CODEX_HOME: sharedHome,
-            },
-          },
-        }),
-    );
+  it("appends and reads redacted first-class adapter revisions", async () => {
+    const configuration = {
+      adapterType: CANONICAL_TEST_ADAPTER_TYPE,
+      adapterConfig: { model: "gpt-5.6" },
+      defaultEnvironmentId: environmentId,
+      runtimeConfig: {},
+      companySkillPins: [],
+      skillChannel: "operator_native",
+    };
+    const app = createApp();
+    const created = await request(app)
+      .post(`/api/agents/${agentId}/adapter-config-revisions`)
+      .send(configuration);
+    const history = await request(app)
+      .get(`/api/agents/${agentId}/adapter-config-revisions`);
+    const current = await request(app)
+      .get(`/api/agents/${agentId}/adapter-config-revisions/current`);
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
-    const env = adapterConfig.env as Record<string, unknown>;
-    expect(env.CODEX_HOME).toBe(sharedHome);
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      revision: {
+        id: revisionId,
+        acpConfiguration: revision().acpConfiguration,
+      },
+      current: {
+        agentId,
+        currentAdapterConfigRevisionId: revisionId,
+      },
+      appended: true,
+    });
+    expect(Object.keys(created.body.revision).sort()).toEqual([
+      "acpConfiguration",
+      "adapterConfigSchemaVersion",
+      "adapterType",
+      "agentId",
+      "companyId",
+      "createdAt",
+      "createdByAgentId",
+      "createdByUserId",
+      "defaultEnvironmentId",
+      "digest",
+      "executionTargetDigest",
+      "executionTargetDriver",
+      "id",
+      "implementationIdentity",
+      "normalizedConfig",
+      "parentRevisionId",
+      "revisionNumber",
+      "runtimeConfig",
+    ]);
+    expect(Object.keys(created.body.revision.acpConfiguration).sort()).toEqual([
+      "companySkillPins",
+      "contractVersion",
+      "executionTargetSelector",
+      "launchProfile",
+      "model",
+      "sessionConfigSelections",
+      "skillChannel",
+      "workspaceSelector",
+    ]);
+    expect(history.status).toBe(200);
+    expect(history.body.map((row: { revisionNumber: number }) =>
+      row.revisionNumber)).toEqual([2, 1]);
+    expect(current.status).toBe(200);
+    expect(current.body.acpConfiguration).toEqual(
+      revision().acpConfiguration,
+    );
+    for (const response of [created.body, history.body, current.body]) {
+      const serialized = JSON.stringify(response);
+      expect(serialized).not.toContain("nativeCorrelationKind");
+      expect(serialized).not.toContain("nativeCorrelation");
+      expect(serialized).not.toContain("fixture-native/v1");
+      expect(serialized).not.toContain("providerModel");
+      expect(serialized).not.toContain("providerSelectors");
+      expect(serialized).not.toContain("operatorNativeConfig");
+      expect(serialized).not.toContain("secretReferenceIdentities");
+      expect(serialized).not.toContain("runtimeFlags");
+    }
   });
 
-  it("isolates CODEX_HOME when a codex_local agent sets its own OPENAI_API_KEY", async () => {
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .post("/api/companies/company-1/agents")
-        .send({
-          name: "Keyed Codex",
-          adapterType: "codex_local",
-          adapterConfig: {
-            env: {
-              OPENAI_API_KEY: "sk-test-key",
-            },
-          },
-        }),
-    );
+  it("reads and replaces company skill pins through the dedicated operation", async () => {
+    const app = createApp();
+    const read = await request(app)
+      .get(`/api/agents/${agentId}/company-skill-pins`);
+    const update = {
+      entries: [
+        {
+          key: "research",
+          versionId:
+            "66666666-6666-4666-8666-666666666666",
+        },
+      ],
+      skillChannel: "isolated_skills_home",
+    };
+    const replaced = await request(app)
+      .put(`/api/agents/${agentId}/company-skill-pins`)
+      .send(update);
 
-    expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const createInput = mockAgentService.create.mock.calls.at(-1)?.[1] as Record<string, unknown>;
-    const agentId = String(createInput.id);
-    const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
-    const env = adapterConfig.env as Record<string, unknown>;
-    expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    expect(read.status).toBe(200);
+    expect(read.body.entries).toEqual([
+      {
+        key: "code-review",
+        versionId:
+          "55555555-5555-4555-8555-555555555555",
+      },
+    ]);
+    expect(read.body.skillChannel).toBe("operator_native");
+    expect(replaced.status).toBe(200);
+    expect(replaced.body).toEqual(update);
+    expect(
+      mockAdapterConfigurations.getCompanySkillPins,
+    ).toHaveBeenCalledWith({
+      companyId: "company-1",
+      agentId,
+    });
+    expect(
+      mockAdapterConfigurations.replaceCompanySkillPins,
+    ).toHaveBeenCalledWith({
+      companyId: "company-1",
+      agentId,
+      update,
+      actor: {
+        type: "user",
+        userId: "board-user",
+      },
+    });
+    expect(mockAdapterConfigurations.createRevision).not.toHaveBeenCalled();
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "agent.company_skill_pins_updated",
+        entityId: revisionId,
+      }),
+    );
   });
 
-  it("rejects unknown adapter types even when schema accepts arbitrary strings", async () => {
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .post("/api/companies/company-1/agents")
-        .send({
-          name: "Missing Adapter",
-          adapterType: missingAdapterType,
-        }),
-    );
+  it("rejects malformed company skill pin replacements before the service", async () => {
+    const duplicate = {
+      entries: [
+        {
+          key: "research",
+          versionId:
+            "66666666-6666-4666-8666-666666666666",
+        },
+        {
+          key: "research",
+          versionId:
+            "77777777-7777-4777-8777-777777777777",
+        },
+      ],
+      mode: "latest",
+    };
+    const response = await request(createApp())
+      .put(`/api/agents/${agentId}/company-skill-pins`)
+      .send(duplicate);
 
-    expect(res.status, JSON.stringify(res.body)).toBe(422);
-    expect(String(res.body.error ?? res.body.message ?? "")).toContain(`Unknown adapter type: ${missingAdapterType}`);
+    expect(response.status).toBe(400);
+    expect(
+      mockAdapterConfigurations.replaceCompanySkillPins,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("updates only the board-owned operational contract", async () => {
+    const response = await request(createApp())
+      .patch(`/api/agents/${agentId}/operational-configuration`)
+      .send({ budgetMonthlyAmount: "25" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      id: agentId,
+      budgetMonthlyAmount: "25",
+    });
+    expect(mockOperationalConfigurations.update).toHaveBeenCalledWith({
+      companyId: "company-1",
+      agentId,
+      configuration: { budgetMonthlyAmount: "25" },
+      actorUserId: "board-user",
+    });
+  });
+
+  it("removes every superseded mixed mutation route", async () => {
+    const app = createApp();
+    const statuses = await Promise.all([
+      request(app).post("/api/companies/company-1/agents").send({}),
+      request(app).patch(`/api/agents/${agentId}`).send({ name: "Legacy" }),
+      request(app)
+        .patch(`/api/agents/${agentId}/governance`)
+        .send({ trustPreset: "standard" }),
+      request(app)
+        .post(`/api/agents/${agentId}/config-revisions/legacy/rollback`)
+        .send({}),
+      request(app).post(`/api/agents/${agentId}/approve`).send({}),
+    ]);
+
+    expect(statuses.map((response) => response.status)).toEqual([
+      404,
+      404,
+      404,
+      404,
+      404,
+    ]);
+  });
+
+  it("rejects agent credentials at the generic control-plane boundary", async () => {
+    const response = await request(createApp("agent"))
+      .get(`/api/agents/${agentId}/adapter-config-revisions`);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toContain(
+      "run-scoped compiled interface",
+    );
   });
 });

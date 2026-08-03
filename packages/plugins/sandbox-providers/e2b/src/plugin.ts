@@ -5,10 +5,19 @@ import {
   Sandbox,
   SandboxNotFoundError,
   TimeoutError,
+  type SandboxBackgroundHandle,
+  type SandboxRunResult,
 } from "e2b";
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import {
+  buildCancelEnvironmentShellCommand,
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+  wrapCancellableEnvironmentShellCommand,
+} from "@paperclipai/plugin-sdk";
 import type {
   PluginEnvironmentAcquireLeaseParams,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
@@ -22,6 +31,8 @@ import type {
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
 } from "@paperclipai/plugin-sdk";
+
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
 interface E2bDriverConfig {
   template: string;
@@ -152,13 +163,6 @@ function isValidShellEnvKey(value: string) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
-// Mirror SSH's buildSshSpawnTarget: source the user's login profiles (and nvm)
-// before exec so commands run with the same PATH the user sees in an
-// interactive shell. e2b's `sandbox.commands.run` otherwise spawns a
-// non-login, non-interactive shell whose PATH does not include npm-globals,
-// nvm shims, or anything else the template installs via .profile/.bashrc —
-// which makes the hello probe fail with `exec: <cli>: not found` even when
-// the binary is on disk.
 function buildLoginShellScript(input: {
   command: string;
   args: string[];
@@ -170,26 +174,35 @@ function buildLoginShellScript(input: {
       throw new Error(`Invalid sandbox environment variable key: ${key}`);
     }
   }
-  const envArgs = Object.entries(env)
+  const configuredHome =
+    env.HOME?.trim() || env.USERPROFILE?.trim() || null;
+  const effectiveEnv = { ...env };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const envArgs = Object.entries(effectiveEnv)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
     .map(([key, value]) => `${key}=${shellQuote(value)}`);
   const commandParts = [shellQuote(input.command), ...input.args.map(shellQuote)].join(" ");
-  const execLine = envArgs.length > 0
-    ? `exec env ${envArgs.join(" ")} ${commandParts}`
-    : `exec ${commandParts}`;
-  return [
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const execPrefix = configuredHome ? "exec " : "";
+  const execLine =
+    `${execPrefix}env -i PATH="$PATH"${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${commandParts}`;
+  const lines = [
     'if [ -f /etc/profile ]; then . /etc/profile >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-    // .bash_profile typically sources .bashrc itself; only source .bashrc
-    // directly when no .bash_profile exists to avoid re-running idempotency-
-    // sensitive setup (nvm, PATH prepends) twice on templates that wire
-    // .bash_profile -> .bashrc.
-    'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; elif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
-    execLine,
-  ].join(" && ");
+  ];
+  if (!configuredHome) {
+    lines.push(
+      'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+      'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+    );
+  }
+  lines.push(execLine);
+  return lines.join(" && ");
 }
 
 async function killSandboxBestEffort(sandbox: Sandbox, reason: string): Promise<void> {
@@ -380,96 +393,145 @@ const plugin = definePlugin({
   async onEnvironmentExecute(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
-    if (!params.lease.providerLeaseId) {
-      return {
-        exitCode: 1,
-        timedOut: false,
-        stdout: "",
-        stderr: "No provider lease ID available for execution.",
-      };
-    }
+    let commandHandle: SandboxBackgroundHandle | null = null;
+    let cancellationRequested = false;
+    return await activeExecutions.execute(params, {
+      cancel: async () => {
+        cancellationRequested = true;
+        await commandHandle?.kill();
+      },
+      execute: async () => {
+        if (!params.lease.providerLeaseId) {
+          return {
+            exitCode: 1,
+            timedOut: false,
+            stdout: "",
+            stderr: "No provider lease ID available for execution.",
+          };
+        }
 
-    const config = parseDriverConfig(params.config);
-    const sandbox = await connectSandbox(config, params.lease.providerLeaseId);
-    // Refresh the sandbox death clock on every command. E2B's `timeoutMs` is
-    // the absolute sandbox lifetime from create/connect; without this, a run
-    // longer than `config.timeoutMs` will have its sandbox killed mid-command
-    // and the next call throws "Sandbox is probably not running anymore".
-    // The refresh is best-effort: the sandbox is already healthy at this
-    // point, so a transient API error on setTimeout should not block the
-    // command from running. Worst case the existing lifetime stands.
-    try {
-      await sandbox.setTimeout(config.timeoutMs);
-    } catch {
-      // ignore — keep going with the existing sandbox lifetime
-    }
-    const baseCommand = buildLoginShellScript({
-      command: params.command,
-      args: params.args ?? [],
-      env: params.env,
+        const config = parseDriverConfig(params.config);
+        const sandbox = await connectSandbox(config, params.lease.providerLeaseId);
+        try {
+          await sandbox.setTimeout(config.timeoutMs);
+        } catch {
+          // Keep going with the existing sandbox lifetime.
+        }
+        if (cancellationRequested) {
+          return { exitCode: 130, timedOut: false, stdout: "", stderr: "" };
+        }
+        const baseCommand = buildLoginShellScript({
+          command: params.command,
+          args: params.args ?? [],
+          env: params.env,
+        });
+        const timeoutMs = params.timeoutMs ?? config.timeoutMs;
+        let stagedStdinPath: string | null = null;
+        if (params.stdin != null) {
+          stagedStdinPath = `/tmp/paperclip-stdin-${randomUUID()}`;
+          try {
+            await sandbox.files.write(stagedStdinPath, params.stdin);
+          } catch (error) {
+            await sandbox.files.remove(stagedStdinPath).catch(() => undefined);
+            throw error;
+          }
+        }
+
+        const commandScript = stagedStdinPath
+          ? `${baseCommand} < ${shellQuote(stagedStdinPath)}`
+          : baseCommand;
+        const command =
+          wrapCancellableEnvironmentShellCommand(
+            params.executionId,
+            commandScript,
+          );
+
+        try {
+          if (cancellationRequested) {
+            return { exitCode: 130, timedOut: false, stdout: "", stderr: "" };
+          }
+          // Background mode yields the exact E2B command PID. The worker keeps
+          // waiting on that handle, while a concurrent cancellation RPC can
+          // kill only this command and leave the sandbox lease intact.
+          const handle = await sandbox.commands.run(command, {
+            background: true,
+            cwd: params.cwd,
+            timeoutMs,
+          }) as SandboxBackgroundHandle;
+          commandHandle = handle;
+          if (cancellationRequested) {
+            await handle.kill();
+          }
+          const result = await handle.wait();
+          return {
+            exitCode: result.exitCode,
+            timedOut: false,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          };
+        } catch (error) {
+          if (error instanceof CommandExitError) {
+            return {
+              exitCode: error.exitCode,
+              timedOut: false,
+              stdout: error.stdout,
+              stderr: error.stderr,
+            };
+          }
+          if (error instanceof TimeoutError) {
+            return buildTimeoutExecuteResult(error);
+          }
+          throw error;
+        } finally {
+          if (stagedStdinPath) {
+            await sandbox.files.remove(stagedStdinPath).catch(() => undefined);
+          }
+        }
+      },
     });
-    const timeoutMs = params.timeoutMs ?? config.timeoutMs;
+  },
 
-    // For commands with stdin, stage the payload to a temp file inside the
-    // sandbox and shell-redirect it. Streaming stdin via `sendStdin` raced
-    // with fast-failing commands (the process exits before the RPC lands),
-    // and the previous code awaited a foreground `run` before sending stdin
-    // at all, so the data was never delivered. The staged-file approach
-    // keeps execution synchronous, avoids the race, and is unaffected by
-    // whether the command exits in microseconds or minutes.
-    let stagedStdinPath: string | null = null;
-    if (params.stdin != null) {
-      stagedStdinPath = `/tmp/paperclip-stdin-${randomUUID()}`;
-      try {
-        await sandbox.files.write(stagedStdinPath, params.stdin);
-      } catch (error) {
-        // Best-effort cleanup in case the write partially succeeded; ignore
-        // remove failures so the original error is what propagates.
-        await sandbox.files.remove(stagedStdinPath).catch(() => undefined);
-        throw error;
-      }
-    }
-
-    const command = stagedStdinPath
-      ? `${baseCommand} < ${shellQuote(stagedStdinPath)}`
-      : baseCommand;
-
-    try {
-      // Env is interpolated into the script via `exec env KEY=val …` after
-      // profile sourcing so user-configured env wins over anything profiles
-      // export. No need to pass `envs:` separately.
-      const result = await sandbox.commands.run(command, {
-        cwd: params.cwd,
-        timeoutMs,
-      }) as Awaited<ReturnType<Sandbox["commands"]["run"]>> & {
-        exitCode: number;
-        stdout: string;
-        stderr: string;
-      };
-      return {
-        exitCode: result.exitCode,
-        timedOut: false,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      };
-    } catch (error) {
-      if (error instanceof CommandExitError) {
-        return {
-          exitCode: error.exitCode,
-          timedOut: false,
-          stdout: error.stdout,
-          stderr: error.stderr,
-        };
-      }
-      if (error instanceof TimeoutError) {
-        return buildTimeoutExecuteResult(error);
-      }
-      throw error;
-    } finally {
-      if (stagedStdinPath) {
-        await sandbox.files.remove(stagedStdinPath).catch(() => undefined);
-      }
-    }
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async () => {
+        if (!params.lease.providerLeaseId) return false;
+        const config = parseDriverConfig(params.config);
+        const sandbox = await connectSandbox(
+          config,
+          params.lease.providerLeaseId,
+        );
+        try {
+          const result = await sandbox.commands.run(
+            buildCancelEnvironmentShellCommand(
+              params.executionId,
+            ),
+            {
+              cwd: "/",
+              timeoutMs: Math.min(
+                config.timeoutMs,
+                10_000,
+              ),
+            },
+          ) as SandboxRunResult;
+          if (result.exitCode !== 0) {
+            throw new Error(
+              `E2B exact command cancellation failed with exit code ${result.exitCode}.`,
+            );
+          }
+          return true;
+        } catch (error) {
+          if (error instanceof CommandExitError) {
+            throw new Error(
+              `E2B exact command cancellation failed with exit code ${error.exitCode}.`,
+            );
+          }
+          throw error;
+        }
+      },
+    );
   },
 });
 

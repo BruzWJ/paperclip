@@ -1,49 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "@paperclipai/shared";
 import { buildIssueTree, countDescendants, filterIssueDescendants } from "./issue-tree";
+import { createTestIssue } from "../test-utils/issue";
 
 function makeIssue(id: string, parentId: string | null = null): Issue {
-  return {
+  return createTestIssue({
     id,
     identifier: id.toUpperCase(),
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
     parentId,
     title: `Issue ${id}`,
-    description: null,
-    status: "todo",
-    workMode: "standard",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-    labels: [],
-    labelIds: [],
-    myLastTouchAt: null,
-    lastExternalCommentAt: null,
-    isUnreadForMe: false,
-  };
+  });
 }
 
 describe("buildIssueTree", () => {

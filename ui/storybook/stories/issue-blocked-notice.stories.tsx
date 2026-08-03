@@ -8,12 +8,16 @@ import { IssueBlockedNotice } from "@/components/IssueBlockedNotice";
 // notice copy can be reviewed at a glance.
 
 function blocker(
-  overrides: Partial<IssueRelationIssueSummary> & Pick<IssueRelationIssueSummary, "id" | "identifier" | "title" | "status">,
+  overrides: Partial<IssueRelationIssueSummary> &
+    Pick<
+      IssueRelationIssueSummary,
+      "id" | "identifier" | "title" | "boardPresentationStatus"
+    >,
 ): IssueRelationIssueSummary {
   return {
     priority: "medium",
-    assigneeAgentId: "agent-1",
-    assigneeUserId: null,
+    ownerAgentId: "agent-1",
+    ownerUserId: null,
     ...overrides,
   } as IssueRelationIssueSummary;
 }
@@ -52,7 +56,6 @@ export const RuleCSingleBlocker: Story = {
   render: () => (
     <Frame label="Blocked · one in-progress blocker — a message won't reopen it yet">
       <IssueBlockedNotice
-        issueId="issue-1"
         issueStatus="blocked"
         agentName="CodexCoder"
         blockers={[
@@ -60,7 +63,7 @@ export const RuleCSingleBlocker: Story = {
             id: "b1",
             identifier: "PAP-500",
             title: "Server work still in flight",
-            status: "in_progress",
+            boardPresentationStatus: "in_progress",
           }),
         ]}
       />
@@ -73,7 +76,6 @@ export const RuleCChainNamesLeaf: Story = {
   render: () => (
     <Frame label="Blocked · direct blocker in review, ultimately waiting on an in-progress leaf">
       <IssueBlockedNotice
-        issueId="issue-2"
         issueStatus="blocked"
         agentName="CodexCoder"
         blockers={[
@@ -81,14 +83,14 @@ export const RuleCChainNamesLeaf: Story = {
             id: "b1",
             identifier: "PAP-600",
             title: "Waiting in review",
-            status: "in_review",
+            boardPresentationStatus: "in_review",
             terminalBlockers: [
               blocker({
                 id: "t1",
                 identifier: "PAP-777",
                 title: "Actual work",
-                status: "in_progress",
-                assigneeAgentId: "agent-2",
+                boardPresentationStatus: "in_progress",
+                ownerAgentId: "agent-2",
               }),
             ],
           }),
@@ -103,12 +105,21 @@ export const RuleCMultipleBlockers: Story = {
   render: () => (
     <Frame label="Blocked · two unresolved blockers — count is summarized">
       <IssueBlockedNotice
-        issueId="issue-3"
         issueStatus="blocked"
         agentName="CodexCoder"
         blockers={[
-          blocker({ id: "b1", identifier: "PAP-501", title: "First dependency", status: "in_progress" }),
-          blocker({ id: "b2", identifier: "PAP-502", title: "Second dependency", status: "todo" }),
+          blocker({
+            id: "b1",
+            identifier: "PAP-501",
+            title: "First dependency",
+            boardPresentationStatus: "in_progress",
+          }),
+          blocker({
+            id: "b2",
+            identifier: "PAP-502",
+            title: "Second dependency",
+            boardPresentationStatus: "todo",
+          }),
         ]}
       />
     </Frame>
@@ -119,7 +130,7 @@ export const BlockedNoUnresolvedBlockers: Story = {
   name: "Rule B path · blocked, no unresolved blockers",
   render: () => (
     <Frame label="Blocked · all blocker edges done/absent — a message WILL move it back to todo">
-      <IssueBlockedNotice issueId="issue-4" issueStatus="blocked" agentName="CodexCoder" blockers={[]} />
+      <IssueBlockedNotice issueStatus="blocked" agentName="CodexCoder" blockers={[]} />
     </Frame>
   ),
 };
@@ -129,11 +140,15 @@ export const InProgressWithBlocker: Story = {
   render: () => (
     <Frame label="In progress · has a blocker edge — no reopen framing">
       <IssueBlockedNotice
-        issueId="issue-5"
         issueStatus="in_progress"
         agentName="CodexCoder"
         blockers={[
-          blocker({ id: "b1", identifier: "PAP-800", title: "Dependency", status: "in_progress" }),
+          blocker({
+            id: "b1",
+            identifier: "PAP-800",
+            title: "Dependency",
+            boardPresentationStatus: "in_progress",
+          }),
         ]}
       />
     </Frame>

@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockFolderService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -27,13 +28,11 @@ async function createApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
+    (req as any).actor = testBoardSessionActor({
       userId: "user-1",
       companyIds: ["company-1"],
-      source: "session",
       isInstanceAdmin: false,
-    };
+    });
     next();
   });
   app.use("/api", folderRoutes({} as any));

@@ -1,35 +1,18 @@
 import { Router, urlencoded, type Request } from "express";
 import type { Db } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import type { DeploymentExposure } from "@paperclipai/shared";
 import {
   createSmokeRunSchema,
   recordSmokeRunStepSchema,
   updateSmokeRunSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { logActivity, smokeLabService } from "../services/index.js";
-
-function configuredPublicBaseUrl() {
-  const raw = (
-    process.env.PAPERCLIP_PUBLIC_URL?.trim()
-    || process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL?.trim()
-    || process.env.BETTER_AUTH_URL?.trim()
-    || process.env.BETTER_AUTH_BASE_URL?.trim()
-  );
-  if (!raw) return null;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return null;
-  }
-}
+import { requireRequestAuthority } from "../http/request-authority.js";
 
 function requestBaseUrl(req: Request) {
-  const configured = configuredPublicBaseUrl();
-  if (configured) return configured;
-  const host = req.get("host")?.trim() || req.hostname;
-  return `${req.protocol}://${host}`;
+  return requireRequestAuthority(req).origin;
 }
 
 function smokeLabBaseUrl(req: Request, companyId: string) {
@@ -43,7 +26,6 @@ function stringBodyValue(body: unknown, key: string) {
 }
 
 export function smokeLabRoutes(db: Db, options: {
-  deploymentMode?: DeploymentMode;
   deploymentExposure?: DeploymentExposure;
   nodeEnv?: string;
 } = {}) {
@@ -65,7 +47,7 @@ export function smokeLabRoutes(db: Db, options: {
       state: typeof req.query.state === "string" ? req.query.state : undefined,
       scope: typeof req.query.scope === "string" ? req.query.scope : undefined,
       responseType: typeof req.query.response_type === "string" ? req.query.response_type : undefined,
-      requestOrigin: configuredPublicBaseUrl() ?? undefined,
+      requestOrigin: requireRequestAuthority(req).origin,
     }));
   });
 
@@ -79,7 +61,7 @@ export function smokeLabRoutes(db: Db, options: {
       scope: stringBodyValue(req.body, "scope"),
       email: stringBodyValue(req.body, "email"),
       password: stringBodyValue(req.body, "password"),
-      requestOrigin: configuredPublicBaseUrl() ?? undefined,
+      requestOrigin: requireRequestAuthority(req).origin,
     });
     res.redirect(302, location);
   });
@@ -123,15 +105,14 @@ export function smokeLabRoutes(db: Db, options: {
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const result = await svc.startServices(companyId, smokeLabBaseUrl(req, companyId));
-    const actor = getActorInfo(req);
+    const result = await svc.startServices(
+      companyId,
+      smokeLabBaseUrl(req, companyId),
+    );
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.services_started",
       entityType: "smoke_lab",
       entityId: companyId,
@@ -145,14 +126,10 @@ export function smokeLabRoutes(db: Db, options: {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const result = await svc.stopServices(smokeLabBaseUrl(req, companyId));
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.services_stopped",
       entityType: "smoke_lab",
       entityId: companyId,
@@ -165,15 +142,13 @@ export function smokeLabRoutes(db: Db, options: {
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const result = await svc.installFixtures(companyId, getActorInfo(req));
-    const actor = getActorInfo(req);
+    const result = await svc.installFixtures(companyId, {
+      userId: req.actor.userId,
+    });
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.fixtures_installed",
       entityType: "smoke_lab",
       entityId: companyId,
@@ -189,25 +164,21 @@ export function smokeLabRoutes(db: Db, options: {
   });
 
   router.get("/companies/:companyId/smoke-lab/runs", async (req, res) => {
-    assertBoardOrAgent(req);
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     res.json(await svc.listRuns(companyId));
   });
 
   router.post("/companies/:companyId/smoke-lab/runs", validate(createSmokeRunSchema), async (req, res) => {
-    assertBoardOrAgent(req);
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const run = await svc.createRun(companyId, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.run_created",
       entityType: "smoke_run",
       entityId: run.id,
@@ -217,25 +188,21 @@ export function smokeLabRoutes(db: Db, options: {
   });
 
   router.get("/companies/:companyId/smoke-lab/runs/:runId", async (req, res) => {
-    assertBoardOrAgent(req);
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     res.json(await svc.getRun(companyId, req.params.runId as string));
   });
 
   router.patch("/companies/:companyId/smoke-lab/runs/:runId", validate(updateSmokeRunSchema), async (req, res) => {
-    assertBoardOrAgent(req);
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const run = await svc.updateRun(companyId, req.params.runId as string, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.run_updated",
       entityType: "smoke_run",
       entityId: run.id,
@@ -245,18 +212,14 @@ export function smokeLabRoutes(db: Db, options: {
   });
 
   router.post("/companies/:companyId/smoke-lab/runs/:runId/steps", validate(recordSmokeRunStepSchema), async (req, res) => {
-    assertBoardOrAgent(req);
+    assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const result = await svc.recordStep(companyId, req.params.runId as string, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.step_recorded",
       entityType: "smoke_run_step",
       entityId: result.step.id,
@@ -270,14 +233,10 @@ export function smokeLabRoutes(db: Db, options: {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const result = await svc.reset(companyId);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "smoke_lab.reset",
       entityType: "smoke_lab",
       entityId: companyId,

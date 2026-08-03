@@ -3,10 +3,15 @@ import type { Db } from "@paperclipai/db";
 import { badRequest, notFound } from "../errors.js";
 import { assertBoardOrgAccess } from "./authz.js";
 import { cloudUpstreamService, instanceSettingsService } from "../services/index.js";
+import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
 
-export function cloudUpstreamRoutes(db: Db, options: { instanceId?: string } = {}) {
+export function cloudUpstreamRoutes(
+  db: Db,
+  ordinaryIssues: OrdinaryIssueRuntime,
+  options: { instanceId?: string } = {},
+) {
   const router = Router();
-  const service = cloudUpstreamService(db, options);
+  const service = cloudUpstreamService(db, ordinaryIssues, options);
   const settings = instanceSettingsService(db);
 
   async function assertEnabled() {

@@ -40,13 +40,7 @@ import path from "node:path";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import type {
-  AskUserQuestionsInteraction,
-  PaperclipPluginManifestV1,
-  RequestCheckboxConfirmationInteraction,
-  RequestConfirmationInteraction,
-  SuggestTasksInteraction,
-} from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 
 import type { PaperclipPlugin } from "./define-plugin.js";
 import type {
@@ -61,10 +55,10 @@ import type {
   PluginJobContext,
   PluginLauncherRegistration,
   ScopeKey,
-  ToolRunContext,
+  PluginRunContextHandle,
+  PluginToolRunContext,
   ToolResult,
   EventFilter,
-  AgentSessionEvent,
 } from "./types.js";
 import type {
   JsonRpcId,
@@ -88,6 +82,7 @@ import type {
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
+  PluginEnvironmentCancelExecutionParams,
   PluginEnvironmentSyncInParams,
   PluginEnvironmentSyncOutParams,
   PluginEnvironmentRealizeWorkspaceParams,
@@ -101,6 +96,7 @@ import type {
   PluginEnvironmentCancelInteractiveSetupParams,
   PluginEnvironmentDeleteTemplateParams,
   PluginInvocationContext,
+  HostToWorkerMethods,
   WorkerToHostMethodName,
   WorkerToHostMethods,
 } from "./protocol.js";
@@ -121,6 +117,7 @@ import {
   isJsonRpcErrorResponse,
   JsonRpcParseError,
   JsonRpcCallError,
+  decodePluginPerformActionActorContext,
 } from "./protocol.js";
 
 // ---------------------------------------------------------------------------
@@ -308,16 +305,20 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   >();
   const toolHandlers = new Map<string, {
     declaration: Pick<import("@paperclipai/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">;
-    fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>;
+    fn: (
+      params: unknown,
+      runContext: PluginToolRunContext,
+    ) => Promise<ToolResult>;
   }>();
-
-  // Agent session event callbacks (populated by sendMessage, cleared by close)
-  const sessionEventCallbacks = new Map<string, (event: AgentSessionEvent) => void>();
+  const creatorCallbackHandlers = new Map<
+    string,
+    import("./types.js").PluginCreatorCallbackHandler
+  >();
 
   // Pending outbound (worker→host) requests
   const pendingRequests = new Map<string | number, {
     resolve: (response: JsonRpcResponse) => void;
-    timer: ReturnType<typeof setTimeout>;
+    timer: ReturnType<typeof setTimeout> | null;
   }>();
   let nextOutboundId = 1;
   const MAX_OUTBOUND_ID = Number.MAX_SAFE_INTEGER - 1;
@@ -338,7 +339,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   function callHost<M extends WorkerToHostMethodName>(
     method: M,
     params: WorkerToHostMethods[M][0],
-    timeoutMs?: number,
+    options?: {
+      timeoutMs?: number;
+      retryTransportTimeout?: boolean;
+    },
   ): Promise<WorkerToHostMethods[M][1]> {
     return new Promise<WorkerToHostMethods[M][1]>((resolve, reject) => {
       if (!running) {
@@ -350,28 +354,26 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         nextOutboundId = 1;
       }
       const id = nextOutboundId++;
-      const timeout = timeoutMs ?? rpcTimeoutMs;
+      const timeout = options?.timeoutMs ?? rpcTimeoutMs;
+      const maxAttempts = options?.retryTransportTimeout ? 2 : 1;
       let settled = false;
+      let attemptsSent = 0;
+      const activeInvocation = invocationContextStorage.getStore();
+      const request = {
+        ...createRequest(method, params, id),
+        ...(activeInvocation ? { paperclipInvocationId: activeInvocation.id } : {}),
+      };
+      const serializedRequest = serializeMessage(request);
 
       const settle = <T>(fn: (value: T) => void, value: T): void => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (pending.timer) clearTimeout(pending.timer);
         pendingRequests.delete(id);
         fn(value);
       };
 
-      const timer = setTimeout(() => {
-        settle(
-          reject,
-          new JsonRpcCallError({
-            code: PLUGIN_RPC_ERROR_CODES.TIMEOUT,
-            message: `Worker→host call "${method}" timed out after ${timeout}ms`,
-          }),
-        );
-      }, timeout);
-
-      pendingRequests.set(id, {
+      const pending = {
         resolve: (response: JsonRpcResponse) => {
           if (isJsonRpcSuccessResponse(response)) {
             settle(resolve, response.result as WorkerToHostMethods[M][1]);
@@ -381,19 +383,35 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
             settle(reject, new Error(`Unexpected response format for "${method}"`));
           }
         },
-        timer,
-      });
+        timer: null as ReturnType<typeof setTimeout> | null,
+      };
+      pendingRequests.set(id, pending);
 
-      try {
-        const activeInvocation = invocationContextStorage.getStore();
-        const request = {
-          ...createRequest(method, params, id),
-          ...(activeInvocation ? { paperclipInvocationId: activeInvocation.id } : {}),
-        };
-        sendMessage(request);
-      } catch (err) {
-        settle(reject, err instanceof Error ? err : new Error(String(err)));
-      }
+      const sendAttempt = (): void => {
+        attemptsSent += 1;
+        pending.timer = setTimeout(() => {
+          pending.timer = null;
+          if (attemptsSent < maxAttempts) {
+            sendAttempt();
+            return;
+          }
+          settle(
+            reject,
+            new JsonRpcCallError({
+              code: PLUGIN_RPC_ERROR_CODES.TIMEOUT,
+              message: `Worker→host call "${method}" timed out after ${timeout}ms`,
+            }),
+          );
+        }, timeout);
+
+        try {
+          stdoutStream.write(serializedRequest);
+        } catch (err) {
+          settle(reject, err instanceof Error ? err : new Error(String(err)));
+        }
+      };
+
+      sendAttempt();
     });
   }
 
@@ -759,12 +777,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           return callHost("issues.list", {
             companyId: input.companyId,
             projectId: input.projectId,
-            assigneeAgentId: input.assigneeAgentId,
-            originKind: input.originKind,
-            originKindPrefix: input.originKindPrefix,
-            originId: input.originId,
+            ownerAgentId: input.ownerAgentId,
             status: input.status,
-            includePluginOperations: input.includePluginOperations,
             limit: input.limit,
             offset: input.offset,
           });
@@ -774,246 +788,64 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           return callHost("issues.get", { issueId, companyId });
         },
 
+        async registerCreatorCallback(registration, handler) {
+          const key = registration.key.trim();
+          const version = registration.version.trim();
+          if (!key || !version) {
+            throw new Error("Creator callback key and version are required");
+          }
+          const identity = `${key}\u0000${version}`;
+          if (creatorCallbackHandlers.has(identity)) {
+            throw new Error(`Creator callback is already registered: ${key}@${version}`);
+          }
+          creatorCallbackHandlers.set(identity, handler);
+          try {
+            await callHost("issues.creatorCallback.register", {
+              callbackKey: key,
+              callbackVersion: version,
+            });
+          } catch (error) {
+            creatorCallbackHandlers.delete(identity);
+            throw error;
+          }
+        },
+
         async create(input) {
           return callHost("issues.create", {
             companyId: input.companyId,
+            request: input.request,
+            ownerAgentId: input.ownerAgentId,
+            callbackKey: input.callbackKey,
+            callbackVersion: input.callbackVersion,
+            title: input.title,
             projectId: input.projectId,
             goalId: input.goalId,
             parentId: input.parentId,
-            inheritExecutionWorkspaceFromIssueId: input.inheritExecutionWorkspaceFromIssueId,
-            title: input.title,
-            description: input.description,
-            status: input.status,
             priority: input.priority,
-            assigneeAgentId: input.assigneeAgentId,
-            assigneeUserId: input.assigneeUserId,
-            requestDepth: input.requestDepth,
-            billingCode: input.billingCode,
-            assigneeAdapterOverrides: input.assigneeAdapterOverrides,
-            surfaceVisibility: input.surfaceVisibility,
-            originKind: input.originKind,
-            originId: input.originId,
-            originRunId: input.originRunId,
-            blockedByIssueIds: input.blockedByIssueIds,
-            labelIds: input.labelIds,
-            executionWorkspaceId: input.executionWorkspaceId,
-            executionWorkspacePreference: input.executionWorkspacePreference,
-            executionWorkspaceSettings: input.executionWorkspaceSettings,
-            actorAgentId: input.actor?.actorAgentId,
-            actorUserId: input.actor?.actorUserId,
-            actorRunId: input.actor?.actorRunId,
+            attentionMask: input.attentionMask,
+          }, {
+            retryTransportTimeout: true,
           });
         },
 
-        async update(issueId: string, patch, companyId: string, actor) {
+        async update(issueId: string, input, companyId: string) {
           return callHost("issues.update", {
             issueId,
-            patch: {
-              ...(patch as Record<string, unknown>),
-              actorAgentId: actor?.actorAgentId,
-              actorUserId: actor?.actorUserId,
-              actorRunId: actor?.actorRunId,
-            },
+            input,
             companyId,
+          }, {
+            retryTransportTimeout: true,
           });
         },
 
-        async assertCheckoutOwner(input) {
-          return callHost("issues.assertCheckoutOwner", input);
-        },
-
-        async getSubtree(issueId: string, companyId: string, options) {
-          return callHost("issues.getSubtree", {
+        async withdraw(issueId: string, message: string, companyId: string) {
+          return callHost("issues.withdraw", {
             issueId,
             companyId,
-            includeRoot: options?.includeRoot,
-            includeRelations: options?.includeRelations,
-            includeDocuments: options?.includeDocuments,
-            includeActiveRuns: options?.includeActiveRuns,
-            includeAssignees: options?.includeAssignees,
+            message,
+          }, {
+            retryTransportTimeout: true,
           });
-        },
-
-        async requestWakeup(issueId: string, companyId: string, options) {
-          return callHost("issues.requestWakeup", {
-            issueId,
-            companyId,
-            reason: options?.reason,
-            contextSource: options?.contextSource,
-            idempotencyKey: options?.idempotencyKey,
-            actorAgentId: options?.actorAgentId,
-            actorUserId: options?.actorUserId,
-            actorRunId: options?.actorRunId,
-          });
-        },
-
-        async requestWakeups(issueIds: string[], companyId: string, options) {
-          return callHost("issues.requestWakeups", {
-            issueIds,
-            companyId,
-            reason: options?.reason,
-            contextSource: options?.contextSource,
-            idempotencyKeyPrefix: options?.idempotencyKeyPrefix,
-            actorAgentId: options?.actorAgentId,
-            actorUserId: options?.actorUserId,
-            actorRunId: options?.actorRunId,
-          });
-        },
-
-        async listComments(issueId: string, companyId: string) {
-          return callHost("issues.listComments", { issueId, companyId });
-        },
-
-        async createComment(issueId: string, body: string, companyId: string, options?: { authorAgentId?: string }) {
-          return callHost("issues.createComment", { issueId, body, companyId, authorAgentId: options?.authorAgentId });
-        },
-
-        async createInteraction(issueId: string, interaction, companyId: string, options?: { authorAgentId?: string }) {
-          return callHost("issues.createInteraction", {
-            issueId,
-            companyId,
-            interaction,
-            authorAgentId: options?.authorAgentId,
-          });
-        },
-
-        async suggestTasks(
-          issueId: string,
-          interaction,
-          companyId: string,
-          options?: { authorAgentId?: string },
-        ): Promise<SuggestTasksInteraction> {
-          return callHost("issues.createInteraction", {
-            issueId,
-            companyId,
-            interaction: {
-              ...interaction,
-              kind: "suggest_tasks",
-            },
-            authorAgentId: options?.authorAgentId,
-          }) as Promise<SuggestTasksInteraction>;
-        },
-
-        async askUserQuestions(
-          issueId: string,
-          interaction,
-          companyId: string,
-          options?: { authorAgentId?: string },
-        ): Promise<AskUserQuestionsInteraction> {
-          return callHost("issues.createInteraction", {
-            issueId,
-            companyId,
-            interaction: {
-              ...interaction,
-              kind: "ask_user_questions",
-            },
-            authorAgentId: options?.authorAgentId,
-          }) as Promise<AskUserQuestionsInteraction>;
-        },
-
-        async requestConfirmation(
-          issueId: string,
-          interaction,
-          companyId: string,
-          options?: { authorAgentId?: string },
-        ): Promise<RequestConfirmationInteraction> {
-          return callHost("issues.createInteraction", {
-            issueId,
-            companyId,
-            interaction: {
-              ...interaction,
-              kind: "request_confirmation",
-            },
-            authorAgentId: options?.authorAgentId,
-          }) as Promise<RequestConfirmationInteraction>;
-        },
-
-        async requestCheckboxConfirmation(
-          issueId: string,
-          interaction,
-          companyId: string,
-          options?: { authorAgentId?: string },
-        ): Promise<RequestCheckboxConfirmationInteraction> {
-          return callHost("issues.createInteraction", {
-            issueId,
-            companyId,
-            interaction: {
-              ...interaction,
-              kind: "request_checkbox_confirmation",
-            },
-            authorAgentId: options?.authorAgentId,
-          }) as Promise<RequestCheckboxConfirmationInteraction>;
-        },
-
-        documents: {
-          async list(issueId: string, companyId: string) {
-            return callHost("issues.documents.list", { issueId, companyId });
-          },
-
-          async get(issueId: string, key: string, companyId: string) {
-            return callHost("issues.documents.get", { issueId, key, companyId });
-          },
-
-          async upsert(input) {
-            return callHost("issues.documents.upsert", {
-              issueId: input.issueId,
-              key: input.key,
-              body: input.body,
-              companyId: input.companyId,
-              title: input.title,
-              format: input.format,
-              changeSummary: input.changeSummary,
-            });
-          },
-
-          async delete(issueId: string, key: string, companyId: string) {
-            return callHost("issues.documents.delete", { issueId, key, companyId });
-          },
-        },
-
-        relations: {
-          async get(issueId: string, companyId: string) {
-            return callHost("issues.relations.get", { issueId, companyId });
-          },
-
-          async setBlockedBy(issueId: string, blockedByIssueIds: string[], companyId: string, actor) {
-            return callHost("issues.relations.setBlockedBy", {
-              issueId,
-              companyId,
-              blockedByIssueIds,
-              actorAgentId: actor?.actorAgentId,
-              actorUserId: actor?.actorUserId,
-              actorRunId: actor?.actorRunId,
-            });
-          },
-
-          async addBlockers(issueId: string, blockerIssueIds: string[], companyId: string, actor) {
-            return callHost("issues.relations.addBlockers", {
-              issueId,
-              companyId,
-              blockerIssueIds,
-              actorAgentId: actor?.actorAgentId,
-              actorUserId: actor?.actorUserId,
-              actorRunId: actor?.actorRunId,
-            });
-          },
-
-          async removeBlockers(issueId: string, blockerIssueIds: string[], companyId: string, actor) {
-            return callHost("issues.relations.removeBlockers", {
-              issueId,
-              companyId,
-              blockerIssueIds,
-              actorAgentId: actor?.actorAgentId,
-              actorUserId: actor?.actorUserId,
-              actorRunId: actor?.actorRunId,
-            });
-          },
-        },
-
-        summaries: {
-          async getOrchestration(input) {
-            return callHost("issues.summaries.getOrchestration", input);
-          },
         },
       },
 
@@ -1039,10 +871,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           return callHost("agents.resume", { agentId, companyId });
         },
 
-        async invoke(agentId: string, companyId: string, opts: { prompt: string; reason?: string }) {
-          return callHost("agents.invoke", { agentId, companyId, prompt: opts.prompt, reason: opts.reason });
-        },
-
         managed: {
           async get(agentKey: string, companyId: string) {
             return callHost("agents.managed.get", { agentKey, companyId });
@@ -1054,47 +882,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
           async reset(agentKey: string, companyId: string) {
             return callHost("agents.managed.reset", { agentKey, companyId });
-          },
-        },
-
-        sessions: {
-          async create(agentId: string, companyId: string, opts?: { taskKey?: string; reason?: string }) {
-            return callHost("agents.sessions.create", {
-              agentId,
-              companyId,
-              taskKey: opts?.taskKey,
-              reason: opts?.reason,
-            });
-          },
-
-          async list(agentId: string, companyId: string) {
-            return callHost("agents.sessions.list", { agentId, companyId });
-          },
-
-          async sendMessage(sessionId: string, companyId: string, opts: {
-            prompt: string;
-            reason?: string;
-            onEvent?: (event: AgentSessionEvent) => void;
-          }) {
-            if (opts.onEvent) {
-              sessionEventCallbacks.set(sessionId, opts.onEvent);
-            }
-            try {
-              return await callHost("agents.sessions.sendMessage", {
-                sessionId,
-                companyId,
-                prompt: opts.prompt,
-                reason: opts.reason,
-              });
-            } catch (err) {
-              sessionEventCallbacks.delete(sessionId);
-              throw err;
-            }
-          },
-
-          async close(sessionId: string, companyId: string) {
-            sessionEventCallbacks.delete(sessionId);
-            await callHost("agents.sessions.close", { sessionId, companyId });
           },
         },
       },
@@ -1253,7 +1040,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         register(
           name: string,
           declaration: Pick<import("@paperclipai/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">,
-          fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>,
+          fn: (
+            params: unknown,
+            runContext: PluginToolRunContext,
+          ) => Promise<ToolResult>,
         ): void {
           toolHandlers.set(name, { declaration, fn });
         },
@@ -1365,6 +1155,30 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
       case "executeTool":
         return handleExecuteTool(params as ExecuteToolParams);
+      case "issues.creatorCallback.deliver": {
+        const input = params as HostToWorkerMethods["issues.creatorCallback.deliver"][0];
+        const handler = creatorCallbackHandlers.get(
+          `${input.callbackKey}\u0000${input.callbackVersion}`,
+        );
+        if (!handler) {
+          throw Object.assign(
+            new Error(
+              `Creator callback is not registered: ${input.callbackKey}@${input.callbackVersion}`,
+            ),
+            { code: JSONRPC_ERROR_CODES.METHOD_NOT_FOUND },
+          );
+        }
+        const acknowledgement = await handler(input.delivery);
+        if (
+          acknowledgement.deliveryId !== input.delivery.deliveryId ||
+          acknowledgement.accepted !== true
+        ) {
+          throw new Error(
+            "Creator callback acknowledgement must exactly accept the delivered id",
+          );
+        }
+        return acknowledgement;
+      }
       case "detectExternalObjects":
         return handleDetectExternalObjects(params as DetectExternalObjectsParams);
       case "resolveExternalObject":
@@ -1395,6 +1209,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
       case "environmentExecute":
         return handleEnvironmentExecute(params as PluginEnvironmentExecuteParams);
+
+      case "environmentCancelExecution":
+        return handleEnvironmentCancelExecution(params as PluginEnvironmentCancelExecutionParams);
 
       case "environmentSyncIn":
         return handleEnvironmentSyncIn(params as PluginEnvironmentSyncInParams);
@@ -1461,6 +1278,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (plugin.definition.onEnvironmentDestroyLease) supportedMethods.push("environmentDestroyLease");
     if (plugin.definition.onEnvironmentRealizeWorkspace) supportedMethods.push("environmentRealizeWorkspace");
     if (plugin.definition.onEnvironmentExecute) supportedMethods.push("environmentExecute");
+    if (plugin.definition.onEnvironmentCancelExecution) supportedMethods.push("environmentCancelExecution");
     if (plugin.definition.onEnvironmentSyncIn) supportedMethods.push("environmentSyncIn");
     if (plugin.definition.onEnvironmentSyncOut) supportedMethods.push("environmentSyncOut");
     if (plugin.definition.onEnvironmentStartInteractiveSetup) supportedMethods.push("environmentStartInteractiveSetup");
@@ -1591,25 +1409,12 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     });
   }
 
-  function stringOrNull(value: unknown): string | null {
-    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-  }
-
-  function actorTypeOrSystem(value: unknown): PluginPerformActionActorContext["type"] {
-    return value === "user" || value === "agent" || value === "system" ? value : "system";
-  }
-
   function actionContextFromParams(params: PerformActionParams): PluginPerformActionContext {
-    const rawActor = params.actorContext && typeof params.actorContext === "object"
-      ? params.actorContext
-      : null;
-    const actor = Object.freeze({
-      type: actorTypeOrSystem(rawActor?.type),
-      userId: stringOrNull(rawActor?.userId),
-      agentId: stringOrNull(rawActor?.agentId),
-      runId: stringOrNull(rawActor?.runId),
-      companyId: stringOrNull(rawActor?.companyId),
-    });
+    const actor: Readonly<PluginPerformActionActorContext> = Object.freeze(
+      decodePluginPerformActionActorContext(
+        (params as PerformActionParams | null | undefined)?.actorContext,
+      ),
+    );
     return Object.freeze({
       actor,
       companyId: actor.companyId,
@@ -1617,17 +1422,23 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   }
 
   async function handlePerformAction(params: PerformActionParams): Promise<unknown> {
+    const context = actionContextFromParams(params);
     const handler = actionHandlers.get(params.key);
     if (!handler) {
       throw new Error(`No action handler registered for key "${params.key}"`);
     }
+    const actionParams = { ...params.params };
+    if (context.companyId === null) {
+      delete actionParams.companyId;
+    } else {
+      actionParams.companyId = context.companyId;
+    }
     return handler(
       {
-        ...params.params,
-        ...(params.companyId === undefined ? {} : { companyId: params.companyId }),
+        ...actionParams,
         ...(params.renderEnvironment === undefined ? {} : { renderEnvironment: params.renderEnvironment }),
       },
-      actionContextFromParams(params),
+      context,
     );
   }
 
@@ -1636,7 +1447,53 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (!entry) {
       throw new Error(`No tool handler registered for "${params.toolName}"`);
     }
-    return entry.fn(params.parameters, params.runContext);
+    const runContext: PluginToolRunContext = Object.freeze({
+      handle: params.runContextHandle,
+      issues: Object.freeze({
+        listCompanyIssues(input: {
+          status?: "open" | "blocked" | "done" | "cancelled";
+          priority?: "critical" | "high" | "medium" | "low";
+          cursor?: string;
+          limit?: number;
+        } = {}) {
+          return callHost("run.issues.listCompanyIssues", {
+            runContextHandle: params.runContextHandle,
+            ...input,
+          });
+        },
+        listSubIssues(input: {
+          issueId?: string;
+          cursor?: string;
+          limit?: number;
+        } = {}) {
+          return callHost("run.issues.listSubIssues", {
+            runContextHandle: params.runContextHandle,
+            ...input,
+          });
+        },
+        readIssueComments(input: {
+          issueId?: string;
+          cursor?: string;
+          limit?: number;
+        } = {}) {
+          return callHost("run.issues.readIssueComments", {
+            runContextHandle: params.runContextHandle,
+            ...input,
+          });
+        },
+        readIssueAgentRun(
+          runId: string,
+          input: { cursor?: string } = {},
+        ) {
+          return callHost("run.issues.readIssueAgentRun", {
+            runContextHandle: params.runContextHandle,
+            runId,
+            ...input,
+          });
+        },
+      }),
+    });
+    return entry.fn(params.parameters, runContext);
   }
 
   async function handleDetectExternalObjects(params: DetectExternalObjectsParams) {
@@ -1723,6 +1580,13 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       throw methodNotImplemented("environmentExecute");
     }
     return plugin.definition.onEnvironmentExecute(params);
+  }
+
+  async function handleEnvironmentCancelExecution(params: PluginEnvironmentCancelExecutionParams) {
+    if (!plugin.definition.onEnvironmentCancelExecution) {
+      throw methodNotImplemented("environmentCancelExecution");
+    }
+    return plugin.definition.onEnvironmentCancelExecution(params);
   }
 
   async function handleEnvironmentSyncIn(params: PluginEnvironmentSyncInParams) {
@@ -1814,7 +1678,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     const pending = pendingRequests.get(id);
     if (!pending) return;
 
-    clearTimeout(pending.timer);
+    if (pending.timer) clearTimeout(pending.timer);
     pendingRequests.delete(id);
     pending.resolve(response);
   }
@@ -1873,11 +1737,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         }
         return fn();
       };
-      if (notif.method === "agents.sessions.event" && notif.params) {
-        const event = notif.params as AgentSessionEvent;
-        const cb = sessionEventCallbacks.get(event.sessionId);
-        if (cb) cb(event);
-      } else if (notif.method === "onEvent" && notif.params) {
+      if (notif.method === "onEvent" && notif.params) {
         // Plugin event bus notifications — dispatch to registered event handlers
         Promise.resolve(runNotification(() => handleOnEvent(notif.params as OnEventParams))).catch((err) => {
           notifyHost("log", {
@@ -1904,7 +1764,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
     // Reject all pending outbound calls
     for (const [id, pending] of pendingRequests) {
-      clearTimeout(pending.timer);
+      if (pending.timer) clearTimeout(pending.timer);
       pending.resolve(
         createErrorResponse(
           id,
@@ -1914,7 +1774,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       );
     }
     pendingRequests.clear();
-    sessionEventCallbacks.clear();
   }
 
   // -----------------------------------------------------------------------

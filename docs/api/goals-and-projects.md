@@ -112,7 +112,7 @@ POST /api/projects/{projectId}/workspaces
 }
 ```
 
-Agents use the primary workspace to determine their working directory for project-scoped tasks.
+Agents use the primary workspace to determine their working directory for project-scoped issues.
 
 ### Manage Workspaces
 

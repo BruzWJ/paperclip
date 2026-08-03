@@ -10,15 +10,11 @@ import type {
   PluginLauncherBounds,
   PluginLauncherRenderEnvironment,
   PluginApiRouteAuthMode,
-  PluginApiRouteCheckoutPolicy,
   PluginApiRouteMethod,
   PluginDatabaseCoreReadTable,
   PluginDatabaseMigrationStatus,
   PluginDatabaseNamespaceMode,
   PluginDatabaseNamespaceStatus,
-  AgentAdapterType,
-  AgentRole,
-  AgentStatus,
   IssuePriority,
   ProjectStatus,
   RoutineCatchUpPolicy,
@@ -30,6 +26,7 @@ import type { Agent } from "./agent.js";
 import type { CompanySkill } from "./company-skill.js";
 import type { Project } from "./project.js";
 import type { Routine, RoutineTrigger, RoutineVariable } from "./routine.js";
+import type { IssueAttentionMask } from "../issue-runtime.js";
 
 // ---------------------------------------------------------------------------
 // JSON Schema placeholder – plugins declare config schemas as JSON Schema
@@ -186,39 +183,10 @@ export interface PluginManagedAgentDeclaration {
   agentKey: string;
   /** Suggested visible agent name. */
   displayName: string;
-  /** Optional suggested role. Defaults to `general`. */
-  role?: AgentRole | string;
   /** Optional suggested title shown in agent surfaces. */
   title?: string | null;
-  /** Optional icon for agent list/detail surfaces. */
-  icon?: string | null;
   /** Suggested capability summary for the agent. */
   capabilities?: string | null;
-  /** Suggested adapter type. Defaults to `process`. */
-  adapterType?: AgentAdapterType | string;
-  /**
-   * Optional ordered list of compatible adapter types. When present, the host
-   * prefers the most-used compatible adapter already configured in the company,
-   * falling back to `adapterType`.
-   */
-  adapterPreference?: Array<AgentAdapterType | string>;
-  /** Suggested adapter configuration. */
-  adapterConfig?: Record<string, unknown>;
-  /** Suggested Paperclip runtime configuration. */
-  runtimeConfig?: Record<string, unknown>;
-  /** Suggested permissions object. Normalized by the host on create/reset. */
-  permissions?: Record<string, unknown>;
-  /** Suggested starting status when no board approval is required. */
-  status?: Extract<AgentStatus, "idle" | "paused">;
-  /** Suggested monthly budget in cents. */
-  budgetMonthlyCents?: number;
-  /** Optional managed instructions content or pointer metadata for plugin UI. */
-  instructions?: {
-    entryFile?: string;
-    content?: string;
-    files?: Record<string, string>;
-    assetPath?: string;
-  };
 }
 
 /**
@@ -325,6 +293,7 @@ export interface PluginManagedRoutineDeclaration {
     surfaceVisibility?: IssueSurfaceVisibility;
     originId?: string | null;
     billingCode?: string | null;
+    attentionMask?: IssueAttentionMask | null;
   };
 }
 
@@ -337,10 +306,6 @@ export interface PluginManagedAgentResolution {
   agent: Agent | null;
   status: "missing" | "resolved" | "created" | "relinked" | "reset";
   approvalId?: string | null;
-  defaultDrift?: {
-    entryFile: string;
-    changedFiles: string[];
-  } | null;
 }
 
 export interface PluginManagedProjectResolution {
@@ -383,7 +348,7 @@ export interface PluginManagedSkillResolution {
  * @see PLUGIN_SPEC.md §19 — UI Extension Model
  */
 export interface PluginUiSlotDeclaration {
-  /** The type of UI mount point (page, detailTab, taskDetailView, toolbarButton, etc.). */
+  /** The type of UI mount point (page, detailTab, issueDetailView, toolbarButton, etc.). */
   type: PluginUiSlotType;
   /** Unique slot identifier within the plugin. */
   id: string;
@@ -393,7 +358,7 @@ export interface PluginUiSlotDeclaration {
   exportName: string;
   /**
    * Entity targets for context-sensitive slots.
-   * Required for `detailTab`, `taskDetailView`, and `contextMenuItem`.
+   * Required for `detailTab`, `issueDetailView`, and `contextMenuItem`.
    */
   entityTypes?: PluginUiSlotEntityType[];
   /**
@@ -498,9 +463,11 @@ export interface PluginUiDeclaration {
 /**
  * Declares restricted database access for trusted orchestration plugins.
  *
- * The host derives the final namespace from the plugin key and optional slug,
- * applies SQL migrations before worker startup, and gates runtime SQL through
- * the `database.namespace.*` capabilities.
+ * Plugin-authored SQL uses the stable logical namespace derived from the key
+ * and optional slug. The host compiles it to a physical namespace that also
+ * includes the immutable installation identity, applies migrations before
+ * worker startup, and gates runtime SQL through the
+ * `database.namespace.*` capabilities.
  */
 export interface PluginDatabaseDeclaration {
   /** Optional stable human-readable slug included in the host-derived namespace. */
@@ -527,8 +494,6 @@ export interface PluginApiRouteDeclaration {
   auth: PluginApiRouteAuthMode;
   /** Capability required to expose the route. Currently `api.routes.register`. */
   capability: "api.routes.register";
-  /** Optional checkout policy enforced by the host before worker dispatch. */
-  checkoutPolicy?: PluginApiRouteCheckoutPolicy;
   /** How the host resolves company access for this route. */
   companyResolution?: PluginApiRouteCompanyResolution;
 }

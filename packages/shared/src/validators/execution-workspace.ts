@@ -72,7 +72,7 @@ export const executionWorkspaceCloseLinkedIssueSchema = z.object({
   id: z.string().uuid(),
   identifier: z.string().nullable(),
   title: z.string(),
-  status: z.string(),
+  boardPresentationStatus: z.string(),
   isTerminal: z.boolean(),
 }).strict();
 
@@ -154,14 +154,17 @@ const branchReconcileReasonSchema = z.string().trim().min(1);
 export const reconcileExecutionWorkspaceBranchSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("forward"),
+    issueId: z.string().uuid().optional(),
     reason: branchReconcileReasonSchema.optional().nullable(),
   }).strict(),
   z.object({
     mode: z.literal("override"),
+    issueId: z.string().uuid().optional(),
     reason: branchReconcileReasonSchema,
   }).strict(),
   z.object({
     mode: z.literal("quarantine_restore"),
+    issueId: z.string().uuid().optional(),
     reason: branchReconcileReasonSchema.optional().nullable(),
   }).strict(),
 ]);

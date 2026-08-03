@@ -16,7 +16,7 @@
  * The lifecycle manager, scheduler, and job store are independent services
  * with clean single-responsibility boundaries. The coordinator provides
  * the "glue" between them without adding coupling. This pattern is used
- * throughout Paperclip (e.g. heartbeat service coordinates timers + runs).
+ * throughout Paperclip (for example, issue execution coordinates queued runs).
  *
  * @see PLUGIN_SPEC.md §17 — Scheduled Jobs
  * @see ./plugin-job-scheduler.ts — Scheduler service
@@ -182,22 +182,16 @@ export function createPluginJobCoordinator(
   async function onPluginUnloaded(payload: {
     pluginId: string;
     pluginKey: string;
-    removeData: boolean;
+    purge: boolean;
   }): Promise<void> {
-    const { pluginId, pluginKey, removeData } = payload;
+    const { pluginId, pluginKey, purge } = payload;
     log.info(
-      { pluginId, pluginKey, removeData },
+      { pluginId, pluginKey, purge },
       "plugin unloaded — unregistering from scheduler",
     );
 
     try {
       await scheduler.unregisterPlugin(pluginId);
-
-      // If data is being purged, also delete all job definitions and runs
-      if (removeData) {
-        log.info({ pluginId, pluginKey }, "purging job data for uninstalled plugin");
-        await jobStore.deleteAllJobs(pluginId);
-      }
     } catch (err) {
       log.error(
         {
@@ -226,7 +220,7 @@ export function createPluginJobCoordinator(
   const boundOnDisabled = (payload: { pluginId: string; pluginKey: string; reason?: string }) => {
     void onPluginDisabled(payload);
   };
-  const boundOnUnloaded = (payload: { pluginId: string; pluginKey: string; removeData: boolean }) => {
+  const boundOnUnloaded = (payload: { pluginId: string; pluginKey: string; purge: boolean }) => {
     void onPluginUnloaded(payload);
   };
 

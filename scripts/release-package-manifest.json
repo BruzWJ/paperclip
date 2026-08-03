@@ -5,61 +5,6 @@
     "publishFromCi": true
   },
   {
-    "dir": "packages/adapters/claude-local",
-    "name": "@paperclipai/adapter-claude-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/codex-local",
-    "name": "@paperclipai/adapter-codex-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/cursor-cloud",
-    "name": "@paperclipai/adapter-cursor-cloud",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/cursor-local",
-    "name": "@paperclipai/adapter-cursor-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/gemini-local",
-    "name": "@paperclipai/adapter-gemini-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/grok-local",
-    "name": "@paperclipai/adapter-grok-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/hermes",
-    "name": "@paperclipai/hermes-paperclip-adapter",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/hermes-gateway",
-    "name": "@paperclipai/adapter-hermes-gateway",
-    "publishFromCi": false
-  },
-  {
-    "dir": "packages/adapters/opencode-local",
-    "name": "@paperclipai/adapter-opencode-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/pi-local",
-    "name": "@paperclipai/adapter-pi-local",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/adapters/openclaw-gateway",
-    "name": "@paperclipai/adapter-openclaw-gateway",
-    "publishFromCi": true
-  },
-  {
     "dir": "packages/shared",
     "name": "@paperclipai/shared",
     "publishFromCi": true
@@ -97,11 +42,6 @@
   {
     "dir": "cli",
     "name": "paperclipai",
-    "publishFromCi": true
-  },
-  {
-    "dir": "packages/mcp-server",
-    "name": "@paperclipai/mcp-server",
     "publishFromCi": true
   },
   {

@@ -494,7 +494,7 @@ Paperclip already has a concrete workspace model for projects:
 - projects expose `workspaces` and `primaryWorkspace`
 - the database already has `project_workspaces`
 - project routes already support creating, updating, and deleting workspaces
-- heartbeat resolution already prefers project workspaces before falling back to task-session or agent-home workspaces
+- heartbeat resolution already prefers project workspaces before falling back to retired conversational-session or agent-home workspaces
 
 That means local/runtime plugins should generally anchor themselves to projects first, not invent a parallel workspace model.
 
@@ -1026,7 +1026,7 @@ This plugin lets the board inspect project workspaces, agent workspaces, generat
 - reviewing generated outputs before approval
 - attaching files from a workspace to issues
 - understanding repo layout for a company
-- inspecting agent home workspaces in local-trusted mode
+- inspecting agent home workspaces on a trusted development host
 
 ### UX
 
@@ -1337,7 +1337,7 @@ This plugin syncs Paperclip issues with GitHub Issues and optionally links PRs. 
 - mirroring issue status and comments
 - linking PRs to Paperclip issues
 - tracking cross-repo work from inside one company view
-- bridging engineering workflow with Paperclip task governance
+- bridging engineering workflow with Paperclip issue governance
 
 ### UX
 

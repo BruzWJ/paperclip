@@ -37,7 +37,7 @@ The main product risk is overloading one concept to do too much:
    - branches
    - commits
    - documents and artifacts
-5. Keep the main navigation and task board simple.
+5. Keep the main navigation and issue board simple.
 6. Seamlessly upgrade existing Paperclip users to the new model without forcing disruptive reconfiguration.
 7. Support cloud-hosted Paperclip deployments where execution happens in remote or adapter-managed environments rather than local workers.
 
@@ -113,7 +113,7 @@ Git-specific automation should live under workspace policy, not under the core i
 
 ### 5. Existing users must upgrade automatically
 
-Paperclip already has users and existing project/task data. Any new model must preserve continuity.
+Paperclip already has users and existing project/issue data. Any new model must preserve continuity.
 
 The product should default existing installs into a sensible compatibility mode:
 
@@ -1112,7 +1112,7 @@ Most importantly, it keeps the abstractions clean:
 - project workspaces define the durable codebases
 - execution workspaces define where work ran
 - work product defines what came out of the work
-- PRs remain outputs, not the core task model
+- PRs remain outputs, not the core issue model
 
 It also keeps the rollout practical:
 

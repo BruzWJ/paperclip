@@ -1,4 +1,10 @@
-import type { AgentAdapterType, FinanceDirection, FinanceEventKind, FinanceUnit } from "../constants.js";
+import type {
+  AgentAdapterType,
+  FinanceDirection,
+  FinanceEventKind,
+  FinanceUnit,
+} from "../constants.js";
+import type { MoneyAmount } from "../money.js";
 
 export interface FinanceEvent {
   id: string;
@@ -7,8 +13,6 @@ export interface FinanceEvent {
   issueId: string | null;
   projectId: string | null;
   goalId: string | null;
-  heartbeatRunId: string | null;
-  costEventId: string | null;
   billingCode: string | null;
   description: string | null;
   eventKind: FinanceEventKind;
@@ -21,7 +25,7 @@ export interface FinanceEvent {
   model: string | null;
   quantity: number | null;
   unit: FinanceUnit | null;
-  amountCents: number;
+  amount: MoneyAmount;
   currency: string;
   estimated: boolean;
   externalInvoiceId: string | null;
@@ -30,31 +34,27 @@ export interface FinanceEvent {
   createdAt: Date;
 }
 
-export interface FinanceSummary {
-  companyId: string;
-  debitCents: number;
-  creditCents: number;
-  netCents: number;
-  estimatedDebitCents: number;
+export interface FinanceSummaryRow {
+  currency: string;
+  debitAmount: MoneyAmount;
+  creditAmount: MoneyAmount;
+  netDirection: FinanceDirection;
+  netAmount: MoneyAmount;
+  estimatedDebitAmount: MoneyAmount;
   eventCount: number;
 }
 
-export interface FinanceByBiller {
+export interface FinanceSummary {
+  companyId: string;
+  currencies: FinanceSummaryRow[];
+}
+
+export interface FinanceByBiller extends FinanceSummaryRow {
   biller: string;
-  debitCents: number;
-  creditCents: number;
-  netCents: number;
-  estimatedDebitCents: number;
-  eventCount: number;
   kindCount: number;
 }
 
-export interface FinanceByKind {
+export interface FinanceByKind extends FinanceSummaryRow {
   eventKind: FinanceEventKind;
-  debitCents: number;
-  creditCents: number;
-  netCents: number;
-  estimatedDebitCents: number;
-  eventCount: number;
   billerCount: number;
 }

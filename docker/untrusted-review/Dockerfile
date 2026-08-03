@@ -1,4 +1,4 @@
-FROM node:lts-trixie-slim
+FROM node:22.13.0-bookworm-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \

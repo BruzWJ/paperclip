@@ -81,8 +81,8 @@ export interface CaseIssueLink {
   issue: {
     id: string;
     identifier: string;
-    title: string;
-    status: string;
+    title: string | null;
+    boardPresentationStatus: string;
   };
 }
 
@@ -142,8 +142,8 @@ export type CaseEventKind =
 export interface CaseAttributionIssue {
   id: string;
   identifier: string;
-  title: string;
-  status: string;
+  title: string | null;
+  boardPresentationStatus: string;
 }
 
 export interface CaseEvent {

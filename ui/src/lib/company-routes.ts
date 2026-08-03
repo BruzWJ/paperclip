@@ -30,13 +30,23 @@ const BOARD_ROUTE_ROOTS = new Set([
   "timeline",
 ]);
 
-const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
+const GLOBAL_ROUTE_ROOTS = new Set([
+  "auth",
+  "invite",
+  "cli-auth",
+  "docs",
+  "instance",
+]);
 
 export function normalizeCompanyPrefix(prefix: string): string {
   return prefix.trim().toUpperCase();
 }
 
-function splitPath(path: string): { pathname: string; search: string; hash: string } {
+function splitPath(path: string): {
+  pathname: string;
+  search: string;
+  hash: string;
+} {
   const match = path.match(/^([^?#]*)(\?[^#]*)?(#.*)?$/);
   return {
     pathname: match?.[1] ?? path,
@@ -73,7 +83,10 @@ export function extractCompanyPrefixFromPath(pathname: string): string | null {
   return normalizeCompanyPrefix(segments[0]!);
 }
 
-export function applyCompanyPrefix(path: string, companyPrefix: string | null | undefined): string {
+export function applyCompanyPrefix(
+  path: string,
+  companyPrefix: string | null | undefined,
+): string {
   const { pathname, search, hash } = splitPath(path);
   if (!pathname.startsWith("/")) return path;
   if (isGlobalPath(pathname)) return path;
@@ -113,7 +126,10 @@ export function toCompanyRelativePath(path: string): string {
 
   if (segments.length >= 2) {
     const second = segments[1]!.toLowerCase();
-    if (!GLOBAL_ROUTE_ROOTS.has(segments[0]!.toLowerCase()) && BOARD_ROUTE_ROOTS.has(second)) {
+    if (
+      !GLOBAL_ROUTE_ROOTS.has(segments[0]!.toLowerCase()) &&
+      BOARD_ROUTE_ROOTS.has(second)
+    ) {
       return `/${segments.slice(1).join("/")}${search}${hash}`;
     }
   }

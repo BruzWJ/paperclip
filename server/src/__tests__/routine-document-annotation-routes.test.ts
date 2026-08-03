@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const routineId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -140,16 +141,24 @@ async function createApp(actor: "board" | "agent" = "board", actorCompanyId = co
         companyId: actorCompanyId,
         runId: "88888888-8888-4888-8888-888888888888",
       }
-      : {
-        type: "board",
+      : testBoardSessionActor({
         userId: "board-user",
+        userName: "Board User",
+        userEmail: "board@example.com",
         companyIds: [actorCompanyId],
-        source: "local_implicit",
+        sessionId: "session-board-user",
+        memberships: [{
+          companyId: actorCompanyId,
+          membershipRole: "owner",
+          status: "active",
+        }],
         isInstanceAdmin: false,
-      };
+      });
     next();
   });
-  app.use("/api", routineRoutes({} as any));
+  app.use("/api", routineRoutes({} as any, {
+    ordinaryIssues: {} as never,
+  }));
   app.use(errorHandler);
   return app;
 }

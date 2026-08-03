@@ -13,8 +13,8 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*.ts"
+    ".": "./index.ts",
+    "./schema": "./schema.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -23,36 +23,33 @@
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
       },
-      "./*": {
-        "types": "./dist/*.d.ts",
-        "import": "./dist/*.js"
+      "./schema": {
+        "types": "./dist/schema.d.ts",
+        "import": "./dist/schema.js"
       }
     },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "migrations"
   ],
   "scripts": {
-    "check:migrations": "tsx src/check-migration-numbering.ts && tsx src/check-migration-safety.ts",
-    "build": "pnpm run check:migrations && tsc && cp -r src/migrations dist/migrations",
-    "clean": "rm -rf dist",
-    "typecheck": "pnpm run check:migrations && tsc --noEmit",
-    "generate": "pnpm run check:migrations && tsc -p tsconfig.json && drizzle-kit generate",
-    "migrate": "pnpm run check:migrations && tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "generate": "drizzle-kit generate --config=./drizzle.config.ts",
+    "migrate": "drizzle-kit migrate --config=./drizzle.config.ts",
+    "studio": "drizzle-kit studio --config=./drizzle.config.ts"
   },
   "dependencies": {
     "@paperclipai/shared": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "embedded-postgres": "^18.1.0-beta.16",
+    "drizzle-orm": "0.45.2",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@types/node": "^22.19.21",
-    "drizzle-kit": "^0.31.10",
-    "tsx": "^4.23.1",
+    "drizzle-kit": "0.31.10",
     "typescript": "^5.7.3",
     "vitest": "^4.1.10"
   }

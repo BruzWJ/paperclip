@@ -9,7 +9,7 @@ const manifest: PaperclipPluginManifestV1 = {
   version: PLUGIN_VERSION,
   displayName: "Kubernetes Sandbox (alpha)",
   description:
-    "Built on kubernetes-sigs/agent-sandbox (v1alpha1). ALPHA — expect breaking changes as the upstream CRD evolves. Falls back to stable batch/v1 Job mode for clusters without agent-sandbox installed. First-party Paperclip sandbox-provider plugin for Kubernetes.",
+    "Built on kubernetes-sigs/agent-sandbox (v1alpha1). ALPHA — expect breaking changes as the upstream CRD evolves. First-party Paperclip sandbox-provider plugin for Kubernetes.",
   author: "Paperclip",
   categories: ["automation"],
   capabilities: ["environment.drivers.register"],
@@ -22,7 +22,7 @@ const manifest: PaperclipPluginManifestV1 = {
       kind: "sandbox_provider",
       displayName: "Kubernetes",
       description:
-        "Dispatches agent runs in per-tenant Kubernetes namespaces. Default backend (sandbox-cr, alpha) uses kubernetes-sigs/agent-sandbox for multi-command exec; fallback backend (job) uses stable batch/v1 Job for clusters without agent-sandbox installed.",
+        "Dispatches agent runs through kubernetes-sigs/agent-sandbox custom resources in per-tenant Kubernetes namespaces.",
       configSchema: {
         type: "object",
         properties: {
@@ -47,7 +47,8 @@ const manifest: PaperclipPluginManifestV1 = {
           },
           imageRegistry: {
             type: "string",
-            description: "Override the default registry for agent runtime images (default: ghcr.io/paperclipai).",
+            description:
+              "Optionally rewrite the registry prefix of the explicitly configured adapter runtime image.",
           },
           imageAllowList: {
             type: "array",
@@ -64,7 +65,7 @@ const manifest: PaperclipPluginManifestV1 = {
             type: "array",
             items: { type: "string" },
             description:
-              "Additional FQDNs to allow egress to from agent pods. Adapter-default FQDNs (e.g. api.anthropic.com) are added automatically.",
+              "Additional FQDNs to allow egress to from agent pods. The selected explicit adapter runtime entry may add more.",
           },
           egressAllowCidrs: {
             type: "array",
@@ -87,11 +88,6 @@ const manifest: PaperclipPluginManifestV1 = {
             description:
               "Annotations applied to the per-tenant ServiceAccount (e.g. `eks.amazonaws.com/role-arn` for IRSA).",
           },
-          jobTtlSecondsAfterFinished: {
-            type: "integer",
-            minimum: 0,
-            description: "Seconds after a Job completes before it is garbage-collected (default: 900).",
-          },
           podActivityDeadlineSec: {
             type: "integer",
             minimum: 1,
@@ -99,16 +95,36 @@ const manifest: PaperclipPluginManifestV1 = {
           },
           adapterType: {
             type: "string",
+            minLength: 1,
             description:
-              "The adapter type that Jobs in this environment will run (e.g. `claude_local`, `codex_local`). Defaults to `claude_local`. Each environment is bound to one adapter; create multiple environments for different adapters.",
+              "Exact default adapter transport for this environment. Defaults to `codex`; per-run external types require their own enabled runtime entry.",
           },
-          backend: {
-            type: "string",
-            enum: ["sandbox-cr", "job"],
+          adapters: {
+            type: "array",
+            minItems: 1,
             description:
-              "sandbox-cr (default, alpha — requires kubernetes-sigs/agent-sandbox installed) | job (stable fallback — batch/v1 Job, one-shot entrypoint, no multi-command exec)",
+              "Authoritative adapter runtime registry. Every selectable built-in or external type requires an explicit image; Kubernetes provides no provider-specific fallback image.",
+            items: {
+              type: "object",
+              properties: {
+                adapterType: { type: "string", minLength: 1 },
+                enabled: { type: "boolean" },
+                runtimeImage: { type: "string", minLength: 1 },
+                allowFqdns: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                probeCommand: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+              required: ["adapterType", "runtimeImage"],
+              additionalProperties: false,
+            },
           },
         },
+        required: ["adapters"],
         anyOf: [
           { required: ["inCluster"] },
           { required: ["kubeconfig"] },

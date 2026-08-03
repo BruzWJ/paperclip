@@ -105,13 +105,18 @@ export function pluginJobStore(db: Db) {
   // Internal helpers
   // -----------------------------------------------------------------------
 
-  async function assertPluginExists(pluginId: string): Promise<void> {
+  async function assertPluginReady(pluginId: string): Promise<void> {
     const rows = await db
-      .select({ id: plugins.id })
+      .select({ id: plugins.id, status: plugins.status })
       .from(plugins)
-      .where(eq(plugins.id, pluginId));
+      .where(
+        and(
+          eq(plugins.id, pluginId),
+          eq(plugins.status, "ready"),
+        ),
+      );
     if (rows.length === 0) {
-      throw notFound(`Plugin not found: ${pluginId}`);
+      throw notFound(`Ready plugin installation not found: ${pluginId}`);
     }
   }
 
@@ -145,7 +150,7 @@ export function pluginJobStore(db: Db) {
       pluginId: string,
       declarations: PluginJobDeclaration[],
     ): Promise<void> {
-      await assertPluginExists(pluginId);
+      await assertPluginReady(pluginId);
 
       // Fetch existing jobs for this plugin
       const existingJobs = await db
@@ -319,19 +324,6 @@ export function pluginJobStore(db: Db) {
           updatedAt: new Date(),
         })
         .where(eq(pluginJobs.id, jobId));
-    },
-
-    /**
-     * Delete all jobs (and cascaded runs) owned by a plugin.
-     *
-     * Called during plugin uninstall when `removeData = true`.
-     *
-     * @param pluginId - UUID of the owning plugin
-     */
-    async deleteAllJobs(pluginId: string): Promise<void> {
-      await db
-        .delete(pluginJobs)
-        .where(eq(pluginJobs.pluginId, pluginId));
     },
 
     // =====================================================================

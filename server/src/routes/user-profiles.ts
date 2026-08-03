@@ -1,11 +1,12 @@
 import { Router } from "express";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
   agents,
   authUsers,
   companyMemberships,
+  companies,
   costEvents,
   issueComments,
   issues,
@@ -15,6 +16,12 @@ import type {
   UserProfileIdentity,
   UserProfileResponse,
   UserProfileWindowStats,
+} from "@paperclipai/shared";
+import {
+  canonicalizeMoneyAmount,
+  parseBudgetCurrency,
+  parseMoneyAmount,
+  type MoneyAmount,
 } from "@paperclipai/shared";
 import { notFound } from "../errors.js";
 import { visibleIssueCondition } from "../services/issue-visibility.js";
@@ -68,7 +75,7 @@ async function resolveCompanyUser(db: Db, companyId: string, rawSlug: string): P
   const rows = await db
     .select({
       id: companyMemberships.id,
-      principalId: companyMemberships.principalId,
+      principalId: companyMemberships.principalUserId,
       status: companyMemberships.status,
       membershipRole: companyMemberships.membershipRole,
       createdAt: companyMemberships.createdAt,
@@ -78,7 +85,7 @@ async function resolveCompanyUser(db: Db, companyId: string, rawSlug: string): P
       image: authUsers.image,
     })
     .from(companyMemberships)
-    .leftJoin(authUsers, eq(authUsers.id, companyMemberships.principalId))
+    .leftJoin(authUsers, eq(authUsers.id, companyMemberships.principalUserId))
     .where(
       and(
         eq(companyMemberships.companyId, companyId),
@@ -88,14 +95,18 @@ async function resolveCompanyUser(db: Db, companyId: string, rawSlug: string): P
     .orderBy(desc(companyMemberships.updatedAt))
     .limit(200);
 
-  return rows.find((row) => userSlugCandidates(row).includes(slug)) ?? null;
+  return rows.find(
+    (row): row is CompanyUserRow =>
+      typeof row.principalId === "string"
+      && userSlugCandidates(row as CompanyUserRow).includes(slug),
+  ) ?? null;
 }
 
 function userIssueInvolvementSql(companyId: string, userId: string) {
   return sql<boolean>`
     (
-      ${issues.createdByUserId} = ${userId}
-      OR ${issues.assigneeUserId} = ${userId}
+      (${issues.creatorKind} = 'user/board' AND ${issues.creatorUserId} = ${userId})
+      OR ${issues.ownerUserId} = ${userId}
       OR EXISTS (
         SELECT 1
         FROM ${issueComments}
@@ -124,8 +135,21 @@ function dayKeyExpr(dateSql: ReturnType<typeof sql>) {
   return sql<string>`to_char(date_trunc('day', ${dateSql}), 'YYYY-MM-DD')`;
 }
 
-function sumNumber(column: typeof costEvents.costCents | typeof costEvents.inputTokens | typeof costEvents.cachedInputTokens | typeof costEvents.outputTokens) {
-  return sql<number>`coalesce(sum(${column}), 0)::double precision`;
+const ZERO_AMOUNT = parseMoneyAmount("0");
+
+function trustedAmount(value: string | null | undefined): MoneyAmount {
+  return canonicalizeMoneyAmount(value ?? "0");
+}
+
+function costAggregateSelection() {
+  return {
+    knownCostAmount:
+      sql<string>`coalesce(sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known'), 0)::text`,
+    pricedPromptCount:
+      sql<number>`count(*) filter (where ${costEvents.kind} = 'known')::int`,
+    unpricedPromptCount:
+      sql<number>`count(*) filter (where ${costEvents.kind} = 'unavailable')::int`,
+  };
 }
 
 async function loadWindowStats(
@@ -143,9 +167,9 @@ async function loadWindowStats(
   const [issueStats] = await db
     .select({
       touchedIssues: sql<number>`count(distinct case when ${involvement} ${fromIso ? sql`and ${issues.updatedAt} >= ${fromIso}` : sql``} then ${issues.id} end)::int`,
-      createdIssues: sql<number>`count(distinct case when ${issues.createdByUserId} = ${userId} ${fromIso ? sql`and ${issues.createdAt} >= ${fromIso}` : sql``} then ${issues.id} end)::int`,
-      completedIssues: sql<number>`count(distinct case when ${involvement} and ${issues.status} = 'done' ${fromIso ? sql`and ${issues.completedAt} >= ${fromIso}` : sql``} then ${issues.id} end)::int`,
-      assignedOpenIssues: sql<number>`count(distinct case when ${issues.assigneeUserId} = ${userId} and ${issues.status} in (${sql.join(openStatuses.map((status) => sql`${status}`), sql`, `)}) then ${issues.id} end)::int`,
+      createdIssues: sql<number>`count(distinct case when ${issues.creatorKind} = 'user/board' and ${issues.creatorUserId} = ${userId} ${fromIso ? sql`and ${issues.createdAt} >= ${fromIso}` : sql``} then ${issues.id} end)::int`,
+      completedIssues: sql<number>`count(distinct case when ${involvement} and ${issues.boardPresentationStatus} = 'done' ${fromIso ? sql`and ${issues.completedAt} >= ${fromIso}` : sql``} then ${issues.id} end)::int`,
+      assignedOpenIssues: sql<number>`count(distinct case when ${issues.ownerUserId} = ${userId} and ${issues.boardPresentationStatus} in (${sql.join(openStatuses.map((status) => sql`${status}`), sql`, `)}) then ${issues.id} end)::int`,
     })
     .from(issues)
     .where(and(eq(issues.companyId, companyId), visibleIssueCondition()));
@@ -178,11 +202,7 @@ async function loadWindowStats(
   if (from) costConditions.push(gte(costEvents.occurredAt, from));
   const [costStats] = await db
     .select({
-      costCents: sumNumber(costEvents.costCents),
-      inputTokens: sumNumber(costEvents.inputTokens),
-      cachedInputTokens: sumNumber(costEvents.cachedInputTokens),
-      outputTokens: sumNumber(costEvents.outputTokens),
-      costEventCount: sql<number>`count(${costEvents.id})::int`,
+      ...costAggregateSelection(),
     })
     .from(costEvents)
     .innerJoin(issues, and(eq(issues.id, costEvents.issueId), eq(issues.companyId, costEvents.companyId)))
@@ -197,11 +217,9 @@ async function loadWindowStats(
     assignedOpenIssues: Number(issueStats?.assignedOpenIssues ?? 0),
     commentCount: Number(commentStats?.count ?? 0),
     activityCount: Number(activityStats?.count ?? 0),
-    costCents: Number(costStats?.costCents ?? 0),
-    inputTokens: Number(costStats?.inputTokens ?? 0),
-    cachedInputTokens: Number(costStats?.cachedInputTokens ?? 0),
-    outputTokens: Number(costStats?.outputTokens ?? 0),
-    costEventCount: Number(costStats?.costEventCount ?? 0),
+    knownCostAmount: trustedAmount(costStats?.knownCostAmount),
+    pricedPromptCount: Number(costStats?.pricedPromptCount ?? 0),
+    unpricedPromptCount: Number(costStats?.unpricedPromptCount ?? 0),
   };
 }
 
@@ -214,10 +232,9 @@ async function loadDailyStats(db: Db, companyId: string, userId: string): Promis
       date: isoDay(date),
       activityCount: 0,
       completedIssues: 0,
-      costCents: 0,
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
+      knownCostAmount: ZERO_AMOUNT,
+      pricedPromptCount: 0,
+      unpricedPromptCount: 0,
     });
   }
 
@@ -254,7 +271,7 @@ async function loadDailyStats(db: Db, companyId: string, userId: string): Promis
       and(
         eq(issues.companyId, companyId),
         visibleIssueCondition(),
-        eq(issues.status, "done"),
+        eq(issues.boardPresentationStatus, "done"),
         gte(issues.completedAt, firstDay),
         userIssueInvolvementSql(companyId, userId),
       ),
@@ -270,10 +287,7 @@ async function loadDailyStats(db: Db, companyId: string, userId: string): Promis
   const costRows = await db
     .select({
       date: costDay,
-      costCents: sumNumber(costEvents.costCents),
-      inputTokens: sumNumber(costEvents.inputTokens),
-      cachedInputTokens: sumNumber(costEvents.cachedInputTokens),
-      outputTokens: sumNumber(costEvents.outputTokens),
+      ...costAggregateSelection(),
     })
     .from(costEvents)
     .innerJoin(issues, and(eq(issues.id, costEvents.issueId), eq(issues.companyId, costEvents.companyId)))
@@ -289,10 +303,9 @@ async function loadDailyStats(db: Db, companyId: string, userId: string): Promis
   for (const row of costRows) {
     const point = points.get(row.date);
     if (!point) continue;
-    point.costCents = Number(row.costCents);
-    point.inputTokens = Number(row.inputTokens);
-    point.cachedInputTokens = Number(row.cachedInputTokens);
-    point.outputTokens = Number(row.outputTokens);
+    point.knownCostAmount = trustedAmount(row.knownCostAmount);
+    point.pricedPromptCount = Number(row.pricedPromptCount);
+    point.unpricedPromptCount = Number(row.unpricedPromptCount);
   }
 
   return [...points.values()];
@@ -310,8 +323,14 @@ export function userProfileRoutes(db: Db) {
     if (!row) throw notFound("User not found");
     const canonicalSlug = userSlugCandidates(row)[0] ?? row.principalId;
     const userId = row.userId ?? row.principalId;
+    const companyAccounting = await db
+      .select({ budgetCurrency: companies.budgetCurrency })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    if (!companyAccounting) throw notFound("Company not found");
 
-    const [stats, daily, recentIssues, recentActivity, topAgents, topProviders] = await Promise.all([
+    const [stats, daily, recentIssues, recentActivity, topAgents] = await Promise.all([
       Promise.all(
         PROFILE_WINDOWS.map((entry) =>
           loadWindowStats(db, companyId, userId, entry.key, entry.label, windowStart(entry.days)),
@@ -323,10 +342,10 @@ export function userProfileRoutes(db: Db) {
           id: issues.id,
           identifier: issues.identifier,
           title: issues.title,
-          status: issues.status,
+          boardPresentationStatus: issues.boardPresentationStatus,
           priority: issues.priority,
-          assigneeAgentId: issues.assigneeAgentId,
-          assigneeUserId: issues.assigneeUserId,
+          ownerAgentId: issues.ownerAgentId,
+          ownerUserId: issues.ownerUserId,
           updatedAt: issues.updatedAt,
           completedAt: issues.completedAt,
         })
@@ -363,33 +382,18 @@ export function userProfileRoutes(db: Db) {
         .select({
           agentId: costEvents.agentId,
           agentName: agents.name,
-          costCents: sumNumber(costEvents.costCents),
-          inputTokens: sumNumber(costEvents.inputTokens),
-          cachedInputTokens: sumNumber(costEvents.cachedInputTokens),
-          outputTokens: sumNumber(costEvents.outputTokens),
+          ...costAggregateSelection(),
         })
         .from(costEvents)
         .innerJoin(issues, and(eq(issues.id, costEvents.issueId), eq(issues.companyId, costEvents.companyId)))
         .leftJoin(agents, eq(agents.id, costEvents.agentId))
         .where(and(eq(costEvents.companyId, companyId), userIssueInvolvementSql(companyId, userId)))
         .groupBy(costEvents.agentId, agents.name)
-        .orderBy(desc(sumNumber(costEvents.costCents)))
-        .limit(5),
-      db
-        .select({
-          provider: costEvents.provider,
-          biller: costEvents.biller,
-          model: costEvents.model,
-          costCents: sumNumber(costEvents.costCents),
-          inputTokens: sumNumber(costEvents.inputTokens),
-          cachedInputTokens: sumNumber(costEvents.cachedInputTokens),
-          outputTokens: sumNumber(costEvents.outputTokens),
-        })
-        .from(costEvents)
-        .innerJoin(issues, and(eq(issues.id, costEvents.issueId), eq(issues.companyId, costEvents.companyId)))
-        .where(and(eq(costEvents.companyId, companyId), userIssueInvolvementSql(companyId, userId)))
-        .groupBy(costEvents.provider, costEvents.biller, costEvents.model)
-        .orderBy(desc(sumNumber(costEvents.costCents)))
+        .orderBy(
+          desc(
+            sql`coalesce(sum(${costEvents.knownDeltaAmount}) filter (where ${costEvents.kind} = 'known'), 0)`,
+          ),
+        )
         .limit(5),
     ]);
 
@@ -406,27 +410,21 @@ export function userProfileRoutes(db: Db) {
 
     const payload: UserProfileResponse = {
       user,
+      budgetCurrency: parseBudgetCurrency(companyAccounting.budgetCurrency),
       stats,
       daily,
       recentIssues: recentIssues.map((issue) => ({
         ...issue,
-        status: issue.status as UserProfileResponse["recentIssues"][number]["status"],
+        boardPresentationStatus:
+          issue.boardPresentationStatus as UserProfileResponse["recentIssues"][number]["boardPresentationStatus"],
         priority: issue.priority as UserProfileResponse["recentIssues"][number]["priority"],
       })),
       recentActivity,
       topAgents: topAgents.map((entry) => ({
         ...entry,
-        costCents: Number(entry.costCents),
-        inputTokens: Number(entry.inputTokens),
-        cachedInputTokens: Number(entry.cachedInputTokens),
-        outputTokens: Number(entry.outputTokens),
-      })),
-      topProviders: topProviders.map((entry) => ({
-        ...entry,
-        costCents: Number(entry.costCents),
-        inputTokens: Number(entry.inputTokens),
-        cachedInputTokens: Number(entry.cachedInputTokens),
-        outputTokens: Number(entry.outputTokens),
+        knownCostAmount: trustedAmount(entry.knownCostAmount),
+        pricedPromptCount: Number(entry.pricedPromptCount),
+        unpricedPromptCount: Number(entry.unpricedPromptCount),
       })),
     };
 

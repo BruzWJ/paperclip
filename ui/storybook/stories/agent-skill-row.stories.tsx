@@ -17,16 +17,16 @@ const ENABLED: AgentSkillRowData = {
 };
 
 const AVAILABLE: AgentSkillRowData = {
-  key: "para-memory-files",
-  name: "para-memory-files",
-  icon: { key: "para-memory-files", name: "para-memory-files", slug: "para", iconUrl: null, color: "#7c3aed" },
-  summary: "File-based memory system using Tiago Forte's PARA method.",
-  chip: "memory",
+  key: "release-notes",
+  name: "release-notes",
+  icon: { key: "release-notes", name: "release-notes", slug: "release-notes", iconUrl: null, color: "#7c3aed" },
+  summary: "Draft concise release notes from a selected change set.",
+  chip: "writing",
   sourceMeta: { icon: Folder, label: "Local folder" },
-  linkTo: "/skills/para-memory-files",
-  slug: "para-memory-files",
-  tagline: "File-based memory system using Tiago Forte's PARA method.",
-  categories: ["memory"],
+  linkTo: "/skills/release-notes",
+  slug: "release-notes",
+  tagline: "Draft concise release notes from a selected change set.",
+  categories: ["writing"],
 };
 
 const READONLY: AgentSkillRowData = {

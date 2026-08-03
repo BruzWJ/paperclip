@@ -10,7 +10,7 @@ Run scope: `ui/src/components/` and `ui/src/pages/` on branch `design/token-extr
 |---|---:|
 | Shared primitives (`ui/src/components/ui/`) | 24 |
 | Feature components, flat (`ui/src/components/*.tsx`) | 178 |
-| Feature components, nested subdirs (`access/`, `artifacts/`, `environment-variables-editor/`, `interrupt-handoff/`, `issue-output/`, `issue-properties/`, `routine-sections/`, `search/`, `timeline/`, `transcript/`) | 28 |
+| Feature components, nested subdirs (`access/`, `artifacts/`, `environment-variables-editor/`, `interrupt-transfer/`, `issue-output/`, `issue-properties/`, `routine-sections/`, `search/`, `timeline/`, `transcript/`) | 28 |
 | **Feature components total** | **206** |
 | Pages (`ui/src/pages/`, incl. `pages/secrets/`) | 73 |
 | **Grand total** | **303** (roughly matches DESIGN.md's "24 + ~277") |
@@ -58,36 +58,34 @@ All 24 checked against the live shadcn registry via `npx shadcn@latest diff` (ne
 
 Grouped by rough domain area. One line each; variants column is props-based where notable, blank where the component is largely propless/single-purpose.
 
-### 2.1 Issue / task surfaces (largest cluster)
+### 2.1 Issue surfaces (largest cluster)
 
 | Component | Purpose |
 |---|---|
-| `IssueRow.tsx` | Single row in a task list (status glyph, title, chips) |
+| `IssueRow.tsx` | Single row in an issue list (status glyph, title, chips) |
 | `IssuesList.tsx` | List/board container rendering many `IssueRow`s, sort/filter/group |
 | `IssueColumns.tsx` | Column-layout config for the issues list/board |
-| `IssueGroupHeader.tsx` | Section header when list is grouped (by status/project/assignee) |
+| `IssueGroupHeader.tsx` | Section header when list is grouped (by status/project/owner) |
 | `IssueProperties.tsx` | 1-line re-export barrel → `issue-properties/IssueProperties.tsx` |
-| `issue-properties/IssueProperties.tsx` | Full task detail properties panel (2,301 lines) — status, assignee, labels, project, dates |
-| `IssueChatThread.tsx` | Task comment/chat thread (agent + human messages) |
-| `IssueThreadInteractionCard.tsx` | Rich interaction card embedded in the chat thread (approvals, tool calls) |
-| `IssueRecoveryActionCard.tsx` | Recovery-action prompt card in a stalled/errored task thread |
-| `IssueScheduledRetryCard.tsx` | Scheduled-retry status card in task thread |
-| `IssueRunLedger.tsx` | Run/cost ledger table for a task |
-| `IssueMonitorActivityCard.tsx` | Monitoring/activity summary card on a task |
-| `IssueBlockedNotice.tsx` | Banner when a task is blocked |
-| `IssueAssignedBacklogNotice.tsx` | Banner when a backlog task gets assigned |
-| `IssueDocumentAnnotations.tsx` / `issue-output/` variants | Doc-annotation highlight overlay on task documents |
-| `IssueDocumentsSection.tsx` | Documents tab/section on task detail |
-| `IssueAttachmentsSection.tsx` | Attachments tab/section on task detail |
-| `IssuePlanDecompositionsSection.tsx` | Sub-task/decomposition list section |
+| `issue-properties/IssueProperties.tsx` | Full issue detail properties panel — status, owner, labels, project, dates |
+| `IssueChatThread.tsx` | Issue comment/chat thread (agent + human messages) |
+| `IssueScheduledRetryCard.tsx` | Scheduled-retry status card in issue thread |
+| `IssueRunLedger.tsx` | Run/cost ledger table for an issue |
+| `IssueMonitorActivityCard.tsx` | Monitoring/activity summary card on an issue |
+| `IssueBlockedNotice.tsx` | Banner when an issue is blocked |
+| `IssueAssignedBacklogNotice.tsx` | Banner when a backlog issue gets assigned |
+| `IssueDocumentAnnotations.tsx` / `issue-output/` variants | Doc-annotation highlight overlay on issue documents |
+| `IssueDocumentsSection.tsx` | Documents tab/section on issue detail |
+| `IssueAttachmentsSection.tsx` | Attachments tab/section on issue detail |
+| `IssuePlanDecompositionsSection.tsx` | Sub-issue/decomposition list section |
 | `IssueRelatedWorkPanel.tsx` | Related-issues panel |
-| `IssueReferenceActivitySummary.tsx` / `IssueReferencePill.tsx` | Inline task-reference chip + activity rollup |
-| `IssueSiblingNavigation.tsx` | Prev/next sibling task nav |
-| `IssueLinkQuicklook.tsx` / `IssuesQuicklook.tsx` | Hover-preview popover for a linked task / task list |
+| `IssueReferenceActivitySummary.tsx` / `IssueReferencePill.tsx` | Inline issue-reference chip + activity rollup |
+| `IssueSiblingNavigation.tsx` | Prev/next sibling issue nav |
+| `IssueLinkQuicklook.tsx` / `IssuesQuicklook.tsx` | Hover-preview popover for a linked issue / issue list |
 | `IssueFiltersPopover.tsx` | Filter builder popover for the issues list |
-| `IssueWorkspaceCard.tsx` | Card summarizing a task's execution workspace |
-| `IssueContinuationHandoff.tsx` | Handoff-to-next-run card |
-| `NewIssueDialog.tsx` | Create-task dialog |
+| `IssueWorkspaceCard.tsx` | Card summarizing an issue's execution workspace |
+| `IssueContinuationTransfer.tsx` | Transfer-to-next-run card |
+| `NewIssueDialog.tsx` | Create-issue dialog |
 
 ### 2.2 Agent / execution
 
@@ -101,21 +99,20 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 | `AgentProperties.tsx` | Agent detail properties panel |
 | `ActiveAgentsPanel.tsx` | Sidebar/dashboard panel of currently-running agents |
 | `LiveRunWidget.tsx` | Live run status widget |
-| `RunChatSurface.tsx` | Shared chat-surface shell used by both conf-room and task chat |
-| `ClaudeSubscriptionPanel.tsx` / `CodexSubscriptionPanel.tsx` | Provider-specific subscription/quota panels — parallel, provider-specific (not a duplicate; see 3.4) |
-| `ProviderQuotaCard.tsx` / `QuotaBar.tsx` | Generic quota display card / bar |
+| `RunChatSurface.tsx` | Shared chat-surface shell used by both conf-room and issue chat |
+| `ProviderQuotaCard.tsx` / `QuotaBar.tsx` | Paperclip spend and budget display card / bar |
 
 ### 2.3 Chat / composer
 
 | Component | Purpose |
 |---|---|
 | `ChatComposer.tsx` (380 lines) | Shared lean composer (conf-room + reused where a single-line/simple composer suffices) |
-| `MarkdownEditor.tsx` (1,425 lines) | Rich MDX-based editor with mention autocomplete — task comment composer |
+| `MarkdownEditor.tsx` (1,425 lines) | Rich MDX-based editor with mention autocomplete — issue comment composer |
 | `OnboardingChat.tsx` | Onboarding-flow chat surface |
-| `CommentThread.tsx` | Generic comment-thread renderer (non-task contexts) |
+| `CommentThread.tsx` | Generic comment-thread renderer (non-issue contexts) |
 | `MarkdownBody.tsx` / `WorkspaceFileMarkdownBody.tsx` | Rendered markdown output (read-only) — general vs. workspace-file-scoped |
 
-**KNOWN-DUPLICATES.md lead verified:** `ChatComposer` vs `MarkdownEditor`-based task composer — confirmed genuinely different in scope (380 vs 1,425 lines; ChatComposer has no mention-autocomplete/MDX machinery). Per KNOWN-DUPLICATES.md this was a deliberate non-unification (PAP-101) — **flagged in section 5, not recommended for merge.**
+**KNOWN-DUPLICATES.md lead verified:** `ChatComposer` vs `MarkdownEditor`-based issue composer — confirmed genuinely different in scope (380 vs 1,425 lines; ChatComposer has no mention-autocomplete/MDX machinery). Per KNOWN-DUPLICATES.md this was a deliberate non-unification (PAP-101) — **flagged in section 5, not recommended for merge.**
 
 ### 2.4 Status / chips / badges
 
@@ -126,11 +123,10 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 | `StatusBadge.tsx` | Custom `<span>` pill components: `StatusBadge` (generic run/goal/approval), `AgentStatusBadge`, heartbeat capsule — **does not wrap the shadcn `Badge` primitive** (see shadcn candidates 4a) |
 | `PriorityIcon.tsx` | Priority-level icon |
 | `ExternalObjectStatusIcon.tsx` / `ExternalObjectStatusSummary.tsx` / `ExternalObjectPill.tsx` | External-object (linked PR/doc/etc.) status glyph, rollup summary, and inline pill — a third, deliberately separate status-presentation family |
-| `BlockedReasonChip.tsx` | Chip explaining why a task is blocked |
+| `BlockedReasonChip.tsx` | Chip explaining why an issue is blocked |
 | `SourceTrustBadge.tsx` / `SourceResolvedFoldBadge.tsx` / `SourceResolvedFoldCallout.tsx` | Trust/fold badges for external content sources |
-| `ProductivityReviewBadge.tsx` | Review-status badge |
 
-**KNOWN-DUPLICATES.md lead verified:** StatusIcon / inline-mention chips / task chips are intentionally three separate systems (StatusIcon+StatusGlyph = task status glyph family; `ExternalObjectStatusIcon`/`Pill`/`Summary` = a second, external-object-specific family; mention chips in `lib/mention-chips.ts` + markdown CSS = a third, generic "chip in prose" family). **Documented here per instruction, not merged.**
+**KNOWN-DUPLICATES.md lead verified:** StatusIcon / inline-mention chips / issue chips are intentionally three separate systems (StatusIcon+StatusGlyph = issue status glyph family; `ExternalObjectStatusIcon`/`Pill`/`Summary` = a second, external-object-specific family; mention chips in `lib/mention-chips.ts` + markdown CSS = a third, generic "chip in prose" family). **Documented here per instruction, not merged.**
 
 ### 2.5 Sidebar / navigation
 
@@ -222,7 +218,6 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 | `FoldCurtain.tsx` | Collapsible "show more" curtain/fade |
 | `InlineEditor.tsx` | Generic inline-edit-in-place control |
 | `JsonSchemaForm.tsx` | JSON-schema-driven dynamic form renderer |
-| `TrustPresetSection.tsx` | Trust-level preset picker section |
 | `WorktreeBanner.tsx` | Worktree-branding banner |
 | `CompanyPatternIcon.tsx` | Canvas-rendered company pattern/avatar icon |
 | `CompanySwitcher.tsx` / `CompanySettingsSidebar.tsx` | Company switcher + settings sidebar |
@@ -248,9 +243,9 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 | `access/` | 2 | Access-request UI |
 | `artifacts/` | 2 | `ArtifactCard`, `ArtifactGroupCard` |
 | `environment-variables-editor/` | 5 | Env-var/secret editor rows and index |
-| `interrupt-handoff/` | 1 | `InterruptHandoffViews.tsx` |
-| `issue-output/` | 5 | Task output file tiles / sections |
-| `issue-properties/` | 5 | Task properties panel (full impl, see 2.1) |
+| `interrupt-transfer/` | 1 | `InterruptTransferViews.tsx` |
+| `issue-output/` | 5 | Issue output file tiles / sections |
+| `issue-properties/` | 5 | Issue properties panel (full impl, see 2.1) |
 | `routine-sections/` | 3 | Editable routine section blocks |
 | `search/` | 3 | Search result row, `HighlightedText`, `MatchSourceChip` |
 | `timeline/` | 1 | `WorkTimelineChart.tsx` |
@@ -265,7 +260,7 @@ Grouped by area; one line each.
 | Page | Purpose |
 |---|---|
 | `Dashboard.tsx` | Home/overview dashboard |
-| `IssueDetail.tsx` / `IssuesList` route pages | Task detail + list routes |
+| `IssueDetail.tsx` / `IssuesList` route pages | Issue detail + list routes |
 | `AgentDetail.tsx` / `Agents.tsx` | Agent detail + list |
 | `ProjectDetail.tsx` / `Projects.test.tsx`-adjacent list page | Project detail + list |
 | `Pipelines.tsx` / `PipelineSettings.tsx` | Pipeline list + settings |
@@ -288,9 +283,9 @@ Grouped by area; one line each.
 | `SystemNoticeUxLab.tsx` | System-notice showcase |
 | `IssueChatUxLab.tsx` / `RunTranscriptUxLab.tsx` | Chat + transcript showcases |
 | `DesignGuide.tsx` | Design-system showcase/reference page |
-| `BoardChat.tsx` / `BoardClaim.tsx` | Board (concierge) chat + claim flow |
+| `BoardChat.tsx` | Board (concierge) chat |
 | `NotFound.tsx` | 404 page |
-| `CliAuth.tsx` | CLI auth handoff page |
+| `CliAuth.tsx` | CLI auth transfer page |
 | `JoinRequestQueue.tsx` | Join-request queue |
 | `InstanceAccess.tsx` / `InstanceGeneralSettings.tsx` / `InstanceExperimentalSettings.tsx` | Instance-level settings pages |
 | `ExecutionWorkspaceDetail.tsx` / `ProjectWorkspaceDetail.tsx` | Execution/project workspace detail pages |
@@ -312,7 +307,7 @@ Grouped by area; one line each.
 |---|---|---|---|
 | `ToastViewport.tsx` + `context/ToastContext.tsx` | shadcn's `sonner`-based toast pattern (not currently installed) | Install `sonner`/toast primitive, migrate `useToastActions`/`useToastState` call sites to it | Low if the registry's toast is restyled to match current `toneClasses`/`toneDotClasses` tint system; the current implementation already has custom tone colors (`sky`/`emerald`/`amber`/`red`) that would need to carry over as variant props — a naive swap would look different unless those tones are preserved |
 | `components/StatusBadge.tsx` (`StatusBadge`, `AgentStatusBadge`) | shadcn `Badge` primitive (installed, `ui/badge.tsx`) | Keep as a distinct component (status badges need the `.status-chip` color-mix mechanic Badge's variant system doesn't support) but consider having it render `<Badge>` internally with a custom class rather than a bare `<span>`, for consistency of base styles (focus ring, disabled states, etc.) | Low — internal implementation change only if done carefully; skip if it risks the WCAG-tuned status hues |
-| Hand-rolled bordered-container `<div>`/`<ul>` patterns (`rounded-md border bg-card`-shaped) found in ~26 files (`pages/AdapterManager.tsx`, `pages/TeamCatalog.tsx`, `pages/InstanceAccess.tsx`, `pages/BootstrapSetupUxLab.tsx`, `pages/ResponsibleUserDenialUxLab.tsx`, `pages/CliAuth.tsx`, `pages/BoardClaim.tsx`, `pages/BoardChat.tsx`, `pages/InstanceGeneralSettings.tsx`, `pages/ProjectWorkspaceDetail.tsx`, `pages/Timeline.tsx`, `pages/PluginManager.tsx`, `pages/JoinRequestQueue.tsx`, `pages/InstanceExperimentalSettings.tsx`, `App.tsx`, `components/BootstrapPendingPage.tsx`, `components/IssuePlanDecompositionsSection.tsx`, `components/BlockedInboxView.tsx`, `components/ApprovalCard.tsx`, + ~7 more) vs. shadcn `Card` (installed, only imported in 21 files) | `Card`/`CardContent` | Low-to-medium — many of these are `<ul>` list wrappers, not literal card content; a swap would need per-site judgment, not a blanket codemod. Flagging the cluster, not asserting every site should change. |
+| Hand-rolled bordered-container `<div>`/`<ul>` patterns (`rounded-md border bg-card`-shaped) found across pages such as `AdapterManager.tsx`, `TeamCatalog.tsx`, `InstanceAccess.tsx`, `BootstrapSetupUxLab.tsx`, `ResponsibleUserDenialUxLab.tsx`, `CliAuth.tsx`, `BoardChat.tsx`, `InstanceGeneralSettings.tsx`, `ProjectWorkspaceDetail.tsx`, `Timeline.tsx`, `PluginManager.tsx`, `JoinRequestQueue.tsx`, `InstanceExperimentalSettings.tsx`, `App.tsx`, and supporting components vs. shadcn `Card` | `Card`/`CardContent` | Low-to-medium — many of these are `<ul>` list wrappers, not literal card content; a swap would need per-site judgment, not a blanket codemod. Flagging the cluster, not asserting every site should change. |
 | Hand-rolled pill/badge-shaped `<span>`s (`rounded-full px-2 text-[...]`) outside `Badge` usage, ~34 files | `Badge` (installed, 35 files already use it) | `Badge` with a custom `className` for color | Low if colors are preserved as `className` overrides |
 | `plugins/launchers.tsx` generic plugin-shell overlay (`role="dialog"`, hand-rolled backdrop `bg-black/45`, manual z-index math, `rounded-xl`/`rounded-2xl`) | `Dialog` / `Sheet` / `Popover` (all installed) | Case-by-case: this component multiplexes dialog/drawer/popover shell types from one plugin-host abstraction, which none of the three installed primitives do individually — a clean swap likely means keeping the multiplexer but delegating each `shellType` branch to the matching installed primitive instead of a fully custom `<div>` tree | Medium — this is the most structurally custom overlay in the codebase; recommend closer human review before treating it as a simple swap |
 
@@ -336,9 +331,9 @@ All of the below are **leads for human review**, not verdicts, per KNOWN-DUPLICA
 
 | Lead | Finding |
 |---|---|
-| `ChatComposer` vs `MarkdownEditor`-based task composer | **Confirmed genuinely distinct** (380 vs 1,425 lines; different prop interfaces `ChatComposerProps` vs `MarkdownEditorProps`; MarkdownEditor owns mention-autocomplete machinery — `findMentionMatch`, `computeMentionMenuPosition`, `placeCaretAfterMentionAnchor` — that ChatComposer has none of). Matches KNOWN-DUPLICATES.md's note that this was a deliberate non-unification (PAP-101). **Needs human decision: re-confirm this split should remain permanent, or revisit unification now that both have matured further.** |
+| `ChatComposer` vs `MarkdownEditor`-based issue composer | **Confirmed genuinely distinct** (380 vs 1,425 lines; different prop interfaces `ChatComposerProps` vs `MarkdownEditorProps`; MarkdownEditor owns mention-autocomplete machinery — `findMentionMatch`, `computeMentionMenuPosition`, `placeCaretAfterMentionAnchor` — that ChatComposer has none of). Matches KNOWN-DUPLICATES.md's note that this was a deliberate non-unification (PAP-101). **Needs human decision: re-confirm this split should remain permanent, or revisit unification now that both have matured further.** |
 | `AgentBubbleActionRow.tsx` duplicate check | **Only one file found** (`components/AgentBubbleActionRow.tsx`). The concurrent-work duplicate PRIOR-ART/KNOWN-DUPLICATES.md warned about is not present on this branch — resolved. |
-| `StatusIcon` vs inline-mention chips vs task chips | **Confirmed three separate, intentionally distinct systems**: (1) `StatusIcon`/`StatusGlyph` — task status glyph, drives from `--status-task-icon-*` tokens; (2) `ExternalObjectStatusIcon`/`ExternalObjectPill`/`ExternalObjectStatusSummary` — a parallel system for external (PR/doc/etc.) object status, independent color/severity model (`externalObjectStatusIcon`, `externalObjectStatusToneSeverity` in `lib/status-colors.ts`); (3) mention chips (`lib/mention-chips.ts` + `.paperclip-mention-chip` CSS in `index.css`) — generic "entity reference in prose" chip unrelated to status at all. Documented per instruction, **not merged.** |
+| `StatusIcon` vs inline-mention chips vs issue chips | **Confirmed three separate, intentionally distinct systems**: (1) `StatusIcon`/`StatusGlyph` — issue status glyph, drives from `--status-task-icon-*` tokens; (2) `ExternalObjectStatusIcon`/`ExternalObjectPill`/`ExternalObjectStatusSummary` — a parallel system for external (PR/doc/etc.) object status, independent color/severity model (`externalObjectStatusIcon`, `externalObjectStatusToneSeverity` in `lib/status-colors.ts`); (3) mention chips (`lib/mention-chips.ts` + `.paperclip-mention-chip` CSS in `index.css`) — generic "entity reference in prose" chip unrelated to status at all. Documented per instruction, **not merged.** |
 
 ### 5.2 New leads found during this audit
 
@@ -371,7 +366,7 @@ All of the below are **leads for human review**, not verdicts, per KNOWN-DUPLICA
 4. **Entity-picker family** (`ReportsToPicker`, `ExecutionParticipantPicker`, `InlineEntitySelector`, `SearchableSelect`) — plausible consolidation candidate on prop-surface similarity alone; needs a closer prop-by-prop and behavior diff (not done in this pass) before any merge recommendation can be made with confidence. **DECIDED (Run 2 review, DECISION-SHEET.md C3): prop-by-prop diff queued as Run 3 prep; no merge without it.** **RESOLVED (Run 3 investigation): all four KEEP SEPARATE — no copy-paste drift found; see §7.2.**
 5. **Finance card family** (5 components, section 5.4) — needs a domain-knowledgeable human to confirm whether all 5 are truly distinct dashboard needs or 2-3 could share a base `FinanceCard`. **DECIDED (Run 2 review, DECISION-SHEET.md C4): keep all five; revisit only if a sixth appears.**
 6. **Hand-rolled card-shaped containers vs. `Card` primitive** (~26 files) and **hand-rolled pill spans vs. `Badge`** (~34 files) — both are large, low-risk-looking consolidation opportunities, but "low risk" was assessed at a glance only; a real swap pass needs per-site visual verification (this is exactly what Storybook snapshots from Phase 0 would catch if these were touched). **DECIDED (Run 2 review, DECISION-SHEET.md C5): queued for Run 3 as the shadcn-swap list, with per-site snapshot verification.**
-7. **`plugins/launchers.tsx` custom multiplexed overlay** — the most structurally custom modal-like component in the app; recommend a dedicated closer look before deciding whether/how to route it through `Dialog`/`Sheet`/`Popover`, since it currently does something none of the three do alone (switch shell type per plugin action). **DECIDED (Run 2 review, DECISION-SHEET.md C6): dedicated review task; excluded from Run 3.**
+7. **`plugins/launchers.tsx` custom multiplexed overlay** — the most structurally custom modal-like component in the app; recommend a dedicated closer look before deciding whether/how to route it through `Dialog`/`Sheet`/`Popover`, since it currently does something none of the three do alone (switch shell type per plugin action). **DECIDED (Run 2 review, DECISION-SHEET.md C6): dedicated review item; excluded from Run 3.**
 8. **`radio-card.tsx` / `toggle-switch.tsx` non-standard "shadcn" primitives** — confirm whether these were deliberately custom-built (and should stay documented as such) or are stale/incidental deviations from `radio-group`/`switch` that should be swapped in a later run. **DECIDED (Run 2 review, DECISION-SHEET.md C7): deliberately custom — documented as such; no swap.**
 9. **`StatusBadge`/`AgentStatusBadge` not wrapping the installed `Badge` primitive** — worth a human call on whether unifying the base markup (while keeping the custom `.status-chip` color-mix mechanic) is worth the churn, or whether the current bespoke `<span>` approach should just be documented as an intentional, permanent exception (similar to the StatusIcon/ExternalObject/mention-chip three-way split already documented). **DECIDED (Run 2 review, DECISION-SHEET.md C8): documented as an intentional exception — the WCAG-tuned `.status-chip` mechanic stays bespoke.**
 10. **Toast system has no installed shadcn primitive to compare against** — `ToastViewport`/`ToastContext` is fully custom because no `sonner`/toast component is installed at all. Human call: install one and migrate, or formally document the custom toast as the system's permanent choice (it already has a working tone/variant system). **DECIDED (Run 2 review, DECISION-SHEET.md C9): decision deferred to Run 4, when the toast's palette colors get retokenized; sonner-behind-a-pushToast-facade is the alternative to evaluate then.**

@@ -4,7 +4,7 @@ import { api } from "./client";
 export const attentionApi = {
   /**
    * Fetch the ranked Decisions attention feed for a company. The server
-   * unions every attention source (approvals, interactions, recovery, reviews,
+   * unions every attention source (approvals, recovery, reviews,
    * failures, budget…) into one ranked queue with the §0 contract.
    */
   list: (companyId: string, options: { includeDismissed?: boolean } = {}) =>

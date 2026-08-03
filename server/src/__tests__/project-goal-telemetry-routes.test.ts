@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockProjectService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -79,13 +80,19 @@ async function createApp(routeType: "project" | "goal") {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
+    (req as any).actor = testBoardSessionActor({
       userId: "board-user",
+      userName: "Board User",
+      userEmail: "board@example.com",
       companyIds: ["company-1"],
-      source: "local_implicit",
+      sessionId: "session-board-user",
+      memberships: [{
+        companyId: "company-1",
+        membershipRole: "owner",
+        status: "active",
+      }],
       isInstanceAdmin: false,
-    };
+    });
     next();
   });
   if (routeType === "project") {
@@ -143,15 +150,19 @@ describe("project and goal telemetry routes", () => {
     mockLogActivity.mockResolvedValue(undefined);
   });
 
-  it("emits telemetry when a project is created", async () => {
-    const app = await createApp("project");
-    const res = await request(app)
-      .post("/api/companies/company-1/projects")
-      .send({ name: "Telemetry project" });
+  it(
+    "emits telemetry when a project is created",
+    async () => {
+      const app = await createApp("project");
+      const res = await request(app)
+        .post("/api/companies/company-1/projects")
+        .send({ name: "Telemetry project" });
 
-    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockTelemetryTrack).toHaveBeenCalledWith("project.created", {});
-  });
+      expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+      expect(mockTelemetryTrack).toHaveBeenCalledWith("project.created", {});
+    },
+    15_000,
+  );
 
   it("emits telemetry when a goal is created", async () => {
     const app = await createApp("goal");

@@ -10,32 +10,28 @@ MCP servers are local fakes.
 Every "You should see" below was checked against the real screens; where a
 button or label is quoted, that's the exact text in the product.
 
-> Companion docs: the automated counterparts live in
-> [`SMOKE-LAB-BROWSER-RUNNER.md`](./SMOKE-LAB-BROWSER-RUNNER.md) (the agent-driven
-> browser runner) and `tests/e2e/smoke-lab.spec.ts` (the headless CI mirror). The
-> daily recurring routine that runs the browser smoke for you is described in
-> [§8](#8-the-daily-routine-hands-off).
+> Companion docs: the database-free automated counterpart is documented in
+> [`SMOKE-LAB-BROWSER-RUNNER.md`](./SMOKE-LAB-BROWSER-RUNNER.md) and implemented
+> by `tests/e2e/smoke-lab.spec.ts` with `tests/e2e/fixtures.ts`.
 
 ---
 
 ## 0. Prerequisite: any private (non-public) instance
 
-The Smoke Lab **fail-closes** on public deployments. It runs anywhere else — you do
-**not** need a special `local_trusted` box or any extra environment variables.
-Turning on the flag is all the setup there is.
+The Smoke Lab **fail-closes** on public exposure. It runs on a private instance
+after you sign in through Better Auth. Turning on the flag is the remaining
+feature setup.
 
 | Requirement | Where |
 |---|---|
 | `Smoke Lab` experimental flag ON | Instance settings → Experimental |
 | deployment exposure **not** `public` (i.e. not internet-facing) | how the instance was started |
 
-That's it. The everyday dev server works as-is: a `local_trusted` localhost box, an
-**`authenticated` instance behind Tailscale + login** (e.g.
-`http://paperclip-dev:45439`), and a `pnpm dev` server built with
-`NODE_ENV=production` are all fine — those are private, so the Smoke Lab is
-available. The auth mode and the Node build target no longer matter; only public
-exposure is disallowed (the fake OAuth provider and fixture sidecars must never be
-reachable from the open internet).
+The everyday loopback dev server and a private instance behind Tailscale (for
+example `http://paperclip-dev:45439`) are both suitable. Both require the same
+Better Auth account and session. The Node build target does not matter; only
+public exposure is disallowed because the fake OAuth provider and fixture
+sidecars must never be reachable from the open internet.
 
 If the flag is off you'll see the tab say *"Smoke Lab is turned off"*. If you're on a
 `public` instance, API calls return `403 "Smoke lab is only available on private
@@ -93,7 +89,7 @@ the URL bar, e.g. `PAP`). Replace it in the example paths.
 
 > If **Start services** errors with a `403`, re-check §0 — you're on a `public`
 > (internet-facing) instance. Any private instance works, including the everyday
-> authenticated dev server.
+> signed-in private dev server.
 
 ---
 
@@ -124,7 +120,7 @@ Two things to know before you start:
 | **approve** | **Review** tab → approve the pending write. | The request clears; the call completes. |
 | **denied-call** | Set the blocked action to **Off**, then run it from **Test**. | Decision **Off**; the call is refused with a reason. |
 | **schema-change / quarantine** | Trigger the fixture schema flip (HTTP paths), then **Refresh actions** on Permissions. | A **quarantine** pill with the changed entries held back. |
-| **revoke** | **Setup** → turn off the **"Agents can use this app"** toggle (or revoke the gateway session for P6). | The connection is paused; a revoked token is cut off (401). |
+| **revoke** | **Setup** → turn off the **"Agents can use this app"** toggle (or revoke P6's named external gateway token). | The connection is paused; a revoked named token is cut off (401). |
 | **audit-evidence** | **Activity** tab. | Audit rows for the allowed, approved, denied, quarantine, and revoke decisions. |
 
 (The results matrix in §6 folds **approve** into its *Ask-first write* column, so
@@ -213,10 +209,10 @@ tools change.
   section of Apps; import the HTTP fixture through the advanced configuration
   surface, then run the same HTTP lifecycle. **You should see:** advanced
   Activity rows show the import and the governed calls.
-- **P6 — Token broker / gateway session.** Create a **run-scoped gateway session**
-  for the smoke agent, list tools through the session token, then **revoke** the
-  session. **You should see:** the token lists tools before revoke and is **cut
-  off (401)** after. Entry/evidence via **Activity**.
+- **P6 — Named external MCP gateway.** Create an explicitly profiled named
+  gateway and external-client token, list its tools through MCP, then **revoke**
+  that token. **You should see:** the token lists only the named gateway's tools
+  before revoke and is **cut off (401)** after. Entry/evidence via **Activity**.
 - **P7 — Governance surfaces.** Entry via **Review**. This path is about the
   governance surfaces themselves — profiles, ask-first policies, block policies,
   and quarantine. **You should see:** Review and Activity expose the ask-first,
@@ -240,37 +236,29 @@ tools change.
 
 ---
 
-## 7. Run the automated browser smoke (optional but recommended)
+## 7. Run the automated browser check
 
-Rather than click all seven paths by hand, let the agent-driven runner do it and
-read the evidence:
+The automated check is deliberately separate from the live tutorial above. It
+runs the UI on Vite and supplies all API/domain state from a deterministic
+Playwright fixture; it never starts Paperclip or connects to a database.
 
-1. In the **Runs** panel of the Smoke Lab tab, click **Run browser smoke now** to
-   open a run, **or** run the reference driver from a shell (it types the demo
-   credentials into the real consent page for you):
-   ```bash
-   SMOKE_BASE=http://127.0.0.1:3251 \
-     node --experimental-strip-types tests/e2e/smoke-lab-browser-runner.mts
-   # SMOKE_ONLY=P1,P3 restricts to a subset; omit for the full P1–P7 sweep.
-   ```
-2. **You should see:** the matrix fills in green as each step is recorded, every
-   step carrying a viewable screenshot, and a new entry in the **Runs** list.
+```bash
+pnpm exec playwright test \
+  --config tests/e2e/playwright.config.ts \
+  tests/e2e/smoke-lab.spec.ts
+```
+
+Read the generated screenshots, trace, and HTML report under `test-results/`.
+The fixture-backed run covers the same P1-P7 scenario catalog without creating
+operator accounts or mutating a development/production instance.
 
 ---
 
-## 8. The daily routine (hands-off)
+## 8. Scheduled verification
 
-A recurring Paperclip routine — **"Daily Smoke Lab integration smoke (P1-P7)"** —
-runs the browser smoke for you every day and:
-
-- **records** each run to the results API (matrix + dashboard);
-- on a real **failure**, files a `high`-priority issue with the failing step and a
-  screenshot, assigned to the owning coder, and links it back to the run;
-- when the flag is off or the instance is unreachable, records an **amber/skipped**
-  run instead of failing silently.
-
-It's driven by `tests/e2e/smoke-lab-routine.mts`. See that file's header and the
-routine's own description for the runbook.
+Schedule the fixture-backed Playwright command in CI. Do not schedule an
+operator script against a running Paperclip instance: that would reintroduce
+user-account and database-backed state into the automated test boundary.
 
 ---
 

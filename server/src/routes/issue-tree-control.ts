@@ -8,8 +8,9 @@ import {
   releaseIssueTreeHoldSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { heartbeatService, issueService, issueTreeControlService, logActivity } from "../services/index.js";
-import { assertBoard, getAccessibleResource, getActorInfo } from "./authz.js";
+import { issueService, issueTreeControlService, logActivity } from "../services/index.js";
+import type { IssueExecutionCancellationService } from "../services/issue-execution-cancellation.js";
+import { assertBoard, getAccessibleResource } from "./authz.js";
 
 const TREE_RUN_CANCELLATION_RESPONSE_WAIT_MS = 1_000;
 
@@ -31,11 +32,16 @@ async function waitForRunCancellationTasks(tasks: Promise<void>[]) {
   }
 }
 
-export function issueTreeControlRoutes(db: Db) {
+export function issueTreeControlRoutes(
+  db: Db,
+  issueExecutionCancellation: Pick<
+    IssueExecutionCancellationService,
+    "cancelRun"
+  >,
+) {
   const router = Router();
   const issuesSvc = issueService(db);
   const treeControlSvc = issueTreeControlService(db);
-  const heartbeat = heartbeatService(db);
 
   async function resolveRootIssue(req: Request) {
     const rootIssueId = req.params.id as string;
@@ -49,14 +55,10 @@ export function issueTreeControlRoutes(db: Db) {
     if (!root) return;
 
     const preview = await treeControlSvc.preview(root.companyId, root.id, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: root.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "issue.tree_control_previewed",
       entityType: "issue",
       entityId: root.id,
@@ -75,13 +77,10 @@ export function issueTreeControlRoutes(db: Db) {
     const root = await getAccessibleResource(req, res, resolveRootIssue(req), "Root issue not found");
     if (!root) return;
 
-    const actor = getActorInfo(req);
     const actorInput = {
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      userId: actor.actorType === "user" ? actor.actorId : null,
-      runId: actor.runId,
+      actorType: "user" as const,
+      actorId: req.actor.userId,
+      userId: req.actor.userId,
     };
     let result = await treeControlSvc.createHold(root.companyId, root.id, {
       ...req.body,
@@ -89,11 +88,8 @@ export function issueTreeControlRoutes(db: Db) {
     });
     await logActivity(db, {
       companyId: root.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "issue.tree_hold_created",
       entityType: "issue",
       entityId: root.id,
@@ -109,20 +105,17 @@ export function issueTreeControlRoutes(db: Db) {
     const runCancellationTasks: Promise<void>[] = [];
     if (result.hold.mode === "pause" || result.hold.mode === "cancel") {
       const interruptedRunIds = [...new Set(result.preview.activeRuns.map((run) => run.id))];
-      for (const heartbeatRunId of interruptedRunIds) {
+      for (const runId of interruptedRunIds) {
         const cancellationTask = (async () => {
           try {
-            await heartbeat.cancelRun(heartbeatRunId);
+            await issueExecutionCancellation.cancelRun(runId);
             await logActivity(db, {
               companyId: root.companyId,
-              actorType: actor.actorType,
-              actorId: actor.actorId,
-              agentId: actor.agentId,
-              runId: actor.runId,
-              agentApiKeyId: actor.agentApiKeyId,
+              actorType: "user",
+              actorId: req.actor.userId,
               action: "issue.tree_hold_run_interrupted",
-              entityType: "heartbeat_run",
-              entityId: heartbeatRunId,
+              entityType: "issue_execution_run",
+              entityId: runId,
               details: {
                 holdId: result.hold.id,
                 rootIssueId: root.id,
@@ -132,14 +125,11 @@ export function issueTreeControlRoutes(db: Db) {
           } catch (error) {
             await Promise.resolve(logActivity(db, {
               companyId: root.companyId,
-              actorType: actor.actorType,
-              actorId: actor.actorId,
-              agentId: actor.agentId,
-              runId: actor.runId,
-              agentApiKeyId: actor.agentApiKeyId,
+              actorType: "user",
+              actorId: req.actor.userId,
               action: "issue.tree_hold_run_interrupt_failed",
-              entityType: "heartbeat_run",
-              entityId: heartbeatRunId,
+              entityType: "issue_execution_run",
+              entityId: runId,
               details: {
                 holdId: result.hold.id,
                 rootIssueId: root.id,
@@ -152,43 +142,14 @@ export function issueTreeControlRoutes(db: Db) {
         runCancellationTasks.push(cancellationTask);
       }
 
-      const cancelledWakeups = await treeControlSvc.cancelUnclaimedWakeupsForTree(
-        root.companyId,
-        root.id,
-        result.hold.mode === "pause"
-          ? "Cancelled because an active subtree pause hold was created"
-          : "Cancelled because a subtree cancel operation was applied",
-      );
-      for (const wakeup of cancelledWakeups) {
-        await logActivity(db, {
-          companyId: root.companyId,
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          agentId: actor.agentId,
-          runId: actor.runId,
-          agentApiKeyId: actor.agentApiKeyId,
-          action: "issue.tree_hold_wakeup_deferred",
-          entityType: "agent_wakeup_request",
-          entityId: wakeup.id,
-          details: {
-            holdId: result.hold.id,
-            rootIssueId: root.id,
-            agentId: wakeup.agentId,
-            previousReason: wakeup.reason,
-          },
-        });
-      }
     }
 
     if (result.hold.mode === "cancel") {
       const statusUpdate = await treeControlSvc.cancelIssueStatusesForHold(root.companyId, root.id, result.hold.id);
       await logActivity(db, {
         companyId: root.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "issue.tree_cancel_status_updated",
         entityType: "issue",
         entityId: root.id,
@@ -218,6 +179,7 @@ export function issueTreeControlRoutes(db: Db) {
             cleanup: "restore_failed_before_apply",
           },
           actor: actorInput,
+          internal: true,
         }).catch(() => null);
         throw error;
       }
@@ -226,11 +188,8 @@ export function issueTreeControlRoutes(db: Db) {
       }
       await logActivity(db, {
         companyId: root.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "issue.tree_restore_status_updated",
         entityType: "issue",
         entityId: root.id,
@@ -242,55 +201,6 @@ export function issueTreeControlRoutes(db: Db) {
         },
       });
 
-      const wakeAgents = typeof req.body.metadata === "object"
-        && req.body.metadata !== null
-        && (req.body.metadata as Record<string, unknown>).wakeAgents === true;
-      if (wakeAgents) {
-        for (const restoredIssue of statusUpdate.updatedIssues) {
-          if (!restoredIssue.assigneeAgentId) continue;
-          const wakeRun = await heartbeat
-            .wakeup(restoredIssue.assigneeAgentId, {
-              source: "assignment",
-              triggerDetail: "system",
-              reason: "issue_tree_restored",
-              payload: {
-                issueId: restoredIssue.id,
-                rootIssueId: root.id,
-                restoreHoldId: result.hold.id,
-              },
-              requestedByActorType: actor.actorType,
-              requestedByActorId: actor.actorId,
-              contextSnapshot: {
-                issueId: restoredIssue.id,
-                taskId: restoredIssue.id,
-                wakeReason: "issue_tree_restored",
-                source: "issue.tree_restore",
-                rootIssueId: root.id,
-                restoreHoldId: result.hold.id,
-              },
-            })
-            .catch(() => null);
-          if (!wakeRun) continue;
-          await logActivity(db, {
-            companyId: root.companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
-            agentApiKeyId: actor.agentApiKeyId,
-            action: "issue.tree_restore_wakeup_requested",
-            entityType: "heartbeat_run",
-            entityId: wakeRun.id,
-            issueId: restoredIssue.id,
-            details: {
-              holdId: result.hold.id,
-              rootIssueId: root.id,
-              issueId: restoredIssue.id,
-              agentId: restoredIssue.assigneeAgentId,
-            },
-          });
-        }
-      }
     }
 
     res
@@ -358,24 +268,18 @@ export function issueTreeControlRoutes(db: Db) {
         return;
       }
 
-      const actor = getActorInfo(req);
       const hold = await treeControlSvc.releaseHold(root.companyId, root.id, holdId, {
         ...req.body,
         actor: {
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          agentId: actor.agentId,
-          userId: actor.actorType === "user" ? actor.actorId : null,
-          runId: actor.runId,
+          actorType: "user",
+          actorId: req.actor.userId,
+          userId: req.actor.userId,
         },
       });
       await logActivity(db, {
         companyId: root.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "issue.tree_hold_released",
         entityType: "issue",
         entityId: root.id,

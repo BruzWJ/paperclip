@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { adapterRegistrySchema } from "./adapter-registry.js";
-import { KNOWN_ADAPTER_TYPES } from "./adapter-defaults.js";
 
 const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
 
@@ -8,6 +7,9 @@ export const kubernetesProviderConfigSchema = z
   .object({
     inCluster: z.boolean().default(false),
     kubeconfig: z.string().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    reuseLease: z.boolean().optional().default(false),
+    archiveOnRelease: z.boolean().optional(),
 
     namespacePrefix: z.string().regex(/^[a-z0-9-]{1,32}$/).default("paperclip-"),
     companySlug: z.string().regex(/^[a-z0-9-]{1,32}$/).optional(),
@@ -30,42 +32,54 @@ export const kubernetesProviderConfigSchema = z
     runtimeClassName: z.string().optional(),
     serviceAccountAnnotations: z.record(z.string()).default({}),
 
-    jobTtlSecondsAfterFinished: z.number().int().nonnegative().default(900),
     podActivityDeadlineSec: z.number().int().positive().default(3600),
 
     /**
-     * The adapter type that Jobs in this environment will run.
-     * Each Kubernetes environment is bound to one adapter; create multiple
-     * environments for different adapters.
-     * Defaults to `"claude_local"`.
+     * Exact default transport for this environment. A per-run external type
+     * may override it only when that type has an enabled registry entry.
      */
     adapterType: z
       .string()
-      .default("claude_local")
-      .refine((v) => KNOWN_ADAPTER_TYPES.has(v), {
-        message: "adapterType must be one of the known adapter types",
-      }),
+      .min(1)
+      .refine((value) => value === value.trim(), {
+        message: "adapterType must be an exact non-blank identifier",
+      })
+      .default("codex"),
 
     /**
-     * Optional declarative adapter registry. When present it is authoritative
-     * for runtime image / envKeys / allowFqdns / probe / defaultEnv resolution
-     * (replace semantics). Absent = built-in defaults.
+     * Authoritative runtime declaration. Kubernetes has no built-in
+     * provider-specific image, egress, or probe defaults.
      */
-    adapters: adapterRegistrySchema.optional(),
+    adapters: adapterRegistrySchema.min(1),
 
-    /**
-     * The sandbox backend to use.
-     *
-     * - `"sandbox-cr"` (default, alpha) — uses the kubernetes-sigs/agent-sandbox
-     *   Sandbox CRD (agents.x-k8s.io/v1alpha1). Creates a long-lived pod that
-     *   paperclip-server can exec into for multi-command adapter-install workflows.
-     *   Requires the agent-sandbox controller to be installed in the cluster.
-     *
-     * - `"job"` — uses batch/v1 Job (stable fallback). One-shot entrypoint; does
-     *   NOT support multi-command exec. Use this for clusters without agent-sandbox
-     *   installed, or when you need stable (non-alpha) k8s APIs.
-     */
-    backend: z.enum(["sandbox-cr", "job"]).default("sandbox-cr"),
+  })
+  .strict()
+  .superRefine((config, context) => {
+    const seenAdapterTypes = new Set<string>();
+    for (const [index, entry] of config.adapters.entries()) {
+      if (seenAdapterTypes.has(entry.adapterType)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["adapters", index, "adapterType"],
+          message:
+            "adapter runtime registry must contain each exact adapterType once",
+        });
+      }
+      seenAdapterTypes.add(entry.adapterType);
+    }
+    const defaultRuntime = config.adapters.find(
+      (entry) =>
+        entry.adapterType === config.adapterType &&
+        entry.enabled !== false,
+    );
+    if (!defaultRuntime) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["adapters"],
+        message:
+          "adapters must contain an enabled runtime for adapterType",
+      });
+    }
   })
   .refine(
     (cfg) => cfg.inCluster || cfg.kubeconfig,
@@ -81,13 +95,33 @@ export function parseKubernetesProviderConfig(input: unknown): KubernetesProvide
   return kubernetesProviderConfigSchema.parse(input);
 }
 
-export interface KubernetesLeaseMetadata {
-  namespace: string;
-  /** Name of the workload resource (Job name for job backend, Sandbox CR name for sandbox-cr backend). */
-  jobName: string;
-  podName: string | null;
-  secretName: string;
-  phase: "Pending" | "Running" | "Succeeded" | "Failed";
-  /** Which backend provisioned this lease. */
-  backend: "sandbox-cr" | "job";
+export const kubernetesLeaseMetadataSchema = z
+  .object({
+    namespace: z.string().min(1),
+    /** Name of the Sandbox custom resource backing this lease. */
+    sandboxName: z.string().min(1),
+    podName: z.string().min(1).nullable(),
+    phase: z.enum(["Pending", "Running", "Failed"]),
+    resumedLease: z.literal(true).optional(),
+  })
+  .strict();
+
+export type KubernetesLeaseMetadata = z.infer<typeof kubernetesLeaseMetadataSchema>;
+
+export function parseKubernetesLeaseMetadata(input: unknown): KubernetesLeaseMetadata {
+  const record =
+    typeof input === "object" && input !== null && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  // The server stores provider metadata beside its own lease envelope. Project
+  // only this provider's exact owned fields into the strict parser.
+  return kubernetesLeaseMetadataSchema.parse({
+    namespace: record.namespace,
+    sandboxName: record.sandboxName,
+    podName: record.podName,
+    phase: record.phase,
+    ...(record.resumedLease === undefined
+      ? {}
+      : { resumedLease: record.resumedLease }),
+  });
 }

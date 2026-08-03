@@ -193,7 +193,6 @@ const SNIPPET_CLIENT_ORDER: ToolMcpGatewayClientSnippet["client"][] = [
   "claude_desktop",
   "vscode",
   "claude_code",
-  "opencode",
 ];
 
 export function orderedSnippets(

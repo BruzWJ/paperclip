@@ -7,7 +7,7 @@ import { foldersApi } from "../api/folders";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
-import { heartbeatsApi } from "../api/heartbeats";
+import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { accessApi } from "../api/access";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -34,6 +34,7 @@ import {
   type RoutineRunDialogSubmitData,
 } from "../components/RoutineRunVariablesDialog";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
+import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -47,7 +48,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import type { RoutineListItem, RoutineVariable } from "@paperclipai/shared";
+import type {
+  IssueAttentionMask,
+  RoutineListItem,
+  RoutineVariable,
+} from "@paperclipai/shared";
 import type { FolderListItem } from "@paperclipai/shared";
 import {
   AllUnfiledBanner,
@@ -101,7 +106,6 @@ type RoutineGroup = {
   items: RoutineListItem[];
 };
 
-const builtInRoutineGroupKey = "__built_in_routines";
 
 const defaultRoutineViewState: RoutineViewState = {
   sortField: "title",
@@ -143,6 +147,7 @@ function buildRoutineMutationPayload(input: {
   priority: string;
   concurrencyPolicy: string;
   catchUpPolicy: string;
+  attentionMask: IssueAttentionMask | null;
   variables: RoutineVariable[];
 }) {
   return {
@@ -193,36 +198,14 @@ export function buildRoutineGroups(
     }));
 }
 
-export function isBuiltInRoutine(routine: Pick<RoutineListItem, "originKind">) {
-  return routine.originKind === "built_in_agent_bundle";
-}
-
 export function buildRoutineSections(
   routines: RoutineListItem[],
   groupByValue: RoutineGroupBy,
   projectById: Map<string, { name: string }>,
   agentById: Map<string, { name: string }>,
 ): RoutineGroup[] {
-  const builtInRoutines = routines.filter(isBuiltInRoutine);
-  const customRoutines = routines.filter((routine) => !isBuiltInRoutine(routine));
-  const customGroups = buildRoutineGroups(customRoutines, groupByValue, projectById, agentById)
-    .filter((group) => group.items.length > 0)
-    .map((group) => (
-      builtInRoutines.length > 0 && groupByValue === "none" && group.key === "__all"
-        ? { ...group, label: "Custom routines" }
-        : group
-    ));
-
-  if (builtInRoutines.length === 0) return customGroups;
-
-  return [
-    ...customGroups,
-    {
-      key: builtInRoutineGroupKey,
-      label: "Built-in routines",
-      items: builtInRoutines,
-    },
-  ];
+  return buildRoutineGroups(routines, groupByValue, projectById, agentById)
+    .filter((group) => group.items.length > 0);
 }
 
 export function sortRoutines(
@@ -315,6 +298,7 @@ export function Routines() {
     priority: string;
     concurrencyPolicy: string;
     catchUpPolicy: string;
+    attentionMask: IssueAttentionMask | null;
     variables: RoutineVariable[];
   }>({
     title: "",
@@ -325,6 +309,7 @@ export function Routines() {
     priority: "medium",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
+    attentionMask: null,
     variables: [],
   });
   const routineViewStateKey = selectedCompanyId
@@ -371,23 +356,23 @@ export function Routines() {
     queryFn: () => issuesApi.list(selectedCompanyId!, { originKind: "routine_execution" }),
     enabled: !!selectedCompanyId && activeTab === "runs",
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(selectedCompanyId!);
-  const sharedLiveRuns = useSharedPollingQuery({
+  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const sharedActiveRuns = useSharedPollingQuery({
     companyId: selectedCompanyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!selectedCompanyId && activeTab === "runs",
-    // Event-sourced via LiveUpdatesProvider (#9627); no interval poll needed.
+    // Event-sourced via LiveUpdatesProvider; no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(selectedCompanyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    enabled: sharedActiveRuns.enabled,
+    refetchInterval: sharedActiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
+  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
 
   useEffect(() => {
     autoResizeTextarea(titleInputRef.current);
@@ -414,6 +399,7 @@ export function Routines() {
         priority: "medium",
         concurrencyPolicy: "coalesce_if_active",
         catchUpPolicy: "skip_missed",
+        attentionMask: null,
         variables: [],
       });
       setComposerOpen(false);
@@ -520,14 +506,6 @@ export function Routines() {
       });
     },
   });
-  const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      issuesApi.update(id, data),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: [...queryKeys.issues.list(selectedCompanyId!), "routine-executions"] });
-    },
-  });
-
   const updateRoutineStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => routinesApi.update(id, { status }),
     onMutate: ({ id }) => {
@@ -596,7 +574,7 @@ export function Routines() {
       ).map((agent) => ({
         id: agent.id,
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
     [agents, recentAssigneeIds],
   );
@@ -617,7 +595,7 @@ export function Routines() {
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
   );
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
   const visibleRoutines = useMemo(
     () => (routines ?? []).filter((routine) => routine.status !== "archived"),
     [routines],
@@ -904,7 +882,6 @@ export function Routines() {
             liveIssueIds={liveIssueIds}
             viewStateKey="paperclip:routine-recent-runs-view"
             issueLinkState={recentRunsIssueLinkState}
-            onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
           />
         </TabsContent>
       </Tabs>
@@ -1153,6 +1130,20 @@ export function Routines() {
                       </Select>
                       <p className="text-xs text-muted-foreground">{catchUpPolicyDescriptions[draft.catchUpPolicy]}</p>
                     </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
+                      Created issue attention
+                    </p>
+                    <IssueAttentionMaskMatrix
+                      value={draft.attentionMask}
+                      onChange={(attentionMask) =>
+                        setDraft((current) => ({
+                          ...current,
+                          attentionMask,
+                        }))
+                      }
+                    />
                   </div>
                 </CollapsibleContent>
               </Collapsible>

@@ -48,7 +48,7 @@ function normalizeApiBase(raw: string | undefined) {
 }
 
 async function readPreviousServerVersion() {
-  const apiBase = normalizeApiBase(process.env.PAPERCLIP_API_URL);
+  const apiBase = normalizeApiBase(process.env.PAPERCLIP_BOARD_API_URL);
   if (!apiBase) return null;
   try {
     const response = await fetch(`${apiBase}/api/health`, {
@@ -71,7 +71,7 @@ const intent = await writeHotRestartIntent({
   previousServerPid: serverPid,
   previousServerVersion: await readPreviousServerVersion(),
   drainRequired,
-  requestedByRunId: process.env.PAPERCLIP_RUN_ID?.trim() || null,
+  requestedByRunId: null,
 });
 
 console.log(JSON.stringify({

@@ -54,23 +54,26 @@ Execution workspaces are durable until a human closes them.
 - Closing an execution workspace stops its runtime services and cleans up its workspace artifacts when allowed.
 - Shared workspaces that point at the project primary checkout are treated more conservatively during cleanup than disposable isolated workspaces.
 
-## Resolved workspace logic during heartbeat runs
+## Resolved workspace logic during issue executions
 
-Heartbeat still resolves a workspace for the run, but that is about code location and session continuity, not runtime-service control.
+The issue-execution dispatcher resolves a workspace for each provider attempt.
+That is about code location and issue-scoped continuity, not runtime-service
+control.
 
-1. Heartbeat resolves a base workspace for the run.
+1. The dispatcher resolves the issue/epoch workspace binding and base workspace.
 2. Paperclip realizes the effective execution workspace, including creating or reusing a worktree when needed.
 3. Paperclip persists execution-workspace metadata such as paths, refs, and provisioning settings.
-4. Heartbeat passes the resolved code workspace to the agent run.
-5. Workspace runtime services remain manual UI-managed controls rather than automatic heartbeat-managed services.
+4. The run receives the resolved code workspace.
+5. Workspace runtime services remain manual UI-managed controls rather than
+   automatic issue-execution-managed services.
 
 ## Cross-run persistence (no-remote-git contract)
 
 Code state moves between runs through the local execution-workspace cwd alone — not through a git remote.
 
 - Each run's prepare step bundles the local worktree to the run's remote dir over ssh, with no `git remote` configured.
-- The adapter's restore step at the end of the run writes any new remote commits back into the local worktree directly.
-- Adapters must never `git push` from runtime code, and must never assume a remote exists.
+- The common execution-target finalizer writes any new remote commits back into the local worktree directly.
+- Execution-target runtime code must never `git push` or assume a remote exists.
 - A failed restore is a run-level error and records `workspace_finalize=failed` on the execution workspace, which gates dependent issue wakes until the next successful finalize.
 
 The invariant is enforced by the "no-remote-git contract" case in `packages/adapter-utils/src/ssh-fixture.test.ts`, which asserts a remote-only commit reaches the local worktree with no remote configured at any point.
@@ -81,5 +84,5 @@ With the current implementation:
 
 - Project workspace command config is the fallback for execution workspace UI controls.
 - Execution workspace runtime overrides are stored on the execution workspace.
-- Heartbeat runs do not auto-start workspace services.
+- Issue executions do not auto-start workspace services.
 - Server startup does not auto-restart workspace services.

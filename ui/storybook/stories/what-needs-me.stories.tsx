@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ArrowUpDown, CheckCircle2, Inbox, Layers, ListFilter } from "lucide-react";
-import type { AttentionItem, AttentionSourceKind, AttentionSeverity, InboxDismissalKind } from "@paperclipai/shared";
+import {
+  canonicalizeMoneyAmount,
+  type AttentionItem,
+  type AttentionSourceKind,
+  type AttentionSeverity,
+  type InboxDismissalKind,
+} from "@paperclipai/shared";
 import { AttentionQueueRow } from "@/components/AttentionQueueRow";
 import { IssueGroupHeader } from "@/components/IssueGroupHeader";
 import { ToastProvider, useToastActions } from "@/context/ToastContext";
@@ -97,14 +103,6 @@ const IMAGES = [
 
 const POPULATED: AttentionItem[] = [
   item(
-    "recov-1",
-    "recovery_action",
-    "critical",
-    "Run watchdog escalated — agent stalled 40m",
-    "Recovery action escalated and needs a human decision.",
-    { subject: { kind: "recovery_action", id: "r1", companyId, title: "Run watchdog escalated — agent stalled 40m", identifier: null, status: "escalated", href: "/PAP/issues/PAP-1000", metadata: {} } },
-  ),
-  item(
     "appr-1",
     "approval",
     "high",
@@ -119,18 +117,6 @@ const POPULATED: AttentionItem[] = [
         { id: "reject", label: "Reject", description: null },
         { id: "request_revision", label: "Request revision", description: null },
       ],
-    },
-  ),
-  item(
-    "intx-1",
-    "issue_thread_interaction",
-    "medium",
-    "Which rollout order should we use?",
-    "Questions need answers on an issue thread.",
-    {
-      inlineResolvable: true,
-      subject: { kind: "interaction", id: "interaction-1", companyId, title: "Which rollout order should we use?", identifier: null, status: "pending", href: "/PAP/issues/PAP-1000#interaction-1", metadata: { kind: "ask_user_questions", issueId: "issue-1000" } },
-      decisionVerbs: [{ id: "respond", label: "Respond", description: null }],
     },
   ),
   item(
@@ -182,7 +168,6 @@ const POPULATED: AttentionItem[] = [
 const ACTIVITY_OFFSETS: Record<string, number> = {
   "recov-1": NOW - 30 * 60 * 1000,
   "appr-1": NOW - 2 * HOUR,
-  "intx-1": NOW - 26 * HOUR,
   "review-1": NOW - 27 * HOUR,
   "join-1": NOW - 3 * DAY,
   "fail-1": NOW - 5 * DAY,
@@ -190,21 +175,21 @@ const ACTIVITY_OFFSETS: Record<string, number> = {
 };
 const PROJECTS: Record<string, AttentionItem["project"]> = {
   "appr-1": { id: "proj-alpha", name: "Alpha", urlKey: "alpha", color: "#0f766e", icon: "rocket" },
-  "intx-1": { id: "proj-alpha", name: "Alpha", urlKey: "alpha", color: "#0f766e", icon: "rocket" },
   "review-1": { id: "proj-beta", name: "Beta", urlKey: "beta", color: "#7c3aed", icon: "layers" },
 };
 const DETAILS: Record<string, AttentionItem["detail"]> = {
   "recov-1": { kind: "generic", summaryExcerpt: "Agent has not produced output in 40 minutes.", images: [] },
   "appr-1": { kind: "approval", approvalType: "hire_agent", summaryExcerpt: "Adds a Research Analyst to the Growth pod.", images: [] },
-  "intx-1": {
-    kind: "questions",
-    questionCount: 2,
-    firstQuestionText: "Which auth provider should we standardize on?",
-    images: [IMAGES[0], IMAGES[1]],
-  },
   "review-1": { kind: "generic", summaryExcerpt: "3 files changed · +212 / −41", images: [IMAGES[0], IMAGES[1], IMAGES[2], IMAGES[3]] },
   "fail-1": { kind: "failed_run", agentName: "Deployer", failureReasonExcerpt: "exit code 1 running migrate", images: [] },
-  "budget-1": { kind: "budget", observedPercent: 85, amountObserved: 425, amountLimit: 500, images: [] },
+  "budget-1": {
+    kind: "budget",
+    observedPercent: 85,
+    budgetCurrency: "USD",
+    observedAmount: canonicalizeMoneyAmount("425"),
+    limitAmount: canonicalizeMoneyAmount("500"),
+    images: [],
+  },
 };
 
 const POPULATED_DATED: AttentionItem[] = POPULATED.map((it) => ({
@@ -214,22 +199,8 @@ const POPULATED_DATED: AttentionItem[] = POPULATED.map((it) => ({
   detail: DETAILS[it.id] ?? it.detail,
 }));
 
-// A dedicated set exercising the §4 color map (a plan approval = violet next to a
-// sky confirmation), §7 detail lines, §8 project chips and §10 thumbnail stacks.
+// A dedicated set exercising detail lines, project chips, and thumbnail stacks.
 const SHOWCASE: AttentionItem[] = [
-  {
-    ...item("plan-1", "issue_thread_interaction", "high", "Approve plan: Attention queue redesign", "A plan is awaiting your approval.", {
-      inlineResolvable: true,
-      subject: { kind: "interaction", id: "intx-plan", companyId, title: "Approve plan: Attention queue redesign", identifier: null, status: "pending", href: "/PAP/issues/PAP-1000#plan", metadata: { kind: "request_confirmation", issueId: "issue-1000" } },
-      decisionVerbs: [
-        { id: "approve", label: "Approve plan", description: null },
-        { id: "request_changes", label: "Request changes", description: null },
-      ],
-      project: { id: "proj-alpha", name: "Alpha", urlKey: "alpha", color: "#0f766e", icon: "rocket" },
-    }),
-    activityAt: new Date(NOW - 20 * 60 * 1000).toISOString(),
-    detail: { kind: "plan_approval", issueTitle: "Attention home", planTitle: "Row/card redesign — 8 sections", summaryExcerpt: null, images: [IMAGES[1]] },
-  },
   {
     ...item("conf-1", "approval", "medium", "Confirm: publish release notes", "A confirmation is pending.", {
       inlineResolvable: true,
@@ -242,17 +213,7 @@ const SHOWCASE: AttentionItem[] = [
       project: { id: "proj-beta", name: "Beta", urlKey: "beta", color: "#7c3aed", icon: "layers" },
     }),
     activityAt: new Date(NOW - 40 * 60 * 1000).toISOString(),
-    detail: { kind: "confirmation", promptExcerpt: "Ship v2026.707.0 changelog to the public page?", isPlanTarget: false, images: [] },
-  },
-  {
-    ...item("qs-1", "issue_thread_interaction", "medium", "Answer 2 questions on rollout", "Questions need answers.", {
-      inlineResolvable: true,
-      subject: { kind: "interaction", id: "intx-qs", companyId, title: "Answer 2 questions on rollout", identifier: null, status: "pending", href: "/PAP/issues/PAP-1000#qs", metadata: { kind: "ask_user_questions", issueId: "issue-1000" } },
-      decisionVerbs: [{ id: "respond", label: "Answer", description: null }],
-      project: PROJECTS["intx-1"],
-    }),
-    activityAt: new Date(NOW - 90 * 60 * 1000).toISOString(),
-    detail: { kind: "questions", questionCount: 2, firstQuestionText: "Which auth provider should we standardize on?", images: [IMAGES[0], IMAGES[2]] },
+    detail: { kind: "approval", approvalType: "release", summaryExcerpt: "Ship the changelog to the public page.", images: [] },
   },
   {
     ...item("fail-2", "failed_run", "critical", "Deploy pipeline failed after 3 retries", "Retries exhausted.", {
@@ -268,7 +229,14 @@ const SHOWCASE: AttentionItem[] = [
       relatedIssue: null,
     }),
     activityAt: new Date(NOW - 5 * HOUR).toISOString(),
-    detail: { kind: "budget", observedPercent: 85, amountObserved: 425, amountLimit: 500, images: [] },
+    detail: {
+      kind: "budget",
+      observedPercent: 85,
+      budgetCurrency: "USD",
+      observedAmount: canonicalizeMoneyAmount("425"),
+      limitAmount: canonicalizeMoneyAmount("500"),
+      images: [],
+    },
   },
   {
     ...item("join-2", "join_request", "medium", "alex@acme.dev wants to join", "Join request pending.", {
@@ -291,16 +259,6 @@ const IMAGE_ROWS: AttentionItem[] = [
     }),
     activityAt: new Date(NOW - 30 * 60 * 1000).toISOString(),
     detail: { kind: "generic", summaryExcerpt: "5 files changed · +212 / −41", images: [IMAGES[0], IMAGES[1], IMAGES[2], IMAGES[3], IMAGES[0]] },
-  },
-  {
-    ...item("img-questions", "issue_thread_interaction", "medium", "Answer 2 questions on rollout", "Questions need answers.", {
-      inlineResolvable: true,
-      subject: { kind: "interaction", id: "intx-img", companyId, title: "Answer 2 questions on rollout", identifier: null, status: "pending", href: "/PAP/issues/PAP-1000#qs", metadata: { kind: "ask_user_questions", issueId: "issue-1000" } },
-      decisionVerbs: [{ id: "respond", label: "Answer", description: null }],
-      project: { id: "proj-alpha", name: "Alpha", urlKey: "alpha", color: "#0f766e", icon: "rocket" },
-    }),
-    activityAt: new Date(NOW - 90 * 60 * 1000).toISOString(),
-    detail: { kind: "questions", questionCount: 2, firstQuestionText: "Which auth provider should we standardize on?", images: [IMAGES[0], IMAGES[2], IMAGES[3]] },
   },
   {
     ...item("img-failed", "failed_run", "high", "Deploy pipeline failed after 3 retries", "Retries exhausted.", {

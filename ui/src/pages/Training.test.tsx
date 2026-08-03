@@ -1,13 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import type { DecisionTrainingExample } from "@paperclipai/shared";
+import type {
+  DecisionTrainingExample,
+} from "@paperclipai/shared";
 import { describe, expect, it } from "vitest";
+import type { ClientIssueComment } from "../lib/optimistic-issue-comments";
 import { TrainingThreadPanel, partitionTrainingThread } from "./Training";
 
 const example: DecisionTrainingExample = {
   id: "training-1",
   companyId: "company-1",
-  sourceKind: "interaction",
-  sourceId: "interaction-1",
+  sourceKind: "approval",
+  sourceId: "approval-1",
   issueId: "issue-1",
   cutoffAt: "2026-07-16T13:02:00.000Z",
   notes: "Use the smaller change.",
@@ -17,22 +20,39 @@ const example: DecisionTrainingExample = {
   snapshot: {
     version: 1,
     capturedAt: "2026-07-16T13:10:00.000Z",
-    cutoff: { at: "2026-07-16T13:02:00.000Z", lastCommentId: "before-2", commentCount: 2 },
+    cutoff: {
+      at: "2026-07-16T13:02:00.000Z",
+      lastCommentId: "before-2",
+      commentCount: 2,
+    },
     issue: {},
     comments: [
-      { id: "before-1", body: "included", createdAt: "2026-07-16T12:00:00.000Z" },
-      { id: "before-2", body: "last visible", createdAt: "2026-07-16T13:00:00.000Z" },
+      {
+        id: "before-1",
+        body: "included",
+        createdAt: "2026-07-16T12:00:00.000Z",
+      },
+      {
+        id: "before-2",
+        body: "last visible",
+        createdAt: "2026-07-16T13:00:00.000Z",
+      },
     ],
     runs: [],
-    decision: { kind: "interaction", payload: {}, actor: null, outcome: "approved" },
+    decision: {
+      kind: "approval",
+      payload: {},
+      actor: null,
+      outcome: "approved",
+    },
     code: { repoUrl: null, ref: null, commitSha: null, resolution: "none" },
   },
-  createdByUserId: "local-board",
+  createdByUserId: "user-1",
   createdAt: "2026-07-16T13:10:00.000Z",
   updatedAt: "2026-07-16T13:10:00.000Z",
 };
 
-const postCutoffComment = {
+const postCutoffComment: ClientIssueComment = {
   id: "after-1",
   companyId: "company-1",
   issueId: "issue-1",
@@ -42,18 +62,32 @@ const postCutoffComment = {
   authorUserId: null,
   presentation: null,
   metadata: null,
+  boardEntryKind: "comment",
+  boardGroupRootId: "after-1",
+  boardIsRoot: true,
+  boardOrder: 1,
+  canonicalSequence: 1,
   createdAt: new Date("2026-07-16T13:30:00.000Z"),
   updatedAt: new Date("2026-07-16T13:30:00.000Z"),
 };
 
 describe("training cutoff rendering", () => {
   it("keeps post-cutoff comments out of snapshot data and renders them ghosted for audit", () => {
-    const result = partitionTrainingThread(example.snapshot.comments, [...example.snapshot.comments, postCutoffComment], example.cutoffAt);
+    const result = partitionTrainingThread(
+      example.snapshot.comments,
+      [...example.snapshot.comments, postCutoffComment],
+      example.cutoffAt,
+    );
     expect(result.included).toEqual(example.snapshot.comments);
     expect(result.excluded).toEqual([postCutoffComment]);
     expect(result.included).not.toContainEqual(postCutoffComment);
 
-    const markup = renderToStaticMarkup(<TrainingThreadPanel example={example} liveComments={[postCutoffComment]} />);
+    const markup = renderToStaticMarkup(
+      <TrainingThreadPanel
+        example={example}
+        liveComments={[postCutoffComment]}
+      />,
+    );
 
     expect(markup).toContain("CUTOFF");
     expect(markup).toContain("excluded tail");

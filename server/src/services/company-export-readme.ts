@@ -3,34 +3,39 @@
  */
 import type { CompanyPortabilityManifest } from "@paperclipai/shared";
 
-const ROLE_LABELS: Record<string, string> = {
-  ceo: "CEO",
-  cto: "CTO",
-  cmo: "CMO",
-  cfo: "CFO",
-  coo: "COO",
-  vp: "VP",
-  manager: "Manager",
-  engineer: "Engineer",
-  agent: "Agent",
-};
+export type CompanyReadmeAgent = Pick<
+  CompanyPortabilityManifest["agents"][number],
+  "slug" | "name" | "title" | "reportsToSlug"
+>;
+
+export interface CompanyReadmeManifest {
+  agents: CompanyReadmeAgent[];
+  projects: Array<
+    Pick<
+      CompanyPortabilityManifest["projects"][number],
+      "name" | "description"
+    >
+  >;
+  skills: CompanyPortabilityManifest["skills"];
+  issues: Array<unknown>;
+}
 
 /**
  * Generate a Mermaid flowchart (TD = top-down) representing the org chart.
  * Returns null if there are no agents.
  */
-export function generateOrgChartMermaid(agents: CompanyPortabilityManifest["agents"]): string | null {
+export function generateOrgChartMermaid(agents: CompanyReadmeAgent[]): string | null {
   if (agents.length === 0) return null;
 
   const lines: string[] = [];
   lines.push("```mermaid");
   lines.push("graph TD");
 
-  // Node definitions with role labels
+  // Node definitions with optional display titles.
   for (const agent of agents) {
-    const roleLabel = ROLE_LABELS[agent.role] ?? agent.role;
     const id = mermaidId(agent.slug);
-    lines.push(`    ${id}["${mermaidEscape(agent.name)}<br/><small>${mermaidEscape(roleLabel)}</small>"]`);
+    const title = agent.title ? `<br/><small>${mermaidEscape(agent.title)}</small>` : "";
+    lines.push(`    ${id}["${mermaidEscape(agent.name)}${title}"]`);
   }
 
   // Edges from parent to child
@@ -72,7 +77,7 @@ function skillSourceLabel(skill: CompanyPortabilityManifest["skills"][number]): 
  * Generate the README.md content for a company export.
  */
 export function generateReadme(
-  manifest: CompanyPortabilityManifest,
+  manifest: CompanyReadmeManifest,
   options: {
     companyName: string;
     companyDescription: string | null;
@@ -103,7 +108,7 @@ export function generateReadme(
   if (manifest.agents.length > 0) counts.push(["Agents", manifest.agents.length]);
   if (manifest.projects.length > 0) counts.push(["Projects", manifest.projects.length]);
   if (manifest.skills.length > 0) counts.push(["Skills", manifest.skills.length]);
-  if (manifest.issues.length > 0) counts.push(["Tasks", manifest.issues.length]);
+  if (manifest.issues.length > 0) counts.push(["Issues", manifest.issues.length]);
 
   if (counts.length > 0) {
     lines.push("| Content | Count |");
@@ -118,12 +123,11 @@ export function generateReadme(
   if (manifest.agents.length > 0) {
     lines.push("### Agents");
     lines.push("");
-    lines.push("| Agent | Role | Reports To |");
+    lines.push("| Agent | Title | Reports To |");
     lines.push("|-------|------|------------|");
     for (const agent of manifest.agents) {
-      const roleLabel = ROLE_LABELS[agent.role] ?? agent.role;
       const reportsTo = agent.reportsToSlug ?? "\u2014";
-      lines.push(`| ${agent.name} | ${roleLabel} | ${reportsTo} |`);
+      lines.push(`| ${agent.name} | ${agent.title ?? "\u2014"} | ${reportsTo} |`);
     }
     lines.push("");
   }

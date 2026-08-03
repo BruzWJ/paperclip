@@ -4,10 +4,8 @@ import {
   desc,
   eq,
   ilike,
-  isNotNull,
   lte,
   or,
-  sql,
   type SQL,
 } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -15,12 +13,11 @@ import {
   approvals,
   decisionTrainingExamples,
   executionWorkspaces,
-  heartbeatRuns,
   issueApprovals,
   issueComments,
   issueExecutionDecisions,
+  issueExecutionWorkspaceBindings,
   issues,
-  issueThreadInteractions,
   projectWorkspaces,
 } from "@paperclipai/db";
 import type {
@@ -30,6 +27,10 @@ import type {
 } from "@paperclipai/shared";
 import { DECISION_TRAINING_RETENTION_POLICY } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
+import {
+  listIssueExecutionRunsForIssue,
+  type IssueExecutionRunListCursor,
+} from "./issue-execution-run-service.js";
 
 type CaptureInput = {
   companyId: string;
@@ -43,7 +44,6 @@ type SourceDecision = {
   outcome: string | null;
   payload: Record<string, unknown>;
   actor: Record<string, unknown> | null;
-  exactRunId: string | null;
 };
 
 type ListInput = {
@@ -86,33 +86,6 @@ function findCommitSha(value: unknown): string | null {
 }
 
 async function loadSourceDecision(db: Db, input: CaptureInput, capturedAt: Date): Promise<SourceDecision> {
-  if (input.sourceKind === "interaction") {
-    const row = await db.query.issueThreadInteractions.findFirst({
-      where: and(
-        eq(issueThreadInteractions.id, input.sourceId),
-        eq(issueThreadInteractions.companyId, input.companyId),
-        eq(issueThreadInteractions.issueId, input.issueId),
-      ),
-    });
-    if (!row) throw notFound("Decision interaction not found");
-    const resolved = row.resolvedAt != null && row.status !== "pending";
-    return {
-      cutoffAt: resolved ? row.resolvedAt! : capturedAt,
-      outcome: resolved ? row.status : null,
-      payload: jsonCopy({
-        kind: row.kind,
-        title: row.title,
-        summary: row.summary,
-        payload: row.payload,
-        result: resolved ? row.result : null,
-      }),
-      actor: jsonCopy(resolved
-        ? { userId: row.resolvedByUserId, agentId: row.resolvedByAgentId }
-        : { userId: row.createdByUserId, agentId: row.createdByAgentId }),
-      exactRunId: row.sourceRunId,
-    };
-  }
-
   if (input.sourceKind === "approval") {
     const rows = await db
       .select({ approval: approvals })
@@ -134,7 +107,6 @@ async function loadSourceDecision(db: Db, input: CaptureInput, capturedAt: Date)
       actor: jsonCopy(resolved
         ? { userId: row.decidedByUserId }
         : { userId: row.requestedByUserId, agentId: row.requestedByAgentId }),
-      exactRunId: null,
     };
   }
 
@@ -151,8 +123,60 @@ async function loadSourceDecision(db: Db, input: CaptureInput, capturedAt: Date)
     outcome: row.outcome,
     payload: jsonCopy({ stageId: row.stageId, stageType: row.stageType, body: row.body }),
     actor: jsonCopy({ userId: row.actorUserId, agentId: row.actorAgentId }),
-    exactRunId: row.createdByRunId,
   };
+}
+
+async function listRunsAtDecisionCutoff(
+  db: Db,
+  input: Pick<CaptureInput, "companyId" | "issueId">,
+  cutoffAt: Date,
+) {
+  const runs = [];
+  let cursor: IssueExecutionRunListCursor | null = null;
+  do {
+    const page = await listIssueExecutionRunsForIssue(db, {
+      companyId: input.companyId,
+      issueId: input.issueId,
+      cursor,
+      limit: 200,
+    });
+    runs.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+
+  return runs
+    .filter((run) =>
+      run.startedAt !== null &&
+      run.startedAt <= cutoffAt &&
+      run.updatedAt <= cutoffAt
+    )
+    .sort((left, right) => {
+      const byStart = left.startedAt!.getTime() - right.startedAt!.getTime();
+      return byStart !== 0 ? byStart : left.runId.localeCompare(right.runId);
+    })
+    .map((run) => ({
+      id: run.runId,
+      companyId: run.companyId,
+      issueId: run.issueId,
+      agentId: run.targetAgentId,
+      kind: run.kind,
+      status: run.status,
+      ownershipEpoch: run.ownershipEpoch,
+      adapterConfigRevisionId: run.adapterConfigRevisionId,
+      executionWorkspaceBindingId: run.executionWorkspaceBindingId,
+      executionMode: run.executionMode,
+      parentRunId: run.parentRunId,
+      retryOfRunId: run.retryOfRunId,
+      triggeredByRunId: run.triggeredByRunId,
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt,
+      terminalClassification: run.terminalClassification,
+      terminalReasonCode: run.terminalReasonCode,
+      processExitCode: run.processExitCode,
+      processSignal: run.processSignal,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    }));
 }
 
 export async function captureDecisionSnapshot(
@@ -175,20 +199,11 @@ export async function captureDecisionSnapshot(
       lte(issueComments.createdAt, decision.cutoffAt),
     ))
     .orderBy(asc(issueComments.createdAt), asc(issueComments.id));
-  const runs = await db
-    .select()
-    .from(heartbeatRuns)
-    .where(and(
-      eq(heartbeatRuns.companyId, input.companyId),
-      isNotNull(heartbeatRuns.startedAt),
-      lte(heartbeatRuns.startedAt, decision.cutoffAt),
-      lte(heartbeatRuns.updatedAt, decision.cutoffAt),
-      or(
-        sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${input.issueId}`,
-        sql`${heartbeatRuns.contextSnapshot} ->> 'taskId' = ${input.issueId}`,
-      ),
-    ))
-    .orderBy(asc(heartbeatRuns.startedAt), asc(heartbeatRuns.id));
+  const runs = await listRunsAtDecisionCutoff(
+    db,
+    input,
+    decision.cutoffAt,
+  );
 
   const [projectWorkspace] = issue.projectId
     ? await db
@@ -204,24 +219,34 @@ export async function captureDecisionSnapshot(
       .limit(1)
     : [];
   const [executionWorkspace] = await db
-    .select()
-    .from(executionWorkspaces)
+    .select({ workspace: executionWorkspaces })
+    .from(issueExecutionWorkspaceBindings)
+    .innerJoin(
+      executionWorkspaces,
+      and(
+        eq(executionWorkspaces.companyId, issueExecutionWorkspaceBindings.companyId),
+        eq(executionWorkspaces.id, issueExecutionWorkspaceBindings.executionWorkspaceId),
+      ),
+    )
     .where(and(
-      eq(executionWorkspaces.companyId, input.companyId),
-      eq(executionWorkspaces.sourceIssueId, input.issueId),
+      eq(issueExecutionWorkspaceBindings.companyId, input.companyId),
+      eq(issueExecutionWorkspaceBindings.issueId, input.issueId),
+      lte(issueExecutionWorkspaceBindings.createdAt, decision.cutoffAt),
       lte(executionWorkspaces.openedAt, decision.cutoffAt),
       lte(executionWorkspaces.lastUsedAt, decision.cutoffAt),
       lte(executionWorkspaces.updatedAt, decision.cutoffAt),
     ))
-    .orderBy(desc(executionWorkspaces.lastUsedAt), desc(executionWorkspaces.id))
+    .orderBy(
+      desc(issueExecutionWorkspaceBindings.ownershipEpoch),
+      desc(executionWorkspaces.lastUsedAt),
+      desc(executionWorkspaces.id),
+    )
     .limit(1);
 
-  const exactRun = decision.exactRunId ? runs.find((run) => run.id === decision.exactRunId) ?? null : null;
-  const latestRunWithCommit = [...runs].reverse().find((run) => findCommitSha(run.contextSnapshot)) ?? null;
-  const exactCommit = exactRun ? findCommitSha(exactRun.contextSnapshot) : null;
-  const nearestCommit = latestRunWithCommit ? findCommitSha(latestRunWithCommit.contextSnapshot) : null;
-  const workspaceCommit = findCommitSha(executionWorkspace?.metadata) ?? findCommitSha(projectWorkspace?.metadata);
-  const commitSha = exactCommit ?? nearestCommit ?? workspaceCommit;
+  const workspaceCommit =
+    findCommitSha(executionWorkspace?.workspace.metadata) ??
+    findCommitSha(projectWorkspace?.metadata);
+  const commitSha = workspaceCommit;
 
   return {
     cutoffAt: decision.cutoffAt,
@@ -249,20 +274,14 @@ export async function captureDecisionSnapshot(
         outcome: decision.outcome,
       },
       code: {
-        repoUrl: executionWorkspace?.repoUrl ?? projectWorkspace?.repoUrl ?? null,
-        ref: executionWorkspace?.branchName
-          ?? executionWorkspace?.baseRef
+        repoUrl: executionWorkspace?.workspace.repoUrl ?? projectWorkspace?.repoUrl ?? null,
+        ref: executionWorkspace?.workspace.branchName
+          ?? executionWorkspace?.workspace.baseRef
           ?? projectWorkspace?.repoRef
           ?? projectWorkspace?.defaultRef
           ?? null,
         commitSha: commitSha ?? null,
-        resolution: exactCommit
-          ? "exact"
-          : nearestCommit
-            ? "nearest_run"
-            : workspaceCommit
-              ? "workspace"
-              : "none",
+        resolution: workspaceCommit ? "workspace" : "none",
       },
     },
   };

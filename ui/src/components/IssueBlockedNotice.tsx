@@ -1,115 +1,16 @@
 import type {
   IssueBlockerAttention,
-  IssueRecoveryAction,
   IssueRelationIssueSummary,
-  IssueScheduledRetry,
-  SuccessfulRunHandoffState,
 } from "@paperclipai/shared";
 import type { ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Circle, Flag, Loader2, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, Flag } from "lucide-react";
 import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
-import { Button } from "@/components/ui/button";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
-import { formatMonitorOffset } from "../lib/issue-monitor";
-import { useRetryNowMutation } from "../hooks/useRetryNowMutation";
 import { IssueLinkQuicklook } from "./IssueLinkQuicklook";
-import { RetryErrorBand } from "./IssueScheduledRetryCard";
 import { isAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { Badge } from "@/components/ui/badge";
-import {
-  deriveActiveRecoveryDisplayState,
-  RECOVERY_CHIP_DEFAULT_TONE,
-  recoveryChipLabel,
-} from "../lib/recovery-display";
 import { StatusGlyph } from "./StatusGlyph";
-
-function BlockerRecoveryIndicator({ action }: { action: IssueRecoveryAction }) {
-  const state = deriveActiveRecoveryDisplayState(action);
-  if (!state) return null;
-  const tone = RECOVERY_CHIP_DEFAULT_TONE[state];
-  const Icon = tone.icon;
-  const label = recoveryChipLabel(state, action.kind);
-  return (
-    <Badge variant="outline"
-      data-testid="issue-blocked-notice-recovery-indicator"
-      data-recovery-state={state}
-      data-recovery-kind={action.kind}
-      role="status"
-      aria-label={label}
-      title={`${label} — open the source task to act.`}
-      className={`[&>svg]:size-2.5 gap-0.5 px-1.5 text-(length:--text-nano) ${tone.className}`}
-    >
-      <Icon className="h-2.5 w-2.5" aria-hidden />
-      {label}
-    </Badge>
-  );
-}
-
-function SuccessfulRunRetryNowControl({
-  issueId,
-  scheduledRetry,
-}: {
-  issueId: string;
-  scheduledRetry: IssueScheduledRetry;
-}) {
-  const retryNow = useRetryNowMutation(issueId);
-  const dueAtIso = scheduledRetry.scheduledRetryAt
-    ? new Date(scheduledRetry.scheduledRetryAt).toISOString()
-    : null;
-  const relative = dueAtIso ? formatMonitorOffset(dueAtIso) : null;
-  const scheduleLabel = relative === "now"
-    ? "due now"
-    : relative
-      ? `scheduled ${relative}`
-      : "scheduled";
-  const success = retryNow.isSuccess
-    && (retryNow.data?.outcome === "promoted" || retryNow.data?.outcome === "already_promoted");
-
-  return (
-    <div className="mt-2 rounded-md border border-amber-300/70 bg-background/80 p-2 dark:border-amber-500/40 dark:bg-background/40">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 text-xs leading-5 text-amber-900 dark:text-amber-100">
-          Corrective wake {scheduleLabel}. Retry now starts the same recovery path immediately.
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0 border-amber-300/80 bg-background/80 text-amber-950 shadow-none hover:bg-amber-100 dark:border-amber-500/50 dark:bg-background/40 dark:text-amber-100 dark:hover:bg-amber-500/15"
-          onClick={() => retryNow.mutate()}
-          disabled={retryNow.isPending || success}
-          data-testid="issue-next-step-retry-now"
-        >
-          {retryNow.isPending ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              Retrying...
-            </span>
-          ) : success ? (
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              {retryNow.data?.outcome === "already_promoted" ? "Already promoted" : "Promoted"}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5">
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              Retry now
-            </span>
-          )}
-        </Button>
-      </div>
-      <RetryErrorBand
-        error={retryNow.lastError}
-        className="mt-2 border-amber-300/70 bg-amber-100/70 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-100"
-        onRetry={() => {
-          retryNow.reset();
-          retryNow.mutate();
-        }}
-      />
-    </div>
-  );
-}
 
 const EMPTY_LIVE_IDS: ReadonlySet<string> = new Set<string>();
 
@@ -121,7 +22,10 @@ function classifyWaitingStep(
 ): WaitingStepStatus {
   // A resolved blocker (done/cancelled) is a completed step; a blocker with a
   // live run is the one currently being worked; everything else is queued.
-  if (blocker.status === "done" || blocker.status === "cancelled") return "done";
+  if (
+    blocker.boardPresentationStatus === "done" ||
+    blocker.boardPresentationStatus === "cancelled"
+  ) return "done";
   if (liveIds.has(blocker.id)) return "running";
   return "queued";
 }
@@ -153,9 +57,9 @@ function WaitingChipLink({
       className="inline-flex max-w-full items-center gap-1 rounded-md border border-blue-300/70 bg-background/80 px-2 py-1 font-mono text-xs text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100 hover:underline dark:border-blue-500/40 dark:bg-background/40 dark:text-blue-100 dark:hover:bg-blue-500/15"
     >
       <StatusGlyph
-        status={blocker.status}
+        status={blocker.boardPresentationStatus}
         size="sm"
-        title={`${waitingTaskStatusLabel(blocker.status)} status`}
+        title={`${waitingTaskStatusLabel(blocker.boardPresentationStatus)} status`}
       />
       <span>{blocker.identifier ?? blocker.id.slice(0, 8)}</span>
       <span className="max-w-(--sz-18rem) truncate font-sans text-(length:--text-micro) text-blue-800 dark:text-blue-200">
@@ -247,8 +151,8 @@ function WaitingOnLiveWorkNotice({
             <p className="font-medium leading-5">Waiting on live work</p>
             <p className="leading-5">
               Queued behind {total} {queuedNoun} being worked in order. This task
-              resumes automatically when the chain is done. Comments still wake the
-              responsible agent.
+              resumes automatically when the chain is done. An explicit @mention can
+              queue the responsible agent for questions or triage.
             </p>
           </div>
 
@@ -351,17 +255,13 @@ function WaitingOnLiveWorkNotice({
 }
 
 export function IssueBlockedNotice({
-  issueId,
   issueStatus,
   blockers,
   allBlockers,
   liveIssueIds,
   blockerAttention,
-  successfulRunHandoff,
-  scheduledRetry,
   agentName,
 }: {
-  issueId?: string | null;
   issueStatus?: string;
   /** Unresolved blockers (drives the amber notice; unchanged). */
   blockers: IssueRelationIssueSummary[];
@@ -374,18 +274,10 @@ export function IssueBlockedNotice({
   /** Company-wide set of issue ids with a queued/running run (own or blocker). */
   liveIssueIds?: ReadonlySet<string>;
   blockerAttention?: IssueBlockerAttention | null;
-  successfulRunHandoff?: SuccessfulRunHandoffState | null;
-  scheduledRetry?: IssueScheduledRetry | null;
   agentName?: string | null;
 }) {
   if (issueStatus === "done" || issueStatus === "cancelled") return null;
-  const showSuccessfulRunHandoff = successfulRunHandoff?.required === true;
-  if (!showSuccessfulRunHandoff && blockers.length === 0 && issueStatus !== "blocked") return null;
-  const successfulRunRetryNow = showSuccessfulRunHandoff
-    && issueId
-    && scheduledRetry?.status === "scheduled_retry"
-      ? { issueId, scheduledRetry }
-      : null;
+  if (blockers.length === 0 && issueStatus !== "blocked") return null;
 
   const blockerLabel = blockers.length === 1 ? "the linked task" : "the linked tasks";
   const terminalBlockers = blockers
@@ -416,7 +308,7 @@ export function IssueBlockedNotice({
   const stalledLeafBlockers = (() => {
     const candidates: IssueRelationIssueSummary[] = [];
     for (const blocker of [...blockers, ...terminalBlockers]) {
-      if (blocker.status !== "in_review") continue;
+      if (blocker.boardPresentationStatus !== "in_review") continue;
       if (candidates.some((existing) => existing.id === blocker.id)) continue;
       candidates.push(blocker);
     }
@@ -449,7 +341,9 @@ export function IssueBlockedNotice({
     const collected: IssueRelationIssueSummary[] = [];
     for (const blocker of blockers) {
       const terminals = (blocker.terminalBlockers ?? []).filter(
-        (leaf) => leaf.status !== "done" && leaf.status !== "cancelled",
+        (leaf) =>
+          leaf.boardPresentationStatus !== "done" &&
+          leaf.boardPresentationStatus !== "cancelled",
       );
       const leaves = terminals.length > 0 ? terminals : [blocker];
       for (const leaf of leaves) {
@@ -465,13 +359,12 @@ export function IssueBlockedNotice({
     ? reopenSuppressedLeaf.identifier ?? reopenSuppressedLeaf.id.slice(0, 8)
     : null;
   const reopenSuppressedLeafStatus = reopenSuppressedLeaf
-    ? reopenSuppressedLeaf.status.replace(/_/g, " ")
+    ? reopenSuppressedLeaf.boardPresentationStatus.replace(/_/g, " ")
     : null;
   const reopenSuppressedOtherCount = Math.max(unresolvedLeafBlockers.length - 1, 0);
 
   const renderBlockerChip = (blocker: IssueRelationIssueSummary) => {
     const issuePathId = blocker.identifier ?? blocker.id;
-    const recoveryAction = blocker.activeRecoveryAction ?? null;
     return (
       <IssueLinkQuicklook
         key={blocker.id}
@@ -483,7 +376,6 @@ export function IssueBlockedNotice({
         <span className="max-w-(--sz-18rem) truncate font-sans text-(length:--text-micro) text-amber-800 dark:text-amber-200">
           {blocker.title}
         </span>
-        {recoveryAction ? <BlockerRecoveryIndicator action={recoveryAction} /> : null}
       </IssueLinkQuicklook>
     );
   };
@@ -491,16 +383,14 @@ export function IssueBlockedNotice({
   // Blue "Waiting on live work" variant: the blocker chain is a healthy plan
   // executing in order and something in it is live. `covered` is
   // the only state that goes blue — stalled / needs_attention / none keep the
-  // amber notice byte-for-byte. The successful-run handoff notice is about this
-  // task's own finished run, so it always keeps its amber priority styling.
+  // amber notice byte-for-byte.
   const liveIds = liveIssueIds ?? EMPTY_LIVE_IDS;
   const chainBlockers = allBlockers ?? blockers;
   const hasLiveWaitingBlocker = [...chainBlockers, ...terminalBlockers].some((blocker) => (
     liveIds.has(blocker.id)
   ));
   const waitingOnLiveWork =
-    !showSuccessfulRunHandoff
-    && blockerAttention?.state === "covered"
+    blockerAttention?.state === "covered"
     && chainBlockers.length > 0
     && hasLiveWaitingBlocker;
 
@@ -520,61 +410,11 @@ export function IssueBlockedNotice({
   return (
     <div
       data-blocker-attention-state={blockerAttention?.state}
-      data-successful-run-handoff={showSuccessfulRunHandoff ? "required" : undefined}
       className="mb-3 rounded-md border border-amber-300/70 bg-amber-50/90 px-3 py-2.5 text-sm text-amber-950 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
     >
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
         <div className="min-w-0 space-y-1.5">
-          {showSuccessfulRunHandoff ? (
-            <>
-              <p className="font-medium leading-5">This task still needs a next step.</p>
-              <p className="leading-5">
-                A run finished successfully, but this task is still open in{" "}
-                <code className="rounded bg-amber-100 px-1 py-0.5 text-xs dark:bg-amber-400/15">
-                  in_progress
-                </code>{" "}
-                with no clear owner for the next action.
-              </p>
-              <ul className="list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900 dark:text-amber-100">
-                <li>Mark it done or cancelled.</li>
-                <li>Send it for review or ask for input.</li>
-                <li>Mark it blocked with a blocker owner.</li>
-                <li>Delegate follow-up work or queue a continuation.</li>
-              </ul>
-              <div className="flex flex-wrap gap-1.5 text-xs">
-                {successfulRunHandoff.sourceRunId && successfulRunHandoff.assigneeAgentId ? (
-                  <Link
-                    to={`/agents/${successfulRunHandoff.assigneeAgentId}/runs/${successfulRunHandoff.sourceRunId}`}
-                    className="rounded-md border border-amber-300/70 bg-background/80 px-2 py-1 font-mono text-amber-950 hover:border-amber-500 hover:bg-amber-100 hover:underline dark:border-amber-500/40 dark:bg-background/40 dark:text-amber-100 dark:hover:bg-amber-500/15"
-                  >
-                    run {successfulRunHandoff.sourceRunId.slice(0, 8)}
-                  </Link>
-                ) : successfulRunHandoff.sourceRunId ? (
-                  <span className="rounded-md border border-amber-300/70 bg-background/80 px-2 py-1 font-mono text-amber-950 dark:border-amber-500/40 dark:bg-background/40 dark:text-amber-100">
-                    run {successfulRunHandoff.sourceRunId.slice(0, 8)}
-                  </span>
-                ) : null}
-                <span className="rounded-md border border-amber-300/70 bg-background/80 px-2 py-1 text-amber-900 dark:border-amber-500/40 dark:bg-background/40 dark:text-amber-100">
-                  Corrective wake queued for {agentName ?? "the responsible"}
-                </span>
-              </div>
-              {successfulRunHandoff.detectedProgressSummary ? (
-                <p className="text-xs leading-5 text-amber-800 dark:text-amber-200">
-                  Detected progress: {successfulRunHandoff.detectedProgressSummary}
-                </p>
-              ) : null}
-              {successfulRunRetryNow ? (
-                <SuccessfulRunRetryNowControl
-                  issueId={successfulRunRetryNow.issueId}
-                  scheduledRetry={successfulRunRetryNow.scheduledRetry}
-                />
-              ) : null}
-            </>
-          ) : null}
-          {showSuccessfulRunHandoff && (blockers.length > 0 || issueStatus === "blocked") ? (
-            <div className="border-t border-amber-300/60 pt-1.5 dark:border-amber-500/30" />
-          ) : null}
           {blockers.length > 0 || issueStatus === "blocked" ? (
             <>
               <p className="leading-5">
@@ -584,9 +424,9 @@ export function IssueBlockedNotice({
                       ? <>Work on this task is blocked by {blockerLabel}, but the chain is stalled in review without a clear next step. Resolve the stalled reviews below or remove them as blockers.</>
                       : <>Work on this task is blocked by {blockerLabel}, but the chain is stalled in review without a clear next step. Resolve the stalled review below or remove it as a blocker.</>
                     : reopenSuppressed
-                      ? <>A message won&rsquo;t move this back to todo yet — it stays blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} done, then it reopens automatically. Comments still wake {responsibleName} for questions or triage in the meantime.</>
-                      : <>Work on this task is blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} complete. Comments still wake the responsible for questions or triage.</>
-                  : <>Work on this task is blocked until it is moved back to todo. Comments still wake the responsible for questions or triage.</>}
+                      ? <>A message won&rsquo;t move this back to todo yet — it stays blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} done, then it reopens automatically. An explicit @mention can queue {responsibleName} for questions or triage in the meantime.</>
+                      : <>Work on this task is blocked by {blockerLabel} until {blockers.length === 1 ? "it is" : "they are"} complete. An explicit @mention can queue the responsible agent for questions or triage.</>
+                  : <>Work on this task is blocked until it is moved back to todo. An explicit @mention can queue the responsible agent for questions or triage.</>}
               </p>
               {reopenSuppressed && reopenSuppressedLeafId ? (
                 <p

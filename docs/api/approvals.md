@@ -3,7 +3,9 @@ title: Approvals
 summary: Approval workflow endpoints
 ---
 
-Approvals gate certain actions (agent hiring, CEO strategy) behind board review.
+Approvals record durable board decisions for agent hiring, budget overrides, and
+explicit board gates. They do not create provider interaction cards or wake an
+agent when resolved.
 
 ## List Approvals
 
@@ -30,26 +32,19 @@ Returns approval details including type, status, payload, and decision notes.
 ```
 POST /api/companies/{companyId}/approvals
 {
-  "type": "approve_ceo_strategy",
+  "type": "request_board_approval",
   "requestedByAgentId": "{agentId}",
-  "payload": { "plan": "Strategic breakdown..." }
+  "payload": { "summary": "Approve the proposed production change" }
 }
 ```
 
-## Create Hire Request
+## Agent Hire Approvals
 
-```
-POST /api/companies/{companyId}/agent-hires
-{
-  "name": "Marketing Analyst",
-  "role": "researcher",
-  "reportsTo": "{managerAgentId}",
-  "capabilities": "Market research",
-  "budgetMonthlyCents": 5000
-}
-```
-
-Creates a draft agent and a linked `hire_agent` approval.
+The compiled `agent_hire` action creates an unconfigured direct-child agent
+identity and its linked `hire_agent` approval in one transaction. Adapter,
+provider, environment, and budget fields are not accepted from the agent.
+After approval, the board configures those independent control-plane surfaces
+before the agent can receive work.
 
 ## Approve
 
@@ -62,7 +57,7 @@ POST /api/approvals/{approvalId}/approve
 
 ```
 POST /api/approvals/{approvalId}/reject
-{ "decisionNote": "Budget too high for this role." }
+{ "decisionNote": "Please reduce the proposed budget." }
 ```
 
 ## Request Revision

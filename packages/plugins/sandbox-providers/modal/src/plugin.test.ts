@@ -558,6 +558,7 @@ describe("Modal sandbox provider plugin", () => {
       environmentId: "e-1",
       config: baseConfig,
       lease: { providerLeaseId: "sb-exec", metadata: {} },
+      executionId: "execution-login-shell",
       command: "printf",
       args: ["hello"],
       cwd: "/srv/work",
@@ -570,9 +571,15 @@ describe("Modal sandbox provider plugin", () => {
     expect(call.argv[0]).toBe("sh");
     expect(call.argv[1]).toBe("-lc");
     const script = call.argv[2]!;
+    expect(script).toContain("paperclip_control=");
     expect(script).toMatch(/\/etc\/profile/);
-    expect(script).toMatch(/cd '\/srv\/work'/);
-    expect(script).toMatch(/&& exec env FOO='bar' 'printf' 'hello'$/);
+    expect(script).not.toMatch(/"\$HOME\/\.(?:profile|bashrc|zprofile)"/);
+    expect(script).toContain("/srv/work");
+    expect(script).toMatch(/mktemp -d \/tmp\/paperclip-provider-home/);
+    expect(script).toContain("env -i PATH=");
+    expect(script).toContain("FOO=");
+    expect(script).toContain("printf");
+    expect(script).toContain("hello");
     expect(call.params).toMatchObject({
       timeoutMs: 12_000,
       stdout: "pipe",
@@ -596,6 +603,7 @@ describe("Modal sandbox provider plugin", () => {
       environmentId: "e-1",
       config: baseConfig,
       lease: { providerLeaseId: "sb-exec", metadata: {} },
+      executionId: "execution-stdin",
       command: "cat",
       args: [],
       stdin: "input payload",
@@ -610,7 +618,10 @@ describe("Modal sandbox provider plugin", () => {
 
     // First exec is the user command; second is the rm cleanup.
     const userCall = sandbox.execCalls[0]!;
-    expect(userCall.argv[2]).toMatch(/&& exec 'cat' < '\/tmp\/paperclip-stdin-/);
+    expect(userCall.argv[2]).toContain("paperclip_control=");
+    expect(userCall.argv[2]).toContain("env -i PATH=");
+    expect(userCall.argv[2]).toContain("cat");
+    expect(userCall.argv[2]).toContain("/tmp/paperclip-stdin-");
     const cleanupCall = sandbox.execCalls[1]!;
     expect(cleanupCall.argv[2]).toMatch(/^rm -f '\/tmp\/paperclip-stdin-/);
     expect(result?.exitCode).toBe(0);
@@ -627,6 +638,7 @@ describe("Modal sandbox provider plugin", () => {
         environmentId: "e-1",
         config: baseConfig,
         lease: { providerLeaseId: "sb-exec", metadata: {} },
+        executionId: "execution-invalid-env",
         command: "printf",
         args: ["hello"],
         env: { "BAD-KEY": "v" },
@@ -644,6 +656,7 @@ describe("Modal sandbox provider plugin", () => {
       environmentId: "e-1",
       config: baseConfig,
       lease: { providerLeaseId: "sb-expired", metadata: {} },
+      executionId: "execution-expired",
       command: "printf",
       args: ["hello"],
     });
@@ -669,6 +682,7 @@ describe("Modal sandbox provider plugin", () => {
       environmentId: "e-1",
       config: baseConfig,
       lease: { providerLeaseId: "sb-exec", metadata: {} },
+      executionId: "execution-timeout",
       command: "sleep",
       args: ["60"],
       cwd: "/srv/work",
@@ -690,6 +704,7 @@ describe("Modal sandbox provider plugin", () => {
       environmentId: "e-1",
       config: baseConfig,
       lease: { providerLeaseId: null, metadata: {} },
+      executionId: "execution-no-lease",
       command: "printf",
       args: ["hello"],
     });

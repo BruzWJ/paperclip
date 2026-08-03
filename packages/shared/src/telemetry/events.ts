@@ -68,13 +68,9 @@ export function trackGoalCreated(
 
 export function trackAgentCreated(
   client: TelemetryClient,
-  dims: {
-    agentRole: RawDimension<EventDimensionsMap["agent.created"]["agent_role"]>;
-    agentId: string;
-  },
+  dims: { agentId: string },
 ): void {
   client.track("agent.created", {
-    agent_role: asEventDimension(dims.agentRole),
     agent_id: dims.agentId,
   });
 }
@@ -92,30 +88,15 @@ export function trackSkillImported(
   });
 }
 
-export function trackAgentFirstHeartbeat(
+export function trackAgentIssueCompleted(
   client: TelemetryClient,
   dims: {
-    agentRole: RawDimension<EventDimensionsMap["agent.first_heartbeat"]["agent_role"]>;
     agentId: string;
-  },
-): void {
-  client.track("agent.first_heartbeat", {
-    agent_role: asEventDimension(dims.agentRole),
-    agent_id: dims.agentId,
-  });
-}
-
-export function trackAgentTaskCompleted(
-  client: TelemetryClient,
-  dims: {
-    agentRole: RawDimension<EventDimensionsMap["agent.task_completed"]["agent_role"]>;
-    agentId: string;
-    adapterType: RawDimension<EventDimensionsMap["agent.task_completed"]["adapter_type"]>;
+    adapterType: RawDimension<EventDimensionsMap["agent.issue_completed"]["adapter_type"]>;
     model?: string;
   },
 ): void {
-  client.track("agent.task_completed", {
-    agent_role: asEventDimension(dims.agentRole),
+  client.track("agent.issue_completed", {
     agent_id: dims.agentId,
     adapter_type: asEventDimension(dims.adapterType),
     ...(dims.model ? { model: dims.model } : {}),
@@ -127,41 +108,4 @@ export function trackErrorHandlerCrash(
   dims: { errorCode: string },
 ): void {
   client.track("error.handler_crash", { error_code: dims.errorCode });
-}
-
-export function trackInteractionResolved(
-  client: TelemetryClient,
-  dims: {
-    interactionKind: RawDimension<EventDimensionsMap["interaction.resolved"]["interaction_kind"]>;
-    status: RawDimension<EventDimensionsMap["interaction.resolved"]["status"]>;
-    resolvedByKind: RawDimension<EventDimensionsMap["interaction.resolved"]["resolved_by_kind"]>;
-    resolutionReason?: RawDimension<EventDimensionsMap["interaction.resolved"]["resolution_reason"]> | null;
-    createdByKind?: RawDimension<EventDimensionsMap["interaction.resolved"]["created_by_kind"]> | null;
-    creatorAgentRole?: RawDimension<EventDimensionsMap["interaction.resolved"]["creator_agent_role"]> | null;
-    continuationPolicy?: RawDimension<EventDimensionsMap["interaction.resolved"]["continuation_policy"]> | null;
-    targetType?: RawDimension<EventDimensionsMap["interaction.resolved"]["target_type"]> | null;
-    optionCount?: number;
-    selectedOptionCount?: number;
-    questionCount?: number;
-    answeredQuestionCount?: number;
-    createdTaskCount?: number;
-    skippedTaskCount?: number;
-  },
-): void {
-  client.track("interaction.resolved", {
-    interaction_kind: asEventDimension(dims.interactionKind),
-    status: asEventDimension(dims.status),
-    resolved_by_kind: asEventDimension(dims.resolvedByKind),
-    ...(dims.resolutionReason ? { resolution_reason: asEventDimension(dims.resolutionReason) } : {}),
-    ...(dims.createdByKind ? { created_by_kind: asEventDimension(dims.createdByKind) } : {}),
-    ...(dims.creatorAgentRole ? { creator_agent_role: asEventDimension(dims.creatorAgentRole) } : {}),
-    ...(dims.continuationPolicy ? { continuation_policy: asEventDimension(dims.continuationPolicy) } : {}),
-    ...(dims.targetType ? { target_type: asEventDimension(dims.targetType) } : {}),
-    ...(dims.optionCount === undefined ? {} : { option_count: dims.optionCount }),
-    ...(dims.selectedOptionCount === undefined ? {} : { selected_option_count: dims.selectedOptionCount }),
-    ...(dims.questionCount === undefined ? {} : { question_count: dims.questionCount }),
-    ...(dims.answeredQuestionCount === undefined ? {} : { answered_question_count: dims.answeredQuestionCount }),
-    ...(dims.createdTaskCount === undefined ? {} : { created_task_count: dims.createdTaskCount }),
-    ...(dims.skippedTaskCount === undefined ? {} : { skipped_task_count: dims.skippedTaskCount }),
-  });
 }

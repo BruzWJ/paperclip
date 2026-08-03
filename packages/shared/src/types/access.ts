@@ -4,6 +4,7 @@ import type {
   HumanCompanyMembershipRole,
   InstanceUserRole,
   InviteJoinType,
+  InviteSource,
   InviteType,
   JoinRequestStatus,
   JoinRequestType,
@@ -65,7 +66,6 @@ export interface CompanyMembersResponse {
 
 export interface ArchiveCompanyMemberResponse {
   member: CompanyMemberRecord;
-  reassignedIssueCount: number;
 }
 
 export interface Invite {
@@ -76,6 +76,7 @@ export interface Invite {
   allowedJoinTypes: InviteJoinType;
   defaultsPayload: Record<string, unknown> | null;
   expiresAt: Date;
+  source: InviteSource;
   invitedByUserId: string | null;
   revokedAt: Date | null;
   acceptedAt: Date | null;
@@ -112,9 +113,9 @@ export interface JoinRequest {
   adapterType: AgentAdapterType | null;
   capabilities: string | null;
   agentDefaultsPayload: Record<string, unknown> | null;
-  claimSecretExpiresAt: Date | null;
-  claimSecretConsumedAt: Date | null;
   createdAgentId: string | null;
+  approvedEnvironmentId: string | null;
+  createdAgentAdapterConfigRevisionId: string | null;
   approvedByUserId: string | null;
   approvedAt: Date | null;
   rejectedByUserId: string | null;

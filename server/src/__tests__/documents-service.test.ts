@@ -1,196 +1,214 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  companies,
-  createDb,
-  documentRevisions,
-  documents,
-  issueDocuments,
-  issues,
-} from "@paperclipai/db";
-import { ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY } from "@paperclipai/shared";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "./helpers/mock-db.js";
+
+const issueReferenceMocks = vi.hoisted(() => ({
+  syncDocument: vi.fn(async () => undefined),
+  deleteCommentSource: vi.fn(async () => undefined),
+  deleteDocumentSource: vi.fn(async () => undefined),
+}));
+
+vi.mock("../services/issue-references.js", () => ({
+  issueReferenceService: () => issueReferenceMocks,
+}));
+
 import { documentService } from "../services/documents.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+type DocumentRow = Parameters<typeof import("../services/documents.js").mapIssueDocumentRow>[0];
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres document service tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+function documentRow(overrides: Partial<DocumentRow> = {}): DocumentRow {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+  return {
+    id: randomUUID(),
+    companyId: randomUUID(),
+    issueId: randomUUID(),
+    key: "plan",
+    title: "Plan",
+    format: "markdown",
+    latestBody: "# Plan",
+    latestRevisionId: randomUUID(),
+    latestRevisionNumber: 1,
+    createdByAgentId: null,
+    createdByUserId: null,
+    updatedByAgentId: null,
+    updatedByUserId: null,
+    lockedAt: null,
+    lockedByAgentId: null,
+    lockedByUserId: null,
+    sourceTrust: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
 }
 
-describeEmbeddedPostgres("documentService system issue documents", () => {
-  let db!: ReturnType<typeof createDb>;
-  let svc!: ReturnType<typeof documentService>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-documents-service-");
-    db = createDb(tempDb.connectionString);
-    svc = documentService(db);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(documentRevisions);
-    await db.delete(issueDocuments);
-    await db.delete(documents);
-    await db.delete(issues);
-    await db.delete(companies);
+describe("documentService issue documents", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function createIssueWithDocuments() {
-    const companyId = randomUUID();
+  it("locks, rejects writes to, unlocks, and then updates an issue document", async () => {
     const issueId = randomUUID();
+    const companyId = randomUUID();
+    const userId = "board-user";
+    const initial = documentRow({ companyId, issueId });
 
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
+    const lockDb = createMockDb({
+      select: [[initial]],
+      update: [[], []],
     });
-
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      identifier: "PAP-1600",
-      title: "System document filtering",
-      description: "Validate document filtering",
-      status: "in_progress",
-      priority: "medium",
-    });
-
-    await svc.upsertIssueDocument({
+    const locked = await documentService(lockDb.db).lockIssueDocument({
       issueId,
       key: "plan",
-      title: "Plan",
-      format: "markdown",
-      body: "# Plan",
-    });
-    await svc.upsertIssueDocument({
-      issueId,
-      key: ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-      title: "Continuation Summary",
-      format: "markdown",
-      body: "# Handoff",
-    });
-
-    return { issueId };
-  }
-
-  it("filters continuation summaries from default document lists and issue payload summaries", async () => {
-    const { issueId } = await createIssueWithDocuments();
-
-    const defaultDocuments = await svc.listIssueDocuments(issueId);
-    expect(defaultDocuments.map((doc) => doc.key)).toEqual(["plan"]);
-
-    const payload = await svc.getIssueDocumentPayload({ id: issueId, description: null });
-    expect(payload.planDocument?.key).toBe("plan");
-    expect(payload.documentSummaries.map((doc) => doc.key)).toEqual(["plan"]);
-  });
-
-  it("keeps system documents available for includeSystem and direct fetch callers", async () => {
-    const { issueId } = await createIssueWithDocuments();
-
-    const debugDocuments = await svc.listIssueDocuments(issueId, { includeSystem: true });
-    expect(debugDocuments.map((doc) => doc.key)).toEqual([
-      ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-      "plan",
-    ]);
-
-    const directHandoff = await svc.getIssueDocumentByKey(issueId, ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY);
-    expect(directHandoff).toEqual(expect.objectContaining({
-      key: ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-      body: "# Handoff",
-    }));
-  });
-
-  it("locks and unlocks issue documents", async () => {
-    const { issueId } = await createIssueWithDocuments();
-
-    const locked = await svc.lockIssueDocument({
-      issueId,
-      key: "plan",
-      lockedByUserId: "board-user",
+      lockedByUserId: userId,
     });
 
     expect(locked.changed).toBe(true);
     expect(locked.document.lockedAt).toBeInstanceOf(Date);
-    expect(locked.document.lockedByUserId).toBe("board-user");
+    expect(locked.document.lockedByUserId).toBe(userId);
+    expect(lockDb.remaining("select")).toBe(0);
+    expect(lockDb.remaining("update")).toBe(0);
 
-    await expect(svc.upsertIssueDocument({
+    const lockedRow = documentRow({
+      ...initial,
+      lockedAt: locked.document.lockedAt,
+      lockedByUserId: userId,
+    });
+    const conflictDb = createMockDb({
+      select: [[{ id: issueId, companyId }], [lockedRow]],
+    });
+    await expect(documentService(conflictDb.db).upsertIssueDocument({
       issueId,
       key: "plan",
       title: "Plan",
       format: "markdown",
       body: "# Updated plan",
       baseRevisionId: locked.document.latestRevisionId,
-      createdByUserId: "board-user",
+      createdByUserId: userId,
     })).rejects.toMatchObject({
       status: 409,
       message: "Document is locked",
     });
+    expect(conflictDb.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(conflictDb.calls.some((call) => call.operation === "update")).toBe(false);
 
-    const unlocked = await svc.unlockIssueDocument(issueId, "plan");
+    const unlockDb = createMockDb({
+      select: [[lockedRow]],
+      update: [[], []],
+    });
+    const unlocked = await documentService(unlockDb.db).unlockIssueDocument(issueId, "plan");
     expect(unlocked.changed).toBe(true);
     expect(unlocked.document.lockedAt).toBeNull();
 
-    const updated = await svc.upsertIssueDocument({
+    const unlockedRow = documentRow({
+      ...lockedRow,
+      lockedAt: null,
+      lockedByUserId: null,
+    });
+    const revisionId = randomUUID();
+    const updateDb = createMockDb({
+      select: [[{ id: issueId, companyId }], [unlockedRow]],
+      insert: [[{ id: revisionId }]],
+      update: [[], []],
+    });
+    const updated = await documentService(updateDb.db).upsertIssueDocument({
       issueId,
       key: "plan",
       title: "Plan",
       format: "markdown",
       body: "# Updated plan",
       baseRevisionId: unlocked.document.latestRevisionId,
-      createdByUserId: "board-user",
+      createdByUserId: userId,
     });
 
     expect(updated.created).toBe(false);
-    expect(updated.document.body).toBe("# Updated plan");
+    expect(updated.document).toMatchObject({
+      body: "# Updated plan",
+      latestRevisionId: revisionId,
+      latestRevisionNumber: 2,
+      updatedByUserId: userId,
+    });
+    expect(issueReferenceMocks.syncDocument).toHaveBeenCalledWith(initial.id, updateDb.db);
+    expect(updateDb.remaining("select")).toBe(0);
+    expect(updateDb.remaining("insert")).toBe(0);
+    expect(updateDb.remaining("update")).toBe(0);
   });
 
   it("creates a new document instead of updating a locked document when requested", async () => {
-    const { issueId } = await createIssueWithDocuments();
-    const locked = await svc.lockIssueDocument({
+    const issueId = randomUUID();
+    const companyId = randomUUID();
+    const locked = documentRow({
+      companyId,
       issueId,
-      key: "plan",
+      lockedAt: new Date("2026-01-01T00:05:00.000Z"),
       lockedByUserId: "board-user",
     });
+    const replacementDocument = documentRow({
+      id: randomUUID(),
+      companyId,
+      issueId,
+      key: "plan-2",
+      latestBody: "# Agent replacement plan",
+      latestRevisionId: null,
+      lockedAt: null,
+      lockedByUserId: null,
+    });
+    const replacementRevisionId = randomUUID();
+    const writeDb = createMockDb({
+      select: [
+        [{ id: issueId, companyId }],
+        [locked],
+        [{ key: "plan" }],
+      ],
+      insert: [
+        [replacementDocument],
+        [{ id: replacementRevisionId }],
+        [],
+      ],
+      update: [[]],
+    });
 
-    const fallback = await svc.upsertIssueDocument({
+    const fallback = await documentService(writeDb.db).upsertIssueDocument({
       issueId,
       key: "plan",
       title: "Plan",
       format: "markdown",
       body: "# Agent replacement plan",
-      baseRevisionId: locked.document.latestRevisionId,
+      baseRevisionId: locked.latestRevisionId,
       lockedDocumentStrategy: "create_new_document",
     });
 
-    expect(fallback.created).toBe(true);
-    expect(fallback.document.key).toBe("plan-2");
-    expect(fallback.document.body).toBe("# Agent replacement plan");
-    expect("redirectedFromLockedDocument" in fallback ? fallback.redirectedFromLockedDocument : null)
-      .toEqual({ id: locked.document.id, key: "plan" });
+    expect(fallback).toMatchObject({
+      created: true,
+      redirectedFromLockedDocument: { id: locked.id, key: "plan" },
+      document: {
+        id: replacementDocument.id,
+        key: "plan-2",
+        body: "# Agent replacement plan",
+        latestRevisionId: replacementRevisionId,
+        lockedAt: null,
+      },
+    });
+    expect(issueReferenceMocks.syncDocument).toHaveBeenCalledWith(replacementDocument.id, writeDb.db);
+    expect(writeDb.remaining("select")).toBe(0);
+    expect(writeDb.remaining("insert")).toBe(0);
+    expect(writeDb.remaining("update")).toBe(0);
 
-    const originalPlan = await svc.getIssueDocumentByKey(issueId, "plan");
-    expect(originalPlan).toEqual(expect.objectContaining({
+    const readDb = createMockDb({
+      select: [
+        [locked],
+        [{ ...replacementDocument, latestRevisionId: replacementRevisionId }],
+      ],
+    });
+    const readService = documentService(readDb.db);
+    await expect(readService.getIssueDocumentByKey(issueId, "plan")).resolves.toMatchObject({
       body: "# Plan",
-      lockedAt: expect.any(Date),
-    }));
-
-    const newPlan = await svc.getIssueDocumentByKey(issueId, "plan-2");
-    expect(newPlan).toEqual(expect.objectContaining({
+      lockedAt: locked.lockedAt,
+    });
+    await expect(readService.getIssueDocumentByKey(issueId, "plan-2")).resolves.toMatchObject({
       body: "# Agent replacement plan",
       lockedAt: null,
-    }));
+    });
+    expect(readDb.remaining("select")).toBe(0);
   });
 });

@@ -8,11 +8,11 @@ Paperclip already treats budgets as a core control-plane responsibility:
 - `doc/SPEC-implementation.md` says V1 must support monthly UTC budget windows, soft alerts, and hard auto-pause.
 - the current code only partially implements that intent.
 
-Today the system has narrow money-budget behavior:
+Today the system has canonical currency-aware money-budget behavior:
 
-- companies track `budgetMonthlyCents` and `spentMonthlyCents`
-- agents track `budgetMonthlyCents` and `spentMonthlyCents`
-- `cost_events` ingestion increments those counters
+- companies own one immutable `budgetCurrency` and `budgetMonthlyAmount`
+- agents track `budgetMonthlyAmount` in their owning company's currency
+- known spend is derived from append-only `cost_events.knownDeltaAmount`
 - when an agent exceeds its monthly budget, the agent is paused
 
 That leaves major product gaps:
@@ -107,7 +107,7 @@ Paperclip should have two threshold classes:
 - hard stop
   - pauses the affected scope automatically
   - creates an approval requiring human resolution
-  - prevents additional heartbeats or task pickup in that scope
+  - prevents additional heartbeats or issue pickup in that scope
 
 Default thresholds:
 

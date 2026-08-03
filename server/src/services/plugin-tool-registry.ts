@@ -23,7 +23,11 @@ import type {
   PaperclipPluginManifestV1,
   PluginToolDeclaration,
 } from "@paperclipai/shared";
-import type { ToolRunContext, ToolResult, ExecuteToolParams } from "@paperclipai/plugin-sdk";
+import type {
+  PluginRunContextHandle,
+  ToolResult,
+  ExecuteToolParams,
+} from "@paperclipai/plugin-sdk";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 import { logger } from "../middleware/logger.js";
 
@@ -87,6 +91,13 @@ export interface ToolExecutionResult {
   toolName: string;
   /** The result returned by the plugin's tool handler. */
   result: ToolResult;
+}
+
+export interface PluginToolExecutionScope {
+  /** Server-resolved company scope; this field never crosses into the worker. */
+  companyId: string;
+  /** Opaque binding minted by the compiler-owned run-interface session. */
+  runContextHandle: PluginRunContextHandle;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +194,7 @@ export interface PluginToolRegistry {
   executeTool(
     namespacedName: string,
     parameters: unknown,
-    runContext: ToolRunContext,
+    scope: PluginToolExecutionScope,
   ): Promise<ToolExecutionResult>;
 
   /**
@@ -384,7 +395,7 @@ export function createPluginToolRegistry(
     async executeTool(
       namespacedName: string,
       parameters: unknown,
-      runContext: ToolRunContext,
+      scope: PluginToolExecutionScope,
     ): Promise<ToolExecutionResult> {
       // 1. Resolve the namespaced name
       const parsed = parseName(namespacedName);
@@ -424,17 +435,26 @@ export function createPluginToolRegistry(
 
       // 5. Dispatch the executeTool RPC call to the worker
       log.debug(
-        { pluginId, pluginDbId: dbId, toolName, namespacedName, agentId: runContext.agentId, runId: runContext.runId },
+        { pluginId, pluginDbId: dbId, toolName, namespacedName },
         "executing tool via plugin worker",
       );
 
       const rpcParams: ExecuteToolParams = {
         toolName,
         parameters,
-        runContext,
+        runContextHandle: scope.runContextHandle,
       };
 
-      const result = await workerManager.call(dbId, "executeTool", rpcParams);
+      const result = await workerManager.call(
+        dbId,
+        "executeTool",
+        rpcParams,
+        undefined,
+        {
+          companyId: scope.companyId,
+          pluginRunContextHandle: scope.runContextHandle,
+        },
+      );
 
       log.debug(
         {

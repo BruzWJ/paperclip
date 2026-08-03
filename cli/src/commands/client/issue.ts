@@ -1,29 +1,26 @@
 import { Command } from "commander";
+import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import {
-  addIssueCommentSchema,
-  acceptIssueThreadInteractionSchema,
-  cancelIssueThreadInteractionSchema,
-  checkoutIssueSchema,
   createChildIssueSchema,
   createIssueLabelSchema,
   createIssueSchema,
-  createIssueThreadInteractionSchema,
+  createIssueUserCommentSchema,
   createIssueTreeHoldSchema,
   createIssueWorkProductSchema,
+  type BoardIssueComment,
+  type BoardIssueCommentGroupPage,
   type FeedbackTrace,
-  type HeartbeatRun,
+  type IssueExecutionRunListPageRecord,
   linkIssueApprovalSchema,
   previewIssueTreeControlSchema,
-  rejectIssueThreadInteractionSchema,
   releaseIssueTreeHoldSchema,
-  respondIssueThreadInteractionSchema,
-  resolveIssueRecoveryActionSchema,
   restoreIssueDocumentRevisionSchema,
-  updateIssueSchema,
+  reassignIssueSchema,
+  reopenIssueSchema,
+  updateIssueTitleSchema,
   updateIssueWorkProductSchema,
   type Issue,
-  type IssueComment,
   upsertIssueDocumentSchema,
   upsertIssueFeedbackVoteSchema,
 } from "@paperclipai/shared";
@@ -45,54 +42,49 @@ import {
 
 interface IssueBaseOptions extends BaseClientOptions {
   status?: string;
-  assigneeAgentId?: string;
+  ownerAgentId?: string;
   projectId?: string;
   match?: string;
 }
 
 interface IssueCreateOptions extends BaseClientOptions {
-  title: string;
-  description?: string;
-  status?: string;
+  request: string;
+  ownerAgentId: string;
+  idempotencyKey?: string;
+  title?: string;
   priority?: string;
-  assigneeAgentId?: string;
   projectId?: string;
+  projectWorkspaceId?: string;
   goalId?: string;
   parentId?: string;
-  requestDepth?: string;
-  billingCode?: string;
 }
 
-interface IssueUpdateOptions extends BaseClientOptions {
-  title?: string;
-  description?: string;
-  status?: string;
-  priority?: string;
-  assigneeAgentId?: string;
-  projectId?: string;
-  goalId?: string;
-  parentId?: string;
-  requestDepth?: string;
-  billingCode?: string;
-  comment?: string;
-  hiddenAt?: string;
+interface IssueTitleOptions extends BaseClientOptions {
+  title: string;
+}
+
+interface IssueReassignOptions extends BaseClientOptions {
+  ownerAgentId: string;
+  idempotencyKey?: string;
+}
+
+interface IssueReopenOptions extends BaseClientOptions {
+  reason: string;
+  idempotencyKey?: string;
 }
 
 interface IssueCommentOptions extends BaseClientOptions {
-  body: string;
-  reopen?: boolean;
-  resume?: boolean;
+  message: string;
+  idempotencyKey?: string;
+  mentionTargetAgentId?: string;
+  mentionOwnershipEpoch?: string;
+  replyToCommentId?: string;
 }
 
 interface IssueCommentListOptions extends BaseClientOptions {
-  afterCommentId?: string;
-  order?: string;
+  cursor?: string;
   limit?: string;
-}
-
-interface IssueCheckoutOptions extends BaseClientOptions {
-  agentId: string;
-  expectedStatuses?: string;
+  entryLimit?: string;
 }
 
 interface IssueFeedbackOptions extends BaseClientOptions {
@@ -105,10 +97,6 @@ interface IssueFeedbackOptions extends BaseClientOptions {
   includePayload?: boolean;
   out?: string;
   format?: string;
-}
-
-interface IssueDeleteOptions extends BaseClientOptions {
-  yes?: boolean;
 }
 
 interface JsonPayloadOptions extends BaseClientOptions {
@@ -140,27 +128,6 @@ interface IssueLabelCreateOptions extends BaseClientOptions {
   color: string;
 }
 
-interface IssueRecoveryResolveOptions extends BaseClientOptions {
-  actionId?: string;
-  outcome: string;
-  sourceIssueStatus: string;
-  resolutionNote?: string;
-}
-
-interface InteractionAcceptOptions extends BaseClientOptions {
-  selectedClientKeys?: string;
-  selectedOptionIds?: string;
-}
-
-interface InteractionReasonOptions extends BaseClientOptions {
-  reason?: string;
-}
-
-interface InteractionRespondOptions extends BaseClientOptions {
-  answersJson: string;
-  summaryMarkdown?: string;
-}
-
 interface TreeHoldListOptions extends BaseClientOptions {
   status?: string;
   mode?: string;
@@ -176,15 +143,15 @@ export function registerIssueCommands(program: Command): void {
       .description("List issues for a company")
       .option("-C, --company-id <id>", "Company ID")
       .option("--status <csv>", "Comma-separated statuses")
-      .option("--assignee-agent-id <id>", "Filter by assignee agent ID")
+      .option("--owner-agent-id <id>", "Filter by owner agent ID")
       .option("--project-id <id>", "Filter by project ID")
-      .option("--match <text>", "Local text match on identifier/title/description")
+      .option("--match <text>", "Local text match on identifier/title/request")
       .action(async (opts: IssueBaseOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const params = new URLSearchParams();
           if (opts.status) params.set("status", opts.status);
-          if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
+          if (opts.ownerAgentId) params.set("ownerAgentId", opts.ownerAgentId);
           if (opts.projectId) params.set("projectId", opts.projectId);
 
           const query = params.toString();
@@ -207,9 +174,9 @@ export function registerIssueCommands(program: Command): void {
               formatInlineRecord({
                 identifier: item.identifier,
                 id: item.id,
-                status: item.status,
+                boardPresentationStatus: item.boardPresentationStatus,
                 priority: item.priority,
-                assigneeAgentId: item.assigneeAgentId,
+                ownerAgentId: item.ownerAgentId,
                 title: item.title,
                 projectId: item.projectId,
               }),
@@ -240,67 +207,31 @@ export function registerIssueCommands(program: Command): void {
 
   addCommonClientOptions(
     issue
-      .command("delete")
-      .description("Delete an issue")
-      .argument("<issueId>", "Issue ID")
-      .option("--yes", "Confirm deletion")
-      .action(async (issueId: string, opts: IssueDeleteOptions) => {
-        try {
-          if (!opts.yes) throw new Error("Refusing to delete without --yes");
-          const ctx = resolveCommandContext(opts);
-          const deleted = await ctx.api.delete<Issue>(apiPath`/api/issues/${issueId}`);
-          printOutput(deleted, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("heartbeat-context")
-      .description("Get heartbeat context for an issue")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const context = await ctx.api.get(apiPath`/api/issues/${issueId}/heartbeat-context`);
-          printOutput(context, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
       .command("create")
       .description("Create an issue")
       .requiredOption("-C, --company-id <id>", "Company ID")
-      .requiredOption("--title <title>", "Issue title")
-      .option("--description <text>", "Issue description")
-      .option("--status <status>", "Issue status")
+      .requiredOption("--request <text>", "Immutable work request")
+      .requiredOption("--owner-agent-id <id>", "Agent owner ID")
+      .option("--idempotency-key <key>", "Retry key (generated when omitted)")
+      .option("--title <title>", "Optional display title")
       .option("--priority <priority>", "Issue priority")
-      .option("--assignee-agent-id <id>", "Assignee agent ID")
       .option("--project-id <id>", "Project ID")
+      .option("--project-workspace-id <id>", "Project workspace ID")
       .option("--goal-id <id>", "Goal ID")
       .option("--parent-id <id>", "Parent issue ID")
-      .option("--request-depth <n>", "Request depth integer")
-      .option("--billing-code <code>", "Billing code")
       .action(async (opts: IssueCreateOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const payload = createIssueSchema.parse({
+            request: opts.request,
+            ownerAgentId: opts.ownerAgentId,
+            idempotencyKey: opts.idempotencyKey ?? randomUUID(),
             title: opts.title,
-            description: opts.description,
-            status: opts.status,
             priority: opts.priority,
-            assigneeAgentId: opts.assigneeAgentId,
             projectId: opts.projectId,
+            projectWorkspaceId: opts.projectWorkspaceId,
             goalId: opts.goalId,
             parentId: opts.parentId,
-            requestDepth: parseOptionalInt(opts.requestDepth),
-            billingCode: opts.billingCode,
           });
 
           const created = await ctx.api.post<Issue>(apiPath`/api/companies/${ctx.companyId}/issues`, payload);
@@ -314,40 +245,18 @@ export function registerIssueCommands(program: Command): void {
 
   addCommonClientOptions(
     issue
-      .command("update")
-      .description("Update an issue")
+      .command("title")
+      .description("Update board-editable issue title metadata")
       .argument("<issueId>", "Issue ID")
-      .option("--title <title>", "Issue title")
-      .option("--description <text>", "Issue description")
-      .option("--status <status>", "Issue status")
-      .option("--priority <priority>", "Issue priority")
-      .option("--assignee-agent-id <id>", "Assignee agent ID")
-      .option("--project-id <id>", "Project ID")
-      .option("--goal-id <id>", "Goal ID")
-      .option("--parent-id <id>", "Parent issue ID")
-      .option("--request-depth <n>", "Request depth integer")
-      .option("--billing-code <code>", "Billing code")
-      .option("--comment <text>", "Optional comment to add with update")
-      .option("--hidden-at <iso8601|null>", "Set hiddenAt timestamp or literal 'null'")
-      .action(async (issueId: string, opts: IssueUpdateOptions) => {
+      .requiredOption("--title <title>", "Issue title")
+      .action(async (issueId: string, opts: IssueTitleOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const payload = updateIssueSchema.parse({
+          const payload = updateIssueTitleSchema.parse({
             title: opts.title,
-            description: opts.description,
-            status: opts.status,
-            priority: opts.priority,
-            assigneeAgentId: opts.assigneeAgentId,
-            projectId: opts.projectId,
-            goalId: opts.goalId,
-            parentId: opts.parentId,
-            requestDepth: parseOptionalInt(opts.requestDepth),
-            billingCode: opts.billingCode,
-            comment: opts.comment,
-            hiddenAt: parseHiddenAt(opts.hiddenAt),
           });
 
-          const updated = await ctx.api.patch<Issue & { comment?: IssueComment | null }>(apiPath`/api/issues/${issueId}`, payload);
+          const updated = await ctx.api.patch<Issue>(apiPath`/api/issues/${issueId}`, payload);
           printOutput(updated, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -357,22 +266,95 @@ export function registerIssueCommands(program: Command): void {
 
   addCommonClientOptions(
     issue
-      .command("comment")
-      .description("Add comment to issue")
+      .command("reassign")
+      .description("Reassign an issue through the audited board control plane")
       .argument("<issueId>", "Issue ID")
-      .requiredOption("--body <text>", "Comment body")
-      .option("--reopen", "Reopen if issue is done/cancelled")
-      .option("--resume", "Request explicit follow-up and wake the assignee when resumable")
+      .requiredOption("--owner-agent-id <id>", "New agent owner ID")
+      .option("--idempotency-key <key>", "Retry key (generated when omitted)")
+      .action(async (issueId: string, opts: IssueReassignOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = reassignIssueSchema.parse({
+            ownerAgentId: opts.ownerAgentId,
+            idempotencyKey: opts.idempotencyKey ?? randomUUID(),
+          });
+          const result = await ctx.api.post(
+            apiPath`/api/issues/${issueId}/reassign`,
+            payload,
+          );
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("reopen")
+      .description("Reopen a terminal issue through the audited board command")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--reason <text>", "Audited reopen reason")
+      .option("--idempotency-key <key>", "Retry key (generated when omitted)")
+      .action(async (issueId: string, opts: IssueReopenOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = reopenIssueSchema.parse({
+            reason: opts.reason,
+            idempotencyKey: opts.idempotencyKey ?? randomUUID(),
+          });
+          const result = await ctx.api.post(
+            apiPath`/api/issues/${issueId}/reopen`,
+            payload,
+          );
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("comment")
+      .description("Add a typed user comment to an issue")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--message <text>", "Comment message")
+      .option("--idempotency-key <key>", "Retry key (generated when omitted)")
+      .option("--mention-target-agent-id <id>", "Explicit current owner agent mention")
+      .option("--mention-ownership-epoch <n>", "Exact current ownership epoch")
+      .option("--reply-to-comment-id <id>", "Persisted comment to reply to or steer")
       .action(async (issueId: string, opts: IssueCommentOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const payload = addIssueCommentSchema.parse({
-            body: opts.body,
-            reopen: opts.reopen,
-            resume: opts.resume,
+          const hasMentionTarget = Boolean(opts.mentionTargetAgentId);
+          const hasMentionEpoch = Boolean(opts.mentionOwnershipEpoch);
+          if (hasMentionTarget !== hasMentionEpoch) {
+            throw new Error(
+              "--mention-target-agent-id and --mention-ownership-epoch must be supplied together",
+            );
+          }
+          const payload = createIssueUserCommentSchema.parse({
+            message: opts.message,
+            idempotencyKey: opts.idempotencyKey ?? randomUUID(),
+            mention: hasMentionTarget
+              ? {
+                  targetAgentId: opts.mentionTargetAgentId,
+                  ownershipEpoch: parseRequiredPositiveInt(
+                    opts.mentionOwnershipEpoch,
+                    "mention ownership epoch",
+                  ),
+                }
+              : null,
+            ...(opts.replyToCommentId
+              ? { replyToCommentId: opts.replyToCommentId }
+              : {}),
           });
-          const comment = await ctx.api.post<IssueComment>(apiPath`/api/issues/${issueId}/comments`, payload);
-          printOutput(comment, { json: ctx.json });
+          const result = await ctx.api.post(
+            apiPath`/api/issues/${issueId}/comments`,
+            payload,
+          );
+          printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
@@ -382,22 +364,22 @@ export function registerIssueCommands(program: Command): void {
   addCommonClientOptions(
     issue
       .command("comments")
-      .description("List issue comments")
+      .description("Page root-grouped issue comments")
       .argument("<issueId>", "Issue ID")
-      .option("--after-comment-id <id>", "Only return comments after this comment ID")
-      .option("--order <order>", "asc or desc")
-      .option("--limit <n>", "Maximum comments to return")
+      .option("--cursor <cursor>", "Opaque root-page cursor")
+      .option("--limit <n>", "Maximum root groups to return")
+      .option("--entry-limit <n>", "Maximum initial entries per root group")
       .action(async (issueId: string, opts: IssueCommentListOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
           const params = new URLSearchParams();
-          if (opts.afterCommentId) params.set("afterCommentId", opts.afterCommentId);
-          if (opts.order) params.set("order", opts.order);
+          if (opts.cursor) params.set("cursor", opts.cursor);
           if (opts.limit) params.set("limit", opts.limit);
+          if (opts.entryLimit) params.set("entryLimit", opts.entryLimit);
           const query = params.toString();
-          const comments = (await ctx.api.get<IssueComment[]>(
+          const comments = await ctx.api.get<BoardIssueCommentGroupPage>(
             `${apiPath`/api/issues/${issueId}/comments`}${query ? `?${query}` : ""}`,
-          )) ?? [];
+          );
           printOutput(comments, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -414,25 +396,8 @@ export function registerIssueCommands(program: Command): void {
       .action(async (issueId: string, commentId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const comment = await ctx.api.get<IssueComment>(apiPath`/api/issues/${issueId}/comments/${commentId}`);
+          const comment = await ctx.api.get<BoardIssueComment>(apiPath`/api/issues/${issueId}/comments/${commentId}`);
           printOutput(comment, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("comment:delete")
-      .description("Delete or cancel one issue comment")
-      .argument("<issueId>", "Issue ID")
-      .argument("<commentId>", "Comment ID")
-      .action(async (issueId: string, commentId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const deleted = await ctx.api.delete<IssueComment>(apiPath`/api/issues/${issueId}/comments/${commentId}`);
-          printOutput(deleted, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
@@ -497,48 +462,6 @@ export function registerIssueCommands(program: Command): void {
 
   addCommonClientOptions(
     issue
-      .command("recovery-actions")
-      .description("List active recovery actions for an issue")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.get(apiPath`/api/issues/${issueId}/recovery-actions`);
-          printOutput(result, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("recovery:resolve")
-      .description("Resolve an issue recovery action")
-      .argument("<issueId>", "Issue ID")
-      .requiredOption("--outcome <outcome>", "restored, false_positive, blocked, or cancelled")
-      .requiredOption("--source-issue-status <status>", "todo, done, or in_review for restored outcomes; blocked is only valid for blocked outcomes")
-      .option("--action-id <id>", "Specific recovery action ID")
-      .option("--resolution-note <text>", "Resolution note")
-      .action(async (issueId: string, opts: IssueRecoveryResolveOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = resolveIssueRecoveryActionSchema.parse({
-            actionId: opts.actionId,
-            outcome: opts.outcome,
-            sourceIssueStatus: opts.sourceIssueStatus,
-            resolutionNote: opts.resolutionNote,
-          });
-          const result = await ctx.api.post(apiPath`/api/issues/${issueId}/recovery-actions/resolve`, payload);
-          printOutput(result, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
       .command("child:create")
       .description("Create a child issue from a JSON payload")
       .argument("<issueId>", "Parent issue ID")
@@ -549,22 +472,6 @@ export function registerIssueCommands(program: Command): void {
           const payload = createChildIssueSchema.parse(parseJson(opts.payloadJson));
           const child = await ctx.api.post<Issue>(apiPath`/api/issues/${issueId}/children`, payload);
           printOutput(child, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("force-release")
-      .description("Force-release an issue from an agent checkout")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.post(apiPath`/api/issues/${issueId}/admin/force-release`, {});
-          printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
@@ -699,110 +606,6 @@ export function registerIssueCommands(program: Command): void {
           });
           const doc = await ctx.api.put(apiPath`/api/issues/${issueId}/documents/${key}`, payload);
           printOutput(doc, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("interactions")
-      .description("List issue thread interactions")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const interactions = await ctx.api.get(apiPath`/api/issues/${issueId}/interactions`);
-          printOutput(interactions, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("interaction:create")
-      .description("Create an issue thread interaction from JSON")
-      .argument("<issueId>", "Issue ID")
-      .requiredOption("--payload-json <json>", "CreateIssueThreadInteraction JSON payload")
-      .action(async (issueId: string, opts: JsonPayloadOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = createIssueThreadInteractionSchema.parse(parseJson(opts.payloadJson));
-          const interaction = await ctx.api.post(apiPath`/api/issues/${issueId}/interactions`, payload);
-          printOutput(interaction, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("interaction:accept")
-      .description("Accept an issue thread interaction")
-      .argument("<issueId>", "Issue ID")
-      .argument("<interactionId>", "Interaction ID")
-      .option("--selected-client-keys <csv>", "Client keys to accept")
-      .option("--selected-option-ids <csv>", "Checkbox option IDs to accept")
-      .action(async (issueId: string, interactionId: string, opts: InteractionAcceptOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = acceptIssueThreadInteractionSchema.parse({
-            selectedClientKeys: opts.selectedClientKeys === undefined ? undefined : parseCsv(opts.selectedClientKeys),
-            selectedOptionIds: opts.selectedOptionIds === undefined ? undefined : parseCsv(opts.selectedOptionIds),
-          });
-          const interaction = await ctx.api.post(apiPath`/api/issues/${issueId}/interactions/${interactionId}/accept`, payload);
-          printOutput(interaction, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  for (const [name, action, schema, description] of [
-    ["interaction:reject", "reject", rejectIssueThreadInteractionSchema, "Reject an issue thread interaction"],
-    ["interaction:cancel", "cancel", cancelIssueThreadInteractionSchema, "Cancel an issue thread interaction"],
-  ] as const) {
-    addCommonClientOptions(
-      issue
-        .command(name)
-        .description(description)
-        .argument("<issueId>", "Issue ID")
-        .argument("<interactionId>", "Interaction ID")
-        .option("--reason <text>", "Reason")
-        .action(async (issueId: string, interactionId: string, opts: InteractionReasonOptions) => {
-          try {
-            const ctx = resolveCommandContext(opts);
-            const payload = schema.parse({ reason: opts.reason });
-            const interaction = await ctx.api.post(`${apiPath`/api/issues/${issueId}/interactions/${interactionId}`}/${action}`, payload);
-            printOutput(interaction, { json: ctx.json });
-          } catch (err) {
-            handleCommandError(err);
-          }
-        }),
-    );
-  }
-
-  addCommonClientOptions(
-    issue
-      .command("interaction:respond")
-      .description("Respond to an issue question interaction")
-      .argument("<issueId>", "Issue ID")
-      .argument("<interactionId>", "Interaction ID")
-      .requiredOption("--answers-json <json>", "Answers array JSON")
-      .option("--summary-markdown <markdown>", "Optional response summary")
-      .action(async (issueId: string, interactionId: string, opts: InteractionRespondOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = respondIssueThreadInteractionSchema.parse({
-            answers: parseJson(opts.answersJson),
-            summaryMarkdown: opts.summaryMarkdown,
-          });
-          const interaction = await ctx.api.post(apiPath`/api/issues/${issueId}/interactions/${interactionId}/respond`, payload);
-          printOutput(interaction, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
@@ -953,7 +756,6 @@ export function registerIssueCommands(program: Command): void {
             issueId,
             filePath: opts.file,
             commentId: opts.commentId,
-            runId: ctx.api.runId,
           });
           printOutput(attachment, { json: ctx.json });
         } catch (err) {
@@ -1194,45 +996,17 @@ export function registerIssueCommands(program: Command): void {
   addCommonClientOptions(
     issue
       .command("runs")
-      .description("List heartbeat runs associated with an issue")
+      .description("List issue-execution runs associated with an issue")
       .argument("<issueId>", "Issue ID or identifier")
       .action(async (issueId: string, opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const rows = (await ctx.api.get<unknown[]>(apiPath`/api/issues/${issueId}/runs`)) ?? [];
-          printOutput(rows, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("live-runs")
-      .description("List queued and running heartbeat runs associated with an issue")
-      .argument("<issueId>", "Issue ID or identifier")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const rows = (await ctx.api.get<HeartbeatRun[]>(apiPath`/api/issues/${issueId}/live-runs`)) ?? [];
-          printOutput(rows, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("active-run")
-      .description("Show the active heartbeat run associated with an issue")
-      .argument("<issueId>", "Issue ID or identifier")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const run = await ctx.api.get<HeartbeatRun | null>(apiPath`/api/issues/${issueId}/active-run`);
-          printOutput(run, { json: ctx.json });
+          const page = await ctx.api.get<IssueExecutionRunListPageRecord>(
+            apiPath`/api/issues/${issueId}/runs`,
+          );
+          printOutput(page ?? { items: [], nextCursor: null }, {
+            json: ctx.json,
+          });
         } catch (err) {
           handleCommandError(err);
         }
@@ -1279,52 +1053,6 @@ export function registerIssueCommands(program: Command): void {
       }),
   );
 
-  addCommonClientOptions(
-    issue
-      .command("checkout")
-      .description("Checkout issue for an agent")
-      .argument("<issueId>", "Issue ID")
-      .requiredOption("--agent-id <id>", "Agent ID")
-      .option(
-        "--expected-statuses <csv>",
-        "Expected current statuses",
-        "todo,backlog,blocked",
-      )
-      .action(async (issueId: string, opts: IssueCheckoutOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const payload = checkoutIssueSchema.parse({
-            agentId: opts.agentId,
-            expectedStatuses: parseCsv(opts.expectedStatuses),
-          });
-          const updated = await ctx.api.post<Issue>(apiPath`/api/issues/${issueId}/checkout`, payload);
-          printOutput(updated, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  addCommonClientOptions(
-    issue
-      .command("release")
-      .description("Release issue back to todo and clear assignee")
-      .argument("<issueId>", "Issue ID")
-      .action(async (issueId: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const updated = await ctx.api.post<Issue>(apiPath`/api/issues/${issueId}/release`, {});
-          printOutput(updated, { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-}
-
-function parseCsv(value: string | undefined): string[] {
-  if (!value) return [];
-  return value.split(",").map((v) => v.trim()).filter(Boolean);
 }
 
 function addIssuePostDeleteMarkerCommand(
@@ -1357,26 +1085,19 @@ function parseJson(value: string): unknown {
   return JSON.parse(value) as unknown;
 }
 
-function parseOptionalInt(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid integer value: ${value}`);
+function parseRequiredPositiveInt(value: string | undefined, label: string): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${label}: ${value ?? ""}`);
   }
   return parsed;
-}
-
-function parseHiddenAt(value: string | undefined): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value.trim().toLowerCase() === "null") return null;
-  return value;
 }
 
 function filterIssueRows(rows: Issue[], match: string | undefined): Issue[] {
   if (!match?.trim()) return rows;
   const needle = match.trim().toLowerCase();
   return rows.filter((row) => {
-    const text = [row.identifier, row.title, row.description]
+    const text = [row.identifier, row.title, row.request]
       .filter((part): part is string => Boolean(part))
       .join("\n")
       .toLowerCase();
@@ -1393,19 +1114,14 @@ function buildApiUrl(apiBase: string, path: string): string {
 async function uploadAttachment(
   apiBase: string,
   apiKey: string | undefined,
-  input: { companyId: string; issueId: string; filePath: string; commentId?: string; runId?: string },
+  input: { companyId: string; issueId: string; filePath: string; commentId?: string },
 ): Promise<unknown> {
   const bytes = await readFile(input.filePath);
   const form = new FormData();
   form.set("file", new Blob([bytes], { type: inferContentTypeFromPath(input.filePath) }), input.filePath.split(/[\\/]/).pop() ?? "attachment");
   if (input.commentId) form.set("issueCommentId", input.commentId);
-  // This multipart upload uses a hand-rolled fetch rather than PaperclipApiClient,
-  // so it must forward the agent run-id header itself — otherwise an
-  // agent-authenticated upload is rejected with "401 Agent run id required"
-  // (the client injects x-paperclip-run-id automatically for JSON requests).
   const headers: Record<string, string> = {};
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-  if (input.runId) headers["x-paperclip-run-id"] = input.runId;
   const response = await fetch(buildApiUrl(apiBase, apiPath`/api/companies/${input.companyId}/issues/${input.issueId}/attachments`), {
     method: "POST",
     headers,

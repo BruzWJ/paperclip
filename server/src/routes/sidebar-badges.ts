@@ -2,6 +2,10 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import { inboxDismissals, joinRequests } from "@paperclipai/db";
+import {
+  compareMoneyAmounts,
+  parseMoneyAmount,
+} from "@paperclipai/shared";
 import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
 import { dashboardService } from "../services/dashboard.js";
@@ -33,15 +37,9 @@ export function sidebarBadgeRoutes(db: Db) {
   router.get("/companies/:companyId/sidebar-badges", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    let canApproveJoins = false;
-    if (req.actor.type === "board") {
-      canApproveJoins =
-        req.actor.source === "local_implicit" ||
-        Boolean(req.actor.isInstanceAdmin) ||
-        (await access.canUser(companyId, req.actor.userId, "joins:approve"));
-    } else if (req.actor.type === "agent" && req.actor.agentId) {
-      canApproveJoins = await access.hasPermission(companyId, "agent", req.actor.agentId, "joins:approve");
-    }
+    const canApproveJoins =
+      req.actor.isInstanceAdmin ||
+      (await access.canUser(companyId, req.actor.userId, "joins:approve"));
 
     const visibleJoinRequests = canApproveJoins
       ? collapseDuplicatePendingHumanJoinRequests(
@@ -64,19 +62,16 @@ export function sidebarBadgeRoutes(db: Db) {
       }))
       : [];
 
-    const dismissedAtByKey =
-      req.actor.type === "board" && req.actor.userId
-        ? await db
-          .select({
-            itemKey: inboxDismissals.itemKey,
-            kind: inboxDismissals.kind,
-            dismissedAt: inboxDismissals.dismissedAt,
-            snoozedUntil: inboxDismissals.snoozedUntil,
-          })
-          .from(inboxDismissals)
-          .where(and(eq(inboxDismissals.companyId, companyId), eq(inboxDismissals.userId, req.actor.userId)))
-          .then(buildDismissedAtByKey)
-        : new Map<string, number>();
+    const dismissedAtByKey = await db
+      .select({
+        itemKey: inboxDismissals.itemKey,
+        kind: inboxDismissals.kind,
+        dismissedAt: inboxDismissals.dismissedAt,
+        snoozedUntil: inboxDismissals.snoozedUntil,
+      })
+      .from(inboxDismissals)
+      .where(and(eq(inboxDismissals.companyId, companyId), eq(inboxDismissals.userId, req.actor.userId)))
+      .then(buildDismissedAtByKey);
 
     const badges = await svc.get(companyId, {
       dismissals: dismissedAtByKey,
@@ -86,7 +81,12 @@ export function sidebarBadgeRoutes(db: Db) {
     const hasFailedRuns = badges.failedRuns > 0;
     const alertsCount =
       (summary.agents.error > 0 && !hasFailedRuns ? 1 : 0) +
-      (summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80 ? 1 : 0);
+      (compareMoneyAmounts(
+        summary.costs.monthBudgetAmount,
+        parseMoneyAmount("0"),
+      ) > 0 && summary.costs.monthUtilizationPercent >= 80
+        ? 1
+        : 0);
     badges.inbox = badges.failedRuns + alertsCount + badges.joinRequests + badges.approvals;
 
     res.json(badges);

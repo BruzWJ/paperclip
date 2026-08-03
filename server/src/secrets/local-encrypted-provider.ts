@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+} from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveDefaultSecretsKeyFilePath } from "../home-paths.js";
@@ -78,6 +84,26 @@ function loadOrCreateMasterKey(): Buffer {
     // best effort
   }
   return generated;
+}
+
+/**
+ * Derives stable instance-private key material without exposing or reusing
+ * the encryption key bytes directly in another protocol.
+ */
+export function deriveInstancePrivateSecret(
+  purpose: string,
+): Buffer {
+  const normalized = purpose.trim();
+  if (!normalized) {
+    throw badRequest("Instance-private secret purpose is required");
+  }
+  return createHmac(
+    "sha256",
+    loadOrCreateMasterKey(),
+  )
+    .update("paperclip-instance-private/v1\0", "utf8")
+    .update(normalized, "utf8")
+    .digest();
 }
 
 function enforceKeyFilePermissionsBestEffort(keyPath: string) {
@@ -252,8 +278,8 @@ export const localEncryptedProvider: SecretProviderModule = {
   },
   async validateConfig(input): Promise<SecretProviderValidationResult> {
     const warnings: string[] = [];
-    if (input?.deploymentMode === "authenticated" && input.strictMode !== true) {
-      warnings.push("Strict secret mode should be enabled for authenticated deployments");
+    if (input?.strictMode !== true) {
+      warnings.push("Strict secret mode is disabled");
     }
     const health = await inspectLocalEncryptedHealth();
     if (health.status === "error") {

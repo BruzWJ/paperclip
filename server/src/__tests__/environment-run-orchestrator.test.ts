@@ -1,41 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  Environment,
+  EnvironmentLease,
+  ExecutionWorkspace,
+} from "@paperclipai/shared";
+import type { EnvironmentRuntimeService } from "../services/environment-runtime.js";
 
-// ---------------------------------------------------------------------------
-// Hoisted mocks — must be declared before any imports that reference them
-// ---------------------------------------------------------------------------
-
-const mockResolveEnvironmentExecutionTarget = vi.hoisted(() => vi.fn());
-const mockAdapterExecutionTargetToRemoteSpec = vi.hoisted(() => vi.fn());
-const mockBuildWorkspaceRealizationRequest = vi.hoisted(() => vi.fn());
+const mockResolveEnvironmentExecutionTarget = vi.hoisted(() =>
+  vi.fn(),
+);
+const mockGetEnvironmentById = vi.hoisted(() => vi.fn());
 const mockUpdateLeaseMetadata = vi.hoisted(() => vi.fn());
+const mockGetExecutionWorkspaceById = vi.hoisted(() => vi.fn());
 const mockUpdateExecutionWorkspace = vi.hoisted(() => vi.fn());
 const mockLogActivity = vi.hoisted(() => vi.fn());
+const mockDeriveExecutionTargetDigest = vi.hoisted(() =>
+  vi.fn(() => "execution-target-digest"),
+);
 
 vi.mock("../services/environment-execution-target.js", () => ({
-  resolveEnvironmentExecutionTarget: mockResolveEnvironmentExecutionTarget,
-  resolveEnvironmentExecutionTransport: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock("@paperclipai/adapter-utils/execution-target", () => ({
-  adapterExecutionTargetToRemoteSpec: mockAdapterExecutionTargetToRemoteSpec,
-}));
-
-vi.mock("../services/workspace-realization.js", () => ({
-  buildWorkspaceRealizationRequest: mockBuildWorkspaceRealizationRequest,
+  resolveEnvironmentExecutionTarget:
+    mockResolveEnvironmentExecutionTarget,
 }));
 
 vi.mock("../services/environments.js", () => ({
   environmentService: vi.fn(() => ({
-    ensureLocalEnvironment: vi.fn(),
-    getById: vi.fn(),
-    acquireLease: vi.fn(),
-    releaseLease: vi.fn(),
+    getById: mockGetEnvironmentById,
     updateLeaseMetadata: mockUpdateLeaseMetadata,
   })),
 }));
 
 vi.mock("../services/execution-workspaces.js", () => ({
   executionWorkspaceService: vi.fn(() => ({
+    getById: mockGetExecutionWorkspaceById,
     update: mockUpdateExecutionWorkspace,
   })),
 }));
@@ -44,507 +41,383 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: mockLogActivity,
 }));
 
-// ---------------------------------------------------------------------------
-// Imports after mocks
-// ---------------------------------------------------------------------------
+vi.mock("../services/agent-adapter-config-revisions.js", () => ({
+  deriveAgentExecutionTargetDigest:
+    mockDeriveExecutionTargetDigest,
+}));
+
+// Keep this environment-lifecycle unit isolated from provider package loading.
+// The target digest service normally reaches the built-in adapter catalog,
+// which is outside this test's execution-target boundary.
+vi.mock("../adapters/builtin-adapter-catalog.js", () => ({
+  BUILTIN_ADAPTER_CATALOG: [],
+}));
 
 import {
-  environmentRunOrchestrator,
   EnvironmentRunError,
-} from "../services/environment-run-orchestrator.ts";
-import type { Environment, EnvironmentLease, ExecutionWorkspace } from "@paperclipai/shared";
-import type { RealizedExecutionWorkspace } from "../services/workspace-runtime.ts";
-import type { EnvironmentRuntimeService } from "../services/environment-runtime.ts";
+  environmentRunOrchestrator,
+} from "../services/environment-run-orchestrator.js";
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-function makeEnvironment(driver: string = "local"): Environment {
+function makeEnvironment(): Environment {
   return {
-    id: "env-1",
-    companyId: "company-1",
-    name: "Test Environment",
+    id: "env-plugin-1",
+    name: "Plugin Environment",
     description: null,
-    driver: driver as Environment["driver"],
+    driver: "plugin",
     status: "active",
-    config: {},
+    config: {
+      pluginKey: "acme.environments",
+      driverKey: "workspace-driver",
+      driverConfig: {},
+    },
+    envVars: {},
     metadata: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
 }
 
-function makeLease(overrides: Partial<EnvironmentLease> = {}): EnvironmentLease {
+function makeLease(
+  overrides: Partial<EnvironmentLease> = {},
+): EnvironmentLease {
   return {
-    id: "lease-1",
+    id: "lease-plugin-1",
     companyId: "company-1",
-    environmentId: "env-1",
-    executionWorkspaceId: null,
-    issueId: null,
-    heartbeatRunId: "run-1",
+    environmentId: "env-plugin-1",
+    executionWorkspaceId: "workspace-1",
+    issueId: "issue-1",
+    runId: "run-1",
     status: "active",
     leasePolicy: "ephemeral",
-    provider: "local",
-    providerLeaseId: null,
-    acquiredAt: new Date(),
-    lastUsedAt: new Date(),
+    provider: "plugin:acme.environments:workspace-driver",
+    providerLeaseId: "provider-lease-1",
+    acquiredAt: new Date("2026-01-01T00:00:00.000Z"),
+    lastUsedAt: new Date("2026-01-01T00:00:00.000Z"),
     expiresAt: null,
     releasedAt: null,
     failureReason: null,
     cleanupStatus: null,
-    metadata: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    metadata: {
+      driver: "plugin",
+      pluginId: "plugin-installation-1",
+      pluginKey: "acme.environments",
+      driverKey: "workspace-driver",
+    },
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
   };
 }
 
-function makeExecutionWorkspace(cwd: string = "/workspace/project"): RealizedExecutionWorkspace {
+function makeWorkspace(): ExecutionWorkspace {
   return {
-    baseCwd: "/workspace",
-    source: "project_primary",
-    projectId: "project-1",
-    workspaceId: "ws-1",
-    repoUrl: null,
-    repoRef: null,
-    strategy: "project_primary",
-    cwd,
-    branchName: null,
-    worktreePath: null,
-    warnings: [],
-    created: false,
-  };
-}
-
-function makePersistedExecutionWorkspace(
-  overrides: Partial<ExecutionWorkspace> = {},
-): ExecutionWorkspace {
-  return {
-    id: "ew-1",
+    id: "workspace-1",
     companyId: "company-1",
     projectId: "project-1",
     projectWorkspaceId: null,
-    sourceIssueId: null,
-    mode: "standard",
+    sourceIssueId: "issue-1",
+    mode: "shared_workspace",
     strategyType: "project_primary",
-    name: "workspace",
-    status: "open",
-    cwd: "/workspace/project",
-    repoUrl: null,
-    baseRef: null,
+    name: "Issue Workspace",
+    status: "active",
+    cwd: "/host/workspace",
+    repoUrl: "https://example.test/repository.git",
+    baseRef: "main",
     branchName: null,
-    providerType: "local",
+    providerType: "local_fs",
     providerRef: null,
     derivedFromExecutionWorkspaceId: null,
-    lastUsedAt: new Date(),
-    openedAt: new Date(),
+    lastUsedAt: new Date("2026-01-01T00:00:00.000Z"),
+    openedAt: new Date("2026-01-01T00:00:00.000Z"),
     closedAt: null,
     cleanupEligibleAt: null,
     cleanupReason: null,
     config: null,
     metadata: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
 }
 
-function makeRealizeInput(overrides: {
+function makeDb(binding: {
+  executionWorkspaceId: string;
+  absoluteCwd: string;
+} | null = {
+  executionWorkspaceId: "workspace-1",
+  absoluteCwd: "/host/workspace",
+}) {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() =>
+            Promise.resolve(binding ? [binding] : []),
+          ),
+        })),
+      })),
+    })),
+  } as never;
+}
+
+function makeRuntime(input: {
   environment?: Environment;
   lease?: EnvironmentLease;
-  persistedExecutionWorkspace?: ExecutionWorkspace | null;
-} = {}): Parameters<ReturnType<typeof environmentRunOrchestrator>["realizeForRun"]>[0] {
+  lifecycle?: string[];
+  releaseRunLeases?: EnvironmentRuntimeService["releaseRunLeases"];
+} = {}): EnvironmentRuntimeService {
+  const environment = input.environment ?? makeEnvironment();
+  const lease = input.lease ?? makeLease();
+  const lifecycle = input.lifecycle ?? [];
   return {
-    environment: overrides.environment ?? makeEnvironment("local"),
-    lease: overrides.lease ?? makeLease(),
-    adapterType: "claude_local",
-    companyId: "company-1",
-    issueId: null,
-    heartbeatRunId: "run-1",
-    executionWorkspace: makeExecutionWorkspace(),
-    effectiveExecutionWorkspaceMode: null,
-    persistedExecutionWorkspace: overrides.persistedExecutionWorkspace !== undefined
-      ? overrides.persistedExecutionWorkspace
-      : null,
-  };
-}
-
-function makeMockRuntime(overrides: Partial<EnvironmentRuntimeService> = {}): EnvironmentRuntimeService {
-  return {
-    acquireRunLease: vi.fn(),
-    releaseRunLeases: vi.fn(),
-    execute: vi.fn().mockResolvedValue({
+    acquireRunLease: vi.fn(async () => {
+      lifecycle.push("acquire");
+      return {
+        environment,
+        lease,
+        leaseContext: {
+          executionWorkspaceId: "workspace-1",
+          executionWorkspaceMode: "shared_workspace",
+        },
+      };
+    }),
+    realizeWorkspace: vi.fn(async () => {
+      lifecycle.push("realize");
+      return {
+        cwd: "/plugin/workspace",
+        metadata: {
+          workspaceRealization: {
+            version: 1,
+            transport: "plugin",
+            remote: { path: "/plugin/workspace" },
+          },
+        },
+      };
+    }),
+    execute: vi.fn(async () => ({
       exitCode: 0,
       signal: null,
       timedOut: false,
       stdout: "",
       stderr: "",
-    }),
-    realizeWorkspace: vi.fn().mockResolvedValue({
-      cwd: "/workspace/project",
-      metadata: {
-        workspaceRealization: {
-          version: 1,
-          driver: "local",
-          cwd: "/workspace/project",
-        },
-      },
-    }),
-    ...overrides,
+    })),
+    releaseRunLeases:
+      input.releaseRunLeases ??
+      vi.fn(async (_runId, status) => {
+        lifecycle.push(`release:${status}`);
+        return [
+          {
+            environment,
+            lease: makeLease({
+              status,
+              releasedAt: new Date(
+                "2026-01-01T00:01:00.000Z",
+              ),
+            }),
+            leaseContext: {
+              executionWorkspaceId: "workspace-1",
+              executionWorkspaceMode: "shared_workspace",
+            },
+          },
+        ];
+      }),
   } as unknown as EnvironmentRuntimeService;
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+function acquisitionInput(runId: string) {
+  const environment = makeEnvironment();
+  return {
+    companyId: "company-1",
+    environmentId: environment.id,
+    executionTargetDriver: environment.driver,
+    executionTargetDigest: "execution-target-digest",
+    adapterType: "codex",
+    issueId: "issue-1",
+    runId: runId,
+    agentId: "agent-1",
+    executionWorkspaceBindingId: "binding-1",
+  };
+}
 
-describe("environmentRunOrchestrator — realizeForRun", () => {
-  const mockDb = {} as any;
-
+describe("environmentRunOrchestrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockBuildWorkspaceRealizationRequest.mockReturnValue({
-      version: 1,
-      adapterType: "claude_local",
-      companyId: "company-1",
-      environmentId: "env-1",
-      executionWorkspaceId: null,
-      issueId: null,
-      heartbeatRunId: "run-1",
-      requestedMode: null,
-      source: {
-        kind: "project_primary",
-        localPath: "/workspace/project",
-        projectId: null,
-        projectWorkspaceId: null,
-        repoUrl: null,
-        repoRef: null,
-        strategy: "project_primary",
-        branchName: null,
-        worktreePath: null,
-      },
-      runtimeOverlay: {
-        provisionCommand: null,
-      },
-    });
-
-    mockAdapterExecutionTargetToRemoteSpec.mockReturnValue({
-      kind: "local",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-    });
-
-    mockUpdateLeaseMetadata.mockResolvedValue(null);
-    mockUpdateExecutionWorkspace.mockResolvedValue(null);
+    mockGetEnvironmentById.mockResolvedValue(makeEnvironment());
+    mockGetExecutionWorkspaceById.mockResolvedValue(makeWorkspace());
+    mockUpdateLeaseMetadata.mockImplementation(
+      async (_leaseId, metadata) =>
+        makeLease({ metadata }),
+    );
+    mockUpdateExecutionWorkspace.mockImplementation(
+      async (_workspaceId, patch) => ({
+        ...makeWorkspace(),
+        ...patch,
+      }),
+    );
     mockLogActivity.mockResolvedValue(undefined);
   });
 
-  it("happy path: returns lease, executionTarget, and remoteExecution on successful realization", async () => {
-    const executionTarget = { kind: "local", environmentId: "env-1", leaseId: "lease-1" };
-    const remoteExecution = { kind: "local", environmentId: "env-1", leaseId: "lease-1" };
+  it.each([
+    ["productive", "productive-run-1"],
+    ["compaction", "compaction-run-1"],
+  ])(
+    "uses the same acquire-realize-target-release lifecycle for %s work",
+    async (_kind, runId) => {
+      const lifecycle: string[] = [];
+      const runtime = makeRuntime({ lifecycle });
+      mockResolveEnvironmentExecutionTarget.mockImplementation(
+        async (input) => {
+          lifecycle.push("target");
+          expect(input.realizedCwd).toBe("/plugin/workspace");
+          expect(input.lease.id).toBe("lease-plugin-1");
+          return {
+            kind: "remote",
+            transport: "plugin",
+            pluginKey: "acme.environments",
+            driverKey: "workspace-driver",
+            remoteCwd: "/plugin/workspace",
+            environmentId: "env-plugin-1",
+            leaseId: "lease-plugin-1",
+          };
+        },
+      );
+      const orchestrator = environmentRunOrchestrator(makeDb(), {
+        environmentRuntime: runtime,
+      });
 
-    mockResolveEnvironmentExecutionTarget.mockResolvedValue(executionTarget);
-    mockAdapterExecutionTargetToRemoteSpec.mockReturnValue(remoteExecution);
+      const acquired =
+        await orchestrator.acquireExecutionTargetForRun(
+          acquisitionInput(runId),
+        );
 
-    const runtime = makeMockRuntime();
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    const result = await orchestrator.realizeForRun(makeRealizeInput());
-
-    expect(result.lease).toBeDefined();
-    expect(result.executionTarget).toEqual(executionTarget);
-    expect(result.remoteExecution).toEqual(remoteExecution);
-    expect(result.workspaceRealization).toEqual(
-      expect.objectContaining({ version: 1, driver: "local" }),
-    );
-
-    expect(runtime.realizeWorkspace).toHaveBeenCalledOnce();
-    expect(mockResolveEnvironmentExecutionTarget).toHaveBeenCalledOnce();
-  });
-
-  it("realization failure: runtime.realizeWorkspace throws → EnvironmentRunError with code workspace_realization_failed", async () => {
-    const runtime = makeMockRuntime({
-      realizeWorkspace: vi.fn().mockRejectedValue(new Error("sandbox unreachable")),
-    });
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    await expect(orchestrator.realizeForRun(makeRealizeInput())).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof EnvironmentRunError &&
-        err.code === "workspace_realization_failed" &&
-        err.environmentId === "env-1" &&
-        err.driver === "local",
-    );
-
-    expect(mockResolveEnvironmentExecutionTarget).not.toHaveBeenCalled();
-  });
-
-  it("target resolution failure: resolveEnvironmentExecutionTarget throws → EnvironmentRunError with code transport_resolution_failed", async () => {
-    mockResolveEnvironmentExecutionTarget.mockRejectedValue(new Error("network error"));
-
-    const runtime = makeMockRuntime();
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    await expect(orchestrator.realizeForRun(makeRealizeInput())).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof EnvironmentRunError &&
-        err.code === "transport_resolution_failed" &&
-        err.environmentId === "env-1",
-    );
-  });
-
-  it("non-sandbox driver skips workspace realization and goes straight to target resolution", async () => {
-    const environment = makeEnvironment("plugin" as Environment["driver"]);
-    const executionTarget = null;
-
-    mockResolveEnvironmentExecutionTarget.mockResolvedValue(executionTarget);
-
-    const runtime = makeMockRuntime();
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    const result = await orchestrator.realizeForRun(
-      makeRealizeInput({ environment }),
-    );
-
-    expect(runtime.realizeWorkspace).not.toHaveBeenCalled();
-    expect(result.workspaceRealization).toEqual({});
-    expect(result.executionTarget).toBeNull();
-  });
-
-  it("persisted metadata is updated on lease and execution workspace after realization", async () => {
-    const persistedExecutionWorkspace = makePersistedExecutionWorkspace();
-    const updatedLease = makeLease({
-      metadata: { workspaceRealization: { version: 1, driver: "local", cwd: "/workspace/project" } },
-    });
-    const updatedEw = { ...persistedExecutionWorkspace, metadata: { workspaceRealizationRequest: {}, workspaceRealization: {} } };
-
-    mockUpdateLeaseMetadata.mockResolvedValue(updatedLease);
-    mockUpdateExecutionWorkspace.mockResolvedValue(updatedEw);
-    mockResolveEnvironmentExecutionTarget.mockResolvedValue({ kind: "local", environmentId: "env-1", leaseId: "lease-1" });
-
-    const runtime = makeMockRuntime();
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    const result = await orchestrator.realizeForRun(
-      makeRealizeInput({ persistedExecutionWorkspace }),
-    );
-
-    // Lease metadata should have been updated with workspaceRealization
-    expect(mockUpdateLeaseMetadata).toHaveBeenCalledOnce();
-    expect(mockUpdateLeaseMetadata).toHaveBeenCalledWith(
-      "lease-1",
-      expect.objectContaining({ workspaceRealization: expect.any(Object) }),
-    );
-
-    // Execution workspace metadata should have been updated
-    expect(mockUpdateExecutionWorkspace).toHaveBeenCalledOnce();
-    expect(mockUpdateExecutionWorkspace).toHaveBeenCalledWith(
-      "ew-1",
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          workspaceRealizationRequest: expect.any(Object),
-          workspaceRealization: expect.any(Object),
+      expect(lifecycle).toEqual([
+        "acquire",
+        "realize",
+        "target",
+      ]);
+      expect(runtime.acquireRunLease).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: runId,
+          persistedExecutionWorkspace:
+            expect.objectContaining({ id: "workspace-1" }),
         }),
+      );
+      expect(runtime.realizeWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          environment:
+            expect.objectContaining({ driver: "plugin" }),
+          workspace: expect.objectContaining({
+            localPath: "/host/workspace",
+          }),
+        }),
+      );
+      expect(acquired.executionTarget).toMatchObject({
+        transport: "plugin",
+        remoteCwd: "/plugin/workspace",
+      });
+
+      await acquired.releaseExecutionTarget();
+      await acquired.releaseExecutionTarget();
+      expect(lifecycle).toEqual([
+        "acquire",
+        "realize",
+        "target",
+        "release:released",
+      ]);
+    },
+  );
+
+  it("releases the acquired lease as failed when target resolution fails", async () => {
+    const lifecycle: string[] = [];
+    const runtime = makeRuntime({ lifecycle });
+    mockResolveEnvironmentExecutionTarget.mockRejectedValue(
+      new Error("plugin worker stopped"),
+    );
+    const orchestrator = environmentRunOrchestrator(makeDb(), {
+      environmentRuntime: runtime,
+    });
+
+    await expect(
+      orchestrator.acquireExecutionTargetForRun(
+        acquisitionInput("productive-run-failure"),
+      ),
+    ).rejects.toMatchObject({
+      code: "transport_resolution_failed",
+    });
+    expect(lifecycle).toEqual([
+      "acquire",
+      "realize",
+      "release:failed",
+    ]);
+  });
+
+  it("fails and releases the plugin lease when realization omits the exact cwd", async () => {
+    const lifecycle: string[] = [];
+    const runtime = makeRuntime({ lifecycle });
+    vi.mocked(runtime.realizeWorkspace).mockImplementation(
+      async () => {
+        lifecycle.push("realize");
+        return {
+          cwd: null,
+          metadata: {},
+        } as never;
+      },
+    );
+    const orchestrator = environmentRunOrchestrator(makeDb(), {
+      environmentRuntime: runtime,
+    });
+
+    await expect(
+      orchestrator.acquireExecutionTargetForRun(
+        acquisitionInput("productive-run-no-plugin-cwd"),
+      ),
+    ).rejects.toMatchObject({
+      code: "workspace_realization_failed",
+    });
+    expect(lifecycle).toEqual([
+      "acquire",
+      "realize",
+      "release:failed",
+    ]);
+    expect(
+      mockResolveEnvironmentExecutionTarget,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("rejects target digest drift before binding resolution or lease acquisition", async () => {
+    const db = makeDb();
+    const runtime = makeRuntime();
+    const orchestrator = environmentRunOrchestrator(db, {
+      environmentRuntime: runtime,
+    });
+
+    await expect(
+      orchestrator.acquireExecutionTargetForRun({
+        ...acquisitionInput("productive-run-drift"),
+        executionTargetDigest: "stale-digest",
       }),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof EnvironmentRunError &&
+        error.code === "unsupported_environment",
+    );
+    expect(db.select).not.toHaveBeenCalled();
+    expect(runtime.acquireRunLease).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing immutable workspace binding before lease acquisition", async () => {
+    const runtime = makeRuntime();
+    const orchestrator = environmentRunOrchestrator(
+      makeDb(null),
+      { environmentRuntime: runtime },
     );
 
-    // The returned lease should reflect the updated value
-    expect(result.lease).toEqual(updatedLease);
-    expect(result.persistedExecutionWorkspace).toEqual(updatedEw);
-  });
-
-  it("runs a remote provision command after workspace realization when configured", async () => {
-    mockBuildWorkspaceRealizationRequest.mockReturnValue({
-      version: 1,
-      adapterType: "claude_local",
-      companyId: "company-1",
-      environmentId: "env-1",
-      executionWorkspaceId: null,
-      issueId: null,
-      heartbeatRunId: "run-1",
-      requestedMode: null,
-      source: {
-        kind: "project_primary",
-        localPath: "/workspace/project",
-        projectId: null,
-        projectWorkspaceId: null,
-        repoUrl: null,
-        repoRef: null,
-        strategy: "project_primary",
-        branchName: null,
-        worktreePath: null,
-      },
-      runtimeOverlay: {
-        provisionCommand: "npm install -g @anthropic-ai/claude-code",
-      },
+    await expect(
+      orchestrator.acquireExecutionTargetForRun(
+        acquisitionInput("productive-run-no-workspace"),
+      ),
+    ).rejects.toMatchObject({
+      code: "workspace_realization_failed",
     });
-    mockResolveEnvironmentExecutionTarget.mockResolvedValue({
-      kind: "remote",
-      transport: "sandbox",
-      providerKey: "e2b",
-      remoteCwd: "/remote/workspace",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-    });
-
-    const runtime = makeMockRuntime({
-      realizeWorkspace: vi.fn().mockResolvedValue({
-        cwd: "/remote/workspace",
-        metadata: {
-          workspaceRealization: {
-            version: 1,
-            transport: "sandbox",
-            remote: { path: "/remote/workspace" },
-          },
-        },
-      }),
-    });
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    await orchestrator.realizeForRun(makeRealizeInput({
-      environment: makeEnvironment("sandbox"),
-    }));
-
-    expect(runtime.execute).toHaveBeenCalledOnce();
-    expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
-      environment: expect.objectContaining({ driver: "sandbox" }),
-      lease: expect.objectContaining({ id: "lease-1" }),
-      command: "bash",
-      args: ["-lc", "npm install -g @anthropic-ai/claude-code"],
-      cwd: "/remote/workspace",
-      env: {
-        SHELL: "/bin/bash",
-      },
-    }));
-  });
-
-  it("runs project-level provision commands for ssh environments", async () => {
-    mockBuildWorkspaceRealizationRequest.mockReturnValue({
-      version: 1,
-      adapterType: "gemini_local",
-      companyId: "company-1",
-      environmentId: "env-1",
-      executionWorkspaceId: null,
-      issueId: null,
-      heartbeatRunId: "run-1",
-      requestedMode: null,
-      source: {
-        kind: "project_primary",
-        localPath: "/workspace/project",
-        projectId: null,
-        projectWorkspaceId: null,
-        repoUrl: null,
-        repoRef: null,
-        strategy: "project_primary",
-        branchName: null,
-        worktreePath: null,
-      },
-      runtimeOverlay: {
-        provisionCommand: "npm install -g @google/gemini-cli",
-      },
-    });
-    mockResolveEnvironmentExecutionTarget.mockResolvedValue({
-      kind: "remote",
-      transport: "ssh",
-      remoteCwd: "/remote/workspace",
-      environmentId: "env-1",
-      leaseId: "lease-1",
-      spec: {
-        host: "ssh.example.test",
-        port: 22,
-        username: "ssh-user",
-        remoteCwd: "/remote/workspace",
-        remoteWorkspacePath: "/remote/workspace",
-        privateKey: null,
-        knownHosts: null,
-        strictHostKeyChecking: true,
-      },
-    });
-
-    const runtime = makeMockRuntime({
-      realizeWorkspace: vi.fn().mockResolvedValue({
-        cwd: "/remote/workspace",
-        metadata: {
-          workspaceRealization: {
-            version: 1,
-            transport: "ssh",
-            remote: { path: "/remote/workspace" },
-          },
-        },
-      }),
-    });
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    await orchestrator.realizeForRun(makeRealizeInput({
-      environment: makeEnvironment("ssh"),
-      lease: makeLease({
-        provider: "ssh",
-        metadata: {
-          driver: "ssh",
-          remoteCwd: "/remote/workspace",
-          remoteWorkspacePath: "/remote/workspace",
-          host: "ssh.example.test",
-          port: 22,
-          username: "ssh-user",
-        },
-      }),
-    }));
-
-    expect(runtime.execute).toHaveBeenCalledWith(expect.objectContaining({
-      command: "bash",
-      args: ["-lc", "npm install -g @google/gemini-cli"],
-    }));
-    expect(mockResolveEnvironmentExecutionTarget).toHaveBeenCalledOnce();
-  });
-
-  it("surfaces remote provision command failures before resolving the adapter target", async () => {
-    mockBuildWorkspaceRealizationRequest.mockReturnValue({
-      version: 1,
-      adapterType: "claude_local",
-      companyId: "company-1",
-      environmentId: "env-1",
-      executionWorkspaceId: null,
-      issueId: null,
-      heartbeatRunId: "run-1",
-      requestedMode: null,
-      source: {
-        kind: "project_primary",
-        localPath: "/workspace/project",
-        projectId: null,
-        projectWorkspaceId: null,
-        repoUrl: null,
-        repoRef: null,
-        strategy: "project_primary",
-        branchName: null,
-        worktreePath: null,
-      },
-      runtimeOverlay: {
-        provisionCommand: "install-tool",
-      },
-    });
-
-    const runtime = makeMockRuntime({
-      execute: vi.fn().mockResolvedValue({
-        exitCode: 127,
-        signal: null,
-        timedOut: false,
-        stdout: "",
-        stderr: "/bin/sh: install-tool: not found\n",
-      }),
-    });
-    const orchestrator = environmentRunOrchestrator(mockDb, { environmentRuntime: runtime });
-
-    await expect(orchestrator.realizeForRun(makeRealizeInput({
-      environment: makeEnvironment("sandbox"),
-    }))).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof EnvironmentRunError &&
-        err.code === "workspace_realization_failed" &&
-        String(err.message).includes("install-tool: not found"),
-    );
-
-    expect(mockResolveEnvironmentExecutionTarget).not.toHaveBeenCalled();
+    expect(runtime.acquireRunLease).not.toHaveBeenCalled();
   });
 });

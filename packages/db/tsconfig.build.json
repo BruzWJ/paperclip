@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": [
+    "index.ts",
+    "schema.ts",
+    "backup-lib.ts",
+    "database-identity.ts",
+    "runtime-config.ts",
+    "schema/**/*.ts"
+  ],
+  "exclude": ["dist", "migrations", "node_modules", "tests"]
+}

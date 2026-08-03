@@ -55,6 +55,8 @@ import type {
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentSyncInParams,
   PluginEnvironmentSyncOutParams,
   PluginEnvironmentSyncResult,
@@ -150,11 +152,9 @@ export interface PluginApiRequestInput {
   query: Record<string, string | string[]>;
   body: unknown;
   actor: {
-    actorType: "user" | "agent";
+    actorType: "user";
     actorId: string;
-    agentId?: string | null;
-    userId?: string | null;
-    runId?: string | null;
+    userId: string;
   };
   companyId: string;
   headers: Record<string, string>;
@@ -260,7 +260,7 @@ export interface PluginDefinition {
   /**
    * Called for manifest-declared scoped JSON API routes under
    * `/api/plugins/:pluginId/api/*` after the host has enforced auth, company
-   * access, capabilities, and checkout policy.
+   * access, capabilities, and route scope.
    */
   onApiRequest?(input: PluginApiRequestInput): Promise<PluginApiResponse>;
 
@@ -338,6 +338,14 @@ export interface PluginDefinition {
   onEnvironmentExecute?(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult>;
+
+  /**
+   * Called to stop one exact in-flight command without releasing or
+   * destroying its provider lease.
+   */
+  onEnvironmentCancelExecution?(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult>;
 
   /**
    * Optional, opt-in: called before execution to place host files/directories at

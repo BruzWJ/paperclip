@@ -3,9 +3,7 @@ import {
   issueChatLongThreadAgentMap,
   issueChatLongThreadComments,
   issueChatLongThreadEvents,
-  issueChatLongThreadLinkedRuns,
   issueChatLongThreadMarkdownCommentIds,
-  issueChatLongThreadTranscriptsByRunId,
   LONG_THREAD_COMMENT_COUNT,
   LONG_THREAD_MARKDOWN_COMMENT_COUNT,
 } from "./issueChatLongThreadFixture";
@@ -16,12 +14,8 @@ describe("issueChatLongThreadFixture", () => {
     const messages = buildIssueChatMessages({
       comments: issueChatLongThreadComments,
       timelineEvents: issueChatLongThreadEvents,
-      linkedRuns: issueChatLongThreadLinkedRuns,
-      liveRuns: [],
       agentMap: issueChatLongThreadAgentMap,
       currentUserId: "user-board",
-      transcriptsByRunId: issueChatLongThreadTranscriptsByRunId,
-      hasOutputForRun: (runId) => issueChatLongThreadTranscriptsByRunId.has(runId),
     });
 
     expect(issueChatLongThreadComments).toHaveLength(LONG_THREAD_COMMENT_COUNT);

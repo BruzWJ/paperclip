@@ -83,7 +83,7 @@ export async function probeEnvironment(
           environment: probeEnvironmentConfig,
           issueId: null,
           agentId: null,
-          heartbeatRunId: null,
+          runId: null,
           persistedExecutionWorkspace: null,
           adapterType: null,
           applyCustomImageTemplate: options.applyCustomImageTemplate === true,

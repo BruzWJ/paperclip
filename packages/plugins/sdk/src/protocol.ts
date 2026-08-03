@@ -24,12 +24,6 @@ import type {
   Company,
   Project,
   Issue,
-  IssueComment,
-  IssueDocument,
-  IssueDocumentSummary,
-  IssueAssigneeAdapterOverrides,
-  IssueThreadInteraction,
-  CreateIssueThreadInteraction,
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
@@ -46,21 +40,24 @@ import type {
   ExternalObjectMentionConfidence,
   ExternalObjectMentionSourceKind,
   EnvSecretRefBinding,
+  ProviderSafeRunTrace,
 } from "@paperclipai/shared";
 export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
 import type {
   PluginEvent,
-  PluginIssueCheckoutOwnership,
-  PluginIssueOrchestrationSummary,
-  PluginIssueRelationSummary,
-  PluginIssueSubtree,
-  PluginIssueWakeupBatchResult,
-  PluginIssueWakeupResult,
+  PluginIssueAttentionMask,
+  PluginIssueUpdateInput,
+  PluginIssueWithdrawalResult,
+  PluginCreatorCallbackAcknowledgement,
+  PluginCreatorCallbackDelivery,
   PluginJobContext,
   PluginExecutionWorkspaceMetadata,
   PluginWorkspace,
-  ToolRunContext,
+  PluginRunContextHandle,
+  PluginRunIssueProjection,
+  PluginRunIssueCommentProjection,
+  PluginRunPage,
   ToolResult,
   PluginLocalFolderListing,
   PluginLocalFolderStatus,
@@ -271,6 +268,12 @@ export type PluginRpcErrorCode =
  */
 export interface PluginInvocationScope {
   companyId: string;
+  /**
+   * Present only for a selected company-tool invocation. The worker may echo
+   * only the enclosing invocation id; run-serving host calls must also carry
+   * the exact opaque handle from `ExecuteToolParams`.
+   */
+  pluginRunContextHandle?: PluginRunContextHandle;
 }
 
 /**
@@ -289,6 +292,12 @@ export interface PluginInvocationContext {
 export interface WorkerHostCallContext {
   invocationScope?: PluginInvocationScope | null;
   invalidInvocationScope?: boolean;
+  /**
+   * Opaque host-owned identity for this exact worker→host JSON-RPC request.
+   * Replaying the exact request retains this identity; a distinct request gets
+   * a distinct identity. Workers cannot supply or override it.
+   */
+  rpcOperationId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -393,18 +402,39 @@ export interface GetDataParams {
  */
 export type PluginPerformActionActorType = "user" | "agent" | "system";
 
-export interface PluginPerformActionActorContext {
-  /** Authenticated principal type resolved by the Paperclip host. */
-  type: PluginPerformActionActorType;
-  /** Authenticated board user id when `type === "user"`, otherwise null. */
-  userId: string | null;
-  /** Authenticated agent id when `type === "agent"`, otherwise null. */
-  agentId: string | null;
-  /** Authenticated heartbeat/run id when available. */
-  runId: string | null;
+interface PluginPerformActionActorBase {
   /** Company id authorized by the host bridge for this action, when applicable. */
   companyId: string | null;
 }
+
+export type PluginPerformActionActorContext =
+  | (
+    PluginPerformActionActorBase & {
+      /** Canonical Better Auth board principal. */
+      type: "user";
+      userId: string;
+      agentId?: never;
+      runId?: never;
+    }
+  )
+  | (
+    PluginPerformActionActorBase & {
+      /** Productive runtime principal. */
+      type: "agent";
+      agentId: string;
+      runId: string;
+      userId?: never;
+    }
+  )
+  | (
+    PluginPerformActionActorBase & {
+      /** Host-owned action with no human or runtime principal. */
+      type: "system";
+      userId?: never;
+      agentId?: never;
+      runId?: never;
+    }
+  );
 
 export interface PluginPerformActionContext {
   /** Immutable authenticated actor context supplied by the host. */
@@ -416,14 +446,115 @@ export interface PluginPerformActionContext {
 export interface PerformActionParams {
   /** Plugin-defined action key (e.g. `"resync"`). */
   key: string;
-  /** Host-authorized active company scope, when this bridge call is company-scoped. */
-  companyId?: string | null;
   /** Action parameters from the UI. */
   params: Record<string, unknown>;
   /** Authenticated actor context resolved by the host, never by caller params. */
-  actorContext?: PluginPerformActionActorContext | null;
+  actorContext: PluginPerformActionActorContext;
   /** Optional launcher/container metadata from the host render environment. */
   renderEnvironment?: PluginLauncherRenderContextSnapshot | null;
+}
+
+const PERFORM_ACTION_ACTOR_KEYS = {
+  user: ["type", "userId", "companyId"],
+  agent: ["type", "agentId", "runId", "companyId"],
+  system: ["type", "companyId"],
+} as const satisfies Record<PluginPerformActionActorType, readonly string[]>;
+
+function invalidPerformActionActorContext(message: string): never {
+  throw Object.assign(
+    new Error(`Invalid performAction actorContext: ${message}`),
+    { code: JSONRPC_ERROR_CODES.INVALID_PARAMS },
+  );
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  return actual.length === canonical.length
+    && actual.every((key, index) => key === canonical[index]);
+}
+
+/**
+ * Decode the host-authenticated actor supplied to `performAction`.
+ *
+ * The three branches are deliberately exact. Missing, nullable, mixed, blank,
+ * or extended actor shapes are invalid JSON-RPC parameters and never reach a
+ * plugin action handler.
+ */
+export function decodePluginPerformActionActorContext(
+  value: unknown,
+): PluginPerformActionActorContext {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidPerformActionActorContext("an exact actor object is required");
+  }
+
+  const actor = value as Record<string, unknown>;
+  const companyId = actor.companyId;
+  if (companyId !== null && !isNonBlankString(companyId)) {
+    return invalidPerformActionActorContext(
+      '"companyId" must be null or a non-blank string',
+    );
+  }
+
+  if (actor.type === "user") {
+    if (!hasExactKeys(actor, PERFORM_ACTION_ACTOR_KEYS.user)) {
+      return invalidPerformActionActorContext(
+        'the "user" branch accepts exactly type, userId, and companyId',
+      );
+    }
+    if (!isNonBlankString(actor.userId)) {
+      return invalidPerformActionActorContext(
+        '"userId" must be a non-blank string for a user actor',
+      );
+    }
+    return {
+      type: "user",
+      userId: actor.userId,
+      companyId,
+    };
+  }
+
+  if (actor.type === "agent") {
+    if (!hasExactKeys(actor, PERFORM_ACTION_ACTOR_KEYS.agent)) {
+      return invalidPerformActionActorContext(
+        'the "agent" branch accepts exactly type, agentId, runId, and companyId',
+      );
+    }
+    if (!isNonBlankString(actor.agentId) || !isNonBlankString(actor.runId)) {
+      return invalidPerformActionActorContext(
+        '"agentId" and "runId" must be non-blank strings for an agent actor',
+      );
+    }
+    return {
+      type: "agent",
+      agentId: actor.agentId,
+      runId: actor.runId,
+      companyId,
+    };
+  }
+
+  if (actor.type === "system") {
+    if (!hasExactKeys(actor, PERFORM_ACTION_ACTOR_KEYS.system)) {
+      return invalidPerformActionActorContext(
+        'the "system" branch accepts exactly type and companyId',
+      );
+    }
+    return {
+      type: "system",
+      companyId,
+    };
+  }
+
+  return invalidPerformActionActorContext(
+    '"type" must be exactly "user", "agent", or "system"',
+  );
 }
 
 /**
@@ -436,8 +567,8 @@ export interface ExecuteToolParams {
   toolName: string;
   /** Parsed parameters matching the tool's declared schema. */
   parameters: unknown;
-  /** Agent run context. */
-  runContext: ToolRunContext;
+  /** Opaque host-minted context for this exact compiled company-tool call. */
+  runContextHandle: PluginRunContextHandle;
 }
 
 export interface PluginExternalObjectUrlCandidate {
@@ -633,6 +764,12 @@ export interface PluginEnvironmentRealizeWorkspaceResult {
 
 export interface PluginEnvironmentExecuteParams extends PluginEnvironmentDriverBaseParams {
   lease: PluginEnvironmentLease;
+  /**
+   * Opaque host-owned identity for this exact command invocation. Providers
+   * use it only to correlate exact cancellation; it must never be copied into
+   * the command environment, stdin, or provider-visible model input.
+   */
+  executionId: string;
   command: string;
   args?: string[];
   cwd?: string;
@@ -648,6 +785,25 @@ export interface PluginEnvironmentExecuteResult {
   stdout: string;
   stderr: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface PluginEnvironmentCancelExecutionParams extends PluginEnvironmentDriverBaseParams {
+  lease: PluginEnvironmentLease;
+  /** Exact host-owned command identity previously passed to environmentExecute. */
+  executionId: string;
+  /** Operator/control-plane cancellation reason. Never provider/model input. */
+  reason: string;
+}
+
+export interface PluginEnvironmentCancelExecutionResult {
+  executionId: string;
+  /**
+   * True only when the exact company/environment/lease/execution tuple was
+   * acknowledged by the provider's command-level stop path. A false result
+   * means that exact identity is absent/stale; scope mismatch is never widened
+   * into lease-, workspace-, or provider-wide cancellation.
+   */
+  cancelled: boolean;
 }
 
 /**
@@ -880,6 +1036,14 @@ export interface HostToWorkerMethods {
   performAction: [params: PerformActionParams, result: unknown];
   /** @see PLUGIN_SPEC.md §13.10 */
   executeTool: [params: ExecuteToolParams, result: ToolResult];
+  "issues.creatorCallback.deliver": [
+    params: {
+      callbackKey: string;
+      callbackVersion: string;
+      delivery: PluginCreatorCallbackDelivery;
+    },
+    result: PluginCreatorCallbackAcknowledgement,
+  ];
   detectExternalObjects: [
     params: DetectExternalObjectsParams,
     result: DetectExternalObjectsResult,
@@ -923,6 +1087,10 @@ export interface HostToWorkerMethods {
   environmentExecute: [
     params: PluginEnvironmentExecuteParams,
     result: PluginEnvironmentExecuteResult,
+  ];
+  environmentCancelExecution: [
+    params: PluginEnvironmentCancelExecutionParams,
+    result: PluginEnvironmentCancelExecutionResult,
   ];
   environmentSyncIn: [
     params: PluginEnvironmentSyncInParams,
@@ -975,6 +1143,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "getData",
   "performAction",
   "executeTool",
+  "issues.creatorCallback.deliver",
   "detectExternalObjects",
   "resolveExternalObject",
   "refreshExternalObjects",
@@ -986,6 +1155,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "environmentDestroyLease",
   "environmentRealizeWorkspace",
   "environmentExecute",
+  "environmentCancelExecution",
   "environmentSyncIn",
   "environmentSyncOut",
   "environmentStartInteractiveSetup",
@@ -1297,12 +1467,8 @@ export interface WorkerToHostMethods {
     params: {
       companyId: string;
       projectId?: string;
-      assigneeAgentId?: string;
-      originKind?: string;
-      originKindPrefix?: string;
-      originId?: string;
-      status?: string;
-      includePluginOperations?: boolean;
+      ownerAgentId?: string;
+      status?: "open" | "blocked" | "done" | "cancelled";
       limit?: number;
       offset?: number;
     },
@@ -1312,180 +1478,84 @@ export interface WorkerToHostMethods {
     params: { issueId: string; companyId: string },
     result: Issue | null,
   ];
+  "issues.creatorCallback.register": [
+    params: {
+      callbackKey: string;
+      callbackVersion: string;
+    },
+    result: {
+      callbackKey: string;
+      callbackVersion: string;
+      registered: true;
+    },
+  ];
+  "run.issues.listCompanyIssues": [
+    params: {
+      runContextHandle: PluginRunContextHandle;
+      status?: "open" | "blocked" | "done" | "cancelled";
+      priority?: "critical" | "high" | "medium" | "low";
+      cursor?: string;
+      limit?: number;
+    },
+    result: PluginRunPage<PluginRunIssueProjection>,
+  ];
+  "run.issues.listSubIssues": [
+    params: {
+      runContextHandle: PluginRunContextHandle;
+      issueId?: string;
+      cursor?: string;
+      limit?: number;
+    },
+    result: PluginRunPage<PluginRunIssueProjection>,
+  ];
+  "run.issues.readIssueComments": [
+    params: {
+      runContextHandle: PluginRunContextHandle;
+      issueId?: string;
+      cursor?: string;
+      limit?: number;
+    },
+    result: PluginRunPage<PluginRunIssueCommentProjection>,
+  ];
+  "run.issues.readIssueAgentRun": [
+    params: {
+      runContextHandle: PluginRunContextHandle;
+      runId: string;
+      cursor?: string;
+    },
+    result: ProviderSafeRunTrace,
+  ];
   "issues.create": [
     params: {
       companyId: string;
+      request: string;
+      ownerAgentId: string;
+      callbackKey: string;
+      callbackVersion: string;
+      title?: string;
       projectId?: string;
       goalId?: string;
       parentId?: string;
-      inheritExecutionWorkspaceFromIssueId?: string;
-      title: string;
-      description?: string;
-      status?: string;
       priority?: string;
-      assigneeAgentId?: string;
-      assigneeUserId?: string | null;
-      requestDepth?: number;
-      billingCode?: string | null;
-      assigneeAdapterOverrides?: IssueAssigneeAdapterOverrides | null;
-      surfaceVisibility?: string | null;
-      originKind?: string | null;
-      originId?: string | null;
-      originRunId?: string | null;
-      blockedByIssueIds?: string[];
-      labelIds?: string[];
-      executionWorkspaceId?: string | null;
-      executionWorkspacePreference?: string | null;
-      executionWorkspaceSettings?: Record<string, unknown> | null;
-      actorAgentId?: string | null;
-      actorUserId?: string | null;
-      actorRunId?: string | null;
+      attentionMask?: PluginIssueAttentionMask | null;
     },
     result: Issue,
   ];
   "issues.update": [
     params: {
       issueId: string;
-      patch: Record<string, unknown>;
+      input: PluginIssueUpdateInput;
       companyId: string;
     },
     result: Issue,
   ];
-  "issues.relations.get": [
-    params: { issueId: string; companyId: string },
-    result: PluginIssueRelationSummary,
-  ];
-  "issues.relations.setBlockedBy": [
+  "issues.withdraw": [
     params: {
       issueId: string;
       companyId: string;
-      blockedByIssueIds: string[];
-      actorAgentId?: string | null;
-      actorUserId?: string | null;
-      actorRunId?: string | null;
+      message: string;
     },
-    result: PluginIssueRelationSummary,
-  ];
-  "issues.relations.addBlockers": [
-    params: {
-      issueId: string;
-      companyId: string;
-      blockerIssueIds: string[];
-      actorAgentId?: string | null;
-      actorUserId?: string | null;
-      actorRunId?: string | null;
-    },
-    result: PluginIssueRelationSummary,
-  ];
-  "issues.relations.removeBlockers": [
-    params: {
-      issueId: string;
-      companyId: string;
-      blockerIssueIds: string[];
-      actorAgentId?: string | null;
-      actorUserId?: string | null;
-      actorRunId?: string | null;
-    },
-    result: PluginIssueRelationSummary,
-  ];
-  "issues.assertCheckoutOwner": [
-    params: {
-      issueId: string;
-      companyId: string;
-      actorAgentId: string;
-      actorRunId: string;
-    },
-    result: PluginIssueCheckoutOwnership,
-  ];
-  "issues.getSubtree": [
-    params: {
-      issueId: string;
-      companyId: string;
-      includeRoot?: boolean;
-      includeRelations?: boolean;
-      includeDocuments?: boolean;
-      includeActiveRuns?: boolean;
-      includeAssignees?: boolean;
-    },
-    result: PluginIssueSubtree,
-  ];
-  "issues.requestWakeup": [
-    params: {
-      issueId: string;
-      companyId: string;
-      reason?: string;
-      contextSource?: string;
-      idempotencyKey?: string | null;
-      actorAgentId?: string | null;
-      actorUserId?: string | null;
-      actorRunId?: string | null;
-    },
-    result: PluginIssueWakeupResult,
-  ];
-  "issues.requestWakeups": [
-    params: {
-      issueIds: string[];
-      companyId: string;
-      reason?: string;
-      contextSource?: string;
-      idempotencyKeyPrefix?: string | null;
-      actorAgentId?: string | null;
-      actorUserId?: string | null;
-      actorRunId?: string | null;
-    },
-    result: PluginIssueWakeupBatchResult[],
-  ];
-  "issues.summaries.getOrchestration": [
-    params: {
-      issueId: string;
-      companyId: string;
-      includeSubtree?: boolean;
-      billingCode?: string | null;
-    },
-    result: PluginIssueOrchestrationSummary,
-  ];
-  "issues.listComments": [
-    params: { issueId: string; companyId: string },
-    result: IssueComment[],
-  ];
-  "issues.createComment": [
-    params: { issueId: string; body: string; companyId: string; authorAgentId?: string },
-    result: IssueComment,
-  ];
-  "issues.createInteraction": [
-    params: {
-      issueId: string;
-      companyId: string;
-      interaction: CreateIssueThreadInteraction;
-      authorAgentId?: string | null;
-    },
-    result: IssueThreadInteraction,
-  ];
-
-  // Issue Documents
-  "issues.documents.list": [
-    params: { issueId: string; companyId: string },
-    result: IssueDocumentSummary[],
-  ];
-  "issues.documents.get": [
-    params: { issueId: string; key: string; companyId: string },
-    result: IssueDocument | null,
-  ];
-  "issues.documents.upsert": [
-    params: {
-      issueId: string;
-      key: string;
-      body: string;
-      companyId: string;
-      title?: string;
-      format?: string;
-      changeSummary?: string;
-    },
-    result: IssueDocument,
-  ];
-  "issues.documents.delete": [
-    params: { issueId: string; key: string; companyId: string },
-    result: void,
+    result: PluginIssueWithdrawalResult,
   ];
 
   // Agents (read)
@@ -1507,10 +1577,6 @@ export interface WorkerToHostMethods {
     params: { agentId: string; companyId: string },
     result: Agent,
   ];
-  "agents.invoke": [
-    params: { agentId: string; companyId: string; prompt: string; reason?: string },
-    result: { runId: string },
-  ];
   "agents.managed.get": [
     params: { agentKey: string; companyId: string },
     result: PluginManagedAgentResolution,
@@ -1522,24 +1588,6 @@ export interface WorkerToHostMethods {
   "agents.managed.reset": [
     params: { agentKey: string; companyId: string },
     result: PluginManagedAgentResolution,
-  ];
-
-  // Agent Sessions
-  "agents.sessions.create": [
-    params: { agentId: string; companyId: string; taskKey?: string; reason?: string },
-    result: { sessionId: string; agentId: string; companyId: string; status: "active" | "closed"; createdAt: string },
-  ];
-  "agents.sessions.list": [
-    params: { agentId: string; companyId: string },
-    result: Array<{ sessionId: string; agentId: string; companyId: string; status: "active" | "closed"; createdAt: string }>,
-  ];
-  "agents.sessions.sendMessage": [
-    params: { sessionId: string; companyId: string; prompt: string; reason?: string },
-    result: { runId: string },
-  ];
-  "agents.sessions.close": [
-    params: { sessionId: string; companyId: string },
-    result: void,
   ];
 
   // Goals

@@ -14,7 +14,6 @@ export interface AgentConfigOverlay {
   identity: Record<string, unknown>;
   adapterType?: string;
   adapterConfig: Record<string, unknown>;
-  heartbeat: Record<string, unknown>;
   runtime: Record<string, unknown>;
   modelProfiles?: { cheap?: AgentModelProfileOverlay };
 }
@@ -60,15 +59,10 @@ export function buildAgentUpdatePatch(agent: Agent, overlay: AgentConfigOverlay)
   const cheapOverlay = overlay.modelProfiles?.cheap;
   const hasModelProfileChange = cheapOverlay !== undefined;
 
-  if (Object.keys(overlay.heartbeat).length > 0 || hasModelProfileChange) {
+  if (hasModelProfileChange) {
     const existingRc = (agent.runtimeConfig ?? {}) as Record<string, unknown>;
     const nextRuntimeConfig: Record<string, unknown> = (patch.runtimeConfig as Record<string, unknown> | undefined)
       ?? { ...existingRc };
-
-    if (Object.keys(overlay.heartbeat).length > 0) {
-      const existingHb = (existingRc.heartbeat ?? {}) as Record<string, unknown>;
-      nextRuntimeConfig.heartbeat = { ...existingHb, ...overlay.heartbeat };
-    }
 
     if (hasModelProfileChange) {
       const existingProfiles = ((existingRc.modelProfiles ?? {}) as Record<string, unknown>);

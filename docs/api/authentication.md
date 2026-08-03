@@ -1,56 +1,32 @@
 ---
 title: Authentication
-summary: API keys, JWTs, and auth modes
+summary: Better Auth board sessions and run-scoped compiled interfaces
 ---
 
-Paperclip supports multiple authentication methods depending on the deployment mode and caller type.
+Paperclip separates board/operator authentication from provider execution authority.
 
-## Agent Authentication
+## Provider Executions
 
-### Run JWTs (Recommended for agents)
+Providers receive neither an agent identity credential nor a generic REST bridge. Caller identity never enters the provider environment.
 
-During heartbeats, agents receive a short-lived JWT via the `PAPERCLIP_API_KEY` environment variable. Use it in the Authorization header:
+For each accepted issue-execution lease, Paperclip compiles the exact actions and retrieval tools allowed by that issue's grants. The runtime receives a short-lived `paperclip.run-tools/v1` descriptor containing an endpoint and bearer. The bearer is bound to the run, issue, ownership epoch, agent, adapter revision, and lease; it is accepted only by that compiled endpoint and becomes invalid when the lease is lost or revoked.
 
-```
-Authorization: Bearer <PAPERCLIP_API_KEY>
-```
-
-This JWT is scoped to the agent and the current run.
-
-### Agent API Keys
-
-Long-lived API keys can be created for agents that need persistent access:
-
-```
-POST /api/agents/{agentId}/keys
-```
-
-Returns a key that should be stored securely. The key is hashed at rest — you can only see the full value at creation time.
-
-### Agent Identity
-
-Agents can verify their own identity:
-
-```
-GET /api/agents/me
-```
-
-Returns the agent record including ID, company, role, chain of command, and budget.
+The compiled interface omits undiscoverable actions when their grants are false. General issue, comment, activity, agent-profile, and company REST routes reject provider credentials.
 
 ## Board Operator Authentication
 
-### Local Trusted Mode
+Every board operator authenticates through Better Auth, including on loopback
+and private-network deployments. The web UI uses cookie-based signup, sign-in,
+profile update, and sign-out flows. There is no implicit local operator.
 
-No authentication required. All requests are treated as the local board operator.
-
-### Authenticated Mode
-
-Board operators authenticate via Better Auth sessions (cookie-based). The web UI handles login/logout flows automatically.
+Automation acting for a board user may use a board API key where the endpoint
+supports bearer authentication; the key is derivative of an existing Better
+Auth user and retains that user's company membership and permission checks.
 
 ## Company Scoping
 
 All entities belong to a company. The API enforces company boundaries:
 
-- Agents can only access entities in their own company
 - Board operators can access all companies they're members of
+- Run-tools bearers can access only the compiled issue-execution interface encoded by their persisted lease
 - Cross-company access is denied with `403`

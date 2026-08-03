@@ -4,30 +4,14 @@
 // instrumentationReady before opening DB connections or constructing the
 // HTTP server, so trace coverage does not depend on incidental timing.
 import { instrumentationReady, shutdownInstrumentation } from "./instrumentation.js";
-import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
 import type { Request as ExpressRequest, RequestHandler } from "express";
-import { and, eq } from "drizzle-orm";
 import {
   createDb,
-  ensurePostgresDatabase,
-  formatEmbeddedPostgresError,
-  getPostgresDataDirectory,
-  inspectMigrations,
-  applyPendingMigrations,
-  createEmbeddedPostgresLogBuffer,
-  prepareEmbeddedPostgresNativeRuntime,
-  reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
-  authUsers,
-  companies,
-  companyMemberships,
-  instanceUserRoles,
 } from "@paperclipai/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
@@ -37,38 +21,71 @@ import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/e
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
   feedbackService,
-  backfillPrincipalAccessCompatibility,
-  backfillLegacyToolOAuthTokens,
   bootstrapExecutionPolicyFromEnv,
   environmentCustomImageService,
-  heartbeatService,
+  composeRuntimeActionPort,
+  createOrdinaryIssueRuntime,
+  createPostgresCreatorDeliveryService,
+  createPostgresSystemEscalationService,
+  createPostgresIssueExecutionProductionRuntime,
+  createPostgresSessionCompactionProvider,
+  createPostgresIssueSessionCompositionRuntime,
+  createIssueSessionStore,
+  createPostgresRuntimeIssueActionService,
+  type PostgresRuntimeIssueActionServiceOptions,
+  createRuntimeAgentActionPort,
+  createRuntimeAgentConfigurationService,
+  createRuntimeIssueActionPort,
   instanceSettingsService,
-  reconcileBuiltInAgentsOnStartup,
   reconcileCloudUpstreamRunsOnStartup,
-  reconcileCodexLocalManagedHomesOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
   toolAccessService,
 } from "./services/index.js";
-import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
   reconcileAdapterAvailability,
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
-import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
+import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { createDevServerRestartCoordinator } from "./services/dev-server-restart-coordinator.js";
+import { environmentRuntimeService } from "./services/environment-runtime.js";
+import { environmentRunOrchestrator } from "./services/environment-run-orchestrator.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
-import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
-import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
+import { maybePersistWorktreeServerPort } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 import { conflict } from "./errors.js";
-import { coordinateHeartbeatSchedulerShutdown } from "./shutdown.js";
+import { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
+import { deriveInstancePrivateSecret } from "./secrets/local-encrypted-provider.js";
+import type { ToolGatewayService } from "./services/tool-gateway.js";
+import type { RuntimeCompanyToolPort } from "./services/runtime-tool-executor.js";
+import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
 import type {
   InstanceDatabaseBackupRunResult,
   InstanceDatabaseBackupTrigger,
 } from "./routes/instance-database-backups.js";
+import type { RequestAuthorityBoundary } from "./http/request-authority.js";
+import {
+  agentProfileChangeTargetKey,
+  CHANGE_CONSENT_DEFAULT_TTL_MS,
+  changeConsentGateService,
+  consumeAcceptedChangeConsentInTransaction,
+} from "./services/change-consent-gate.js";
+
+export {
+  appendCanonicalControlNotice,
+  appendCanonicalUserComment,
+  type CanonicalControlNoticeInput,
+  type CanonicalUserCommentInput,
+} from "./services/issue-session-producers.js";
+export {
+  persistCanonicalIssueAggregateInTx,
+  CanonicalIssueAggregateRejected,
+  type CanonicalIssueAggregateInput,
+} from "./services/canonical-issue-aggregate.js";
+export { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -81,23 +98,36 @@ type BetterAuthSessionResult = {
   user: BetterAuthSessionUser | null;
 };
 
-type EmbeddedPostgresInstance = {
-  initialise(): Promise<void>;
-  start(): Promise<void>;
-  stop(): Promise<void>;
-};
+type CausalRuntimeStartupAssembly = Pick<
+  PostgresRuntimeIssueActionServiceOptions,
+  | "dispatchPersistedRef"
+  | "notifyCreatorDelivery"
+  | "executeMention"
+  | "issueExecutionCancellation"
+  | "runService"
+>;
 
-type EmbeddedPostgresCtor = new (opts: {
-  databaseDir: string;
-  user: string;
-  password: string;
-  port: number;
-  persistent: boolean;
-  initdbFlags?: string[];
-  onLog?: (message: unknown) => void;
-  onError?: (message: unknown) => void;
-}) => EmbeddedPostgresInstance;
+/**
+ * Resolves a construction-time dependency cycle without a nullable callback,
+ * no-op implementation, or late failure. The assembly is completed before
+ * routes, recovery, schedulers, or the HTTP listener can submit work.
+ */
+function createStartupAssembly<T>() {
+  let complete!: (assembly: T) => void;
+  const ready = new Promise<T>((resolveReady) => {
+    complete = resolveReady;
+  });
+  return { ready, complete };
+}
 
+async function closeDatabaseClient(database: unknown): Promise<void> {
+  const client = (database as {
+    $client?: { end?: (options?: { timeout?: number }) => Promise<void> };
+  }).$client;
+  if (client?.end) {
+    await client.end({ timeout: 5 });
+  }
+}
 
 export interface StartedServer {
   server: ReturnType<typeof createServer>;
@@ -123,474 +153,49 @@ export async function startServer(): Promise<StartedServer> {
     process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
   }
   
-  type MigrationSummary =
-    | "skipped"
-    | "already applied"
-    | "applied (empty database)"
-    | "applied (pending migrations)";
-  
-  function formatPendingMigrationSummary(migrations: string[]): string {
-    if (migrations.length === 0) return "none";
-    return migrations.length > 3
-      ? `${migrations.slice(0, 3).join(", ")} (+${migrations.length - 3} more)`
-      : migrations.join(", ");
-  }
-  
-  async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
-    if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
-    if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
-    if (!stdin.isTTY || !stdout.isTTY) return true;
-  
-    const prompt = createInterface({ input: stdin, output: stdout });
-    try {
-      const answer = (await prompt.question(
-        `Apply pending migrations (${formatPendingMigrationSummary(migrations)}) now? (y/N): `,
-      )).trim().toLowerCase();
-      return answer === "y" || answer === "yes";
-    } finally {
-      prompt.close();
-    }
-  }
-  
-  type EnsureMigrationsOptions = {
-    autoApply?: boolean;
-  };
-  
-  async function ensureMigrations(
-    connectionString: string,
-    label: string,
-    opts?: EnsureMigrationsOptions,
-  ): Promise<MigrationSummary> {
-    const autoApply = opts?.autoApply === true;
-    let state = await inspectMigrations(connectionString);
-    if (state.status === "needsMigrations" && state.reason === "pending-migrations") {
-      const repair = await reconcilePendingMigrationHistory(connectionString);
-      if (repair.repairedMigrations.length > 0) {
-        logger.warn(
-          { repairedMigrations: repair.repairedMigrations },
-          `${label} had drifted migration history; repaired migration journal entries from existing schema state.`,
-        );
-        state = await inspectMigrations(connectionString);
-        if (state.status === "upToDate") return "already applied";
-      }
-    }
-    if (state.status === "upToDate") return "already applied";
-    if (state.status === "needsMigrations" && state.reason === "no-migration-journal-non-empty-db") {
-      logger.warn(
-        { tableCount: state.tableCount },
-        `${label} has existing tables but no migration journal. Run migrations manually to sync schema.`,
-      );
-      const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
-      if (!apply) {
-        throw new Error(
-          `${label} has pending migrations (${formatPendingMigrationSummary(state.pendingMigrations)}). ` +
-            "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
-        );
-      }
-  
-      logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-      await applyPendingMigrations(connectionString);
-      return "applied (pending migrations)";
-    }
-  
-    const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
-    if (!apply) {
-      throw new Error(
-        `${label} has pending migrations (${formatPendingMigrationSummary(state.pendingMigrations)}). ` +
-          "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
-      );
-    }
-  
-    logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-    await applyPendingMigrations(connectionString);
-    return "applied (pending migrations)";
-  }
-  
-  function isLoopbackHost(host: string): boolean {
-    const normalized = host.trim().toLowerCase();
-    return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
-  }
+  const activeDatabaseConnectionString = config.databaseUrl;
+  const db = createDb(activeDatabaseConnectionString);
+  const pluginMigrationDb = config.databaseMigrationUrl
+    ? createDb(config.databaseMigrationUrl)
+    : db;
+  const devServerRestartCoordinator = createDevServerRestartCoordinator(db);
+  const startupDbInfo = { connectionString: activeDatabaseConnectionString };
+  logger.info(
+    { databaseTargetSource: config.databaseTargetSource },
+    "Using externally provisioned PostgreSQL",
+  );
 
-  function isPostgresConnectionString(connectionString: string): boolean {
-    try {
-      const parsed = new URL(connectionString);
-      return parsed.protocol === "postgres:" || parsed.protocol === "postgresql:";
-    } catch {
-      return false;
-    }
-  }
-
-  function assertCloudDatabaseContract(): void {
-    if (config.deploymentMode !== "authenticated" || config.deploymentExposure !== "public") {
-      return;
-    }
-    if (!config.databaseUrl) {
-      throw new Error(
-        "authenticated public deployments require DATABASE_URL or config.database.connectionString; refusing embedded PostgreSQL fallback",
-      );
-    }
-    if (!isPostgresConnectionString(config.databaseUrl)) {
-      throw new Error(
-        "authenticated public deployments require DATABASE_URL to be a postgres/postgresql connection string",
-      );
-    }
-  }
-
-  function rewriteLocalUrlPort(rawUrl: string | undefined, port: number): string | undefined {
-    if (!rawUrl) return undefined;
-    try {
-      const parsed = new URL(rawUrl);
-      // The URL API normalizes default ports like :80/:443 to "", so treat them as stable URLs.
-      if (!parsed.port) return rawUrl;
-      parsed.port = String(port);
-      return parsed.toString();
-    } catch {
-      return rawUrl;
-    }
-  }
-  
-  const LOCAL_BOARD_USER_ID = "local-board";
-  const LOCAL_BOARD_USER_EMAIL = "local@paperclip.local";
-  const LOCAL_BOARD_USER_NAME = "Board";
-  
-  async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
-    const now = new Date();
-    const existingUser = await db
-      .select({ id: authUsers.id })
-      .from(authUsers)
-      .where(eq(authUsers.id, LOCAL_BOARD_USER_ID))
-      .then((rows: Array<{ id: string }>) => rows[0] ?? null);
-  
-    if (!existingUser) {
-      await db.insert(authUsers).values({
-        id: LOCAL_BOARD_USER_ID,
-        name: LOCAL_BOARD_USER_NAME,
-        email: LOCAL_BOARD_USER_EMAIL,
-        emailVerified: true,
-        image: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-  
-    const role = await db
-      .select({ id: instanceUserRoles.id })
-      .from(instanceUserRoles)
-      .where(and(eq(instanceUserRoles.userId, LOCAL_BOARD_USER_ID), eq(instanceUserRoles.role, "instance_admin")))
-      .then((rows: Array<{ id: string }>) => rows[0] ?? null);
-    if (!role) {
-      await db.insert(instanceUserRoles).values({
-        userId: LOCAL_BOARD_USER_ID,
-        role: "instance_admin",
-      });
-    }
-  
-    const companyRows = await db.select({ id: companies.id }).from(companies);
-    for (const company of companyRows) {
-      const membership = await db
-        .select({ id: companyMemberships.id })
-        .from(companyMemberships)
-        .where(
-          and(
-            eq(companyMemberships.companyId, company.id),
-            eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, LOCAL_BOARD_USER_ID),
-          ),
-        )
-        .then((rows: Array<{ id: string }>) => rows[0] ?? null);
-      if (membership) continue;
-      await db.insert(companyMemberships).values({
-        companyId: company.id,
-        principalType: "user",
-        principalId: LOCAL_BOARD_USER_ID,
-        status: "active",
-        membershipRole: "owner",
-      });
-    }
-  }
-  
-  let db;
-  let pluginMigrationDb;
-  let embeddedPostgres: EmbeddedPostgresInstance | null = null;
-  let embeddedPostgresStartedByThisProcess = false;
-  let migrationSummary: MigrationSummary = "skipped";
-  let activeDatabaseConnectionString: string;
-  let resolvedEmbeddedPostgresPort: number | null = null;
-  let startupDbInfo:
-    | { mode: "external-postgres"; connectionString: string }
-    | { mode: "embedded-postgres"; dataDir: string; port: number };
-  assertCloudDatabaseContract();
-  if (config.databaseUrl) {
-    const migrationUrl = config.databaseMigrationUrl ?? config.databaseUrl;
-    migrationSummary = await ensureMigrations(migrationUrl, "PostgreSQL");
-  
-    db = createDb(config.databaseUrl);
-    pluginMigrationDb = config.databaseMigrationUrl ? createDb(config.databaseMigrationUrl) : db;
-    logger.info("Using external PostgreSQL via DATABASE_URL/config");
-    activeDatabaseConnectionString = config.databaseUrl;
-    startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
-  } else {
-    const moduleName = "embedded-postgres";
-    let EmbeddedPostgres: EmbeddedPostgresCtor;
-    try {
-      const mod = await import(moduleName);
-      EmbeddedPostgres = mod.default as EmbeddedPostgresCtor;
-    } catch {
-      throw new Error(
-        "Embedded PostgreSQL mode requires dependency `embedded-postgres`. Reinstall dependencies (without omitting required packages), or set DATABASE_URL for external Postgres.",
-      );
-    }
-    await prepareEmbeddedPostgresNativeRuntime();
-  
-    const dataDir = resolve(config.embeddedPostgresDataDir);
-    const configuredPort = config.embeddedPostgresPort;
-    let port = configuredPort;
-    const logBuffer = createEmbeddedPostgresLogBuffer(120);
-    const verboseEmbeddedPostgresLogs = process.env.PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE === "true";
-    const appendEmbeddedPostgresLog = (message: unknown) => {
-      logBuffer.append(message);
-      if (!verboseEmbeddedPostgresLogs) {
-        return;
-      }
-      const lines = typeof message === "string"
-        ? message.split(/\r?\n/)
-        : message instanceof Error
-          ? [message.message]
-          : [String(message ?? "")];
-      for (const lineRaw of lines) {
-        const line = lineRaw.trim();
-        if (!line) continue;
-        logger.info({ embeddedPostgresLog: line }, "embedded-postgres");
-      }
-    };
-    const logEmbeddedPostgresFailure = (phase: "initialise" | "start", err: unknown) => {
-      const recentLogs = logBuffer.getRecentLogs();
-      if (recentLogs.length > 0) {
-        logger.error(
-          {
-            phase,
-            recentLogs,
-            err,
-          },
-          "Embedded PostgreSQL failed; showing buffered startup logs",
-        );
-      }
-    };
-  
-    if (config.databaseMode === "postgres") {
-      logger.warn("Database mode is postgres but no connection string was set; falling back to embedded PostgreSQL");
-    }
-  
-    const clusterVersionFile = resolve(dataDir, "PG_VERSION");
-    const clusterAlreadyInitialized = existsSync(clusterVersionFile);
-    const postmasterPidFile = resolve(dataDir, "postmaster.pid");
-    const isPidRunning = (pid: number): boolean => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-  
-    const getRunningPid = (): number | null => {
-      if (!existsSync(postmasterPidFile)) return null;
-      try {
-        const pidLine = readFileSync(postmasterPidFile, "utf8").split("\n")[0]?.trim();
-        const pid = Number(pidLine);
-        if (!Number.isInteger(pid) || pid <= 0) return null;
-        if (!isPidRunning(pid)) return null;
-        return pid;
-      } catch {
-        return null;
-      }
-    };
-  
-    const runningPid = getRunningPid();
-    if (runningPid) {
-      logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
-    } else {
-      const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
-      try {
-        const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
-        if (
-          typeof actualDataDir !== "string" ||
-          resolve(actualDataDir) !== resolve(dataDir)
-        ) {
-          throw new Error("reachable postgres does not use the expected embedded data directory");
-        }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "paperclip");
-        logger.warn(
-          `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
-        );
-      } catch {
-        const detectedPort = await detectPort(configuredPort);
-        if (detectedPort !== configuredPort) {
-          logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
-        }
-        port = detectedPort;
-        logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
-        embeddedPostgres = new EmbeddedPostgres({
-          databaseDir: dataDir,
-          user: "paperclip",
-          password: "paperclip",
-          port,
-          persistent: true,
-          initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
-          onLog: appendEmbeddedPostgresLog,
-          onError: appendEmbeddedPostgresLog,
-        });
-
-        if (!clusterAlreadyInitialized) {
-          try {
-            await embeddedPostgres.initialise();
-          } catch (err) {
-            logEmbeddedPostgresFailure("initialise", err);
-            throw formatEmbeddedPostgresError(err, {
-              fallbackMessage: `Failed to initialize embedded PostgreSQL cluster in ${dataDir} on port ${port}`,
-              recentLogs: logBuffer.getRecentLogs(),
-            });
-          }
-        } else {
-          logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
-        }
-
-        if (existsSync(postmasterPidFile)) {
-          logger.warn("Removing stale embedded PostgreSQL lock file");
-          rmSync(postmasterPidFile, { force: true });
-        }
-        try {
-          await embeddedPostgres.start();
-        } catch (err) {
-          logEmbeddedPostgresFailure("start", err);
-          throw formatEmbeddedPostgresError(err, {
-            fallbackMessage: `Failed to start embedded PostgreSQL on port ${port}`,
-            recentLogs: logBuffer.getRecentLogs(),
-          });
-        }
-        embeddedPostgresStartedByThisProcess = true;
-      }
-    }
-  
-    const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
-    if (dbStatus === "created") {
-      logger.info("Created embedded PostgreSQL database: paperclip");
-    }
-  
-    const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
-    const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
-    if (shouldAutoApplyFirstRunMigrations) {
-      logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
-    }
-    migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL", {
-      autoApply: shouldAutoApplyFirstRunMigrations,
-    });
-  
-    db = createDb(embeddedConnectionString);
-    pluginMigrationDb = db;
-    logger.info("Embedded PostgreSQL ready");
-    activeDatabaseConnectionString = embeddedConnectionString;
-    resolvedEmbeddedPostgresPort = port;
-    startupDbInfo = { mode: "embedded-postgres", dataDir, port };
-  }
-  
-  if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
-    throw new Error(
-      `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
-        "Use authenticated mode for non-loopback deployments.",
-    );
-  }
-  
-  if (config.deploymentMode === "local_trusted" && config.deploymentExposure !== "private") {
-    throw new Error("local_trusted mode only supports private exposure");
-  }
-  
-  if (config.deploymentMode === "authenticated") {
-    if (config.authBaseUrlMode === "explicit" && !config.authPublicBaseUrl) {
-      throw new Error("auth.baseUrlMode=explicit requires auth.publicBaseUrl");
-    }
-    if (config.deploymentExposure === "public") {
-      if (config.authBaseUrlMode !== "explicit") {
-        throw new Error("authenticated public exposure requires auth.baseUrlMode=explicit");
-      }
-      if (!config.authPublicBaseUrl) {
-        throw new Error("authenticated public exposure requires auth.publicBaseUrl");
-      }
-    }
+  if (config.deploymentExposure === "public" && !config.authPublicBaseUrl) {
+    throw new Error("public exposure requires PAPERCLIP_PUBLIC_URL or persisted auth.publicBaseUrl");
   }
 
   const requestedListenPort = config.port;
   const listenPort = await detectPort(requestedListenPort);
-  if (config.authBaseUrlMode === "explicit" && config.authPublicBaseUrl) {
-    config.authPublicBaseUrl = rewriteLocalUrlPort(config.authPublicBaseUrl, listenPort);
-  }
   
-  let authReady = config.deploymentMode === "local_trusted";
-  let betterAuthHandler: RequestHandler | undefined;
-  let resolveSession:
-    | ((req: ExpressRequest) => Promise<BetterAuthSessionResult | null>)
-    | undefined;
-  let resolveSessionFromHeaders:
-    | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
-    | undefined;
-  if (config.deploymentMode === "local_trusted") {
-    await ensureLocalTrustedBoardPrincipal(db as any);
-  }
-  const accessBackfill = await backfillPrincipalAccessCompatibility(db as any);
-  if (accessBackfill.agentMembershipsInserted > 0 || accessBackfill.humanGrantsInserted > 0) {
-    logger.info(accessBackfill, "Backfilled principal access compatibility records");
-  }
-  const toolOAuthBackfill = await backfillLegacyToolOAuthTokens(db as any);
-  if (toolOAuthBackfill.sanitizedConnections > 0 || toolOAuthBackfill.migratedConnections > 0) {
-    logger.info(toolOAuthBackfill, "Backfilled legacy tool OAuth credentials into company secrets");
-  }
-  if (config.deploymentMode === "authenticated") {
-    const {
-      createBetterAuthHandler,
-      createBetterAuthInstance,
-      deriveAuthTrustedOrigins,
-      resolveBetterAuthSession,
-      resolveBetterAuthSessionFromHeaders,
-    } = await import("./auth/better-auth.js");
-    const derivedTrustedOrigins = deriveAuthTrustedOrigins(config, { listenPort });
-    const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
-    const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
-    logger.info(
-      {
-        authBaseUrlMode: config.authBaseUrlMode,
-        authPublicBaseUrl: config.authPublicBaseUrl ?? null,
-        trustedOrigins: effectiveTrustedOrigins,
-        trustedOriginsSource: {
-          derived: derivedTrustedOrigins.length,
-          env: envTrustedOrigins.length,
-        },
-      },
-      "Authenticated mode auth origin configuration",
-    );
-    const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
-    betterAuthHandler = createBetterAuthHandler(auth);
-    resolveSession = (req) => resolveBetterAuthSession(auth, req);
-    resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
-    await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
-    authReady = true;
-  }
-
-  if (resolvedEmbeddedPostgresPort !== null && resolvedEmbeddedPostgresPort !== config.embeddedPostgresPort) {
-    config.embeddedPostgresPort = resolvedEmbeddedPostgresPort;
-  }
-  maybePersistWorktreeRuntimePorts({
-    serverPort: listenPort,
-    databasePort: resolvedEmbeddedPostgresPort,
+  const {
+    createBetterAuthHandler,
+    createBetterAuthInstance,
+    resolveBetterAuthSession,
+    resolveBetterAuthSessionFromHeaders,
+  } = await import("./auth/better-auth.js");
+  const auth = createBetterAuthInstance(db as any, config);
+  const betterAuthHandler: RequestHandler = createBetterAuthHandler(auth);
+  const resolveSession = (
+    req: ExpressRequest,
+  ): Promise<BetterAuthSessionResult | null> => resolveBetterAuthSession(auth, req);
+  const resolveSessionFromHeaders = (
+    headers: Headers,
+  ): Promise<BetterAuthSessionResult | null> => resolveBetterAuthSessionFromHeaders(auth, headers);
+  const authReady = true;
+  const issueSessionStore = createIssueSessionStore(db as any, {
+    cursorSecret: deriveInstancePrivateSecret(
+      "issue-session-read-cursor",
+    ).toString("base64url"),
   });
+
+  maybePersistWorktreeServerPort({ serverPort: listenPort });
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
-  const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
-  });
   const backupSettingsSvc = instanceSettingsService(db);
   const databaseBackupMaxAgeHours = Math.max(
     1,
@@ -627,9 +232,16 @@ export async function startServer(): Promise<StartedServer> {
       // Read retention from Instance Settings (DB) so changes take effect without restart.
       const generalSettings = await backupSettingsSvc.getGeneral();
       const retention = generalSettings.backupRetention;
+      const betterAuthSecret = process.env.BETTER_AUTH_SECRET;
+      if (!betterAuthSecret?.trim()) {
+        throw new Error(
+          "BETTER_AUTH_SECRET is required to create a restorable database backup.",
+        );
+      }
 
       const result = await runDatabaseBackup({
         connectionString: activeDatabaseConnectionString,
+        betterAuthSecret,
         backupDir: config.databaseBackupDir,
         retention,
         filenamePrefix: "paperclip",
@@ -647,6 +259,10 @@ export async function startServer(): Promise<StartedServer> {
       logger.info(
         {
           backupFile: result.backupFile,
+          manifestFile: result.manifestFile,
+          manifestFormat: result.manifestFormat,
+          manifestFormatVersion: result.manifestFormatVersion,
+          payloadChecksum: result.payloadChecksum,
           sizeBytes: result.sizeBytes,
           prunedCount: result.prunedCount,
           backupDir: config.databaseBackupDir,
@@ -665,6 +281,240 @@ export async function startServer(): Promise<StartedServer> {
     }
   };
   const pluginWorkerManager = createPluginWorkerManager();
+  const runtimeListenHost = config.host;
+  const runtimeApiUrl = choosePrimaryRuntimeApiUrl({
+    authPublicBaseUrl: config.authPublicBaseUrl ?? null,
+    allowedHostnames: config.allowedHostnames,
+    bindHost: runtimeListenHost,
+    port: listenPort,
+  });
+  process.env.PAPERCLIP_LISTEN_HOST = runtimeListenHost;
+  process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
+  process.env.PAPERCLIP_RUNTIME_API_URL = runtimeApiUrl;
+
+  const workerId =
+    `paperclip-server:${process.pid}:${Date.now()}`;
+  const causalRuntimeStartup =
+    createStartupAssembly<CausalRuntimeStartupAssembly>();
+  const issueExecutionSteeringResults =
+    createIssueExecutionSteeringResultBroker();
+  const issueActions = createRuntimeIssueActionPort(
+    createPostgresRuntimeIssueActionService(db as any, {
+      async dispatchPersistedRef(refId) {
+        const runtime = await causalRuntimeStartup.ready;
+        await runtime.dispatchPersistedRef(refId);
+      },
+      async notifyCreatorDelivery(deliveryId) {
+        const runtime = await causalRuntimeStartup.ready;
+        await runtime.notifyCreatorDelivery(deliveryId);
+      },
+      async executeMention(input) {
+        const runtime = await causalRuntimeStartup.ready;
+        return runtime.executeMention(input);
+      },
+      issueExecutionCancellation: {
+        async requestScopeCancellationsInTransaction(transaction, input) {
+          const runtime = await causalRuntimeStartup.ready;
+          return runtime.issueExecutionCancellation
+            .requestScopeCancellationsInTransaction(transaction, input);
+        },
+        async reconcileRequestedScopeCancellations(requested) {
+          const runtime = await causalRuntimeStartup.ready;
+          return runtime.issueExecutionCancellation
+            .reconcileRequestedScopeCancellations(requested);
+        },
+      },
+      runService: {
+        async readRun(input) {
+          const runtime = await causalRuntimeStartup.ready;
+          return runtime.runService.readRun(input);
+        },
+        async lockRun(transaction, input) {
+          const runtime = await causalRuntimeStartup.ready;
+          return runtime.runService.lockRun(transaction, input);
+        },
+        async requestSteeringInTransaction(transaction, input) {
+          const runtime = await causalRuntimeStartup.ready;
+          return runtime.runService.requestSteeringInTransaction(
+            transaction,
+            input,
+          );
+        },
+        async continuePendingSteeringForSource(input) {
+          const runtime = await causalRuntimeStartup.ready;
+          return runtime.runService.continuePendingSteeringForSource(
+            input,
+          );
+        },
+      },
+      issueExecutionSteeringResults,
+    }),
+  );
+  const changeConsents = changeConsentGateService(db);
+  const agentActions = createRuntimeAgentActionPort(
+    createRuntimeAgentConfigurationService(db as any, {
+      async assertConsentedChange(
+        transaction,
+        { capability, targetAgentId, displayedDiff },
+      ) {
+        await consumeAcceptedChangeConsentInTransaction(
+          transaction,
+          {
+            companyId: capability.companyId,
+            actorAgentId: capability.targetAgentId,
+            actorRunId: capability.runId,
+            targetKeys: [
+              agentProfileChangeTargetKey(targetAgentId),
+            ],
+            displayedDiff,
+          },
+        );
+      },
+    }),
+    {
+      async requestChangeConsent({
+        capability,
+        targetAgentId,
+        displayedDiff,
+      }) {
+        await changeConsents.request({
+          companyId: capability.companyId,
+          requestedByAgentId: capability.targetAgentId,
+          sourceRunId: capability.runId,
+          targetKey: agentProfileChangeTargetKey(targetAgentId),
+          displayedDiff,
+          expiresAt: new Date(
+            Date.now() + CHANGE_CONSENT_DEFAULT_TTL_MS,
+          ),
+        });
+      },
+    },
+  );
+  const actions = composeRuntimeActionPort(
+    issueActions,
+    agentActions,
+  );
+  let executePromptCapabilityTool:
+    | ToolGatewayService["executePromptCapabilityTool"]
+    | null = null;
+  const promptCapabilityCompanyTools: RuntimeCompanyToolPort = {
+    execute(input) {
+      if (!executePromptCapabilityTool) {
+        throw new Error(
+          "Prompt-capability company-tool executor is not initialized",
+        );
+      }
+      return executePromptCapabilityTool({
+        capability: input.capability,
+        companyToolSelectionId: input.companyToolSelectionId,
+        parameters: input.arguments,
+        callIdentity: input.callIdentity,
+        runInterfaceToolCallId: input.runInterfaceToolCallId,
+        mintPluginRunContext: input.mintPluginRunContext,
+      });
+    },
+  };
+  // Adapter declarations must be settled before issue execution starts.
+  const { waitForExternalAdapters } = await import("./adapters/registry.js");
+  await waitForExternalAdapters();
+  reconcileAdapterAvailability(parseAdapterRegistryEnv());
+  const composition =
+    createPostgresIssueSessionCompositionRuntime(db as any, {
+      workerId,
+    });
+  const issueExecutionEnvironmentRuntime =
+    environmentRuntimeService(db as any, {
+      pluginWorkerManager,
+    });
+  const issueExecutionEnvironmentOrchestrator =
+    environmentRunOrchestrator(db as any, {
+      environmentRuntime:
+        issueExecutionEnvironmentRuntime,
+    });
+  const compactionProvider =
+    createPostgresSessionCompactionProvider(db as any, {
+      environmentOrchestrator:
+        issueExecutionEnvironmentOrchestrator,
+    });
+  const issueExecution =
+    createPostgresIssueExecutionProductionRuntime(
+      db as any,
+      {
+        workerId,
+        targetSessionProtectionSecret:
+          deriveInstancePrivateSecret(
+            "issue-execution-target-session",
+          ),
+        issueSessionStore,
+        environmentOrchestrator:
+          issueExecutionEnvironmentOrchestrator,
+        capabilityEndpoint:
+          `${runtimeApiUrl.replace(/\/+$/, "")}/api/run-tools`,
+        capabilityCursorSecret: deriveInstancePrivateSecret(
+          "prompt-capability-retrieval-cursor",
+        ).toString("base64url"),
+        actions,
+        companyTools: promptCapabilityCompanyTools,
+        steeringResults: issueExecutionSteeringResults,
+        compactionProvider,
+        async prepareAndNotifyPersistedRef(refId, dispatcher) {
+          await composition.prepareAndNotifyPersistedRef(
+            refId,
+            dispatcher,
+          );
+        },
+      },
+    );
+  const feedback = feedbackService(db as any, {
+    shareClient: createFeedbackTraceShareClientFromConfig(config),
+    runService: issueExecution.runService,
+  });
+  const dispatchPersistedRef = async (refId: string) => {
+    await composition.prepareAndNotifyPersistedRef(
+      refId,
+      issueExecution.dispatcher,
+    );
+  };
+  const systemEscalations = createPostgresSystemEscalationService(
+    db as any,
+    {
+      dispatchRef: dispatchPersistedRef,
+    },
+  );
+  const creatorDelivery = createPostgresCreatorDeliveryService(
+    db as any,
+    {
+      workerId,
+      pluginWorkerManager,
+      async notifyRef(refId) {
+        return composition.prepareAndNotifyCreatorDeliveryRef(
+          refId,
+          issueExecution.dispatcher,
+        );
+      },
+      terminalizeCreatorDelivery(input) {
+        return systemEscalations.terminalizeCreatorDelivery(input);
+      },
+    },
+  );
+  const notifyCreatorDelivery = async (deliveryId: string) => {
+    await creatorDelivery.notifyPersistedDelivery(deliveryId);
+  };
+  causalRuntimeStartup.complete({
+    dispatchPersistedRef,
+    notifyCreatorDelivery,
+    executeMention(input) {
+      return issueExecution.mentionExecutor.executeMention(input);
+    },
+    issueExecutionCancellation: issueExecution.cancellation,
+    runService: issueExecution.runService,
+  });
+  const ordinaryIssues = createOrdinaryIssueRuntime(db as any, {
+    issueExecutionRunService: issueExecution.runService,
+    issueExecutionCancellation: issueExecution.cancellation,
+    dispatchRef: dispatchPersistedRef,
+    notifyCreatorDelivery,
+  });
   const app = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,
@@ -688,8 +538,8 @@ export async function startServer(): Promise<StartedServer> {
           alertFiles: databaseBackupAlertFiles,
         }
       : undefined,
-    deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
+    canonicalPublicUrl: config.authPublicBaseUrl,
     allowedHostnames: config.allowedHostnames,
     bindHost: config.host,
     authReady,
@@ -698,7 +548,27 @@ export async function startServer(): Promise<StartedServer> {
     betterAuthHandler,
     resolveSession,
     pluginWorkerManager,
+    promptCapabilityGateway:
+      issueExecution.promptCapabilities.gateway,
+    pluginRunIssueContextReader:
+      issueExecution.promptCapabilities.pluginRunIssueContextReader,
+    issueSessionStore,
+    bindPromptCapabilityCompanyTools(execute) {
+      executePromptCapabilityTool = execute;
+    },
+    ordinaryIssueRuntime: ordinaryIssues,
+    issueExecutionRunService: issueExecution.runService,
+    issueExecutionCancellation: issueExecution.cancellation,
+    issueSessionCompactionRuntime: issueExecution.compaction,
+    adapterReadinessEnvironmentOrchestrator:
+      issueExecutionEnvironmentOrchestrator,
   });
+  const requestAuthorityBoundary = (
+    app.locals as { paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary }
+  ).paperclipRequestAuthorityBoundary;
+  if (!requestAuthorityBoundary) {
+    throw new Error("Request authority boundary was not assembled");
+  }
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
   // Increase keep-alive timeouts to safely outlive default idle timeouts
@@ -711,33 +581,13 @@ export async function startServer(): Promise<StartedServer> {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${requestedListenPort}, selectedPort=${listenPort})`);
   }
   
-  const runtimeListenHost = config.host;
-  const runtimeApiUrl = choosePrimaryRuntimeApiUrl({
-    authPublicBaseUrl: config.authPublicBaseUrl ?? null,
-    allowedHostnames: config.allowedHostnames,
-    bindHost: runtimeListenHost,
-    port: listenPort,
-  });
-  const configuredApiUrl = process.env.PAPERCLIP_API_URL?.trim() || runtimeApiUrl;
-  const runtimeApiCandidates = buildRuntimeApiCandidateUrls({
-    preferredApiUrl: configuredApiUrl,
-    authPublicBaseUrl: config.authPublicBaseUrl ?? null,
-    allowedHostnames: config.allowedHostnames,
-    bindHost: runtimeListenHost,
-    port: listenPort,
-  });
-  process.env.PAPERCLIP_LISTEN_HOST = runtimeListenHost;
-  process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
-  process.env.PAPERCLIP_RUNTIME_API_URL = runtimeApiUrl;
-  process.env.PAPERCLIP_RUNTIME_API_CANDIDATES_JSON = JSON.stringify(runtimeApiCandidates);
-  process.env.PAPERCLIP_API_URL = configuredApiUrl;
-  
   setupEnvironmentCustomImageTerminalWebSocketServer(server, db as any, {
     pluginWorkerManager,
+    requestAuthorityBoundary,
   });
   setupLiveEventsWebSocketServer(server, db as any, {
-    deploymentMode: config.deploymentMode,
     resolveSessionFromHeaders,
+    requestAuthorityBoundary,
   });
 
   void reconcilePersistedRuntimeServicesOnStartup(db as any)
@@ -766,43 +616,8 @@ export async function startServer(): Promise<StartedServer> {
       logger.error({ err }, "startup reconciliation of cloud upstream runs failed");
     });
 
-  // Backfill auth.json into any already-isolated codex_local managed home that
-  // was created by the #8272 isolation guard before the Phase 1 seeding fix.
-  // Idempotent; the Phase 1 execute-time seeding covers new strandings.
-  void reconcileCodexLocalManagedHomesOnStartup(db)
-    .then((result) => {
-      if (result.seeded > 0 || result.failed > 0) {
-        logger.warn(
-          { seeded: result.seeded, failed: result.failed, scanned: result.scanned },
-          "reconciled codex_local managed homes (backfilled missing auth)",
-        );
-      }
-      if (result.sourceAuthMissing > 0) {
-        logger.warn(
-          { sourceAuthMissing: result.sourceAuthMissing, scanned: result.scanned },
-          "could not backfill codex_local managed homes because shared Codex auth is missing",
-        );
-      }
-    })
-    .catch((err) => {
-      logger.error({ err }, "startup reconciliation of codex_local managed homes failed");
-    });
-
-  void reconcileBuiltInAgentsOnStartup(db as any)
-    .then((result) => {
-      if (result.reconciled > 0 || result.unknown > 0 || result.duplicates > 0 || result.autoEnsured > 0) {
-        logger.warn(
-          result,
-          "startup reconciliation of built-in agents complete",
-        );
-      }
-    })
-    .catch((err) => {
-      logger.error({ err }, "startup reconciliation of built-in agents failed");
-    });
-
   // Force the instance onto the Kubernetes sandbox provider when configured via
-  // env (PAPERCLIP_EXECUTION_MODE=kubernetes). Runs BEFORE the heartbeat resumes
+  // env (PAPERCLIP_EXECUTION_MODE=kubernetes). Runs before persisted issue execution resumes
   // queued runs so the policy + managed k8s environments are in place. A bad
   // PAPERCLIP_EXECUTION_MODE / PAPERCLIP_K8S_* value throws and fails startup
   // (fail-loud) rather than silently allowing local execution.
@@ -822,201 +637,122 @@ export async function startServer(): Promise<StartedServer> {
     throw err;
   }
 
-  let drainHeartbeatRunsForShutdown: ((signal: "SIGINT" | "SIGTERM") => Promise<unknown>) | null = null;
-  let prepareHotRestartShutdown: ((signal: "SIGINT" | "SIGTERM") => Promise<{ skipDrain: boolean }>) | null = null;
-  let heartbeatSchedulerStopped = false;
-  let heartbeatSchedulerInterval: ReturnType<typeof setInterval> | null = null;
-  const heartbeatSchedulerInFlight = new Set<Promise<void>>();
-  const trackHeartbeatSchedulerWork = (work: Promise<unknown>) => {
+  let issueExecutionSchedulerStopped = false;
+  let issueExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;
+  let creatorDeliveryInterval: ReturnType<typeof setInterval> | null = null;
+  const issueExecutionSchedulerInFlight = new Set<Promise<void>>();
+  const trackIssueExecutionSchedulerWork = (work: Promise<unknown>) => {
     let tracked: Promise<void>;
     tracked = Promise.resolve(work)
       .then(() => undefined, () => undefined)
       .finally(() => {
-        heartbeatSchedulerInFlight.delete(tracked);
+        issueExecutionSchedulerInFlight.delete(tracked);
       });
-    heartbeatSchedulerInFlight.add(tracked);
+    issueExecutionSchedulerInFlight.add(tracked);
+    return tracked;
   };
-  const waitForHeartbeatSchedulerIdle = async () => {
-    while (heartbeatSchedulerInFlight.size > 0) {
-      await Promise.allSettled([...heartbeatSchedulerInFlight]);
+  const waitForIssueExecutionSchedulerIdle = async () => {
+    while (issueExecutionSchedulerInFlight.size > 0) {
+      await Promise.allSettled([...issueExecutionSchedulerInFlight]);
+    }
+  };
+  const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
+  const routines = routineService(db as any, { ordinaryIssues });
+  const tools = toolAccessService(db as any, {
+    deploymentExposure: config.deploymentExposure,
+    trustedLocalStdioRuntimeHost: process.env.PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST
+      ?? process.env.PAPERCLIP_TOOL_RUNTIME_TRUSTED_HOST
+      ?? null,
+  });
+
+  const reconcilePersistedIssueExecutions = async () => {
+    // Durable exact stops are reconciled before any path may recover or
+    // dispatch persisted execution work.
+    const cancellations =
+      await issueExecution.cancellation.reconcilePending();
+    const deliveries = await creatorDelivery.drainQueued();
+    const escalations = await systemEscalations.reconcile();
+    const prepared = await composition.reconcilePersistedRefs(
+      issueExecution.dispatcher,
+    );
+    const dispatchable =
+      await issueExecution.dispatcher.reconcilePersistedRefs();
+    if (
+      cancellations.length > 0 ||
+      deliveries.delivered > 0 ||
+      deliveries.deferred > 0 ||
+      deliveries.failed > 0 ||
+      deliveries.holdsChanged > 0 ||
+      deliveries.terminalOutcomesChanged > 0 ||
+      escalations.terminalized > 0 ||
+      escalations.ensured > 0 ||
+      prepared.discovered > 0 ||
+      dispatchable.discovered > 0
+    ) {
+      logger.info(
+        {
+          cancellations,
+          creatorDeliveries: deliveries,
+          systemEscalations: escalations,
+          prepared,
+          dispatchable,
+        },
+        "persisted issue-execution recovery reconciled refs",
+      );
     }
   };
 
-  if (config.heartbeatSchedulerEnabled) {
-    const heartbeat = heartbeatService(db as any, { pluginWorkerManager });
-    drainHeartbeatRunsForShutdown = heartbeat.drainRunningRunsForShutdown;
-    prepareHotRestartShutdown = heartbeat.prepareHotRestartShutdown;
-    const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
-    const routines = routineService(db as any, { pluginWorkerManager });
-    const tools = toolAccessService(db as any, {
-      deploymentMode: config.deploymentMode,
-      deploymentExposure: config.deploymentExposure,
-      trustedLocalStdioRuntimeHost: process.env.PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST
-        ?? process.env.PAPERCLIP_TOOL_RUNTIME_TRUSTED_HOST
-        ?? null,
-    });
-    const worktreeRunExecutionActivation = await resolveWorktreeRunExecutionActivationState({
-      getExperimental: () => instanceSettingsService(db).getExperimental(),
-    });
-    logger.info(
-      {
-        state: worktreeRunExecutionActivation.armed ? "armed" : "disarmed",
-        cutoff: worktreeRunExecutionActivation.cutoff,
-      },
-      "worktree run-execution cutoff state",
+  const startupCancellations =
+    await issueExecution.cancellation.reconcilePending();
+  if (startupCancellations.length > 0) {
+    logger.warn(
+      { cancellations: startupCancellations },
+      "reconciled durable issue-execution cancellations before recovery",
     );
-    const heartbeatSchedulingSuppression = await heartbeat.resolveSchedulingSuppression();
-
-    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
-    // into a dead "running" row during startup recovery.
-    if (heartbeatSchedulingSuppression.suppressed) {
-      logger.warn(
-        { reason: heartbeatSchedulingSuppression.reason },
-        "heartbeat scheduling suppressed for this runtime instance",
+  }
+  const startupIssueExecutionRecovery =
+    reconcilePersistedIssueExecutions().catch((err) => {
+      logger.error(
+        { err },
+        "startup persisted issue-execution recovery failed",
       );
-    } else {
-      const startupHeartbeatRecovery = (async () => {
-        try {
-          const hotRestart = await heartbeat.reconcileHotRestartAdoption();
-          if (hotRestart.mode === "reported") {
-            logger.info(
-              hotRestart,
-              "startup hot-restart adoption reconciliation complete",
-            );
-          }
-        } catch (err) {
+    });
+  trackIssueExecutionSchedulerWork(startupIssueExecutionRecovery);
+  await startupIssueExecutionRecovery;
+
+  const setupCleanup = await environmentCustomImages.cleanupExpiredSetupSessions();
+  if (setupCleanup.timedOut > 0 || setupCleanup.failed > 0) {
+    logger.warn({ ...setupCleanup }, "startup environment customImage setup cleanup changed sessions");
+  }
+  const toolHealthSweep = await tools.sweepConnectionHealth();
+  if (toolHealthSweep.failed > 0) {
+    logger.warn({ ...toolHealthSweep }, "startup tool connection health sweep found failing connections");
+  }
+
+  if (config.issueExecutionSchedulerEnabled) {
+    issueExecutionSchedulerInterval = setInterval(() => {
+      if (issueExecutionSchedulerStopped) return;
+      trackIssueExecutionSchedulerWork(
+        reconcilePersistedIssueExecutions().catch((err) => {
           logger.error(
             { err },
-            "startup hot-restart adoption reconciliation failed - orphan reaper will serve as degraded backstop",
+            "periodic persisted issue-execution recovery failed",
           );
-        }
-
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            const result = await heartbeat.reapOrphanedRuns();
-            logger.info(
-              { reaped: result.reaped, runIds: result.runIds },
-              "startup reap of orphaned heartbeat runs complete",
-            );
-            break;
-          } catch (err) {
-            if (attempt < 2) {
-              logger.warn({ err, attempt }, "startup reap failed, retrying");
-            } else {
-              logger.error(
-                { err },
-                "startup reap of orphaned heartbeat runs failed after retry - periodic reaper will serve as degraded backstop",
-              );
-            }
-          }
-        }
-
-        const promotion = await heartbeat.promoteDueScheduledRetries();
-        await heartbeat.resumeQueuedRuns();
-        const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
-        if (
-          promotion.promoted > 0 ||
-          reconciled.assignmentDispatched > 0 ||
-          reconciled.dispatchRequeued > 0 ||
-          reconciled.continuationRequeued > 0 ||
-          reconciled.successfulRunHandoffEscalated > 0 ||
-          reconciled.escalated > 0
-        ) {
-          logger.warn(
-            { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds, ...reconciled },
-            "startup heartbeat recovery changed assigned issue state",
-          );
-        }
-
-        const issueGraphReconciled = await heartbeat.reconcileIssueGraphLiveness();
-        if (issueGraphReconciled.escalationsCreated > 0 || issueGraphReconciled.dependencyWakesHealed > 0) {
-          logger.warn(
-            { ...issueGraphReconciled },
-            "startup issue-graph liveness reconciliation changed issue graph state",
-          );
-        }
-
-        const taskWatchdogsReconciled = await heartbeat.reconcileTaskWatchdogs();
-        if (taskWatchdogsReconciled.triggered > 0) {
-          logger.warn(
-            { ...taskWatchdogsReconciled },
-            "startup task-watchdog reconciliation triggered watchdog work",
-          );
-        }
-
-        const scanned = await heartbeat.scanSilentActiveRuns();
-        if (scanned.created > 0 || scanned.escalated > 0) {
-          logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
-        }
-
-        const swept = await heartbeat.sweepStaleIssueLocks();
-        if (swept.cleared > 0) {
-          logger.warn({ ...swept }, "startup stale-lock sweeper cleared issue locks");
-        }
-
-        const reviewed = await heartbeat.reconcileProductivityReviews();
-        if (reviewed.created > 0 || reviewed.updated > 0 || reviewed.failed > 0) {
-          logger.warn({ ...reviewed }, "startup productivity reconciliation created or updated review work");
-        }
-      })().catch((err) => {
-        logger.error({ err }, "startup heartbeat recovery failed");
-      });
-      trackHeartbeatSchedulerWork(startupHeartbeatRecovery);
-      await startupHeartbeatRecovery;
-    }
-
-    const setupCleanup = await environmentCustomImages.cleanupExpiredSetupSessions();
-    if (setupCleanup.timedOut > 0 || setupCleanup.failed > 0) {
-      logger.warn({ ...setupCleanup }, "startup environment customImage setup cleanup changed sessions");
-    }
-
-    const toolHealthSweep = await tools.sweepConnectionHealth();
-    if (toolHealthSweep.failed > 0) {
-      logger.warn({ ...toolHealthSweep }, "startup tool connection health sweep found failing connections");
-    }
-
-    heartbeatSchedulerInterval = setInterval(() => {
-      // Async so the suppression checks below can honor the override-aware
-      // resolver (e.g. worktree run-execution opt-in). The gated work is still
-      // wrapped in trackHeartbeatSchedulerWork with its own error handling.
-      void (async () => {
-        if (heartbeatSchedulerStopped) return;
-        const sweptRuntimeStatuses = heartbeat.sweepExpiredRuntimeStatuses();
-        if (sweptRuntimeStatuses > 0) {
-          logger.info(
-            { swept: sweptRuntimeStatuses },
-            "heartbeat runtime-status sweeper cleared expired entries",
-          );
-        }
-
-        if (!(await heartbeat.resolveSchedulingSuppression()).suppressed) {
-          trackHeartbeatSchedulerWork(heartbeat
-            .tickTimers(new Date())
-            .then((result) => {
-              if (result.enqueued > 0) {
-                logger.info({ ...result }, "heartbeat timer tick enqueued runs");
-              }
-            })
-            .catch((err) => {
-              logger.error({ err }, "heartbeat timer tick failed");
-            }));
-        }
-
-        if (heartbeatSchedulerStopped) return;
-        trackHeartbeatSchedulerWork(routines
-          .tickScheduledTriggers(new Date())
+        }),
+      );
+      trackIssueExecutionSchedulerWork(
+        routines.tickScheduledTriggers(new Date())
           .then((result) => {
             if (result.triggered > 0) {
-              logger.info({ ...result }, "routine scheduler tick enqueued runs");
+              logger.info({ ...result }, "routine scheduler created ordinary issues");
             }
           })
           .catch((err) => {
             logger.error({ err }, "routine scheduler tick failed");
-          }));
-
-        if (heartbeatSchedulerStopped) return;
-        trackHeartbeatSchedulerWork(environmentCustomImages
-          .cleanupExpiredSetupSessions()
+          }),
+      );
+      trackIssueExecutionSchedulerWork(
+        environmentCustomImages.cleanupExpiredSetupSessions()
           .then((result) => {
             if (result.timedOut > 0 || result.failed > 0) {
               logger.warn({ ...result }, "environment customImage setup cleanup changed sessions");
@@ -1024,81 +760,47 @@ export async function startServer(): Promise<StartedServer> {
           })
           .catch((err) => {
             logger.error({ err }, "environment customImage setup cleanup failed");
-          }));
-
-        if (heartbeatSchedulerStopped) return;
-        trackHeartbeatSchedulerWork(tools
-          .sweepConnectionHealth()
-          .then((swept) => {
-            if (swept.failed > 0) {
-              logger.warn({ ...swept }, "periodic tool connection health sweep found failing connections");
+          }),
+      );
+      trackIssueExecutionSchedulerWork(
+        tools.sweepConnectionHealth()
+          .then((result) => {
+            if (result.failed > 0) {
+              logger.warn({ ...result }, "periodic tool connection health sweep found failing connections");
             }
           })
           .catch((err) => {
             logger.error({ err }, "periodic tool connection health sweep failed");
-          }));
-
-        if (heartbeatSchedulerStopped) return;
-        if (!(await heartbeat.resolveSchedulingSuppression()).suppressed) {
-          // Periodically reap orphaned runs (5-min staleness threshold) and make sure
-          // persisted queued work is still being driven forward.
-          trackHeartbeatSchedulerWork(heartbeat
-            .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
-            .then(() => heartbeat.promoteDueScheduledRetries())
-            .then(async (promotion) => {
-              await heartbeat.resumeQueuedRuns();
-              const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
-              if (
-                promotion.promoted > 0 ||
-                reconciled.assignmentDispatched > 0 ||
-                reconciled.dispatchRequeued > 0 ||
-                reconciled.continuationRequeued > 0 ||
-                reconciled.successfulRunHandoffEscalated > 0 ||
-                reconciled.escalated > 0
-              ) {
-                logger.warn(
-                  { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds, ...reconciled },
-                  "periodic heartbeat recovery changed assigned issue state",
-                );
-              }
-            })
-            .then(async () => {
-              const reconciled = await heartbeat.reconcileIssueGraphLiveness();
-              if (reconciled.escalationsCreated > 0 || reconciled.dependencyWakesHealed > 0) {
-                logger.warn({ ...reconciled }, "periodic issue-graph liveness reconciliation changed issue graph state");
-              }
-            })
-            .then(async () => {
-              const reconciled = await heartbeat.reconcileTaskWatchdogs();
-              if (reconciled.triggered > 0) {
-                logger.warn({ ...reconciled }, "periodic task-watchdog reconciliation triggered watchdog work");
-              }
-            })
-            .then(async () => {
-              const scanned = await heartbeat.scanSilentActiveRuns();
-              if (scanned.created > 0 || scanned.escalated > 0) {
-                logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
-              }
-            })
-            .then(async () => {
-              const swept = await heartbeat.sweepStaleIssueLocks();
-              if (swept.cleared > 0) {
-                logger.warn({ ...swept }, "periodic stale-lock sweeper cleared issue locks");
-              }
-            })
-            .then(async () => {
-              const reviewed = await heartbeat.reconcileProductivityReviews();
-              if (reviewed.created > 0 || reviewed.updated > 0 || reviewed.failed > 0) {
-                logger.warn({ ...reviewed }, "periodic productivity reconciliation created or updated review work");
-              }
-            })
-            .catch((err) => {
-              logger.error({ err }, "periodic heartbeat recovery failed");
-            }));
-        }
-      })();
-    }, config.heartbeatSchedulerIntervalMs);
+          }),
+      );
+    }, config.issueExecutionSchedulerIntervalMs);
   }
+  creatorDeliveryInterval = setInterval(() => {
+    if (issueExecutionSchedulerStopped) return;
+    trackIssueExecutionSchedulerWork(
+      creatorDelivery.drainQueued()
+        .then((result) => {
+          if (
+            result.delivered > 0 ||
+            result.deferred > 0 ||
+            result.failed > 0 ||
+            result.holdsChanged > 0 ||
+            result.terminalOutcomesChanged > 0
+          ) {
+            logger.info(
+              { ...result },
+              "creator-delivery worker drained persisted intents",
+            );
+          }
+        })
+        .catch((err) => {
+          logger.error(
+            { err },
+            "creator-delivery worker drain failed",
+          );
+        }),
+    );
+  }, 1_000);
   
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
@@ -1118,24 +820,6 @@ export async function startServer(): Promise<StartedServer> {
     }, backupIntervalMs);
   }
   
-  // Wait for external adapters to finish loading before accepting requests.
-  // Without this, adapter type validation (assertKnownAdapterType) would
-  // reject valid external adapter types during the startup loading window.
-  const { waitForExternalAdapters } = await import("./adapters/registry.js");
-  await waitForExternalAdapters();
-
-  // Reconcile the agent-creation picker to the declaratively-configured adapter
-  // set (PAPERCLIP_ADAPTERS). Must run after external adapters are loaded so the
-  // known-adapter list is complete. Fail loud on misconfig (a declared adapter
-  // with no implementation), consistent with the execution-policy bootstrap:
-  // log the structured error, then rethrow to fail startup.
-  try {
-    reconcileAdapterAvailability(parseAdapterRegistryEnv());
-  } catch (err) {
-    logger.error({ err }, "failed to reconcile adapter availability from PAPERCLIP_ADAPTERS");
-    throw err;
-  }
-
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {
       server.off("error", onError);
@@ -1161,67 +845,39 @@ export async function startServer(): Promise<StartedServer> {
         printStartupBanner({
           bind: config.bind,
           host: config.host,
-          deploymentMode: config.deploymentMode,
-        deploymentExposure: config.deploymentExposure,
+          deploymentExposure: config.deploymentExposure,
         authReady,
         requestedPort: requestedListenPort,
         listenPort,
         uiMode,
         db: startupDbInfo,
-        migrationSummary,
-        heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
-        heartbeatSchedulerIntervalMs: config.heartbeatSchedulerIntervalMs,
+        issueExecutionSchedulerEnabled: config.issueExecutionSchedulerEnabled,
+        issueExecutionSchedulerIntervalMs: config.issueExecutionSchedulerIntervalMs,
         databaseBackupEnabled: config.databaseBackupEnabled,
         databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
         databaseBackupRetentionDays: config.databaseBackupRetentionDays,
         databaseBackupDir: config.databaseBackupDir,
       });
 
-      const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);
-      if (boardClaimUrl) {
-        const red = "\x1b[41m\x1b[30m";
-        const yellow = "\x1b[33m";
-        const reset = "\x1b[0m";
-        console.log(
-          [
-            `${red}  BOARD CLAIM REQUIRED  ${reset}`,
-            `${yellow}This instance was previously local_trusted and still has local-board as the only admin.${reset}`,
-            `${yellow}Sign in with a real user and open this one-time URL to claim ownership:${reset}`,
-            `${yellow}${boardClaimUrl}${reset}`,
-            `${yellow}If you are connecting over Tailscale, replace the host in this URL with your Tailscale IP/MagicDNS name.${reset}`,
-          ].join("\n"),
-        );
-      }
-
       resolveListen();
     });
   });
+
+  devServerRestartCoordinator.start();
   
   {
     const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
-      heartbeatSchedulerStopped = true;
-      if (heartbeatSchedulerInterval) {
-        clearInterval(heartbeatSchedulerInterval);
-        heartbeatSchedulerInterval = null;
+      devServerRestartCoordinator.stop();
+      issueExecutionSchedulerStopped = true;
+      if (issueExecutionSchedulerInterval) {
+        clearInterval(issueExecutionSchedulerInterval);
+        issueExecutionSchedulerInterval = null;
       }
-
-      const heartbeatShutdown = await coordinateHeartbeatSchedulerShutdown({
-        signal,
-        prepareHotRestartShutdown,
-        waitForHeartbeatSchedulerIdle,
-      });
-      const skipHeartbeatDrain = heartbeatShutdown.hotRestart?.skipDrain === true;
-      if (skipHeartbeatDrain) {
-        logger.info(
-          { signal, hotRestart: heartbeatShutdown.hotRestart },
-          "hot-restart shutdown prepared; skipping heartbeat scheduler idle wait and graceful run drain",
-        );
-      } else if (heartbeatShutdown.preparationError) {
-        logger.error(
-          { err: heartbeatShutdown.preparationError, signal },
-          "hot-restart shutdown preparation failed; falling back to graceful heartbeat run drain",
-        );
+      if (creatorDeliveryInterval) {
+        clearInterval(creatorDeliveryInterval);
+        creatorDeliveryInterval = null;
       }
+      await waitForIssueExecutionSchedulerIdle();
 
       const telemetryClient = getTelemetryClient();
       if (telemetryClient) {
@@ -1229,25 +885,32 @@ export async function startServer(): Promise<StartedServer> {
         await telemetryClient.flush();
       }
 
-      if (!skipHeartbeatDrain && drainHeartbeatRunsForShutdown) {
-        try {
-          const drain = await drainHeartbeatRunsForShutdown(signal);
-          logger.info({ signal, drain }, "graceful heartbeat run drain complete");
-        } catch (err) {
-          logger.error({ err, signal }, "graceful heartbeat run drain failed");
-        }
+      try {
+        await Promise.all([
+          issueExecution.mentionExecutor.shutdown(),
+          issueExecution.dispatcher.shutdown(),
+          issueExecution.cancellation.drainRunningRunsForShutdown(signal),
+        ]);
+        logger.info(
+          { signal },
+          "graceful issue-execution drain complete",
+        );
+      } catch (err) {
+        logger.error(
+          { err, signal },
+          "graceful issue-execution drain failed",
+        );
       }
 
       const appShutdown = (app as { locals?: { paperclipShutdown?: () => void } }).locals?.paperclipShutdown;
       appShutdown?.();
 
-      if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
-        logger.info({ signal }, "Stopping embedded PostgreSQL");
-        try {
-          await embeddedPostgres?.stop();
-        } catch (err) {
-          logger.error({ err }, "Failed to stop embedded PostgreSQL cleanly");
-        }
+      try {
+        await Promise.all(
+          Array.from(new Set([db, pluginMigrationDb]), (database) => closeDatabaseClient(database)),
+        );
+      } catch (err) {
+        logger.error({ err }, "Failed to close PostgreSQL client cleanly");
       }
 
       // Flush buffered OTel spans before the process goes away; without this
@@ -1269,7 +932,7 @@ export async function startServer(): Promise<StartedServer> {
     server,
     host: config.host,
     listenPort,
-    apiUrl: configuredApiUrl,
+    apiUrl: runtimeApiUrl,
     databaseUrl: activeDatabaseConnectionString,
   };
 }
@@ -1285,6 +948,7 @@ function isMainModule(metaUrl: string): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
+  loadRuntimeEnvironmentFiles();
   void startServer().catch((err) => {
     logger.error({ err }, "Paperclip server failed to start");
     process.exit(1);

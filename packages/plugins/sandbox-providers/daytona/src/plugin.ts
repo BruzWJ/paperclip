@@ -9,11 +9,18 @@ import type {
   Resources,
   Sandbox,
 } from "@daytonaio/sdk";
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import {
+  buildCancelEnvironmentShellCommand,
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+  wrapCancellableEnvironmentShellCommand,
+} from "@paperclipai/plugin-sdk";
 import type {
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentCancelInteractiveSetupParams,
   PluginEnvironmentCancelInteractiveSetupResult,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentCaptureTemplateParams,
   PluginEnvironmentCaptureTemplateResult,
   PluginEnvironmentDeleteTemplateParams,
@@ -38,6 +45,8 @@ import type {
   PluginEnvironmentValidationResult,
 } from "@paperclipai/plugin-sdk";
 import { performSyncIn, performSyncOut } from "./file-sync.js";
+
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
 interface DaytonaDriverConfig {
   apiKey: string | null;
@@ -639,32 +648,37 @@ function buildLoginShellScript(input: {
   }
   // Caller env takes priority over noninteractive git credential defaults
   const env = { ...NONINTERACTIVE_GIT_ENV, ...callerEnv };
-  const envArgs = Object.entries(env)
+  const configuredHome =
+    env.HOME?.trim() || env.USERPROFILE?.trim() || null;
+  const effectiveEnv = { ...env };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const envArgs = Object.entries(effectiveEnv)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
     .map(([key, value]) => `${key}=${shellQuote(value)}`);
   const commandParts = [shellQuote(input.command), ...input.args.map(shellQuote)].join(" ");
   const redirectedCommand = input.stdinPath
     ? `${commandParts} < ${shellQuote(input.stdinPath)}`
     : commandParts;
-  // Each `executeCommand` call runs in its own shell, so we don't `exec`-
-  // replace it; running the command as the last `&&`-chained line is enough to
-  // surface the right exit code. Env is interpolated after profile sourcing so
-  // the caller's env wins over any defaults the profile exports.
-  const finalLine = envArgs.length > 0
-    ? `env ${envArgs.join(" ")} ${redirectedCommand}`
-    : redirectedCommand;
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const finalLine =
+    `env -i PATH="$PATH"${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${redirectedCommand}`;
   const lines = [
     'if [ -f /etc/profile ]; then . /etc/profile >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-    // .bash_profile typically sources .bashrc itself; only source .bashrc
-    // directly when no .bash_profile exists to avoid double-running setup.
-    'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; elif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
   ];
   if (input.cwd) {
     lines.push(`cd ${shellQuote(input.cwd)}`);
+  }
+  if (!configuredHome) {
+    lines.push(
+      'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+      'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+    );
   }
   lines.push(finalLine);
   return lines.join(" && ");
@@ -748,13 +762,13 @@ async function executeOneShot(
       await sandbox.fs.uploadFile(Buffer.from(params.stdin ?? "", "utf8"), stdinPath, timeoutSeconds);
     }
 
-    const command = buildLoginShellScript({
+    const command = wrapCancellableEnvironmentShellCommand(params.executionId, buildLoginShellScript({
       command: params.command,
       args: params.args ?? [],
       cwd: params.cwd,
       env: params.env,
       stdinPath: stdinPath ?? undefined,
-    });
+    }));
 
     // Pass cwd undefined: `buildLoginShellScript` already injects `cd` after
     // profile sourcing when params.cwd is set, and the Daytona executor's own
@@ -1246,19 +1260,72 @@ const plugin = definePlugin({
   async onEnvironmentExecute(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
-    if (!params.lease.providerLeaseId) {
-      return {
-        exitCode: 1,
-        timedOut: false,
-        stdout: "",
-        stderr: "No provider lease ID available for execution.",
-      };
-    }
-
     const config = parseDriverConfig(params.config);
-    const sandbox = await getSandbox(config, params.lease.providerLeaseId);
-    await ensureSandboxStarted(sandbox, toTimeoutSeconds(resolveTimeoutMs(params.timeoutMs, config)));
-    return await executeOneShot(sandbox, params, config);
+    return await activeExecutions.execute(params, {
+      cancel: async () => {
+        if (!params.lease.providerLeaseId) return;
+        const sandbox = await getSandbox(config, params.lease.providerLeaseId);
+        const result = await sandbox.process.executeCommand(
+          buildCancelEnvironmentShellCommand(params.executionId),
+          undefined,
+          undefined,
+          toTimeoutSeconds(Math.min(config.timeoutMs, 10_000)),
+        );
+        if (typeof result.exitCode === "number" && result.exitCode !== 0) {
+          throw new Error(
+            `Daytona exact command cancellation failed with exit code ${result.exitCode}.`,
+          );
+        }
+      },
+      execute: async () => {
+        if (!params.lease.providerLeaseId) {
+          return {
+            exitCode: 1,
+            timedOut: false,
+            stdout: "",
+            stderr: "No provider lease ID available for execution.",
+          };
+        }
+        const sandbox = await getSandbox(config, params.lease.providerLeaseId);
+        await ensureSandboxStarted(sandbox, toTimeoutSeconds(resolveTimeoutMs(params.timeoutMs, config)));
+        return await executeOneShot(sandbox, params, config);
+      },
+    });
+  },
+
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async () => {
+        if (!params.lease.providerLeaseId) return false;
+        const config = parseDriverConfig(params.config);
+        const sandbox = await getSandbox(
+          config,
+          params.lease.providerLeaseId,
+        );
+        const result = await sandbox.process.executeCommand(
+          buildCancelEnvironmentShellCommand(
+            params.executionId,
+          ),
+          undefined,
+          undefined,
+          toTimeoutSeconds(
+            Math.min(config.timeoutMs, 10_000),
+          ),
+        );
+        if (
+          typeof result.exitCode === "number" &&
+          result.exitCode !== 0
+        ) {
+          throw new Error(
+            `Daytona exact command cancellation failed with exit code ${result.exitCode}.`,
+          );
+        }
+        return true;
+      },
+    );
   },
 
   // Opt-in native inbound transfer. Defining this hook (with onEnvironmentSyncOut)

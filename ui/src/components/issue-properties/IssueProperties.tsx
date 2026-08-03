@@ -13,31 +13,25 @@ import { issuesApi } from "../../api/issues";
 import { projectsApi } from "../../api/projects";
 import { useCompany } from "../../context/CompanyContext";
 import { queryKeys } from "../../lib/queryKeys";
+import { issueDisplayTitle } from "../../lib/issue-display";
 import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap, buildCompanyUserProfileMap, isAgentTaskTarget } from "../../lib/company-members";
-import { ISSUE_OVERRIDE_ADAPTER_TYPES, type IssueModelLane } from "../../lib/issue-assignee-overrides";
 import { useProjectOrder } from "../../hooks/useProjectOrder";
 import {
   getRecentAssigneeIds,
   sortAgentsByRecency,
   trackRecentAssignee,
-  trackRecentAssigneeUser,
 } from "../../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../../lib/recent-projects";
 import { orderItemsBySelectedAndRecent } from "../../lib/recent-selections";
-import { formatAssigneeUserLabel, formatUserLabel } from "../../lib/assignees";
+import { formatOwnerUserLabel, formatUserLabel } from "../../lib/issue-owners";
 import { buildExecutionPolicy, stageParticipantValues } from "../../lib/issue-execution-policy";
 import {
   formatMonitorAbsolute,
   formatMonitorAbsoluteFull,
   formatMonitorEta,
   formatMonitorEtaLabel,
-  formatMonitorOffset,
   useMonitorCountdown,
 } from "../../lib/issue-monitor";
-import { extractProviderIdWithFallback } from "../../lib/model-utils";
-import { formatRetryReason } from "../../lib/runRetryState";
-import { useRetryNowMutation } from "../../hooks/useRetryNowMutation";
-import { RetryErrorBand } from "../IssueScheduledRetryCard";
 import { StatusIcon } from "../StatusIcon";
 import { PriorityIcon } from "../PriorityIcon";
 import { Identity } from "../Identity";
@@ -47,20 +41,16 @@ import type { IssueExternalObjectGroup } from "../../hooks/useIssueExternalObjec
 import { timeAgo } from "../../lib/timeAgo";
 import { invalidateInboxIssueQueries } from "../../lib/inboxArchiveCache";
 import { Button } from "@/components/ui/button";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { User, ArrowUpRight, Plus, GitBranch, FolderOpen, HardDrive, Check, Clock, RotateCcw, Loader2, CheckCircle2, ArchiveRestore } from "lucide-react";
+import { User, ArrowUpRight, Plus, GitBranch, FolderOpen, HardDrive, Check, Clock, ArchiveRestore } from "lucide-react";
 import { AgentIcon } from "../AgentIconPicker";
-import { InlineEntitySelector, type InlineEntityOption } from "../InlineEntitySelector";
 import {
-  AssigneeRunningBanner,
-  InterruptAssignConfirm,
-  type HandoffChipResolvers,
-} from "../interrupt-handoff/InterruptHandoffViews";
-import { describeReassignInterrupt } from "../../lib/interrupt-handoff";
+  OwnerRunningBanner,
+  InterruptOwnerChangeConfirm,
+  type OwnerChipResolvers,
+} from "../owner-transition/OwnerTransitionViews";
+import { describeOwnerChangeInterrupt } from "../../lib/owner-transition";
 import {
   buildWorkspaceRuntimeControlSections,
   WorkspaceRuntimeQuickControls,
@@ -68,16 +58,9 @@ import {
 } from "../WorkspaceRuntimeControls";
 import { ExternalObjectRows } from "./external-object-rows";
 import {
-  asRecord,
-  compactRecord,
   defaultExecutionWorkspaceModeForProject,
   defaultProjectWorkspaceIdForProject,
   isMainIssueWorkspace,
-  overrideLane,
-  sortAdapterModels,
-  thinkingEffortKeyFor,
-  thinkingEffortOptionsFor,
-  thinkingEffortValueFor,
   toDateTimeLocalValue,
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
@@ -127,7 +110,7 @@ interface IssuePropertiesProps {
   onAddSubIssue?: () => void;
   onUpdate: (data: Record<string, unknown>) => void;
   inline?: boolean;
-  /** Whether an agent run is currently in flight on this issue, so the assignee
+  /** Whether an agent run is currently in flight on this issue, so the owner
    * picker can warn that reassigning will interrupt it. */
   hasActiveRun?: boolean;
   externalObjects?: IssueExternalObjectGroup[];
@@ -162,14 +145,13 @@ export function IssueProperties({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const taskWatchdogsEnabled = experimentalSettings?.enableTaskWatchdogs === true;
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const systemSafeguardsEnabled = experimentalSettings?.enableIssueWatchdogs === true;
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [ownerSearch, setOwnerSearch] = useState("");
   /** When a run is live, a selection is staged here until the operator confirms
    * the interrupt rather than applying it immediately. */
-  const [pendingAssignee, setPendingAssignee] = useState<{
-    assigneeAgentId: string | null;
-    assigneeUserId: string | null;
+  const [pendingOwner, setPendingOwner] = useState<{
+    ownerAgentId: string;
     label: string;
     track?: () => void;
   } | null>(null);
@@ -189,9 +171,7 @@ export function IssueProperties({
   const [approverSearch, setApproverSearch] = useState("");
   const [monitorOpen, setMonitorOpen] = useState(false);
   const [monitorDetailsOpen, setMonitorDetailsOpen] = useState(false);
-  const [scheduledRetryOpen, setScheduledRetryOpen] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
-  const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   // token-extraction: allowlisted — color-picker seed state, persisted into label-create payload; a var() string would break that payload.
@@ -203,8 +183,6 @@ export function IssueProperties({
   const [runtimeActionErrorMessage, setRuntimeActionErrorMessage] = useState<string | null>(null);
   const [unarchiveErrorMessage, setUnarchiveErrorMessage] = useState<string | null>(null);
   const [watchdogOpen, setWatchdogOpen] = useState(false);
-  const [watchdogAgentInput, setWatchdogAgentInput] = useState(issue.watchdog?.watchdogAgentId ?? "");
-  const [watchdogInstructionsInput, setWatchdogInstructionsInput] = useState(issue.watchdog?.instructions ?? "");
   const normalizedBlockedBySearch = blockedBySearch.trim();
 
   useEffect(() => {
@@ -223,6 +201,11 @@ export function IssueProperties({
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(companyId!),
     queryFn: () => agentsApi.list(companyId!),
+    enabled: !!companyId,
+  });
+  const { data: issueOwnerCatalog } = useQuery({
+    queryKey: queryKeys.agents.issueOwnerCatalog(companyId!),
+    queryFn: () => agentsApi.listInvokableIssueOwners(companyId!),
     enabled: !!companyId,
   });
   const { data: companyMembers } = useQuery({
@@ -332,7 +315,8 @@ export function IssueProperties({
     () => isMainIssueWorkspace({ issue, project: issueProject }),
     [issue, issueProject],
   );
-  const showWorkspaceDetailLink = Boolean(issue.executionWorkspaceId) && !issueUsesMainWorkspace;
+  const currentExecutionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
+  const showWorkspaceDetailLink = Boolean(currentExecutionWorkspaceId) && !issueUsesMainWorkspace;
   const workspaceRuntimeConfig = issueUsesMainWorkspace
     ? null
     : issue.currentExecutionWorkspace?.config?.workspaceRuntime ?? null;
@@ -351,14 +335,16 @@ export function IssueProperties({
   );
   const controlWorkspaceRuntime = useMutation({
     mutationFn: (request: WorkspaceRuntimeControlRequest) => {
-      const workspaceId = issue.currentExecutionWorkspace?.id ?? issue.executionWorkspaceId;
+      const workspaceId = currentExecutionWorkspaceId;
       if (!workspaceId) throw new Error("This task is not attached to a workspace.");
       return executionWorkspacesApi.controlRuntimeCommands(workspaceId, request.action, request);
     },
     onSuccess: (result, request) => {
       queryClient.setQueryData(queryKeys.executionWorkspaces.detail(result.workspace.id), result.workspace);
       void queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issue.id) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(result.workspace.projectId) });
+      if (result.workspace.projectId) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(result.workspace.projectId) });
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.overview(result.workspace.companyId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.workspaceOperations(result.workspace.id) });
       if (companyId) {
@@ -412,10 +398,14 @@ export function IssueProperties({
     return project ? projectUrl(project) : `/projects/${id}`;
   };
 
-  const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [assigneeOpen]);
+  const recentOwnerAgentIds = useMemo(() => getRecentAssigneeIds(), [ownerOpen]);
   const sortedAgents = useMemo(
-    () => sortAgentsByRecency((agents ?? []).filter(isAgentTaskTarget), recentAssigneeIds),
-    [agents, recentAssigneeIds],
+    () => sortAgentsByRecency((agents ?? []).filter(isAgentTaskTarget), recentOwnerAgentIds),
+    [agents, recentOwnerAgentIds],
+  );
+  const sortedIssueOwners = useMemo(
+    () => sortAgentsByRecency(issueOwnerCatalog ?? [], recentOwnerAgentIds),
+    [issueOwnerCatalog, recentOwnerAgentIds],
   );
   const recentProjectIds = useMemo(() => getRecentProjectIds(), [projectOpen]);
   const userLabelMap = useMemo(
@@ -426,242 +416,21 @@ export function IssueProperties({
     () => buildCompanyUserProfileMap(companyMembers?.users),
     [companyMembers?.users],
   );
+  const creatorUserId = issue.creatorKind === "user/board" ? issue.creatorUserId : null;
   const otherUserOptions = useMemo(
-    () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
-    [companyMembers?.users, currentUserId, issue.createdByUserId],
+    () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, creatorUserId] }),
+    [companyMembers?.users, creatorUserId, currentUserId],
   );
 
-  const assignee = issue.assigneeAgentId
-    ? agents?.find((a) => a.id === issue.assigneeAgentId)
+  const ownerAgent = issue.ownerAgentId
+    ? agents?.find((agent) => agent.id === issue.ownerAgentId)
     : null;
-  const assigneeAdapterType = assignee?.adapterType ?? null;
-  const assigneeAdapterOverrides = issue.assigneeAdapterOverrides ?? null;
-  const showAssigneeAdapterOptions = assigneeAdapterOverrides !== null;
-  const supportsAssigneeOverrides = Boolean(
-    assigneeAdapterType && ISSUE_OVERRIDE_ADAPTER_TYPES.has(assigneeAdapterType),
-  );
-  const assigneeSupportsCheapLane = Boolean(
-    supportsAssigneeOverrides
-      && (assigneeAdapterType === "claude_local"
-        || assigneeAdapterType === "codex_local"
-        || assigneeAdapterType === "opencode_local"),
-  );
-  const assigneeOverrideLane = overrideLane(assigneeAdapterOverrides);
-  const assigneeOverrideAdapterConfig = asRecord(assigneeAdapterOverrides?.adapterConfig);
-  const assigneeOverrideModel =
-    typeof assigneeOverrideAdapterConfig.model === "string" ? assigneeOverrideAdapterConfig.model : "";
-  const assigneeOverrideThinkingEffort = thinkingEffortValueFor(
-    assigneeAdapterType,
-    assigneeOverrideAdapterConfig,
-  );
-  const assigneeOverrideChrome = assigneeAdapterType === "claude_local"
-    && assigneeOverrideAdapterConfig.chrome === true;
-  const { data: assigneeAdapterModels } = useQuery({
-    queryKey:
-      companyId && assigneeAdapterType
-        ? queryKeys.agents.adapterModels(companyId, assigneeAdapterType)
-        : ["agents", "none", "adapter-models", assigneeAdapterType ?? "none"],
-    queryFn: () => agentsApi.adapterModels(companyId!, assigneeAdapterType!),
-    enabled: Boolean(companyId) && showAssigneeAdapterOptions && supportsAssigneeOverrides,
-  });
-  const { data: assigneeCheapProfiles } = useQuery({
-    queryKey: companyId && assigneeAdapterType
-      ? queryKeys.agents.adapterModelProfiles(companyId, assigneeAdapterType)
-      : ["agents", "none", "adapter-model-profiles", assigneeAdapterType ?? "none"],
-    queryFn: () => agentsApi.adapterModelProfiles(companyId!, assigneeAdapterType!),
-    enabled: Boolean(companyId) && showAssigneeAdapterOptions && assigneeSupportsCheapLane,
-  });
-  const assigneeCheapProfile = useMemo(
-    () => (assigneeCheapProfiles ?? []).find((profile) => profile.key === "cheap") ?? null,
-    [assigneeCheapProfiles],
-  );
-  const modelOverrideOptions = useMemo<InlineEntityOption[]>(() => {
-    const models = sortAdapterModels(assigneeAdapterModels ?? []);
-    const options = models.map((model) => ({
-      id: model.id,
-      label: model.label,
-      searchText: `${model.id} ${extractProviderIdWithFallback(model.id)}`,
-    }));
-    if (assigneeOverrideModel && !options.some((option) => option.id === assigneeOverrideModel)) {
-      options.unshift({
-        id: assigneeOverrideModel,
-        label: assigneeOverrideModel,
-        searchText: assigneeOverrideModel,
-      });
-    }
-    return options;
-  }, [assigneeAdapterModels, assigneeOverrideModel]);
-  const updateAssigneeAdapterOverrides = (next: Issue["assigneeAdapterOverrides"]) => {
-    onUpdate({ assigneeAdapterOverrides: next });
-  };
-  const buildAssigneeOverrideWithConfig = (adapterConfig: Record<string, unknown>) => {
-    const nextConfig = compactRecord(adapterConfig);
-    const next = compactRecord({
-      useProjectWorkspace: assigneeAdapterOverrides?.useProjectWorkspace,
-      ...(Object.keys(nextConfig).length > 0 ? { adapterConfig: nextConfig } : {}),
-    });
-    return Object.keys(next).length > 0 ? next : null;
-  };
-  const updateAssigneeOverrideConfig = (patch: Record<string, unknown>) => {
-    updateAssigneeAdapterOverrides(
-      buildAssigneeOverrideWithConfig({
-        ...assigneeOverrideAdapterConfig,
-        ...patch,
-      }),
-    );
-  };
-  const updateAssigneeOverrideThinkingEffort = (nextValue: string) => {
-    const nextConfig = { ...assigneeOverrideAdapterConfig };
-    delete nextConfig.modelReasoningEffort;
-    delete nextConfig.reasoningEffort;
-    delete nextConfig.effort;
-    delete nextConfig.variant;
-    if (nextValue) {
-      nextConfig[thinkingEffortKeyFor(assigneeAdapterType)] = nextValue;
-    }
-    updateAssigneeAdapterOverrides(buildAssigneeOverrideWithConfig(nextConfig));
-  };
-  const setAssigneeOverrideLane = (lane: IssueModelLane) => {
-    if (lane === "primary") {
-      updateAssigneeAdapterOverrides(null);
-      return;
-    }
-    if (lane === "cheap") {
-      updateAssigneeAdapterOverrides(
-        compactRecord({
-          useProjectWorkspace: assigneeAdapterOverrides?.useProjectWorkspace,
-          modelProfile: "cheap",
-        }),
-      );
-      return;
-    }
-    updateAssigneeAdapterOverrides(buildAssigneeOverrideWithConfig(assigneeOverrideAdapterConfig) ?? { adapterConfig: {} });
-  };
-  const assigneeOptionsTrigger = (() => {
-    if (assigneeOverrideLane === "cheap") {
-      return <span className="text-sm">Cheap model</span>;
-    }
-    if (assigneeOverrideLane === "custom") {
-      const details = [
-        assigneeOverrideModel,
-        assigneeOverrideThinkingEffort,
-        assigneeOverrideChrome ? "Chrome" : "",
-      ].filter(Boolean);
-      const summary = details.length > 0 ? `Override · ${details.join(" · ")}` : "Override · adapter options";
-      return (
-        <span
-          className="min-w-0 truncate text-sm"
-          title={`Task-level model override — replaces the agent's primary model for this issue.${details.length > 0 ? ` (${details.join(" · ")})` : ""}`}
-        >
-          {summary}
-        </span>
-      );
-    }
-    return <span className="text-sm text-muted-foreground">Primary model</span>;
-  })();
-  const assigneeOptionsContent = supportsAssigneeOverrides ? (
-    <div className="w-full space-y-3 p-2">
-      <div className="space-y-1.5">
-        <div className="text-xs text-muted-foreground">Model lane</div>
-        <div className="flex w-full overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Model lane">
-          {(["primary", ...(assigneeSupportsCheapLane ? (["cheap"] as const) : ([] as const)), "custom"] as const).map((lane) => (
-            <button
-              key={lane}
-              type="button"
-              role="radio"
-              aria-checked={assigneeOverrideLane === lane}
-              className={cn(
-                "flex-1 px-2 py-1 text-xs capitalize transition-colors hover:bg-accent/40",
-                assigneeOverrideLane === lane && "bg-accent text-foreground",
-              )}
-              onClick={() => setAssigneeOverrideLane(lane)}
-            >
-              {lane === "primary" ? "Primary" : lane === "cheap" ? "Cheap" : "Override"}
-            </button>
-          ))}
-        </div>
-        {assigneeOverrideLane === "cheap" ? (
-          <p className="text-xs text-muted-foreground">
-            Sends <code>modelProfile: "cheap"</code>{" "}
-            {assigneeCheapProfile?.adapterConfig && typeof (assigneeCheapProfile.adapterConfig as Record<string, unknown>).model === "string"
-              ? <>· adapter default <code>{String((assigneeCheapProfile.adapterConfig as Record<string, unknown>).model)}</code></>
-              : assigneeCheapProfile
-                ? <>· uses the agent&apos;s configured cheap profile</>
-                : <>· falls back to the primary model if no cheap profile is configured</>}
-          </p>
-        ) : null}
-        {assigneeOverrideLane === "custom" ? (
-          <p className="text-xs text-muted-foreground">
-            Task-level model override — replaces the agent&apos;s primary model for this issue.
-          </p>
-        ) : null}
-      </div>
-      {assigneeOverrideLane === "custom" ? (
-        <>
-          <div className="space-y-1.5">
-            <div className="text-xs text-muted-foreground">Model</div>
-            <InlineEntitySelector
-              value={assigneeOverrideModel}
-              options={modelOverrideOptions}
-              placeholder="Default model"
-              disablePortal
-              noneLabel="Default model"
-              searchPlaceholder="Search models..."
-              emptyMessage="No models found."
-              onChange={(model) => updateAssigneeOverrideConfig({ model: model || undefined })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="text-xs text-muted-foreground">Thinking effort</div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {thinkingEffortOptionsFor(assigneeAdapterType).map((option) => (
-                <button
-                  key={option.value || "default"}
-                  className={cn(
-                    "px-2 py-1 rounded-md text-xs border border-border hover:bg-accent/50 transition-colors",
-                    assigneeOverrideThinkingEffort === option.value && "bg-accent",
-                  )}
-                  onClick={() => updateAssigneeOverrideThinkingEffort(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {assigneeAdapterType === "claude_local" ? (
-            <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
-              <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
-              <ToggleSwitch
-                checked={assigneeOverrideChrome}
-                onCheckedChange={(next) => updateAssigneeOverrideConfig({ chrome: next ? true : undefined })}
-              />
-            </div>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  ) : (
-    <div className="w-full space-y-2 p-2">
-      <p className="text-xs text-muted-foreground">
-        {assignee
-          ? "This assignee's adapter does not expose editable task overrides."
-          : "Select a compatible assignee agent to edit these overrides."}
-      </p>
-      <button
-        type="button"
-        className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-        onClick={() => updateAssigneeAdapterOverrides(null)}
-      >
-        Clear adapter options
-      </button>
-    </div>
-  );
   const reviewerValues = stageParticipantValues(issue.executionPolicy, "review");
   const approverValues = stageParticipantValues(issue.executionPolicy, "approval");
-  const userLabel = (userId: string | null | undefined) => formatAssigneeUserLabel(userId, currentUserId, userLabelMap);
+  const userLabel = (userId: string | null | undefined) => formatOwnerUserLabel(userId, currentUserId, userLabelMap);
   const actualUserLabel = (userId: string | null | undefined) => formatUserLabel(userId, userLabelMap);
-  const assigneeUserLabel = userLabel(issue.assigneeUserId);
-  const creatorUserLabel = actualUserLabel(issue.createdByUserId);
+  const ownerUserLabel = userLabel(issue.ownerUserId);
+  const creatorUserLabel = actualUserLabel(creatorUserId);
   const originatingActor = deriveOriginatingActor(issue);
   const originatingUserProfile =
     originatingActor?.kind === "user" ? userProfileMap.get(originatingActor.id) : null;
@@ -669,14 +438,10 @@ export function IssueProperties({
     originatingActor?.kind === "user" && originatingActor.viaAgentId
       ? agentName(originatingActor.viaAgentId) ?? originatingActor.viaAgentId.slice(0, 8)
       : null;
-  const selectedAssigneeValue = issue.assigneeAgentId
-    ? `agent:${issue.assigneeAgentId}`
-    : issue.assigneeUserId
-      ? `user:${issue.assigneeUserId}`
-      : "";
+  const selectedOwnerAgentId = issue.ownerAgentId ?? "";
 
-  // --- Interrupt-handoff clarity for the assignee picker (design surface 2) ---
-  const handoffResolvers: HandoffChipResolvers = useMemo(
+  // --- Interrupt clarity for the owner picker ---
+  const ownerResolvers: OwnerChipResolvers = useMemo(
     () => ({
       agentMap: new Map((agents ?? []).map((agent) => [agent.id, { name: agent.name, icon: agent.icon }])),
       resolveUserLabel: (id) => userLabel(id),
@@ -684,40 +449,35 @@ export function IssueProperties({
     // userLabel closes over userLabelMap + currentUserId, both reflected here.
     [agents, userLabelMap, currentUserId],
   );
-  const reassignInterruptCopy = useMemo(
-    () => describeReassignInterrupt({ runningAgentName: assignee?.name ?? null }),
-    [assignee?.name],
+  const ownerChangeInterruptCopy = useMemo(
+    () => describeOwnerChangeInterrupt({ runningAgentName: ownerAgent?.name ?? null }),
+    [ownerAgent?.name],
   );
-  const closeAssigneePicker = () => {
-    setAssigneeOpen(false);
-    setAssigneeSearch("");
-    setPendingAssignee(null);
+  const closeOwnerPicker = () => {
+    setOwnerOpen(false);
+    setOwnerSearch("");
+    setPendingOwner(null);
   };
-  const applyAssignee = (next: { assigneeAgentId: string | null; assigneeUserId: string | null }, track?: () => void) => {
+  const applyOwner = (ownerAgentId: string, track?: () => void) => {
     track?.();
-    onUpdate(next);
-    closeAssigneePicker();
+    onUpdate({ ownerAgentId });
+    closeOwnerPicker();
   };
   /** Apply a selection immediately, or stage it for confirmation while a run is live. */
-  const selectAssignee = (
-    next: { assigneeAgentId: string | null; assigneeUserId: string | null },
+  const selectOwner = (
+    ownerAgentId: string,
     label: string,
     track?: () => void,
   ) => {
-    const nextValue = next.assigneeAgentId
-      ? `agent:${next.assigneeAgentId}`
-      : next.assigneeUserId
-        ? `user:${next.assigneeUserId}`
-        : "";
-    if (nextValue === selectedAssigneeValue) {
-      closeAssigneePicker();
+    if (ownerAgentId === selectedOwnerAgentId) {
+      closeOwnerPicker();
       return;
     }
     if (hasActiveRun) {
-      setPendingAssignee({ ...next, label, track });
+      setPendingOwner({ ownerAgentId, label, track });
       return;
     }
-    applyAssignee(next, track);
+    applyOwner(ownerAgentId, track);
   };
   const updateExecutionPolicy = (nextReviewers: string[], nextApprovers: string[]) => {
     onUpdate({
@@ -755,26 +515,6 @@ export function IssueProperties({
   const approverTrigger = approverValues.length > 0
     ? <span className="text-sm truncate min-w-0" title={approverLabel}>{approverLabel}</span>
     : <span className="text-sm text-muted-foreground">None</span>;
-  const nextRunnableExecutionStage = (() => {
-    if (issue.executionState?.status === "changes_requested" && issue.executionState.currentStageType) {
-      return issue.executionState.currentStageType;
-    }
-    if (issue.executionState) return null;
-    if (reviewerValues.length > 0) return "review";
-    if (approverValues.length > 0) return "approval";
-    return null;
-  })();
-  const runExecutionButton = (stageType: "review" | "approval") => (
-    <PropertyRow label="">
-      <button
-        type="button"
-        className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-        onClick={() => onUpdate({ status: "in_review" })}
-      >
-        {stageType === "review" ? "Run review now" : "Run approval now"}
-      </button>
-    </PropertyRow>
-  );
   const currentExecutionLabel = (() => {
     if (!issue.executionState?.currentStageType) return null;
     const stageLabel = issue.executionState.currentStageType === "review" ? "Review" : "Approval";
@@ -789,6 +529,61 @@ export function IssueProperties({
     }
     return `${stageLabel} pending${participantLabel ? ` with ${participantLabel}` : ""}`;
   })();
+  const decideExecutionStage = useMutation({
+    mutationFn: (input: {
+      outcome: "approved" | "changes_requested";
+      body: string;
+    }) =>
+      issuesApi.decideExecutionStage(issue.id, {
+        ...input,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    onSuccess: ({ issue: updatedIssue }) => {
+      queryClient.setQueryData<Issue>(
+        queryKeys.issues.detail(issue.id),
+        updatedIssue,
+      );
+      if (issue.identifier) {
+        queryClient.setQueryData<Issue>(
+          queryKeys.issues.detail(issue.identifier),
+          updatedIssue,
+        );
+      }
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.issues.detail(issue.id),
+      });
+      if (issue.identifier) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.issues.detail(issue.identifier),
+        });
+      }
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.issues.activity(issue.id),
+      });
+      if (companyId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.issues.list(companyId),
+        });
+        invalidateInboxIssueQueries(queryClient, companyId);
+      }
+    },
+  });
+  const canCurrentUserDecideExecutionStage =
+    issue.executionState?.status === "pending" &&
+    issue.executionState.currentParticipant?.type === "user" &&
+    issue.executionState.currentParticipant.userId === currentUserId;
+  const requestExecutionStageDecision = (
+    outcome: "approved" | "changes_requested",
+  ) => {
+    const body = window.prompt(
+      outcome === "approved"
+        ? "Record the approval decision"
+        : "Describe the changes requested",
+      outcome === "approved" ? "Approved" : "",
+    )?.trim();
+    if (!body) return;
+    decideExecutionStage.mutate({ outcome, body });
+  };
   useEffect(() => {
     setMonitorAtInput(toDateTimeLocalValue(issue.executionPolicy?.monitor?.nextCheckAt));
     setMonitorNotesInput(issue.executionPolicy?.monitor?.notes ?? "");
@@ -798,27 +593,8 @@ export function IssueProperties({
     issue.executionPolicy?.monitor?.notes,
     issue.executionPolicy?.monitor?.serviceName,
   ]);
-  // Re-sync watchdog editor inputs when the persisted watchdog changes (and reset on close).
-  useEffect(() => {
-    if (watchdogOpen) return;
-    setWatchdogAgentInput(issue.watchdog?.watchdogAgentId ?? "");
-    setWatchdogInstructionsInput(issue.watchdog?.instructions ?? "");
-  }, [issue.watchdog?.watchdogAgentId, issue.watchdog?.instructions, watchdogOpen]);
-
-  const watchdogAgentOptions = useMemo<InlineEntityOption[]>(
-    () =>
-      (agents ?? [])
-        .filter(isAgentTaskTarget)
-        .map((agent) => ({
-          id: agent.id,
-          label: agent.name,
-          searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
-        })),
-    [agents],
-  );
   const upsertWatchdog = useMutation({
-    mutationFn: (data: { agentId: string; instructions: string | null }) =>
-      issuesApi.upsertWatchdog(issue.id, data),
+    mutationFn: () => issuesApi.upsertWatchdog(issue.id, {}),
     onSuccess: (watchdog) => {
       queryClient.setQueryData<Issue>(queryKeys.issues.detail(issue.id), (current) =>
         current ? { ...current, watchdog } : current,
@@ -837,125 +613,46 @@ export function IssueProperties({
       setWatchdogOpen(false);
     },
   });
-  const saveWatchdog = () => {
-    if (!watchdogAgentInput) return;
-    upsertWatchdog.mutate({
-      agentId: watchdogAgentInput,
-      instructions: watchdogInstructionsInput.trim() || null,
-    });
-  };
-  const removeWatchdog = () => {
-    if (issue.watchdog) {
-      deleteWatchdog.mutate();
-    } else {
-      setWatchdogOpen(false);
-    }
-    setWatchdogAgentInput("");
-    setWatchdogInstructionsInput("");
-  };
   const watchdogMutationError =
     upsertWatchdog.error instanceof Error
       ? upsertWatchdog.error.message
       : deleteWatchdog.error instanceof Error
         ? deleteWatchdog.error.message
         : null;
-  const watchdogIssueRef = (childIssues ?? []).find(
-    (child) => child.id === issue.watchdog?.watchdogIssueId,
-  );
   const watchdogTrigger = issue.watchdog ? (
-    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm" title={issue.watchdog.instructions?.trim() || undefined}>
-      {(() => {
-        const agent = (agents ?? []).find((candidate) => candidate.id === issue.watchdog?.watchdogAgentId);
-        return agent ? <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
-      })()}
-      <span className="shrink-0 max-w-40 truncate">{agentName(issue.watchdog.watchdogAgentId)}</span>
-      {issue.watchdog.instructions?.trim() ? (
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          · {issue.watchdog.instructions.trim()}
-        </span>
-      ) : null}
-      {issue.watchdog.status === "disabled" ? (
-        <span className="shrink-0 text-xs text-muted-foreground">(disabled)</span>
-      ) : null}
-    </span>
+    <span className="text-sm">Enabled</span>
   ) : (
-    <span className="text-sm text-muted-foreground">None</span>
+    <span className="text-sm text-muted-foreground">Disabled</span>
   );
   const watchdogContent = (
     <div className="space-y-3 p-2">
-      <div className="space-y-1.5">
-        <div className="text-xs font-medium text-foreground">Watchdog agent</div>
-        <InlineEntitySelector
-          value={watchdogAgentInput}
-          options={watchdogAgentOptions}
-          placeholder="Select agent"
-          noneLabel="No watchdog agent"
-          searchPlaceholder="Search agents..."
-          emptyMessage="No agents found."
-          onChange={setWatchdogAgentInput}
-          renderTriggerValue={(option) => {
-            if (!option) return <span className="text-muted-foreground">Select agent</span>;
-            const agent = (agents ?? []).find((candidate) => candidate.id === option.id);
-            return (
-              <>
-                {agent ? <AgentIcon icon={agent.icon} className="h-3 w-3 shrink-0 text-muted-foreground" /> : null}
-                <span className="truncate">{option.label}</span>
-              </>
-            );
-          }}
-          renderOption={(option) => {
-            const agent = (agents ?? []).find((candidate) => candidate.id === option.id);
-            return (
-              <>
-                {agent ? <AgentIcon icon={agent.icon} className="h-3 w-3 shrink-0 text-muted-foreground" /> : null}
-                <span className="truncate">{option.label}</span>
-              </>
-            );
-          }}
-        />
-      </div>
-      <div className="space-y-1.5">
-        <div className="text-xs font-medium text-foreground">
-          Instructions <span className="font-normal text-muted-foreground">(optional)</span>
-        </div>
-        <Textarea
-          value={watchdogInstructionsInput}
-          onChange={(event) => setWatchdogInstructionsInput(event.target.value)}
-          placeholder="What should the watchdog watch for and how should it keep work moving?"
-          rows={4}
-          className="text-xs"
-        />
-      </div>
-      {watchdogIssueRef ? (
-        <div className="text-xs text-muted-foreground">
-          Watchdog task:{" "}
-          <Link to={`/issues/${watchdogIssueRef.id}`} className="text-primary hover:underline">
-            {watchdogIssueRef.identifier ?? "View task"}
-          </Link>
-        </div>
-      ) : null}
+      <p className="text-xs text-muted-foreground">
+        The system watches this issue subtree and nudges the current owner when
+        runnable work stops unexpectedly.
+      </p>
       {watchdogMutationError ? (
         <div className="rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
           {watchdogMutationError}
         </div>
       ) : null}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-          disabled={deleteWatchdog.isPending || (!issue.watchdog && !watchdogAgentInput)}
-          onClick={removeWatchdog}
-        >
-          {deleteWatchdog.isPending ? "Removing…" : "Remove"}
-        </button>
+      <div className="flex justify-end">
         <Button
           type="button"
           size="sm"
           className="h-7 text-xs"
-          disabled={!watchdogAgentInput || upsertWatchdog.isPending}
-          onClick={saveWatchdog}
+          disabled={upsertWatchdog.isPending || deleteWatchdog.isPending}
+          onClick={() => {
+            if (issue.watchdog) deleteWatchdog.mutate();
+            else upsertWatchdog.mutate();
+          }}
         >
-          {upsertWatchdog.isPending ? "Saving…" : issue.watchdog ? "Update" : "Set watchdog"}
+          {upsertWatchdog.isPending
+            ? "Enabling…"
+            : deleteWatchdog.isPending
+              ? "Disabling…"
+              : issue.watchdog
+                ? "Disable safeguard"
+                : "Enable safeguard"}
         </Button>
       </div>
     </div>
@@ -1092,168 +789,6 @@ export function IssueProperties({
     </TooltipProvider>
   );
 
-  const scheduledRetry = issue.scheduledRetry ?? null;
-  const retryNow = useRetryNowMutation(issue.id);
-  const showScheduledRetryRow = scheduledRetry && scheduledRetry.status === "scheduled_retry";
-  const scheduledRetryDueAtIso = scheduledRetry?.scheduledRetryAt
-    ? new Date(scheduledRetry.scheduledRetryAt).toISOString()
-    : null;
-  const scheduledRetryRelative = scheduledRetryDueAtIso
-    ? formatMonitorOffset(scheduledRetryDueAtIso)
-    : null;
-  const scheduledRetryAbsolute = scheduledRetry?.scheduledRetryAt
-    ? formatDateTime(scheduledRetry.scheduledRetryAt)
-    : null;
-  const scheduledRetryShortDate = scheduledRetry?.scheduledRetryAt
-    ? formatDate(new Date(scheduledRetry.scheduledRetryAt))
-    : null;
-  const scheduledRetryReasonLabel = formatRetryReason(scheduledRetry?.scheduledRetryReason);
-  const scheduledRetryAttempt =
-    typeof scheduledRetry?.scheduledRetryAttempt === "number"
-    && Number.isFinite(scheduledRetry.scheduledRetryAttempt)
-    && scheduledRetry.scheduledRetryAttempt > 0
-      ? scheduledRetry.scheduledRetryAttempt
-      : null;
-  const scheduledRetryIsContinuation =
-    scheduledRetry?.scheduledRetryReason === "max_turns_continuation";
-  const scheduledRetryRelativeLabel = (() => {
-    if (!scheduledRetryRelative) return "Pending schedule";
-    const action = scheduledRetryIsContinuation ? "Continuation" : "Retry";
-    if (scheduledRetryRelative === "now") return `${action} due now`;
-    return `${action} ${scheduledRetryRelative}`;
-  })();
-  const scheduledRetryRetryNowSuccess = retryNow.isSuccess
-    && (retryNow.data?.outcome === "promoted" || retryNow.data?.outcome === "already_promoted");
-  const scheduledRetryAttemptBadge = scheduledRetryAttempt !== null ? (
-    <span className="whitespace-nowrap shrink-0 text-xs text-muted-foreground">Attempt {scheduledRetryAttempt}</span>
-  ) : null;
-  const scheduledRetryTrigger = (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
-      <RotateCcw className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span
-        className="min-w-0 truncate text-sm text-foreground"
-        title={scheduledRetryAbsolute ?? undefined}
-      >
-        {scheduledRetryRelativeLabel}
-      </span>
-      {scheduledRetryShortDate ? (
-        <span className="shrink-0 text-xs text-muted-foreground" title={scheduledRetryAbsolute ?? undefined}>
-          {scheduledRetryShortDate}
-        </span>
-      ) : null}
-    </span>
-  );
-  const scheduledRetryContent = scheduledRetry ? (
-    <div className="flex w-full flex-col gap-2 p-2 text-xs">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-foreground">
-          {scheduledRetryIsContinuation ? "Scheduled continuation" : "Scheduled retry"}
-        </span>
-        {scheduledRetryAttempt !== null ? (
-          <span className="text-xs text-muted-foreground">
-            Attempt {scheduledRetryAttempt}
-          </span>
-        ) : null}
-      </div>
-      <dl className="grid grid-cols-(--gtc-15) gap-y-1">
-        {scheduledRetryReasonLabel ? (
-          <>
-            <dt className="text-muted-foreground">Reason</dt>
-            <dd className="text-foreground">{scheduledRetryReasonLabel}</dd>
-          </>
-        ) : null}
-        {scheduledRetryAbsolute ? (
-          <>
-            <dt className="text-muted-foreground">Next attempt</dt>
-            <dd className="text-foreground">
-              {scheduledRetryAbsolute}
-              {scheduledRetryRelative ? (
-                <span className="ml-1 text-muted-foreground">· {scheduledRetryRelative}</span>
-              ) : null}
-            </dd>
-          </>
-        ) : null}
-        {scheduledRetry.retryOfRunId ? (
-          <>
-            <dt className="text-muted-foreground">Replaces run</dt>
-            <dd className="text-foreground">
-              <Link
-                to={`/agents/${scheduledRetry.agentId}/runs/${scheduledRetry.retryOfRunId}`}
-                className="font-mono text-foreground hover:underline"
-              >
-                {scheduledRetry.retryOfRunId.slice(0, 8)}
-              </Link>
-            </dd>
-          </>
-        ) : null}
-        {scheduledRetry.agentName ? (
-          <>
-            <dt className="text-muted-foreground">Agent</dt>
-            <dd className="text-foreground">
-              <Link
-                to={`/agents/${scheduledRetry.agentId}`}
-                className="text-foreground hover:underline"
-              >
-                {scheduledRetry.agentName}
-              </Link>
-            </dd>
-          </>
-        ) : null}
-        {scheduledRetry.error ? (
-          <>
-            <dt className="text-muted-foreground">Last error</dt>
-            <dd className="text-foreground break-words">{scheduledRetry.error}</dd>
-          </>
-        ) : null}
-      </dl>
-      <RetryErrorBand
-        error={retryNow.lastError}
-        onRetry={() => {
-          retryNow.reset();
-          retryNow.mutate();
-        }}
-      />
-      <Separator className="my-1" />
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="default"
-          onClick={() => retryNow.mutate()}
-          disabled={retryNow.isPending || scheduledRetryRetryNowSuccess}
-          data-testid="issue-scheduled-retry-properties-retry-now"
-        >
-          {retryNow.isPending ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              Retrying…
-            </span>
-          ) : scheduledRetryRetryNowSuccess ? (
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              {retryNow.data?.outcome === "already_promoted" ? "Already promoted" : "Promoted"}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5">
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              Retry now
-            </span>
-          )}
-        </Button>
-        <span className="text-right text-xs text-muted-foreground">
-          {retryNow.isPending
-            ? "Promoting scheduled retry"
-            : scheduledRetryRetryNowSuccess
-              ? retryNow.data?.outcome === "already_promoted"
-                ? "Already promoted — run starting"
-                : "Promoted — run starting"
-              : scheduledRetryIsContinuation
-                ? "Pulls continuation forward immediately"
-                : "Pulls retry forward immediately"}
-        </span>
-      </div>
-    </div>
-  ) : null;
   const monitorContent = (
     <div className="flex w-full flex-col gap-2">
       <div className="flex flex-col gap-2 md:flex-row">
@@ -1416,158 +951,82 @@ export function IssueProperties({
     </>
   );
 
-  const assigneeTrigger = assignee ? (
-    <Identity name={assignee.name} size="sm" shape="square" />
-  ) : assigneeUserLabel ? (
+  const ownerTrigger = ownerAgent ? (
+    <Identity name={ownerAgent.name} size="sm" shape="square" />
+  ) : ownerUserLabel ? (
     <>
       <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate text-sm" title={assigneeUserLabel}>{assigneeUserLabel}</span>
+      <span className="min-w-0 truncate text-sm" title={ownerUserLabel}>{ownerUserLabel}</span>
     </>
   ) : (
-    <span className="text-sm text-muted-foreground">Unassigned</span>
+    <span className="text-sm text-muted-foreground">Board escalation</span>
   );
 
-  // Grouped picker options (design surface 2): a board-users section and an
-  // agents section, plus the "No assignee" reset. Agents stay recency-sorted
-  // within their group via `sortedAgents`.
-  const userAssigneeOptions = [
-    ...(currentUserId
-      ? [{
-          kind: "user" as const,
-          value: `user:${currentUserId}`,
-          userId: currentUserId,
-          label: "Assign to me",
-          searchText: userLabel(currentUserId) ?? "",
-        }]
-      : []),
-    ...(issue.createdByUserId && issue.createdByUserId !== currentUserId
-      ? [{
-          kind: "user" as const,
-          value: `user:${issue.createdByUserId}`,
-          userId: issue.createdByUserId,
-          label: creatorUserLabel ? `Assign to ${creatorUserLabel}` : "Assign to requester",
-          searchText: creatorUserLabel ?? "requester",
-        }]
-      : []),
-    ...otherUserOptions.map((option) => ({
-      kind: "user" as const,
-      value: option.id,
-      userId: option.id.slice("user:".length),
-      label: option.label,
-      searchText: option.searchText ?? "",
-    })),
-  ];
-  const agentAssigneeOptions = sortedAgents.map((agent) => ({
-    kind: "agent" as const,
-    value: `agent:${agent.id}`,
+  const agentOwnerOptions = sortedIssueOwners.map((agent) => ({
+    value: agent.id,
     agent,
     label: agent.name,
-    searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+    searchText: `${agent.name} ${agent.title ?? ""}`,
   }));
 
-  const matchesAssigneeSearch = (label: string, searchText: string) => {
-    if (!assigneeSearch.trim()) return true;
-    return `${label} ${searchText}`.toLowerCase().includes(assigneeSearch.toLowerCase());
+  const matchesOwnerSearch = (label: string, searchText: string) => {
+    if (!ownerSearch.trim()) return true;
+    return `${label} ${searchText}`.toLowerCase().includes(ownerSearch.toLowerCase());
   };
 
-  type AssigneeOptionLike =
-    | { kind: "none"; value: string; label: string; searchText: string }
-    | { kind: "user"; value: string; userId: string; label: string; searchText: string }
-    | { kind: "agent"; value: string; agent: (typeof agentAssigneeOptions)[number]["agent"]; label: string; searchText: string };
-
-  const renderAssigneeOption = (option: AssigneeOptionLike) => (
+  const renderOwnerOption = (option: (typeof agentOwnerOptions)[number]) => (
     <button
-      key={option.value || "__none__"}
+      key={option.value}
       className={cn(
         "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-        option.value === selectedAssigneeValue && "bg-accent",
+        option.value === selectedOwnerAgentId && "bg-accent",
       )}
-      onClick={() => {
-        if (option.kind === "agent") {
-          selectAssignee({ assigneeAgentId: option.agent.id, assigneeUserId: null }, option.label, () =>
-            trackRecentAssignee(option.agent.id),
-          );
-        } else if (option.kind === "user") {
-          selectAssignee({ assigneeAgentId: null, assigneeUserId: option.userId }, option.label, () =>
-            trackRecentAssigneeUser(option.userId),
-          );
-        } else {
-          selectAssignee({ assigneeAgentId: null, assigneeUserId: null }, option.label);
-        }
-      }}
+      onClick={() =>
+        selectOwner(option.agent.id, option.label, () => trackRecentAssignee(option.agent.id))
+      }
     >
-      {option.kind === "agent" ? (
-        <AgentIcon icon={option.agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-      ) : option.kind === "user" ? (
-        <User className="h-3 w-3 shrink-0 text-muted-foreground" />
-      ) : null}
+      <AgentIcon icon={option.agent.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{option.label}</span>
-      {option.value === selectedAssigneeValue ? (
+      {option.value === selectedOwnerAgentId ? (
         <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-foreground" aria-hidden="true" />
       ) : null}
     </button>
   );
 
-  const visibleUserOptions = userAssigneeOptions.filter((option) =>
-    matchesAssigneeSearch(option.label, option.searchText),
-  );
-  const visibleAgentOptions = agentAssigneeOptions.filter((option) =>
-    matchesAssigneeSearch(option.label, option.searchText),
-  );
-  const showNoAssigneeOption = matchesAssigneeSearch("No assignee", "");
-  const sectionHeader = (text: string) => (
-    <div className="px-2 pb-0.5 pt-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-      {text}
-    </div>
+  const visibleOwnerOptions = agentOwnerOptions.filter((option) =>
+    matchesOwnerSearch(option.label, option.searchText),
   );
 
-  const assigneeContent = pendingAssignee ? (
+  const ownerContent = pendingOwner ? (
     <div className="space-y-2 p-1">
-      <InterruptAssignConfirm
-        copy={reassignInterruptCopy}
-        to={{ agentId: pendingAssignee.assigneeAgentId, userId: pendingAssignee.assigneeUserId }}
-        resolvers={handoffResolvers}
+      <InterruptOwnerChangeConfirm
+        copy={ownerChangeInterruptCopy}
+        to={{ ownerKind: "agent", ownerAgentId: pendingOwner.ownerAgentId, ownerUserId: null }}
+        resolvers={ownerResolvers}
         onConfirm={() =>
-          applyAssignee(
-            { assigneeAgentId: pendingAssignee.assigneeAgentId, assigneeUserId: pendingAssignee.assigneeUserId },
-            pendingAssignee.track,
-          )
+          applyOwner(pendingOwner.ownerAgentId, pendingOwner.track)
         }
-        onCancel={() => setPendingAssignee(null)}
+        onCancel={() => setPendingOwner(null)}
       />
     </div>
   ) : (
     <>
       {hasActiveRun ? (
         <div className="px-1 pt-1">
-          <AssigneeRunningBanner copy={reassignInterruptCopy} />
+          <OwnerRunningBanner copy={ownerChangeInterruptCopy} />
         </div>
       ) : null}
       <input
         className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-        placeholder="Search assignees..."
-        value={assigneeSearch}
-        onChange={(e) => setAssigneeSearch(e.target.value)}
+        placeholder="Search owners..."
+        value={ownerSearch}
+        onChange={(event) => setOwnerSearch(event.target.value)}
         autoFocus={!inline}
       />
       <div className="max-h-56 overflow-y-auto overscroll-contain">
-        {showNoAssigneeOption
-          ? renderAssigneeOption({ kind: "none", value: "", label: "No assignee", searchText: "" })
-          : null}
-        {visibleAgentOptions.length > 0 ? (
-          <>
-            {sectionHeader("Agents")}
-            {visibleAgentOptions.map((option) => renderAssigneeOption(option))}
-          </>
-        ) : null}
-        {visibleUserOptions.length > 0 ? (
-          <>
-            {sectionHeader("Board users")}
-            {visibleUserOptions.map((option) => renderAssigneeOption(option))}
-          </>
-        ) : null}
-        {!showNoAssigneeOption && visibleAgentOptions.length === 0 && visibleUserOptions.length === 0 ? (
-          <div className="px-2 py-2 text-xs text-muted-foreground">No matches.</div>
+        {visibleOwnerOptions.map((option) => renderOwnerOption(option))}
+        {visibleOwnerOptions.length === 0 ? (
+          <div className="px-2 py-2 text-xs text-muted-foreground">No invokable agent matches.</div>
         ) : null}
       </div>
     </>
@@ -1610,13 +1069,13 @@ export function IssueProperties({
             Assign to me
           </button>
         )}
-        {issue.createdByUserId && issue.createdByUserId !== currentUserId && (
+        {creatorUserId && creatorUserId !== currentUserId && (
           <button
             className={cn(
               "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-              values.includes(`user:${issue.createdByUserId}`) && "bg-accent",
+              values.includes(`user:${creatorUserId}`) && "bg-accent",
             )}
-            onClick={() => toggleExecutionParticipant(stageType, `user:${issue.createdByUserId}`)}
+            onClick={() => toggleExecutionParticipant(stageType, `user:${creatorUserId}`)}
           >
             <User className="h-3 w-3 shrink-0 text-muted-foreground" />
             {creatorUserLabel ? creatorUserLabel : "Requester"}
@@ -1796,7 +1255,11 @@ export function IssueProperties({
     return allIssues?.find((candidate) => candidate.id === issue.parentId) ?? null;
   }, [allIssues, issue.parentId]);
   const parentIdentifier = issue.ancestors?.[0]?.identifier ?? currentParentIssue?.identifier;
-  const parentTitle = issue.ancestors?.[0]?.title ?? currentParentIssue?.title ?? issue.parentId?.slice(0, 8);
+  const parentTitle = issue.ancestors?.[0]
+    ? issueDisplayTitle(issue.ancestors[0])
+    : currentParentIssue
+      ? issueDisplayTitle(currentParentIssue)
+      : issue.parentId?.slice(0, 8);
   const parentTrigger = issue.parentId ? (
     <span
       className="text-sm truncate min-w-0"
@@ -1825,13 +1288,11 @@ export function IssueProperties({
       const query = parentSearch.toLowerCase();
       return (
         (candidate.identifier ?? "").toLowerCase().includes(query) ||
-        candidate.title.toLowerCase().includes(query)
+        candidate.title?.toLowerCase().includes(query)
       );
     })
     .sort((a, b) => {
-      const aLabel = `${a.identifier ?? ""} ${a.title}`.trim();
-      const bLabel = `${b.identifier ?? ""} ${b.title}`.trim();
-      return aLabel.localeCompare(bLabel);
+      return issueDisplayTitle(a).localeCompare(issueDisplayTitle(b));
     });
   const parentContent = (
     <>
@@ -1867,7 +1328,7 @@ export function IssueProperties({
               setParentOpen(false);
             }}
           >
-            <StatusIcon status={candidate.status} className="h-3 w-3" />
+            <StatusIcon status={candidate.boardPresentationStatus} className="h-3 w-3" />
             <span className="truncate">
               {candidate.identifier ? `${candidate.identifier} ` : ""}
               {candidate.title}
@@ -1883,9 +1344,7 @@ export function IssueProperties({
     .filter((candidate) => candidate.id !== issue.id);
   if (!blockerSearchActive) {
     blockerOptions.sort((a, b) => {
-      const aLabel = `${a.identifier ?? ""} ${a.title}`.trim();
-      const bLabel = `${b.identifier ?? ""} ${b.title}`.trim();
-      return aLabel.localeCompare(bLabel);
+      return issueDisplayTitle(a).localeCompare(issueDisplayTitle(b));
     });
   }
   const blockerOptionsLoading = blockedByOpen && (
@@ -1939,7 +1398,7 @@ export function IssueProperties({
               )}
               onClick={() => toggleBlockedBy(candidate.id)}
             >
-              <StatusIcon status={candidate.status} className="h-3 w-3" />
+              <StatusIcon status={candidate.boardPresentationStatus} className="h-3 w-3" />
               <span className="truncate">
                 {candidate.identifier ? `${candidate.identifier} ` : ""}
                 {candidate.title}
@@ -1972,7 +1431,7 @@ export function IssueProperties({
       <PropertySection title="Triage" first>
         <PropertyRow label="Status">
           <StatusIcon
-            status={issue.status}
+            status={issue.boardPresentationStatus}
             size="lg"
             blockerAttention={issue.blockerAttention}
             onChange={(status) => onUpdate({ status })}
@@ -2003,14 +1462,14 @@ export function IssueProperties({
 
         <PropertyPicker
           inline={inline}
-          label="Assignee"
-          open={assigneeOpen}
-          onOpenChange={(open) => { setAssigneeOpen(open); if (!open) { setAssigneeSearch(""); setPendingAssignee(null); } }}
-          triggerContent={assigneeTrigger}
+          label="Owner"
+          open={ownerOpen}
+          onOpenChange={(open) => { setOwnerOpen(open); if (!open) { setOwnerSearch(""); setPendingOwner(null); } }}
+          triggerContent={ownerTrigger}
           popoverClassName="w-52"
-          extra={issue.assigneeAgentId ? (
+          extra={issue.ownerAgentId ? (
             <Link
-              to={`/agents/${issue.assigneeAgentId}`}
+              to={`/agents/${issue.ownerAgentId}`}
               className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
             >
@@ -2018,22 +1477,8 @@ export function IssueProperties({
             </Link>
           ) : undefined}
         >
-          {assigneeContent}
+          {ownerContent}
         </PropertyPicker>
-
-        {showAssigneeAdapterOptions ? (
-          <PropertyPicker
-            inline={inline}
-            label="Model"
-            open={assigneeOptionsOpen}
-            onOpenChange={setAssigneeOptionsOpen}
-            triggerContent={assigneeOptionsTrigger}
-            triggerClassName="min-w-0 max-w-full"
-            popoverClassName={cn("max-w-full", inline ? "w-full" : "w-72")}
-          >
-            {assigneeOptionsContent}
-          </PropertyPicker>
-        ) : null}
 
         <PropertyPicker
           inline={inline}
@@ -2203,8 +1648,6 @@ export function IssueProperties({
             () => updateExecutionPolicy([], approverValues),
           )}
         </PropertyPicker>
-        {nextRunnableExecutionStage === "review" && reviewerValues.length > 0 ? runExecutionButton("review") : null}
-
         <PropertyPicker
           inline={inline}
           label="Approvers"
@@ -2222,28 +1665,41 @@ export function IssueProperties({
             () => updateExecutionPolicy(reviewerValues, []),
           )}
         </PropertyPicker>
-        {nextRunnableExecutionStage === "approval" && approverValues.length > 0 ? runExecutionButton("approval") : null}
-
         {currentExecutionLabel && (
           <PropertyRow label="Execution">
-            <span className="text-sm truncate min-w-0" title={currentExecutionLabel}>{currentExecutionLabel}</span>
+            <div className="flex min-w-0 flex-col items-start gap-1.5">
+              <span className="text-sm truncate min-w-0" title={currentExecutionLabel}>{currentExecutionLabel}</span>
+              {canCurrentUserDecideExecutionStage ? (
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7"
+                    disabled={decideExecutionStage.isPending}
+                    onClick={() => requestExecutionStageDecision("approved")}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={decideExecutionStage.isPending}
+                    onClick={() => requestExecutionStageDecision("changes_requested")}
+                  >
+                    Request changes
+                  </Button>
+                </div>
+              ) : null}
+              {decideExecutionStage.error instanceof Error ? (
+                <span className="text-xs text-destructive" role="alert">
+                  {decideExecutionStage.error.message}
+                </span>
+              ) : null}
+            </div>
           </PropertyRow>
         )}
-
-        {showScheduledRetryRow && scheduledRetryContent ? (
-          <PropertyPicker
-            inline={inline}
-            label="Scheduled retry"
-            open={scheduledRetryOpen}
-            onOpenChange={setScheduledRetryOpen}
-            triggerContent={scheduledRetryTrigger}
-            triggerClassName="min-w-0 max-w-full"
-            popoverClassName={cn("max-w-full", inline ? "w-full" : "w-80 sm:w-(--sz-32rem)")}
-            extra={scheduledRetryAttemptBadge}
-          >
-            {scheduledRetryContent}
-          </PropertyPicker>
-        ) : null}
 
         <PropertyPicker
           inline={inline}
@@ -2257,40 +1713,27 @@ export function IssueProperties({
           {monitorContent}
         </PropertyPicker>
 
-        {taskWatchdogsEnabled ? (
+        {systemSafeguardsEnabled ? (
           <PropertyPicker
             inline={inline}
-            label="Watchdog"
+            label="System safeguard"
             open={watchdogOpen}
             onOpenChange={setWatchdogOpen}
             triggerContent={watchdogTrigger}
             triggerClassName="min-w-0 max-w-full"
             popoverClassName={cn("max-w-full", inline ? "w-full" : "w-80 sm:w-96")}
-            extra={
-              watchdogIssueRef ? (
-                <Link
-                  to={`/issues/${watchdogIssueRef.id}`}
-                  className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-                  title="Open watchdog task"
-                  aria-label="Open watchdog task"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ArrowUpRight className="h-3 w-3" />
-                </Link>
-              ) : undefined
-            }
           >
             {watchdogContent}
           </PropertyPicker>
         ) : null}
       </PropertySection>
 
-      {hasWorkspaceRuntimeControls || issue.currentExecutionWorkspace?.branchName || issue.currentExecutionWorkspace?.cwd || issue.executionWorkspaceId ? (
+      {hasWorkspaceRuntimeControls || issue.currentExecutionWorkspace?.branchName || issue.currentExecutionWorkspace?.cwd || currentExecutionWorkspaceId ? (
         <PropertySection title="Workspace">
-          {showWorkspaceDetailLink && issue.executionWorkspaceId && (
+          {showWorkspaceDetailLink && currentExecutionWorkspaceId && (
             <PropertyRow label="Workspace">
               <Link
-                to={`/execution-workspaces/${issue.executionWorkspaceId}`}
+                to={`/execution-workspaces/${currentExecutionWorkspaceId}`}
                 className="text-sm text-primary hover:underline inline-flex min-w-0 items-center gap-1.5"
               >
                 <HardDrive className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

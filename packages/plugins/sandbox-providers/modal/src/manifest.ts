@@ -35,7 +35,7 @@ const manifest: PaperclipPluginManifestV1 = {
           image: {
             type: "string",
             description:
-              "Container image reference passed to `modal.images.fromRegistry()`, e.g. `python:3.13` or `node:20`.",
+              "Container image reference passed to `modal.images.fromRegistry()`, e.g. `python:3.13` or `node:22`.",
           },
           tokenId: {
             type: "string",

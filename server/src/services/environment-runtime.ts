@@ -12,6 +12,7 @@ import type {
 } from "@paperclipai/shared";
 import type {
   PluginEnvironmentExecuteResult,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentLease,
   PluginEnvironmentRealizeWorkspaceResult,
   PluginEnvironmentSyncResult,
@@ -45,6 +46,7 @@ import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 import {
   destroyPluginEnvironmentLease,
   executePluginEnvironmentCommand,
+  pluginWorkerSupportsEnvironmentExecutionLifecycle,
   realizePluginEnvironmentWorkspace,
   resolvePluginSandboxProviderDriverByKey,
   resolvePluginExecuteRpcTimeoutMs,
@@ -115,12 +117,12 @@ export interface EnvironmentDriverAcquireInput {
   issueId: string | null;
   agentId: string | null;
   /**
-   * UUID of the owning heartbeat run, or null for ad-hoc invocations
+   * UUID of the owning issue-execution run, or null for ad-hoc invocations
    * (e.g. operator-initiated `Test` probes) that are not tied to a run.
    * Null leases must be released by id via `getDriver(...).releaseRunLease`
-   * since `releaseRunLeases(heartbeatRunId)` cannot find them.
+   * since `releaseRunLeases(runId)` cannot find them.
    */
-  heartbeatRunId: string | null;
+  runId: string | null;
   executionWorkspaceId: string | null;
   executionWorkspaceMode: ExecutionWorkspace["mode"] | null;
   /**
@@ -132,7 +134,7 @@ export interface EnvironmentDriverAcquireInput {
   adapterType: string | null;
   /**
    * Force applying the active custom-image template even when issueId and
-   * heartbeatRunId are null. Operator-initiated `Test` probes set this so the
+   * runId are null. Operator-initiated `Test` probes set this so the
    * probe uses the operator-prepared custom image for the runtime lease instead
    * of the base image, matching what real agent runs do.
    */
@@ -179,12 +181,20 @@ export interface EnvironmentDriverRealizeWorkspaceInput extends EnvironmentDrive
 }
 
 export interface EnvironmentDriverExecuteInput extends EnvironmentDriverLeaseInput {
+  /** Exact host-only command identity; never copied into command env/stdin. */
+  executionId: string;
   command: string;
   args?: string[];
   cwd?: string;
   env?: Record<string, string>;
   stdin?: string;
   timeoutMs?: number;
+}
+
+export interface EnvironmentDriverCancelExecutionInput extends EnvironmentDriverLeaseInput {
+  companyId: string;
+  executionId: string;
+  reason: string;
 }
 
 export interface EnvironmentDriverSyncInput extends EnvironmentDriverLeaseInput {
@@ -199,6 +209,11 @@ export interface EnvironmentRuntimeDriver {
   destroyRunLease?(input: EnvironmentDriverLeaseInput): Promise<EnvironmentLease | null>;
   realizeWorkspace?(input: EnvironmentDriverRealizeWorkspaceInput): Promise<PluginEnvironmentRealizeWorkspaceResult>;
   execute?(input: EnvironmentDriverExecuteInput): Promise<PluginEnvironmentExecuteResult>;
+  cancelExecution?(
+    input: EnvironmentDriverCancelExecutionInput,
+  ): Promise<PluginEnvironmentCancelExecutionResult>;
+  /** Synchronous readiness check for exact command-level cancellation. */
+  supportsExecutionCancellation?(input: EnvironmentDriverLeaseInput): boolean;
   /**
    * Optional native inbound/outbound file transfer, delegated to the plugin
    * worker's `environmentSyncIn`/`environmentSyncOut` verbs. Only present for
@@ -236,7 +251,7 @@ function toEnvironmentLeaseSnapshot(row: typeof environmentLeases.$inferSelect):
     environmentId: row.environmentId,
     executionWorkspaceId: row.executionWorkspaceId ?? null,
     issueId: row.issueId ?? null,
-    heartbeatRunId: row.heartbeatRunId ?? null,
+    runId: row.runId ?? null,
     status: row.status as EnvironmentLease["status"],
     leasePolicy: row.leasePolicy as EnvironmentLease["leasePolicy"],
     provider: row.provider ?? null,
@@ -498,11 +513,11 @@ function reusableSandboxLeaseScopeMatches(input: {
 }
 
 function reusableLeaseCanBeResumed(input: {
-  lease: Pick<EnvironmentLease, "status" | "heartbeatRunId">;
-  heartbeatRunId: string | null;
+  lease: Pick<EnvironmentLease, "status" | "runId">;
+  runId: string | null;
 }): boolean {
   if (input.lease.status === "released" || input.lease.status === "retained") return true;
-  return input.lease.status === "active" && input.heartbeatRunId !== null && input.lease.heartbeatRunId === input.heartbeatRunId;
+  return input.lease.status === "active" && input.runId !== null && input.lease.runId === input.runId;
 }
 
 function reusableLeaseCanBeCleanedUp(lease: Pick<EnvironmentLease, "status">): boolean {
@@ -528,7 +543,7 @@ function createLocalEnvironmentDriver(db: Db): EnvironmentRuntimeDriver {
         environmentId: input.environment.id,
         executionWorkspaceId: input.executionWorkspaceId,
         issueId: input.issueId,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         leasePolicy: "ephemeral",
         provider: "local",
         metadata: {
@@ -569,7 +584,7 @@ function createSshEnvironmentDriver(db: Db): EnvironmentRuntimeDriver {
     async acquireRunLease(input) {
       const parsed = await resolveEnvironmentDriverConfigForRuntime(db, input.companyId, input.environment, {
         issueId: input.issueId,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         applyCustomImageTemplate: input.applyCustomImageTemplate ?? false,
       });
       if (parsed.driver !== "ssh") {
@@ -582,7 +597,7 @@ function createSshEnvironmentDriver(db: Db): EnvironmentRuntimeDriver {
         environmentId: input.environment.id,
         executionWorkspaceId: input.executionWorkspaceId,
         issueId: input.issueId,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         leasePolicy: "ephemeral",
         provider: "ssh",
         providerLeaseId: `ssh://${parsed.config.username}@${parsed.config.host}:${parsed.config.port}${remoteCwd}`,
@@ -665,6 +680,21 @@ function createSandboxEnvironmentDriver(
       return { state: "worker_unavailable" as const, resolved: installed };
     }
 
+    if (pluginWorkerManager.isRunning(installed.plugin.id)) {
+      if (
+        !pluginWorkerSupportsEnvironmentExecutionLifecycle(
+          pluginWorkerManager,
+          installed.plugin.id,
+        )
+      ) {
+        return {
+          state: "incomplete_execution_lifecycle" as const,
+          resolved: installed,
+        };
+      }
+      return { state: "running" as const, resolved: installed };
+    }
+
     const deadline = Date.now() + Math.max(0, pluginWorkerReadyTimeoutMs);
     while (Date.now() < deadline) {
       const retried = await resolvePluginSandboxProviderDriverByKey({
@@ -675,6 +705,12 @@ function createSandboxEnvironmentDriver(
       });
       if (retried) {
         return { state: "running" as const, resolved: retried };
+      }
+      if (pluginWorkerManager.isRunning(installed.plugin.id)) {
+        return {
+          state: "incomplete_execution_lifecycle" as const,
+          resolved: installed,
+        };
       }
       await delay(Math.max(1, pluginWorkerReadyPollMs));
     }
@@ -778,7 +814,7 @@ function createSandboxEnvironmentDriver(
       const storedParsed = parseEnvironmentDriverConfig(input.environment);
       const parsed = await resolveEnvironmentDriverConfigForRuntime(db, input.companyId, input.environment, {
         issueId: input.issueId,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         applyCustomImageTemplate: input.applyCustomImageTemplate ?? false,
       });
       if (parsed.driver !== "sandbox" || storedParsed.driver !== "sandbox") {
@@ -800,6 +836,14 @@ function createSandboxEnvironmentDriver(
             `Sandbox provider "${parsed.config.provider}" is installed via plugin "${pluginProvider.resolved.plugin.pluginKey}", but that plugin is currently ${pluginProvider.resolved.plugin.status}.`,
           );
         }
+        if (
+          pluginProvider.state ===
+          "incomplete_execution_lifecycle"
+        ) {
+          throw new Error(
+            `Sandbox provider "${parsed.config.provider}" is installed via plugin "${pluginProvider.resolved.plugin.pluginKey}", but its worker does not advertise the complete acquire/realize/execute/cancel/release lifecycle.`,
+          );
+        }
         if (pluginProvider.state === "worker_unavailable") {
           throw new Error(
             `Sandbox provider "${parsed.config.provider}" is installed via plugin "${pluginProvider.resolved.plugin.pluginKey}", but its worker is not running.`,
@@ -818,7 +862,7 @@ function createSandboxEnvironmentDriver(
         const leaseFingerprint =
           supportsReusableLeases &&
           parsed.config.reuseLease &&
-          input.heartbeatRunId !== null &&
+          input.runId !== null &&
           input.executionWorkspaceId !== null &&
           input.agentId !== null
             ? await buildReusableSandboxLeaseFingerprint({
@@ -838,22 +882,22 @@ function createSandboxEnvironmentDriver(
                 },
               })
             : null;
-        // Ad-hoc tests (heartbeatRunId === null) must never resume an existing
+        // Ad-hoc tests (runId === null) must never resume an existing
         // provider lease. If they did, releasing the test lease at the end of
-        // the probe would tear down the live heartbeat run that owns it.
+        // the probe would tear down the live issue-execution run that owns it.
         // We also filter out leases whose policy is not reuse_by_environment
         // and whose status is not reusable so non-reusable, cleanup-pending,
         // or terminal rows cannot be matched.
         const reusableCandidateLeases =
           supportsReusableLeases &&
           parsed.config.reuseLease &&
-          input.heartbeatRunId !== null &&
+          input.runId !== null &&
           input.executionWorkspaceId !== null &&
           input.agentId !== null
           ? (await environmentsSvc.listLeases(input.environment.id))
               .filter((lease) =>
                 lease.leasePolicy === "reuse_by_environment" &&
-                reusableLeaseCanBeResumed({ lease, heartbeatRunId: input.heartbeatRunId }) &&
+                reusableLeaseCanBeResumed({ lease, runId: input.runId }) &&
                 lease.executionWorkspaceId === input.executionWorkspaceId &&
                 lease.metadata?.agentId === input.agentId,
               )
@@ -871,8 +915,8 @@ function createSandboxEnvironmentDriver(
             leaseFingerprint,
             allowLegacyRuntimeFingerprint:
               lease.status === "active" &&
-              input.heartbeatRunId !== null &&
-              lease.heartbeatRunId === input.heartbeatRunId,
+              input.runId !== null &&
+              lease.runId === input.runId,
           }),
         );
         if (reusableCandidateLeases.length > reusableExistingLeases.length) {
@@ -885,7 +929,7 @@ function createSandboxEnvironmentDriver(
         const reusableProviderLeaseId =
           supportsReusableLeases &&
           parsed.config.reuseLease &&
-          input.heartbeatRunId !== null &&
+          input.runId !== null &&
           input.executionWorkspaceId !== null &&
           input.agentId !== null
           ? findReusableSandboxLeaseId({ config: storedConfig, leases: reusableExistingLeases })
@@ -938,26 +982,26 @@ function createSandboxEnvironmentDriver(
             // Plugin SDK requires a string; ad-hoc test leases use a fresh
             // UUID so providers that validate or persist the runId still see
             // a well-formed identifier.
-            runId: input.heartbeatRunId ?? randomUUID(),
+            runId: input.runId ?? randomUUID(),
             workspaceMode: input.executionWorkspaceMode ?? undefined,
             agentId: input.agentId ?? undefined,
             executionWorkspaceId: input.executionWorkspaceId ?? undefined,
             // The agent's harness for THIS run, so the plugin picks the matching
             // runtime image (per-run adapter, mixed-harness environments).
             // NOTE: environment-runtime.ts has TWO drivers calling
-            // environmentAcquireLease; this plugin-sandbox one is the HEARTBEAT
+            // environmentAcquireLease; this plugin-sandbox one is the issue-execution
             // path. Omitting adapterType here silently falls back to the
-            // environment's default adapter image (a pi agent then runs in the
-            // opencode image and the harness binary is missing at exec time).
+            // environment's default adapter image, which may not contain the
+            // selected external adapter's harness binary.
             adapterType: input.adapterType ?? undefined,
           },
           resolvePluginSandboxRpcTimeoutMs(workerConfig),
         );
 
         // Ad-hoc test leases are never publishable for reuse: storing them
-        // as `reuse_by_environment` would let a concurrent heartbeat resume
+        // as `reuse_by_environment` would let a concurrent issue execution resume
         // the test's provider lease and lose its sandbox when the test ends.
-        const resolvedLeasePolicy = supportsReusableLeases && parsed.config.reuseLease && input.heartbeatRunId !== null
+        const resolvedLeasePolicy = supportsReusableLeases && parsed.config.reuseLease && input.runId !== null
           ? "reuse_by_environment"
           : "ephemeral";
         const sanitizedProviderMetadata = stripSecretRefValuesFromPluginLeaseMetadata({
@@ -983,7 +1027,7 @@ function createSandboxEnvironmentDriver(
           environmentId: input.environment.id,
           executionWorkspaceId: input.executionWorkspaceId,
           issueId: input.issueId,
-          heartbeatRunId: input.heartbeatRunId,
+          runId: input.runId,
           leasePolicy: resolvedLeasePolicy,
           provider: parsed.config.provider,
           providerLeaseId: acquiredLease.providerLeaseId,
@@ -1003,9 +1047,9 @@ function createSandboxEnvironmentDriver(
       }
 
       // Built-in sandbox provider path. Same guard as the plugin-backed path:
-      // ad-hoc tests (heartbeatRunId === null) must never resume an existing
+      // ad-hoc tests (runId === null) must never resume an existing
       // provider lease, or releasing the test lease will terminate the live
-      // heartbeat run that shares it. Filter to reusable policies and statuses
+      // issue-execution run that shares it. Filter to reusable policies and statuses
       // so non-reusable, cleanup-pending, or terminal rows can never be matched.
       const builtinSandboxProvider = getBuiltinSandboxProvider(parsed.config.provider);
       const supportsReusableLeases = builtinSandboxProvider?.supportsReusableLeases === true;
@@ -1013,7 +1057,7 @@ function createSandboxEnvironmentDriver(
       const leaseFingerprint =
         supportsReusableLeases &&
         parsed.config.reuseLease &&
-        input.heartbeatRunId !== null &&
+        input.runId !== null &&
         input.executionWorkspaceId !== null &&
         input.agentId !== null
           ? await buildReusableSandboxLeaseFingerprint({
@@ -1030,13 +1074,13 @@ function createSandboxEnvironmentDriver(
       const reusableCandidateLeases =
         supportsReusableLeases &&
         parsed.config.reuseLease &&
-        input.heartbeatRunId !== null &&
+        input.runId !== null &&
         input.executionWorkspaceId !== null &&
         input.agentId !== null
           ? (await environmentsSvc.listLeases(input.environment.id))
               .filter((lease) =>
                 lease.leasePolicy === "reuse_by_environment" &&
-                reusableLeaseCanBeResumed({ lease, heartbeatRunId: input.heartbeatRunId }) &&
+                reusableLeaseCanBeResumed({ lease, runId: input.runId }) &&
                 lease.executionWorkspaceId === input.executionWorkspaceId &&
                 lease.metadata?.agentId === input.agentId,
               )
@@ -1054,8 +1098,8 @@ function createSandboxEnvironmentDriver(
           leaseFingerprint,
           allowLegacyRuntimeFingerprint:
             lease.status === "active" &&
-            input.heartbeatRunId !== null &&
-            lease.heartbeatRunId === input.heartbeatRunId,
+            input.runId !== null &&
+            lease.runId === input.runId,
         }),
       );
       if (reusableCandidateLeases.length > reusableExistingLeases.length) {
@@ -1068,7 +1112,7 @@ function createSandboxEnvironmentDriver(
       const reusableProviderLeaseId =
         supportsReusableLeases &&
         parsed.config.reuseLease &&
-        input.heartbeatRunId !== null &&
+        input.runId !== null &&
         input.executionWorkspaceId !== null &&
         input.agentId !== null
           ? findReusableSandboxLeaseId({ config: parsed.config, leases: reusableExistingLeases })
@@ -1082,7 +1126,7 @@ function createSandboxEnvironmentDriver(
         providerLease = await acquireSandboxProviderLease({
           config: parsed.config,
           environmentId: input.environment.id,
-          heartbeatRunId: input.heartbeatRunId ?? randomUUID(),
+          runId: input.runId ?? randomUUID(),
           issueId: input.issueId,
           agentId: input.agentId,
           executionWorkspaceId: input.executionWorkspaceId,
@@ -1108,7 +1152,7 @@ function createSandboxEnvironmentDriver(
 
       // Same ephemeral-policy-for-tests guard as the plugin-backed path:
       // ad-hoc test leases must not be publishable for reuse.
-      const resolvedLeasePolicy = supportsReusableLeases && parsed.config.reuseLease && input.heartbeatRunId !== null
+      const resolvedLeasePolicy = supportsReusableLeases && parsed.config.reuseLease && input.runId !== null
         ? "reuse_by_environment"
         : "ephemeral";
       const reusableScope = resolvedLeasePolicy === "reuse_by_environment"
@@ -1130,7 +1174,7 @@ function createSandboxEnvironmentDriver(
         environmentId: input.environment.id,
         executionWorkspaceId: input.executionWorkspaceId,
         issueId: input.issueId,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         leasePolicy: resolvedLeasePolicy,
         provider: parsed.config.provider,
         providerLeaseId: providerLease.providerLeaseId,
@@ -1269,6 +1313,7 @@ function createSandboxEnvironmentDriver(
               metadata: input.lease.metadata ?? undefined,
               expiresAt: input.lease.expiresAt?.toISOString() ?? null,
             },
+            executionId: input.executionId,
             command: input.command,
             args: input.args,
             cwd: input.cwd,
@@ -1282,6 +1327,48 @@ function createSandboxEnvironmentDriver(
         }
       }
       throw new Error("Sandbox driver does not support direct command execution for built-in providers.");
+    },
+
+    async cancelExecution(input) {
+      if (input.companyId !== input.lease.companyId) {
+        throw new Error("Environment cancellation scope does not match the environment lease company.");
+      }
+      if (input.lease.metadata?.sandboxProviderPlugin && pluginWorkerManager) {
+        const pluginId = readString(input.lease.metadata?.pluginId);
+        const providerKey = readString(input.lease.metadata?.provider);
+        if (pluginId && providerKey) {
+          const config = await resolvePluginSandboxRuntimeConfig({
+            environment: input.environment,
+            lease: input.lease,
+            provider: providerKey,
+          });
+          const sanitizedConfig = stripSandboxProviderEnvelope(config as SandboxEnvironmentConfig);
+          return await pluginWorkerManager.call(pluginId, "environmentCancelExecution", {
+            driverKey: providerKey,
+            companyId: input.companyId,
+            environmentId: input.environment.id,
+            issueId: input.lease.issueId,
+            config: sanitizedConfig,
+            lease: {
+              providerLeaseId: input.lease.providerLeaseId,
+              metadata: input.lease.metadata ?? undefined,
+              expiresAt: input.lease.expiresAt?.toISOString() ?? null,
+            },
+            executionId: input.executionId,
+            reason: input.reason,
+          });
+        }
+      }
+      throw new Error("Sandbox driver does not support exact command cancellation.");
+    },
+
+    supportsExecutionCancellation(input) {
+      if (!input.lease.metadata?.sandboxProviderPlugin || !pluginWorkerManager) return false;
+      const pluginId = readString(input.lease.metadata?.pluginId);
+      if (!pluginId) return false;
+      const advertised = pluginWorkerManager.getWorker(pluginId)?.supportedMethods ?? [];
+      return advertised.includes("environmentExecute")
+        && advertised.includes("environmentCancelExecution");
     },
 
     supportsSync(input) {
@@ -1485,6 +1572,16 @@ function createPluginEnvironmentDriver(
     if (!workerManager.isRunning(plugin.id)) {
       throw new Error(`Plugin environment driver "${pluginDriverProviderKey(config)}" has no running worker.`);
     }
+    if (
+      !pluginWorkerSupportsEnvironmentExecutionLifecycle(
+        workerManager,
+        plugin.id,
+      )
+    ) {
+      throw new Error(
+        `Plugin environment driver "${pluginDriverProviderKey(config)}" does not advertise the complete acquire/realize/execute/cancel/release lifecycle.`,
+      );
+    }
     return { plugin };
   }
 
@@ -1534,6 +1631,16 @@ function createPluginEnvironmentDriver(
     if (!workerManager.isRunning(plugin.id)) {
       throw new Error(`Plugin environment driver "${plugin.pluginKey}:${driverKey}" has no running worker.`);
     }
+    if (
+      !pluginWorkerSupportsEnvironmentExecutionLifecycle(
+        workerManager,
+        plugin.id,
+      )
+    ) {
+      throw new Error(
+        `Plugin environment driver "${plugin.pluginKey}:${driverKey}" does not advertise the complete acquire/realize/execute/cancel/release lifecycle.`,
+      );
+    }
 
     const currentConfigStillMatches =
       currentConfig?.pluginKey === plugin.pluginKey && currentConfig.driverKey === driverKey;
@@ -1561,7 +1668,7 @@ function createPluginEnvironmentDriver(
         environmentId: input.environment.id,
         issueId: input.issueId,
         config: parsed.config.driverConfig,
-        runId: input.heartbeatRunId ?? randomUUID(),
+        runId: input.runId ?? randomUUID(),
         workspaceMode: input.executionWorkspaceMode ?? undefined,
         agentId: input.agentId ?? undefined,
         executionWorkspaceId: input.executionWorkspaceId ?? undefined,
@@ -1573,7 +1680,7 @@ function createPluginEnvironmentDriver(
         environmentId: input.environment.id,
         executionWorkspaceId: input.executionWorkspaceId,
         issueId: input.issueId,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         leasePolicy: "ephemeral",
         provider: `plugin:${parsed.config.pluginKey}:${parsed.config.driverKey}`,
         providerLeaseId: providerLease.providerLeaseId,
@@ -1709,6 +1816,7 @@ function createPluginEnvironmentDriver(
             metadata: input.lease.metadata ?? undefined,
             expiresAt: input.lease.expiresAt?.toISOString() ?? null,
           },
+          executionId: input.executionId,
           command: input.command,
           args: input.args,
           cwd: input.cwd,
@@ -1717,6 +1825,104 @@ function createPluginEnvironmentDriver(
           timeoutMs: input.timeoutMs,
         },
       });
+    },
+
+    async cancelExecution(input) {
+      if (input.companyId !== input.lease.companyId) {
+        throw new Error("Environment cancellation scope does not match the environment lease company.");
+      }
+      const { plugin, driverKey, driverConfig } = await resolvePluginDriverForRelease({
+        environment: input.environment,
+        lease: input.lease,
+        status: "released",
+      });
+      return await workerManager.call(plugin.id, "environmentCancelExecution", {
+        driverKey,
+        companyId: input.companyId,
+        environmentId: input.environment.id,
+        issueId: input.lease.issueId,
+        config: driverConfig,
+        lease: {
+          providerLeaseId: input.lease.providerLeaseId,
+          metadata: input.lease.metadata ?? undefined,
+          expiresAt: input.lease.expiresAt?.toISOString() ?? null,
+        },
+        executionId: input.executionId,
+        reason: input.reason,
+      });
+    },
+
+    supportsExecutionCancellation(input) {
+      const pluginId = readString(input.lease.metadata?.pluginId);
+      if (!pluginId) return false;
+      const advertised = workerManager.getWorker(pluginId)?.supportedMethods ?? [];
+      return advertised.includes("environmentExecute")
+        && advertised.includes("environmentCancelExecution");
+    },
+
+    async syncIn(input) {
+      const { plugin, driverKey, driverConfig } =
+        await resolvePluginDriverForRelease({
+          environment: input.environment,
+          lease: input.lease,
+          status: "released",
+        });
+      return await workerManager.call(
+        plugin.id,
+        "environmentSyncIn",
+        {
+          driverKey,
+          companyId: input.lease.companyId,
+          environmentId: input.environment.id,
+          issueId: input.lease.issueId,
+          config: driverConfig,
+          lease: {
+            providerLeaseId: input.lease.providerLeaseId,
+            metadata: input.lease.metadata ?? undefined,
+            expiresAt:
+              input.lease.expiresAt?.toISOString() ?? null,
+          },
+          operations: input.operations,
+        },
+      );
+    },
+
+    async syncOut(input) {
+      const { plugin, driverKey, driverConfig } =
+        await resolvePluginDriverForRelease({
+          environment: input.environment,
+          lease: input.lease,
+          status: "released",
+        });
+      return await workerManager.call(
+        plugin.id,
+        "environmentSyncOut",
+        {
+          driverKey,
+          companyId: input.lease.companyId,
+          environmentId: input.environment.id,
+          issueId: input.lease.issueId,
+          config: driverConfig,
+          lease: {
+            providerLeaseId: input.lease.providerLeaseId,
+            metadata: input.lease.metadata ?? undefined,
+            expiresAt:
+              input.lease.expiresAt?.toISOString() ?? null,
+          },
+          operations: input.operations,
+        },
+      );
+    },
+
+    supportsSync(input) {
+      const pluginId = readString(input.lease.metadata?.pluginId);
+      if (!pluginId) return false;
+      const advertised =
+        workerManager.getWorker(pluginId)?.supportedMethods ?? [];
+      return (
+        advertised.includes("environmentSyncIn") &&
+        advertised.includes("environmentSyncOut")
+      );
     },
   };
 }
@@ -1783,7 +1989,7 @@ export function environmentRuntimeService(
       issueId: string | null;
       agentId?: string | null;
       /** Null for ad-hoc invocations (e.g. operator-initiated `Test` probes). */
-      heartbeatRunId: string | null;
+      runId: string | null;
       persistedExecutionWorkspace: Pick<ExecutionWorkspace, "id" | "mode"> | null;
       /** The agent's adapter type for this run (mixed-harness environments). */
       adapterType?: string | null;
@@ -1807,7 +2013,7 @@ export function environmentRuntimeService(
         environment: input.environment,
         issueId: input.issueId,
         agentId: input.agentId ?? null,
-        heartbeatRunId: input.heartbeatRunId,
+        runId: input.runId,
         executionWorkspaceId: leaseContext.executionWorkspaceId,
         executionWorkspaceMode: leaseContext.executionWorkspaceMode,
         adapterType: input.adapterType ?? null,
@@ -1822,7 +2028,7 @@ export function environmentRuntimeService(
     },
 
     async releaseRunLeases(
-      heartbeatRunId: string,
+      runId: string,
       status: Extract<EnvironmentLeaseStatus, "released" | "expired" | "failed"> = "released",
     ): Promise<EnvironmentRuntimeLeaseRecord[]> {
       const leaseRows = await db
@@ -1830,7 +2036,7 @@ export function environmentRuntimeService(
         .from(environmentLeases)
         .where(
           and(
-            eq(environmentLeases.heartbeatRunId, heartbeatRunId),
+            eq(environmentLeases.runId, runId),
             inArray(environmentLeases.status, ["active"]),
           ),
         );
@@ -1954,6 +2160,26 @@ export function environmentRuntimeService(
         throw new Error(`Environment driver "${driver.driver}" does not support command execution.`);
       }
       return await driver.execute(input);
+    },
+
+    supportsExecutionCancellation(input: EnvironmentDriverLeaseInput): boolean {
+      const driver = getDriver(getLeaseDriverKey(input.lease, input.environment));
+      return driver?.supportsExecutionCancellation?.(input) ?? false;
+    },
+
+    async cancelExecution(
+      input: EnvironmentDriverCancelExecutionInput,
+    ): Promise<PluginEnvironmentCancelExecutionResult> {
+      if (input.companyId !== input.lease.companyId) {
+        throw new Error("Environment cancellation scope does not match the environment lease company.");
+      }
+      const driver = requireDriverKey(getLeaseDriverKey(input.lease, input.environment));
+      if (!driver.cancelExecution || !driver.supportsExecutionCancellation?.(input)) {
+        throw new Error(
+          `Environment driver "${driver.driver}" does not support exact command cancellation.`,
+        );
+      }
+      return await driver.cancelExecution(input);
     },
 
     supportsSync(input: EnvironmentDriverLeaseInput): boolean {

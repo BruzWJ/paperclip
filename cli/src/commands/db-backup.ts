@@ -1,7 +1,11 @@
 import path from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { formatDatabaseBackupResult, runDatabaseBackup } from "@paperclipai/db";
+import {
+  formatDatabaseBackupResult,
+  resolveDatabaseTarget,
+  runDatabaseBackup,
+} from "@paperclipai/db";
 import {
   expandHomePrefix,
   resolveDefaultBackupDir,
@@ -17,22 +21,6 @@ type DbBackupOptions = {
   filenamePrefix?: string;
   json?: boolean;
 };
-
-function resolveConnectionString(configPath?: string): { value: string; source: string } {
-  const envUrl = process.env.DATABASE_URL?.trim();
-  if (envUrl) return { value: envUrl, source: "DATABASE_URL" };
-
-  const config = readConfig(configPath);
-  if (config?.database.mode === "postgres" && config.database.connectionString?.trim()) {
-    return { value: config.database.connectionString.trim(), source: "config.database.connectionString" };
-  }
-
-  const port = config?.database.embeddedPostgresPort ?? 54329;
-  return {
-    value: `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`,
-    source: `embedded-postgres@${port}`,
-  };
-}
 
 function normalizeRetentionDays(value: number | undefined, fallback: number): number {
   const candidate = value ?? fallback;
@@ -52,7 +40,7 @@ export async function dbBackupCommand(opts: DbBackupOptions): Promise<void> {
 
   const configPath = resolveConfigPath(opts.config);
   const config = readConfig(opts.config);
-  const connection = resolveConnectionString(opts.config);
+  const connection = resolveDatabaseTarget({ configPath });
   const defaultDir = resolveDefaultBackupDir(resolvePaperclipInstanceId());
   const configuredDir = opts.dir?.trim() || config?.database.backup.dir || defaultDir;
   const backupDir = resolveBackupDir(configuredDir);
@@ -61,6 +49,12 @@ export async function dbBackupCommand(opts: DbBackupOptions): Promise<void> {
     config?.database.backup.retentionDays ?? 30,
   );
   const filenamePrefix = opts.filenamePrefix?.trim() || "paperclip";
+  const betterAuthSecret = process.env.BETTER_AUTH_SECRET;
+  if (!betterAuthSecret?.trim()) {
+    throw new Error(
+      "BETTER_AUTH_SECRET is required to create a restorable database backup.",
+    );
+  }
 
   p.log.message(pc.dim(`Config: ${configPath}`));
   p.log.message(pc.dim(`Connection source: ${connection.source}`));
@@ -71,7 +65,8 @@ export async function dbBackupCommand(opts: DbBackupOptions): Promise<void> {
   spinner.start("Creating database backup...");
   try {
     const result = await runDatabaseBackup({
-      connectionString: connection.value,
+      connectionString: connection.connectionString,
+      betterAuthSecret,
       backupDir,
       retention: { dailyDays: retentionDays, weeklyWeeks: 4, monthlyMonths: 1 },
       filenamePrefix,
@@ -83,6 +78,13 @@ export async function dbBackupCommand(opts: DbBackupOptions): Promise<void> {
         JSON.stringify(
           {
             backupFile: result.backupFile,
+            manifestFile: result.manifestFile,
+            manifestFormat: result.manifestFormat,
+            manifestFormatVersion: result.manifestFormatVersion,
+            payloadChecksum: result.payloadChecksum,
+            sourceDatabaseIdentity: result.sourceDatabaseIdentity,
+            migrationJournal: result.migrationJournal,
+            tableSet: result.tableSet,
             sizeBytes: result.sizeBytes,
             prunedCount: result.prunedCount,
             backupDir,

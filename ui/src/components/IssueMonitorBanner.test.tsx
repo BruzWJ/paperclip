@@ -20,7 +20,6 @@ const NOW = new Date("2026-07-17T20:00:00.000Z");
 
 function derived(overrides: Partial<DerivedMonitorState> & { state: DerivedMonitorState["state"] }): DerivedMonitorState {
   return {
-    source: "monitor",
     nextCheckAt: null,
     attemptCount: 0,
     serviceName: null,
@@ -62,21 +61,6 @@ describe("buildMonitorSurfaceCopy", () => {
     );
     expect(copy!.stripTitle).toBe("Resumes in 1h 30m");
     expect(copy!.stripMeta).toContain("Attempt 3");
-  });
-
-  it("uses agent copy for scheduled retries without a monitor", () => {
-    const copy = buildMonitorSurfaceCopy(
-      derived({
-        state: "retrying",
-        source: "scheduled-retry",
-        nextCheckAt: new Date(NOW.getTime() + 90 * 60_000).toISOString(),
-        attemptCount: 2,
-      }),
-      NOW,
-    );
-
-    expect(copy!.bannerTitle).toBe("Agent resumes in 1h 30m");
-    expect(copy!.stripTitle).toBe("Resumes in 1h 30m");
   });
 
   it("switches copy for due-now and overdue states", () => {
@@ -131,7 +115,6 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
       executionState: nextCheckAt
         ? { monitor: { status: "scheduled", nextCheckAt, attemptCount: 1, serviceName: "vercel-deploy" } }
         : null,
-      scheduledRetry: null,
     } as unknown as Issue;
   }
 
@@ -189,7 +172,7 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
 
     expect(container.querySelector("[data-testid='issue-monitor-composer-strip']")).toBeTruthy();
     expect(container.textContent).toContain("Resumes in 2h");
-    expect(container.textContent).toContain("Sending a reply wakes the agent now");
+    expect(container.textContent).toContain("Use an explicit @mention to queue the agent");
 
     flushSync(() => root.unmount());
   });

@@ -171,7 +171,7 @@ export function TokensPanel({
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1.5 text-sm">
               <span className="text-xs font-medium text-muted-foreground">Name</span>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="cto-cursor" required autoFocus />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="build-cursor" required autoFocus />
             </label>
             <label className="space-y-1.5 text-sm">
               <span className="text-xs font-medium text-muted-foreground">Owner / client</span>

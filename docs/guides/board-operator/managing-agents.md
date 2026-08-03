@@ -3,16 +3,20 @@ title: Managing Agents
 summary: Hiring, configuring, pausing, and terminating agents
 ---
 
-Agents are the employees of your autonomous company. As the board operator, you have full control over their lifecycle.
+An agent is a reusable configured identity. It has display identity, a direct
+reporting edge, capabilities text, explicit context and action grants, provider
+configuration, and control-plane accounting. It has no role-derived behavior,
+instruction bundle, or Paperclip-authored memory shared between issues.
 
 ## Agent States
 
 | Status | Meaning |
 |--------|---------|
 | `active` | Ready to receive work |
-| `idle` | Active but no current heartbeat running |
-| `running` | Currently executing a heartbeat |
-| `error` | Last heartbeat failed |
+| `idle` | Available with no active issue execution |
+| `running` | Currently executing issue work |
+| `error` | The most recent execution failed |
+| `pending_approval` | Waiting for a board decision on creation |
 | `paused` | Manually paused or budget-paused |
 | `terminated` | Permanently deactivated (irreversible) |
 
@@ -21,48 +25,50 @@ Agents are the employees of your autonomous company. As the board operator, you 
 Create agents from the Agents page. Each agent requires:
 
 - **Name** — unique identifier (used for @-mentions)
-- **Role** — `ceo`, `cto`, `manager`, `engineer`, `researcher`, etc.
-- **Reports to** — the agent's manager in the org tree
+- **Title** — optional display text with no authorization meaning
+- **Reports to** — the agent's direct parent in the org chart
 - **Adapter type** — how the agent runs
-- **Adapter config** — runtime-specific settings (working directory, model, prompt, etc.)
-- **Capabilities** — short description of what this agent does
+- **Adapter config** — runtime-specific provider and model settings
+- **Capabilities** — verbatim description shown when another agent selects an owner
+- **Context and action grants** — independent, explicit per-agent permissions
+- **Company tools and skills** — explicit selections only
 
 Common adapter choices:
-- `claude_local` / `codex_local` / `opencode_local` / `hermes_local` for local coding agents
-- `hermes_gateway` / `openclaw_gateway` / `http` for webhook-based external agents
-- `process` for generic local command execution
 
-Use `hermes_local` when Paperclip should start the local Hermes CLI. Use
-`hermes_gateway` when Hermes is already running as an API server and Paperclip
-should call that server. Both are built-in adapter types from the unified
-`@paperclipai/hermes-paperclip-adapter` package.
-
-For `opencode_local`, configure an explicit `adapterConfig.model` (`provider/model`).
-Paperclip validates the selected model against live `opencode models` output.
+- `process` for an explicitly configured command that implements the ordered provider ABI
+- `http` for a service that implements the structured Session turn contract
+- an installed external adapter whose complete schema and runtime declaration match the intended provider
 
 ## Agent Hiring via Governance
 
-Agents can request to hire subordinates. When this happens, you'll see a `hire_agent` approval in your approval queue. Review the proposed agent config and approve or reject.
+An agent with the explicit hire action can propose a direct subordinate. This
+creates a `hire_agent` approval containing the proposed ordinary agent
+configuration. Approval does not grant a role, implicit tools, or inherited
+permissions.
 
 ## Configuring Agents
 
 Edit an agent's configuration from the agent detail page:
 
-- **Adapter config** — change model, prompt template, working directory, environment variables
-- **Heartbeat settings** — interval, cooldown, max concurrent runs, wake triggers
+- **Identity** — name, display title, icon, capabilities, and direct reporting edge
+- **Adapter config** — change provider, model, and provider-native settings
+- **Runtime settings** — cooldown and concurrent-run limits
+- **Context and action grants** — explicit booleans; absent means denied
+- **Selected tools and skills** — explicit company catalog entries
 - **Budget** — monthly spend limit
 
-Use the "Test Environment" button to validate that the agent's adapter config is correct before running.
+Configuration changes produce a new immutable adapter revision for later issue
+executions. A run already in progress stays on the revision it started with.
 
 ## Pausing and Resuming
 
-Pause an agent to temporarily stop heartbeats:
+Pause an agent to prevent new issue executions:
 
 ```
 POST /api/agents/{agentId}/pause
 ```
 
-Resume to restart:
+Resume to allow eligible issue work to dispatch again:
 
 ```
 POST /api/agents/{agentId}/resume

@@ -1,86 +1,115 @@
 ---
 title: Core Concepts
-summary: Companies, agents, issues, delegation, heartbeats, and governance
+summary: Companies, configured agents, issues, issue executions, and governance
 ---
 
-Paperclip organizes autonomous AI work around six key concepts.
+Paperclip organizes agent work around durable control-plane records. Providers
+receive only the current issue input and the run-scoped interface compiled for
+that execution.
 
 ## Company
 
-A company is the top-level unit of organization. Each company has:
+A company is the top-level isolation and governance boundary. It contains:
 
-- A **goal** — the reason it exists (e.g. "Build the #1 AI note-taking app at $1M MRR")
-- **Employees** — every employee is an AI agent
-- **Org structure** — who reports to whom
-- **Budget** — monthly spend limits in cents
-- **Task hierarchy** — all work traces back to the company goal
+- company goals and projects;
+- ordinary configured agents and their reporting edges;
+- issues, routines, tools, skills, environments, and workspaces;
+- budgets, approvals, audit history, and retention policy.
 
-One Paperclip instance can run multiple companies.
+One Paperclip instance can host multiple isolated companies.
 
 ## Agents
 
-Every employee is an AI agent. Each agent has:
+An agent is a reusable configured identity, not a persistent mind. Its
+configuration includes:
 
-- **Adapter type + config** — how the agent runs (Claude Code, Codex, shell process, HTTP webhook)
-- **Role and reporting** — title, who they report to, who reports to them
-- **Capabilities** — a short description of what the agent does
-- **Budget** — per-agent monthly spend limit
-- **Status** — active, idle, running, error, paused, or terminated
+- name, optional display title, icon, capabilities text, and optional direct
+  `reportsTo` edge;
+- adapter type, provider-native configuration, runtime limits, environment, and
+  budget;
+- explicit context grants, issue-action grants, mention reach, company-tool
+  selections, and company-skill selections;
+- lifecycle and operational accounting.
 
-Agents are organized in a strict tree hierarchy. Every agent reports to exactly one manager (except the CEO). This chain of command is used for escalation and delegation.
+There is no agent role field, privileged first or root agent, role-derived
+grant, Paperclip instruction fallback, or agent-wide model-visible memory. An
+org-chart edge describes reporting only; it grants no recursive authority or
+escalation fallback.
 
-## Issues (Tasks)
+## Issues
 
-Issues are the unit of work. Every issue has:
+An issue is the canonical unit of work. Its behavioral identity consists of:
 
-- A title, description, status, and priority
-- An assignee (one agent at a time)
-- A parent issue (creating a traceable hierarchy back to the company goal)
-- A project and optional goal association
+- an immutable request;
+- an immutable polymorphic creator;
+- one current owner and a monotonically increasing ownership epoch;
+- lifecycle `open`, `blocked`, `done`, or `cancelled`;
+- an optional disposition for a terminal lifecycle;
+- parent/project/goal relations, priority, comments, documents, and workspace
+  policy.
 
-### Status Lifecycle
+Every issue owns one Paperclip Session graph. Inputs, assistant turns, tool
+states, costs, and compaction controls are recorded per issue.
+Provider-native continuity may be retained only for the same issue, ownership
+epoch, agent, and adapter revision when `carry_context` is enabled. It never
+becomes Paperclip-authored cross-issue memory.
 
-```
-backlog -> todo -> in_progress -> in_review -> done
-                       |
-                    blocked
-```
-
-Terminal states: `done`, `cancelled`.
-
-The transition to `in_progress` requires an **atomic checkout** — only one agent can own a task at a time. If two agents try to claim the same task simultaneously, one gets a `409 Conflict`.
+The current owner alone has owner-form lifecycle authority. Reassignment is a
+separate audited operation that advances the ownership epoch, revokes the old
+execution authority, and starts the new owner cleanly. There is no checkout,
+claim, release, or singleton run pointer on the issue.
 
 ## Delegation
 
-The CEO is the primary delegator. When you set company goals, the CEO:
+Delegation follows authenticated issue edges:
 
-1. Creates a strategy and submits it for your approval
-2. Breaks approved goals into tasks
-3. Assigns tasks to agents based on their role and capabilities
-4. Hires new agents when needed, with hire approvals available when you enable them
+1. A board user, agent execution, plugin, routine, or system source creates an
+   ordinary issue with an exact creator and required owner.
+2. An eligible owner execution may create a direct child when `issue_create` is
+   compiled into its run interface.
+3. The child has its own Session, owner, epoch, and execution authority.
+4. Owner updates are delivered to the immutable creator; the creator can send a
+   creator-form response or perform an explicitly allowed reassignment.
 
-You don't need to manually assign every task — set the goals and let the CEO organize the work. You approve key decisions such as strategy, can enable hire approvals when you want a gate, and monitor progress. See the [How Delegation Works](/guides/board-operator/delegation) guide for the full lifecycle.
+The runtime never chooses an owner from role, title, root position, manager
+walk, hire order, or an arbitrary invokable-agent scan.
 
-## Heartbeats
+## Issue Executions
 
-Agents don't run continuously. They wake up in **heartbeats** — short execution windows triggered by Paperclip.
+A persisted issue-execution ref is the only provider invocation boundary. The
+server binds it to the issue, epoch, owner, immutable adapter revision,
+workspace, mode, effective grants, and compiled interface before a provider
+attempt starts.
 
-A heartbeat can be triggered by:
+Refs are admitted only by enumerated issue events such as creation, assignment,
+an invokable-agent board reopen, an authorized comment or mention, a
+counterpart update, or a typed system nudge. The system-escalation board-only
+reopen branch intentionally admits no ref. Routines and Board Chat use the same
+path by creating ordinary issues. Schedules, approval resolution, plugins, and
+users cannot invoke an agent or enqueue a generic wake outside an issue.
 
-- **Schedule** — periodic timer (e.g. every hour)
-- **Assignment** — a new task is assigned to the agent
-- **Comment** — someone @-mentions the agent
-- **Manual** — a human clicks "Invoke" in the UI
-- **Approval resolution** — a pending approval is approved or rejected
+## Context and Tools
 
-Each heartbeat, the agent: checks its identity, reviews assignments, picks work, checks out a task, does the work, and updates status. This is the **heartbeat protocol**.
+Each context key and action key is an independent explicit boolean; absent
+means denied. The server resolves the effective context for the current run and
+serves a dynamic tool schema bound to that authenticated ref. An unavailable
+tool is absent and undiscoverable.
+
+Company tools and genuine company skills are visible to a provider only when
+explicitly selected for that agent and allowed by the run's effective mask. No
+static Paperclip MCP, operational skill bundle, or prompt attachment supplies a
+second interface.
 
 ## Governance
 
-Some actions require board (human) approval:
+The human board can:
 
-- **Hiring agents** — agents can request to hire subordinates, but the board must approve
-- **CEO strategy** — the CEO's initial strategic plan requires board approval
-- **Board overrides** — the board can pause, resume, or terminate any agent and reassign any task
+- configure, pause, resume, adopt, or terminate agents;
+- choose initial issue owners and perform audited reassign/reopen operations;
+- review formal hire, budget, and explicit board approvals;
+- inspect issue Sessions, comments, runs, costs, and audit history;
+- resolve board-owned system escalation issues.
 
-The board operator has full visibility and control through the web UI. Every mutation is logged in an **activity audit trail**.
+Approval decisions remain durable control-plane records. Resolving one does not
+create a provider interaction card or directly wake an agent. Every provider
+attempt still begins from an authorized issue-execution ref.

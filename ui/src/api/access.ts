@@ -1,4 +1,9 @@
-import type { AgentAdapterType, JoinRequest, PermissionKey } from "@paperclipai/shared";
+import type {
+  AgentAdapterType,
+  InviteSource,
+  JoinRequest,
+  PermissionKey,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 export type HumanCompanyRole = "owner" | "admin" | "operator" | "viewer";
@@ -9,7 +14,7 @@ type InviteSummary = {
   companyName?: string | null;
   companyLogoUrl?: string | null;
   companyBrandColor?: string | null;
-  inviteType: "company_join" | "bootstrap_ceo";
+  inviteType: "company_join" | "bootstrap_admin";
   allowedJoinTypes: "human" | "agent" | "both";
   humanRole?: HumanCompanyRole | null;
   expiresAt: string;
@@ -17,8 +22,6 @@ type InviteSummary = {
   onboardingUrl?: string;
   onboardingTextPath?: string;
   onboardingTextUrl?: string;
-  skillIndexPath?: string;
-  skillIndexUrl?: string;
   inviteMessage?: string | null;
   invitedByUserName?: string | null;
   joinRequestStatus?: JoinRequest["status"] | null;
@@ -28,16 +31,14 @@ type InviteSummary = {
 type AcceptInviteInput =
   | { requestType: "human" }
   | {
-    requestType: "agent";
-    agentName: string;
-    adapterType?: AgentAdapterType;
-    capabilities?: string | null;
-    agentDefaultsPayload?: Record<string, unknown> | null;
-  };
+      requestType: "agent";
+      agentName: string;
+      adapterType: AgentAdapterType;
+      capabilities?: string | null;
+      agentDefaultsPayload: Record<string, unknown>;
+    };
 
 type AgentJoinRequestAccepted = JoinRequest & {
-  claimSecret: string;
-  claimApiKeyPath: string;
   onboarding?: Record<string, unknown>;
   diagnostics?: Array<{
     code: string;
@@ -45,32 +46,6 @@ type AgentJoinRequestAccepted = JoinRequest & {
     message: string;
     hint?: string;
   }>;
-};
-
-type InviteOnboardingManifest = {
-  invite: InviteSummary;
-  onboarding: {
-    inviteMessage?: string | null;
-    connectivity?: {
-      guidance?: string;
-      connectionCandidates?: string[];
-      testResolutionEndpoint?: {
-        method?: string;
-        path?: string;
-        url?: string;
-      };
-    };
-    textInstructions?: {
-      url?: string;
-    };
-  };
-};
-
-type BoardClaimStatus = {
-  status: "available" | "claimed" | "expired";
-  requiresSignIn: boolean;
-  expiresAt: string | null;
-  claimedByUserId: string | null;
 };
 
 type CliAuthChallengeStatus = {
@@ -95,11 +70,11 @@ type CompanyInviteCreated = {
   token: string;
   inviteUrl: string;
   expiresAt: string;
+  source: InviteSource;
   allowedJoinTypes: "human" | "agent" | "both";
   humanRole?: HumanCompanyRole | null;
   companyName?: string | null;
-  onboardingTextPath?: string;
-  onboardingTextUrl?: string;
+  onboardingTextUrl: string;
   inviteMessage?: string | null;
 };
 
@@ -124,7 +99,12 @@ export type CompanyMember = {
   membershipRole: HumanCompanyRole | null;
   createdAt: string;
   updatedAt: string;
-  user: { id: string; email: string | null; name: string | null; image: string | null } | null;
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
   grants: CompanyMemberGrant[];
   removal?: {
     canArchive: boolean;
@@ -134,7 +114,6 @@ export type CompanyMember = {
 
 export type ArchiveCompanyMemberResponse = {
   member: CompanyMember;
-  reassignedIssueCount: number;
 };
 
 export type CompanyMembersResponse = {
@@ -150,7 +129,12 @@ export type CompanyMembersResponse = {
 export type CompanyUserDirectoryEntry = {
   principalId: string;
   status: "active";
-  user: { id: string; email: string | null; name: string | null; image: string | null } | null;
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
 };
 
 export type CompanyUserDirectoryResponse = {
@@ -161,11 +145,12 @@ export type CompanyInviteRecord = {
   id: string;
   companyId: string | null;
   companyName: string | null;
-  inviteType: "company_join" | "bootstrap_ceo";
+  inviteType: "company_join" | "bootstrap_admin";
   allowedJoinTypes: "human" | "agent" | "both";
   humanRole: HumanCompanyRole | null;
   defaultsPayload: Record<string, unknown> | null;
   expiresAt: string;
+  source: InviteSource;
   invitedByUserId: string | null;
   revokedAt: string | null;
   acceptedAt: string | null;
@@ -173,7 +158,12 @@ export type CompanyInviteRecord = {
   updatedAt: string;
   inviteMessage: string | null;
   state: "active" | "revoked" | "accepted" | "expired";
-  invitedByUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
+  invitedByUser: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
   relatedJoinRequestId: string | null;
 };
 
@@ -183,12 +173,27 @@ export type CompanyInviteListResponse = {
 };
 
 export type CompanyJoinRequest = JoinRequest & {
-  requesterUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
-  approvedByUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
-  rejectedByUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
+  requesterUser: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
+  approvedByUser: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
+  rejectedByUser: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
   invite: {
     id: string;
-    inviteType: "company_join" | "bootstrap_ceo";
+    inviteType: "company_join" | "bootstrap_admin";
     allowedJoinTypes: "human" | "agent" | "both";
     humanRole: HumanCompanyRole | null;
     inviteMessage: string | null;
@@ -196,7 +201,12 @@ export type CompanyJoinRequest = JoinRequest & {
     expiresAt: string;
     revokedAt: string | null;
     acceptedAt: string | null;
-    invitedByUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
+    invitedByUser: {
+      id: string;
+      email: string | null;
+      name: string | null;
+      image: string | null;
+    } | null;
   } | null;
 };
 
@@ -234,7 +244,12 @@ export type UserCompanyAccessResponse = {
 };
 
 export type CurrentBoardAccess = {
-  user: { id: string; email: string | null; name: string | null; image: string | null } | null;
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+    image: string | null;
+  } | null;
   userId: string;
   isInstanceAdmin: boolean;
   companyIds: string[];
@@ -269,29 +284,16 @@ export const accessApi = {
       defaultsPayload?: Record<string, unknown> | null;
       agentMessage?: string | null;
     } = {},
-  ) =>
-    api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
-
-  createOpenClawInvitePrompt: (
-    companyId: string,
-    input: {
-      agentMessage?: string | null;
-    } = {},
-  ) =>
-    api.post<CompanyInviteCreated>(
-      `/companies/${companyId}/openclaw/invite-prompt`,
-      input,
-    ),
+  ) => api.post<CompanyInviteCreated>(`/companies/${companyId}/invites`, input),
 
   getInvite: (token: string) => api.get<InviteSummary>(`/invites/${token}`),
-  getInviteOnboarding: (token: string) =>
-    api.get<InviteOnboardingManifest>(`/invites/${token}/onboarding`),
 
   acceptInvite: (token: string, input: AcceptInviteInput) =>
-    api.post<AgentJoinRequestAccepted | JoinRequest | { bootstrapAccepted: true; userId: string }>(
-      `/invites/${token}/accept`,
-      input,
-    ),
+    api.post<
+      | AgentJoinRequestAccepted
+      | JoinRequest
+      | { bootstrapAccepted: true; userId: string }
+    >(`/invites/${token}/accept`, input),
 
   listInvites: (
     companyId: string,
@@ -305,7 +307,8 @@ export const accessApi = {
       `/companies/${companyId}/invites${buildInviteListQuery(options)}`,
     ),
 
-  revokeInvite: (inviteId: string) => api.post(`/invites/${inviteId}/revoke`, {}),
+  revokeInvite: (inviteId: string) =>
+    api.post(`/invites/${inviteId}/revoke`, {}),
 
   listJoinRequests: (
     companyId: string,
@@ -320,7 +323,9 @@ export const accessApi = {
     api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
 
   listUserDirectory: (companyId: string) =>
-    api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),
+    api.get<CompanyUserDirectoryResponse>(
+      `/companies/${companyId}/user-directory`,
+    ),
 
   updateMember: (
     companyId: string,
@@ -329,7 +334,11 @@ export const accessApi = {
       membershipRole?: HumanCompanyRole | null;
       status?: "pending" | "active" | "suspended";
     },
-  ) => api.patch<CompanyMember>(`/companies/${companyId}/members/${memberId}`, input),
+  ) =>
+    api.patch<CompanyMember>(
+      `/companies/${companyId}/members/${memberId}`,
+      input,
+    ),
 
   updateMemberPermissions: (
     companyId: string,
@@ -340,7 +349,11 @@ export const accessApi = {
         scope?: Record<string, unknown> | null;
       }>;
     },
-  ) => api.patch<CompanyMember>(`/companies/${companyId}/members/${memberId}/permissions`, input),
+  ) =>
+    api.patch<CompanyMember>(
+      `/companies/${companyId}/members/${memberId}/permissions`,
+      input,
+    ),
 
   updateMemberAccess: (
     companyId: string,
@@ -353,54 +366,61 @@ export const accessApi = {
         scope?: Record<string, unknown> | null;
       }>;
     },
-  ) => api.patch<CompanyMember>(`/companies/${companyId}/members/${memberId}/role-and-grants`, input),
-
-  archiveMember: (
-    companyId: string,
-    memberId: string,
-    input: {
-      reassignment?: {
-        assigneeAgentId?: string | null;
-        assigneeUserId?: string | null;
-      } | null;
-    } = {},
-  ) => api.post<ArchiveCompanyMemberResponse>(`/companies/${companyId}/members/${memberId}/archive`, input),
-
-  approveJoinRequest: (companyId: string, requestId: string) =>
-    api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/approve`, {}),
-
-  rejectJoinRequest: (companyId: string, requestId: string) =>
-    api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/reject`, {}),
-
-  claimJoinRequestApiKey: (requestId: string, claimSecret: string) =>
-    api.post<{ keyId: string; token: string; agentId: string; createdAt: string }>(
-      `/join-requests/${requestId}/claim-api-key`,
-      { claimSecret },
+  ) =>
+    api.patch<CompanyMember>(
+      `/companies/${companyId}/members/${memberId}/role-and-grants`,
+      input,
     ),
 
-  getBoardClaimStatus: (token: string, code: string) =>
-    api.get<BoardClaimStatus>(`/board-claim/${token}?code=${encodeURIComponent(code)}`),
+  archiveMember: (companyId: string, memberId: string) =>
+    api.post<ArchiveCompanyMemberResponse>(
+      `/companies/${companyId}/members/${memberId}/archive`,
+      {},
+    ),
 
-  claimBoard: (token: string, code: string) =>
-    api.post<{ claimed: true; userId: string }>(`/board-claim/${token}/claim`, { code }),
+  approveJoinRequest: (
+    companyId: string,
+    requestId: string,
+    input: { defaultEnvironmentId?: string | null } = {},
+  ) =>
+    api.post<JoinRequest>(
+      `/companies/${companyId}/join-requests/${requestId}/approve`,
+      input,
+    ),
+
+  rejectJoinRequest: (companyId: string, requestId: string) =>
+    api.post<JoinRequest>(
+      `/companies/${companyId}/join-requests/${requestId}/reject`,
+      {},
+    ),
 
   claimBootstrapAdmin: () =>
     api.post<{ claimed: true; userId: string }>("/bootstrap/claim", {}),
 
   getCliAuthChallenge: (id: string, token: string) =>
-    api.get<CliAuthChallengeStatus>(`/cli-auth/challenges/${id}?token=${encodeURIComponent(token)}`),
+    api.get<CliAuthChallengeStatus>(
+      `/cli-auth/challenges/${id}?token=${encodeURIComponent(token)}`,
+    ),
 
   approveCliAuthChallenge: (id: string, token: string) =>
-    api.post<{ approved: boolean; status: string; userId: string; keyId: string | null; expiresAt: string }>(
-      `/cli-auth/challenges/${id}/approve`,
+    api.post<{
+      approved: boolean;
+      status: string;
+      userId: string;
+      keyId: string | null;
+      expiresAt: string;
+    }>(`/cli-auth/challenges/${id}/approve`, { token }),
+
+  cancelCliAuthChallenge: (id: string, token: string) =>
+    api.post<{ cancelled: boolean; status: string }>(
+      `/cli-auth/challenges/${id}/cancel`,
       { token },
     ),
 
-  cancelCliAuthChallenge: (id: string, token: string) =>
-    api.post<{ cancelled: boolean; status: string }>(`/cli-auth/challenges/${id}/cancel`, { token }),
-
   searchAdminUsers: (query: string) =>
-    api.get<AdminUserDirectoryEntry[]>(`/admin/users?query=${encodeURIComponent(query)}`),
+    api.get<AdminUserDirectoryEntry[]>(
+      `/admin/users?query=${encodeURIComponent(query)}`,
+    ),
 
   promoteInstanceAdmin: (userId: string) =>
     api.post(`/admin/users/${userId}/promote-instance-admin`, {}),
@@ -412,8 +432,10 @@ export const accessApi = {
     api.get<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`),
 
   setUserCompanyAccess: (userId: string, companyIds: string[]) =>
-    api.put<UserCompanyAccessResponse>(`/admin/users/${userId}/company-access`, { companyIds }),
+    api.put<UserCompanyAccessResponse>(
+      `/admin/users/${userId}/company-access`,
+      { companyIds },
+    ),
 
-  getCurrentBoardAccess: () =>
-    api.get<CurrentBoardAccess>("/cli-auth/me"),
+  getCurrentBoardAccess: () => api.get<CurrentBoardAccess>("/cli-auth/me"),
 };

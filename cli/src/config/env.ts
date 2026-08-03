@@ -1,18 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomBytes } from "node:crypto";
 import { config as loadDotenv, parse as parseEnvFileContents } from "dotenv";
 import { resolveConfigPath } from "./store.js";
 
-const JWT_SECRET_ENV_KEY = "PAPERCLIP_AGENT_JWT_SECRET";
 function resolveEnvFilePath(configPath?: string) {
   return path.resolve(path.dirname(resolveConfigPath(configPath)), ".env");
 }
 const loadedEnvFiles = new Set<string>();
-
-function isNonEmpty(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
 
 function parseEnvFile(contents: string) {
   try {
@@ -43,57 +37,13 @@ export function resolvePaperclipEnvFile(configPath?: string): string {
   return resolveEnvFilePath(configPath);
 }
 
-export function resolveAgentJwtEnvFile(configPath?: string): string {
-  return resolveEnvFilePath(configPath);
-}
-
 export function loadPaperclipEnvFile(configPath?: string): void {
-  loadAgentJwtEnvFile(resolveEnvFilePath(configPath));
-}
-
-export function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()): void {
+  const filePath = resolveEnvFilePath(configPath);
   if (loadedEnvFiles.has(filePath)) return;
 
   if (!fs.existsSync(filePath)) return;
   loadedEnvFiles.add(filePath);
   loadDotenv({ path: filePath, override: false, quiet: true });
-}
-
-export function readAgentJwtSecretFromEnv(configPath?: string): string | null {
-  loadAgentJwtEnvFile(resolveEnvFilePath(configPath));
-  const raw = process.env[JWT_SECRET_ENV_KEY];
-  return isNonEmpty(raw) ? raw!.trim() : null;
-}
-
-export function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()): string | null {
-  if (!fs.existsSync(filePath)) return null;
-
-  const raw = fs.readFileSync(filePath, "utf-8");
-  const values = parseEnvFile(raw);
-  const value = values[JWT_SECRET_ENV_KEY];
-  return isNonEmpty(value) ? value!.trim() : null;
-}
-
-export function ensureAgentJwtSecret(configPath?: string): { secret: string; created: boolean } {
-  const existingEnv = readAgentJwtSecretFromEnv(configPath);
-  if (existingEnv) {
-    return { secret: existingEnv, created: false };
-  }
-
-  const envFilePath = resolveEnvFilePath(configPath);
-  const existingFile = readAgentJwtSecretFromEnvFile(envFilePath);
-  const secret = existingFile ?? randomBytes(32).toString("hex");
-  const created = !existingFile;
-
-  if (!existingFile) {
-    writeAgentJwtEnv(secret, envFilePath);
-  }
-
-  return { secret, created };
-}
-
-export function writeAgentJwtEnv(secret: string, filePath = resolveEnvFilePath()): void {
-  mergePaperclipEnvEntries({ [JWT_SECRET_ENV_KEY]: secret }, filePath);
 }
 
 export function readPaperclipEnvEntries(filePath = resolveEnvFilePath()): Record<string, string> {

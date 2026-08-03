@@ -1,6 +1,4 @@
 import type {
-  ConnectionTokenIssuanceOutcome,
-  ConnectionTokenIssuancePath,
   SecretProjectionClass,
   ToolActionRequestStatus,
   ToolApplicationStatus,
@@ -33,8 +31,6 @@ import type {
 } from "../constants.js";
 
 export type {
-  ConnectionTokenIssuanceOutcome,
-  ConnectionTokenIssuancePath,
   SecretProjectionClass,
   ToolActionRequestStatus,
   ToolApplicationStatus,
@@ -190,73 +186,6 @@ export interface ToolConnectionInstallSnapshot {
   installs: ToolConnectionInstall[];
 }
 
-export type ConnectionTokenScope = string | string[];
-export type ConnectionTokenSubject = { type: "app" } | { type: "user"; userId: string };
-
-export const CONNECTION_RECOVERABLE_ERROR_CODES = [
-  "user_authorization_required",
-  "grant_revoked",
-  "needs_reauthorization",
-  "installation_required",
-  "connection_not_installed",
-  "subject_not_permitted",
-] as const;
-
-export type ConnectionRecoverableErrorCode = typeof CONNECTION_RECOVERABLE_ERROR_CODES[number];
-
-export interface ConnectionRecoverableErrorPayload {
-  code: ConnectionRecoverableErrorCode;
-  connection: { uid: string };
-  subject?: ConnectionTokenSubject;
-  remediation?: Record<string, unknown>;
-}
-
-export interface ConnectionTokenRequest {
-  subject?: ConnectionTokenSubject;
-  scope?: ConnectionTokenScope;
-  requestedTtlSeconds?: number;
-  grantId?: string;
-}
-
-export interface ConnectionTokenAttribution {
-  agentId: string;
-  runId: string;
-  issueId: string | null;
-  projectId: string | null;
-  responsibleUserId: string | null;
-}
-
-export interface ConnectionTokenMintedResponse {
-  status: "minted";
-  connectionId: string;
-  connection: { id: string; uid: string };
-  grantId: string;
-  providerTenantId?: string;
-  externalSubject?: string;
-  metadata?: Record<string, unknown>;
-  path: "exchange";
-  token: string;
-  tokenType: "Bearer" | string;
-  expiresAt: string;
-  ttlSeconds: number;
-  scope: string[];
-  attribution: ConnectionTokenAttribution;
-}
-
-export interface ConnectionTokenUseEnvLeaseResponse {
-  status: "use_env_lease";
-  code: "use_env_lease";
-  connectionId: string;
-  connection: { id: string; uid: string };
-  grantId: string;
-  path: "static";
-  message: string;
-  scope: string[];
-  attribution: ConnectionTokenAttribution;
-}
-
-export type ConnectionTokenResponse = ConnectionTokenMintedResponse | ConnectionTokenUseEnvLeaseResponse;
-
 export interface StartConnectionAuthorizationRequest {
   subjectUserId: string;
   scopes?: string[];
@@ -269,7 +198,6 @@ export interface StartConnectionAuthorizationResponse {
 
 export interface ConnectionUsageDailyBucket {
   date: string;
-  issuances: { total: number; byOutcome: Record<string, number>; byPath: Record<string, number> };
   invocations: { total: number; byRiskLevel: Record<string, number> };
   deliveries: { received: number; forwarded: number };
 }
@@ -278,28 +206,6 @@ export interface ConnectionUsageResponse {
   connection: { id: string; uid: string };
   range: "7d" | "30d";
   buckets: ConnectionUsageDailyBucket[];
-}
-
-export interface ConnectionTokenIssuance {
-  id: string;
-  companyId: string;
-  applicationId: string | null;
-  connectionId: string;
-  agentId: string;
-  runId: string | null;
-  issueId: string | null;
-  projectId: string | null;
-  responsibleUserId: string | null;
-  path: ConnectionTokenIssuancePath;
-  requestedScope: string[];
-  issuedScope: string[];
-  ttlSeconds: number | null;
-  expiresAt: Date | null;
-  tokenHash: string | null;
-  outcome: ConnectionTokenIssuanceOutcome;
-  errorCode: string | null;
-  metadata: Record<string, unknown> | null;
-  createdAt: Date;
 }
 
 export interface ToolCatalogEntry {
@@ -442,12 +348,6 @@ export interface ToolMcpGatewayMetadataPolicy {
   forwardCorrelationId: boolean;
 }
 
-export interface ToolMcpGatewayOnDemandToolsConfig {
-  enabled: boolean;
-  searchToolName: "search_tools";
-  runToolName: "run_tool";
-}
-
 export interface ToolMcpGateway {
   id: string;
   companyId: string;
@@ -470,7 +370,6 @@ export interface ToolMcpGateway {
   authConfig: ToolMcpGatewayAuthConfig;
   headerPolicy: ToolMcpGatewayHeaderPolicy;
   metadataPolicy: ToolMcpGatewayMetadataPolicy;
-  onDemandToolsConfig: ToolMcpGatewayOnDemandToolsConfig;
   metadata: Record<string, unknown> | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
@@ -508,7 +407,7 @@ export interface ToolMcpGatewayTokenCreated extends ToolMcpGatewayToken {
 }
 
 export interface ToolMcpGatewayClientSnippet {
-  client: "cursor" | "claude_desktop" | "vscode" | "claude_code" | "opencode";
+  client: "cursor" | "claude_desktop" | "vscode" | "claude_code";
   label: string;
   config: Record<string, unknown>;
   notes: string[];
@@ -800,12 +699,11 @@ export interface ToolConnectionActivityResponse {
   lifecycleEvents: ToolConnectionLifecycleEvent[];
   issues: Record<string, {
     identifier: string;
-    title: string;
+    title: string | null;
   }>;
   actionRequests: Record<string, {
     status: ToolActionRequestStatus;
     resolverDisplayName: string | null;
-    resolvedByAgentId: string | null;
     resolvedByUserId: string | null;
   }>;
 }
@@ -1000,18 +898,14 @@ export interface ToolActionRequest {
   companyId: string;
   invocationId: string;
   issueId: string | null;
-  interactionId: string | null;
   approvalId: string | null;
   status: ToolActionRequestStatus;
   canonicalArgumentsHash: string;
   canonicalArgumentsSummary: ToolRedactedValueSummary;
-  signedArguments: string | null;
   previewMarkdown: string | null;
   requestedByAgentId: string | null;
   requestedByUserId: string | null;
-  resolvedByAgentId: string | null;
   resolvedByUserId: string | null;
-  decidedByAgentId?: string | null;
   decidedByUserId?: string | null;
   decidedAt?: Date | null;
   expiresAt: Date | null;
@@ -1067,7 +961,6 @@ export interface ToolRunDecision {
   pendingAction: {
     actionRequestId: string;
     issueId: string | null;
-    interactionId: string | null;
     approvalId: string | null;
     status: ToolActionRequestStatus;
     previewMarkdown: string | null;
@@ -1199,7 +1092,6 @@ export interface ToolPolicyConditions {
     applicationKey?: string;
     applicationKeys?: string[];
     remoteHttpOnly?: boolean;
-    paperclipSelfOnly?: boolean;
   };
   timeWindow?: {
     startAt?: string;
@@ -1251,7 +1143,7 @@ export interface ToolAccessDecisionInput {
     userId?: string | null;
   };
   runContext?: {
-    heartbeatRunId?: string | null;
+    runId?: string | null;
     issueId?: string | null;
     projectId?: string | null;
     routineId?: string | null;
@@ -1261,6 +1153,8 @@ export interface ToolAccessDecisionInput {
     clientSubjectType?: ToolMcpGatewayTokenSubjectType | null;
     clientSubjectId?: string | null;
     clientName?: string | null;
+    mcpSessionId?: string | null;
+    correlationId?: string | null;
     externalClient?: boolean | null;
   } | null;
   request: {
@@ -1275,6 +1169,12 @@ export interface ToolAccessDecisionInput {
     arguments?: unknown;
     idempotencyKey?: string | null;
     sideEffecting?: boolean;
+    companyToolSelectionId?: string | null;
+    connectionInstallId?: string | null;
+    callIdentitySource?: "provider" | "jsonrpc" | null;
+    callIdentityType?: "string" | "number" | null;
+    callIdentityValue?: string | null;
+    runInterfaceToolCallId?: string | null;
   };
   consumeRateLimit?: boolean;
   writeAuditEvent?: boolean;
@@ -1338,7 +1238,6 @@ export interface ToolConnectionAccessSummary {
 export interface ToolConnectionTestAgent {
   id: string;
   name: string;
-  role: string;
   title: string | null;
   status: string;
   effectiveAccess: ToolConnectionAccessSummary;

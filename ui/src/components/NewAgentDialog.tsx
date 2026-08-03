@@ -4,8 +4,6 @@ import { useNavigate } from "@/lib/router";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { accessApi } from "../api/access";
-import { agentsApi } from "../api/agents";
-import { adaptersApi } from "../api/adapters";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   Dialog,
@@ -25,21 +23,11 @@ import { buildAgentOnboardingPrompt } from "@/lib/agent-onboarding-prompt";
 import { listUIAdapters } from "../adapters";
 import { isVisualAdapterChoice } from "../adapters/metadata";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
-import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
+import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { useToast } from "../context/ToastContext";
 import { Badge } from "@/components/ui/badge";
 
-/**
- * Adapter types that are suitable for agent creation (excludes internal
- * system adapters like "process" and "http").
- */
-const SYSTEM_ADAPTER_TYPES = new Set(["process", "http"]);
-
 type NewAgentDialogMode = "choices" | "runtime" | "invite" | "prompt";
-
-function isAgentAdapterType(type: string): boolean {
-  return !SYSTEM_ADAPTER_TYPES.has(type);
-}
 
 export function NewAgentDialog() {
   const { newAgentOpen, closeNewAgent, openNewIssue } = useDialog();
@@ -51,7 +39,7 @@ export function NewAgentDialog() {
   const [agentMessage, setAgentMessage] = useState("");
   const [latestAgentPrompt, setLatestAgentPrompt] = useState<string | null>(null);
   const [latestAgentPromptCopied, setLatestAgentPromptCopied] = useState(false);
-  const disabledTypes = useDisabledAdaptersSync();
+  const admittedAdapters = useAdapterCatalogSync();
 
   function resetDialogState() {
     setMode("choices");
@@ -68,32 +56,13 @@ export function NewAgentDialog() {
     return () => window.clearTimeout(timeout);
   }, [latestAgentPromptCopied]);
 
-  // Fetch registered adapters from server (syncs disabled store + provides data)
-  const { data: serverAdapters } = useQuery({
-    queryKey: queryKeys.adapters.all,
-    queryFn: () => adaptersApi.list(),
-    staleTime: 5 * 60 * 1000,
-  });
-
-  // Fetch existing agents for the "Ask CEO" flow
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newAgentOpen,
-  });
-
-  const ceoAgent = (agents ?? []).find((a) => a.role === "ceo");
   const inviteHistoryQueryKey = queryKeys.access.invites(selectedCompanyId ?? "", "all", 5);
 
-  // Build the adapter grid from the UI registry merged with display metadata.
-  // This automatically includes external/plugin adapters.
+  // The synchronized UI registry contains only server-admitted declarative
+  // ACP adapters.
   const adapterGrid = useMemo(() => {
     const registered = listUIAdapters()
-      .filter((a) =>
-        isAgentAdapterType(a.type) &&
-        !disabledTypes.has(a.type) &&
-        isVisualAdapterChoice(a.type)
-      );
+      .filter((a) => isVisualAdapterChoice(a.type));
 
     // Sort: recommended first, then alphabetical
     return registered
@@ -101,7 +70,7 @@ export function NewAgentDialog() {
         const display = getAdapterDisplay(a.type);
         return {
           value: a.type,
-          label: display.label,
+          label: a.label,
           desc: display.description,
           icon: display.icon,
           recommended: display.recommended,
@@ -114,14 +83,13 @@ export function NewAgentDialog() {
         if (!a.recommended && b.recommended) return 1;
         return a.label.localeCompare(b.label);
       });
-  }, [disabledTypes, serverAdapters]);
+  }, [admittedAdapters]);
 
-  function handleAskCeo() {
+  function handleAskAgent() {
     closeNewAgent();
     openNewIssue({
-      assigneeAgentId: ceoAgent?.id,
       title: "Create a new agent",
-      description: "(type in what kind of agent you want here)",
+      request: "(type in what kind of agent you want here)",
     });
   }
 
@@ -165,33 +133,9 @@ export function NewAgentDialog() {
         agentMessage: agentMessage.trim() || null,
       }),
     onSuccess: async (invite) => {
-      const base = window.location.origin.replace(/\/+$/, "");
-      const onboardingTextLink =
-        invite.onboardingTextUrl ??
-        invite.onboardingTextPath ??
-        `/api/invites/${invite.token}/onboarding.txt`;
-      const onboardingTextUrl = onboardingTextLink.startsWith("http")
-        ? onboardingTextLink
-        : `${base}${onboardingTextLink}`;
-
-      let prompt: string;
-      try {
-        const manifest = await accessApi.getInviteOnboarding(invite.token);
-        prompt = buildAgentOnboardingPrompt({
-          onboardingTextUrl,
-          connectionCandidates:
-            manifest.onboarding.connectivity?.connectionCandidates ?? null,
-          testResolutionUrl:
-            manifest.onboarding.connectivity?.testResolutionEndpoint?.url ??
-            null,
-        });
-      } catch {
-        prompt = buildAgentOnboardingPrompt({
-          onboardingTextUrl,
-          connectionCandidates: null,
-          testResolutionUrl: null,
-        });
-      }
+      const prompt = buildAgentOnboardingPrompt({
+        onboardingTextUrl: invite.onboardingTextUrl,
+      });
 
       setLatestAgentPrompt(prompt);
       setLatestAgentPromptCopied(false);
@@ -261,9 +205,9 @@ export function NewAgentDialog() {
                 </p>
               </div>
 
-              <Button className="w-full" size="lg" onClick={handleAskCeo}>
+              <Button className="w-full" size="lg" onClick={handleAskAgent}>
                 <Bot className="h-4 w-4 mr-2" />
-                Ask the CEO to create a new agent
+                Ask an agent to create a new agent
               </Button>
 
               <div className="grid gap-2">
@@ -277,7 +221,7 @@ export function NewAgentDialog() {
                     Invite an external agent
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">
-                    (OpenClaw, Hermes, or any agent that can call the invite API.)
+                    The invite submits a configuration proposal; Paperclip&apos;s worker executes the approved adapter.
                   </p>
                 </div>
               </div>
@@ -338,7 +282,7 @@ export function NewAgentDialog() {
                 <div className="space-y-1">
                   <h2 className="text-sm font-semibold">Invite an external agent</h2>
                   <p className="text-sm text-muted-foreground">
-                    Generate a one-time onboarding prompt that any compatible agent can use to request access, wait for approval, and claim its Paperclip API key.
+                    Generate a one-time prompt that an external agent can use to propose an ordinary Paperclip agent configuration for board approval.
                   </p>
                 </div>
               </div>
@@ -349,13 +293,13 @@ export function NewAgentDialog() {
                   value={agentMessage}
                   onChange={(event) => setAgentMessage(event.target.value)}
                   className="min-h-24 resize-y"
-                  placeholder="Add onboarding context, expected role, or first instructions."
+                  placeholder="Add onboarding context, expected responsibilities, or first instructions."
                   maxLength={4000}
                 />
               </label>
 
               <div className="rounded-lg border border-border px-4 py-3 text-sm text-muted-foreground">
-                Agent invites create a join request first. A company admin still approves the request before the agent can claim its API key.
+                Agent invites create a configuration proposal. A company admin chooses the final adapter and execution configuration before creating the agent; no generic Paperclip API key is issued.
               </div>
 
               <div>
@@ -388,7 +332,7 @@ export function NewAgentDialog() {
                     ) : null}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Send this prompt to the external agent that should join this company.
+                    Send this prompt to the external agent that should propose the new Paperclip agent configuration.
                   </p>
                 </div>
               </div>

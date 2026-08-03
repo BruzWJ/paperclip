@@ -19,7 +19,7 @@
  */
 
 import { fork, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
@@ -261,6 +261,7 @@ export interface PluginWorkerHandle {
     method: M,
     params: HostToWorkerMethods[M][0],
     timeoutMs?: number,
+    invocationScope?: PluginInvocationScope,
   ): Promise<HostToWorkerMethods[M][1]>;
 
   /**
@@ -356,6 +357,7 @@ export interface PluginWorkerManager {
     method: M,
     params: HostToWorkerMethods[M][0],
     timeoutMs?: number,
+    invocationScope?: PluginInvocationScope,
   ): Promise<HostToWorkerMethods[M][1]>;
 }
 
@@ -387,6 +389,7 @@ export function createPluginWorkerHandle(
   let status: WorkerStatus = "stopped";
   let startedAt: number | null = null;
   let stderrExcerpt = "";
+  let workerRpcIncarnationId = "";
 
   // Pending RPC requests awaiting a response
   const pendingRequests = new Map<string | number, PendingRequest>();
@@ -518,11 +521,6 @@ export function createPluginWorkerHandle(
       return companyId ? { companyId } : null;
     }
 
-    if (method === "executeTool" && isRecord(params.runContext)) {
-      const companyId = readNonEmptyString(params.runContext.companyId);
-      return companyId ? { companyId } : null;
-    }
-
     if (method === "onEvent" && isRecord(params.event)) {
       const companyId = readNonEmptyString(params.event.companyId);
       return companyId ? { companyId } : null;
@@ -554,18 +552,38 @@ export function createPluginWorkerHandle(
     activeInvocations.delete(invocation.id);
   }
 
+  function rpcOperationIdForWorkerRequest(request: JsonRpcRequest): string {
+    // This is transport identity, not payload identity: the message/body is
+    // deliberately excluded so distinct same-payload calls never deduplicate.
+    const digest = createHash("sha256")
+      .update(workerRpcIncarnationId)
+      .update("\u0000")
+      .update(request.method)
+      .update("\u0000")
+      .update(typeof request.id)
+      .update("\u0000")
+      .update(String(request.id))
+      .digest("hex");
+    return `pc_plugin_rpc_op_v1_${digest}`;
+  }
+
   function contextForWorkerMessage(message: JsonRpcRequest | JsonRpcNotification): WorkerHostCallContext {
+    const rpcOperationContext = isJsonRpcRequest(message)
+      ? { rpcOperationId: rpcOperationIdForWorkerRequest(message) }
+      : {};
     const invocationId = readNonEmptyString(
       (message as { paperclipInvocationId?: unknown }).paperclipInvocationId,
     );
     if (!invocationId) {
       const hasActiveInvocation = activeInvocations.size > 0 ||
         Array.from(pendingRequests.values()).some((pending) => pending.invocationId);
-      return hasActiveInvocation ? { invalidInvocationScope: true } : {};
+      return hasActiveInvocation
+        ? { ...rpcOperationContext, invalidInvocationScope: true }
+        : rpcOperationContext;
     }
     const entry = activeInvocations.get(invocationId);
-    if (!entry) return { invalidInvocationScope: true };
-    return { invocationScope: entry.scope };
+    if (!entry) return { ...rpcOperationContext, invalidInvocationScope: true };
+    return { ...rpcOperationContext, invocationScope: entry.scope };
   }
 
   /**
@@ -933,6 +951,7 @@ export function createPluginWorkerHandle(
     intentionalStop = false;
     setStatus("starting");
     stderrExcerpt = "";
+    workerRpcIncarnationId = randomUUID();
 
     const child = spawnProcess();
     childProcess = child;
@@ -1120,6 +1139,7 @@ export function createPluginWorkerHandle(
     method: M,
     params: HostToWorkerMethods[M][0],
     timeoutMs?: number,
+    explicitInvocationScope?: PluginInvocationScope,
   ): Promise<HostToWorkerMethods[M][1]> {
     const rpcPromise = new Promise<HostToWorkerMethods[M][1]>((resolve, reject) => {
       if (!childProcess?.stdin?.writable) {
@@ -1133,7 +1153,8 @@ export function createPluginWorkerHandle(
 
       const id = nextRequestId++;
       const timeout = Math.min(timeoutMs ?? rpcTimeoutMs, MAX_RPC_TIMEOUT_MS);
-      const invocationScope = deriveInvocationScope(method, params);
+      const invocationScope =
+        explicitInvocationScope ?? deriveInvocationScope(method, params);
       const invocation = invocationScope ? registerInvocation(invocationScope) : null;
 
       // Guard against double-settlement. When a process exits all pending
@@ -1243,6 +1264,7 @@ export function createPluginWorkerHandle(
       method: M,
       params: HostToWorkerMethods[M][0],
       timeoutMs?: number,
+      invocationScope?: PluginInvocationScope,
     ): Promise<HostToWorkerMethods[M][1]> {
       if (status !== "running" && status !== "starting") {
         return Promise.reject(
@@ -1251,7 +1273,7 @@ export function createPluginWorkerHandle(
           ),
         );
       }
-      return callInternal(method, params, timeoutMs);
+      return callInternal(method, params, timeoutMs, invocationScope);
     },
 
     notify(method: string, params: unknown) {
@@ -1467,6 +1489,7 @@ export function createPluginWorkerManager(
       method: M,
       params: HostToWorkerMethods[M][0],
       timeoutMs?: number,
+      invocationScope?: PluginInvocationScope,
     ): Promise<HostToWorkerMethods[M][1]> {
       const handle = workers.get(pluginId);
       if (!handle) {
@@ -1474,7 +1497,7 @@ export function createPluginWorkerManager(
           new Error(`No worker registered for plugin "${pluginId}"`),
         );
       }
-      return handle.call(method, params, timeoutMs);
+      return handle.call(method, params, timeoutMs, invocationScope);
     },
   };
 }

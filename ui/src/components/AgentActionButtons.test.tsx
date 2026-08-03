@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Agent } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentActionButtons } from "./AgentActionButtons";
 
@@ -18,9 +18,6 @@ const mockAgentsApi = vi.hoisted(() => ({
   clearError: vi.fn(),
   approve: vi.fn(),
   terminate: vi.fn(),
-  resetSession: vi.fn(),
-  instructionsBundle: vi.fn(),
-  instructionsFile: vi.fn(),
   create: vi.fn(),
   hire: vi.fn(),
 }));
@@ -68,21 +65,20 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     companyId: "company-1",
     name: "Alpha Agent",
     urlKey: "alpha",
-    role: "engineer",
     title: null,
     icon: null,
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
+    currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
-    lastHeartbeatAt: null,
+    governance: {},
     metadata: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -108,7 +104,6 @@ describe("AgentActionButtons", () => {
     mockAgentsApi.pause.mockResolvedValue(makeAgent({ status: "paused" }));
     mockAgentsApi.resume.mockResolvedValue(makeAgent({ status: "idle" }));
     mockAgentsApi.invoke.mockResolvedValue({ id: "run-1" });
-    mockAgentsApi.resetSession.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -128,7 +123,7 @@ describe("AgentActionButtons", () => {
     root = createRoot(container);
     root.render(
       <QueryClientProvider client={queryClient}>
-        <AgentActionButtons agent={agent} companyId="company-1" runLabel="Run Heartbeat" />
+        <AgentActionButtons agent={agent} companyId="company-1" />
       </QueryClientProvider>,
     );
   }
@@ -139,14 +134,14 @@ describe("AgentActionButtons", () => {
 
     expect(container.textContent).toContain("Clear error");
     expect(container.textContent).not.toContain("Pause");
-    expect(container.textContent).toContain("Run Heartbeat");
+    expect(container.textContent).toContain("Assign Task");
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Open actions for Alpha Agent"]')?.click();
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain("Reset Sessions");
+    expect(document.body.textContent).not.toContain("Reset Sessions");
   });
 
   it("calls clearError and refreshes agent-related queries", async () => {
@@ -162,10 +157,10 @@ describe("AgentActionButtons", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "detail", "agent-1"] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "detail", "alpha"] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "runtime-state", "agent-1"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "task-sessions", "agent-1"] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["agents", "company-1"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["live-runs", "company-1"] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["heartbeats", "company-1", "agent-1"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["runs", "company-1", "all-agents", "all-statuses"],
+    });
   });
 
   it("keeps the normal pause action for non-error agents", async () => {

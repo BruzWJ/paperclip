@@ -1,19 +1,16 @@
 import type { Db } from "@paperclipai/db";
-import { issueThreadInteractions } from "@paperclipai/db";
-import { and, desc, eq, or, sql } from "drizzle-orm";
-import type { RequestConfirmationPayload, RequestConfirmationResult } from "@paperclipai/shared";
-import { forbidden } from "../errors.js";
+import { changeConsents } from "@paperclipai/db";
+import { and, desc, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
+import { badRequest, conflict, forbidden, notFound } from "../errors.js";
+import {
+  readIssueExecutionRun,
+  resolveIssueExecutionRunIdentityById,
+} from "./issue-execution-run-service.js";
 
-export const AGENT_PROFILE_CHANGE_CONSENT_FIELDS = ["name", "role", "title", "capabilities"] as const;
+export const AGENT_PROFILE_CHANGE_CONSENT_FIELDS = ["name", "title", "capabilities"] as const;
+export const CHANGE_CONSENT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
-type ConsumedRequestConfirmationResult = RequestConfirmationResult & {
-  consumedAt?: string | null;
-  consumedByRunId?: string | null;
-};
-
-export function agentInstructionsChangeTargetKey(agentId: string) {
-  return `agent:${agentId}:instructions`;
-}
+export type ChangeConsentStatus = "pending" | "accepted" | "rejected" | "expired";
 
 export function agentProfileChangeTargetKey(agentId: string) {
   return `agent:${agentId}:profile`;
@@ -41,192 +38,229 @@ export function touchesAgentProfileChangeConsentFields(patchData: Record<string,
   );
 }
 
+export type ChangeConsentTransaction =
+  Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 function readNonEmptyString(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function payloadHasDisplayedDiff(payload: RequestConfirmationPayload) {
-  const details = readNonEmptyString(payload.detailsMarkdown);
-  if (!details) return false;
-  if (/```diff\b/i.test(details)) return true;
-  return /(^|\n)[+-][^\n]+/.test(details);
+function hasDisplayedDiff(value: string) {
+  return /```diff\b/i.test(value) || /(^|\n)[+-][^\n]+/.test(value);
 }
 
-function requestConfirmationResultConsumed(result: RequestConfirmationResult | null) {
-  const consumed = result as ConsumedRequestConfirmationResult | null;
-  return Boolean(readNonEmptyString(consumed?.consumedByRunId) || readNonEmptyString(consumed?.consumedAt));
-}
+export async function consumeAcceptedChangeConsentInTransaction(
+  tx: ChangeConsentTransaction,
+  input: {
+    companyId: string;
+    actorAgentId: string | null | undefined;
+    actorRunId: string | null | undefined;
+    targetKeys: string[];
+    displayedDiff: string;
+    now?: Date;
+  },
+): Promise<boolean> {
+  const actorAgentId = readNonEmptyString(input.actorAgentId);
+  if (!actorAgentId) return false;
 
-function markRequestConfirmationResultConsumed(
-  result: RequestConfirmationResult,
-  actorRunId: string,
-  consumedAt: Date,
-): ConsumedRequestConfirmationResult {
-  return {
-    ...result,
-    consumedAt: consumedAt.toISOString(),
-    consumedByRunId: actorRunId,
-  };
-}
+  const actorRunId = readNonEmptyString(input.actorRunId);
+  if (!actorRunId) {
+    throw forbidden(
+      "Agent mutations requiring change consent need a run id",
+      { code: "change_consent_run_id_required" },
+    );
+  }
+  const targetKeys = [
+    ...new Set(
+      input.targetKeys
+        .map(readNonEmptyString)
+        .filter((key): key is string => Boolean(key)),
+    ),
+  ];
+  if (targetKeys.length === 0) {
+    throw forbidden("Mutation target is not consent-gated", {
+      code: "change_consent_target_required",
+    });
+  }
+  const displayedDiff = readNonEmptyString(input.displayedDiff);
+  if (!displayedDiff || !hasDisplayedDiff(displayedDiff)) {
+    throw forbidden("Mutation requires the exact displayed change-consent diff", {
+      code: "change_consent_diff_required",
+    });
+  }
+  const now = input.now ?? new Date();
+  const accepted = await tx
+    .select({ id: changeConsents.id })
+    .from(changeConsents)
+    .where(
+      and(
+        eq(changeConsents.companyId, input.companyId),
+        eq(changeConsents.requestedByAgentId, actorAgentId),
+        inArray(changeConsents.targetKey, targetKeys),
+        eq(changeConsents.displayedDiff, displayedDiff),
+        eq(changeConsents.status, "accepted"),
+        ne(changeConsents.sourceRunId, actorRunId),
+        gt(changeConsents.expiresAt, now),
+        isNull(changeConsents.consumedAt),
+        isNull(changeConsents.consumedByRunId),
+      ),
+    )
+    .orderBy(
+      desc(changeConsents.decidedAt),
+      desc(changeConsents.createdAt),
+    )
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
 
-function legacyTargetKeysFor(targetKey: string) {
-  if (targetKey.startsWith("agent:") && targetKey.endsWith(":instructions")) {
-    const agentId = targetKey.slice("agent:".length, -":instructions".length);
-    if (agentId) return [`reflection-coach:agent-instructions:${agentId}`];
+  if (!accepted) {
+    throw forbidden(
+      "Mutation requires unexpired board consent for the exact displayed diff from a previous run.",
+      { code: "change_consent_required", targetKeys },
+    );
   }
-  if (targetKey.startsWith("agent:") && targetKey.endsWith(":profile")) {
-    const agentId = targetKey.slice("agent:".length, -":profile".length);
-    if (agentId) return [`reflection-coach:agent-description:${agentId}`];
-  }
-  if (targetKey.startsWith("skill:")) {
-    const skillId = targetKey.slice("skill:".length);
-    if (skillId) return [`reflection-coach:company-skill:${skillId}`];
-  }
-  if (targetKey.startsWith("skill-slug:")) {
-    const slug = targetKey.slice("skill-slug:".length);
-    if (slug) return [`reflection-coach:company-skill-slug:${slug}`];
-  }
-  if (targetKey.startsWith("skill-import:")) {
-    const source = targetKey.slice("skill-import:".length);
-    if (source) {
-      return [
-        `reflection-coach:company-skill-import:${source}`,
-        `reflection-coach:company-skill-catalog:${source}`,
-      ];
-    }
-  }
-  if (targetKey === "skills:scan-projects") {
-    return ["reflection-coach:company-skills:scan-projects"];
-  }
-  return [];
-}
 
-function expandTargetKeysForLegacyCompatibility(targetKeys: string[]) {
-  const expanded = new Set<string>();
-  for (const targetKey of targetKeys) {
-    expanded.add(targetKey);
-    for (const legacyTargetKey of legacyTargetKeysFor(targetKey)) {
-      expanded.add(legacyTargetKey);
-    }
+  const [consumed] = await tx
+    .update(changeConsents)
+    .set({
+      consumedAt: now,
+      consumedByRunId: actorRunId,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(changeConsents.id, accepted.id),
+        eq(changeConsents.companyId, input.companyId),
+        eq(changeConsents.status, "accepted"),
+        gt(changeConsents.expiresAt, now),
+        isNull(changeConsents.consumedAt),
+        isNull(changeConsents.consumedByRunId),
+      ),
+    )
+    .returning({ id: changeConsents.id });
+  if (!consumed) {
+    throw forbidden(
+      "Mutation requires unexpired board consent for the exact displayed diff from a previous run.",
+      { code: "change_consent_required", targetKeys },
+    );
   }
-  return [...expanded];
+  return true;
 }
 
 export function changeConsentGateService(db: Db) {
+  async function expirePending(companyId: string, now = new Date()) {
+    await db
+      .update(changeConsents)
+      .set({ status: "expired", updatedAt: now })
+      .where(and(
+        eq(changeConsents.companyId, companyId),
+        eq(changeConsents.status, "pending"),
+        lt(changeConsents.expiresAt, now),
+      ));
+  }
+
   return {
+    request: async (input: {
+      companyId: string;
+      requestedByAgentId: string;
+      sourceRunId: string;
+      targetKey: string;
+      displayedDiff: string;
+      expiresAt: Date;
+    }) => {
+      const targetKey = readNonEmptyString(input.targetKey);
+      const displayedDiff = readNonEmptyString(input.displayedDiff);
+      if (!targetKey) throw badRequest("Change consent target is required");
+      if (!displayedDiff || !hasDisplayedDiff(displayedDiff)) {
+        throw badRequest("Change consent requires the exact displayed diff");
+      }
+      const now = new Date();
+      if (!(input.expiresAt instanceof Date) || Number.isNaN(input.expiresAt.getTime()) || input.expiresAt <= now) {
+        throw badRequest("Change consent expiry must be in the future");
+      }
+      const sourceIdentity = await resolveIssueExecutionRunIdentityById(
+        db,
+        input.sourceRunId,
+      );
+      const sourceRun = sourceIdentity?.companyId === input.companyId
+        ? await readIssueExecutionRun(db, sourceIdentity)
+        : null;
+      if (!sourceRun || sourceRun.targetAgentId !== input.requestedByAgentId) {
+        throw badRequest("Change consent source run is invalid");
+      }
+
+      return db
+        .insert(changeConsents)
+        .values({
+          companyId: input.companyId,
+          requestedByAgentId: input.requestedByAgentId,
+          sourceRunId: input.sourceRunId,
+          targetKey,
+          displayedDiff,
+          expiresAt: input.expiresAt,
+        })
+        .returning()
+        .then((rows) => rows[0]!);
+    },
+
+    list: async (companyId: string, status?: ChangeConsentStatus) => {
+      await expirePending(companyId);
+      return db
+        .select()
+        .from(changeConsents)
+        .where(status
+          ? and(eq(changeConsents.companyId, companyId), eq(changeConsents.status, status))
+          : eq(changeConsents.companyId, companyId))
+        .orderBy(desc(changeConsents.createdAt));
+    },
+
+    decide: async (input: {
+      companyId: string;
+      consentId: string;
+      decision: "accepted" | "rejected";
+      decidedByBoardId: string;
+      reason?: string | null;
+    }) => {
+      const boardId = readNonEmptyString(input.decidedByBoardId);
+      if (!boardId) throw badRequest("Board decision identity is required");
+      const now = new Date();
+      await expirePending(input.companyId, now);
+      const [updated] = await db
+        .update(changeConsents)
+        .set({
+          status: input.decision,
+          decisionReason: readNonEmptyString(input.reason),
+          decidedByBoardId: boardId,
+          decidedAt: now,
+          updatedAt: now,
+        })
+        .where(and(
+          eq(changeConsents.id, input.consentId),
+          eq(changeConsents.companyId, input.companyId),
+          eq(changeConsents.status, "pending"),
+          gt(changeConsents.expiresAt, now),
+        ))
+        .returning();
+      if (updated) return updated;
+
+      const existing = await db
+        .select({ status: changeConsents.status })
+        .from(changeConsents)
+        .where(and(eq(changeConsents.id, input.consentId), eq(changeConsents.companyId, input.companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!existing) throw notFound("Change consent not found");
+      throw conflict("Change consent is no longer pending", { status: existing.status });
+    },
+
     assertConsented: async (input: {
       companyId: string;
       actorAgentId: string | null | undefined;
       actorRunId: string | null | undefined;
       targetKeys: string[];
+      displayedDiff: string;
     }): Promise<boolean> => {
-      const actorAgentId = readNonEmptyString(input.actorAgentId);
-      if (!actorAgentId) return false;
-
-      const actorRunId = readNonEmptyString(input.actorRunId);
-      if (!actorRunId) {
-        throw forbidden("Reflection Coach mutations require a run id", {
-          code: "reflection_coach_mutation_run_id_required",
-        });
-      }
-
-      const targetKeys = [...new Set(input.targetKeys.map(readNonEmptyString).filter((key): key is string => Boolean(key)))];
-      if (targetKeys.length === 0) {
-        throw forbidden("Reflection Coach mutation target is not gateable", {
-          code: "reflection_coach_mutation_target_required",
-        });
-      }
-      const queryTargetKeys = expandTargetKeysForLegacyCompatibility(targetKeys);
-
-      const targetKeyPredicate = or(
-        ...queryTargetKeys.map((targetKey) =>
-          sql`${issueThreadInteractions.payload}->'target'->>'key' = ${targetKey}`,
-        ),
+      return db.transaction((tx) =>
+        consumeAcceptedChangeConsentInTransaction(tx, input),
       );
-
-      const rows = await db
-        .select({
-          id: issueThreadInteractions.id,
-          sourceRunId: issueThreadInteractions.sourceRunId,
-          payload: issueThreadInteractions.payload,
-          result: issueThreadInteractions.result,
-        })
-        .from(issueThreadInteractions)
-        .where(and(
-          eq(issueThreadInteractions.companyId, input.companyId),
-          eq(issueThreadInteractions.createdByAgentId, actorAgentId),
-          eq(issueThreadInteractions.kind, "request_confirmation"),
-          eq(issueThreadInteractions.status, "accepted"),
-          targetKeyPredicate,
-        ))
-        .orderBy(desc(issueThreadInteractions.resolvedAt), desc(issueThreadInteractions.createdAt))
-        .limit(10);
-
-      const accepted = rows.find((row) => {
-        const payload = row.payload as RequestConfirmationPayload;
-        const result = row.result as RequestConfirmationResult | null;
-        return payload.target?.type === "custom"
-          && queryTargetKeys.includes(payload.target.key)
-          && result?.outcome === "accepted"
-          && !requestConfirmationResultConsumed(result)
-          && payloadHasDisplayedDiff(payload)
-          && Boolean(row.sourceRunId)
-          && row.sourceRunId !== actorRunId;
-      });
-
-      if (!accepted) {
-        throw forbidden(
-          "Reflection Coach mutations require an accepted request_confirmation with a displayed diff for this target, "
-            + "created in a previous run and not already consumed.",
-          {
-            code: "reflection_coach_mutation_gate_required",
-            targetKeys,
-          },
-        );
-      }
-
-      const acceptedResult = accepted.result as RequestConfirmationResult | null;
-      if (!acceptedResult) {
-        throw forbidden(
-          "Reflection Coach mutations require an accepted request_confirmation with a displayed diff for this target, "
-            + "created in a previous run and not already consumed.",
-          {
-            code: "reflection_coach_mutation_gate_required",
-            targetKeys,
-          },
-        );
-      }
-
-      const now = new Date();
-      const [consumed] = await db
-        .update(issueThreadInteractions)
-        .set({
-          result: markRequestConfirmationResultConsumed(acceptedResult, actorRunId, now),
-          updatedAt: now,
-        })
-        .where(and(
-          eq(issueThreadInteractions.id, accepted.id),
-          eq(issueThreadInteractions.companyId, input.companyId),
-          eq(issueThreadInteractions.createdByAgentId, actorAgentId),
-          eq(issueThreadInteractions.kind, "request_confirmation"),
-          eq(issueThreadInteractions.status, "accepted"),
-          sql`${issueThreadInteractions.result}->>'outcome' = 'accepted'`,
-          sql`coalesce(${issueThreadInteractions.result}->>'consumedByRunId', ${issueThreadInteractions.result}->>'consumedAt') is null`,
-        ))
-        .returning({ id: issueThreadInteractions.id });
-
-      if (!consumed) {
-        throw forbidden(
-          "Reflection Coach mutations require an accepted request_confirmation with a displayed diff for this target, "
-            + "created in a previous run and not already consumed.",
-          {
-            code: "reflection_coach_mutation_gate_required",
-            targetKeys,
-          },
-        );
-      }
-
-      return true;
     },
   };
 }

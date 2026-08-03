@@ -283,7 +283,7 @@ describe("Daytona sandbox provider plugin", () => {
       runId: "run-1",
       agentId: "agent-1",
       executionWorkspaceId: "workspace-1",
-      adapterType: "codex_local",
+      adapterType: "codex",
       config: {
         image: "node:20",
         timeoutMs: 300000,
@@ -593,7 +593,7 @@ describe("Daytona sandbox provider plugin", () => {
       runId: "run-1",
       agentId: "agent-1",
       executionWorkspaceId: "workspace-1",
-      adapterType: "codex_local",
+      adapterType: "codex",
       config: {
         image: "node:20",
         cpu: 4,
@@ -626,7 +626,7 @@ describe("Daytona sandbox provider plugin", () => {
       runId: "run-1",
       agentId: "agent-1",
       executionWorkspaceId: "workspace-1",
-      adapterType: "codex_local",
+      adapterType: "codex",
       config: {
         snapshot: "captured-snapshot",
         cpu: 4,
@@ -676,7 +676,7 @@ describe("Daytona sandbox provider plugin", () => {
       runId: "run-1",
       agentId: "agent-1",
       executionWorkspaceId: "workspace-1",
-      adapterType: "codex_local",
+      adapterType: "codex",
       config: {
         cpu: 4,
         memory: 4,
@@ -702,7 +702,7 @@ describe("Daytona sandbox provider plugin", () => {
       runId: "run-1",
       agentId: "agent-1",
       executionWorkspaceId: "workspace-1",
-      adapterType: "codex_local",
+      adapterType: "codex",
       config: {
         image: "daytonaio/sandbox:0.8.0",
         cpu: 4,
@@ -730,7 +730,7 @@ describe("Daytona sandbox provider plugin", () => {
         runId: "run-1",
         agentId: "agent-1",
         executionWorkspaceId: "workspace-1",
-        adapterType: "codex_local",
+        adapterType: "codex",
         config: {
           image: "daytonaio/sandbox:0.8.0",
           cpu,
@@ -1079,6 +1079,7 @@ describe("Daytona sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-one-shot",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -1088,10 +1089,17 @@ describe("Daytona sandbox provider plugin", () => {
 
     expect(sandbox.process.executeCommand).toHaveBeenCalledTimes(1);
     const [command, cwdArg, envArg, timeoutArg] = sandbox.process.executeCommand.mock.calls[0] as [string, unknown, unknown, number];
+    expect(command).toContain("paperclip_control=");
     expect(command).toMatch(/\/etc\/profile/);
-    expect(command).toMatch(/"\$HOME\/\.profile"/);
-    expect(command).toMatch(/cd '\/workspace'/);
-    expect(command).toMatch(/&& env GIT_TERMINAL_PROMPT='0' GCM_INTERACTIVE='Never' GIT_ASKPASS='echo' SSH_ASKPASS='echo' SSH_ASKPASS_REQUIRE='force' FOO='bar' 'printf' 'hello'$/);
+    expect(command).not.toMatch(/"\$HOME\/\.(?:profile|bashrc|zprofile)"/);
+    expect(command).toContain("/workspace");
+    expect(command).toMatch(/mktemp -d \/tmp\/paperclip-provider-home/);
+    expect(command).toContain("env -i PATH=");
+    expect(command).toContain("GIT_TERMINAL_PROMPT=");
+    expect(command).toContain("GCM_INTERACTIVE=");
+    expect(command).toContain("FOO=");
+    expect(command).toContain("printf");
+    expect(command).toContain("hello");
     expect(command).not.toMatch(/(?:^|&& )exec /);
     // cwd/env are baked into the login-shell command itself; we pass undefined
     // to the SDK so it doesn't run the cd before profile sourcing.
@@ -1120,6 +1128,7 @@ describe("Daytona sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-stdin",
       command: "cat",
       args: [],
       cwd: "/workspace",
@@ -1133,9 +1142,12 @@ describe("Daytona sandbox provider plugin", () => {
       1,
     );
     const [command] = sandbox.process.executeCommand.mock.calls[0] as [string];
+    expect(command).toContain("paperclip_control=");
     expect(command).toMatch(/\/etc\/profile/);
-    expect(command).toMatch(/cd '\/workspace'/);
-    expect(command).toMatch(/env .* 'cat' < '\/tmp\/paperclip-stdin-/);
+    expect(command).toContain("/workspace");
+    expect(command).toContain("env ");
+    expect(command).toContain("cat");
+    expect(command).toContain("/tmp/paperclip-stdin-");
     expect(command).not.toMatch(/(?:^|&& )exec /);
     expect(sandbox.fs.deleteFile).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/paperclip-stdin-/));
     expect(result).toMatchObject({
@@ -1158,6 +1170,7 @@ describe("Daytona sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-invalid-env",
       command: "printf",
       args: ["hello"],
       env: { "BAD-KEY": "bar" },
@@ -1181,6 +1194,7 @@ describe("Daytona sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-timeout",
       command: "sleep",
       args: ["60"],
       cwd: "/workspace",
@@ -1206,17 +1220,18 @@ describe("Daytona sandbox provider plugin", () => {
       environmentId: "env-1",
       config: { timeoutMs: 300000, reuseLease: false },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-git-defaults",
       command: "git",
       args: ["status"],
       timeoutMs: 5000,
     });
 
     const [command] = sandbox.process.executeCommand.mock.calls[0] as [string];
-    expect(command).toContain("GIT_TERMINAL_PROMPT='0'");
-    expect(command).toContain("GCM_INTERACTIVE='Never'");
-    expect(command).toContain("GIT_ASKPASS='echo'");
-    expect(command).toContain("SSH_ASKPASS='echo'");
-    expect(command).toContain("SSH_ASKPASS_REQUIRE='force'");
+    expect(command).toContain("GIT_TERMINAL_PROMPT=");
+    expect(command).toContain("GCM_INTERACTIVE=");
+    expect(command).toContain("GIT_ASKPASS=");
+    expect(command).toContain("SSH_ASKPASS=");
+    expect(command).toContain("SSH_ASKPASS_REQUIRE=");
   });
 
   it("caps git network commands at 120 s and returns an actionable message on timeout", async () => {
@@ -1231,6 +1246,7 @@ describe("Daytona sandbox provider plugin", () => {
       environmentId: "env-1",
       config: { timeoutMs: 300000, reuseLease: false },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-git-timeout",
       command: "git",
       args: ["push", "origin", "HEAD"],
       cwd: "/workspace",

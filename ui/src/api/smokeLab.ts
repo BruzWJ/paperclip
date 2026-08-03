@@ -11,8 +11,8 @@ import { api } from "./client";
 /**
  * Smoke Lab API client (PAP-13347 / S2, plan §D3). Mirrors the S1 results API
  * shipped in `server/src/routes/smoke-lab.ts` (PAP-13346). Every endpoint is
- * company-scoped and gated server-side on `experimental.enableSmokeLab`,
- * `deploymentMode === local_trusted`, and a non-production environment — the UI
+ * company-scoped and gated server-side on `experimental.enableSmokeLab`
+ * and a non-production environment — the UI
  * only ever surfaces these screens when the board-readable experimental flag is
  * on, but the server stays authoritative.
  */
@@ -48,7 +48,10 @@ export const smokeLabApi = {
   stopServices: (companyId: string) =>
     api.post<SmokeLabServicesResponse>(`${base(companyId)}/services/stop`, {}),
   installFixtures: (companyId: string) =>
-    api.post<SmokeLabInstallFixturesResponse>(`${base(companyId)}/install-fixtures`, {}),
+    api.post<SmokeLabInstallFixturesResponse>(
+      `${base(companyId)}/install-fixtures`,
+      {},
+    ),
   reset: (companyId: string) =>
     api.post<{ reset: boolean }>(`${base(companyId)}/reset`, {}),
 

@@ -11,7 +11,7 @@ import {
 
 function issue(
   id: string,
-  status: Issue["status"],
+  boardPresentationStatus: Issue["boardPresentationStatus"],
   createdAt: string,
   blockedByIds: string[] = [],
 ): Issue {
@@ -19,7 +19,7 @@ function issue(
     id,
     identifier: `PAP-${id}`,
     title: `Issue ${id}`,
-    status,
+    boardPresentationStatus,
     createdAt: new Date(createdAt),
     blockedBy: blockedByIds.map((blockerId) => ({ id: blockerId })),
   } as Issue;

@@ -50,7 +50,7 @@ This also keeps the abstraction valid for non-local adapters:
 
 They should be treated as **repo/project-scoped infrastructure**, not agent identity.
 
-The stable object is the project workspace. Agents come and go, ownership changes, and the same issue may be reassigned. A git worktree is a derived checkout of a repo workspace for a specific task or issue. The agent uses it, but should not own the abstraction.
+The stable object is the project workspace. Agents come and go, ownership changes, and the same issue may be reassigned. A git worktree is a derived checkout of a repo workspace for a specific issue. The agent uses it, but should not own the abstraction.
 
 If Paperclip makes worktrees agent-first, it will blur:
 
@@ -67,7 +67,7 @@ By making execution workspace strategy **opt-in at the adapter/config layer**, n
 Defaults should remain:
 
 - existing project workspace resolution
-- existing task-session resume
+- existing conversational-session resume
 - existing agent-home fallback
 
 Then local coding agents can opt into a strategy like `git_worktree`.
@@ -139,7 +139,7 @@ Examples:
 
 - a small fix may be fine in the main project workspace
 - an operator may want to work directly on a long-lived branch
-- a board user may want to create a task without paying the setup/cleanup overhead
+- a board user may want to create an issue without paying the setup/cleanup overhead
 
 So the model should be:
 
@@ -192,7 +192,7 @@ Those should not be buried inside adapter prompts. They are workflow policy.
 
 ### Human operator workflows are different from issue-isolation workflows
 
-A human operator may want a long-lived personal integration branch such as `dotta` and may not want every task to create a new branch/workspace dance.
+A human operator may want a long-lived personal integration branch such as `dotta` and may not want every issue to create a new branch/workspace dance.
 
 That is a legitimate workflow and should be supported directly.
 
@@ -470,9 +470,9 @@ Add:
 
 If we want these fields persisted directly on existing entities instead of living in opaque JSON:
 
-- `packages/db/src/schema/projects.ts`
-- `packages/db/src/schema/issues.ts`
-- migration generation in `packages/db/src/migrations/`
+- `packages/db/schema/projects.ts`
+- `packages/db/schema/issues.ts`
+- migration generation in `packages/db/migrations/`
 
 Recommended first cut:
 
@@ -495,7 +495,7 @@ Files:
 - `server/src/services/projects.ts`
 - project routes in `server/src/routes/projects.ts`
 
-Tasks:
+Work items:
 
 - accept and validate project execution workspace policy
 - return it from project API payloads
@@ -508,7 +508,7 @@ Files:
 - `server/src/services/issues.ts`
 - `server/src/routes/issues.ts`
 
-Tasks:
+Work items:
 
 - accept issue-level `executionWorkspaceSettings`
 - when creating an issue in a project with execution workspaces enabled, default the issue setting from the project policy if not explicitly provided
@@ -518,7 +518,7 @@ Tasks:
 
 Primary file:
 
-- `server/src/services/heartbeat.ts`
+- `server/src/services/issue-execution-attempt-executor.ts`
 
 Current behavior should be refactored so workspace resolution is based on:
 
@@ -615,7 +615,7 @@ Files:
 - `packages/adapters/claude-local/src/ui/build-config.ts`
 - local adapter execute paths already consuming env/context
 
-Tasks:
+Work items:
 
 - continue to accept resolved workspace/runtime context from heartbeat
 - stop assuming the agent config is the primary source of workspace policy
@@ -627,7 +627,7 @@ Files:
 
 - `server/src/services/workspace-runtime.ts`
 
-Tasks:
+Work items:
 
 - accept runtime service defaults from the effective project/issue policy
 - keep adapter-config runtime service JSON as override-only
@@ -641,7 +641,7 @@ This is not fully implemented today and should be treated as a separate orchestr
 
 Likely files:
 
-- `server/src/services/heartbeat.ts`
+- `server/src/services/issue-execution-attempt-executor.ts`
 - future git/provider integration helpers
 
 Needed decisions:
@@ -662,7 +662,7 @@ Suggested approach:
 Likely files:
 
 - `server/src/services/workspace-runtime.ts`
-- `server/src/services/heartbeat.ts`
+- `server/src/services/issue-execution-attempt-executor.ts`
 - any future merge-detection hooks
 
 Needed behaviors:
@@ -701,19 +701,19 @@ Paperclip already has the right foundation for a project-first model.
 
 ### Project workspace is already first-class
 
-- `project_workspaces` already exists in `packages/db/src/schema/project_workspaces.ts`
+- `project_workspaces` already exists in `packages/db/schema/project_workspaces.ts`
 - the shared `ProjectWorkspace` type already includes `cwd`, `repoUrl`, and `repoRef` in `packages/shared/src/types/project.ts`
-- docs already state that agents use the project's primary workspace for project-scoped tasks in `docs/api/goals-and-projects.md`
+- docs already state that agents use the project's primary workspace for project-scoped issues in `docs/api/goals-and-projects.md`
 
 ### Heartbeat already resolves workspace in the right order
 
 Current run resolution already prefers:
 
 1. project workspace
-2. prior task session cwd
+2. prior conversational session cwd
 3. agent-home fallback
 
-See `server/src/services/heartbeat.ts`.
+See `server/src/services/issue-execution-attempt-executor.ts`.
 
 ### Session resume is already cwd-aware
 
@@ -728,7 +728,7 @@ That means the clean insertion point is before adapter execution: resolve the fi
 
 For server-spawned local adapters, Paperclip already injects a short-lived local JWT:
 
-- JWT creation: `server/src/services/heartbeat.ts`
+- request authorization: the persisted issue-execution ref and compiled run interface
 - adapter env injection:
   - `packages/adapters/codex-local/src/server/execute.ts`
   - `packages/adapters/claude-local/src/server/execute.ts`
@@ -741,7 +741,7 @@ The linked tool docs support a project-first, adapter-specific launch model.
 
 ### Codex
 
-- Codex app has a native worktree concept for parallel tasks in git repos
+- Codex app has a native worktree concept for parallel work in git repos
 - Codex CLI documents running in a chosen working directory and resuming sessions from the current working directory
 - Codex CLI does not present a single first-class portable CLI worktree abstraction that Paperclip should mirror directly
 
@@ -1063,7 +1063,7 @@ Suggested fields to introduce:
 - `executionServiceRefs`
 - `executionCleanupStatus`
 
-These can live first on `heartbeat_runs.context_snapshot` or adjacent run metadata, with an optional later move into a dedicated table if the UI and cleanup workflows justify it.
+These can live first on `issue_execution_runs.context_snapshot` or adjacent run metadata, with an optional later move into a dedicated table if the UI and cleanup workflows justify it.
 
 For runtime services specifically, Paperclip should eventually track normalized fields such as:
 
@@ -1128,7 +1128,7 @@ Acceptance:
 
 Primary touchpoints:
 
-- `server/src/services/heartbeat.ts`
+- `server/src/services/issue-execution-attempt-executor.ts`
 
 Acceptance:
 
@@ -1264,7 +1264,7 @@ Acceptance:
 
 - board can see where the agent is working
 - board can see what runtime services exist for that workspace
-- issue thread becomes the handoff surface for branch names and reachable URLs
+- issue thread becomes the transfer surface for branch names and reachable URLs
 
 ## Phase 8: Cleanup Policies
 

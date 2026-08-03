@@ -8,28 +8,23 @@ export { companySkillPolicyService, normalizeSkillPolicySourceType } from "./com
 export { folderService } from "./folders.js";
 export { agentService, deduplicateAgentName } from "./agents.js";
 export {
-  builtInAgentService,
-  deriveBuiltInAgentStatus,
-  getBuiltInAgentDefinition,
-  listBuiltInAgentDefinitions,
-  reconcileBuiltInAgentsOnStartup,
-  validateBuiltInAgentDefinitions,
-  type BuiltInAgentDefinition,
-  type BuiltInManagedResourceState,
-  type BuiltInManagedResourceStockStatus,
-  type BuiltInAgentState,
-  type BuiltInAgentStatus,
-} from "./built-in-agents.js";
-export { agentInstructionsService, syncInstructionsBundleConfigFromFilePath } from "./agent-instructions.js";
-export { assetService } from "./assets.js";
-export { documentService, extractLegacyPlanBody } from "./documents.js";
-export { documentAnnotationService } from "./document-annotations.js";
+  AGENT_ADAPTER_CONFIG_SCHEMA_VERSION,
+  createAgentAdapterConfigurationService,
+  deriveAgentAdapterConfigRevision,
+  deriveRegisteredAgentAdapterConfigRevision,
+  validateRegisteredAdapterRuntimeConfiguration,
+  selectAgentAdapterConfigRevision,
+  type AgentAdapterConfigurationRevisionResult,
+  type AgentAdapterConfigurationService,
+} from "./agent-adapter-config-revisions.js";
 export {
-  ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
-  buildContinuationSummaryMarkdown,
-  getIssueContinuationSummaryDocument,
-  refreshIssueContinuationSummary,
-} from "./issue-continuation-summary.js";
+  createAgentOperationalConfigurationService,
+  type AgentOperationalConfigurationResult,
+  type AgentOperationalConfigurationService,
+} from "./agent-operational-configuration.js";
+export { assetService } from "./assets.js";
+export { documentService } from "./documents.js";
+export { documentAnnotationService } from "./document-annotations.js";
 export { projectService } from "./projects.js";
 export {
   clampIssueListLimit,
@@ -38,17 +33,10 @@ export {
   issueService,
   type IssueFilters,
 } from "./issues.js";
-export { issueThreadInteractionService } from "./issue-thread-interactions.js";
 export { issueTreeControlService } from "./issue-tree-control.js";
 export { issueApprovalService } from "./issue-approvals.js";
 export { issueReferenceService } from "./issue-references.js";
-export { issueRecoveryActionService } from "./issue-recovery-actions.js";
-export { taskWatchdogService } from "./task-watchdogs.js";
-export {
-  issueIsInTaskWatchdogSubtree,
-  resolveTaskWatchdogMutationScope,
-  taskWatchdogScopeAllowsIssueMutation,
-} from "./task-watchdog-scope.js";
+export { issueWatchdogService } from "./issue-watchdogs.js";
 export {
   createExternalObjectDetectorRegistry,
   createExternalObjectResolverRegistry,
@@ -76,17 +64,10 @@ export { budgetService } from "./budgets.js";
 export { secretService } from "./secrets.js";
 export { googleSheetsRobotEmailFromEnv, toolAccessService } from "./tool-access.js";
 export { smokeLabService } from "./smoke-lab.js";
-export { backfillLegacyToolOAuthTokens } from "./tool-oauth-legacy-backfill.js";
 export { toolAccessPolicyService } from "./tool-access-policy.js";
 export { routineService } from "./routines.js";
 export { costService } from "./costs.js";
 export { financeService } from "./finance.js";
-export { heartbeatService, resolveHeartbeatSchedulingSuppression } from "./heartbeat.js";
-export {
-  productivityReviewService,
-  PRODUCTIVITY_REVIEW_ORIGIN_KIND,
-} from "./productivity-review.js";
-export { classifyIssueGraphLiveness, type IssueLivenessFinding } from "./recovery/index.js";
 export { dashboardService } from "./dashboard.js";
 export { sidebarBadgeService } from "./sidebar-badges.js";
 export { sidebarPreferenceService } from "./sidebar-preferences.js";
@@ -94,11 +75,9 @@ export { resourceMembershipService, type ResourceMembershipPolicyHook } from "./
 export { inboxDismissalService } from "./inbox-dismissals.js";
 export { accessService } from "./access.js";
 export {
-  backfillPrincipalAccessCompatibility,
-  ensureHumanRoleDefaultGrants,
+  stampHumanMemberRoleGrants,
   insertMissingPrincipalGrants,
-  type PrincipalAccessCompatibilityBackfillStats,
-} from "./principal-access-compatibility.js";
+} from "./human-member-grants.js";
 export { authorizationService } from "./authorization.js";
 export { inboxAgentPolicyService } from "./inbox-agent-policy.js";
 export type {
@@ -133,16 +112,315 @@ export {
   type ParsedCustomImageSetupSshCommand,
 } from "./environment-custom-image-terminal-sessions.js";
 export { executionWorkspaceService } from "./execution-workspaces.js";
+export {
+  buildRuntimeInterfaceCompileInput,
+  createPostgresRuntimeInterfaceCompiler,
+  createRuntimeRetrievalScopeResolver,
+  type PostgresPromptCapabilityCompiler,
+  type RuntimeInterfaceCompilerSnapshot,
+} from "./runtime-interface-compiler-db.js";
+export {
+  createPostgresPromptCapabilityRuntime,
+  type PostgresPromptCapabilityRuntime,
+  type PostgresPromptCapabilityRuntimeOptions,
+} from "./run-interface-runtime.js";
+export {
+  assertPromptCapabilityCredential,
+  assertRunBearerRejectedByGenericApi,
+  assertRunBearerRejectedByNamedGateway,
+  createPromptCapabilityGateway,
+  promptCapabilityGenerationIdentity,
+  PromptCapabilityAuthenticationError,
+  PromptCapabilityAuthorityError,
+  type PromptCapabilityBinding,
+  type PromptCapabilityCallIdentity,
+  type PromptCapabilityCompileScope,
+  type PromptCapabilityGateway,
+  type PromptCapabilityGatewayRepository,
+  type PromptCapabilityIngressAuthenticationResult,
+  type PromptCapabilityIngressBinding,
+} from "./prompt-capability-gateway.js";
+export {
+  createPostgresPromptCapabilityGatewayRepository,
+  lockActivePromptCapabilityBinding,
+} from "./prompt-capability-gateway-postgres.js";
+export {
+  createIssueExecutionAttemptExecutor,
+  IssueExecutionAttemptRejected,
+  type IssueExecutionAcpEventSink,
+  type IssueExecutionAttemptExecutor,
+  type IssueExecutionAttemptLease,
+  type IssueExecutionDispatchResult,
+  type IssueExecutionPromptClosure,
+  type IssueExecutionPromptClosureDecision,
+  type IssueExecutionPromptCapabilityIdentity,
+  type IssueExecutionPromptCycleRepository,
+  type IssueExecutionPromptIdentity,
+  type IssueExecutionSubprocessObservation,
+  type IssueExecutionTargetNotFoundRecovery,
+  type MintedIssueExecutionPromptCapability,
+  type ResolvedIssueExecutionPrompt,
+} from "./issue-execution-attempt-executor.js";
+export {
+  settleAcpPromptInTransaction,
+  AcpPromptSettlementRejected,
+  type AcpCompactionPromptSettlementIdentity,
+  type AcpProductivePromptSettlementIdentity,
+  type AcpPromptSettlementIdentity,
+  type AcpPromptStepEndedPublication,
+  type SettleAcpPromptInTransactionInput,
+  type SettledAcpPromptResult,
+} from "./acp-prompt-settlement.js";
+export {
+  createIssueExecutionRunService,
+  computeIssueExecutionRunBatchDigest,
+  resolveIssueExecutionRunIdentityById,
+  IssueExecutionSteeringRejected,
+  IssueExecutionRunInvariantViolation,
+  type JoinedIssueExecutionRunDetail,
+  type IssueExecutionRunEnvelope,
+  type IssueExecutionRunIdentity,
+  type IssueExecutionRunService,
+  type IssueExecutionSteeringActor,
+  type IssueExecutionSteeringCancellationPort,
+  type IssueExecutionSteeringCancellationSettlement,
+  type IssueExecutionSteeringRepository,
+  type IssueExecutionSteeringResumePort,
+  type ReboundIssueExecutionSteering,
+  type RequestedIssueExecutionSteering,
+  type RequestIssueExecutionSteeringInput,
+} from "./issue-execution-run-service.js";
+export {
+  createIssueExecutionWatchdogDecisionService,
+  type IssueExecutionWatchdogDecisionActor,
+  type IssueExecutionWatchdogDecisionService,
+  type RecordIssueExecutionWatchdogDecisionInput,
+} from "./issue-execution-watchdog-decisions.js";
+export {
+  buildIssueExecutionFinalizationPlan,
+  IssueExecutionFinalizationRejected,
+  type BuildIssueExecutionFinalizationPlanInput,
+  type IssueExecutionFinalizationPlan,
+  type IssueExecutionFinalizationPromptDependency,
+  type IssueExecutionFinalizationPromptIdentity,
+  type IssueExecutionFinalizationUpdateDependency,
+  type IssueExecutionGatewayRevocationIdentity,
+} from "./issue-execution-finalization.js";
+export {
+  attachIssueLivenessFollowupRunInTransaction,
+  classifyIssueLivenessFollowupWithoutAction,
+  createIssueLivenessReconciliationService,
+  decideIssueLivenessActionSettlement,
+  ISSUE_LIVENESS_FOLLOWUP_TEXT,
+  IssueLivenessReconciliationRejected,
+  recordIssueLivenessActionInTransaction,
+  shouldClaimIssueLivenessFrontier,
+  type IssueLivenessActionReference,
+  type IssueLivenessActionSettlement,
+  type IssueLivenessFinalizationIdentity,
+  type IssueLivenessPostCommitPort,
+  type IssueLivenessPostCommitWork,
+  type IssueLivenessReconciliationService,
+} from "./issue-liveness-reconciliation.js";
+export {
+  createIssueExecutionCancellationService,
+  type IssueExecutionAuthorityFenceResult,
+  type IssueExecutionCancellationActor,
+  type IssueExecutionCancellationResult,
+  type IssueExecutionCancellationService,
+  type IssueExecutionCancellationServiceOptions,
+  type ReleasedAgentSuspensions,
+  type ReleasedBudgetScopeSuspension,
+  type RequestedAgentSuspensions,
+  type RequestedAgentRunCancellations,
+  type RequestedBudgetScopeSuspension,
+  type RequestedRunCancellation,
+  type RequestedScopedRunCancellations,
+} from "./issue-execution-cancellation.js";
+export {
+  createPostgresIssueExecutionProductionRuntime,
+  type PostgresIssueExecutionProductionRuntime,
+  type PostgresIssueExecutionProductionRuntimeOptions,
+} from "./issue-execution-postgres.js";
+export {
+  createPostgresIssueExecutionDispatcherRepository,
+  projectPersistedIssueExecutionRef,
+  PostgresIssueExecutionDispatchRejected,
+  type FencedIssueExecutionAuthority,
+  type IssueExecutionAuthorityFenceSelector,
+  type PersistedIssueExecutionRefRow,
+  type PostgresIssueExecutionDispatcherRepository,
+  type PostgresIssueExecutionDispatcherRepositoryOptions,
+} from "./issue-execution-dispatcher-postgres.js";
+export {
+  createAuthenticatedNativeCorrelationProtector,
+  type PostgresNativeCorrelationProtector,
+} from "./native-correlation-postgres.js";
+export {
+  createNativeCorrelationService,
+  NativeCorrelationRejected,
+  validateAcpCorrelationScope,
+  type AcpActiveRunSteeringCorrelationScope,
+  type AcpCarryCorrelationScope,
+  type AcpCorrelationScope,
+  type AcpSessionCorrelationProtector,
+  type NativeCorrelationService,
+  type ProtectedAcpSessionCorrelation,
+  type ResolvedAcpSessionStart,
+  type StoredAcpSessionCorrelation,
+} from "./native-correlation.js";
+export {
+  createIssueExecutionRuntimeRedactor,
+  createIssueExecutionTargetAcquirer,
+  IssueExecutionTargetAcquisitionRejected,
+  type AcquiredIssueExecutionTarget,
+  type IssueExecutionRuntimeRedactor,
+  type IssueExecutionTargetAcquirer,
+  type IssueExecutionTargetAcquisitionInput,
+} from "./issue-execution-provider-configuration.js";
+export {
+  createPostgresIssueSessionCompositionRuntime,
+  type PostgresIssueSessionCompositionOptions,
+  type PostgresIssueSessionCompositionReconciliation,
+  type PostgresIssueSessionCompositionRuntime,
+} from "./issue-session-composition-postgres.js";
+export {
+  createPostgresIssueSessionCompactionRuntime,
+  SessionCompactionConflict,
+  SessionCompactionProviderFailure,
+  type PostgresIssueSessionCompactionOptions,
+  type PostgresIssueSessionCompactionRuntime,
+  type IssueSessionCompactionAttemptCancellationSignal,
+  type SessionCompactionModelResolver,
+  type SessionCompactionSummarizer,
+  type SessionCompactionSummaryResult,
+} from "./issue-session-compaction-postgres.js";
+export { lowerCanonicalCompactionMarker } from "./issue-session/compaction-lowering.js";
+export {
+  createPostgresSessionCompactionProvider,
+} from "./issue-session-compaction-provider.js";
+export {
+  appendCanonicalControlNotice,
+  appendCanonicalUserComment,
+  type CanonicalControlNoticeInput,
+  type CanonicalUserCommentInput,
+} from "./issue-session-producers.js";
+export {
+  createContextRetrievalDbRepository,
+} from "./context-retrieval-db.js";
+export {
+  createIssueSessionStore,
+  type IssueSessionStore,
+} from "./issue-session/store.js";
+export {
+  createContextRetrievalService,
+  type ContextRetrievalService,
+} from "./context-retrieval.js";
+export {
+  createRuntimeToolExecutor,
+  type RuntimeActionPort,
+  type RuntimeCompanyToolPort,
+  type RuntimeRetrievalScopeResolver,
+} from "./runtime-tool-executor.js";
+export {
+  composeRuntimeActionPort,
+  createRuntimeAgentActionPort,
+  type RuntimeAgentActionPort,
+  type RuntimeNonAgentActionPort,
+} from "./runtime-agent-action-port.js";
+export {
+  createPostgresRuntimeIssueActionService,
+  createRuntimeIssueActionPort,
+  RuntimeIssueActionConflict,
+  RuntimeIssueActionDenied,
+  type PostgresRuntimeIssueActionServiceOptions,
+  type RuntimeIssueActionService,
+  type RuntimeMentionExecutionInput,
+  type RuntimeMentionExecutionResult,
+} from "./runtime-issue-action-port.js";
+export {
+  createOrdinaryIssueRuntime,
+  OrdinaryIssueRuntimeRejected,
+  type OrdinaryIssueRuntime,
+  type OrdinaryIssueRuntimeOptions,
+  type OrdinaryIssueCreateInput,
+  type OrdinaryIssueCreateResult,
+} from "./ordinary-issue-runtime.js";
+export {
+  persistCanonicalIssueAggregateInTx,
+  CanonicalIssueAggregateRejected,
+  type CanonicalIssueAggregateInput,
+} from "./canonical-issue-aggregate.js";
+export {
+  createPostgresSystemEscalationService,
+  ensureSystemEscalationInTransaction,
+  terminalizeCreatorEdgeInTransaction,
+  terminalizeAgentCreatorEdgesInTransaction,
+  terminalizePluginCreatorEdgesInTransaction,
+  terminalizeRoutineCreatorEdgesInTransaction,
+  resolveSystemEscalationOwnerInTransaction,
+  PostgresSystemEscalationConflict,
+  type PostgresSystemEscalationService,
+  type EnsureSystemEscalationInput,
+  type TerminalizeCreatorEdgeInput,
+  type TerminalizeCreatorDeliveryInput,
+  type SystemEscalationOwner,
+} from "./system-escalation-postgres.js";
+export {
+  createPostgresCreatorDeliveryService,
+  type CreatorDeliveryRefNotificationOutcome,
+  type PostgresCreatorDeliveryOptions,
+} from "./creator-delivery.js";
+export { createPluginIssueControlPlane } from "./plugin-issue-control-plane.js";
+export {
+  assertPluginInstallationAvailableForCompany,
+  assertPluginPermittedIssueOwnerInTransaction,
+  resolvePluginPermittedIssueOwnerCatalog,
+  resolvePluginPermittedIssueOwnerCatalogFromDb,
+  resolvePluginPermittedIssueOwnerCatalogInTransaction,
+  selectPluginPermittedIssueOwner,
+  PluginIssueAuthorizationRejected,
+  type PluginIssueAuthorizationIdentity,
+  type PluginIssueAuthorizationRejectionReason,
+  type PluginIssueOwnerCatalogInput,
+  type PluginIssueOwnerOperation,
+} from "./plugin-issue-authorization.js";
+export {
+  createJoinRequestApprovalService,
+  type JoinRequestApprovalInput,
+  type JoinRequestApprovalService,
+} from "./join-request-approval.js";
+export {
+  createRuntimeAgentConfigurationService,
+  listRuntimeAgentCreateCompanyToolOptions,
+  listRuntimeAgentEditCompanyToolOptions,
+  lockCreateCompanyToolSources,
+  materializeCreateAgentConnectionInstalls,
+  resolveSelectedToolsForAgent,
+  RuntimeAgentConfigurationConflict,
+  RuntimeAgentConfigurationDenied,
+  RuntimeAgentConfigurationInvalid,
+  type RuntimeAgentConfigurationControlActor,
+  type RuntimeAgentConfigurationControlSource,
+  type RuntimeAgentConfigurationResult,
+  type RuntimeAgentConfigurationService,
+} from "./runtime-agent-configuration.js";
 export { workspaceOperationService } from "./workspace-operations.js";
+export {
+  lockToolSelectionRowsInOrder,
+  type ToolSelectionLockTransaction,
+} from "./tool-selection-lock-order.js";
 export { workspaceFileResourceService } from "./workspace-file-resources.js";
 export { workProductService } from "./work-products.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
-export { summarySlotService, SUMMARIZER_BUILT_IN_KEY } from "./summary-slots.js";
-export { notifyHireApproved, type NotifyHireApprovedInput } from "./hire-hook.js";
+export { summarySlotService } from "./summary-slots.js";
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
 export {
-  reconcileCodexLocalManagedHomesOnStartup,
-  type CodexAuthReconciliationSummary,
-} from "./codex-auth-reconciliation.js";
+  IssueExecutionLivePlanViolation,
+  publishIssueExecutionLivePlan,
+  type CurrentAcpPromptIdentity,
+  type IssueExecutionPlanPublicationRedactor,
+  type RoutedAcpPromptIdentity,
+} from "./issue-execution-plan-live.js";
 export { reconcilePersistedRuntimeServicesOnStartup, restartDesiredRuntimeServicesOnStartup } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";

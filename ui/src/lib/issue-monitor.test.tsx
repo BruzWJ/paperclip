@@ -9,7 +9,6 @@ import {
   formatMonitorAbsoluteFull,
   formatMonitorEta,
   formatMonitorEtaLabel,
-  formatMonitorOffset,
   useMonitorCountdown,
 } from "./issue-monitor";
 
@@ -39,14 +38,6 @@ describe("monitor time formatting", () => {
     expect(formatMonitorEtaLabel(new Date(now.getTime() + (2 * 60 + 12) * 60_000), now)).toBe("In 2h 12m");
     expect(formatMonitorEtaLabel(now, now)).toBe("Due now");
     expect(formatMonitorEtaLabel(new Date(now.getTime() - 18 * 60_000), now)).toBe("Overdue by 18m");
-  });
-
-  it("uses the injectable Date.now clock for scheduled retry offsets", () => {
-    const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now.getTime());
-    expect(formatMonitorOffset(new Date(now.getTime() + 15 * 60_000))).toBe("in 15m");
-    expect(formatMonitorOffset(new Date(now.getTime() + 10_000))).toBe("now");
-    expect(formatMonitorOffset(now)).toBe("now");
-    dateNowSpy.mockRestore();
   });
 
   it("formats the full local timestamp with weekday, year and zone", () => {
@@ -108,7 +99,6 @@ describe("deriveMonitorState", () => {
       ),
     ).toEqual({
       state: "scheduled",
-      source: "monitor",
       nextCheckAt: "2026-07-17T22:12:00.000Z",
       attemptCount: 1,
       serviceName: "API",
@@ -140,13 +130,12 @@ describe("deriveMonitorState", () => {
     expect(deriveMonitorState(issue("2026-07-17T19:59:00.000Z"), now).state).toBe("overdue");
   });
 
-  it("derives cleared, none, and scheduled retry states", () => {
+  it("derives cleared and none states", () => {
     expect(
       deriveMonitorState({ executionState: { monitor: { status: "cleared", attemptCount: 2 } } }, now),
     ).toMatchObject({ state: "cleared", attemptCount: 2 });
     expect(deriveMonitorState({}, now)).toEqual({
       state: "none",
-      source: "none",
       nextCheckAt: null,
       attemptCount: 0,
       serviceName: null,
@@ -154,16 +143,20 @@ describe("deriveMonitorState", () => {
     expect(
       deriveMonitorState(
         {
-          monitorAttemptCount: 0,
           scheduledRetry: {
             status: "scheduled_retry",
             scheduledRetryAt: "2026-07-17T20:05:00.000Z",
             scheduledRetryAttempt: 2,
           },
-        },
+        } as unknown as Parameters<typeof deriveMonitorState>[0],
         now,
       ),
-    ).toMatchObject({ state: "retrying", source: "scheduled-retry", attemptCount: 2 });
+    ).toEqual({
+      state: "none",
+      nextCheckAt: null,
+      attemptCount: 0,
+      serviceName: null,
+    });
   });
 });
 

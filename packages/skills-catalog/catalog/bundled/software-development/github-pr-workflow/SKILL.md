@@ -2,8 +2,6 @@
 name: github-pr-workflow
 description: Prepare a GitHub pull request from a feature branch — branch hygiene, commit shape, title/body, verification notes, screenshots for UI work, and replies to review comments.
 key: paperclipai/bundled/software-development/github-pr-workflow
-recommendedForRoles:
-  - engineer
 tags:
   - github
   - pull-requests

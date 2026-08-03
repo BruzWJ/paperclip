@@ -15,13 +15,17 @@ import {
   type EnvironmentCustomImageSshShell,
 } from "../realtime/environment-custom-image-terminal-ws.js";
 import {
+  createRequestAuthorityBoundary,
+  createRequestAuthorityPolicy,
+} from "../http/request-authority.js";
+import {
   EnvironmentCustomImageTerminalConnectionRegistry,
   EnvironmentCustomImageTerminalSessionStore,
 } from "../services/environment-custom-image-terminal-sessions.js";
 
 const require = createRequire(import.meta.url);
 const { WebSocket } = require("ws") as {
-  WebSocket: new (url: string) => {
+  WebSocket: new (url: string, options?: { headers?: Record<string, string> }) => {
     readyState: number;
     send(data: string): void;
     close(): void;
@@ -148,6 +152,12 @@ function waitForClose(ws: InstanceType<typeof WebSocket>) {
   });
 }
 
+function waitForError(ws: InstanceType<typeof WebSocket>) {
+  return new Promise<Error>((resolve) => {
+    ws.on("error", resolve);
+  });
+}
+
 function waitForJsonMessage<T extends Record<string, unknown>>(
   ws: InstanceType<typeof WebSocket>,
   predicate: (frame: T) => boolean,
@@ -215,6 +225,14 @@ describe("custom image terminal websocket bridge", () => {
     const server = createServer();
     servers.push(server);
     setupEnvironmentCustomImageTerminalWebSocketServer(server, {} as never, {
+      requestAuthorityBoundary: createRequestAuthorityBoundary({
+        trustProxy: () => false,
+        policy: createRequestAuthorityPolicy({
+          deploymentExposure: "private",
+          allowedHostnames: [],
+          bindHost: "127.0.0.1",
+        }),
+      }),
       customImageService: customImages,
       sessionStore,
       connectionRegistry,
@@ -223,6 +241,21 @@ describe("custom image terminal websocket bridge", () => {
     const port = await listen(server);
     return { server, port };
   }
+
+  it("rejects a disallowed upgrade authority before terminal token authentication", async () => {
+    const { port } = await startHarness();
+    const ws = new WebSocket(terminalUrl(port, {
+      terminalSessionId: "not-consumed",
+    }), {
+      headers: { Host: "attacker.example" },
+    });
+
+    await expect(waitForError(ws)).resolves.toMatchObject({
+      message: expect.stringContaining("403"),
+    });
+    expect(customImages.getSessionById).not.toHaveBeenCalled();
+    expect(customImages.refreshSetupSession).not.toHaveBeenCalled();
+  });
 
   it("rejects invalid and expired terminal credentials before refreshing provider payloads", async () => {
     const { port } = await startHarness();

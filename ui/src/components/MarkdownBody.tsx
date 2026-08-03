@@ -104,7 +104,7 @@ function MarkdownIssueLink({
 
   const identifier = data?.identifier ?? issuePathId;
   const title = data?.title ?? identifier;
-  const status = data?.status;
+  const status = data?.boardPresentationStatus;
   const issueLabel = title !== identifier ? `Issue ${identifier}: ${title}` : `Issue ${identifier}`;
 
   return (

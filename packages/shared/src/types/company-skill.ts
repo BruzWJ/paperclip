@@ -1,5 +1,6 @@
 import type { IssueAttachment, IssueDocument } from "./issue.js";
 import type { IssueWorkProduct } from "./work-product.js";
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export type CompanySkillSourceType = "local_path" | "github" | "url" | "catalog" | "skills_sh";
 
@@ -114,7 +115,7 @@ export interface CompanySkillUsageAgent {
   id: string;
   name: string;
   urlKey: string;
-  adapterType: string;
+  adapterType: string | null;
   desired: boolean;
   /**
    * Runtime adapter skill state when a caller explicitly fetched it.
@@ -452,7 +453,6 @@ export interface CompanySkillTestRunTemplate {
   name: string;
   description: string | null;
   body: string;
-  builtIn: boolean;
   createdByAgentId: string | null;
   createdByUserId: string | null;
   updatedByAgentId: string | null;
@@ -481,10 +481,10 @@ export interface CompanySkillTestRunTemplateSnapshot {
 }
 
 export interface CompanySkillTestRunCostSummary {
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
+  budgetCurrency: BudgetCurrency;
+  knownCostAmount: MoneyAmount;
+  pricedPromptCount: number;
+  unpricedPromptCount: number;
 }
 
 export interface CompanySkillTestRun {
@@ -501,7 +501,7 @@ export interface CompanySkillTestRun {
   templateName: string | null;
   templateBody: string | null;
   renderedTemplateBody: string | null;
-  harnessIssueDescription: string;
+  harnessIssueRequest: string;
   status: CompanySkillTestRunStatus;
   outputDocumentKey: string;
   outputSnapshot: string;
@@ -513,17 +513,14 @@ export interface CompanySkillTestRun {
   createdAt: Date;
   updatedAt: Date;
   cost: CompanySkillTestRunCostSummary;
-  taskExpired: boolean;
+  issueExpired: boolean;
 }
 
 export interface CompanySkillTestRunCreateRequest {
   inputId?: string | null;
   content?: string | null;
   agentId: string;
-  /**
-   * Omitted uses the built-in default template, null means "No template", and
-   * a string selects a built-in or custom template id.
-   */
+  /** Omitted or null means "No template"; a string selects a saved template. */
   templateId?: string | null;
   /**
    * Re-run can provide the viewed run's template body snapshot so the new run
@@ -564,8 +561,8 @@ export interface CompanySkillTestRunDetail extends CompanySkillTestRun {
   harnessIssue: {
     id: string;
     identifier: string | null;
-    title: string;
-    status: string;
+    title: string | null;
+    boardPresentationStatus: string;
     hiddenAt: Date | null;
   } | null;
   documents: Array<{
@@ -573,14 +570,6 @@ export interface CompanySkillTestRunDetail extends CompanySkillTestRun {
     title: string | null;
     updatedAt: Date;
     body: string;
-  }>;
-  interactions: Array<{
-    id: string;
-    kind: string;
-    status: string;
-    title: string;
-    createdAt: Date;
-    updatedAt: Date;
   }>;
   artifacts: Array<{
     id: string;
@@ -628,7 +617,6 @@ export interface CatalogSkill {
   trustLevel: CompanySkillTrustLevel;
   compatibility: CompanySkillCompatibility;
   defaultInstall: boolean;
-  recommendedForRoles: string[];
   requires: string[];
   tags: string[];
   files: CatalogSkillFile[];

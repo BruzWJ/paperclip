@@ -17,9 +17,9 @@ export const sampleTeam: CatalogTeam = {
   kind: "bundled",
   category: "company-defaults",
   slug: "core-exec-team",
-  name: "Core Exec Team",
+  name: "Core Team",
   description:
-    "A starter executive team: a CEO who manages a CTO and a CMO, plus a launch project and a weekly standup routine. Installs ready-to-run agents you can customize.",
+    "A starter team with an ordinary company lead, engineering lead, QA agent, launch project, and priority-review routine.",
   path: "catalog/bundled/company-defaults/core-exec-team",
   entrypoint: "TEAM.md",
   schema: "agentcompanies/v1",
@@ -29,22 +29,22 @@ export const sampleTeam: CatalogTeam = {
   counts: {
     agents: 3,
     projects: 1,
-    tasks: 1,
+    issues: 0,
     routines: 1,
     localSkills: 1,
     catalogSkills: 1,
     externalSkillSources: 1,
   },
-  rootAgentSlugs: ["ceo"],
-  agentSlugs: ["ceo", "cto", "cmo"],
+  rootAgentSlugs: ["company-lead"],
+  agentSlugs: ["company-lead", "engineering-lead", "qa"],
   projectSlugs: ["launch"],
   requiredSkills: [
-    { type: "catalog", ref: "engineering/code-review", agentSlugs: ["cto"], resolved: true, catalogSkillKey: "engineering/code-review" },
-    { type: "github", ref: "acme/growth-playbook@v1.2.0", agentSlugs: ["cmo"], resolved: false, sourceRef: "v1.2.0" },
+    { type: "catalog", ref: "engineering/code-review", agentSlugs: [], resolved: true, catalogSkillKey: "engineering/code-review" },
+    { type: "github", ref: "acme/growth-playbook@v1.2.0", agentSlugs: [], resolved: false, sourceRef: "v1.2.0" },
   ],
   envInputs: [
-    { key: "OPENAI_API_KEY", agentSlug: "cto", projectSlug: null, kind: "secret", requirement: "required" },
-    { key: "DEFAULT_TIMEZONE", agentSlug: null, projectSlug: "launch", kind: "plain", requirement: "optional" },
+    { key: "OPENAI_API_KEY", projectSlug: "launch", kind: "secret", requirement: "required" },
+    { key: "DEFAULT_TIMEZONE", projectSlug: "launch", kind: "plain", requirement: "optional" },
   ],
   sourceRefs: [
     { type: "github", ref: "acme/growth-playbook@v1.2.0", pinned: true },
@@ -53,9 +53,9 @@ export const sampleTeam: CatalogTeam = {
   files: [
     { path: "TEAM.md", kind: "team", sizeBytes: 2144, sha256: "a1" },
     { path: "README.md", kind: "readme", sizeBytes: 980, sha256: "a2" },
-    { path: "agents/ceo/AGENTS.md", kind: "agent", sizeBytes: 1200, sha256: "a3" },
-    { path: "agents/cto/AGENTS.md", kind: "agent", sizeBytes: 1100, sha256: "a4" },
-    { path: "agents/cmo/AGENTS.md", kind: "agent", sizeBytes: 1050, sha256: "a5" },
+    { path: "agents/company-lead/AGENTS.md", kind: "agent", sizeBytes: 96, sha256: "a3" },
+    { path: "agents/engineering-lead/AGENTS.md", kind: "agent", sizeBytes: 120, sha256: "a4" },
+    { path: "agents/qa/AGENTS.md", kind: "agent", sizeBytes: 82, sha256: "a5" },
     { path: "projects/launch/PROJECT.md", kind: "project", sizeBytes: 640, sha256: "a6" },
   ],
   trustLevel: "external_sources",
@@ -116,8 +116,8 @@ export const currentInstalledState: InstalledCatalogTeam = {
 };
 
 export const sampleSkillPreparations: CatalogTeamSkillPreparation[] = [
-  { type: "catalog", ref: "engineering/code-review", agentSlugs: ["cto"], action: "already_in_package", catalogSkillId: "skill-1", catalogSkillKey: "engineering/code-review", sourceLocator: null, sourceRef: null, reason: null },
-  { type: "github", ref: "acme/growth-playbook@v1.2.0", agentSlugs: ["cmo"], action: "external_import_required", catalogSkillId: null, catalogSkillKey: null, sourceLocator: "github.com/acme/growth-playbook", sourceRef: "v1.2.0", reason: "Resolved from GitHub at install time" },
+  { type: "catalog", ref: "engineering/code-review", agentSlugs: [], action: "already_in_package", catalogSkillId: "skill-1", catalogSkillKey: "engineering/code-review", sourceLocator: null, sourceRef: null, reason: null },
+  { type: "github", ref: "acme/growth-playbook@v1.2.0", agentSlugs: [], action: "external_import_required", catalogSkillId: null, catalogSkillKey: null, sourceLocator: "github.com/acme/growth-playbook", sourceRef: "v1.2.0", reason: "Resolved from GitHub at install time" },
 ];
 
 // Onboarding "Pick a starter team" grid (design §6): `defaultInstall` bundled
@@ -140,7 +140,7 @@ export const onboardingTeams: CatalogTeam[] = [
     description:
       "A lean growth squad: a head of growth managing a content marketer and a data analyst, wired to a launch project and a weekly metrics routine.",
     tags: ["growth", "marketing", "starter"],
-    counts: { agents: 3, projects: 1, tasks: 0, routines: 1, localSkills: 0, catalogSkills: 0, externalSkillSources: 0 },
+    counts: { agents: 3, projects: 1, issues: 0, routines: 1, localSkills: 0, catalogSkills: 0, externalSkillSources: 0 },
     rootAgentSlugs: ["head-of-growth"],
     agentSlugs: ["head-of-growth", "content-marketer", "data-analyst"],
     trustLevel: "assets",
@@ -155,7 +155,7 @@ export const onboardingTeams: CatalogTeam[] = [
     name: "Support Pod",
     description: "A two-person support desk with a lead and an agent, plus a triage routine.",
     tags: ["support", "ops"],
-    counts: { agents: 2, projects: 0, tasks: 0, routines: 1, localSkills: 0, catalogSkills: 0, externalSkillSources: 0 },
+    counts: { agents: 2, projects: 0, issues: 0, routines: 1, localSkills: 0, catalogSkills: 0, externalSkillSources: 0 },
     rootAgentSlugs: ["support-lead"],
     agentSlugs: ["support-lead", "support-agent"],
     projectSlugs: [],

@@ -84,10 +84,10 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Checklist (Per File)
 
-- [ ] `packages/db/src/schema/assets.ts`: new generic asset metadata table.
-- [ ] `packages/db/src/schema/issue_attachments.ts`: issue-to-asset linking table.
-- [ ] `packages/db/src/schema/index.ts`: export new tables.
-- [ ] `packages/db/src/migrations/*`: generate migration for both tables and indexes.
+- [ ] `packages/db/schema/assets.ts`: new generic asset metadata table.
+- [ ] `packages/db/schema/issue_attachments.ts`: issue-to-asset linking table.
+- [ ] `packages/db/schema/index.ts`: export new tables.
+- [ ] `packages/db/migrations/*`: generate migration for both tables and indexes.
 - [ ] `packages/shared/src/types/issue.ts` (or new asset types file): add `IssueAttachment` type.
 - [ ] `packages/shared/src/index.ts`: export new types.
 
@@ -203,4 +203,3 @@ If any command is skipped, document exactly what was skipped and why.
 3. Phase 4 (API)
 4. Phase 5 (UI consumer)
 5. Phase 6 (doctor/docs hardening)
-

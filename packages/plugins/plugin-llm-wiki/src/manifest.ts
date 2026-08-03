@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
-import { DEFAULT_AGENT_INSTRUCTION_FILES, DEFAULT_AGENT_INSTRUCTIONS } from "./templates.js";
 
 export const PLUGIN_ID = "paperclipai.plugin-llm-wiki";
 export const WIKI_ROOT_FOLDER_KEY = "wiki-root";
@@ -50,7 +49,7 @@ const CURSOR_WINDOW_ROUTINE_DESCRIPTION = `Process bounded Paperclip issue-histo
 Run procedure:
 Target space: default (slug: default). Paperclip-derived indexing currently writes only into the default space, so this routine never sweeps other spaces. Per-space Paperclip ingestion profiles are a later phase; until they ship, treat any prompt to operate on a non-default space here as a bug and stop.
 1. Resolve the configured wiki root, then read the default space AGENTS.md, wiki/index.md, and the recent entries in wiki/log.md.
-2. Review recent Paperclip issue, comment, and document activity for non-plugin-operation work. Skip LLM Wiki operation issues so routine output does not feed back into itself.
+2. Review recent Paperclip issue, comment, and document activity. Skip issues correlated to LLM Wiki operations so routine output does not feed back into itself.
 3. Synthesize Paperclip project state into wiki/projects/<slug>/standup.md for the executive current-state view, then durable project or root-issue knowledge into focused pages under wiki/projects/<slug>/index.md, wiki/concepts/, or wiki/synthesis/. Keep transient run logs out of durable pages unless they change the project's state or decisions.
 4. Write project material as concept-grouped executive synthesis. Link readable issue identifiers when useful, but do not turn project pages into issue-ID lists, UUID dumps, date ledgers, or metadata reports. Always pass wikiId \`default\` and spaceSlug \`default\` to LLM Wiki tools.
 5. Refresh wiki/index.md and append a short wiki/log.md entry listing the source window, affected pages, skipped windows, warnings, and any follow-up issue needed.
@@ -97,21 +96,10 @@ const manifest: PaperclipPluginManifestV1 = {
     "projects.managed",
     "skills.managed",
     "issues.read",
-    "issue.subtree.read",
     "issues.create",
     "issues.update",
-    "issues.wakeup",
-    "issues.orchestration.read",
-    "issue.comments.read",
-    "issue.comments.create",
-    "issue.documents.read",
-    "issue.documents.write",
     "agents.read",
     "agents.managed",
-    "agent.sessions.create",
-    "agent.sessions.list",
-    "agent.sessions.send",
-    "agent.sessions.close",
     "routines.managed",
     "local.folders",
     "agent.tools.register",
@@ -129,7 +117,7 @@ const manifest: PaperclipPluginManifestV1 = {
   database: {
     namespaceSlug: "llm_wiki",
     migrationsDir: "migrations",
-    coreReadTables: ["companies", "issues", "projects", "agents"]
+    coreReadTables: ["companies", "issues", "issue_comments", "projects", "agents"]
   },
   localFolders: [
     {
@@ -153,38 +141,8 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       agentKey: WIKI_MAINTAINER_AGENT_KEY,
       displayName: "Wiki Maintainer",
-      role: "knowledge-maintainer",
       title: "LLM Wiki Maintainer",
-      icon: "book-open",
       capabilities: "Ingests source material, maintains local wiki pages, answers cited questions, and runs wiki lint/maintenance through plugin tools.",
-      adapterType: "claude_local",
-      adapterPreference: ["claude_local", "codex_local", "gemini_local", "opencode_local", "cursor", "pi_local"],
-      adapterConfig: {
-        dangerouslySkipPermissions: false,
-        dangerouslyBypassApprovalsAndSandbox: false,
-        sandbox: true,
-        paperclipSkillSync: {
-          desiredSkills: WIKI_MANAGED_SKILL_CANONICAL_KEYS
-        }
-      },
-      runtimeConfig: {
-        modelProfiles: {
-          cheap: {
-            purpose: "classification, lint planning, index maintenance"
-          }
-        }
-      },
-      permissions: {
-        pluginTools: [PLUGIN_ID]
-      },
-      status: "paused",
-      budgetMonthlyCents: 0,
-      instructions: {
-        entryFile: "AGENTS.md",
-        content: DEFAULT_AGENT_INSTRUCTIONS,
-        files: DEFAULT_AGENT_INSTRUCTION_FILES,
-        assetPath: "agents/wiki-maintainer"
-      }
     }
   ],
   projects: [
@@ -261,12 +219,7 @@ const manifest: PaperclipPluginManifestV1 = {
           signingMode: null,
           replayWindowSec: null
         }
-      ],
-      issueTemplate: {
-        surfaceVisibility: "plugin_operation",
-        originId: "routine:cursor-window-processing",
-        billingCode: "plugin-llm-wiki:distillation"
-      }
+      ]
     },
     {
       routineKey: NIGHTLY_LINT_ROUTINE_KEY,
@@ -288,12 +241,7 @@ const manifest: PaperclipPluginManifestV1 = {
           signingMode: null,
           replayWindowSec: null
         }
-      ],
-      issueTemplate: {
-        surfaceVisibility: "plugin_operation",
-        originId: "routine:nightly-wiki-lint",
-        billingCode: "plugin-llm-wiki:maintenance"
-      }
+      ]
     },
     {
       routineKey: INDEX_REFRESH_ROUTINE_KEY,
@@ -315,12 +263,7 @@ const manifest: PaperclipPluginManifestV1 = {
           signingMode: null,
           replayWindowSec: null
         }
-      ],
-      issueTemplate: {
-        surfaceVisibility: "plugin_operation",
-        originId: "routine:index-refresh",
-        billingCode: "plugin-llm-wiki:maintenance"
-      }
+      ]
     }
   ],
   tools: [
@@ -486,7 +429,7 @@ const manifest: PaperclipPluginManifestV1 = {
       routeKey: "overview",
       method: "GET",
       path: "/overview",
-      auth: "board-or-agent",
+      auth: "board",
       capability: "api.routes.register",
       companyResolution: { from: "query", key: "companyId" }
     },
@@ -502,7 +445,7 @@ const manifest: PaperclipPluginManifestV1 = {
       routeKey: "capture-source",
       method: "POST",
       path: "/sources",
-      auth: "board-or-agent",
+      auth: "board",
       capability: "api.routes.register",
       companyResolution: { from: "body", key: "companyId" }
     },
@@ -510,7 +453,7 @@ const manifest: PaperclipPluginManifestV1 = {
       routeKey: "spaces",
       method: "GET",
       path: "/spaces",
-      auth: "board-or-agent",
+      auth: "board",
       capability: "api.routes.register",
       companyResolution: { from: "query", key: "companyId" }
     },
@@ -550,14 +493,14 @@ const manifest: PaperclipPluginManifestV1 = {
       routeKey: "operations",
       method: "GET",
       path: "/operations",
-      auth: "board-or-agent",
+      auth: "board",
       capability: "api.routes.register",
       companyResolution: { from: "query", key: "companyId" }
     },
     {
       routeKey: "start-query",
       method: "POST",
-      path: "/query-sessions",
+      path: "/queries",
       auth: "board",
       capability: "api.routes.register",
       companyResolution: { from: "body", key: "companyId" }

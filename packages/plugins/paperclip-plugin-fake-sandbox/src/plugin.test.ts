@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   assertEnvironmentEventOrder,
@@ -21,6 +22,7 @@ describe("fake sandbox provider plugin", () => {
         onDestroyLease: definition.onEnvironmentDestroyLease,
         onRealizeWorkspace: definition.onEnvironmentRealizeWorkspace,
         onExecute: definition.onEnvironmentExecute,
+        onCancelExecution: definition.onEnvironmentCancelExecution,
         onStartInteractiveSetup: definition.onEnvironmentStartInteractiveSetup,
         onGetInteractiveSetup: definition.onEnvironmentGetInteractiveSetup,
         onCaptureTemplate: definition.onEnvironmentCaptureTemplate,
@@ -63,6 +65,7 @@ describe("fake sandbox provider plugin", () => {
     const executed = await harness.execute({
       ...base,
       lease,
+      executionId: "execution-1",
       command: "sh",
       args: ["-lc", "printf fake-plugin-ok"],
       cwd: realized.cwd,
@@ -372,6 +375,7 @@ describe("fake sandbox provider plugin", () => {
           onDestroyLease: definition.onEnvironmentDestroyLease,
           onRealizeWorkspace: definition.onEnvironmentRealizeWorkspace,
           onExecute: definition.onEnvironmentExecute,
+          onCancelExecution: definition.onEnvironmentCancelExecution,
         },
       });
       const base = {
@@ -390,6 +394,7 @@ describe("fake sandbox provider plugin", () => {
       const executed = await harness.execute({
         ...base,
         lease,
+        executionId: "execution-env-boundary",
         command: "sh",
         args: ["-lc", "test -z \"${PAPERCLIP_FAKE_PLUGIN_HOST_SECRET+x}\" && printf \"$EXPLICIT_ONLY\""],
         cwd: realized.cwd,
@@ -426,6 +431,7 @@ describe("fake sandbox provider plugin", () => {
         onDestroyLease: definition.onEnvironmentDestroyLease,
         onRealizeWorkspace: definition.onEnvironmentRealizeWorkspace,
         onExecute: definition.onEnvironmentExecute,
+        onCancelExecution: definition.onEnvironmentCancelExecution,
       },
     });
     const base = {
@@ -444,6 +450,7 @@ describe("fake sandbox provider plugin", () => {
     const executed = await harness.execute({
       ...base,
       lease,
+      executionId: "execution-path",
       command: "sh",
       args: ["-lc", "printf %s \"$PATH\""],
       cwd: realized.cwd,
@@ -468,6 +475,7 @@ describe("fake sandbox provider plugin", () => {
         onDestroyLease: definition.onEnvironmentDestroyLease,
         onRealizeWorkspace: definition.onEnvironmentRealizeWorkspace,
         onExecute: definition.onEnvironmentExecute,
+        onCancelExecution: definition.onEnvironmentCancelExecution,
       },
     });
     const base = {
@@ -486,6 +494,7 @@ describe("fake sandbox provider plugin", () => {
     const executed = await harness.execute({
       ...base,
       lease,
+      executionId: `execution-timeout-${randomUUID()}`,
       command: "sh",
       args: ["-lc", "trap '' TERM; while :; do sleep 1; done"],
       cwd: realized.cwd,

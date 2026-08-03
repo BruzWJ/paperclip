@@ -13,9 +13,13 @@ import type {
   SecretVersionSelector,
   SshEnvironmentConfig,
 } from "@paperclipai/shared";
+import { parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { unprocessable } from "../errors.js";
-import { parseObject } from "../adapters/utils.js";
-import { secretService } from "./secrets.js";
+import {
+  requireSecretMutationActor,
+  secretService,
+  type SecretMutationActor,
+} from "./secrets.js";
 import {
   resolvePluginSandboxProviderDriverByKey,
   validatePluginEnvironmentDriverConfig,
@@ -75,7 +79,6 @@ const fakeSandboxEnvironmentConfigSchema = z.object({
     .min(1, "Fake sandbox environments require an image.")
     .default("ubuntu:24.04"),
   reuseLease: z.boolean().optional().default(false),
-  streamRunLogs: z.boolean().optional(),
   archiveOnRelease: z.boolean().optional(),
 }).strict();
 
@@ -91,7 +94,6 @@ const pluginSandboxEnvironmentConfigSchema = z.object({
   provider: pluginSandboxProviderKeySchema,
   timeoutMs: z.coerce.number().int().min(1).max(86_400_000).optional(),
   reuseLease: z.boolean().optional().default(false),
-  streamRunLogs: z.boolean().optional(),
   archiveOnRelease: z.boolean().optional(),
 }).catchall(z.unknown());
 
@@ -181,7 +183,7 @@ async function createEnvironmentSecret(input: {
   field: string;
   provider: SecretProvider;
   value: string;
-  actor?: { userId?: string | null; agentId?: string | null };
+  actor: SecretMutationActor;
 }) {
   const created = await secretService(input.db).create(
     input.companyId,
@@ -208,7 +210,7 @@ async function persistConfigSecretRefs(input: {
   secretProvider: SecretProvider;
   config: Record<string, unknown>;
   schema: Record<string, unknown> | null;
-  actor?: { userId?: string | null; agentId?: string | null };
+  actor: SecretMutationActor;
 }): Promise<Record<string, unknown>> {
   let nextConfig = { ...input.config };
   for (const path of collectSecretRefPaths(input.schema)) {
@@ -246,7 +248,7 @@ async function resolveConfigSecretRefsForRuntime(input: {
   context: {
     consumerId: string;
     issueId?: string | null;
-    heartbeatRunId?: string | null;
+    runId?: string | null;
   };
 }): Promise<Record<string, unknown>> {
   const secrets = secretService(input.db);
@@ -268,7 +270,7 @@ async function resolveConfigSecretRefsForRuntime(input: {
         actorType: "system",
         actorId: null,
         issueId: input.context.issueId ?? null,
-        heartbeatRunId: input.context.heartbeatRunId ?? null,
+        runId: input.context.runId ?? null,
         configPath: path,
       }),
     );
@@ -284,8 +286,8 @@ async function resolveConfigSecretRefsForProbe(input: {
   accessContext?: {
     actorType: "agent" | "user";
     actorId: string;
-    actorSource?: "local_implicit" | "session" | "board_key" | "agent_key" | "agent_jwt" | "cloud_tenant";
-    heartbeatRunId?: string | null;
+    actorSource?: "session" | "board_key" | "internal";
+    runId?: string | null;
   };
 }): Promise<Record<string, unknown>> {
   const secrets = secretService(input.db);
@@ -308,7 +310,7 @@ async function resolveConfigSecretRefsForProbe(input: {
         actorType: input.accessContext?.actorType ?? "system",
         actorId: input.accessContext?.actorId ?? null,
         actorSource: input.accessContext?.actorSource,
-        heartbeatRunId: input.accessContext?.heartbeatRunId ?? null,
+        runId: input.accessContext?.runId ?? null,
       }),
     );
   }
@@ -395,8 +397,8 @@ export function normalizeEnvironmentConfigForProbe(input: {
   accessContext?: {
     actorType: "agent" | "user";
     actorId: string;
-    actorSource?: "local_implicit" | "session" | "board_key" | "agent_key" | "agent_jwt" | "cloud_tenant";
-    heartbeatRunId?: string | null;
+    actorSource?: "session" | "board_key" | "internal";
+    runId?: string | null;
   };
   pluginWorkerManager?: PluginWorkerManager;
 }): Promise<Record<string, unknown>> | Record<string, unknown> {
@@ -458,9 +460,10 @@ export async function normalizeEnvironmentConfigForPersistence(input: {
   driver: EnvironmentDriver;
   secretProvider: SecretProvider;
   config: Record<string, unknown> | null | undefined;
-  actor?: { userId?: string | null; agentId?: string | null };
+  actor: SecretMutationActor;
   pluginWorkerManager?: PluginWorkerManager;
 }): Promise<Record<string, unknown>> {
+  requireSecretMutationActor(input.actor);
   if (input.driver === "ssh") {
     const parsed = sshEnvironmentConfigPersistenceSchema.safeParse(parseObject(input.config));
     if (!parsed.success) {
@@ -486,7 +489,10 @@ export async function normalizeEnvironmentConfigForPersistence(input: {
         stored.privateKeySecretRef &&
         stored.privateKeySecretRef.secretId !== nextPrivateKeySecretRef.secretId
       ) {
-        await secrets.remove(stored.privateKeySecretRef.secretId);
+        await secrets.remove(
+          stored.privateKeySecretRef.secretId,
+          input.actor,
+        );
       }
     }
     return {
@@ -564,9 +570,9 @@ export async function resolveEnvironmentDriverConfigForRuntime(
   environment: Pick<Environment, "driver" | "config"> & Partial<Pick<Environment, "id">>,
   context?: {
     issueId?: string | null;
-    heartbeatRunId?: string | null;
+    runId?: string | null;
     // Force applying the active custom-image template even without a run/issue
-    // context. Operator-initiated `Test` probes have no issueId/heartbeatRunId
+    // context. Operator-initiated `Test` probes have no issueId/runId
     // but must still resolve the active custom image as prepared runtime
     // configuration and tooling so the test reflects what real agent runs use.
     applyCustomImageTemplate?: boolean;
@@ -597,7 +603,7 @@ export async function resolveEnvironmentDriverConfigForRuntime(
             actorType: "system",
             actorId: null,
             issueId: context?.issueId ?? null,
-            heartbeatRunId: context?.heartbeatRunId ?? null,
+            runId: context?.runId ?? null,
             configPath: "privateKeySecretRef",
           },
         ),
@@ -617,7 +623,7 @@ export async function resolveEnvironmentDriverConfigForRuntime(
         context: {
           consumerId: environmentId!,
           issueId: context?.issueId ?? null,
-          heartbeatRunId: context?.heartbeatRunId ?? null,
+          runId: context?.runId ?? null,
         },
       }) as SandboxEnvironmentConfig;
     } else {
@@ -630,7 +636,7 @@ export async function resolveEnvironmentDriverConfigForRuntime(
     }
     return {
       driver: "sandbox",
-      config: environmentId && (context?.issueId || context?.heartbeatRunId || context?.applyCustomImageTemplate)
+      config: environmentId && (context?.issueId || context?.runId || context?.applyCustomImageTemplate)
         ? await resolveActiveEnvironmentCustomImageTemplateForRuntime(db, {
             environmentId,
             baseConfig: parsed.config,

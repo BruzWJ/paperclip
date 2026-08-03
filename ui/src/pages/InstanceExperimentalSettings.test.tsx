@@ -3,18 +3,13 @@
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type {
-  InstanceExperimentalSettings as InstanceExperimentalSettingsPayload,
-  IssueGraphLivenessAutoRecoveryPreview,
-} from "@paperclipai/shared";
+import type { InstanceExperimentalSettings as InstanceExperimentalSettingsPayload } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InstanceExperimentalSettings } from "./InstanceExperimentalSettings";
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
   updateExperimental: vi.fn(),
-  previewIssueGraphLivenessAutoRecovery: vi.fn(),
-  runIssueGraphLivenessAutoRecovery: vi.fn(),
 }));
 
 vi.mock("@/api/instanceSettings", () => ({
@@ -45,22 +40,17 @@ const CONFERENCE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle conference room chat experimental setting"]';
 const STREAMLINED_TOGGLE_SELECTOR =
   'button[aria-label="Toggle streamlined left navigation experimental setting"]';
-const TASK_WATCHDOGS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle task watchdogs experimental setting"]';
+const ISSUE_WATCHDOGS_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle task safeguards experimental setting"]';
 const GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR =
   'button[aria-label="Toggle goals sidebar link experimental setting"]';
 const DECISIONS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle decisions experimental setting"]';
 const SERVER_INFO_TOGGLE_SELECTOR =
   'button[aria-label="Toggle server info debug view experimental setting"]';
-const BUILT_IN_AGENTS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle built-in agents experimental setting"]';
 const APPS_TOGGLE_SELECTOR = 'button[aria-label="Toggle apps experimental setting"]';
 const SUMMARIES_TOGGLE_SELECTOR =
   'button[aria-label="Toggle summaries experimental setting"]';
-const AUTO_RECOVERY_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle task graph liveness auto-recovery"]';
-
 function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
   return {
     enableEnvironments: false,
@@ -70,37 +60,21 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enablePipelines: false,
     enableCases: false,
     enableConferenceRoomChat: false,
-    enableIssuePlanDecompositions: false,
     enableExperimentalFileViewer: false,
     enableExternalObjects: false,
-    enableBuiltInAgents: false,
     enableSummaries: false,
     enableDecisions: false,
     enableGoalsSidebarLink: false,
-    enableTaskWatchdogs: false,
+    enableIssueWatchdogs: false,
     enableCloudSync: false,
     enableServerInfoDebugView: false,
     enableSmokeLab: false,
     autoRestartDevServerWhenIdle: false,
-    enableIssueGraphLivenessAutoRecovery: false,
-    issueGraphLivenessAutoRecoveryLookbackHours: 24,
     enableWorkspaceBranchReconcileForward: true,
     enableWorkspaceDirtyQuarantineRepair: true,
     enableWorktreeRunExecution: false,
     worktreeRunExecutionActivatedAt: null,
     worktreeRunExecutionActivationInstanceId: null,
-  };
-}
-
-function emptyRecoveryPreview(): IssueGraphLivenessAutoRecoveryPreview {
-  return {
-    lookbackHours: 24,
-    cutoff: "2026-07-12T16:00:00.000Z",
-    generatedAt: "2026-07-13T16:00:00.000Z",
-    findings: 0,
-    recoverableFindings: 0,
-    skippedOutsideLookback: 0,
-    items: [],
   };
 }
 
@@ -241,15 +215,15 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
   });
 
-  it("renders and patches the Task Watchdogs experimental toggle on and off", async () => {
+  it("renders and patches the Task Safeguards experimental toggle on and off", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Task Watchdogs");
+    expect(container.textContent).toContain("Task Safeguards");
     expect(container.textContent).toContain(
-      "Show task detail controls for configuring watchdog agents that verify stopped task subtrees and restore live paths when work should continue.",
+      "Show task detail controls for enabling a system safeguard that watches stopped task subtrees and nudges the current owner when runnable work should continue.",
     );
 
-    const toggle = container.querySelector<HTMLButtonElement>(TASK_WATCHDOGS_TOGGLE_SELECTOR);
+    const toggle = container.querySelector<HTMLButtonElement>(ISSUE_WATCHDOGS_TOGGLE_SELECTOR);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
 
     await act(async () => {
@@ -258,7 +232,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     await flushReact();
 
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableTaskWatchdogs: true,
+      enableIssueWatchdogs: true,
     });
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
 
@@ -269,7 +243,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     container.textContent = "";
     await renderPage();
 
-    const enabledToggle = container.querySelector<HTMLButtonElement>(TASK_WATCHDOGS_TOGGLE_SELECTOR);
+    const enabledToggle = container.querySelector<HTMLButtonElement>(ISSUE_WATCHDOGS_TOGGLE_SELECTOR);
     expect(enabledToggle?.getAttribute("aria-checked")).toBe("true");
 
     await act(async () => {
@@ -278,7 +252,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     await flushReact();
 
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-      enableTaskWatchdogs: false,
+      enableIssueWatchdogs: false,
     });
   });
 
@@ -421,31 +395,11 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Running tasks created after");
   });
 
-  it("renders and patches the Built-in Agents experimental toggle", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("Built-in Agents");
-    expect(container.textContent).toContain("Show Paperclip-managed built-in agent surfaces");
-
-    const toggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableBuiltInAgents: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  });
-
   it("renders and patches the Summaries experimental toggle", async () => {
     await renderPage();
 
     expect(container.textContent).toContain("Summaries");
-    expect(container.textContent).toContain("Show Summarizer-generated status slots");
+    expect(container.textContent).toContain("Show routine-generated status slots");
 
     const toggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
@@ -483,87 +437,4 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("removes the auto-recovery confirmation overlay after enabling only", async () => {
-    mockInstanceSettingsApi.previewIssueGraphLivenessAutoRecovery.mockResolvedValue(emptyRecoveryPreview());
-    await renderPage();
-
-    const toggle = container.querySelector<HTMLButtonElement>(AUTO_RECOVERY_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.previewIssueGraphLivenessAutoRecovery).toHaveBeenCalledWith({
-      lookbackHours: 24,
-    });
-    expect(document.body.textContent).toContain("Confirm auto-recovery");
-    expect(document.body.querySelector('[data-slot="dialog-overlay"]')).not.toBeNull();
-
-    const enableOnlyButton = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Enable only",
-    );
-
-    await act(async () => {
-      enableOnlyButton?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableIssueGraphLivenessAutoRecovery: true,
-      issueGraphLivenessAutoRecoveryLookbackHours: 24,
-    });
-    expect(document.body.textContent).not.toContain("Confirm auto-recovery");
-    expect(document.body.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
-    const enabledToggle = container.querySelector<HTMLButtonElement>(AUTO_RECOVERY_TOGGLE_SELECTOR);
-    expect(enabledToggle?.getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("removes the auto-recovery confirmation overlay after enabling and running", async () => {
-    mockInstanceSettingsApi.previewIssueGraphLivenessAutoRecovery.mockResolvedValue(emptyRecoveryPreview());
-    mockInstanceSettingsApi.runIssueGraphLivenessAutoRecovery.mockResolvedValue({
-      findings: 0,
-      autoRecoveryEnabled: true,
-      lookbackHours: 24,
-      cutoff: "2026-07-12T16:00:00.000Z",
-      escalationsCreated: 0,
-      existingEscalations: 0,
-      skipped: 0,
-      skippedAutoRecoveryDisabled: 0,
-    });
-    await renderPage();
-
-    const toggle = container.querySelector<HTMLButtonElement>(AUTO_RECOVERY_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(document.body.textContent).toContain("Confirm auto-recovery");
-    expect(document.body.querySelector('[data-slot="dialog-overlay"]')).not.toBeNull();
-
-    const enableAndRunButton = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Enable",
-    );
-
-    await act(async () => {
-      enableAndRunButton?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableIssueGraphLivenessAutoRecovery: true,
-      issueGraphLivenessAutoRecoveryLookbackHours: 24,
-    });
-    expect(mockInstanceSettingsApi.runIssueGraphLivenessAutoRecovery).toHaveBeenCalledWith({
-      lookbackHours: 24,
-    });
-    expect(document.body.textContent).not.toContain("Confirm auto-recovery");
-    expect(document.body.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
-    const enabledToggle = container.querySelector<HTMLButtonElement>(AUTO_RECOVERY_TOGGLE_SELECTOR);
-    expect(enabledToggle?.getAttribute("aria-checked")).toBe("true");
-  });
 });

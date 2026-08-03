@@ -1,12 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, heartbeatRuns, projects } from "@paperclipai/db";
+import { agents, projects } from "@paperclipai/db";
 import {
   LOW_TRUST_REVIEW_PRESET,
   type SourceTrustMetadata,
 } from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
-import { readObject } from "../lib/objects.js";
+import { resolveProductiveRunLinkage } from "./productive-run-linkage.js";
 import { resolveCoreTrustPreset } from "./trust-preset-resolver.js";
 
 export const LOW_TRUST_QUARANTINED_BODY =
@@ -101,7 +101,7 @@ export async function resolveActorSourceTrustForIssue(input: {
 }): Promise<SourceTrustMetadata | null> {
   if (input.actor.actorType !== "agent" || !input.actor.agentId) return null;
 
-  const [agent, project, run] = await Promise.all([
+  const [agent, project, runLinkage] = await Promise.all([
     input.db
       .select({
         companyId: agents.companyId,
@@ -121,20 +121,20 @@ export async function resolveActorSourceTrustForIssue(input: {
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     input.actor.runId
-      ? input.db
-          .select({
-            companyId: heartbeatRuns.companyId,
-            agentId: heartbeatRuns.agentId,
-            contextSnapshot: heartbeatRuns.contextSnapshot,
-          })
-          .from(heartbeatRuns)
-          .where(and(eq(heartbeatRuns.id, input.actor.runId), eq(heartbeatRuns.companyId, input.issue.companyId)))
-          .then((rows) => rows[0] ?? null)
+      ? resolveProductiveRunLinkage(input.db, {
+          runId: input.actor.runId,
+          companyId: input.issue.companyId,
+          agentId: input.actor.agentId,
+        })
       : Promise.resolve(null),
   ]);
 
-  if (input.actor.runId && (!run || run.agentId !== input.actor.agentId)) {
-    // Fail closed: an unknown or mismatched run cannot prove higher trust, so tag the write as quarantined.
+  if (
+    input.actor.runId
+    && (!runLinkage || runLinkage.issueId !== input.issue.id)
+  ) {
+    // Fail closed: only the exact persisted productive issue execution can
+    // establish the source run for an agent-authored write.
     return buildLowTrustSourceTrust({
       issueId: input.issue.id,
       runId: input.actor.runId,
@@ -142,21 +142,20 @@ export async function resolveActorSourceTrustForIssue(input: {
     });
   }
 
-  const runContext = readObject(run?.contextSnapshot);
-  const runExecutionPolicy = readObject(runContext?.executionPolicy);
-
   const resolution = resolveCoreTrustPreset({
     companyId: input.issue.companyId,
-    agent,
+    agent: agent
+      ? { companyId: agent.companyId, governance: agent.permissions }
+      : null,
     project,
     issue: {
       companyId: input.issue.companyId,
       executionPolicy: input.issue.executionPolicy,
     },
-    run: run
+    run: runLinkage
       ? {
-          companyId: run.companyId,
-          executionPolicy: runExecutionPolicy,
+          companyId: runLinkage.companyId,
+          executionPolicy: runLinkage.issueExecutionPolicy,
         }
       : null,
   });

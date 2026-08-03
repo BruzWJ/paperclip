@@ -294,7 +294,7 @@ export interface SecretAccessEvent {
   consumerId: string;
   configPath: string | null;
   issueId: string | null;
-  heartbeatRunId: string | null;
+  runId: string | null;
   pluginId: string | null;
   outcome: SecretAccessOutcome;
   errorCode: string | null;

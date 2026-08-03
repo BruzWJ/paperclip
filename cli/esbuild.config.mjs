@@ -20,11 +20,6 @@ const workspacePaths = [
   "packages/db",
   "packages/shared",
   "packages/adapter-utils",
-  "packages/adapters/claude-local",
-  "packages/adapters/codex-local",
-  "packages/adapters/hermes-gateway",
-  "packages/adapters/hermes",
-  "packages/adapters/openclaw-gateway",
 ];
 
 // Workspace packages that should NOT be bundled — they'll be published
@@ -58,7 +53,7 @@ export default {
   entryPoints: ["src/index.ts"],
   bundle: true,
   platform: "node",
-  target: "node20",
+  target: "node22.13",
   format: "esm",
   outfile: "dist/index.js",
   banner: { js: "#!/usr/bin/env node" },

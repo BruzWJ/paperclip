@@ -1,44 +1,86 @@
 import { EventEmitter } from "node:events";
-import type { LiveEvent, LiveEventType } from "@paperclipai/shared";
+import type {
+  LiveEvent,
+  LiveEventOf,
+  LiveEventPayloadMap,
+  LiveEventType,
+} from "@paperclipai/shared";
 
-type LiveEventPayload = Record<string, unknown>;
 type LiveEventListener = (event: LiveEvent) => void;
+type NonPlanLiveEventType = Exclude<
+  LiveEventType,
+  "issue.execution.plan.live"
+>;
 
 const emitter = new EventEmitter();
 emitter.setMaxListeners(0);
 
 let nextEventId = 0;
 
-function toLiveEvent(input: {
+function toLiveEvent<Type extends LiveEventType>(input: {
   companyId: string;
-  type: LiveEventType;
-  payload?: LiveEventPayload;
-}): LiveEvent {
+  type: Type;
+  payload: LiveEventPayloadMap[Type];
+}): LiveEventOf<Type> {
   nextEventId += 1;
   return {
     id: nextEventId,
     companyId: input.companyId,
     type: input.type,
     createdAt: new Date().toISOString(),
-    payload: input.payload ?? {},
-  };
+    payload: input.payload,
+  } as LiveEventOf<Type>;
 }
 
 export function publishLiveEvent(input: {
   companyId: string;
+  type: "issue.execution.plan.live";
+  payload: LiveEventPayloadMap["issue.execution.plan.live"];
+}): LiveEventOf<"issue.execution.plan.live">;
+export function publishLiveEvent<Type extends NonPlanLiveEventType>(input: {
+  companyId: string;
+  type: Type;
+  payload?: LiveEventPayloadMap[Type];
+}): LiveEventOf<Type>;
+export function publishLiveEvent(input: {
+  companyId: string;
   type: LiveEventType;
-  payload?: LiveEventPayload;
-}) {
-  const event = toLiveEvent(input);
+  payload?: LiveEventPayloadMap[LiveEventType];
+}): LiveEvent {
+  if (
+    input.type === "issue.execution.plan.live" &&
+    input.payload === undefined
+  ) {
+    throw new TypeError("issue.execution.plan.live requires its exact payload");
+  }
+  const event = toLiveEvent({
+    companyId: input.companyId,
+    type: input.type,
+    payload: input.payload ?? {},
+  } as {
+    companyId: string;
+    type: LiveEventType;
+    payload: LiveEventPayloadMap[LiveEventType];
+  });
   emitter.emit(input.companyId, event);
   return event;
 }
 
-export function publishGlobalLiveEvent(input: {
-  type: LiveEventType;
-  payload?: LiveEventPayload;
-}) {
-  const event = toLiveEvent({ companyId: "*", type: input.type, payload: input.payload });
+export function publishGlobalLiveEvent<Type extends NonPlanLiveEventType>(input: {
+  type: Type;
+  payload?: LiveEventPayloadMap[Type];
+}): LiveEventOf<Type> {
+  const eventType: string = input.type;
+  if (eventType === "issue.execution.plan.live") {
+    throw new TypeError(
+      "issue.execution.plan.live is authenticated company scope only",
+    );
+  }
+  const event = toLiveEvent({
+    companyId: "*",
+    type: input.type,
+    payload: input.payload ?? {},
+  });
   emitter.emit("*", event);
   return event;
 }

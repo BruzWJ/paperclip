@@ -1,4 +1,4 @@
-import type { BindMode, DeploymentExposure, DeploymentMode } from "./constants.js";
+import type { BindMode, DeploymentExposure } from "./constants.js";
 
 export const LOOPBACK_BIND_HOST = "127.0.0.1";
 export const ALL_INTERFACES_BIND_HOST = "0.0.0.0";
@@ -32,8 +32,7 @@ export function inferBindModeFromHost(
 }
 
 export function validateConfiguredBindMode(input: {
-  deploymentMode: DeploymentMode;
-  deploymentExposure: DeploymentExposure;
+  exposure: DeploymentExposure;
   bind?: BindMode | null | undefined;
   host?: string | null | undefined;
   customBindHost?: string | null | undefined;
@@ -42,10 +41,6 @@ export function validateConfiguredBindMode(input: {
   const customBindHost = normalizeHost(input.customBindHost);
   const errors: string[] = [];
 
-  if (input.deploymentMode === "local_trusted" && bind !== "loopback") {
-    errors.push("local_trusted requires server.bind=loopback");
-  }
-
   if (bind === "custom" && !customBindHost) {
     const legacyHost = normalizeHost(input.host);
     if (!legacyHost || isLoopbackHost(legacyHost) || isAllInterfacesHost(legacyHost)) {
@@ -53,8 +48,8 @@ export function validateConfiguredBindMode(input: {
     }
   }
 
-  if (input.deploymentMode === "authenticated" && input.deploymentExposure === "public" && bind === "tailnet") {
-    errors.push("server.bind=tailnet is only supported for authenticated/private deployments");
+  if (input.exposure === "public" && bind === "tailnet") {
+    errors.push("server.bind=tailnet is only supported when server.exposure=private");
   }
 
   return errors;

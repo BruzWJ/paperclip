@@ -5,7 +5,7 @@ summary: Run Paperclip with Tailscale-friendly bind presets and connect from oth
 
 Use this when you want to access Paperclip over Tailscale (or a private LAN/VPN) instead of only `localhost`.
 
-## 1. Start Paperclip in private authenticated mode
+## 1. Start Paperclip on a private tailnet
 
 ```sh
 pnpm dev --bind tailnet
@@ -13,20 +13,15 @@ pnpm dev --bind tailnet
 
 Recommended behavior:
 
-- `PAPERCLIP_DEPLOYMENT_MODE=authenticated`
 - `PAPERCLIP_DEPLOYMENT_EXPOSURE=private`
 - `PAPERCLIP_BIND=tailnet`
 
-If you want the old broad private-network behavior instead, use:
+Every operator still signs up or signs in through Better Auth.
+
+To listen on every private-network interface instead, use:
 
 ```sh
 pnpm dev --bind lan
-```
-
-Legacy aliases still map to `authenticated/private + bind=lan`:
-
-pnpm dev --authenticated-private
-pnpm dev --tailscale-auth
 ```
 
 ## 2. Find your reachable Tailscale address

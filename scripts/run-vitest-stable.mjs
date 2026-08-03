@@ -1,33 +1,31 @@
-#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
+import { linkSdkInto } from "./link-plugin-dev-sdk.mjs";
+import {
+  discoverVitestProjectManifest,
+  generalServerLane,
+  generalWorkspacesALane,
+  generalWorkspacesBLane,
+  serializedWorkspaceLane,
+} from "./vitest-project-manifest.mjs";
 
-const repoRoot = process.cwd();
-const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
-const generalServerShardDurations = loadShardDurations(
-  path.join(scriptsDir, "general-server-shard-durations.json"),
-);
-const serverRoot = path.join(repoRoot, "server");
-const serverSrcDir = path.join(repoRoot, "server", "src");
-const serverTestsDir = path.join(repoRoot, "server", "src", "__tests__");
-const nonServerProjects = [
-  "@paperclipai/shared",
-  "@paperclipai/skills-catalog",
-  "@paperclipai/db",
-  "@paperclipai/adapter-utils",
-  "@paperclipai/adapter-codex-local",
-  "@paperclipai/adapter-opencode-local",
-  "@paperclipai/plugin-sdk",
-  "@paperclipai/create-paperclip-plugin",
-  "@paperclipai/ui",
-  "paperclipai",
-];
 const routeTestPattern = /[^/]*(?:route|routes|authz)[^/]*\.test\.ts$/;
-const additionalSerializedServerTests = new Set([
+const serializedDomainTestPatterns = Object.freeze([
+  /(?:^|\/)issue-execution(?:-|\/)/,
+  /(?:^|\/)issue-session(?:-|\/)/,
+  /(?:^|\/)[^/]*liveness[^/]*\.test\.ts$/,
+  /(?:^|\/)[^/]*(?:prompt|acp)[^/]*\.test\.ts$/,
+  /(?:^|\/)[^/]*postgres[^/]*\.test\.ts$/,
+]);
+const serializedIsolationSuites = new Set([
   "server/src/__tests__/approval-routes-idempotency.test.ts",
   "server/src/__tests__/assets.test.ts",
   "server/src/__tests__/authz-company-access.test.ts",
@@ -35,20 +33,15 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/company-portability.test.ts",
   "server/src/__tests__/costs-service.test.ts",
   "server/src/__tests__/express5-auth-wildcard.test.ts",
-  "server/src/__tests__/health-dev-server-token.test.ts",
+  "server/src/__tests__/health-dev-server-access.test.ts",
   "server/src/__tests__/health.test.ts",
-  "server/src/__tests__/heartbeat-dependency-scheduling.test.ts",
-  "server/src/__tests__/heartbeat-issue-liveness-escalation.test.ts",
-  "server/src/__tests__/heartbeat-process-recovery.test.ts",
   "server/src/__tests__/invite-accept-existing-member.test.ts",
   "server/src/__tests__/invite-accept-gateway-defaults.test.ts",
   "server/src/__tests__/invite-accept-replay.test.ts",
   "server/src/__tests__/invite-expiry.test.ts",
   "server/src/__tests__/invite-join-manager.test.ts",
   "server/src/__tests__/invite-onboarding-text.test.ts",
-  "server/src/__tests__/issues-checkout-wakeup.test.ts",
   "server/src/__tests__/issues-service.test.ts",
-  "server/src/__tests__/opencode-local-adapter-environment.test.ts",
   "server/src/__tests__/project-routes-env.test.ts",
   "server/src/__tests__/redaction.test.ts",
   "server/src/__tests__/routines-e2e.test.ts",
@@ -60,43 +53,72 @@ const allModeName = "all";
 const generalServerGroupName = "general-server";
 const generalWorkspacesAGroupName = "general-workspaces-a";
 const generalWorkspacesBGroupName = "general-workspaces-b";
-const generalWorkspacesAProjects = ["@paperclipai/ui", "paperclipai"];
-const generalWorkspacesBProjects = nonServerProjects.filter((project) => !generalWorkspacesAProjects.includes(project));
 const generalGroupNames = [generalServerGroupName, generalWorkspacesAGroupName, generalWorkspacesBGroupName];
+const databaseEnvironmentKeyPattern =
+  /(?:^|_)DATABASE(?:_|$)|^(?:PG|POSTGRES(?:QL)?_)/;
+const inheritedTestEnvironmentKeys = new Set([
+  "CI",
+  "COLORTERM",
+  "COMSPEC",
+  "FORCE_COLOR",
+  "GITHUB_ACTIONS",
+  "LANG",
+  "LANGUAGE",
+  "LOGNAME",
+  "NO_COLOR",
+  "PATH",
+  "PATHEXT",
+  "RUNNER_ARCH",
+  "RUNNER_OS",
+  "SHELL",
+  "SYSTEMROOT",
+  "TERM",
+  "TZ",
+  "USER",
+  "USERNAME",
+  "WINDIR",
+]);
 const serializedServerVitestArgs = [
   "--no-file-parallelism",
   "--maxWorkers=1",
 ];
 
-function walk(dir) {
-  const entries = readdirSync(dir);
-  const files = [];
-  for (const entry of entries) {
-    const absolute = path.join(dir, entry);
-    const stats = statSync(absolute);
-    if (stats.isDirectory()) {
-      files.push(...walk(absolute));
-    } else if (stats.isFile()) {
-      files.push(absolute);
+export function buildIsolatedVitestEnv(baseEnvironment, testRoot, instanceId) {
+  const env = {};
+  for (const [key, value] of Object.entries(baseEnvironment)) {
+    const normalizedKey = key.toUpperCase();
+    if (
+      value !== undefined &&
+      (inheritedTestEnvironmentKeys.has(normalizedKey) || normalizedKey.startsWith("LC_"))
+    ) {
+      env[key] = value;
     }
   }
-  return files;
-}
-
-function toRepoPath(file) {
-  return path.relative(repoRoot, file).split(path.sep).join("/");
-}
-
-function toServerPath(file) {
-  return path.relative(serverRoot, file).split(path.sep).join("/");
-}
-
-function isRouteOrAuthzTest(file) {
-  if (routeTestPattern.test(file)) {
-    return true;
+  Object.assign(env, {
+    HOME: path.join(testRoot, "home"),
+    NODE_ENV: "test",
+    PAPERCLIP_HOME: path.join(testRoot, "h"),
+    PAPERCLIP_INSTANCE_ID: instanceId,
+    TEMP: path.join(testRoot, "t"),
+    TMP: path.join(testRoot, "t"),
+    TMPDIR: path.join(testRoot, "t"),
+  });
+  for (const key of Object.keys(env)) {
+    const normalizedKey = key.toUpperCase();
+    if (databaseEnvironmentKeyPattern.test(normalizedKey)) {
+      delete env[key];
+    }
   }
+  return env;
+}
 
-  return additionalSerializedServerTests.has(file);
+export function isSerializedServerTest(file) {
+  if (!file.startsWith("server/src/") || !file.endsWith(".test.ts")) return false;
+  return (
+    routeTestPattern.test(file) ||
+    serializedIsolationSuites.has(file) ||
+    serializedDomainTestPatterns.some((pattern) => pattern.test(file))
+  );
 }
 
 function fail(message) {
@@ -246,24 +268,23 @@ function parseCliOptions(argv) {
   };
 }
 
-function selectSerializedSuites(routeTests, shardIndex, shardCount) {
-  return routeTests.filter((_, index) => index % shardCount === shardIndex);
+function selectSerializedSuites(serializedTests, shardIndex, shardCount) {
+  return serializedTests.filter((_, index) => index % shardCount === shardIndex);
 }
 
-function runVitest(args, label) {
+function runVitest(repoRoot, args, label) {
   console.log(`\n[test:run] ${label}`);
   invocationIndex += 1;
   const tempRootParent = process.platform === "win32" ? os.tmpdir() : "/tmp";
   const testRoot = mkdtempSync(path.join(tempRootParent, `pcvt-${process.pid}-${invocationIndex}-`));
   // Keep per-run paths compact so Unix socket fixtures stay under macOS path limits.
-  const env = {
-    ...process.env,
-    NODE_ENV: "test",
-    PAPERCLIP_HOME: path.join(testRoot, "h"),
-    PAPERCLIP_INSTANCE_ID: `vt-${process.pid}-${invocationIndex}`,
-    TMPDIR: path.join(testRoot, "t"),
-  };
+  const env = buildIsolatedVitestEnv(
+    process.env,
+    testRoot,
+    `vt-${process.pid}-${invocationIndex}`,
+  );
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
+  mkdirSync(env.HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
   const result = spawnSync("pnpm", ["exec", "vitest", "run", ...args], {
     cwd: repoRoot,
@@ -279,19 +300,106 @@ function runVitest(args, label) {
   }
 }
 
-function runGeneralSuites(routeTests) {
-  for (const groupName of generalGroupNames) {
-    runGeneralGroup(routeTests, groupName);
-  }
+function standaloneDependenciesReady(repoRoot, project) {
+  return existsSync(
+    path.join(
+      repoRoot,
+      project.path,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "vitest.cmd" : "vitest",
+    ),
+  );
 }
 
-function runProjectGroup(projects, groupName) {
+/**
+ * Packages intentionally excluded from the pnpm workspace keep their own
+ * dependency graph. Prepare those graphs only when their lane is actually
+ * going to execute, using the same isolated install and SDK-link mechanics as
+ * the standalone release builder.
+ */
+export function prepareStandaloneVitestProjects(
+  repoRoot,
+  projects,
+  {
+    spawn = spawnSync,
+    linkSdk = linkSdkInto,
+  } = {},
+) {
   for (const project of projects) {
-    runVitest(["--project", project], `${groupName} project ${project}`);
+    if (!project.requiresStandaloneInstall) continue;
+    const projectRoot = path.join(repoRoot, project.path);
+    if (!standaloneDependenciesReady(repoRoot, project)) {
+      console.log(`\n[test:run] preparing standalone project ${project.name}`);
+      const install = spawn(
+        "pnpm",
+        ["install", "--ignore-workspace", "--no-lockfile"],
+        {
+          cwd: projectRoot,
+          env: process.env,
+          stdio: "inherit",
+        },
+      );
+      if (install.error) {
+        throw new Error(
+          `Failed to prepare standalone Vitest project ${project.name}: ${install.error.message}`,
+        );
+      }
+      if (install.status !== 0) {
+        throw new Error(
+          `Failed to prepare standalone Vitest project ${project.name} (exit ${install.status ?? "unknown"})`,
+        );
+      }
+    }
+
+    if (
+      project.path.startsWith("packages/plugins/sandbox-providers/") &&
+      project.path.split("/").length === 4
+    ) {
+      linkSdk(projectRoot);
+    }
   }
 }
 
-function runGeneralGroup(routeTests, groupName, shardIndex = null, shardCount = null) {
+function runGeneralSuites(context) {
+  for (const groupName of generalGroupNames) {
+    runGeneralGroup(context, groupName);
+  }
+}
+
+export function buildProjectVitestInvocation(repoRoot, project) {
+  return project.requiresStandaloneInstall
+    ? {
+        cwd: path.join(repoRoot, project.path),
+        args: ["--config", "vitest.config.ts"],
+      }
+    : {
+        cwd: repoRoot,
+        args: ["--project", project.name],
+      };
+}
+
+function runProjectGroup(repoRoot, projects, groupName) {
+  prepareStandaloneVitestProjects(repoRoot, projects);
+  for (const project of projects) {
+    const invocation = buildProjectVitestInvocation(repoRoot, project);
+    runVitest(
+      invocation.cwd,
+      invocation.args,
+      `${groupName} ${project.requiresStandaloneInstall ? "standalone " : ""}project ${project.name}`,
+    );
+  }
+}
+
+function runGeneralGroup(context, groupName, shardIndex = null, shardCount = null) {
+  const {
+    generalServerShardDurations,
+    generalServerTestFiles,
+    generalWorkspacesAProjects,
+    generalWorkspacesBProjects,
+    repoRoot,
+    serializedServerTests,
+  } = context;
   if (groupName === generalServerGroupName) {
     if (shardCount !== null && shardCount > 1) {
       const shardFiles = selectGeneralServerShard(
@@ -308,6 +416,7 @@ function runGeneralGroup(routeTests, groupName, shardIndex = null, shardCount = 
       }
 
       runVitest(
+        repoRoot,
         [
           "--project",
           "@paperclipai/server",
@@ -319,117 +428,200 @@ function runGeneralGroup(routeTests, groupName, shardIndex = null, shardCount = 
       return;
     }
 
-    const excludeRouteArgs = routeTests.flatMap((file) => ["--exclude", file.serverPath]);
+    const excludeSerializedArgs = serializedServerTests.flatMap((file) => [
+      "--exclude",
+      file.serverPath,
+    ]);
     runVitest(
+      repoRoot,
       [
         "--project",
         "@paperclipai/server",
         ...serializedServerVitestArgs,
-        ...excludeRouteArgs,
+        ...excludeSerializedArgs,
       ],
-      `${groupName} server suites excluding ${routeTests.length} serialized suites`,
+      `${groupName} server suites excluding ${serializedServerTests.length} serialized suites`,
     );
     return;
   }
 
   if (groupName === generalWorkspacesAGroupName) {
-    runProjectGroup(generalWorkspacesAProjects, groupName);
+    runProjectGroup(repoRoot, generalWorkspacesAProjects, groupName);
     return;
   }
 
   if (groupName === generalWorkspacesBGroupName) {
-    runProjectGroup(generalWorkspacesBProjects, groupName);
+    runProjectGroup(repoRoot, generalWorkspacesBProjects, groupName);
     return;
   }
 
   fail(`Unknown group "${groupName}".`);
 }
 
-function runSerializedSuites(routeTests, shardIndex, shardCount) {
-  const shardTests = selectSerializedSuites(routeTests, shardIndex, shardCount);
+function runSerializedSuites(context, shardIndex, shardCount) {
+  const { repoRoot, serializedServerTests, serializedWorkspaceProjects } = context;
+  const shardTests = selectSerializedSuites(
+    serializedServerTests,
+    shardIndex,
+    shardCount,
+  );
   console.log(
-    `\n[test:run] serialized shard ${shardIndex + 1}/${shardCount} running ${shardTests.length} of ${routeTests.length} suites`,
+    `\n[test:run] serialized shard ${shardIndex + 1}/${shardCount} running ${shardTests.length} of ${serializedServerTests.length} server suites`,
   );
 
-  for (const routeTest of shardTests) {
+  if (shardIndex === 0) {
+    runProjectGroup(repoRoot, serializedWorkspaceProjects, "serialized workspace");
+  }
+
+  for (const serializedTest of shardTests) {
     runVitest(
+      repoRoot,
       [
         "--project",
         "@paperclipai/server",
-        routeTest.repoPath,
+        serializedTest.repoPath,
         "--pool=forks",
         "--isolate",
       ],
-      routeTest.repoPath,
+      serializedTest.repoPath,
     );
   }
 }
 
-const routeTests = walk(serverTestsDir)
-  .filter((file) => isRouteOrAuthzTest(toRepoPath(file)))
-  .map((file) => ({
-    repoPath: toRepoPath(file),
-    serverPath: toServerPath(file),
-  }))
-  .sort((a, b) => a.repoPath.localeCompare(b.repoPath));
-
-// Every server test file that the general-server group is responsible for,
-// i.e. the whole server project minus the route/authz suites that run in the
-// dedicated serialized shards. Sharding this list across runners is what keeps
-// the general-server lane from becoming the PR critical path: the server vitest
-// config pins maxWorkers to 1, so the only way to parallelize is across jobs.
-// Suites are partitioned by recorded duration (scripts/general-server-shard.mjs)
-// rather than round-robin, so one slow suite cluster can't stretch a single shard.
-const generalServerTestFiles = walk(serverSrcDir)
-  .map((file) => toRepoPath(file))
-  .filter((repoPath) => repoPath.endsWith(".test.ts"))
-  .filter((repoPath) => !isRouteOrAuthzTest(repoPath))
-  .sort((a, b) => a.localeCompare(b));
-
-const options = parseCliOptions(process.argv.slice(2));
-if (options.dryRun) {
-  const serializedSuites =
-    options.mode === serializedModeName
-      ? selectSerializedSuites(routeTests, options.shardIndex, options.shardCount)
-      : routeTests;
-  console.log(
-    JSON.stringify(
-      {
-        mode: options.mode,
-        shardIndex: options.shardIndex,
-        shardCount: options.shardCount,
-        group: options.group,
-        availableGeneralGroups: generalGroupNames,
-        serializedSuiteCount: routeTests.length,
-        selectedSerializedSuites: serializedSuites.map((routeTest) => routeTest.repoPath),
-        generalServerSuiteCount: generalServerTestFiles.length,
-        selectedGeneralServerSuites:
-          options.mode === generalModeName &&
-          options.group === generalServerGroupName &&
-          options.shardCount !== null
-            ? selectGeneralServerShard(
-                generalServerTestFiles,
-                options.shardIndex,
-                options.shardCount,
-                generalServerShardDurations,
-              )
-            : null,
-      },
-      null,
-      2,
-    ),
+export function main(argv = process.argv.slice(2)) {
+  const repoRoot = process.cwd();
+  const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+  const generalServerShardDurations = loadShardDurations(
+    path.join(scriptsDir, "general-server-shard-durations.json"),
   );
-  process.exit(0);
-}
+  const serverRoot = path.join(repoRoot, "server");
+  const { projects: testProjects } = discoverVitestProjectManifest(repoRoot);
+  const serverProject = testProjects.find((project) => project.path === "server");
+  if (!serverProject) fail("The server Vitest project is missing");
+  const serializedWorkspaceProjects = testProjects
+    .filter((project) => project.lane === serializedWorkspaceLane);
+  if (serializedWorkspaceProjects.length !== 1) {
+    fail("The database Vitest project must exist exactly once");
+  }
+  const generalWorkspacesAProjects = testProjects
+    .filter((project) => project.lane === generalWorkspacesALane);
+  const generalWorkspacesBProjects = testProjects
+    .filter((project) => project.lane === generalWorkspacesBLane);
 
-if (options.mode === generalModeName || options.mode === allModeName) {
-  if (options.group) {
-    runGeneralGroup(routeTests, options.group, options.shardIndex, options.shardCount);
-  } else {
-    runGeneralSuites(routeTests);
+  const allServerTestFiles = serverProject.testFiles;
+  const serializedServerTests = allServerTestFiles
+    .filter(isSerializedServerTest)
+    .map((repoPath) => ({
+      repoPath,
+      serverPath: path.relative(serverRoot, path.join(repoRoot, repoPath)).split(path.sep).join("/"),
+    }));
+  // Every server suite belongs to exactly one lane. The general shard remains
+  // duration-balanced; only the closed serialized path/metadata rule removes a
+  // suite from it.
+  const generalServerTestFiles = allServerTestFiles.filter(
+    (repoPath) => !isSerializedServerTest(repoPath),
+  );
+  const testFileAssignments = testProjects.flatMap((project) =>
+    project.testFiles.map((file) => ({
+      file,
+      project: project.name,
+      lane:
+        project.lane === generalServerLane && isSerializedServerTest(file)
+          ? "serialized-server"
+          : project.lane,
+    })),
+  );
+  const context = {
+    generalServerShardDurations,
+    generalServerTestFiles,
+    generalWorkspacesAProjects,
+    generalWorkspacesBProjects,
+    repoRoot,
+    serializedServerTests,
+    serializedWorkspaceProjects,
+  };
+
+  const options = parseCliOptions(argv);
+  if (options.dryRun) {
+    const selectedSerializedSuites =
+      options.mode === serializedModeName
+        ? selectSerializedSuites(
+            serializedServerTests,
+            options.shardIndex,
+            options.shardCount,
+          )
+        : serializedServerTests;
+    console.log(
+      JSON.stringify(
+        {
+          mode: options.mode,
+          shardIndex: options.shardIndex,
+          shardCount: options.shardCount,
+          group: options.group,
+          availableGeneralGroups: generalGroupNames,
+          testProjects: testProjects.map(({ name, path, lane, workspace, testFiles }) => ({
+            name,
+            path,
+            lane,
+            workspace,
+            suiteCount: testFiles.length,
+          })),
+          testFileAssignments,
+          generalWorkspacesAProjects: generalWorkspacesAProjects.map(
+            (project) => project.name,
+          ),
+          generalWorkspacesBProjects: generalWorkspacesBProjects.map(
+            (project) => project.name,
+          ),
+          serializedWorkspaceProjects: serializedWorkspaceProjects.map(
+            (project) => project.name,
+          ),
+          selectedSerializedWorkspaceProjects:
+            (options.mode === serializedModeName || options.mode === allModeName) &&
+            (options.shardIndex ?? 0) === 0
+              ? serializedWorkspaceProjects.map((project) => project.name)
+              : [],
+          serializedSuiteCount: serializedServerTests.length,
+          selectedSerializedSuites: selectedSerializedSuites.map(
+            (serializedTest) => serializedTest.repoPath,
+          ),
+          generalServerSuiteCount: generalServerTestFiles.length,
+          selectedGeneralServerSuites:
+            options.mode === generalModeName &&
+            options.group === generalServerGroupName &&
+            options.shardCount !== null
+              ? selectGeneralServerShard(
+                  generalServerTestFiles,
+                  options.shardIndex,
+                  options.shardCount,
+                  generalServerShardDurations,
+                )
+              : null,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  if (options.mode === generalModeName || options.mode === allModeName) {
+    if (options.group) {
+      runGeneralGroup(context, options.group, options.shardIndex, options.shardCount);
+    } else {
+      runGeneralSuites(context);
+    }
+  }
+
+  if (options.mode === serializedModeName || options.mode === allModeName) {
+    runSerializedSuites(
+      context,
+      options.shardIndex ?? 0,
+      options.shardCount ?? 1,
+    );
   }
 }
 
-if (options.mode === serializedModeName || options.mode === allModeName) {
-  runSerializedSuites(routeTests, options.shardIndex ?? 0, options.shardCount ?? 1);
+if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  main();
 }

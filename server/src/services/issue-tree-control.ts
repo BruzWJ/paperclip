@@ -1,9 +1,7 @@
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
-  agentWakeupRequests,
-  heartbeatRuns,
-  issueComments,
   issueTreeHoldMembers,
   issueTreeHolds,
   issues,
@@ -22,7 +20,12 @@ import {
   type IssueTreePreviewWarning,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import {
+  recordNamedBoardLifecycleCommandInTransaction,
+  type NamedBoardLifecycleAffectedIssue,
+} from "./issue-board-lifecycle-command.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
+import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
 
 type IssueRow = typeof issues.$inferSelect;
 type HoldRow = typeof issueTreeHolds.$inferSelect;
@@ -60,8 +63,8 @@ type TreeStatusUpdateResult = {
   updatedIssueIds: string[];
   updatedIssues: Array<{
     id: string;
-    status: IssueStatus;
-    assigneeAgentId: string | null;
+    boardPresentationStatus: IssueStatus;
+    ownerAgentId: string | null;
   }>;
 };
 type RestoreTreeStatusResult = TreeStatusUpdateResult & {
@@ -70,160 +73,8 @@ type RestoreTreeStatusResult = TreeStatusUpdateResult & {
 };
 
 const TERMINAL_ISSUE_STATUSES = new Set<IssueStatus>(["done", "cancelled"]);
-const ACTIVE_RUN_STATUSES = ["queued", "running"] as const;
 const DEFAULT_RELEASE_POLICY: IssueTreeHoldReleasePolicy = { strategy: "manual" };
 const MAX_PAUSE_HOLD_ANCESTOR_DEPTH = 100;
-export const ISSUE_TREE_CONTROL_INTERACTION_WAKE_REASONS: ReadonlySet<string> = new Set([
-  "issue_commented",
-  "issue_reopened_via_comment",
-  "issue_comment_mentioned",
-] as const);
-const ISSUE_TREE_CONTROL_INTERACTION_WAKE_SOURCES: Readonly<Record<string, ReadonlySet<string>>> = {
-  issue_commented: new Set(["issue.comment"]),
-  issue_reopened_via_comment: new Set(["issue.comment.reopen"]),
-  issue_comment_mentioned: new Set(["comment.mention"]),
-};
-
-type VerifiedInteractionActor = {
-  requestedByActorType?: string | null;
-  requestedByActorId?: string | null;
-};
-
-function readNonEmptyStringFromRecord(record: unknown, key: string) {
-  if (!record || typeof record !== "object") return null;
-  const value = (record as Record<string, unknown>)[key];
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function readInteractionWakeCommentId(record: unknown) {
-  if (!record || typeof record !== "object") return null;
-  const value = (record as Record<string, unknown>).wakeCommentIds;
-  if (Array.isArray(value)) {
-    const latest = value
-      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      .at(-1);
-    if (latest) return latest.trim();
-  }
-  return readNonEmptyStringFromRecord(record, "wakeCommentId") ?? readNonEmptyStringFromRecord(record, "commentId");
-}
-
-function hasVerifiedInteractionSource(wakeReason: string, contextSnapshot: Record<string, unknown>) {
-  const source = readNonEmptyStringFromRecord(contextSnapshot, "source");
-  if (!source) return false;
-  return ISSUE_TREE_CONTROL_INTERACTION_WAKE_SOURCES[wakeReason]?.has(source) ?? false;
-}
-
-function actorMatchesComment(
-  actor: VerifiedInteractionActor,
-  comment: { authorAgentId: string | null; authorUserId: string | null },
-) {
-  if (!actor.requestedByActorType) return false;
-  if (actor.requestedByActorType === "system") return true;
-  if (!actor.requestedByActorId) return false;
-  if (actor.requestedByActorType === "agent") return comment.authorAgentId === actor.requestedByActorId;
-  if (actor.requestedByActorType === "user") return comment.authorUserId === actor.requestedByActorId;
-  return false;
-}
-
-async function hasVerifiedInteractionWakeRequest(
-  dbOrTx: Pick<Db, "select">,
-  input: {
-    companyId: string;
-    agentId?: string | null;
-    runId?: string | null;
-    wakeupRequestId?: string | null;
-    issueId: string;
-    commentId: string;
-    comment: { authorAgentId: string | null; authorUserId: string | null };
-  },
-) {
-  if (!input.runId && !input.wakeupRequestId) return false;
-  const predicates = [
-    eq(agentWakeupRequests.companyId, input.companyId),
-    sql`${agentWakeupRequests.payload} ->> 'issueId' = ${input.issueId}`,
-    sql`${agentWakeupRequests.payload} ->> 'commentId' = ${input.commentId}`,
-  ];
-  if (input.agentId) predicates.push(eq(agentWakeupRequests.agentId, input.agentId));
-  if (input.runId && input.wakeupRequestId) {
-    const requestScope = or(
-      eq(agentWakeupRequests.runId, input.runId),
-      eq(agentWakeupRequests.id, input.wakeupRequestId),
-    );
-    if (requestScope) predicates.push(requestScope);
-  } else if (input.runId) {
-    predicates.push(eq(agentWakeupRequests.runId, input.runId));
-  } else if (input.wakeupRequestId) {
-    predicates.push(eq(agentWakeupRequests.id, input.wakeupRequestId));
-  }
-
-  const requests = await dbOrTx
-    .select({
-      requestedByActorType: agentWakeupRequests.requestedByActorType,
-      requestedByActorId: agentWakeupRequests.requestedByActorId,
-    })
-    .from(agentWakeupRequests)
-    .where(and(...predicates));
-
-  return requests.some((request) => actorMatchesComment(request, input.comment));
-}
-
-export async function isVerifiedIssueTreeControlInteractionWake(
-  dbOrTx: Pick<Db, "select">,
-  input: {
-    companyId: string;
-    issueId: string;
-    agentId?: string | null;
-    contextSnapshot: Record<string, unknown> | null | undefined;
-    requestedByActorType?: "user" | "agent" | "system" | string | null;
-    requestedByActorId?: string | null;
-    runId?: string | null;
-    wakeupRequestId?: string | null;
-  },
-) {
-  const contextSnapshot = input.contextSnapshot ?? null;
-  const wakeReason =
-    readNonEmptyStringFromRecord(contextSnapshot, "wakeReason") ??
-    readNonEmptyStringFromRecord(contextSnapshot, "reason");
-  if (!wakeReason || !ISSUE_TREE_CONTROL_INTERACTION_WAKE_REASONS.has(wakeReason)) return false;
-  if (!contextSnapshot || !hasVerifiedInteractionSource(wakeReason, contextSnapshot)) return false;
-
-  const commentId = readInteractionWakeCommentId(contextSnapshot);
-  if (!commentId) return false;
-
-  const comment = await dbOrTx
-    .select({
-      id: issueComments.id,
-      authorAgentId: issueComments.authorAgentId,
-      authorUserId: issueComments.authorUserId,
-    })
-    .from(issueComments)
-    .where(
-      and(
-        eq(issueComments.companyId, input.companyId),
-        eq(issueComments.issueId, input.issueId),
-        eq(issueComments.id, commentId),
-      ),
-    )
-    .then((rows) => rows[0] ?? null);
-  if (!comment) return false;
-
-  const directActor = {
-    requestedByActorType: input.requestedByActorType,
-    requestedByActorId: input.requestedByActorId,
-  };
-  if (actorMatchesComment(directActor, comment)) return true;
-
-  return hasVerifiedInteractionWakeRequest(dbOrTx, {
-    companyId: input.companyId,
-    agentId: input.agentId,
-    runId: input.runId,
-    wakeupRequestId: input.wakeupRequestId,
-    issueId: input.issueId,
-    commentId,
-    comment,
-  });
-}
-
 function normalizeReleasePolicy(
   releasePolicy: IssueTreeHoldReleasePolicy | null | undefined,
 ): IssueTreeHoldReleasePolicy {
@@ -286,8 +137,8 @@ function toHoldMember(row: HoldMemberRow): IssueTreeHoldMember {
     issueIdentifier: row.issueIdentifier,
     issueTitle: row.issueTitle,
     issueStatus: coerceIssueStatus(row.issueStatus),
-    assigneeAgentId: row.assigneeAgentId,
-    assigneeUserId: row.assigneeUserId,
+    ownerAgentId: row.ownerAgentId,
+    ownerUserId: row.ownerUserId,
     activeRunId: row.activeRunId,
     activeRunStatus: row.activeRunStatus,
     skipped: row.skipped,
@@ -302,7 +153,7 @@ function issueSkipReason(input: {
   activePauseHoldIds: string[];
   activeCancelSnapshot?: ActiveCancelSnapshot | null;
 }): string | null {
-  const status = coerceIssueStatus(input.issue.status);
+  const status = coerceIssueStatus(input.issue.boardPresentationStatus);
   if (input.mode === "restore") {
     if (input.activeCancelSnapshot?.member && status !== "cancelled") {
       return "changed_after_cancel";
@@ -329,7 +180,7 @@ function buildAffectedAgents(issuesToPreview: IssueTreePreviewIssue[]): IssueTre
   for (const issue of issuesToPreview) {
     if (issue.skipped) continue;
     const agentIds = new Set<string>();
-    if (issue.assigneeAgentId) agentIds.add(issue.assigneeAgentId);
+    if (issue.ownerAgentId) agentIds.add(issue.ownerAgentId);
     if (issue.activeRun) agentIds.add(issue.activeRun.agentId);
     for (const agentId of agentIds) {
       const current = byAgentId.get(agentId) ?? { agentId, issueCount: 0, activeRunCount: 0 };
@@ -364,7 +215,7 @@ function buildWarnings(input: {
   if ((input.mode === "pause" || input.mode === "cancel") && runningRunIssueIds.length > 0) {
     warnings.push({
       code: "running_runs_present",
-      message: "Some affected issues have running heartbeat runs.",
+      message: "Some affected issues have running issue-execution runs.",
       issueIds: [...new Set(runningRunIssueIds)].sort(),
     });
   }
@@ -375,7 +226,7 @@ function buildWarnings(input: {
   if ((input.mode === "pause" || input.mode === "cancel") && queuedRunIssueIds.length > 0) {
     warnings.push({
       code: "queued_runs_present",
-      message: "Some affected issues have queued heartbeat runs.",
+      message: "Some affected issues have queued issue-execution runs.",
       issueIds: [...new Set(queuedRunIssueIds)].sort(),
     });
   }
@@ -407,6 +258,30 @@ function restoreStatusFromCancelSnapshot(status: IssueStatus): IssueStatus | nul
   if (status === "in_progress") return "todo";
   if (isTerminalIssue(status)) return null;
   return status;
+}
+
+function namedBoardActorUserId(actor: ActorInput): string | null {
+  if (actor.actorType !== "user") return null;
+  if (!actor.userId || actor.actorId !== actor.userId) {
+    throw unprocessable(
+      "A named-user issue-tree command requires one exact authenticated user identity",
+    );
+  }
+  return actor.userId;
+}
+
+function deterministicTreeCommandId(namespace: string, sourceId: string): string {
+  const bytes = Buffer.from(
+    createHash("sha256")
+      .update(`${namespace}\0${sourceId}`)
+      .digest("hex")
+      .slice(0, 32),
+    "hex",
+  );
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function issueTreeControlService(db: Db) {
@@ -450,55 +325,19 @@ export function issueTreeControlService(db: Db) {
   async function activeRunsForTree(companyId: string, treeIssues: TreeIssue[]) {
     const issueIds = treeIssues.map((issue) => issue.id);
     if (issueIds.length === 0) return [];
-    const runIds = treeIssues
-      .map((issue) => issue.executionRunId)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    const uniqueRunIds = [...new Set(runIds)];
-    const issueIdFromContext = sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
-    const issueIdSet = new Set(issueIds);
-
-    const rows = await db
-      .select({
-        id: heartbeatRuns.id,
-        agentId: heartbeatRuns.agentId,
-        status: heartbeatRuns.status,
-        issueIdFromContext,
-        startedAt: heartbeatRuns.startedAt,
-        createdAt: heartbeatRuns.createdAt,
-      })
-      .from(heartbeatRuns)
-      .where(
-        and(
-          eq(heartbeatRuns.companyId, companyId),
-          inArray(heartbeatRuns.status, [...ACTIVE_RUN_STATUSES]),
-          uniqueRunIds.length > 0
-            ? or(inArray(heartbeatRuns.id, uniqueRunIds), inArray(issueIdFromContext, issueIds))
-            : inArray(issueIdFromContext, issueIds),
-        ),
-      );
-
-    const issueIdByExecutionRunId = new Map(
-      treeIssues
-        .filter((issue) => issue.executionRunId)
-        .map((issue) => [issue.executionRunId as string, issue.id]),
-    );
-    return rows
-      .map((run) => {
-        if (run.status !== "queued" && run.status !== "running") return null;
-        const issueId = run.issueIdFromContext && issueIdSet.has(run.issueIdFromContext)
-          ? run.issueIdFromContext
-          : issueIdByExecutionRunId.get(run.id) ?? null;
-        if (!issueId) return null;
-        return {
-          id: run.id,
-          issueId,
-          agentId: run.agentId,
-          status: run.status,
-          startedAt: run.startedAt,
-          createdAt: run.createdAt,
-        } satisfies ActiveRunRow;
-      })
-      .filter((run): run is ActiveRunRow => run !== null)
+    const linkages = await resolveCurrentIssueOwnerRunLinkages(db, {
+      companyId,
+      issueIds,
+    });
+    return [...linkages.values()]
+      .map((linkage) => ({
+        id: linkage.runId,
+        issueId: linkage.issueId,
+        agentId: linkage.agentId,
+        status: "running" as const,
+        startedAt: linkage.startedAt,
+        createdAt: linkage.createdAt,
+      }))
       .sort((a, b) => a.issueId.localeCompare(b.issueId) || a.createdAt.getTime() - b.createdAt.getTime());
   }
 
@@ -547,22 +386,6 @@ export function issueTreeControlService(db: Db) {
       }
     }
     return byIssueId;
-  }
-
-  async function activePauseHoldsForIssueIds(companyId: string, issueIds: string[]) {
-    if (issueIds.length === 0) return [];
-    return db
-      .select()
-      .from(issueTreeHolds)
-      .where(
-        and(
-          eq(issueTreeHolds.companyId, companyId),
-          eq(issueTreeHolds.status, "active"),
-          eq(issueTreeHolds.mode, "pause"),
-          inArray(issueTreeHolds.rootIssueId, issueIds),
-        ),
-      )
-      .orderBy(asc(issueTreeHolds.createdAt), asc(issueTreeHolds.id));
   }
 
   async function getActivePauseHoldGate(
@@ -645,8 +468,9 @@ export function issueTreeControlService(db: Db) {
     const countsByStatus: Partial<Record<IssueStatus, number>> = {};
 
     const issuesToPreview = treeIssues.map((issue) => {
-      const status = coerceIssueStatus(issue.status);
-      countsByStatus[status] = (countsByStatus[status] ?? 0) + 1;
+      const boardPresentationStatus = coerceIssueStatus(issue.boardPresentationStatus);
+      countsByStatus[boardPresentationStatus] =
+        (countsByStatus[boardPresentationStatus] ?? 0) + 1;
       const holdState = holdsByIssueId.get(issue.id) ?? { all: [], pause: [] };
       const skipReason = issueSkipReason({
         mode: input.mode,
@@ -659,11 +483,11 @@ export function issueTreeControlService(db: Db) {
         id: issue.id,
         identifier: issue.identifier,
         title: issue.title,
-        status,
+        boardPresentationStatus,
         parentId: issue.parentId,
         depth: issue.depth,
-        assigneeAgentId: issue.assigneeAgentId,
-        assigneeUserId: issue.assigneeUserId,
+        ownerAgentId: issue.ownerAgentId,
+        ownerUserId: issue.ownerUserId,
         activeRun: run ? toPreviewRun(run) : null,
         activeHoldIds: holdState.all,
         action: input.mode,
@@ -722,10 +546,25 @@ export function issueTreeControlService(db: Db) {
 
     if (input.mode === "resume") {
       const issueIds = [...new Set(holdPreview.issues.map((issue) => issue.id))];
-      const activePauseHolds = await activePauseHoldsForIssueIds(companyId, issueIds);
       const releaseReason = input.reason ?? "Subtree resume applied.";
+      const actorUserId = namedBoardActorUserId(input.actor);
 
-      const { hold: resumeHold } = await db.transaction(async (tx) => {
+      return db.transaction(async (tx) => {
+        const activePauseHolds = issueIds.length === 0
+          ? []
+          : await tx
+            .select()
+            .from(issueTreeHolds)
+            .where(
+              and(
+                eq(issueTreeHolds.companyId, companyId),
+                eq(issueTreeHolds.status, "active"),
+                eq(issueTreeHolds.mode, "pause"),
+                inArray(issueTreeHolds.rootIssueId, issueIds),
+              ),
+            )
+            .orderBy(asc(issueTreeHolds.createdAt), asc(issueTreeHolds.id))
+            .for("update");
         const [createdHold] = await tx
           .insert(issueTreeHolds)
           .values({
@@ -750,9 +589,9 @@ export function issueTreeControlService(db: Db) {
           depth: issue.depth,
           issueIdentifier: issue.identifier,
           issueTitle: issue.title,
-          issueStatus: issue.status,
-          assigneeAgentId: issue.assigneeAgentId,
-          assigneeUserId: issue.assigneeUserId,
+          issueStatus: issue.boardPresentationStatus,
+          ownerAgentId: issue.ownerAgentId,
+          ownerUserId: issue.ownerUserId,
           activeRunId: issue.activeRun?.id ?? null,
           activeRunStatus: issue.activeRun?.status ?? null,
           skipped: issue.skipped,
@@ -765,42 +604,110 @@ export function issueTreeControlService(db: Db) {
             .values(memberRows)
             .returning()
           : [];
+        const resumedPauseHoldIds = activePauseHolds.map((hold) => hold.id);
+        const now = new Date();
+        let affectedIssueIds: string[] = [];
+        if (resumedPauseHoldIds.length > 0) {
+          affectedIssueIds = await tx
+            .select({ issueId: issueTreeHoldMembers.issueId })
+            .from(issueTreeHoldMembers)
+            .where(
+              and(
+                eq(issueTreeHoldMembers.companyId, companyId),
+                inArray(issueTreeHoldMembers.holdId, resumedPauseHoldIds),
+                eq(issueTreeHoldMembers.skipped, false),
+              ),
+            )
+            .then((rows) => [...new Set(rows.map((row) => row.issueId))]);
+          await tx
+            .update(issueTreeHolds)
+            .set({
+              status: "released",
+              releasedAt: now,
+              releasedByActorType: input.actor.actorType,
+              releasedByAgentId: input.actor.agentId ?? null,
+              releasedByUserId: input.actor.userId ?? null,
+              releasedByRunId: input.actor.runId ?? null,
+              releaseReason,
+              releaseMetadata: sql`jsonb_build_object(
+                'resumedByResumeHoldId', ${createdHold.id},
+                'resumeHoldMode', 'tree_resume',
+                'resumedPauseHoldId', ${issueTreeHolds.id}
+              )`,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(issueTreeHolds.companyId, companyId),
+                eq(issueTreeHolds.status, "active"),
+                inArray(issueTreeHolds.id, resumedPauseHoldIds),
+              ),
+            );
+        }
 
-        return { hold: toHold(createdHold, createdMembers) };
-      });
+        const [releasedResumeHold] = await tx
+          .update(issueTreeHolds)
+          .set({
+            status: "released",
+            releasedAt: now,
+            releasedByActorType: input.actor.actorType,
+            releasedByAgentId: input.actor.agentId ?? null,
+            releasedByUserId: input.actor.userId ?? null,
+            releasedByRunId: input.actor.runId ?? null,
+            releaseReason,
+            releaseMetadata: {
+              resumedPauseHoldIds,
+              resumeMode: "subtree",
+              ...(input.releasePolicy
+                ? { releasePolicy: holdReleasePolicy }
+                : {}),
+            },
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(issueTreeHolds.companyId, companyId),
+              eq(issueTreeHolds.id, createdHold.id),
+              eq(issueTreeHolds.status, "active"),
+            ),
+          )
+          .returning();
+        if (!releasedResumeHold) {
+          throw conflict("Subtree resume command was not committed");
+        }
 
-      const resumedPauseHoldIds = activePauseHolds.map((hold) => hold.id);
-      if (resumedPauseHoldIds.length > 0) {
-        await Promise.all(
-          activePauseHolds.map((pauseHold) =>
-            releaseHold(companyId, pauseHold.rootIssueId, pauseHold.id, {
-              reason: releaseReason,
-              metadata: {
-                resumedByResumeHoldId: resumeHold.id,
-                resumeHoldMode: "tree_resume",
-                resumedPauseHoldId: pauseHold.id,
-              },
-              actor: input.actor,
-            }),
-          ),
-        );
-      }
+        if (actorUserId && affectedIssueIds.length > 0) {
+          const affectedIssues = await tx
+            .select({
+              id: issues.id,
+              ownershipEpoch: issues.ownershipEpoch,
+            })
+            .from(issues)
+            .where(
+              and(
+                eq(issues.companyId, companyId),
+                inArray(issues.id, affectedIssueIds),
+              ),
+            )
+            .orderBy(asc(issues.id))
+            .for("update");
+          await recordNamedBoardLifecycleCommandInTransaction(tx, {
+            companyId,
+            affectedIssues,
+            actorUserId,
+            subtype: "tree_control_resume",
+            sourceCommandId: createdHold.id,
+            idempotencyKey: `issue-tree-resume:${createdHold.id}`,
+            committedAt: now,
+          });
+        }
 
-      const releasedResumeHold = await releaseHold(companyId, rootIssueId, resumeHold.id, {
-        reason: releaseReason,
-        metadata: {
+        return {
+          hold: toHold(releasedResumeHold, createdMembers),
+          preview: holdPreview,
           resumedPauseHoldIds,
-          resumeMode: "subtree",
-          ...(input.releasePolicy ? { releasePolicy: holdReleasePolicy } : {}),
-        },
-        actor: input.actor,
+        };
       });
-
-      return {
-        hold: releasedResumeHold,
-        preview: holdPreview,
-        resumedPauseHoldIds,
-      };
     }
 
     const { hold, members } = await db.transaction(async (tx) => {
@@ -828,9 +735,9 @@ export function issueTreeControlService(db: Db) {
         depth: issue.depth,
         issueIdentifier: issue.identifier,
         issueTitle: issue.title,
-        issueStatus: issue.status,
-        assigneeAgentId: issue.assigneeAgentId,
-        assigneeUserId: issue.assigneeUserId,
+        issueStatus: issue.boardPresentationStatus,
+        ownerAgentId: issue.ownerAgentId,
+        ownerUserId: issue.ownerUserId,
         activeRunId: issue.activeRun?.id ?? null,
         activeRunStatus: issue.activeRun?.status ?? null,
         skipped: issue.skipped,
@@ -840,6 +747,38 @@ export function issueTreeControlService(db: Db) {
       const createdMembers = memberRows.length > 0
         ? await tx.insert(issueTreeHoldMembers).values(memberRows).returning()
         : [];
+
+      const actorUserId = namedBoardActorUserId(input.actor);
+      if (input.mode === "pause" && actorUserId) {
+        const affectedIssueIds = holdPreview.issues
+          .filter((issue) => !issue.skipped)
+          .map((issue) => issue.id);
+        const affectedIssues = affectedIssueIds.length === 0
+          ? []
+          : await tx
+            .select({
+              id: issues.id,
+              ownershipEpoch: issues.ownershipEpoch,
+            })
+            .from(issues)
+            .where(
+              and(
+                eq(issues.companyId, companyId),
+                inArray(issues.id, affectedIssueIds),
+              ),
+            )
+            .orderBy(asc(issues.id))
+            .for("update");
+        await recordNamedBoardLifecycleCommandInTransaction(tx, {
+          companyId,
+          affectedIssues,
+          actorUserId,
+          subtype: "tree_control_pause",
+          sourceCommandId: createdHold.id,
+          idempotencyKey: `issue-tree-pause:${createdHold.id}`,
+          committedAt: createdHold.createdAt,
+        });
+      }
 
       return { hold: createdHold, members: createdMembers };
     });
@@ -874,36 +813,53 @@ export function issueTreeControlService(db: Db) {
       const rows = await tx
         .update(issues)
         .set({
-          status: "cancelled",
+          boardPresentationStatus: "cancelled",
+          lifecycleStatus: "cancelled",
+          disposition: {
+            message: `Cancelled by issue-tree hold ${holdId}`,
+            structuredResult: { kind: "issue_tree_control", holdId },
+          },
           cancelledAt: now,
           completedAt: null,
-          checkoutRunId: null,
-          executionRunId: null,
-          executionAgentNameKey: null,
-          executionLockedAt: null,
           updatedAt: now,
         })
         .where(
           and(
             eq(issues.companyId, companyId),
             inArray(issues.id, issueIds),
-            notInArray(issues.status, ["done", "cancelled"]),
+            notInArray(issues.boardPresentationStatus, ["done", "cancelled"]),
           ),
         )
         .returning({
           id: issues.id,
           companyId: issues.companyId,
+          ownershipEpoch: issues.ownershipEpoch,
           identifier: issues.identifier,
           title: issues.title,
-          status: issues.status,
-          assigneeAgentId: issues.assigneeAgentId,
+          boardPresentationStatus: issues.boardPresentationStatus,
+          ownerAgentId: issues.ownerAgentId,
         });
 
-      for (const issue of rows) {
-        await finalizeSummarySlotsForTerminalIssue(tx, {
-          ...issue,
-          status: coerceIssueStatus(issue.status),
+      if (
+        hold.createdByActorType === "user" &&
+        hold.createdByUserId
+      ) {
+        await recordNamedBoardLifecycleCommandInTransaction(tx, {
+          companyId,
+          affectedIssues: rows.map((issue) => ({
+            id: issue.id,
+            ownershipEpoch: issue.ownershipEpoch,
+          })),
+          actorUserId: hold.createdByUserId,
+          subtype: "tree_control_cancel",
+          sourceCommandId: holdId,
+          idempotencyKey: `issue-tree-cancel:${holdId}`,
+          committedAt: now,
         });
+      }
+
+      for (const issue of rows) {
+        await finalizeSummarySlotsForTerminalIssue(tx, issue);
       }
       return rows;
     });
@@ -912,8 +868,9 @@ export function issueTreeControlService(db: Db) {
       updatedIssueIds: updated.map((issue) => issue.id),
       updatedIssues: updated.map((issue) => ({
         id: issue.id,
-        status: coerceIssueStatus(issue.status),
-        assigneeAgentId: issue.assigneeAgentId,
+        boardPresentationStatus:
+          coerceIssueStatus(issue.boardPresentationStatus),
+        ownerAgentId: issue.ownerAgentId,
       })),
     };
   }
@@ -972,36 +929,43 @@ export function issueTreeControlService(db: Db) {
     const releasedCancelHoldIds = activeCancelHolds.map((hold) => hold.id);
     const updatedIssues = await db.transaction(async (tx) => {
       const restored: TreeStatusUpdateResult["updatedIssues"] = [];
+      const restoredForLedger: NamedBoardLifecycleAffectedIssue[] = [];
       for (const [status, issueIdsForStatus] of issueIdsByStatus) {
         if (issueIdsForStatus.length === 0) continue;
         const rows = await tx
           .update(issues)
           .set({
-            status,
+            boardPresentationStatus: status,
+            lifecycleStatus: "open",
+            disposition: null,
             cancelledAt: null,
             completedAt: null,
-            checkoutRunId: null,
-            executionRunId: null,
-            executionAgentNameKey: null,
-            executionLockedAt: null,
             updatedAt: now,
           })
           .where(
             and(
               eq(issues.companyId, companyId),
               inArray(issues.id, issueIdsForStatus),
-              eq(issues.status, "cancelled"),
+              eq(issues.boardPresentationStatus, "cancelled"),
             ),
           )
           .returning({
             id: issues.id,
-            status: issues.status,
-            assigneeAgentId: issues.assigneeAgentId,
+            ownershipEpoch: issues.ownershipEpoch,
+            boardPresentationStatus: issues.boardPresentationStatus,
+            ownerAgentId: issues.ownerAgentId,
           });
+        restoredForLedger.push(
+          ...rows.map((issue) => ({
+            id: issue.id,
+            ownershipEpoch: issue.ownershipEpoch,
+          })),
+        );
         restored.push(...rows.map((issue) => ({
           id: issue.id,
-          status: coerceIssueStatus(issue.status),
-          assigneeAgentId: issue.assigneeAgentId,
+          boardPresentationStatus:
+            coerceIssueStatus(issue.boardPresentationStatus),
+          ownerAgentId: issue.ownerAgentId,
         })));
       }
 
@@ -1042,6 +1006,30 @@ export function issueTreeControlService(db: Db) {
           updatedAt: now,
         })
         .where(and(eq(issueTreeHolds.companyId, companyId), eq(issueTreeHolds.id, restoreHoldId)));
+
+      const actorUserId =
+        restoreHold.createdByActorType === "user"
+          ? restoreHold.createdByUserId
+          : null;
+      if (
+        restoreHold.createdByActorType === "user" &&
+        (!actorUserId || namedBoardActorUserId(input.actor) !== actorUserId)
+      ) {
+        throw unprocessable(
+          "Restore application actor does not match the named user who issued the restore command",
+        );
+      }
+      if (actorUserId) {
+        await recordNamedBoardLifecycleCommandInTransaction(tx, {
+          companyId,
+          affectedIssues: restoredForLedger,
+          actorUserId,
+          subtype: "tree_control_restore",
+          sourceCommandId: restoreHoldId,
+          idempotencyKey: `issue-tree-restore:${restoreHoldId}`,
+          committedAt: now,
+        });
+      }
 
       return restored;
     });
@@ -1125,76 +1113,120 @@ export function issueTreeControlService(db: Db) {
       releasePolicy?: IssueTreeHoldReleasePolicy | null;
       metadata?: Record<string, unknown> | null;
       actor: ActorInput;
+      /** Internal cleanup/choreography never qualifies as a board action. */
+      internal?: true;
     },
   ) {
-    const existing = await db
-      .select()
-      .from(issueTreeHolds)
-      .where(and(eq(issueTreeHolds.id, holdId), eq(issueTreeHolds.companyId, companyId)))
-      .then((rows) => rows[0] ?? null);
-    if (!existing) throw notFound("Issue tree hold not found");
-    if (existing.rootIssueId !== rootIssueId) {
-      throw unprocessable("Issue tree hold does not belong to the requested root issue");
-    }
-    if (existing.status === "released") {
-      throw conflict("Issue tree hold is already released");
-    }
+    return db.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(issueTreeHolds)
+        .where(
+          and(
+            eq(issueTreeHolds.id, holdId),
+            eq(issueTreeHolds.companyId, companyId),
+          ),
+        )
+        .for("update")
+        .then((rows) => rows[0] ?? null);
+      if (!existing) throw notFound("Issue tree hold not found");
+      if (existing.rootIssueId !== rootIssueId) {
+        throw unprocessable(
+          "Issue tree hold does not belong to the requested root issue",
+        );
+      }
+      if (existing.status === "released") {
+        throw conflict("Issue tree hold is already released");
+      }
 
-    const [updated] = await db
-      .update(issueTreeHolds)
-      .set({
-        status: "released",
-        releasedAt: new Date(),
-        releasedByActorType: input.actor.actorType,
-        releasedByAgentId: input.actor.agentId ?? null,
-        releasedByUserId: input.actor.userId ?? (input.actor.actorType === "user" ? input.actor.actorId : null),
-        releasedByRunId: input.actor.runId ?? null,
-        releaseReason: input.reason ?? null,
-        releasePolicy: input.releasePolicy
-          ? (normalizeReleasePolicy(input.releasePolicy) as unknown as Record<string, unknown>)
-          : existing.releasePolicy,
-        releaseMetadata: input.metadata ?? null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(issueTreeHolds.id, holdId), eq(issueTreeHolds.companyId, companyId)))
-      .returning();
+      const now = new Date();
+      const [updated] = await tx
+        .update(issueTreeHolds)
+        .set({
+          status: "released",
+          releasedAt: now,
+          releasedByActorType: input.actor.actorType,
+          releasedByAgentId: input.actor.agentId ?? null,
+          releasedByUserId:
+            input.actor.userId ??
+            (input.actor.actorType === "user" ? input.actor.actorId : null),
+          releasedByRunId: input.actor.runId ?? null,
+          releaseReason: input.reason ?? null,
+          releasePolicy: input.releasePolicy
+            ? (normalizeReleasePolicy(
+                input.releasePolicy,
+              ) as unknown as Record<string, unknown>)
+            : existing.releasePolicy,
+          releaseMetadata: input.metadata ?? null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(issueTreeHolds.id, holdId),
+            eq(issueTreeHolds.companyId, companyId),
+            eq(issueTreeHolds.status, "active"),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        throw conflict("Issue tree hold changed while it was released");
+      }
 
-    const members = await db
-      .select()
-      .from(issueTreeHoldMembers)
-      .where(and(eq(issueTreeHoldMembers.companyId, companyId), eq(issueTreeHoldMembers.holdId, holdId)))
-      .orderBy(asc(issueTreeHoldMembers.depth), asc(issueTreeHoldMembers.createdAt), asc(issueTreeHoldMembers.issueId));
+      const members = await tx
+        .select()
+        .from(issueTreeHoldMembers)
+        .where(
+          and(
+            eq(issueTreeHoldMembers.companyId, companyId),
+            eq(issueTreeHoldMembers.holdId, holdId),
+          ),
+        )
+        .orderBy(
+          asc(issueTreeHoldMembers.depth),
+          asc(issueTreeHoldMembers.createdAt),
+          asc(issueTreeHoldMembers.issueId),
+        );
 
-    return toHold(updated, members);
-  }
+      const actorUserId = input.internal
+        ? null
+        : namedBoardActorUserId(input.actor);
+      if (actorUserId) {
+        const affectedIssueIds = members
+          .filter((member) => !member.skipped)
+          .map((member) => member.issueId);
+        const affectedIssues = affectedIssueIds.length === 0
+          ? []
+          : await tx
+            .select({
+              id: issues.id,
+              ownershipEpoch: issues.ownershipEpoch,
+            })
+            .from(issues)
+            .where(
+              and(
+                eq(issues.companyId, companyId),
+                inArray(issues.id, affectedIssueIds),
+              ),
+            )
+            .orderBy(asc(issues.id))
+            .for("update");
+        const sourceCommandId = deterministicTreeCommandId(
+          "issue-tree-release",
+          `${companyId}:${holdId}`,
+        );
+        await recordNamedBoardLifecycleCommandInTransaction(tx, {
+          companyId,
+          affectedIssues,
+          actorUserId,
+          subtype: "tree_control_release",
+          sourceCommandId,
+          idempotencyKey: `issue-tree-release:${holdId}`,
+          committedAt: now,
+        });
+      }
 
-  async function cancelUnclaimedWakeupsForTree(companyId: string, rootIssueId: string, reason: string) {
-    const treeIssues = await listTreeIssues(companyId, rootIssueId);
-    const issueIds = treeIssues.map((issue) => issue.id);
-    if (issueIds.length === 0) return [];
-    const now = new Date();
-    return db
-      .update(agentWakeupRequests)
-      .set({
-        status: "cancelled",
-        finishedAt: now,
-        error: reason,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(agentWakeupRequests.companyId, companyId),
-          inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution"]),
-          isNull(agentWakeupRequests.runId),
-          inArray(sql<string | null>`${agentWakeupRequests.payload} ->> 'issueId'`, issueIds),
-        ),
-      )
-      .returning({
-        id: agentWakeupRequests.id,
-        agentId: agentWakeupRequests.agentId,
-        reason: agentWakeupRequests.reason,
-        payload: agentWakeupRequests.payload,
-      });
+      return toHold(updated, members);
+    });
   }
 
   return {
@@ -1207,6 +1239,5 @@ export function issueTreeControlService(db: Db) {
     listHolds,
     getActivePauseHoldGate,
     releaseHold,
-    cancelUnclaimedWakeupsForTree,
   };
 }

@@ -2,25 +2,42 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the kube-client module so the plugin handlers run against injected
 // fake API clients instead of a real cluster. h.clients is swapped per test.
-const h = vi.hoisted(() => ({ clients: {} as Record<string, unknown> }));
+const h = vi.hoisted(() => ({
+  clients: {} as Record<string, unknown>,
+  execInPod: vi.fn(),
+}));
 
 vi.mock("../../src/kube-client.js", () => ({
   createKubeConfig: vi.fn(() => ({})),
   makeKubeClients: vi.fn(() => h.clients),
 }));
 
+vi.mock("../../src/pod-exec.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../src/pod-exec.js")>();
+  return {
+    ...original,
+    execInPod: h.execInPod,
+  };
+});
+
 import plugin from "../../src/plugin.js";
 
-const CONFIG = { inCluster: true, backend: "sandbox-cr" };
+const CONFIG = {
+  inCluster: true,
+  adapters: [
+    {
+      adapterType: "codex",
+      runtimeImage: "registry.example/provider-runtime:v1",
+    },
+  ],
+};
 
 function leaseMetadata(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     namespace: "paperclip-acme",
-    jobName: "pc-abc",
+    sandboxName: "pc-abc",
     podName: "pc-abc-pod",
-    secretName: "pc-abc-env",
     phase: "Pending",
-    backend: "sandbox-cr",
     ...overrides,
   };
 }
@@ -41,6 +58,7 @@ function readySandboxCr(podName: string): Record<string, unknown> {
 
 beforeEach(() => {
   h.clients = {};
+  h.execInPod.mockReset();
 });
 
 describe("onEnvironmentResumeLease", () => {
@@ -75,11 +93,9 @@ describe("onEnvironmentResumeLease", () => {
     expect(lease.metadata).toEqual(
       expect.objectContaining({
         namespace: "paperclip-acme",
-        jobName: "pc-abc",
+        sandboxName: "pc-abc",
         podName: "pc-abc-pod",
-        secretName: "pc-abc-env",
         phase: "Running",
-        backend: "sandbox-cr",
         resumedLease: true,
       }),
     );
@@ -128,14 +144,12 @@ describe("onEnvironmentResumeLease", () => {
 });
 
 describe("onEnvironmentDestroyLease", () => {
-  it("deletes the Sandbox CR, pod, and per-run Secret", async () => {
+  it("deletes the Sandbox CR and pod", async () => {
     const deleteCr = vi.fn().mockResolvedValue({});
     const deletePod = vi.fn().mockResolvedValue({});
-    const deleteSecret = vi.fn().mockResolvedValue({});
     h.clients = {
       custom: { deleteNamespacedCustomObject: deleteCr },
-      core: { deleteNamespacedPod: deletePod, deleteNamespacedSecret: deleteSecret },
-      batch: { deleteNamespacedJob: vi.fn() },
+      core: { deleteNamespacedPod: deletePod },
     };
 
     await plugin.definition.onEnvironmentDestroyLease!({
@@ -154,10 +168,6 @@ describe("onEnvironmentDestroyLease", () => {
       namespace: "paperclip-acme",
       name: "pc-abc-pod",
     });
-    expect(deleteSecret).toHaveBeenCalledWith({
-      namespace: "paperclip-acme",
-      name: "pc-abc-env",
-    });
   });
 
   it("is idempotent: resolves cleanly when every resource is already gone (404)", async () => {
@@ -165,9 +175,7 @@ describe("onEnvironmentDestroyLease", () => {
       custom: { deleteNamespacedCustomObject: vi.fn().mockRejectedValue(notFound()) },
       core: {
         deleteNamespacedPod: vi.fn().mockRejectedValue(notFound()),
-        deleteNamespacedSecret: vi.fn().mockRejectedValue(notFound()),
       },
-      batch: { deleteNamespacedJob: vi.fn() },
     };
 
     await expect(
@@ -186,8 +194,7 @@ describe("onEnvironmentDestroyLease", () => {
     const deleteCr = vi.fn();
     h.clients = {
       custom: { deleteNamespacedCustomObject: deleteCr },
-      core: { deleteNamespacedPod: vi.fn(), deleteNamespacedSecret: vi.fn() },
-      batch: { deleteNamespacedJob: vi.fn() },
+      core: { deleteNamespacedPod: vi.fn() },
     };
 
     await plugin.definition.onEnvironmentDestroyLease!({
@@ -202,30 +209,74 @@ describe("onEnvironmentDestroyLease", () => {
     expect(deleteCr).not.toHaveBeenCalled();
   });
 
-  it("deletes the Job for job-backend leases", async () => {
-    const deleteJob = vi.fn().mockResolvedValue({});
-    const deleteCr = vi.fn();
-    h.clients = {
-      custom: { deleteNamespacedCustomObject: deleteCr },
-      core: {
-        deleteNamespacedPod: vi.fn().mockResolvedValue({}),
-        deleteNamespacedSecret: vi.fn().mockResolvedValue({}),
-      },
-      batch: { deleteNamespacedJob: deleteJob },
-    };
+});
 
-    await plugin.definition.onEnvironmentDestroyLease!({
-      driverKey: "kubernetes",
-      companyId: "acme",
-      environmentId: "env-1",
-      config: { inCluster: true, backend: "job" },
-      providerLeaseId: "pc-job",
-      leaseMetadata: leaseMetadata({ jobName: "pc-job", backend: "job", podName: "pc-job-pod", secretName: "pc-job-env" }),
+describe("onEnvironmentCancelExecution", () => {
+  it("reaches the exact Sandbox pod after worker-local registry loss", async () => {
+    h.clients = {
+      custom: {
+        getNamespacedCustomObject: vi.fn(),
+      },
+      core: {},
+    };
+    h.execInPod.mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
     });
 
-    expect(deleteJob).toHaveBeenCalledWith(
-      expect.objectContaining({ namespace: "paperclip-acme", name: "pc-job" }),
+    await expect(
+      plugin.definition.onEnvironmentCancelExecution!({
+        driverKey: "kubernetes",
+        companyId: "acme",
+        environmentId: "env-1",
+        issueId: "issue-1",
+        config: CONFIG,
+        lease: {
+          providerLeaseId: "pc-abc",
+          metadata: leaseMetadata(),
+        },
+        executionId: "run-immutable",
+        reason: "fresh_session_reset",
+      }),
+    ).resolves.toEqual({
+      executionId: "run-immutable",
+      cancelled: true,
+    });
+
+    expect(h.execInPod).toHaveBeenCalledWith(
+      {},
+      "paperclip-acme",
+      "pc-abc-pod",
+      "agent",
+      [
+        "/bin/sh",
+        "-c",
+        expect.stringContaining(
+          ".paperclip-execution-72756e2d696d6d757461626c65",
+        ),
+      ],
+      undefined,
+      10_000,
     );
-    expect(deleteCr).not.toHaveBeenCalled();
+  });
+
+  it("rejects lease metadata that does not name the exact Sandbox", async () => {
+    await expect(
+      plugin.definition.onEnvironmentCancelExecution!({
+        driverKey: "kubernetes",
+        companyId: "acme",
+        environmentId: "env-1",
+        issueId: "issue-1",
+        config: CONFIG,
+        lease: {
+          providerLeaseId: "pc-abc",
+          metadata: leaseMetadata({ sandboxName: "pc-other" }),
+        },
+        executionId: "run-immutable",
+        reason: "fresh_session_reset",
+      }),
+    ).rejects.toThrow(/expected pc-abc/);
+    expect(h.execInPod).not.toHaveBeenCalled();
   });
 });

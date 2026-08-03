@@ -1,5 +1,13 @@
 import { Command } from "commander";
 import {
+  agentOperationalConfigurationUpdateSchema,
+  createFinanceEventSchema,
+  resolveBudgetIncidentSchema,
+  updateCompanyBudgetSchema,
+  upsertBudgetPolicySchema,
+  type MoneyAmount,
+} from "@paperclipai/shared";
+import {
   addCommonClientOptions,
   apiPath,
   handleCommandError,
@@ -17,7 +25,7 @@ interface JsonPayloadOptions extends CompanyOptions {
 }
 
 interface IncidentOptions extends CompanyOptions {
-  payloadJson?: string;
+  payloadJson: string;
 }
 
 export function registerCostCommands(program: Command): void {
@@ -26,12 +34,8 @@ export function registerCostCommands(program: Command): void {
   for (const [name, path] of [
     ["summary", "costs/summary"],
     ["by-agent", "costs/by-agent"],
-    ["by-agent-model", "costs/by-agent-model"],
-    ["by-provider", "costs/by-provider"],
-    ["by-biller", "costs/by-biller"],
     ["by-project", "costs/by-project"],
-    ["window-spend", "costs/window-spend"],
-    ["quota-windows", "costs/quota-windows"],
+    ["events", "cost-events"],
   ] as const) {
     addCompanyGet(cost, name, `Get ${name} cost data`, path);
   }
@@ -52,10 +56,14 @@ export function registerCostCommands(program: Command): void {
       }),
   );
 
-  addCompanyPostJson(cost, "event:create", "Record a cost event", "cost-events");
-
   const finance = program.command("finance").description("Finance event and summary operations");
-  addCompanyPostJson(finance, "event:create", "Record a finance event", "finance-events");
+  addCompanyPostJson(
+    finance,
+    "event:create",
+    "Record a finance event",
+    "finance-events",
+    (value) => createFinanceEventSchema.parse(value),
+  );
   addCompanyGet(finance, "events", "List finance events", "costs/finance-events");
   addCompanyGet(finance, "summary", "Get finance summary", "costs/finance-summary");
   addCompanyGet(finance, "by-biller", "Get finance summary by biller", "costs/finance-by-biller");
@@ -63,7 +71,13 @@ export function registerCostCommands(program: Command): void {
 
   const budget = program.command("budget").description("Budget policy and incident operations");
   addCompanyGet(budget, "overview", "Get budget overview", "budgets/overview");
-  addCompanyPostJson(budget, "policy:upsert", "Create or update a budget policy", "budgets/policies");
+  addCompanyPostJson(
+    budget,
+    "policy:upsert",
+    "Create or update a budget policy",
+    "budgets/policies",
+    (value) => upsertBudgetPolicySchema.parse(value),
+  );
 
   addCommonClientOptions(
     budget
@@ -74,7 +88,13 @@ export function registerCostCommands(program: Command): void {
       .action(async (opts: JsonPayloadOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const result = await ctx.api.patch(apiPath`/api/companies/${ctx.companyId}/budgets`, parseJson(opts.payloadJson));
+          const payload = updateCompanyBudgetSchema.parse(
+            parseJson(opts.payloadJson),
+          );
+          const result = await ctx.api.patch(
+            apiPath`/api/companies/${ctx.companyId}/budgets`,
+            payload,
+          );
           printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -86,13 +106,20 @@ export function registerCostCommands(program: Command): void {
   addCommonClientOptions(
     budget
       .command("agent:update")
-      .description("Update agent budget")
+      .description("Update an agent's monthly budget through its operational configuration")
       .argument("<agentId>", "Agent ID")
-      .requiredOption("--payload-json <json>", "UpdateBudget JSON payload")
+      .requiredOption(
+        "--payload-json <json>",
+        'Budget JSON payload: {"budgetMonthlyAmount":"<canonical nonnegative decimal>"}',
+      )
       .action(async (agentId: string, opts: JsonPayloadOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
-          const result = await ctx.api.patch(apiPath`/api/agents/${agentId}/budgets`, parseJson(opts.payloadJson));
+          const payload = parseAgentBudgetPayload(opts.payloadJson);
+          const result = await ctx.api.patch(
+            apiPath`/api/agents/${agentId}/operational-configuration`,
+            payload,
+          );
           printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -106,13 +133,16 @@ export function registerCostCommands(program: Command): void {
       .description("Resolve a budget incident")
       .argument("<incidentId>", "Budget incident ID")
       .option("-C, --company-id <id>", "Company ID")
-      .option("--payload-json <json>", "ResolveBudgetIncident JSON payload", "{}")
+      .requiredOption("--payload-json <json>", "ResolveBudgetIncident JSON payload")
       .action(async (incidentId: string, opts: IncidentOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const payload = resolveBudgetIncidentSchema.parse(
+            parseJson(opts.payloadJson),
+          );
           const result = await ctx.api.post(
             apiPath`/api/companies/${ctx.companyId}/budget-incidents/${incidentId}/resolve`,
-            parseJson(opts.payloadJson ?? "{}"),
+            payload,
           );
           printOutput(result, { json: ctx.json });
         } catch (err) {
@@ -142,7 +172,13 @@ function addCompanyGet(parent: Command, name: string, description: string, path:
   );
 }
 
-function addCompanyPostJson(parent: Command, name: string, description: string, path: string): void {
+function addCompanyPostJson(
+  parent: Command,
+  name: string,
+  description: string,
+  path: string,
+  validatePayload: (value: unknown) => unknown,
+): void {
   addCommonClientOptions(
     parent
       .command(name)
@@ -152,7 +188,10 @@ function addCompanyPostJson(parent: Command, name: string, description: string, 
       .action(async (opts: JsonPayloadOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const result = await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}`}/${path}`, parseJson(opts.payloadJson));
+          const result = await ctx.api.post(
+            `${apiPath`/api/companies/${ctx.companyId}`}/${path}`,
+            validatePayload(parseJson(opts.payloadJson)),
+          );
           printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
@@ -164,4 +203,21 @@ function addCompanyPostJson(parent: Command, name: string, description: string, 
 
 function parseJson(value: string): unknown {
   return JSON.parse(value) as unknown;
+}
+
+function parseAgentBudgetPayload(
+  value: string,
+): { budgetMonthlyAmount: MoneyAmount } {
+  const parsed = agentOperationalConfigurationUpdateSchema.parse(
+    parseJson(value),
+  );
+  if (
+    parsed.budgetMonthlyAmount === undefined ||
+    Object.keys(parsed).some((key) => key !== "budgetMonthlyAmount")
+  ) {
+    throw new Error(
+      "Agent budget payload must contain only budgetMonthlyAmount",
+    );
+  }
+  return { budgetMonthlyAmount: parsed.budgetMonthlyAmount };
 }

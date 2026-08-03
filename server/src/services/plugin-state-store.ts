@@ -71,13 +71,18 @@ export function pluginStateStore(db: Db) {
   // Internal helpers
   // -----------------------------------------------------------------------
 
-  async function assertPluginExists(pluginId: string): Promise<void> {
+  async function assertPluginReady(pluginId: string): Promise<void> {
     const rows = await db
-      .select({ id: plugins.id })
+      .select({ id: plugins.id, status: plugins.status })
       .from(plugins)
-      .where(eq(plugins.id, pluginId));
+      .where(
+        and(
+          eq(plugins.id, pluginId),
+          eq(plugins.status, "ready"),
+        ),
+      );
     if (rows.length === 0) {
-      throw notFound(`Plugin not found: ${pluginId}`);
+      throw notFound(`Ready plugin installation not found: ${pluginId}`);
     }
   }
 
@@ -109,6 +114,7 @@ export function pluginStateStore(db: Db) {
         namespace = DEFAULT_NAMESPACE,
       }: { scopeId?: string; namespace?: string } = {},
     ): Promise<unknown> => {
+      await assertPluginReady(pluginId);
       const rows = await db
         .select()
         .from(pluginState)
@@ -130,7 +136,7 @@ export function pluginStateStore(db: Db) {
      * @param input - Scope key and value to store
      */
     set: async (pluginId: string, input: SetPluginState): Promise<void> => {
-      await assertPluginExists(pluginId);
+      await assertPluginReady(pluginId);
 
       const namespace = input.namespace ?? DEFAULT_NAMESPACE;
       const scopeId = input.scopeId ?? null;
@@ -183,6 +189,7 @@ export function pluginStateStore(db: Db) {
         namespace = DEFAULT_NAMESPACE,
       }: { scopeId?: string; namespace?: string } = {},
     ): Promise<void> => {
+      await assertPluginReady(pluginId);
       await db
         .delete(pluginState)
         .where(scopeConditions(pluginId, scopeKind, scopeId, namespace, stateKey));
@@ -200,6 +207,7 @@ export function pluginStateStore(db: Db) {
      * @param filter - Optional scope filters (scopeKind, scopeId, namespace)
      */
     list: async (pluginId: string, filter: ListPluginState = {}): Promise<typeof pluginState.$inferSelect[]> => {
+      await assertPluginReady(pluginId);
       const conditions = [eq(pluginState.pluginId, pluginId)];
 
       if (filter.scopeKind !== undefined) {
@@ -216,20 +224,6 @@ export function pluginStateStore(db: Db) {
         .select()
         .from(pluginState)
         .where(and(...conditions));
-    },
-
-    /**
-     * Delete all state entries owned by a plugin.
-     *
-     * Called during plugin uninstall when `removeData = true`. Also useful
-     * for resetting a plugin's state during testing.
-     *
-     * @param pluginId - UUID of the owning plugin
-     */
-    deleteAll: async (pluginId: string): Promise<void> => {
-      await db
-        .delete(pluginState)
-        .where(eq(pluginState.pluginId, pluginId));
     },
   };
 }

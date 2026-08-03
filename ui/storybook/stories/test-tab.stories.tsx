@@ -133,7 +133,6 @@ function buildAgent(id: string, name: string, decisions: Record<string, ToolConn
   return {
     id,
     name,
-    role: "engineer",
     title: "Engineer",
     status: "active",
     effectiveAccess: {

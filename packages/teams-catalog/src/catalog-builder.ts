@@ -60,12 +60,13 @@ interface ParsedTeamFile {
   relativePath: string;
   frontmatter: Record<string, unknown>;
   hasFrontmatter: boolean;
+  body: string;
 }
 
 interface TeamPackageGraph {
   agents: ParsedTeamFile[];
   projects: ParsedTeamFile[];
-  tasks: ParsedTeamFile[];
+  issues: ParsedTeamFile[];
   skills: ParsedTeamFile[];
 }
 
@@ -307,14 +308,15 @@ async function buildCatalogTeam(
   const tags = readStringArrayField(parsed.frontmatter.tags, "tags", prefix, errors);
   const files = await collectTeamFiles(packageDir, candidate.absolutePath, prefix, errors);
   const graph = await readTeamPackageGraph(candidate.absolutePath, errors);
+  validateAgentIdentityDocuments(graph.agents, errors);
   const agentSlugs = collectSlugs(graph.agents, "agent", errors);
   const projectSlugs = collectSlugs(graph.projects, "project", errors);
-  const taskRecords = graph.tasks.map((task) => ({
-    slug: readSlug(task, "task", errors),
-    recurring: asBoolean(task.frontmatter.recurring) ?? false,
-    assignee: asString(task.frontmatter.assignee),
-    project: asString(task.frontmatter.project),
-    path: task.relativePath,
+  const issueRecords = graph.issues.map((issue) => ({
+    slug: readSlug(issue, "issue", errors),
+    recurring: asBoolean(issue.frontmatter.recurring) ?? false,
+    owner: asString(issue.frontmatter.owner),
+    project: asString(issue.frontmatter.project),
+    path: issue.relativePath,
   }));
   const localSkillSlugs = collectSlugs(graph.skills, "skill", errors);
   const rootAgentSlugs = validateLocalReferences(candidate.absolutePath, parsed.frontmatter, graph, agentSlugs, projectSlugs, errors);
@@ -342,8 +344,8 @@ async function buildCatalogTeam(
     counts: {
       agents: graph.agents.length,
       projects: graph.projects.length,
-      tasks: taskRecords.filter((task) => !task.recurring).length,
-      routines: taskRecords.filter((task) => task.recurring).length,
+      issues: issueRecords.filter((issue) => !issue.recurring).length,
+      routines: issueRecords.filter((issue) => issue.recurring).length,
       localSkills: graph.skills.length,
       catalogSkills: catalogSkillCount,
       externalSkillSources: sourceRefs.filter((ref) => ref.type !== "include").length,
@@ -438,7 +440,7 @@ async function readTeamPackageGraph(teamDir: string, errors: string[]): Promise<
   const graph: TeamPackageGraph = {
     agents: [],
     projects: [],
-    tasks: [],
+    issues: [],
     skills: [],
   };
 
@@ -461,6 +463,7 @@ async function readTeamPackageGraph(teamDir: string, errors: string[]): Promise<
         relativePath,
         frontmatter: doc.frontmatter,
         hasFrontmatter: doc.hasFrontmatter,
+        body: doc.body,
       });
     }
   }
@@ -469,10 +472,37 @@ async function readTeamPackageGraph(teamDir: string, errors: string[]): Promise<
   return graph;
 }
 
+const AGENT_IDENTITY_FRONTMATTER_FIELDS = new Set([
+  "name",
+  "slug",
+  "title",
+  "reportsTo",
+  "capabilities",
+]);
+
+function validateAgentIdentityDocuments(
+  agents: ParsedTeamFile[],
+  errors: string[],
+) {
+  for (const agent of agents) {
+    if (agent.body.trim().length > 0) {
+      errors.push(
+        `${agent.relativePath} must contain identity frontmatter only; provider instructions and persona bodies are not catalog content.`,
+      );
+    }
+    for (const field of Object.keys(agent.frontmatter)) {
+      if (AGENT_IDENTITY_FRONTMATTER_FIELDS.has(field)) continue;
+      errors.push(
+        `${agent.relativePath} frontmatter field "${field}" is not agent identity and is not allowed in the team catalog.`,
+      );
+    }
+  }
+}
+
 function graphBucketForFile(relativePath: string): keyof TeamPackageGraph | null {
   if (relativePath.endsWith("/AGENTS.md") || relativePath === "AGENTS.md") return "agents";
   if (relativePath.endsWith("/PROJECT.md") || relativePath === "PROJECT.md") return "projects";
-  if (relativePath.endsWith("/TASK.md") || relativePath === "TASK.md") return "tasks";
+  if (relativePath.endsWith("/ISSUE.md") || relativePath === "ISSUE.md") return "issues";
   if (relativePath.endsWith("/SKILL.md") || relativePath === "SKILL.md") return "skills";
   return null;
 }
@@ -516,20 +546,25 @@ function validateLocalReferences(
   }
 
   for (const project of graph.projects) {
-    const owner = asString(project.frontmatter.owner) ?? asString(project.frontmatter.leadAgent);
+    const owner = asString(project.frontmatter.owner);
     if (owner && !agentSlugs.includes(owner)) {
       errors.push(`${project.relativePath} owner references unknown agent slug "${owner}".`);
     }
   }
 
-  for (const task of graph.tasks) {
-    const assignee = asString(task.frontmatter.assignee);
-    if (assignee && !agentSlugs.includes(assignee)) {
-      errors.push(`${task.relativePath} assignee references unknown agent slug "${assignee}".`);
+  for (const issue of graph.issues) {
+    if (Object.hasOwn(issue.frontmatter, "assignee")) {
+      errors.push(`${issue.relativePath} uses retired frontmatter field "assignee"; use "owner".`);
     }
-    const project = asString(task.frontmatter.project);
+    const owner = asString(issue.frontmatter.owner);
+    if (!owner) {
+      errors.push(`${issue.relativePath} frontmatter must include owner.`);
+    } else if (!agentSlugs.includes(owner)) {
+      errors.push(`${issue.relativePath} owner references unknown agent slug "${owner}".`);
+    }
+    const project = asString(issue.frontmatter.project);
     if (project && !projectSlugs.includes(project)) {
-      errors.push(`${task.relativePath} project references unknown project slug "${project}".`);
+      errors.push(`${issue.relativePath} project references unknown project slug "${project}".`);
     }
   }
 
@@ -555,14 +590,6 @@ function collectRequiredSkills(
       return;
     }
     existing.agentSlugs = Array.from(new Set([...existing.agentSlugs, ...requirement.agentSlugs])).sort();
-  }
-
-  for (const agent of graph.agents) {
-    const agentSlug = readSlug(agent, "agent", errors);
-    const skills = readStringArrayField(agent.frontmatter.skills, "skills", agent.relativePath, errors);
-    for (const skillRef of skills) {
-      upsert(resolveSkillRequirement(skillRef, [agentSlug], catalogSkills, localSkillSlugs, errors, agent.relativePath));
-    }
   }
 
   for (const declared of readRequiredSkillEntries(teamFrontmatter, errors)) {
@@ -696,29 +723,27 @@ function readRequiredSkillEntries(frontmatter: Record<string, unknown>, errors: 
 function collectEnvInputs(graph: TeamPackageGraph): CatalogTeamEnvInputSummary[] {
   const out: CatalogTeamEnvInputSummary[] = [];
 
-  for (const agent of graph.agents) {
-    const agentSlug = asString(agent.frontmatter.slug) ?? slugFromEntityPath(agent.relativePath);
-    out.push(...readEnvInputs(agent.frontmatter, agentSlug, null));
-  }
-
   for (const project of graph.projects) {
     const projectSlug = asString(project.frontmatter.slug) ?? slugFromEntityPath(project.relativePath);
-    out.push(...readEnvInputs(project.frontmatter, null, projectSlug));
+    out.push(...readProjectEnvInputs(project.frontmatter, projectSlug));
   }
 
   const seen = new Set<string>();
   return out.filter((input) => {
-    const key = `${input.agentSlug ?? ""}:${input.projectSlug ?? ""}:${input.key}`;
+    const key = `${input.projectSlug ?? ""}:${input.key}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).sort((a, b) => `${a.agentSlug ?? ""}:${a.projectSlug ?? ""}:${a.key}`.localeCompare(`${b.agentSlug ?? ""}:${b.projectSlug ?? ""}:${b.key}`));
+  }).sort((a, b) =>
+    `${a.projectSlug ?? ""}:${a.key}`.localeCompare(
+      `${b.projectSlug ?? ""}:${b.key}`,
+    ),
+  );
 }
 
-function readEnvInputs(
+function readProjectEnvInputs(
   frontmatter: Record<string, unknown>,
-  agentSlug: string | null,
-  projectSlug: string | null,
+  projectSlug: string,
 ): CatalogTeamEnvInputSummary[] {
   const inputs = isPlainRecord(frontmatter.inputs) ? frontmatter.inputs : null;
   const env = inputs && isPlainRecord(inputs.env) ? inputs.env : null;
@@ -728,7 +753,6 @@ function readEnvInputs(
     if (!isPlainRecord(value)) return [];
     return [{
       key,
-      agentSlug,
       projectSlug,
       kind: value.kind === "plain" ? "plain" : "secret",
       requirement: value.requirement === "required" ? "required" : "optional",
@@ -831,7 +855,7 @@ function classifyCatalogFile(relativePath: string): CatalogTeamFileKind {
   if (relativePath === TEAM_ENTRYPOINT) return "team";
   if (relativePath.endsWith("/AGENTS.md") || relativePath === "AGENTS.md") return "agent";
   if (relativePath.endsWith("/PROJECT.md") || relativePath === "PROJECT.md") return "project";
-  if (relativePath.endsWith("/TASK.md") || relativePath === "TASK.md") return "task";
+  if (relativePath.endsWith("/ISSUE.md") || relativePath === "ISSUE.md") return "issue";
   if (relativePath.endsWith("/SKILL.md") || relativePath === "SKILL.md") return "skill";
   if (relativePath === ".paperclip.yaml") return "extension";
   if (relativePath === "README.md") return "readme";

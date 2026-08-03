@@ -12,7 +12,7 @@ import {
 } from "@paperclipai/shared";
 import { HttpError, notFound, unprocessable } from "../errors.js";
 import { workspaceFileResourceService } from "../services/index.js";
-import { assertBoard, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { assertBoard, hasCompanyAccess } from "./authz.js";
 import { logActivity } from "../services/activity-log.js";
 
 export type WorkspaceFileResourceService = {
@@ -276,7 +276,7 @@ export function fileResourceRoutes(db: Db, opts: {
 
   async function logDeniedAttempt(input: {
     companyId: string;
-    actor: ReturnType<typeof getActorInfo>;
+    userId: string;
     issueId: string;
     displayPath: string;
     projectId?: string | null;
@@ -286,13 +286,11 @@ export function fileResourceRoutes(db: Db, opts: {
   }) {
     await logActivity(db, {
       companyId: input.companyId,
-      actorType: input.actor.actorType,
-      actorId: input.actor.actorId,
+      actorType: "user",
+      actorId: input.userId,
       action: input.action ?? "issue.file_resource_content_denied",
       entityType: "issue",
       entityId: input.issueId,
-      agentId: input.actor.agentId,
-      runId: input.actor.runId,
       details: activityDetails({
         outcome: "denied",
         displayPath: input.displayPath,
@@ -305,7 +303,7 @@ export function fileResourceRoutes(db: Db, opts: {
 
   async function logListDeniedAttempt(input: {
     companyId: string;
-    actor: ReturnType<typeof getActorInfo>;
+    userId: string;
     issueId: string;
     query: { workspace: "auto" | "execution" | "project"; mode: "all" | "recent" | "changed" };
     target?: { projectId: string | null; workspaceId: string | null };
@@ -313,13 +311,11 @@ export function fileResourceRoutes(db: Db, opts: {
   }) {
     await logActivity(db, {
       companyId: input.companyId,
-      actorType: input.actor.actorType,
-      actorId: input.actor.actorId,
+      actorType: "user",
+      actorId: input.userId,
       action: "issue.file_resource_list_denied",
       entityType: "issue",
       entityId: input.issueId,
-      agentId: input.actor.agentId,
-      runId: input.actor.runId,
       details: listActivityDetails({
         outcome: "denied",
         workspaceSelector: input.query.workspace,
@@ -334,23 +330,8 @@ export function fileResourceRoutes(db: Db, opts: {
   router.get("/issues/:issueId/file-resources/list", async (req, res) => {
     const auditQuery = safeListAuditQuery(req.query);
     const auditTarget = safeAuditTarget(req.query);
-    try {
-      assertBoard(req);
-    } catch (error) {
-      if (req.actor.type === "agent" && req.actor.companyId) {
-        await logListDeniedAttempt({
-          companyId: req.actor.companyId,
-          actor: getActorInfo(req),
-          issueId: req.params.issueId,
-          query: auditQuery,
-          target: auditTarget,
-          error,
-        });
-      }
-      throw error;
-    }
+    assertBoard(req);
     const issue = await svc.getIssue(req.params.issueId);
-    const actor = getActorInfo(req);
     try {
       if (!hasCompanyAccess(req, issue.companyId)) {
         // Same 404 as a missing issue so cross-tenant probes can't tell them apart.
@@ -359,7 +340,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logListDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         query: auditQuery,
         target: auditTarget,
@@ -374,7 +355,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logListDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         query: auditQuery,
         target: auditTarget,
@@ -385,11 +366,11 @@ export function fileResourceRoutes(db: Db, opts: {
 
     let release: (() => void) | null = null;
     try {
-      release = listLimiter.acquire(limiterKey(issue.companyId, actor.actorId, req.params.issueId));
+      release = listLimiter.acquire(limiterKey(issue.companyId, req.actor.userId, req.params.issueId));
     } catch (error) {
       await logListDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         query,
         target: { projectId: query.projectId, workspaceId: query.workspaceId },
@@ -402,14 +383,11 @@ export function fileResourceRoutes(db: Db, opts: {
       const result = await svc.list(req.params.issueId, query, { issue });
       await logActivity(db, {
         companyId: issue.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "issue.file_resource_list",
         entityType: "issue",
         entityId: req.params.issueId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
         details: listActivityDetails({
           outcome: result.state === "available" ? "success" : "unavailable",
           workspaceSelector: result.query.workspace,
@@ -428,7 +406,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logListDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         query,
         target: { projectId: query.projectId, workspaceId: query.workspaceId },
@@ -442,25 +420,8 @@ export function fileResourceRoutes(db: Db, opts: {
 
   router.get("/issues/:issueId/file-resources/resolve", async (req, res) => {
     const auditTarget = safeAuditTarget(req.query);
-    try {
-      assertBoard(req);
-    } catch (error) {
-      if (req.actor.type === "agent" && req.actor.companyId) {
-        await logDeniedAttempt({
-          companyId: req.actor.companyId,
-          actor: getActorInfo(req),
-          issueId: req.params.issueId,
-          displayPath: safeAuditDisplayPath(req.query),
-          projectId: auditTarget.projectId,
-          workspaceId: auditTarget.workspaceId,
-          error,
-          action: "issue.file_resource_resolve_denied",
-        });
-      }
-      throw error;
-    }
+    assertBoard(req);
     const issue = await svc.getIssue(req.params.issueId);
-    const actor = getActorInfo(req);
     try {
       if (!hasCompanyAccess(req, issue.companyId)) {
         // Same 404 as a missing issue so cross-tenant probes can't tell them apart.
@@ -469,7 +430,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: safeAuditDisplayPath(req.query),
         projectId: auditTarget.projectId,
@@ -485,7 +446,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: safeAuditDisplayPath(req.query),
         projectId: auditTarget.projectId,
@@ -497,11 +458,11 @@ export function fileResourceRoutes(db: Db, opts: {
     }
     let release: (() => void) | null = null;
     try {
-      release = limiter.acquire(limiterKey(issue.companyId, actor.actorId, req.params.issueId));
+      release = limiter.acquire(limiterKey(issue.companyId, req.actor.userId, req.params.issueId));
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: query.path,
         projectId: query.projectId,
@@ -515,14 +476,11 @@ export function fileResourceRoutes(db: Db, opts: {
       const result = await svc.resolve(req.params.issueId, query, { issue });
       await logActivity(db, {
         companyId: issue.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "issue.file_resource_resolve",
         entityType: "issue",
         entityId: req.params.issueId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
         details: activityDetails({
           outcome: "success",
           workspaceKind: result.workspaceKind,
@@ -539,7 +497,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: query.path,
         projectId: query.projectId,
@@ -555,24 +513,8 @@ export function fileResourceRoutes(db: Db, opts: {
 
   router.get("/issues/:issueId/file-resources/content", async (req, res) => {
     const auditTarget = safeAuditTarget(req.query);
-    try {
-      assertBoard(req);
-    } catch (error) {
-      if (req.actor.type === "agent" && req.actor.companyId) {
-        await logDeniedAttempt({
-          companyId: req.actor.companyId,
-          actor: getActorInfo(req),
-          issueId: req.params.issueId,
-          displayPath: safeAuditDisplayPath(req.query),
-          projectId: auditTarget.projectId,
-          workspaceId: auditTarget.workspaceId,
-          error,
-        });
-      }
-      throw error;
-    }
+    assertBoard(req);
     const issue = await svc.getIssue(req.params.issueId);
-    const actor = getActorInfo(req);
     try {
       if (!hasCompanyAccess(req, issue.companyId)) {
         // Same 404 as a missing issue so cross-tenant probes can't tell them apart.
@@ -581,7 +523,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: safeAuditDisplayPath(req.query),
         projectId: auditTarget.projectId,
@@ -596,7 +538,7 @@ export function fileResourceRoutes(db: Db, opts: {
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: safeAuditDisplayPath(req.query),
         projectId: auditTarget.projectId,
@@ -607,11 +549,11 @@ export function fileResourceRoutes(db: Db, opts: {
     }
     let release: (() => void) | null = null;
     try {
-      release = limiter.acquire(limiterKey(issue.companyId, actor.actorId, req.params.issueId));
+      release = limiter.acquire(limiterKey(issue.companyId, req.actor.userId, req.params.issueId));
     } catch (error) {
       await logDeniedAttempt({
         companyId: issue.companyId,
-        actor,
+        userId: req.actor.userId,
         issueId: req.params.issueId,
         displayPath: query.path,
         projectId: query.projectId,
@@ -628,7 +570,7 @@ export function fileResourceRoutes(db: Db, opts: {
         } catch (error) {
           await logDeniedAttempt({
             companyId: issue.companyId,
-            actor,
+            userId: req.actor.userId,
             issueId: req.params.issueId,
             displayPath: query.path,
             projectId: query.projectId,
@@ -641,14 +583,11 @@ export function fileResourceRoutes(db: Db, opts: {
 
         await logActivity(db, {
           companyId: issue.companyId,
-          actorType: actor.actorType,
-          actorId: actor.actorId,
+          actorType: "user",
+          actorId: req.actor.userId,
           action: "issue.file_resource_download",
           entityType: "issue",
           entityId: req.params.issueId,
-          agentId: actor.agentId,
-          runId: actor.runId,
-          agentApiKeyId: actor.agentApiKeyId,
           details: activityDetails({
             outcome: "success",
             workspaceKind: result.resource.workspaceKind,
@@ -678,7 +617,7 @@ export function fileResourceRoutes(db: Db, opts: {
       } catch (error) {
         await logDeniedAttempt({
           companyId: issue.companyId,
-          actor,
+          userId: req.actor.userId,
           issueId: req.params.issueId,
           displayPath: query.path,
           projectId: query.projectId,
@@ -691,14 +630,11 @@ export function fileResourceRoutes(db: Db, opts: {
       if (!result) throw unprocessable("Workspace file cannot be previewed");
       await logActivity(db, {
         companyId: issue.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "issue.file_resource_content_read",
         entityType: "issue",
         entityId: req.params.issueId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
         details: activityDetails({
           outcome: "success",
           workspaceKind: result.resource.workspaceKind,

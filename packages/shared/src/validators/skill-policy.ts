@@ -80,7 +80,6 @@ export const skillPolicySubjectSchema = z.discriminatedUnion("type", [
     agentIds: z.array(z.string().uuid()).min(1).max(500)
       .refine((values) => new Set(values).size === values.length, "Agent IDs must be unique"),
   }).strict(),
-  z.object({ type: z.literal("roles"), roles: nonEmptyUniqueStrings }).strict(),
 ]);
 
 export const skillPolicyResourceSelectorSchema = z.object({
@@ -144,8 +143,7 @@ export type SkillPolicyDecisionReason =
   | "platform_invariant"
   | "no_policy_default"
   | "explicit_rule"
-  | "policy_default"
-  | "legacy_compatibility";
+  | "policy_default";
 export type SkillPolicyDecision = {
   allowed: boolean;
   action: SkillPolicyAction;

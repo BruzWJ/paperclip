@@ -6,13 +6,13 @@ import type {
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
   CompanyPortabilityAdapterOverride,
+  CompanySkillChannel,
 } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
 import { authApi } from "../api/auth";
 import { companiesApi } from "../api/companies";
-import { agentsApi } from "../api/agents";
 import { sidebarPreferencesApi } from "../api/sidebarPreferences";
 import { queryKeys } from "../lib/queryKeys";
 import { getAgentOrderStorageKey, writeAgentOrder } from "../lib/agent-order";
@@ -30,10 +30,10 @@ import {
   Package,
   Upload,
 } from "lucide-react";
-import { Field, adapterLabels } from "../components/agent-config-primitives";
-import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { Field } from "../components/agent-config-primitives";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
+import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import {
   type FileTreeNode,
@@ -341,7 +341,7 @@ function deriveSourcePrefix(
   return null;
 }
 
-/** Generate a prefix-based rename: e.g. "gstack" + "CEO" → "gstack-CEO" */
+/** Generate a prefix-based rename: e.g. "gstack" + "Lead" → "gstack-Lead" */
 function prefixedName(prefix: string | null, originalName: string): string {
   if (!prefix) return originalName;
   return `${prefix}-${originalName}`;
@@ -512,38 +512,42 @@ function ConflictResolutionList({
   );
 }
 
-// ── Adapter type options for import ───────────────────────────────────
-
-const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapters().map((adapter) => ({
-  value: adapter.type,
-  label: adapterLabels[adapter.type] ?? getAdapterLabel(adapter.type),
-}));
-
 // ── Adapter picker for imported agents ───────────────────────────────
 
 interface AdapterPickerItem {
   slug: string;
   name: string;
-  adapterType: string;
 }
 
 function AdapterPickerList({
   agents,
   adapterOverrides,
+  skillChannels,
   expandedSlugs,
   configValues,
   onChangeAdapter,
+  onChangeSkillChannel,
   onToggleExpand,
   onChangeConfig,
 }: {
   agents: AdapterPickerItem[];
   adapterOverrides: Record<string, string>;
+  skillChannels: Record<string, CompanySkillChannel | undefined>;
   expandedSlugs: Set<string>;
   configValues: Record<string, CreateConfigValues>;
   onChangeAdapter: (slug: string, adapterType: string) => void;
+  onChangeSkillChannel: (slug: string, channel: CompanySkillChannel) => void;
   onToggleExpand: (slug: string) => void;
   onChangeConfig: (slug: string, patch: Partial<CreateConfigValues>) => void;
 }) {
+  const admittedAdapters = useAdapterCatalogSync();
+  const adapterOptions = useMemo(
+    () => listUIAdapters().map((adapter) => ({
+      value: adapter.type,
+      label: adapter.label,
+    })),
+    [admittedAdapters],
+  );
   if (agents.length === 0) return null;
 
   return (
@@ -557,10 +561,10 @@ function AdapterPickerList({
         </div>
         <div className="divide-y divide-border">
           {agents.map((agent) => {
-            const selectedType = adapterOverrides[agent.slug] ?? agent.adapterType;
+            const selectedType = adapterOverrides[agent.slug] ?? "";
+            const skillChannel = skillChannels[agent.slug] ?? "";
             const isExpanded = expandedSlugs.has(agent.slug);
             const vals = configValues[agent.slug] ?? { ...defaultCreateValues, adapterType: selectedType };
-
             return (
               <div key={agent.slug}>
                 <div className="flex items-center gap-3 px-4 py-2.5 text-sm">
@@ -579,11 +583,35 @@ function AdapterPickerList({
                     value={selectedType}
                     onChange={(e) => onChangeAdapter(agent.slug, e.target.value)}
                   >
-                    {IMPORT_ADAPTER_OPTIONS.map((opt) => (
+                    <option value="" disabled>
+                      Select target adapter
+                    </option>
+                    {adapterOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>
                         {opt.label}
                       </option>
                     ))}
+                  </select>
+                  <select
+                    className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs outline-none focus:border-foreground"
+                    value={skillChannel}
+                    onChange={(event) =>
+                      onChangeSkillChannel(
+                        agent.slug,
+                        event.target.value as CompanySkillChannel,
+                      )
+                    }
+                    disabled={!selectedType}
+                  >
+                    <option value="" disabled>
+                      Select skill channel
+                    </option>
+                    <option value="isolated_skills_home">
+                      Isolated skills home
+                    </option>
+                    <option value="operator_native">
+                      Operator-managed native
+                    </option>
                   </select>
                   <button
                     type="button"
@@ -594,22 +622,22 @@ function AdapterPickerList({
                         : "border-border text-muted-foreground hover:bg-accent/50",
                     )}
                     onClick={() => onToggleExpand(agent.slug)}
+                    disabled={!selectedType}
                   >
                     <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />
                     configure adapter
                   </button>
                 </div>
-                {isExpanded && (
+                {isExpanded && selectedType && (
                   <div className="border-t border-border bg-accent/10 px-4 py-3 space-y-3">
                     <AgentConfigForm
                       mode="create"
                       values={vals}
                       onChange={(patch) => onChangeConfig(agent.slug, patch)}
                       showAdapterTypeField={false}
-                      showAdapterTestEnvironmentButton={false}
-                      showCreateRunPolicySection={false}
-                      hideInstructionsFile
                       sectionLayout="cards"
+                      applyAdapterSchemaDefaults={false}
+                      requireExplicitExecutionEnvironment
                     />
                   </div>
                 )}
@@ -689,20 +717,11 @@ export function CompanyImport() {
 
   // Adapter override state
   const [adapterOverrides, setAdapterOverrides] = useState<Record<string, string>>({});
+  const [skillChannels, setSkillChannels] = useState<
+    Record<string, CompanySkillChannel | undefined>
+  >({});
   const [adapterExpandedSlugs, setAdapterExpandedSlugs] = useState<Set<string>>(new Set());
   const [adapterConfigValues, setAdapterConfigValues] = useState<Record<string, CreateConfigValues>>({});
-
-  // Fetch current company agents to find CEO adapter type
-  const { data: companyAgents } = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "none"],
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
-  });
-  const ceoAdapterType = useMemo(() => {
-    if (!companyAgents) return "claude_local";
-    const ceo = companyAgents.find((a) => a.role === "ceo");
-    return ceo?.adapterType ?? "claude_local";
-  }, [companyAgents]);
 
   const localZipHelpText =
     "Upload a .zip exported directly from Paperclip. Re-zipped archives created by Finder, Explorer, or other zip tools may not import correctly.";
@@ -737,6 +756,8 @@ export function CompanyImport() {
             ? { mode: "new_company", newCompanyName: newCompanyName || null }
             : { mode: "existing_company", companyId: selectedCompanyId! },
         collisionStrategy,
+        selectedFiles: buildSelectedFiles(),
+        adapterOverrides: buildFinalAdapterOverrides(),
       });
     },
     onSuccess: (result) => {
@@ -762,14 +783,14 @@ export function CompanyImport() {
       setSkippedSlugs(new Set());
       setConfirmedSlugs(new Set());
 
-      // Initialize adapter overrides — default all agents to the CEO's adapter type
-      const defaultAdapters: Record<string, string> = {};
-      for (const agent of result.manifest.agents) {
-        defaultAdapters[agent.slug] = ceoAdapterType;
+      if (!importPreview) {
+        // Source package adapter bytes are descriptive only. Target runtime
+        // authority starts empty and must be selected explicitly.
+        setAdapterOverrides({});
+        setSkillChannels({});
+        setAdapterExpandedSlugs(new Set());
+        setAdapterConfigValues({});
       }
-      setAdapterOverrides(defaultAdapters);
-      setAdapterExpandedSlugs(new Set());
-      setAdapterConfigValues({});
 
       // Check all files by default, then uncheck COMPANY.md for existing company
       const allFiles = new Set(Object.keys(result.files));
@@ -921,7 +942,7 @@ export function CompanyImport() {
       if (isSkipped) continue;
       const renamedTo = nameOverrides[c.slug] ?? c.plannedName;
       if (renamedTo === c.originalName) continue;
-      // Map the parent directory (e.g. agents/ceo → gstack-ceo) for the file tree
+      // Map the parent directory (e.g. agents/lead → gstack-lead) for the file tree
       const parentDir = c.filePath.split("/").slice(0, -1).join("/");
       if (parentDir) map.set(parentDir, renamedTo);
       // Map the file path too — used by the preview header, not shown in tree
@@ -1030,6 +1051,18 @@ export function CompanyImport() {
       delete next[slug];
       return next;
     });
+    setSkillChannels((prev) => {
+      const next = { ...prev };
+      delete next[slug];
+      return next;
+    });
+  }
+
+  function handleSkillChannelChange(
+    slug: string,
+    channel: CompanySkillChannel,
+  ) {
+    setSkillChannels((prev) => ({ ...prev, [slug]: channel }));
   }
 
   function handleAdapterToggleExpand(slug: string) {
@@ -1044,7 +1077,13 @@ export function CompanyImport() {
   function handleAdapterConfigChange(slug: string, patch: Partial<CreateConfigValues>) {
     setAdapterConfigValues((prev) => ({
       ...prev,
-      [slug]: { ...(prev[slug] ?? { ...defaultCreateValues, adapterType: adapterOverrides[slug] ?? "claude_local" }), ...patch },
+      [slug]: {
+        ...(prev[slug] ?? {
+          ...defaultCreateValues,
+          adapterType: adapterOverrides[slug] ?? "",
+        }),
+        ...patch,
+      },
     }));
   }
 
@@ -1054,7 +1093,6 @@ export function CompanyImport() {
     return importPreview.manifest.agents.map((a) => ({
       slug: a.slug,
       name: a.name,
-      adapterType: a.adapterType,
     }));
   }, [importPreview]);
 
@@ -1063,13 +1101,25 @@ export function CompanyImport() {
     if (adapterAgents.length === 0) return undefined;
     const overrides: Record<string, CompanyPortabilityAdapterOverride> = {};
     for (const agent of adapterAgents) {
-      const selectedType = adapterOverrides[agent.slug] ?? agent.adapterType;
+      const selectedType = adapterOverrides[agent.slug];
+      if (!selectedType) continue;
       const configVals = adapterConfigValues[agent.slug];
-      const override: CompanyPortabilityAdapterOverride = { adapterType: selectedType };
-      if (configVals) {
-        const uiAdapter = getUIAdapter(selectedType);
-        override.adapterConfig = uiAdapter.buildAdapterConfig(configVals);
+      const skillChannel = skillChannels[agent.slug];
+      if (!skillChannel) {
+        throw new Error(
+          `Select an exact skill channel for imported agent ${agent.slug}.`,
+        );
       }
+      const uiAdapter = getUIAdapter(selectedType);
+      const override: CompanyPortabilityAdapterOverride = {
+        adapterType: selectedType,
+        adapterConfig: configVals
+          ? uiAdapter.buildAdapterConfig(configVals)
+          : {},
+        defaultEnvironmentId:
+          configVals?.defaultEnvironmentId ?? "",
+        skillChannel,
+      };
       overrides[agent.slug] = override;
     }
     return Object.keys(overrides).length > 0 ? overrides : undefined;
@@ -1280,9 +1330,11 @@ export function CompanyImport() {
           <AdapterPickerList
             agents={adapterAgents}
             adapterOverrides={adapterOverrides}
+            skillChannels={skillChannels}
             expandedSlugs={adapterExpandedSlugs}
             configValues={adapterConfigValues}
             onChangeAdapter={handleAdapterChange}
+            onChangeSkillChannel={handleSkillChannelChange}
             onToggleExpand={handleAdapterToggleExpand}
             onChangeConfig={handleAdapterConfigChange}
           />

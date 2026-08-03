@@ -406,8 +406,8 @@ export function CommandPalette() {
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate">{issue.title}</span>
-                  {issue.assigneeAgentId && (() => {
-                    const name = agentName(issue.assigneeAgentId);
+                  {issue.ownerAgentId && (() => {
+                    const name = agentName(issue.ownerAgentId);
                     return name ? <Identity name={name} size="sm" className="ml-2 hidden sm:inline-flex" /> : null;
                   })()}
                 </CommandItem>
@@ -424,7 +424,9 @@ export function CommandPalette() {
                 <CommandItem key={agent.id} onSelect={() => go(agentUrl(agent))}>
                   <Bot className="mr-2 h-4 w-4" />
                   {agent.name}
-                  <span className="text-xs text-muted-foreground ml-2">{agent.role}</span>
+                  {agent.title ? (
+                    <span className="text-xs text-muted-foreground ml-2">{agent.title}</span>
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>

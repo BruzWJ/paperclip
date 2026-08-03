@@ -258,6 +258,10 @@ export async function buildLocalProcessSandboxSpawnTarget(input: {
   args: string[];
   cwd: string;
   options: LocalProcessSandboxOptions;
+  /** Extra process executables whose complete read closure must be visible. */
+  requiredExecutables?: readonly string[];
+  /** Native identity roots that confinement must already expose explicitly. */
+  requiredIdentityEnvironment?: Readonly<Record<string, string>>;
 }): Promise<LocalProcessSandboxSpawnTarget> {
   if (process.platform !== "linux") {
     throw new Error("Local process filesystem and network scopes are currently supported only on Linux.");
@@ -302,12 +306,45 @@ export async function buildLocalProcessSandboxSpawnTarget(input: {
     };
     for (const systemPath of SYSTEM_READ_PATHS) await mount(systemPath, "ro");
     for (const executablePath of await executableReadPaths(input.executable)) await mount(executablePath, "ro");
+    for (const requiredExecutable of input.requiredExecutables ?? []) {
+      const normalized = normalizeAbsolutePath(
+        requiredExecutable,
+        "Sandbox required executable",
+      );
+      for (const executablePath of await executableReadPaths(normalized)) {
+        await mount(executablePath, "ro");
+      }
+    }
     if (networkScope === "allowlist") {
       for (const nodePath of await executableReadPaths(process.execPath)) await mount(nodePath, "ro");
     }
     for (const managedPath of input.options.managedPaths ?? []) await mount(managedPath.path, managedPath.access);
     for (const extraPath of input.options.extraPaths ?? []) await mount(extraPath.path, extraPath.access);
     await mount(workspaceDir, "rw");
+
+    const explicitlyVisibleRoots = [
+      workspaceDir,
+      ...(input.options.managedPaths ?? []).map((entry) => entry.path),
+      ...(input.options.extraPaths ?? []).map((entry) => entry.path),
+      ...SYSTEM_READ_PATHS,
+    ].map((entry) => path.resolve(entry));
+    for (const [key, identityRoot] of Object.entries(
+      input.requiredIdentityEnvironment ?? {},
+    )) {
+      const normalizedIdentityRoot = normalizeAbsolutePath(
+        identityRoot,
+        `Target-native identity environment ${key}`,
+      );
+      const visible = explicitlyVisibleRoots.some((visibleRoot) => {
+        const relative = path.relative(visibleRoot, normalizedIdentityRoot);
+        return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+      });
+      if (!visible) {
+        throw new Error(
+          `Local process confinement does not expose target-native identity root ${key}`,
+        );
+      }
+    }
 
     if (networkScope === "allowlist") {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-sandbox-"));

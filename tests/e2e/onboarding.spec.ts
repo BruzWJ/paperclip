@@ -1,101 +1,203 @@
-import { test, expect } from "@playwright/test";
-
-/**
- * E2E: Onboarding wizard flow (NUX Phase 2 expanded wizard).
- *
- * The wizard now opens on a front door (path picker) and the "Create a new
- * company" path runs:
- *   Step 0  — Front door (Create a new company / Level up existing)
- *   Step 1a — Name your company
- *   Step 1b — Define your mission (direct or guided)
- *   Step 2  — Hire your team lead (adapter picker)
- *   Step 3+ — Launch celebration → CEO chat → hiring plan → orientation
- *
- * This test covers the deterministic, LLM-free core: it drives the front door
- * through company naming + mission definition (which creates the company and a
- * company-level goal) and verifies the wizard advances to the team-lead step.
- *
- * The tail (CEO chat at step 4, hiring-plan generation at step 5, final
- * landing) depends on a live LLM and is verified separately during manual /
- * LLM-backed QA — see PAP-50. Surface-level rendering of every step is
- * snapshotted by nux-phase4-screenshots.spec.ts.
- */
+import { test, expect, type APIRequestContext, type Page } from "./fixtures";
 
 const COMPANY_NAME = `E2E-Test-${Date.now()}`;
 const MISSION = "Build affordable home robots that handle household chores.";
+const AGENT_NAME = "Robotics coordinator";
+const AGENT_TITLE = "Automation lead";
+const CODEX_MODEL = "gpt-5.6";
+const ISSUE_TITLE = "Plan the household workflow";
+const ISSUE_REQUEST =
+  "  Map the first household workflow the robot should automate.\nKeep the operator checkpoints explicit.  ";
+
+type CreatedCompany = {
+  id: string;
+  name: string;
+};
+
+type CreatedAgent = {
+  id: string;
+  name: string;
+  title: string | null;
+  reportsTo: string | null;
+  adapterType: string | null;
+  adapterConfig: Record<string, unknown> | null;
+  defaultEnvironmentId: string | null;
+};
+
+async function enableEnvironmentSelection(request: APIRequestContext) {
+  const response = await request.patch(
+    "/api/instance/settings/experimental",
+    { data: { enableEnvironments: true } },
+  );
+  expect(response.ok()).toBe(true);
+}
+
+async function openCreateCompanyPath(page: Page) {
+  await page.goto("/onboarding");
+  const startButton = page.getByRole("button", {
+    name: /Start Onboarding|New Company|Add Agent/,
+  });
+  if (await startButton.count()) {
+    await startButton.first().click();
+  }
+  const createCard = page.getByRole("button", {
+    name: /Build a new company/,
+  });
+  if (await createCard.count()) {
+    await createCard.first().click();
+  }
+}
+
+async function configureCodexAgent(page: Page) {
+  await page.getByRole("button", { name: /Codex/ }).first().click();
+  const modelField = page.locator("label").filter({ hasText: /^Model$/ }).locator("../..");
+  await expect(modelField).toBeVisible({ timeout: 15_000 });
+  await modelField.getByRole("button").last().click();
+  await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
+
+  const environmentSelect = page
+    .locator("select")
+    .filter({ hasText: "Local · local" });
+  await expect(environmentSelect).toBeVisible({ timeout: 15_000 });
+  await environmentSelect.selectOption({ label: "Local · local" });
+  return environmentSelect.inputValue();
+}
+
+async function listRuns(request: APIRequestContext, companyId: string, agentId: string) {
+  const response = await request.get(
+    `/api/companies/${companyId}/runs?agentId=${agentId}`,
+  );
+  expect(response.ok()).toBe(true);
+  const payload = (await response.json()) as {
+    items: Array<{ id: string; status: string }>;
+  };
+  return payload.items;
+}
 
 test.describe("Onboarding wizard", () => {
-  test("create-company path: name + mission creates company and goal", async ({
+  test("creates an explicitly configured ordinary agent, then its first issue", async ({
     page,
+    request,
   }) => {
     const pageErrors: string[] = [];
-    page.on("pageerror", (err) => pageErrors.push(err.message));
+    page.on("pageerror", (error) => pageErrors.push(error.message));
 
-    // New-NUX surfaces are flag-gated default-OFF (PAP-136/137/138): turn the
-    // experimental flag on for this throwaway instance before driving them.
-    const flagRes = await page.request.patch("/api/instance/settings/experimental", {
-      data: { enableConferenceRoomChat: true },
-    });
-    expect(flagRes.ok()).toBe(true);
+    await enableEnvironmentSelection(request);
+    await openCreateCompanyPath(page);
 
-    await page.goto("/onboarding");
-
-    // The wizard may open on a launcher card or directly on the capsule
-    // wizard; the front door (step 0) requires a click into the create path.
-    const startBtn = page.getByRole("button", {
-      name: /Start Onboarding|New Company|Add Agent/,
-    });
-    if (await startBtn.count()) {
-      await startBtn.first().click();
-    }
-    const createCard = page.getByRole("button", { name: /Build a new company/ });
-    if (await createCard.count()) {
-      await createCard.first().click();
-    }
-
-    // Step 1 — Name your company.
     await expect(
       page.getByRole("heading", { name: "Name your company" }),
     ).toBeVisible({ timeout: 15_000 });
     await page.getByPlaceholder("Acme Corp").fill(COMPANY_NAME);
     await page.getByRole("button", { name: /^Next/ }).click();
 
-    // Step 2 — Define your mission (direct entry is the default path).
     await expect(
       page.getByRole("heading", { name: "Define your mission" }),
     ).toBeVisible({ timeout: 10_000 });
     await page
       .getByPlaceholder("What is your team trying to achieve?")
       .fill(MISSION);
-
-    // "Confirm mission" creates the company + a company-level goal, then
-    // advances to the team-lead naming step of the capsule wizard.
     await page.getByRole("button", { name: /Confirm mission/ }).click();
-    await page.waitForSelector('input[placeholder="Chief of staff"]', {
+
+    await expect(page.getByPlaceholder("Agent name")).toBeVisible({
       timeout: 30_000,
     });
+    await page.getByPlaceholder("Agent name").fill(AGENT_NAME);
+    await page.getByPlaceholder("Optional title").fill(AGENT_TITLE);
+    await page
+      .getByPlaceholder(
+        "What work can another agent select this agent to handle?",
+      )
+      .fill("Plans and coordinates home-robotics automation work.");
 
-    // Verify the company + company-level goal were persisted.
-    const baseUrl = page.url().split("/").slice(0, 3).join("/");
-    const companiesRes = await page.request.get(`${baseUrl}/api/companies`);
-    expect(companiesRes.ok()).toBe(true);
-    const companies = await companiesRes.json();
-    const company = companies.find(
-      (c: { name: string }) => c.name === COMPANY_NAME,
+    const companiesResponse = await request.get("/api/companies");
+    expect(companiesResponse.ok()).toBe(true);
+    const company = ((await companiesResponse.json()) as CreatedCompany[]).find(
+      (candidate) => candidate.name === COMPANY_NAME,
     );
-    expect(company, `company ${COMPANY_NAME} should exist`).toBeTruthy();
+    expect(company).toBeTruthy();
 
-    const goalsRes = await page.request.get(
-      `${baseUrl}/api/companies/${company.id}/goals`,
+    const goalsResponse = await request.get(
+      `/api/companies/${company!.id}/goals`,
     );
-    expect(goalsRes.ok()).toBe(true);
-    const goals = await goalsRes.json();
-    const companyGoal = (Array.isArray(goals) ? goals : []).find(
-      (g: { level?: string }) => g.level === "company",
-    );
-    expect(companyGoal, "a company-level goal should be created").toBeTruthy();
+    expect(goalsResponse.ok()).toBe(true);
+    expect(
+      ((await goalsResponse.json()) as Array<{ level?: string }>).some(
+        (goal) => goal.level === "company",
+      ),
+    ).toBe(true);
 
-    // The expanded wizard must not crash the app (Rules-of-Hooks regression).
+    const agentsBeforeConfiguration = await request.get(
+      `/api/companies/${company!.id}/agents`,
+    );
+    expect(agentsBeforeConfiguration.ok()).toBe(true);
+    expect(await agentsBeforeConfiguration.json()).toEqual([]);
+
+    await page.getByRole("button", { name: /^Next/ }).click();
+    const selectedEnvironmentId = await configureCodexAgent(page);
+    const createAgentButton = page.getByRole("button", {
+      name: "Create agent",
+    });
+    await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
+    await createAgentButton.click();
+
+    await expect(
+      page.getByRole("heading", { name: "Review" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const agentsResponse = await request.get(
+      `/api/companies/${company!.id}/agents`,
+    );
+    expect(agentsResponse.ok()).toBe(true);
+    const agents = (await agentsResponse.json()) as CreatedAgent[];
+    expect(agents).toHaveLength(1);
+    const agent = agents[0]!;
+    expect(agent).toMatchObject({
+      name: AGENT_NAME,
+      title: AGENT_TITLE,
+      reportsTo: null,
+      adapterType: "codex",
+      defaultEnvironmentId: selectedEnvironmentId,
+    });
+    expect(agent.adapterConfig).toMatchObject({
+      model: CODEX_MODEL,
+    });
+
+    // Creating and configuring an agent alone cannot start provider work.
+    expect(await listRuns(request, company!.id, agent.id)).toEqual([]);
+
+    await page.getByPlaceholder("Issue title (optional)").fill(ISSUE_TITLE);
+    await page
+      .getByPlaceholder(/Describe .* first concrete assignment/)
+      .fill(ISSUE_REQUEST);
+    await page.getByRole("button", { name: "Get started" }).click();
+    await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
+
+    const issuesResponse = await request.get(
+      `/api/companies/${company!.id}/issues`,
+    );
+    expect(issuesResponse.ok()).toBe(true);
+    const issue = (
+      (await issuesResponse.json()) as Array<{
+        title: string | null;
+        request: string;
+        ownerAgentId: string | null;
+      }>
+    ).find((candidate) => candidate.title === ISSUE_TITLE);
+    expect(issue).toEqual(
+      expect.objectContaining({
+        title: ISSUE_TITLE,
+        request: ISSUE_REQUEST,
+        ownerAgentId: agent.id,
+      }),
+    );
+
+    await expect
+      .poll(
+        async () => (await listRuns(request, company!.id, agent.id)).length,
+        { timeout: 20_000 },
+      )
+      .toBeGreaterThan(0);
     expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
   });
 });

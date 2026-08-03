@@ -43,7 +43,7 @@ const CI_BUILD_SCRIPTS = [
   'scripts/check-docker-deps-stage.mjs',
   'scripts/check-release-package-bootstrap.mjs',
   'scripts/release-package-map.mjs',
-  'scripts/docker-onboard-smoke.sh',
+  'scripts/run-release-smoke.mjs',
 ];
 
 export function scanCITampering(files) {
@@ -120,8 +120,6 @@ export function scanTestPatterns(files) {
 }
 
 const SENSITIVE_PATHS = [
-  // Advisory 1: codex-local adapter (inherited ChatGPT/Gmail OAuth scopes)
-  'packages/adapters/codex-local/',
   // Advisory 2 & 11: OS command injection / privilege escalation via provisionCommand / cleanupCommand
   'server/src/services/workspace-realization.ts',
   'server/src/routes/execution-workspaces.ts',
@@ -132,14 +130,12 @@ const SENSITIVE_PATHS = [
   'server/src/routes/approvals.ts',
   // Advisory 5: Stored XSS via javascript: URLs in MarkdownBody (urlTransform)
   'ui/src/components/MarkdownBody.tsx',
-  // Advisory 7: Unauthenticated access to authenticated-mode endpoints
+  // Advisory 7: Unauthenticated access to protected endpoints
   'server/src/routes/authz.ts',
   // Advisory 8: Unauthenticated RCE via import authorization bypass
   'server/src/routes/companies.ts',
   // Advisory 9: Malicious skills able to exfiltrate / destroy user data
   'server/src/routes/company-skills.ts',
-  // Advisory 10: Arbitrary file read via agent-controlled instructionsFilePath
-  'server/src/services/agent-instructions.ts',
 ];
 
 export function scanSensitivePaths(files) {

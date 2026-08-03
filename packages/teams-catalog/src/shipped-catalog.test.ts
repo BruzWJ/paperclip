@@ -89,18 +89,47 @@ describe("shipped teams catalog", () => {
     expect(resolveCatalogTeamRef(sample.slug)).toMatchObject({ key: sample.key });
   });
 
-  it("declares a valid project for every shipped recurring task", () => {
+  it("ships identity-only agent documents without provider-authored bodies", () => {
+    const issues: string[] = [];
+    const allowedFields = new Set(["name", "slug", "title", "reportsTo", "capabilities"]);
+
+    for (const team of catalogTeams) {
+      for (const file of team.files.filter((entry) => entry.kind === "agent")) {
+        const absolutePath = path.join(PACKAGE_DIR, team.path, file.path);
+        const parsed = parseFrontmatterMarkdown(fs.readFileSync(absolutePath, "utf8"));
+        if (parsed.body.trim()) {
+          issues.push(`${team.key}/${file.path} contains a provider-visible body`);
+        }
+        for (const field of Object.keys(parsed.frontmatter)) {
+          if (!allowedFields.has(field)) {
+            issues.push(`${team.key}/${file.path} contains non-identity field ${field}`);
+          }
+        }
+      }
+    }
+
+    expect(issues).toEqual([]);
+  });
+
+  it("declares canonical owners and a valid project for every shipped recurring issue", () => {
     const issues: string[] = [];
 
     for (const team of catalogTeams) {
-      for (const file of team.files.filter((entry) => entry.kind === "task")) {
+      for (const file of team.files.filter((entry) => entry.kind === "issue")) {
         const absolutePath = path.join(PACKAGE_DIR, team.path, file.path);
         const parsed = parseFrontmatterMarkdown(fs.readFileSync(absolutePath, "utf8"));
         if (!asBoolean(parsed.frontmatter.recurring)) continue;
 
+        const owner = asString(parsed.frontmatter.owner);
+        if (!owner || !team.agentSlugs.includes(owner)) {
+          issues.push(`${team.key}/${file.path} owner must match a team agent`);
+        }
+        if ("assignee" in parsed.frontmatter) {
+          issues.push(`${team.key}/${file.path} must not use retired assignee terminology`);
+        }
         const project = asString(parsed.frontmatter.project);
         if (!project) {
-          issues.push(`${team.key}/${file.path} recurring task must declare a project`);
+          issues.push(`${team.key}/${file.path} recurring issue must declare a project`);
           continue;
         }
         if (!team.projectSlugs.includes(project)) {

@@ -22,7 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Activity, ArrowDown, History, MessageSquarePlus, X } from "lucide-react";
+import { Activity, ArrowDown, History, MessageSquarePlus } from "lucide-react";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { ChatComposer, type ChatComposerHandle } from "../components/ChatComposer";
 import {
@@ -31,13 +31,19 @@ import {
 } from "../components/AgentBubbleActionRow";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { cn, formatDateTime } from "../lib/utils";
-import type { FeedbackVoteValue } from "@paperclipai/shared";
+import type {
+  FeedbackVoteValue,
+  Issue,
+  IssueAttentionMask,
+} from "@paperclipai/shared";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
+import { flattenBoardIssueCommentGroupPages } from "../lib/optimistic-issue-comments";
 
 /**
- * Board Concierge Chat — a chat interface powered by the board-member skill.
- * Uses /board/chat/stream to invoke Claude with the board skill as system prompt.
- * The user manages their Paperclip company through natural conversation.
+ * Board Chat is a focused presentation of an ordinary user-created issue.
+ * Its special route creates the issue only. Follow-ups and closing use the
+ * canonical creator and owner forms; replies remain canonical comments.
  */
 /** Hit zone to the right of the 1px line (line sits on chat pane’s right edge). */
 const SPLIT_DIVIDER_PX = 12;
@@ -186,17 +192,14 @@ export function BoardChat() {
    *  draft with "" before we've had a chance to load it. */
   const loadedDraftCompanyRef = useRef<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  const [statusText, setStatusText] = useState("");
+  const [closing, setClosing] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [boardIssueId, setBoardIssueId] = useState<string | null>(null);
-  const [elapsedSec, setElapsedSec] = useState(0);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasRestoredScrollRef = useRef(false);
   const composerRef = useRef<ChatComposerHandle>(null);
-  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /** True when the user is scrolled away from the bottom AND new content
    *  has arrived they can't see. Drives the floating "jump to latest" chip. */
@@ -222,24 +225,27 @@ export function BoardChat() {
   const [welcomeRevealed, setWelcomeRevealed] = useState(false);
   const [chipsRevealed, setChipsRevealed] = useState(false);
 
-  // Reset state and clear cached comments when company changes. The
-  // composer draft is NOT wiped — it's loaded from per-company
-  // sessionStorage in the effect below so users don't lose typed content
-  // when switching between companies or navigating away and back.
-  const prevCompanyRef = useRef(selectedCompanyId);
+  // Restore only the issue explicitly opened in this browser tab. Board Chat
+  // never scans for or revives a standing concierge issue.
   useEffect(() => {
-    if (prevCompanyRef.current !== selectedCompanyId) {
-      if (boardIssueId) {
-        queryClient.removeQueries({ queryKey: queryKeys.issues.comments(boardIssueId) });
-      }
+    setSending(false);
+    setOptimisticMessage(null);
+    setErrorText("");
+    hasRestoredScrollRef.current = false;
+    if (!selectedCompanyId) {
       setBoardIssueId(null);
-      setStreamingText("");
-      setStatusText("");
-      setSending(false);
-      setOptimisticMessage(null);
-      prevCompanyRef.current = selectedCompanyId;
+      return;
     }
-  }, [selectedCompanyId, boardIssueId, queryClient]);
+    try {
+      setBoardIssueId(
+        sessionStorage.getItem(
+          `paperclip.boardChat.issue.${selectedCompanyId}`,
+        ),
+      );
+    } catch {
+      setBoardIssueId(null);
+    }
+  }, [selectedCompanyId]);
 
   // Load a saved composer draft (if any) whenever the active company
   // changes — runs on first mount too.
@@ -279,12 +285,47 @@ export function BoardChat() {
     enabled: !!selectedCompanyId,
   });
 
-  const ceoAgent = useMemo(
-    () => agents?.find((a) => a.role === "ceo" && a.status !== "terminated"),
-    [agents],
+  const issueOwnerCatalogQuery = useQuery({
+    queryKey: queryKeys.agents.issueOwnerCatalog(selectedCompanyId!),
+    queryFn: () => agentsApi.listInvokableIssueOwners(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+  const [attentionMask, setAttentionMask] =
+    useState<IssueAttentionMask | null>(null);
+  const selectableAgents = useMemo(
+    () => issueOwnerCatalogQuery.data ?? [],
+    [issueOwnerCatalogQuery.data],
+  );
+  const selectedAgent = useMemo(
+    () =>
+      selectableAgents.find((agent) => agent.id === selectedAgentId) ??
+      (boardIssueId
+        ? (agents ?? []).find((agent) => agent.id === selectedAgentId) ?? null
+        : null),
+    [agents, boardIssueId, selectableAgents, selectedAgentId],
   );
 
-  // Pull the company's top-level goal so the CEO's welcome can reference
+  useEffect(() => {
+    if (
+      boardIssueId ||
+      !selectedAgentId ||
+      !issueOwnerCatalogQuery.isSuccess
+    ) {
+      return;
+    }
+    if (!selectableAgents.some((agent) => agent.id === selectedAgentId)) {
+      setSelectedAgentId("");
+    }
+  }, [
+    boardIssueId,
+    issueOwnerCatalogQuery.isSuccess,
+    selectableAgents,
+    selectedAgentId,
+  ]);
+
+  // Pull the company's top-level goal so the selected agent's welcome can reference
   // the mission verbatim.
   const { data: goals } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
@@ -297,25 +338,24 @@ export function BoardChat() {
     return active?.title ?? null;
   }, [goals]);
 
-  // Find or detect the board operations issue
-  const { data: issues } = useQuery({
-    queryKey: queryKeys.issues.list(selectedCompanyId!),
-    queryFn: () => issuesApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+  const { data: boardIssue } = useQuery({
+    queryKey: queryKeys.issues.detail(boardIssueId ?? ""),
+    queryFn: () => issuesApi.get(boardIssueId!),
+    enabled: !!boardIssueId,
+    refetchInterval: boardIssueId ? 3000 : false,
   });
 
   useEffect(() => {
-    if (!issues) {
-      setBoardIssueId(null);
-      return;
+    if (boardIssue?.ownerAgentId) {
+      setSelectedAgentId(boardIssue.ownerAgentId);
     }
-    const boardIssue = issues.find(
-      (i) => i.title === "Board Operations" && i.status !== "done" && i.status !== "cancelled",
-    );
-    setBoardIssueId(boardIssue?.id ?? null);
-  }, [issues]);
+  }, [boardIssue?.ownerAgentId]);
 
-  // Fetch comments for the board issue
+  const boardIssueTerminal =
+    boardIssue?.lifecycleStatus === "done" || boardIssue?.lifecycleStatus === "cancelled";
+
+  // The issue request and every subsequent turn are projected into the same
+  // durable chronological thread; there is no provider draft stream.
   const { data: comments } = useQuery({
     queryKey: queryKeys.issues.comments(boardIssueId ?? ""),
     queryFn: () => issuesApi.listComments(boardIssueId!),
@@ -323,9 +363,16 @@ export function BoardChat() {
     refetchInterval: 3000,
   });
 
-  const sortedComments = (comments ?? [])
-    .slice()
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const sortedComments = useMemo(
+    () => flattenBoardIssueCommentGroupPages(
+      comments ? [comments] : undefined,
+      {
+        companyId: boardIssue?.companyId ?? selectedCompanyId ?? "",
+        issueId: boardIssueId ?? "",
+      },
+    ),
+    [boardIssue?.companyId, boardIssueId, comments, selectedCompanyId],
+  );
 
   // Agent lookup so each bubble can show its author's name + icon header.
   const agentMap = useMemo(
@@ -403,7 +450,7 @@ export function BoardChat() {
   // needed to render the welcome bubble. This guarantees the animation is
   // visible at the moment the user arrives, even if agent/goal queries
   // take a beat to resolve.
-  const canRenderWelcome = !!ceoAgent && !!selectedCompany;
+  const canRenderWelcome = !!selectedAgent && !!selectedCompany;
   useEffect(() => {
     if (!canRenderWelcome) return;
     if (welcomeRevealed) return;
@@ -426,21 +473,19 @@ export function BoardChat() {
   useEffect(() => {
     if (welcomeRevealed && chipsRevealed) return;
     if (!comments) return;
-    const userHasReplied = comments.some(
-      (c) => !c.authorAgentId && c.authorUserId !== "board-concierge",
-    );
+    const userHasReplied = sortedComments.some((comment) => !comment.authorAgentId);
     if (userHasReplied) {
       setWelcomeRevealed(true);
       setChipsRevealed(true);
     }
-  }, [comments, welcomeRevealed, chipsRevealed]);
+  }, [comments, sortedComments, welcomeRevealed, chipsRevealed]);
 
   // Clear optimistic message once server-persisted comments include it
   useEffect(() => {
     if (optimisticMessage && sortedComments.length > 0) {
       const lastUserComment = [...sortedComments]
         .reverse()
-        .find((c) => !c.authorAgentId && c.authorUserId !== "board-concierge");
+        .find((c) => !c.authorAgentId);
       if (lastUserComment?.body === optimisticMessage) {
         setOptimisticMessage(null);
       }
@@ -482,12 +527,8 @@ export function BoardChat() {
     scrollToLatest("smooth");
   }, [optimisticMessage, scrollToLatest]);
 
-  // Agent activity (new persisted comment, streaming chunks, status):
-  // auto-scroll only if the user was near the bottom BEFORE the new content
-  // arrived. Using the ref (updated on scroll events) instead of measuring
-  // after the render, because the new content has already grown scrollHeight
-  // by the time this effect fires — making the post-update "distance from
-  // bottom" misleading.
+  // Auto-scroll for new durable comments only when the reader was already
+  // near the bottom.
   useEffect(() => {
     if (!hasRestoredScrollRef.current) return;
     if (wasNearBottomRef.current) {
@@ -495,7 +536,7 @@ export function BoardChat() {
     } else {
       setHasNewBelow(true);
     }
-  }, [sortedComments.length, streamingText, statusText, scrollToLatest]);
+  }, [sortedComments.length, scrollToLatest]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -524,125 +565,187 @@ export function BoardChat() {
     };
   }, []);
 
-  // Elapsed timer for thinking state — tick at 100ms so the tenths place
-  // updates smoothly and the wait feels quicker than a whole-second counter.
-  useEffect(() => {
-    if (sending) {
-      setElapsedSec(0);
-      const startedAt = Date.now();
-      elapsedTimerRef.current = setInterval(() => {
-        setElapsedSec((Date.now() - startedAt) / 1000);
-      }, 100);
-    } else {
-      if (elapsedTimerRef.current) {
-        clearInterval(elapsedTimerRef.current);
-        elapsedTimerRef.current = null;
-      }
-    }
-    return () => {
-      if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
-    };
-  }, [sending]);
-
   const sendMessage = useCallback(
     async (body: string) => {
-      const trimmed = body.trim();
-      if (!trimmed || sending || !selectedCompanyId) return;
+      if (
+        !body.trim() ||
+        sending ||
+        !selectedCompanyId ||
+        !selectedAgent ||
+        boardIssueTerminal
+      ) {
+        return;
+      }
 
-      // Show user message immediately
-      setOptimisticMessage(trimmed);
+      setOptimisticMessage(body);
       setSending(true);
       setInput("");
-      setStreamingText("");
       setErrorText("");
-      setStatusText("Connecting...");
 
       try {
-        const controller = new AbortController();
-        const fetchTimeout = setTimeout(() => controller.abort(), 130000);
-        const res = await fetch("/api/board/chat/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            companyId: selectedCompanyId,
-            message: trimmed,
-            taskId: boardIssueId ?? undefined,
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(fetchTimeout);
-
-        if (!res.ok || !res.body) {
-          throw new Error("Board chat stream not available");
-        }
-
-        setStatusText("Thinking...");
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let accumulated = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            try {
-              const event = JSON.parse(line.slice(6));
-              if (event.type === "chunk" && event.text) {
-                accumulated += event.text;
-                setStreamingText(accumulated);
-                setStatusText("");
-              } else if (event.type === "status" && event.text) {
-                setStatusText(event.text);
-              } else if (event.type === "start" && event.issueId) {
-                setBoardIssueId(event.issueId);
-              } else if (event.type === "error") {
-                setErrorText(
-                  event.message ||
-                    "The board assistant couldn't respond. Please try again.",
-                );
-                setStatusText("");
-              } else if (event.type === "done") {
-                if (event.issueId) {
-                  queryClient.invalidateQueries({
-                    queryKey: queryKeys.issues.comments(event.issueId),
-                  });
-                  queryClient.invalidateQueries({
-                    queryKey: queryKeys.issues.list(selectedCompanyId),
-                  });
-                }
-              }
-            } catch {
-              /* malformed SSE line */
-            }
-          }
-        }
-
-        setStreamingText("");
-        setStatusText("");
+        let nextIssueId: string;
+        let nextIssue: Issue | undefined;
         if (boardIssueId) {
-          queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(boardIssueId) });
+          await issuesApi.commitCreatorFormUpdate({
+            issueId: boardIssueId,
+            message: body,
+          });
+          nextIssueId = boardIssueId;
+        } else {
+          const res = await fetch("/api/board/chat/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              companyId: selectedCompanyId,
+              agentId: selectedAgent.id,
+              message: body,
+              ...(attentionMask ? { attentionMask } : {}),
+              idempotencyKey: crypto.randomUUID(),
+            }),
+          });
+          const payload = (await res.json()) as {
+            error?: string;
+            issueId?: string;
+            issue?: Issue;
+          };
+          if (!res.ok || !payload.issueId) {
+            throw new Error(
+              payload.error || "Board Chat request was rejected",
+            );
+          }
+          nextIssueId = payload.issueId;
+          nextIssue = payload.issue;
         }
+
+        if (nextIssue) {
+          queryClient.setQueryData(
+            queryKeys.issues.detail(nextIssueId),
+            nextIssue,
+          );
+        }
+        setBoardIssueId(nextIssueId);
+        try {
+          sessionStorage.setItem(
+            `paperclip.boardChat.issue.${selectedCompanyId}`,
+            nextIssueId,
+          );
+        } catch {
+          // sessionStorage is an optional UI convenience, never the record.
+        }
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.issues.detail(nextIssueId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.issues.comments(nextIssueId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.issues.list(selectedCompanyId),
+          }),
+        ]);
+        setAttentionMask(null);
       } catch (err) {
         console.error("Board chat error:", err);
-        setStatusText("");
+        setInput(body);
+        setOptimisticMessage(null);
         setErrorText(
-          "The board assistant is unavailable right now. Please try again in a moment.",
+          err instanceof Error
+            ? err.message
+            : "The Board Chat request could not be admitted.",
         );
       } finally {
         setSending(false);
         composerRef.current?.focus();
       }
     },
-    [sending, selectedCompanyId, boardIssueId, queryClient],
+    [
+      sending,
+      selectedCompanyId,
+      selectedAgent,
+      boardIssueId,
+      boardIssueTerminal,
+      attentionMask,
+      queryClient,
+    ],
   );
+
+  const startNewChat = useCallback(async () => {
+    if (closing || sending) return;
+    setClosing(true);
+    setErrorText("");
+    try {
+      if (boardIssueId && !boardIssueTerminal) {
+        let issueForCancellation = boardIssue;
+        if (
+          issueForCancellation?.ownerKind === "agent" &&
+          issueForCancellation.ownerAgentId
+        ) {
+          const reassigned = await issuesApi.selfAssignForWithdrawal(
+            boardIssueId,
+            { idempotencyKey: crypto.randomUUID() },
+          );
+          issueForCancellation = reassigned.issue;
+          queryClient.setQueryData(
+            queryKeys.issues.detail(boardIssueId),
+            reassigned.issue,
+          );
+        }
+        if (
+          issueForCancellation?.ownerKind !== "user" ||
+          issueForCancellation.ownerAssignmentSource !==
+            "user_creator_withdrawal"
+        ) {
+          throw new Error(
+            "This Board Chat issue cannot be withdrawn by its creator.",
+          );
+        }
+        await issuesApi.commitOwnerFormUpdate({
+          issueId: boardIssueId,
+          message: "Closed from Board Chat.",
+          status: "cancelled",
+        });
+      }
+    if (boardIssueId) {
+      queryClient.removeQueries({
+        queryKey: queryKeys.issues.comments(boardIssueId),
+      });
+      queryClient.removeQueries({
+        queryKey: queryKeys.issues.detail(boardIssueId),
+      });
+    }
+    setBoardIssueId(null);
+    setAttentionMask(null);
+    setOptimisticMessage(null);
+    setErrorText("");
+    hasRestoredScrollRef.current = false;
+    if (selectedCompanyId) {
+      try {
+        sessionStorage.removeItem(
+          `paperclip.boardChat.issue.${selectedCompanyId}`,
+        );
+      } catch {
+        // sessionStorage is optional.
+      }
+    }
+    composerRef.current?.focus();
+    } catch (err) {
+      setErrorText(
+        err instanceof Error
+          ? err.message
+          : "The current Board Chat issue could not be closed.",
+      );
+    } finally {
+      setClosing(false);
+    }
+  }, [
+    boardIssue,
+    boardIssueId,
+    boardIssueTerminal,
+    closing,
+    queryClient,
+    selectedCompanyId,
+    sending,
+  ]);
 
   const handleSend = useCallback(() => {
     sendMessage(input);
@@ -660,7 +763,7 @@ export function BoardChat() {
         <div className="text-center max-w-sm">
           <h2 className="text-lg font-semibold">No company selected</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            Select a company to start chatting with your board concierge.
+            Select a company to start a Board Chat issue.
           </p>
         </div>
       </div>
@@ -689,11 +792,38 @@ export function BoardChat() {
             />
             <div className="min-w-0 flex-1">
               <h3 className="text-sm font-semibold">
-                {ceoAgent?.name ?? "Conference Room"}
+                {selectedAgent?.name ?? "Conference Room"}
               </h3>
               <p className="text-xs text-muted-foreground">
                 {selectedCompany?.name ?? "Your company"}
               </p>
+              <select
+                className="mt-1 max-w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                value={selectedAgentId}
+                onChange={(event) => setSelectedAgentId(event.target.value)}
+                aria-label="Board Chat agent"
+                disabled={!!boardIssueId}
+              >
+                <option value="">Select an agent…</option>
+                {selectableAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}{agent.title ? ` — ${agent.title}` : ""}
+                  </option>
+                ))}
+              </select>
+              <div className="mt-2 max-w-2xl">
+                <IssueAttentionMaskMatrix
+                  value={
+                    boardIssue
+                      ? boardIssue.attentionMask ?? null
+                      : attentionMask
+                  }
+                  onChange={
+                    boardIssueId ? undefined : setAttentionMask
+                  }
+                  readOnly={Boolean(boardIssueId)}
+                />
+              </div>
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
               <Tooltip>
@@ -704,8 +834,18 @@ export function BoardChat() {
                     size="icon-sm"
                     className="text-muted-foreground"
                     aria-label="chat history"
+                    asChild
+                    disabled={!boardIssue}
                   >
-                    <History className="h-4 w-4" />
+                    <a
+                      href={
+                        boardIssue
+                          ? `/issues/${boardIssue.identifier ?? boardIssue.id}`
+                          : "/issues"
+                      }
+                    >
+                      <History className="h-4 w-4" />
+                    </a>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">chat history</TooltipContent>
@@ -718,6 +858,8 @@ export function BoardChat() {
                     size="icon-sm"
                     className="text-muted-foreground"
                     aria-label="new chat"
+                    onClick={() => void startNewChat()}
+                    disabled={closing || sending}
                   >
                     <MessageSquarePlus className="h-4 w-4" />
                   </Button>
@@ -740,18 +882,18 @@ export function BoardChat() {
                    visible even while agent/goal data is still loading. */}
               {!welcomeRevealed && <TypingBubble />}
 
-              {welcomeRevealed && ceoAgent && selectedCompany && (() => {
-                const ceoName = ceoAgent.name;
+              {welcomeRevealed && selectedAgent && selectedCompany && (() => {
+                const agentName = selectedAgent.name;
                 const companyName = selectedCompany.name;
                 const missionLine = missionText
                   ? ` — your mission is "${missionText}".`
                   : ".";
                 const welcomeBody =
-                  `Welcome to **${companyName}**! I'm ${ceoName}, your team lead. I've read through what you shared in the wizard${missionLine}\n\n` +
+                  `Welcome to **${companyName}**! I'm ${agentName}. I've read through what you shared in the wizard${missionLine}\n\n` +
                   `Here are a few things I can help you put on paper right now. Pick one below and I'll draft it for you using everything you told us.`;
 
                 const userHasReplied = sortedComments.some(
-                  (c) => !c.authorAgentId && c.authorUserId !== "board-concierge",
+                  (c) => !c.authorAgentId,
                 );
 
                 const chips: Array<{ label: string; prompt: string }> = [
@@ -776,7 +918,7 @@ export function BoardChat() {
                 return (
                   <>
                     <div className="flex flex-col items-start">
-                      <AgentBubbleHeader name={ceoName} icon={ceoAgent.icon} />
+                      <AgentBubbleHeader name={agentName} icon={selectedAgent.icon} />
                       <div
                         className={cn(
                           boardChatBubbleShell,
@@ -809,7 +951,7 @@ export function BoardChat() {
               })()}
 
               {sortedComments.map((comment) => {
-                const isUser = !comment.authorAgentId && comment.authorUserId !== "board-concierge";
+                const isUser = !comment.authorAgentId;
                 if (isUser) {
                   return (
                     <div key={comment.id} className="flex justify-end">
@@ -828,7 +970,7 @@ export function BoardChat() {
                 // the room speaks the same bubble language as the task thread.
                 const agent = comment.authorAgentId
                   ? agentMap.get(comment.authorAgentId) ?? null
-                  : ceoAgent ?? null;
+                  : selectedAgent;
                 const agentName = agent?.name ?? "Assistant";
                 const agentIconValue = agent?.icon ?? null;
                 return (
@@ -879,43 +1021,21 @@ export function BoardChat() {
                 </div>
               )}
 
-              {/* Streaming response */}
-              {streamingText && (
-                <div className="flex flex-col items-start">
-                  {ceoAgent && (
-                    <AgentBubbleHeader name={ceoAgent.name} icon={ceoAgent.icon} />
-                  )}
-                  <div
-                    className={cn(
-                      boardChatBubbleShell,
-                      "bg-card border border-border text-foreground [border-radius:14px_14px_14px_4px]",
-                    )}
-                  >
-                    <MarkdownBody className={BOARD_CHAT_MARKDOWN_CLASS}>{streamingText}</MarkdownBody>
-                  </div>
-                </div>
-              )}
-
-              {/* Typing bubble — sits above the status line while the agent
-                   is preparing a reply but no text has streamed yet. Shows
-                   alongside the user's optimistic bubble to make the
-                   turn-taking feel alive. */}
-              {sending && !streamingText && <TypingBubble />}
-
-              {/* Status bar — always visible while sending, independent from the chat bubble */}
-              {sending && (
+              {/* Admission status only. Provider drafts are never rendered. */}
+              {(sending || closing) && (
                 <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
                   <img src="/paperclip-thinking.svg" alt="" className="inline-block shrink-0" style={{ width: 14, height: 14 }} />
-                  <span>{statusText || "Thinking..."}</span>
-                  {elapsedSec > 0 && (
-                    <span className="opacity-50">{elapsedSec.toFixed(1)}s</span>
-                  )}
+                  <span>
+                    {closing
+                      ? "Closing this issue…"
+                      : "Adding this message to the issue…"}
+                  </span>
                 </div>
               )}
 
               {/* Error notice — surfaced when the stream endpoint fails so
                   the message doesn't silently sit with no response. */}
-              {errorText && !sending && (
+              {errorText && !sending && !closing && (
                 <div
                   role="alert"
                   className="flex justify-start"
@@ -967,11 +1087,17 @@ export function BoardChat() {
               value={input}
               onChange={setInput}
               onSubmit={handleSend}
-              placeholder="Ask anything about your company..."
+              placeholder={
+                boardIssueTerminal
+                  ? "This issue is closed. Start a new chat to continue."
+                  : "Ask anything about your company..."
+              }
               submitKey="enter"
               surface="translucent"
               submitting={sending}
-              disabled={sending}
+              disabled={
+                sending || closing || !selectedAgent || boardIssueTerminal
+              }
               sendLabel="Send message"
               className="pointer-events-auto"
             />

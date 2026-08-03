@@ -3,13 +3,13 @@ import type { ActivityEvent } from "@paperclipai/shared";
 import { extractIssueTimelineEvents } from "./issue-timeline-events";
 
 describe("extractIssueTimelineEvents", () => {
-  it("extracts and sorts status and assignee changes from issue updates", () => {
+  it("extracts and sorts lifecycle and owner changes from issue updates", () => {
     const events = extractIssueTimelineEvents([
       {
         id: "evt-2",
         companyId: "company-1",
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         action: "issue.updated",
         entityType: "issue",
         entityId: "issue-1",
@@ -17,11 +17,13 @@ describe("extractIssueTimelineEvents", () => {
         runId: null,
         createdAt: new Date("2026-03-31T12:02:00.000Z"),
         details: {
-          assigneeAgentId: "agent-2",
-          assigneeUserId: null,
+          ownerKind: "agent",
+          ownerAgentId: "agent-2",
+          ownerUserId: null,
           _previous: {
-            assigneeAgentId: "agent-1",
-            assigneeUserId: null,
+            ownerKind: "agent",
+            ownerAgentId: "agent-1",
+            ownerUserId: null,
           },
         },
       },
@@ -29,7 +31,7 @@ describe("extractIssueTimelineEvents", () => {
         id: "evt-1",
         companyId: "company-1",
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         action: "issue.updated",
         entityType: "issue",
         entityId: "issue-1",
@@ -37,9 +39,9 @@ describe("extractIssueTimelineEvents", () => {
         runId: null,
         createdAt: new Date("2026-03-31T12:01:00.000Z"),
         details: {
-          status: "in_progress",
+          lifecycleStatus: "open",
           _previous: {
-            status: "todo",
+            lifecycleStatus: "blocked",
           },
         },
       },
@@ -47,7 +49,7 @@ describe("extractIssueTimelineEvents", () => {
         id: "evt-ignored",
         companyId: "company-1",
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         action: "issue.comment_added",
         entityType: "issue",
         entityId: "issue-1",
@@ -65,34 +67,36 @@ describe("extractIssueTimelineEvents", () => {
         id: "evt-1",
         createdAt: new Date("2026-03-31T12:01:00.000Z"),
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         runId: null,
-        statusChange: {
-          from: "todo",
-          to: "in_progress",
+        lifecycleStatusChange: {
+          from: "blocked",
+          to: "open",
         },
       },
       {
         id: "evt-2",
         createdAt: new Date("2026-03-31T12:02:00.000Z"),
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         runId: null,
-        assigneeChange: {
+        ownerChange: {
           from: {
-            agentId: "agent-1",
-            userId: null,
+            ownerKind: "agent",
+            ownerAgentId: "agent-1",
+            ownerUserId: null,
           },
           to: {
-            agentId: "agent-2",
-            userId: null,
+            ownerKind: "agent",
+            ownerAgentId: "agent-2",
+            ownerUserId: null,
           },
         },
       },
     ]);
   });
 
-  it("uses reopenedFrom when a reopen update omits _previous", () => {
+  it("extracts a canonical lifecycle reopen transition", () => {
     const events = extractIssueTimelineEvents([
       {
         id: "evt-reopen",
@@ -106,9 +110,10 @@ describe("extractIssueTimelineEvents", () => {
         runId: "run-1",
         createdAt: new Date("2026-03-31T12:01:00.000Z"),
         details: {
-          status: "todo",
-          reopened: true,
-          reopenedFrom: "done",
+          lifecycleStatus: "open",
+          _previous: {
+            lifecycleStatus: "done",
+          },
           source: "comment",
         },
       },
@@ -121,9 +126,9 @@ describe("extractIssueTimelineEvents", () => {
         actorType: "agent",
         actorId: "agent-1",
         runId: "run-1",
-        statusChange: {
+        lifecycleStatusChange: {
           from: "done",
-          to: "todo",
+          to: "open",
         },
       },
     ]);
@@ -143,9 +148,10 @@ describe("extractIssueTimelineEvents", () => {
         runId: "run-1",
         createdAt: new Date("2026-03-31T12:01:00.000Z"),
         details: {
-          status: "todo",
-          reopened: true,
-          reopenedFrom: "done",
+          lifecycleStatus: "open",
+          _previous: {
+            lifecycleStatus: "done",
+          },
           source: "comment",
           commentId: "comment-1",
           resumeIntent: true,
@@ -163,9 +169,9 @@ describe("extractIssueTimelineEvents", () => {
         runId: "run-1",
         commentId: "comment-1",
         followUpRequested: true,
-        statusChange: {
+        lifecycleStatusChange: {
           from: "done",
-          to: "todo",
+          to: "open",
         },
       },
     ]);
@@ -177,7 +183,7 @@ describe("extractIssueTimelineEvents", () => {
         id: "evt-workspace",
         companyId: "company-1",
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         action: "issue.updated",
         entityType: "issue",
         entityId: "issue-1",
@@ -212,7 +218,7 @@ describe("extractIssueTimelineEvents", () => {
         id: "evt-workspace",
         createdAt: new Date("2026-03-31T12:01:00.000Z"),
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         runId: null,
         workspaceChange: {
           from: {
@@ -272,7 +278,7 @@ describe("extractIssueTimelineEvents", () => {
         id: "evt-title",
         companyId: "company-1",
         actorType: "user",
-        actorId: "local-board",
+        actorId: "user-1",
         action: "issue.updated",
         entityType: "issue",
         entityId: "issue-1",

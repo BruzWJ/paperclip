@@ -67,6 +67,43 @@ describe("local process sandbox", () => {
     expect(target.args.slice(-3)).toEqual([process.execPath, "-e", "console.log('ok')"]);
   });
 
+  it("fails closed unless confinement already exposes native identity roots", async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), "paperclip-native-identity-sandbox-"),
+    );
+    cleanup.push(root);
+    const workspace = path.join(root, "workspace");
+    const operatorHome = path.join(root, "operator-home");
+    await Promise.all([fs.mkdir(workspace), fs.mkdir(operatorHome)]);
+    const input = {
+      executable: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      cwd: workspace,
+      requiredIdentityEnvironment: { HOME: operatorHome },
+    };
+
+    await expect(
+      buildLocalProcessSandboxSpawnTarget({
+        ...input,
+        options: { workspaceDir: workspace, filesystemScope: "workspace" },
+      }),
+    ).rejects.toThrow(
+      "Local process confinement does not expose target-native identity root HOME",
+    );
+
+    const target = await buildLocalProcessSandboxSpawnTarget({
+      ...input,
+      options: {
+        workspaceDir: workspace,
+        filesystemScope: "workspace",
+        extraPaths: [{ path: operatorHome, access: "ro" }],
+      },
+    });
+    expect(target.args).toEqual(
+      expect.arrayContaining(["--ro-bind", operatorHome, operatorHome]),
+    );
+  });
+
   it("builds a network-only namespace without changing filesystem visibility", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-network-sandbox-"));
     cleanup.push(workspace);

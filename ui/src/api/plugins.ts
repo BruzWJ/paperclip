@@ -247,12 +247,13 @@ export const pluginsApi = {
   /**
    * Uninstall a plugin.
    *
-   * @param pluginId - UUID of the plugin to remove.
-   * @param purge - If `true`, permanently delete all plugin data (hard delete).
-   *   Otherwise the plugin is soft-deleted with a 30-day data retention window.
+   * @param pluginId - Immutable installation UUID of the plugin to uninstall.
+   * @param purge - If `true`, also remove operational config, state, jobs,
+   *   webhooks, and custom database objects. The installation tombstone and
+   *   provenance are always retained.
    */
   uninstall: (pluginId: string, purge?: boolean) =>
-    api.delete<{ ok: boolean }>(`/plugins/${pluginId}${purge ? "?purge=true" : ""}`),
+    api.delete<PluginRecord>(`/plugins/${pluginId}${purge ? "?purge=true" : ""}`),
 
   /**
    * Transition a plugin from `error` state back to `ready`.

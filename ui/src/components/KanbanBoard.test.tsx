@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { Issue, IssueStatus } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getKanbanColumnTone, KanbanBoard, resolveKanbanTargetStatus } from "./KanbanBoard";
+import { getKanbanColumnTone, KanbanBoard } from "./KanbanBoard";
+import { createTestIssue } from "../test-utils/issue";
 
 vi.mock("@/lib/router", () => ({
   Link: ({
@@ -30,39 +31,13 @@ function act(callback: () => void): void {
 }
 
 function createIssue(index: number, status: IssueStatus): Issue {
-  return {
+  return createTestIssue({
     id: `issue-${status}-${index}`,
     identifier: `PAP-${index}`,
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title: `Issue ${index}`,
-    description: null,
-    status,
-    workMode: "standard",
-    priority: "medium",
-    assigneeAgentId: index === 1 ? "agent-1" : null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
+    boardPresentationStatus: status,
+    ownerAgentId: index === 1 ? "agent-1" : null,
     issueNumber: index,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     createdAt: new Date("2026-05-05T00:00:00.000Z"),
     updatedAt: new Date("2026-05-05T00:00:00.000Z"),
     labels: [],
@@ -71,7 +46,7 @@ function createIssue(index: number, status: IssueStatus): Issue {
     lastExternalCommentAt: null,
     lastActivityAt: null,
     isUnreadForMe: false,
-  };
+  });
 }
 
 function createIssues(count: number, status: IssueStatus): Issue[] {
@@ -92,7 +67,6 @@ function renderBoard(
         <KanbanBoard
           agents={[{ id: "agent-1", name: "Codex" }]}
           liveIssueIds={new Set(["issue-todo-1"])}
-          onUpdateIssue={vi.fn()}
           {...nextProps}
         />,
       );
@@ -221,14 +195,4 @@ describe("KanbanBoard", () => {
     expect(container.textContent).toContain("Live");
   });
 
-  it("resolves drop targets from status rails and cards", () => {
-    const issues = [
-      createIssue(1, "todo"),
-      createIssue(2, "blocked"),
-    ];
-
-    expect(resolveKanbanTargetStatus("done", issues)).toBe("done");
-    expect(resolveKanbanTargetStatus("issue-blocked-2", issues)).toBe("blocked");
-    expect(resolveKanbanTargetStatus("missing", issues)).toBeNull();
-  });
 });

@@ -541,7 +541,6 @@ describe("AppDetail", () => {
         "request-1": {
           status: "approved",
           resolverDisplayName: "Dotta",
-          resolvedByAgentId: null,
           resolvedByUserId: "board-user",
         },
       },

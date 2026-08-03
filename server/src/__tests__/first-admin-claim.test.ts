@@ -1,56 +1,74 @@
-import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createDb, instanceUserRoles } from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { describe, expect, it } from "vitest";
+import { instanceUserRoles } from "@paperclipai/db";
 import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+describe("claimFirstInstanceAdmin", () => {
+  it("locks, checks, and inserts when no instance admin exists", async () => {
+    const { db, calls } = createMockDb({
+      execute: [[]],
+      select: [[]],
+      insert: [[]],
+    });
 
-describeEmbeddedPostgres("claimFirstInstanceAdmin", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+    const result = await claimFirstInstanceAdmin(db, { userId: "user-first" });
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-first-admin-claim-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(instanceUserRoles);
+    expect(result).toEqual({
+      status: "claimed",
+      userId: "user-first",
+      value: null,
+    });
+    expect(calls.map(({ operation, method }) => `${operation}.${method}`)).toEqual([
+      "execute.execute",
+      "select.select",
+      "select.from",
+      "select.where",
+      "insert.insert",
+      "insert.values",
+    ]);
+    expect(calls.find((call) => call.method === "values")?.args).toEqual([
+      { userId: "user-first", role: "instance_admin" },
+    ]);
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
+  it("reports the existing admin without inserting", async () => {
+    const { db, calls } = createMockDb({
+      execute: [[]],
+      select: [[{ userId: "user-first" }]],
+    });
+
+    const result = await claimFirstInstanceAdmin(db, { userId: "user-second" });
+
+    expect(result).toEqual({
+      status: "already_claimed",
+      existingUserId: "user-first",
+      value: null,
+    });
+    expect(calls.some((call) => call.operation === "insert")).toBe(false);
   });
 
-  it("inserts exactly one first admin and reports later claims as conflicts", async () => {
-    const firstUserId = `user-${randomUUID()}`;
-    const first = await claimFirstInstanceAdmin(db, { userId: firstUserId });
-
-    expect(first).toMatchObject({ status: "claimed", userId: firstUserId });
-
-    const second = await claimFirstInstanceAdmin(db, { userId: `user-${randomUUID()}` });
-    expect(second).toMatchObject({ status: "already_claimed", existingUserId: firstUserId });
-
-    const roles = await db.select().from(instanceUserRoles);
-    expect(roles).toHaveLength(1);
-    expect(roles[0]).toMatchObject({ userId: firstUserId, role: "instance_admin" });
-  });
-
-  it("runs onClaim inside the winning transaction", async () => {
-    const userId = `user-${randomUUID()}`;
+  it("runs onClaim after the winning insert in the same transaction", async () => {
+    const { db, calls } = createMockDb({
+      execute: [[]],
+      select: [[], [{ userId: "user-first" }]],
+      insert: [[]],
+    });
     const result = await claimFirstInstanceAdmin(db, {
-      userId,
+      userId: "user-first",
       onClaim: async (tx) => {
         const roles = await tx.select().from(instanceUserRoles);
         return roles.map((role) => role.userId);
       },
     });
 
-    expect(result).toMatchObject({ status: "claimed", userId, value: [userId] });
+    expect(result).toEqual({
+      status: "claimed",
+      userId: "user-first",
+      value: ["user-first"],
+    });
+    const methods = calls.map(({ operation, method }) => `${operation}.${method}`);
+    expect(methods.indexOf("insert.values")).toBeLessThan(
+      methods.lastIndexOf("select.select"),
+    );
   });
 });

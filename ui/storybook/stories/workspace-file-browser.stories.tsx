@@ -170,7 +170,6 @@ function Placement() {
             companyId: "company-1",
             projectId: "project-1",
             projectWorkspaceId: "pw-1",
-            executionWorkspaceId: "ws-1",
             executionWorkspacePreference: "isolated_workspace",
             executionWorkspaceSettings: { mode: "isolated_workspace", environmentId: null },
             // eslint-disable-next-line @typescript-eslint/no-explicit-any

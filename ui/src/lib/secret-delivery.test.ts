@@ -11,11 +11,8 @@ describe("deliveryModeForConfigPath", () => {
     expect(deliveryModeForConfigPath("env.OPENAI_API_KEY")).toBe("env");
   });
 
-  it("classifies API-access config paths", () => {
-    expect(deliveryModeForConfigPath("access.STRIPE")).toBe("api");
-  });
-
   it("falls back to config for other paths and empties", () => {
+    expect(deliveryModeForConfigPath("access.STRIPE")).toBe("config");
     expect(deliveryModeForConfigPath("headers.authorization")).toBe("config");
     expect(deliveryModeForConfigPath(null)).toBe("config");
     expect(deliveryModeForConfigPath("")).toBe("config");
@@ -25,7 +22,6 @@ describe("deliveryModeForConfigPath", () => {
 describe("deliveryModeLabel", () => {
   it("maps each mode to a human label", () => {
     expect(deliveryModeLabel("env")).toBe("Env var");
-    expect(deliveryModeLabel("api")).toBe("API access");
     expect(deliveryModeLabel("config")).toBe("Config");
   });
 });
@@ -33,7 +29,7 @@ describe("deliveryModeLabel", () => {
 describe("aliasFromConfigPath", () => {
   it("strips the delivery prefix", () => {
     expect(aliasFromConfigPath("env.GH_TOKEN")).toBe("GH_TOKEN");
-    expect(aliasFromConfigPath("access.STRIPE")).toBe("STRIPE");
+    expect(aliasFromConfigPath("access.STRIPE")).toBe("access.STRIPE");
   });
 
   it("returns the raw path when no known prefix applies", () => {

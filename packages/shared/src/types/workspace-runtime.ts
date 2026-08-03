@@ -111,8 +111,8 @@ export interface ExecutionWorkspaceCloseAction {
 export interface ExecutionWorkspaceCloseLinkedIssue {
   id: string;
   identifier: string | null;
-  title: string;
-  status: string;
+  title: string | null;
+  boardPresentationStatus: string;
   isTerminal: boolean;
 }
 
@@ -181,8 +181,8 @@ export interface ExecutionWorkspaceSummary {
 export interface WorkspaceOverviewLinkedIssue {
   id: string;
   identifier: string | null;
-  title: string;
-  status: string;
+  title: string | null;
+  boardPresentationStatus: string;
   priority: string;
   updatedAt: Date;
 }
@@ -202,9 +202,9 @@ export interface WorkspaceOverviewItem {
   kind: "execution_workspace";
   workspaceId: string;
   workspaceName: string;
-  projectId: string;
-  projectUrlKey: string;
-  projectName: string;
+  projectId: string | null;
+  projectUrlKey: string | null;
+  projectName: string | null;
   mode: ExecutionWorkspaceSummary["mode"];
   strategyType: ExecutionWorkspaceStrategyType;
   cwd: string | null;
@@ -235,7 +235,7 @@ export interface WorkspaceOverviewResponse {
 export interface ExecutionWorkspace {
   id: string;
   companyId: string;
-  projectId: string;
+  projectId: string | null;
   projectWorkspaceId: string | null;
   sourceIssueId: string | null;
   mode: Exclude<ExecutionWorkspaceMode, "inherit" | "reuse_existing" | "agent_default"> | "adapter_managed" | "cloud_sandbox";
@@ -307,10 +307,10 @@ export interface WorkspaceRealizationRequest {
   environmentId: string;
   executionWorkspaceId: string | null;
   issueId: string | null;
-  heartbeatRunId: string;
+  runId: string;
   requestedMode: string | null;
   source: {
-    kind: "project_primary" | "task_session" | "agent_home";
+    kind: "project_primary" | "issue_execution";
     localPath: string;
     projectId: string | null;
     projectWorkspaceId: string | null;

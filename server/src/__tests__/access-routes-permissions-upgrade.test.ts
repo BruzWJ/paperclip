@@ -1,167 +1,168 @@
 import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  activityLog,
-  companies,
-  companyMemberships,
-  createDb,
-  principalPermissionGrants,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "./helpers/mock-db.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-vi.hoisted(() => {
-  process.env.PAPERCLIP_HOME = "/tmp/paperclip-test-home";
-  process.env.PAPERCLIP_INSTANCE_ID = "vitest";
-  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-test-home/logs";
-  process.env.PAPERCLIP_IN_WORKTREE = "false";
-});
+const accessMocks = vi.hoisted(() => ({
+  canUser: vi.fn(async () => true),
+  getMemberById: vi.fn(),
+  getMembership: vi.fn(),
+  isInstanceAdmin: vi.fn(async () => false),
+  logActivity: vi.fn(async () => undefined),
+}));
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+vi.mock("../services/index.js", () => ({
+  accessService: () => ({
+    canUser: accessMocks.canUser,
+    getMemberById: accessMocks.getMemberById,
+    getMembership: accessMocks.getMembership,
+    isInstanceAdmin: accessMocks.isInstanceAdmin,
+  }),
+  agentService: () => ({ getById: vi.fn() }),
+  boardAuthService: () => ({}),
+  createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
+  logActivity: accessMocks.logActivity,
+}));
 
-type Db = ReturnType<typeof createDb>;
+import { accessRoutes } from "../routes/access.js";
 
-async function createApp(db: Db, companyId: string, userId: string) {
-  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-test-home/logs";
-  process.env.PAPERCLIP_IN_WORKTREE = "false";
-  const { accessRoutes } = await import("../routes/access.js");
+function createApp(
+  db: ReturnType<typeof createMockDb>["db"],
+  companyId: string,
+  userId: string,
+) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    req.actor = {
-      type: "board",
+    req.actor = testBoardSessionActor({
       userId,
-      source: "local_implicit",
       companyIds: [companyId],
       memberships: [{ companyId, membershipRole: "owner", status: "active" }],
-      isInstanceAdmin: true,
-    };
+      isInstanceAdmin: false,
+    });
     next();
   });
-  app.use("/api", accessRoutes(db, {
-    deploymentMode: "authenticated",
-    deploymentExposure: "private",
-    bindHost: "127.0.0.1",
-    allowedHostnames: [],
-  }));
-  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(err.status ?? 500).json({ error: err.message ?? "Internal server error" });
+  app.use("/api", accessRoutes(db, { deploymentExposure: "private" }));
+  app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(error.status ?? 500).json({ error: error.message ?? "Internal server error" });
   });
   return app;
 }
 
-async function createCompanyWithOwner(db: Db) {
-  const company = await db
-    .insert(companies)
-    .values({
-      name: `Access Routes ${randomUUID()}`,
-      issuePrefix: `AR${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-    })
-    .returning()
-    .then((rows) => rows[0]!);
-  const owner = await db
-    .insert(companyMemberships)
-    .values({
-      companyId: company.id,
+describe("access routes canonical member-role updates", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    accessMocks.canUser.mockResolvedValue(true);
+    accessMocks.isInstanceAdmin.mockResolvedValue(false);
+  });
+
+  it("rejects owner self-lockout through the role-only member route", async () => {
+    const companyId = randomUUID();
+    const ownerUserId = `owner-${randomUUID()}`;
+    const ownerId = randomUUID();
+    accessMocks.getMemberById.mockResolvedValue({
+      id: ownerId,
+      companyId,
+      principalId: ownerUserId,
       principalType: "user",
-      principalId: `owner-${randomUUID()}`,
       status: "active",
       membershipRole: "owner",
-    })
-    .returning()
-    .then((rows) => rows[0]!);
-  return { company, owner };
-}
+    });
+    const harness = createMockDb();
 
-describeEmbeddedPostgres("access routes permissions upgrade compatibility", () => {
-  let db!: Db;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-access-routes-permissions-upgrade-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(principalPermissionGrants);
-    await db.delete(companyMemberships);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  it("rejects owner self-lockout through the member route after the permissions upgrade", async () => {
-    const { company, owner } = await createCompanyWithOwner(db);
-
-    const res = await request(await createApp(db, company.id, owner.principalId))
-      .patch(`/api/companies/${company.id}/members/${owner.id}`)
+    const response = await request(createApp(harness.db, companyId, ownerUserId))
+      .patch(`/api/companies/${companyId}/members/${ownerId}`)
       .send({ membershipRole: "admin" });
 
-    expect(res.status, JSON.stringify(res.body)).toBe(403);
-    expect(res.body.error).toContain("You cannot remove yourself");
-
-    const unchanged = await db
-      .select()
-      .from(companyMemberships)
-      .where(eq(companyMemberships.id, owner.id))
-      .then((rows) => rows[0]!);
-    expect(unchanged.membershipRole).toBe("owner");
-  }, 10_000);
+    expect(response.status, JSON.stringify(response.body)).toBe(403);
+    expect(response.body.error).toContain("You cannot remove yourself");
+    expect(harness.calls).toEqual([]);
+    expect(accessMocks.logActivity).not.toHaveBeenCalled();
+  });
 
   it("keeps custom grants when the role-only member route changes a member role", async () => {
-    const { company, owner } = await createCompanyWithOwner(db);
-    const member = await db
-      .insert(companyMemberships)
-      .values({
-        companyId: company.id,
-        principalType: "user",
-        principalId: `admin-${randomUUID()}`,
-        status: "active",
-        membershipRole: "admin",
-      })
-      .returning()
-      .then((rows) => rows[0]!);
-    const customScope = { projectIds: ["project-1"] };
-    await db.insert(principalPermissionGrants).values({
-      companyId: company.id,
+    const companyId = randomUUID();
+    const ownerUserId = `owner-${randomUUID()}`;
+    const memberUserId = `admin-${randomUUID()}`;
+    const memberId = randomUUID();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const existing = {
+      id: memberId,
+      companyId,
       principalType: "user",
-      principalId: member.principalId,
-      permissionKey: "tasks:assign_scope",
+      principalUserId: memberUserId,
+      principalAgentId: null,
+      status: "active",
+      membershipRole: "admin",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const updated = { ...existing, membershipRole: "operator", updatedAt: now };
+    const customScope = { targetAgentIds: [randomUUID()] };
+    const customGrant = {
+      id: randomUUID(),
+      companyId,
+      principalType: "user",
+      principalUserId: memberUserId,
+      principalAgentId: null,
+      permissionKey: "agents:configure",
       scope: customScope,
-      grantedByUserId: owner.principalId,
+      grantedByUserId: ownerUserId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    accessMocks.getMemberById.mockResolvedValue({
+      id: memberId,
+      companyId,
+      principalId: memberUserId,
+      principalType: "user",
+      status: "active",
+      membershipRole: "admin",
+    });
+    accessMocks.getMembership.mockResolvedValue({
+      status: "active",
+      membershipRole: "owner",
+    });
+    const harness = createMockDb({
+      select: [
+        [existing],
+        [updated],
+        [{ id: memberUserId, name: "Admin", email: "admin@example.com", image: null }],
+        [customGrant],
+      ],
+      update: [[updated]],
+      execute: [[]],
     });
 
-    const res = await request(await createApp(db, company.id, owner.principalId))
-      .patch(`/api/companies/${company.id}/members/${member.id}`)
+    const response = await request(createApp(harness.db, companyId, ownerUserId))
+      .patch(`/api/companies/${companyId}/members/${memberId}`)
       .send({ membershipRole: "operator" });
 
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body.membershipRole).toBe("operator");
-
-    const grants = await db
-      .select()
-      .from(principalPermissionGrants)
-      .where(
-        and(
-          eq(principalPermissionGrants.companyId, company.id),
-          eq(principalPermissionGrants.principalType, "user"),
-          eq(principalPermissionGrants.principalId, member.principalId),
-        ),
-      );
-    expect(grants).toHaveLength(1);
-    expect(grants[0]).toMatchObject({
-      permissionKey: "tasks:assign_scope",
-      scope: customScope,
-      grantedByUserId: owner.principalId,
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toMatchObject({
+      id: memberId,
+      principalId: memberUserId,
+      membershipRole: "operator",
+      grants: [{
+        permissionKey: "agents:configure",
+        scope: customScope,
+        grantedByUserId: ownerUserId,
+      }],
     });
+    expect(harness.calls.filter((call) => call.operation === "update" && call.method === "set"))
+      .toEqual([expect.objectContaining({
+        args: [expect.objectContaining({ membershipRole: "operator", status: "active" })],
+      })]);
+    expect(harness.calls.some((call) => call.operation === "delete")).toBe(false);
+    expect(accessMocks.logActivity).toHaveBeenCalledWith(harness.db, expect.objectContaining({
+      action: "company_member.updated",
+      entityId: memberId,
+      details: { membershipRole: "operator", status: "active" },
+    }));
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+    expect(harness.remaining("execute")).toBe(0);
   });
 });

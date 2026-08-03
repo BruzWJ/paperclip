@@ -4,10 +4,9 @@ import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, Environment, EnvironmentCapabilities } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Agent, type Environment, type EnvironmentCapabilities } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../context/ToastContext";
-import type { BuiltInAgentState } from "../api/builtInAgents";
 import { Agents } from "./Agents";
 import type { AgentOrgChainHealth } from "@paperclipai/shared";
 
@@ -21,19 +20,13 @@ const mockAgentsApi = vi.hoisted(() => ({
   org: vi.fn(),
 }));
 
-const mockBuiltInAgentsApi = vi.hoisted(() => ({
-  list: vi.fn(),
-  provision: vi.fn(),
-  reset: vi.fn(),
-}));
-
 const mockEnvironmentsApi = vi.hoisted(() => ({
   list: vi.fn(),
   capabilities: vi.fn(),
 }));
 
-const mockHeartbeatsApi = vi.hoisted(() => ({
-  liveRunsForCompany: vi.fn(),
+const mockRunsApi = vi.hoisted(() => ({
+  listForCompany: vi.fn(),
 }));
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
@@ -77,17 +70,14 @@ vi.mock("../api/agents", () => ({
   agentsApi: mockAgentsApi,
 }));
 
-vi.mock("../api/builtInAgents", () => ({
-  builtInAgentsApi: mockBuiltInAgentsApi,
-}));
-
 vi.mock("../api/environments", () => ({
   environmentsApi: mockEnvironmentsApi,
 }));
 
-vi.mock("../api/heartbeats", () => ({
-  heartbeatsApi: mockHeartbeatsApi,
-}));
+vi.mock("../api/runs", async () => {
+  const actual = await vi.importActual<typeof import("../api/runs")>("../api/runs");
+  return { ...actual, runsApi: mockRunsApi };
+});
 
 vi.mock("../api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
@@ -118,42 +108,23 @@ function makeAgent(overrides: Partial<Agent>): Agent {
     companyId: "company-1",
     name: "Alpha",
     urlKey: "alpha",
-    role: "engineer",
     title: null,
     icon: null,
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
+    currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
-    lastHeartbeatAt: null,
+    governance: {},
     metadata: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
-    ...overrides,
-  };
-}
-
-function makeBuiltInAgentState(overrides: Partial<BuiltInAgentState> = {}): BuiltInAgentState {
-  return {
-    definition: {
-      key: "briefs",
-      displayName: "Briefs Agent",
-      featureKeys: ["Briefs"],
-      shortPurpose: "Generates briefs.",
-      defaultInstructions: "You are Paperclip's built-in Briefs agent.",
-      defaultRole: "engineer",
-    },
-    status: "ready",
-    agentId: "built-in-agent",
-    agent: null,
-    pauseReason: null,
     ...overrides,
   };
 }
@@ -215,11 +186,9 @@ const environmentCapabilities: EnvironmentCapabilities = {
 function makeInstanceSettings({
   defaultEnvironmentId = null,
   enableEnvironments = true,
-  enableBuiltInAgents = false,
 }: {
   defaultEnvironmentId?: string | null;
   enableEnvironments?: boolean;
-  enableBuiltInAgents?: boolean;
 } = {}) {
   return {
     id: "instance-settings-1",
@@ -240,15 +209,11 @@ function makeInstanceSettings({
       enableIsolatedWorkspaces: true,
       enableStreamlinedLeftNavigation: false,
       enableConferenceRoomChat: false,
-      enableTaskWatchdogs: true,
-      enableIssuePlanDecompositions: true,
+      enableIssueWatchdogs: true,
       enableExperimentalFileViewer: false,
       enableCloudSync: false,
       enableExternalObjects: false,
-      enableBuiltInAgents,
       autoRestartDevServerWhenIdle: false,
-      enableIssueGraphLivenessAutoRecovery: false,
-      issueGraphLivenessAutoRecoveryLookbackHours: 24,
     },
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -311,27 +276,24 @@ describe("Agents", () => {
 
     mockAgentsApi.list.mockResolvedValue([
       makeAgent({
-        adapterConfig: { model: "gpt-5.4" },
+        adapterConfig: { model: "gpt-5.6" },
         // Old enough that relativeTime() falls back to an absolute date string.
-        lastHeartbeatAt: new Date("2026-01-15T00:00:00Z"),
       }),
     ]);
     mockAgentsApi.org.mockResolvedValue([
       {
         id: "agent-1",
         name: "Alpha",
-        role: "engineer",
         status: "active",
         reports: [],
       },
     ]);
-    mockBuiltInAgentsApi.list.mockResolvedValue([]);
     mockEnvironmentsApi.list.mockResolvedValue([
       makeEnvironment({ id: "env-daytona" }),
     ]);
     mockEnvironmentsApi.capabilities.mockResolvedValue(environmentCapabilities);
     mockInstanceSettingsApi.get.mockResolvedValue(makeInstanceSettings());
-    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
+    mockRunsApi.listForCompany.mockResolvedValue({ items: [], nextCursor: null });
     mockResourceMembershipsApi.listMine.mockResolvedValue({
       projectMemberships: {},
       agentMemberships: {},
@@ -373,14 +335,9 @@ describe("Agents", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain("codex_local");
-    expect(container.textContent).toContain("gpt-5.4");
+    expect(container.textContent).toContain("codex");
+    expect(container.textContent).toContain("gpt-5.6");
 
-    // The heartbeat cell must render on a single line so full dates like
-    // "Apr 30, 2026" never wrap (PAP-85 defect #2).
-    const heartbeatCell = container.querySelector(".whitespace-nowrap.w-24");
-    expect(heartbeatCell).not.toBeNull();
-    expect(heartbeatCell?.textContent).not.toContain("\n");
   });
 
   it("gives mobile agent names the full row width after the leading status indicator", async () => {
@@ -440,58 +397,6 @@ describe("Agents", () => {
     expect(subtitle?.classList.contains("xl:truncate")).toBe(true);
     expect(subtitle?.classList.contains("xl:whitespace-nowrap")).toBe(true);
     expect(subtitle?.classList.contains("truncate")).toBe(false);
-  });
-
-  it("uses the built-in agents route segment as the built-in filter", async () => {
-    mockRouterState.pathname = "/agents/builtin";
-    mockInstanceSettingsApi.get.mockResolvedValue(makeInstanceSettings({ enableBuiltInAgents: true }));
-    const builtInAgent = makeAgent({
-      id: "built-in-agent",
-      name: "Briefs Agent",
-      urlKey: "briefs-agent",
-    });
-    const regularAgent = makeAgent({
-      id: "regular-agent",
-      name: "Regular Agent",
-      urlKey: "regular-agent",
-    });
-    mockAgentsApi.list.mockResolvedValue([builtInAgent, regularAgent]);
-    mockAgentsApi.org.mockResolvedValue([
-      {
-        id: "built-in-agent",
-        name: "Briefs Agent",
-        role: "engineer",
-        status: "active",
-        reports: [],
-      },
-      {
-        id: "regular-agent",
-        name: "Regular Agent",
-        role: "engineer",
-        status: "active",
-        reports: [],
-      },
-    ]);
-    mockBuiltInAgentsApi.list.mockResolvedValue([
-      makeBuiltInAgentState({ agentId: "built-in-agent", agent: builtInAgent }),
-    ]);
-
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(
-        <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <Agents />
-          </ToastProvider>
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).toContain("1 agent");
-    expect(container.textContent).toContain("Briefs Agent");
-    expect(container.textContent).not.toContain("Regular Agent");
   });
 
   it("shows effective environment and sandbox provider beside agents", async () => {
@@ -647,14 +552,12 @@ describe("Agents", () => {
       {
         id: "agent-local",
         name: "Local Agent",
-        role: "engineer",
         status: "active",
         reports: [],
       },
       {
         id: "agent-sandbox",
         name: "Sandbox Agent",
-        role: "engineer",
         status: "active",
         reports: [],
       },
@@ -707,14 +610,12 @@ describe("Agents", () => {
       {
         id: "agent-fallback",
         name: "Fallback Agent",
-        role: "engineer",
         status: "active",
         reports: [],
       },
       {
         id: "agent-override",
         name: "Override Agent",
-        role: "engineer",
         status: "active",
         reports: [],
       },
@@ -810,83 +711,6 @@ describe("Agents", () => {
 
     expect(container.querySelector('select[aria-label="Filter by environment"]')).toBeNull();
     expect(container.querySelector('select[aria-label="Group agents"]')).toBeNull();
-  });
-
-  it("hides built-in agent surfaces while the experimental flag is disabled", async () => {
-    mockRouterState.pathname = "/agents/builtin";
-
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(
-        <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <Agents />
-          </ToastProvider>
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(mockBuiltInAgentsApi.list).not.toHaveBeenCalled();
-    expect(container.textContent).not.toContain("Built-in");
-    expect(mockRouterState.navigate).toHaveBeenCalledWith("/agents/all", { replace: true });
-  });
-
-  it("shows and filters built-in agents when the experimental flag is enabled", async () => {
-    mockRouterState.pathname = "/agents/builtin";
-    mockInstanceSettingsApi.get.mockResolvedValue(makeInstanceSettings({ enableBuiltInAgents: true }));
-    mockAgentsApi.list.mockResolvedValue([
-      makeAgent({
-        id: "built-in-agent",
-        name: "Briefs Agent",
-        urlKey: "briefs-agent",
-      }),
-      makeAgent({
-        id: "regular-agent",
-        name: "Regular Agent",
-        urlKey: "regular-agent",
-      }),
-    ]);
-    mockAgentsApi.org.mockResolvedValue([
-      {
-        id: "built-in-agent",
-        name: "Briefs Agent",
-        role: "engineer",
-        status: "active",
-        reports: [],
-      },
-      {
-        id: "regular-agent",
-        name: "Regular Agent",
-        role: "engineer",
-        status: "active",
-        reports: [],
-      },
-    ]);
-    mockBuiltInAgentsApi.list.mockResolvedValue([
-      makeBuiltInAgentState({ agentId: "built-in-agent" }),
-    ]);
-
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(
-        <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <Agents />
-          </ToastProvider>
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(mockBuiltInAgentsApi.list).toHaveBeenCalledWith("company-1");
-    expect(container.textContent).toContain("Built-in");
-    expect(container.textContent).toContain("Briefs Agent");
-    expect(container.textContent).not.toContain("Regular Agent");
-    expect(container.querySelector('[title="Ships with Paperclip"]')).toBeNull();
-    expect(mockRouterState.navigate).not.toHaveBeenCalledWith("/agents/all", { replace: true });
   });
 
   it("gives list-view rows a fixed-width title so meta columns align (PAP-86)", async () => {

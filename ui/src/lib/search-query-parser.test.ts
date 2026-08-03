@@ -30,17 +30,17 @@ describe("parseSearchQuery", () => {
     });
   });
 
-  it("parses assignee:me to the current user", () => {
-    expect(parseSearchQuery("assignee:me", context).filters).toEqual({
-      assigneeUserId: "user-1",
+  it("parses owner:me to the current user", () => {
+    expect(parseSearchQuery("owner:me", context).filters).toEqual({
+      ownerUserId: "user-1",
     });
   });
 
-  it("parses assignee names including quoted multi-word names", () => {
-    expect(parseSearchQuery("assignee:\"Codex Coder\" crash", context)).toMatchObject({
+  it("parses owner names including quoted multi-word names", () => {
+    expect(parseSearchQuery("owner:\"Codex Coder\" crash", context)).toMatchObject({
       query: "crash",
-      filters: { assigneeAgentId: "agent-1" },
-      pills: [{ key: "assignee", value: "Codex Coder", label: "assignee:Codex Coder" }],
+      filters: { ownerAgentId: "agent-1" },
+      pills: [{ key: "owner", value: "Codex Coder", label: "owner:Codex Coder" }],
     });
   });
 
@@ -93,8 +93,8 @@ describe("parseSearchQuery", () => {
   });
 
   it("falls unknown operators through to plain text", () => {
-    expect(parseSearchQuery("owner:me auth", context)).toMatchObject({
-      query: "owner:me auth",
+    expect(parseSearchQuery("assignee:me auth", context)).toMatchObject({
+      query: "assignee:me auth",
       filters: {},
       pills: [],
     });
@@ -138,6 +138,6 @@ describe("search operator suggestions", () => {
 
   it("replaces only the current token when applying a suggestion", () => {
     expect(applySearchOperatorSuggestion("auth sta", "status:todo")).toBe("auth status:todo");
-    expect(applySearchOperatorSuggestion("", "assignee:me")).toBe("assignee:me");
+    expect(applySearchOperatorSuggestion("", "owner:me")).toBe("owner:me");
   });
 });

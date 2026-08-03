@@ -4,7 +4,7 @@ import {
   toCompanyRelativePath,
 } from "./company-routes";
 
-const GLOBAL_SEGMENTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs"]);
+const GLOBAL_SEGMENTS = new Set(["auth", "invite", "cli-auth", "docs"]);
 
 export function isRememberableCompanyPath(path: string): boolean {
   const pathname = path.split("?")[0] ?? "";
@@ -15,15 +15,21 @@ export function isRememberableCompanyPath(path: string): boolean {
   return true;
 }
 
-function findCompanyByPrefix<T extends { id: string; issuePrefix: string }>(params: {
-  companies: T[];
-  companyPrefix: string;
-}): T | null {
+function findCompanyByPrefix<
+  T extends { id: string; issuePrefix: string },
+>(params: { companies: T[]; companyPrefix: string }): T | null {
   const normalizedPrefix = normalizeCompanyPrefix(params.companyPrefix);
-  return params.companies.find((company) => normalizeCompanyPrefix(company.issuePrefix) === normalizedPrefix) ?? null;
+  return (
+    params.companies.find(
+      (company) =>
+        normalizeCompanyPrefix(company.issuePrefix) === normalizedPrefix,
+    ) ?? null
+  );
 }
 
-export function getRememberedPathOwnerCompanyId<T extends { id: string; issuePrefix: string }>(params: {
+export function getRememberedPathOwnerCompanyId<
+  T extends { id: string; issuePrefix: string },
+>(params: {
   companies: T[];
   pathname: string;
   fallbackCompanyId: string | null;
@@ -33,17 +39,21 @@ export function getRememberedPathOwnerCompanyId<T extends { id: string; issuePre
     return params.fallbackCompanyId;
   }
 
-  return findCompanyByPrefix({
-    companies: params.companies,
-    companyPrefix: routeCompanyPrefix,
-  })?.id ?? null;
+  return (
+    findCompanyByPrefix({
+      companies: params.companies,
+      companyPrefix: routeCompanyPrefix,
+    })?.id ?? null
+  );
 }
 
 export function sanitizeRememberedPathForCompany(params: {
   path: string | null | undefined;
   companyPrefix: string;
 }): string {
-  const relativePath = params.path ? toCompanyRelativePath(params.path) : "/dashboard";
+  const relativePath = params.path
+    ? toCompanyRelativePath(params.path)
+    : "/dashboard";
   if (!isRememberableCompanyPath(relativePath)) {
     return "/dashboard";
   }
@@ -55,7 +65,8 @@ export function sanitizeRememberedPathForCompany(params: {
     const identifierMatch = /^([A-Za-z]+)-\d+$/.exec(entityId);
     if (
       identifierMatch &&
-      normalizeCompanyPrefix(identifierMatch[1] ?? "") !== normalizeCompanyPrefix(params.companyPrefix)
+      normalizeCompanyPrefix(identifierMatch[1] ?? "") !==
+        normalizeCompanyPrefix(params.companyPrefix)
     ) {
       return "/dashboard";
     }

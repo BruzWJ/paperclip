@@ -7,7 +7,12 @@ export function storageCheck(config: PaperclipConfig, configPath?: string): Chec
   if (config.storage.provider === "local_disk") {
     const baseDir = resolveRuntimeLikePath(config.storage.localDisk.baseDir, configPath);
     if (!fs.existsSync(baseDir)) {
-      fs.mkdirSync(baseDir, { recursive: true });
+      return {
+        name: "Storage",
+        status: "warn",
+        message: `Local storage directory does not exist yet: ${baseDir}`,
+        guidance: "Paperclip will create it during first startup; doctor does not mutate deployment state",
+      };
     }
 
     try {
@@ -22,8 +27,7 @@ export function storageCheck(config: PaperclipConfig, configPath?: string): Chec
         name: "Storage",
         status: "fail",
         message: `Local storage directory is not writable: ${baseDir}`,
-        canRepair: false,
-        repairHint: "Check file permissions for storage.localDisk.baseDir",
+        guidance: "Check file permissions for storage.localDisk.baseDir",
       };
     }
   }
@@ -35,8 +39,7 @@ export function storageCheck(config: PaperclipConfig, configPath?: string): Chec
       name: "Storage",
       status: "fail",
       message: "S3 storage requires non-empty bucket and region",
-      canRepair: false,
-      repairHint: "Run `paperclipai configure --section storage`",
+      guidance: "Run `paperclipai configure --section storage`",
     };
   }
 
@@ -44,8 +47,6 @@ export function storageCheck(config: PaperclipConfig, configPath?: string): Chec
     name: "Storage",
     status: "warn",
     message: `S3 storage configured (bucket=${bucket}, region=${region}). Reachability check is skipped in doctor.`,
-    canRepair: false,
-    repairHint: "Verify credentials and endpoint in deployment environment",
+    guidance: "Verify credentials and endpoint in deployment environment",
   };
 }
-

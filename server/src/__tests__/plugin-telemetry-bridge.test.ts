@@ -34,6 +34,11 @@ describe("plugin telemetry bridge", () => {
       "plugin-record-id",
       "linear",
       createEventBusStub(),
+      undefined,
+      {
+        ordinaryIssues: {} as never,
+        pluginIssueControlPlane: {} as never,
+      },
     );
     const handlers = createHostClientHandlers({
       pluginId: "linear",
@@ -60,6 +65,11 @@ describe("plugin telemetry bridge", () => {
       "plugin-record-id",
       "linear",
       createEventBusStub(),
+      undefined,
+      {
+        ordinaryIssues: {} as never,
+        pluginIssueControlPlane: {} as never,
+      },
     );
 
     await expect(
@@ -75,6 +85,11 @@ describe("plugin telemetry bridge", () => {
       "plugin-record-id",
       "linear",
       createEventBusStub(),
+      undefined,
+      {
+        ordinaryIssues: {} as never,
+        pluginIssueControlPlane: {} as never,
+      },
     );
     const handlers = createHostClientHandlers({
       pluginId: "linear",
@@ -100,6 +115,11 @@ describe("plugin telemetry bridge", () => {
       "plugin-record-id",
       "linear",
       createEventBusStub(),
+      undefined,
+      {
+        ordinaryIssues: {} as never,
+        pluginIssueControlPlane: {} as never,
+      },
     );
     const handlers = createHostClientHandlers({
       pluginId: "linear",

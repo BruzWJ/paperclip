@@ -11,7 +11,7 @@ pause controls, and consistent audits instead of hidden daemon behavior.
 
 ## Prerequisites
 
-- Node.js 22+ and `pnpm`.
+- Node.js >=22.13.0 and `pnpm`.
 - A local Paperclip checkout you can run from source. Local plugin installs read source from disk, so the running server must be able to see the path you give it.
 
 ## The five steps
@@ -95,7 +95,7 @@ Before it installs, the CLI probes `GET /api/health` on the instance it is confi
 
 ```
 Target Paperclip: http://127.0.0.1:3100
-  health: status=ok  version=0.1.0  mode=local_trusted  exposure=private
+  health: status=ok  version=0.1.0  exposure=private
 Installing plugin from local path: /Users/you/dev/paperclip-plugins/hello-plugin
 ✓ Installed acme.hello-plugin v0.1.0 (ready)
 Local plugin installs run trusted local code from your machine.
@@ -103,7 +103,12 @@ Keep `pnpm dev` running in /Users/you/dev/paperclip-plugins/hello-plugin;
 Paperclip watches rebuilt dist output and reloads the plugin worker.
 ```
 
-Read that first line. If the API URL, version, or mode is not the instance you expect, stop and re-point the CLI (see [Targeting a branch / issue-workspace runtime](#targeting-a-branch--issue-workspace-runtime)) before trusting the result. Pass `--no-verify-target` to skip the probe, or run `paperclipai plugin target` to see the same diagnostics without installing anything.
+Read that first line. If the API URL, version, or exposure is not the instance
+you expect, stop and re-point the CLI (see
+[Targeting a branch / issue-workspace runtime](#targeting-a-branch--issue-workspace-runtime))
+before trusting the result. Pass `--no-verify-target` to skip the probe, or run
+`paperclipai plugin target` to see the same diagnostics without installing
+anything.
 
 Relative paths are resolved against the current working directory, so `paperclipai plugin install .` from inside the plugin folder works too.
 
@@ -131,7 +136,7 @@ If you install the plugin into a long-lived control-plane host that is still on 
 The CLI resolves the API base URL in this order (highest priority first):
 
 1. `--api-base <url>` flag on the command,
-2. `PAPERCLIP_API_URL` environment variable,
+2. `PAPERCLIP_BOARD_API_URL` environment variable,
 3. the active CLI context profile's `apiBase`,
 4. inferred default `http://<PAPERCLIP_SERVER_HOST|localhost>:<PAPERCLIP_SERVER_PORT|config.server.port|3100>`.
 
@@ -147,19 +152,24 @@ PAPERCLIP_SERVER_PORT=3120 pnpm dev          # or: pnpm paperclipai run
 # 2. Confirm the CLI will talk to that exact branch service before installing.
 paperclipai plugin target --api-base http://127.0.0.1:3120
 # Target Paperclip: http://127.0.0.1:3120
-#   health: status=ok  version=<branch-version>  mode=local_trusted  exposure=private
+#   health: status=ok  version=<branch-version>  exposure=private
 
 # 3. Install the local-path plugin into that service (not the default host).
 paperclipai plugin install ~/dev/paperclip-plugins/hello-plugin \
   --api-base http://127.0.0.1:3120
 
 # Prefer setting it once for the shell instead of repeating --api-base:
-export PAPERCLIP_API_URL=http://127.0.0.1:3120
+export PAPERCLIP_BOARD_API_URL=http://127.0.0.1:3120
 paperclipai plugin target
 paperclipai plugin install ~/dev/paperclip-plugins/hello-plugin
 ```
 
-`plugin target` and the install-time probe both read `GET /api/health`, which returns the server `version`, `deploymentMode`, and `deploymentExposure`. Compare that `version` against the branch you expect to be running. If the diagnostics show a different URL, an unexpected version, or `health: unreachable`, you are about to test against the wrong instance — fix the target before reading anything into the plugin's behavior.
+`plugin target` and the install-time probe both read `GET /api/health`, which
+returns the server `version` and `deploymentExposure`. Compare that `version`
+against the branch you expect to be running. If the diagnostics show a
+different URL, an unexpected version, or `health: unreachable`, you are about
+to test against the wrong instance—fix the target before reading anything into
+the plugin's behavior.
 
 ### End-to-end check that the branch route is actually served
 
@@ -168,7 +178,7 @@ When the behavior you care about is a branch-only route, hit it directly against
 ```bash
 # Same base URL you installed into; expect JSON, not "API route not found".
 curl -s "http://127.0.0.1:3120/api/companies/<companyId>/<branch-route>" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" | head
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_API_KEY" | head
 ```
 
 If that returns the route's JSON, the branch runtime is serving the route and the plugin is exercising real published behavior. If it returns `API route not found`, the service on that port is not running your branch code — restart the branch server (step 1) and re-check `plugin target` before continuing.
@@ -202,7 +212,7 @@ When you are done iterating locally, publish the package and reinstall the npm-p
 
 ## Common things to do next
 
-- **Restart cleanly:** `paperclipai plugin disable <key>` pauses the plugin without removing it. `paperclipai plugin enable <key>` brings it back. `paperclipai plugin uninstall <key>` removes the install record; add `--force` to also purge plugin state and settings.
+- **Restart cleanly:** `paperclipai plugin disable <key>` pauses the plugin without uninstalling it. `paperclipai plugin enable <key>` brings that installation back. `paperclipai plugin uninstall <key>` terminalizes the installation and retains its immutable tombstone; add `--force` to also purge operational state, settings, jobs, webhooks, and custom database objects.
 - **Browse examples:** `paperclipai plugin examples` lists the bundled example plugins that ship with the repo, each with a ready-to-run `paperclipai plugin install <path>` line.
 - **Go deeper:** [`PLUGIN_AUTHORING_GUIDE.md`](./PLUGIN_AUTHORING_GUIDE.md) covers worker capabilities, managed agents/projects/routines/skills, plugin database namespaces, scoped API routes, and the shared UI components in `@paperclipai/plugin-sdk/ui`. [`PLUGIN_SPEC.md`](./PLUGIN_SPEC.md) is the longer-form specification, including future ideas that are not yet implemented.
 - **Routine-first automation:** If your plugin should produce periodic issue work, prefer managed routines and `ctx.routines.managed` reconciliation over custom process loops or unobserved cron code.

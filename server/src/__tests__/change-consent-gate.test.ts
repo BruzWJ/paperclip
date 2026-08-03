@@ -1,249 +1,212 @@
-import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import {
-  agents,
-  companies,
-  createDb,
-  heartbeatRuns,
-  issueThreadInteractions,
-  issues,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   changeConsentGateService,
+  consumeAcceptedChangeConsentInTransaction,
   skillChangeTargetKey,
 } from "../services/change-consent-gate.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const runMocks = vi.hoisted(() => ({
+  resolveIdentity: vi.fn(),
+  readRun: vi.fn(),
+}));
 
-describeEmbeddedPostgres("changeConsentGateService", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+vi.mock("../services/issue-execution-run-service.js", () => ({
+  resolveIssueExecutionRunIdentityById: runMocks.resolveIdentity,
+  readIssueExecutionRun: runMocks.readRun,
+}));
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-reflection-coach-gate-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+const DISPLAYED_DIFF = "```diff\n+Tighten the workflow.\n```";
+const companyId = "00000000-0000-4000-8000-000000000001";
+const agentId = "00000000-0000-4000-8000-000000000002";
+const sourceRunId = "00000000-0000-4000-8000-000000000003";
+const actorRunId = "00000000-0000-4000-8000-000000000004";
+const targetKey = skillChangeTargetKey("00000000-0000-4000-8000-000000000005");
 
-  afterEach(async () => {
-    await db.delete(issueThreadInteractions);
-    await db.delete(issues);
-    await db.delete(heartbeatRuns);
-    await db.delete(agents);
-    await db.delete(companies);
+describe("changeConsentGateService", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    runMocks.resolveIdentity.mockResolvedValue({ companyId, runId: sourceRunId });
+    runMocks.readRun.mockResolvedValue({ targetAgentId: agentId });
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedGateFixture() {
-    const companyId = randomUUID();
-    const coachId = randomUUID();
-    const sourceRunId = randomUUID();
-    const proposalIssueId = randomUUID();
-    const skillId = randomUUID();
-    const targetKey = skillChangeTargetKey(skillId);
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: "PAP",
-      defaultResponsibleUserId: "board-user",
-    });
-    await db.insert(agents).values({
-      id: coachId,
-      companyId,
-      name: "Reflection Coach",
-      role: "general",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: { canCreateSkills: true },
-    });
-    await db.insert(heartbeatRuns).values({
-      id: sourceRunId,
-      companyId,
-      agentId: coachId,
-      status: "succeeded",
-    });
-    await db.insert(issues).values({
-      id: proposalIssueId,
-      companyId,
-      title: "Review Reflection Coach proposal",
-      status: "in_review",
-      priority: "medium",
-      identifier: "PAP-1",
-      issueNumber: 1,
-      createdByAgentId: coachId,
-    });
-
-    return { companyId, coachId, sourceRunId, proposalIssueId, skillId, targetKey };
-  }
-
-  it("rejects Reflection Coach skill mutation without an accepted bound interaction", async () => {
-    const { companyId, coachId, targetKey } = await seedGateFixture();
+  it("requires durable consent for the exact target", async () => {
+    const { db } = createMockDb({ select: [[]] });
 
     await expect(changeConsentGateService(db).assertConsented({
       companyId,
-      actorAgentId: coachId,
-      actorRunId: randomUUID(),
-      targetKeys: [targetKey],
-    })).rejects.toMatchObject({
-      status: 403,
-      details: { code: "reflection_coach_mutation_gate_required" },
-    });
-  });
-
-  it("rejects accepted interactions from the same run as the apply mutation", async () => {
-    const { companyId, coachId, sourceRunId, proposalIssueId, targetKey } = await seedGateFixture();
-    await db.insert(issueThreadInteractions).values({
-      id: randomUUID(),
-      companyId,
-      issueId: proposalIssueId,
-      kind: "request_confirmation",
-      status: "accepted",
-      continuationPolicy: "wake_assignee_on_accept",
-      sourceRunId,
-      createdByAgentId: coachId,
-      payload: {
-        version: 1,
-        prompt: "Apply this Reflection Coach skill diff?",
-        detailsMarkdown: "```diff\n+Tighten the workflow.\n```",
-        target: { type: "custom", key: targetKey, revisionId: "proposal-v1" },
-      },
-      result: { version: 1, outcome: "accepted" },
-      resolvedByUserId: "board-user",
-      resolvedAt: new Date(),
-    });
-
-    await expect(changeConsentGateService(db).assertConsented({
-      companyId,
-      actorAgentId: coachId,
-      actorRunId: sourceRunId,
-      targetKeys: [targetKey],
-    })).rejects.toMatchObject({
-      status: 403,
-      details: { code: "reflection_coach_mutation_gate_required" },
-    });
-  });
-
-  it("allows a previous-run accepted interaction with a displayed diff for the bound target", async () => {
-    const { companyId, coachId, sourceRunId, proposalIssueId, targetKey } = await seedGateFixture();
-    const interactionId = randomUUID();
-    await db.insert(issueThreadInteractions).values({
-      id: interactionId,
-      companyId,
-      issueId: proposalIssueId,
-      kind: "request_confirmation",
-      status: "accepted",
-      continuationPolicy: "wake_assignee_on_accept",
-      sourceRunId,
-      createdByAgentId: coachId,
-      payload: {
-        version: 1,
-        prompt: "Apply this Reflection Coach skill diff?",
-        detailsMarkdown: "```diff\n+Tighten the workflow.\n```",
-        target: { type: "custom", key: targetKey, revisionId: "proposal-v1" },
-      },
-      result: { version: 1, outcome: "accepted" },
-      resolvedByUserId: "board-user",
-      resolvedAt: new Date(),
-    });
-    const actorRunId = randomUUID();
-
-    await expect(changeConsentGateService(db).assertConsented({
-      companyId,
-      actorAgentId: coachId,
+      actorAgentId: agentId,
       actorRunId,
       targetKeys: [targetKey],
-    })).resolves.toBe(true);
-
-    const [stored] = await db
-      .select({ result: issueThreadInteractions.result })
-      .from(issueThreadInteractions)
-      .where(eq(issueThreadInteractions.id, interactionId));
-
-    expect(stored?.result).toMatchObject({
-      consumedByRunId: actorRunId,
-      outcome: "accepted",
-      version: 1,
-    });
-    expect((stored?.result as { consumedAt?: unknown } | undefined)?.consumedAt).toEqual(expect.any(String));
-  });
-
-  it("rejects reusing an accepted interaction after it is consumed by a mutation", async () => {
-    const { companyId, coachId, sourceRunId, proposalIssueId, targetKey } = await seedGateFixture();
-    await db.insert(issueThreadInteractions).values({
-      id: randomUUID(),
-      companyId,
-      issueId: proposalIssueId,
-      kind: "request_confirmation",
-      status: "accepted",
-      continuationPolicy: "wake_assignee_on_accept",
-      sourceRunId,
-      createdByAgentId: coachId,
-      payload: {
-        version: 1,
-        prompt: "Apply this Reflection Coach skill diff?",
-        detailsMarkdown: "```diff\n+Tighten the workflow.\n```",
-        target: { type: "custom", key: targetKey, revisionId: "proposal-v1" },
-      },
-      result: { version: 1, outcome: "accepted" },
-      resolvedByUserId: "board-user",
-      resolvedAt: new Date(),
-    });
-
-    await expect(changeConsentGateService(db).assertConsented({
-      companyId,
-      actorAgentId: coachId,
-      actorRunId: randomUUID(),
-      targetKeys: [targetKey],
-    })).resolves.toBe(true);
-
-    await expect(changeConsentGateService(db).assertConsented({
-      companyId,
-      actorAgentId: coachId,
-      actorRunId: randomUUID(),
-      targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
     })).rejects.toMatchObject({
       status: 403,
-      details: { code: "reflection_coach_mutation_gate_required" },
+      details: { code: "change_consent_required" },
     });
   });
 
-  it("allows legacy Reflection Coach target keys for durable accepted interactions", async () => {
-    const { companyId, coachId, sourceRunId, proposalIssueId, skillId, targetKey } = await seedGateFixture();
-    await db.insert(issueThreadInteractions).values({
-      id: randomUUID(),
-      companyId,
-      issueId: proposalIssueId,
-      kind: "request_confirmation",
-      status: "accepted",
-      continuationPolicy: "wake_assignee_on_accept",
-      sourceRunId,
-      createdByAgentId: coachId,
-      payload: {
-        version: 1,
-        prompt: "Apply this Reflection Coach skill diff?",
-        detailsMarkdown: "```diff\n+Tighten the workflow.\n```",
-        target: { type: "custom", key: `reflection-coach:company-skill:${skillId}`, revisionId: "proposal-v1" },
-      },
-      result: { version: 1, outcome: "accepted" },
-      resolvedByUserId: "board-user",
-      resolvedAt: new Date(),
-    });
+  it("rejects consent from the same run as the applying mutation", async () => {
+    const { db } = createMockDb({ select: [[]] });
 
     await expect(changeConsentGateService(db).assertConsented({
       companyId,
-      actorAgentId: coachId,
-      actorRunId: randomUUID(),
+      actorAgentId: agentId,
+      actorRunId: sourceRunId,
       targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
+    })).rejects.toMatchObject({
+      status: 403,
+      details: { code: "change_consent_required" },
+    });
+  });
+
+  it("consumes one previous-run accepted consent atomically", async () => {
+    const now = new Date("2026-08-02T12:00:00.000Z");
+    const { db, calls } = createMockDb({
+      select: [[{ id: "consent-1" }]],
+      update: [[{ id: "consent-1" }]],
+    });
+
+    await expect(consumeAcceptedChangeConsentInTransaction(db as never, {
+      companyId,
+      actorAgentId: agentId,
+      actorRunId,
+      targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
+      now,
     })).resolves.toBe(true);
+
+    expect(calls.find(
+      (call) => call.operation === "update" && call.method === "set",
+    )?.args[0]).toEqual({
+      consumedAt: now,
+      consumedByRunId: actorRunId,
+      updatedAt: now,
+    });
+  });
+
+  it("does not consume consent for a different displayed diff", async () => {
+    const { db } = createMockDb({
+      select: [[], [{ id: "consent-1" }]],
+      update: [[{ id: "consent-1" }]],
+    });
+    const service = changeConsentGateService(db);
+
+    await expect(service.assertConsented({
+      companyId,
+      actorAgentId: agentId,
+      actorRunId,
+      targetKeys: [targetKey],
+      displayedDiff: "```diff\n+Different change.\n```",
+    })).rejects.toMatchObject({
+      status: 403,
+      details: { code: "change_consent_required" },
+    });
+    await expect(service.assertConsented({
+      companyId,
+      actorAgentId: agentId,
+      actorRunId,
+      targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
+    })).resolves.toBe(true);
+  });
+
+  it("cannot consume an accepted consent twice", async () => {
+    const { db } = createMockDb({
+      select: [[{ id: "consent-1" }], []],
+      update: [[{ id: "consent-1" }]],
+    });
+    const service = changeConsentGateService(db);
+
+    await service.assertConsented({
+      companyId,
+      actorAgentId: agentId,
+      actorRunId,
+      targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
+    });
+    await expect(service.assertConsented({
+      companyId,
+      actorAgentId: agentId,
+      actorRunId: "00000000-0000-4000-8000-000000000099",
+      targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
+    })).rejects.toMatchObject({
+      status: 403,
+      details: { code: "change_consent_required" },
+    });
+  });
+
+  it("requires the exact displayed diff before resolving or writing a request", async () => {
+    const { db, calls } = createMockDb();
+
+    await expect(changeConsentGateService(db).request({
+      companyId,
+      requestedByAgentId: agentId,
+      sourceRunId,
+      targetKey,
+      displayedDiff: "Please approve the change.",
+      expiresAt: new Date(Date.now() + 60_000),
+    })).rejects.toMatchObject({ status: 400 });
+    expect(runMocks.resolveIdentity).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it("persists a validated request against its canonical source run", async () => {
+    const expiresAt = new Date(Date.now() + 60_000);
+    const created = {
+      id: "consent-1",
+      companyId,
+      requestedByAgentId: agentId,
+      sourceRunId,
+      targetKey,
+      displayedDiff: DISPLAYED_DIFF,
+      expiresAt,
+    };
+    const { db, calls } = createMockDb({ insert: [[created]] });
+
+    await expect(changeConsentGateService(db).request({
+      companyId,
+      requestedByAgentId: agentId,
+      sourceRunId,
+      targetKey,
+      displayedDiff: DISPLAYED_DIFF,
+      expiresAt,
+    })).resolves.toEqual(created);
+    expect(runMocks.resolveIdentity).toHaveBeenCalledWith(db, sourceRunId);
+    expect(calls.find((call) => call.method === "values")?.args[0]).toEqual({
+      companyId,
+      requestedByAgentId: agentId,
+      sourceRunId,
+      targetKey,
+      displayedDiff: DISPLAYED_DIFF,
+      expiresAt,
+    });
+  });
+
+  it("does not treat a rejected decision as consent", async () => {
+    const { db } = createMockDb({
+      update: [[], [{ id: "consent-1", status: "rejected" }]],
+      select: [[]],
+    });
+    const service = changeConsentGateService(db);
+
+    await expect(service.decide({
+      companyId,
+      consentId: "consent-1",
+      decision: "rejected",
+      decidedByBoardId: "board-user",
+      reason: "Needs revision",
+    })).resolves.toMatchObject({ status: "rejected" });
+    await expect(service.assertConsented({
+      companyId,
+      actorAgentId: agentId,
+      actorRunId,
+      targetKeys: [targetKey],
+      displayedDiff: DISPLAYED_DIFF,
+    })).rejects.toMatchObject({
+      status: 403,
+      details: { code: "change_consent_required" },
+    });
   });
 });

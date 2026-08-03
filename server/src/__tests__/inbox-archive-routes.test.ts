@@ -1,383 +1,181 @@
-import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  activityLog,
-  agents,
-  authUsers,
-  companies,
-  companyMemberships,
-  createDb,
-  heartbeatRuns,
-  issueComments,
-  issueInboxArchives,
-  issues,
-  principalPermissionGrants,
-  userInboxAgentPolicies,
-} from "@paperclipai/db";
-import { LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Db } from "@paperclipai/db";
 import { errorHandler } from "../middleware/index.js";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { issueRoutes } from "../routes/issues.js";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { issueService as createIssueService } from "../services/issues.js";
+import { createMockDb } from "./helpers/mock-db.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const routeMocks = vi.hoisted(() => ({
+  getById: vi.fn(),
+  archiveInbox: vi.fn(),
+  unarchiveInbox: vi.fn(),
+  logActivity: vi.fn(),
+}));
 
-describeEmbeddedPostgres("inbox archive routes", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+vi.mock("../services/index.js", async () => ({
+  ...await vi.importActual<typeof import("../services/index.js")>("../services/index.js"),
+  issueService: () => routeMocks,
+  logActivity: routeMocks.logActivity,
+}));
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-inbox-archive-routes-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+const companyId = "00000000-0000-4000-8000-000000000001";
+const issueId = "00000000-0000-4000-8000-000000000010";
+const agentId = "00000000-0000-4000-8000-000000000020";
+const userId = "responsible-user";
+const targetUserId = "target-user";
+const archivedAt = new Date("2026-01-02T03:04:05.000Z");
 
-  afterEach(async () => {
-    await db.delete(issueComments);
-    await db.delete(issueInboxArchives);
-    await db.delete(activityLog);
-    await db.delete(issues);
-    await db.delete(heartbeatRuns);
-    await db.delete(userInboxAgentPolicies);
-    await db.delete(principalPermissionGrants);
-    await db.delete(companyMemberships);
-    await db.delete(agents);
-    await db.delete(companies);
-    await db.delete(authUsers);
+const issue = {
+  id: issueId,
+  companyId,
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+
+const archiveRow = {
+  id: "00000000-0000-4000-8000-000000000030",
+  companyId,
+  issueId,
+  userId,
+  archivedByActorType: "user",
+  archivedByAgentId: null,
+  archivedByRunId: null,
+  archivedAt,
+  updatedAt: archivedAt,
+};
+
+function boardActor(): Express.Request["actor"] {
+  return testBoardSessionActor({
+    userId,
+    companyIds: [companyId],
+    memberships: [{ companyId, membershipRole: "operator", status: "active" }],
+    isInstanceAdmin: false,
+  });
+}
+
+function createApp(db: Db, actor: Express.Request["actor"] = boardActor()) {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.actor = actor;
+    next();
+  });
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use("/api", issueRoutes(db, {} as never, { ordinaryIssues: {} as never }));
+  app.use(errorHandler);
+  return app;
+}
+
+describe("inbox archive routes", () => {
+  beforeEach(() => {
+    routeMocks.getById.mockReset();
+    routeMocks.archiveInbox.mockReset();
+    routeMocks.unarchiveInbox.mockReset();
+    routeMocks.logActivity.mockReset().mockResolvedValue(undefined);
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
+  it("preserves board archive and unarchive idempotency for the authenticated user", async () => {
+    routeMocks.getById.mockResolvedValue(issue);
+    routeMocks.archiveInbox.mockResolvedValue(archiveRow);
+    routeMocks.unarchiveInbox
+      .mockResolvedValueOnce(archiveRow)
+      .mockResolvedValueOnce(null);
+    const harness = createMockDb();
+    const app = createApp(harness.db);
 
-  function appFor(actor: Express.Request["actor"]) {
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      req.actor = actor;
-      next();
-    });
-    app.use("/api", issueRoutes(db, {} as never));
-    app.use(errorHandler);
-    return app;
-  }
+    const first = await request(app).post(`/api/issues/${issueId}/inbox-archive`).send({});
+    const second = await request(app).post(`/api/issues/${issueId}/inbox-archive`).send({});
+    const removed = await request(app).delete(`/api/issues/${issueId}/inbox-archive`).send({});
+    const repeated = await request(app).delete(`/api/issues/${issueId}/inbox-archive`).send({});
 
-  async function seed(input: { lowTrust?: boolean } = {}) {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    const runId = randomUUID();
-    const issueId = randomUUID();
-    const responsibleUserId = `user-${randomUUID()}`;
-    const targetUserId = `user-${randomUUID()}`;
-    const now = new Date();
-    await db.insert(companies).values({
-      id: companyId,
-      name: `Inbox ${companyId}`,
-      issuePrefix: `IA${companyId.replaceAll("-", "").slice(0, 6).toUpperCase()}`,
-    });
-    await db.insert(authUsers).values([
-      {
-        id: responsibleUserId,
-        name: "Responsible",
-        email: `${responsibleUserId}@example.com`,
-        emailVerified: true,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: targetUserId,
-        name: "Target",
-        email: `${targetUserId}@example.com`,
-        emailVerified: true,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]);
-    await db.insert(companyMemberships).values([
-      {
-        companyId,
-        principalType: "user",
-        principalId: responsibleUserId,
-        status: "active",
-        membershipRole: "operator",
-      },
-      {
-        companyId,
-        principalType: "user",
-        principalId: targetUserId,
-        status: "active",
-        membershipRole: "operator",
-      },
-    ]);
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "InboxAgent",
-      role: "engineer",
-      status: "active",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: input.lowTrust
-        ? {
-            trustPreset: LOW_TRUST_REVIEW_PRESET,
-            authorizationPolicy: {
-              trustBoundary: { mode: LOW_TRUST_REVIEW_PRESET, companyId },
-            },
-          }
-        : {},
-    });
-    await db.insert(heartbeatRuns).values({
-      id: runId,
-      companyId,
-      agentId,
-      status: "running",
-      invocationSource: "assignment",
-      responsibleUserId,
-    });
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      title: "Archive me",
-      status: "todo",
-      priority: "medium",
-      createdByUserId: responsibleUserId,
-    });
-    return { companyId, agentId, runId, issueId, responsibleUserId, targetUserId };
-  }
-
-  function agentActor(seed: Awaited<ReturnType<typeof seed>>): Express.Request["actor"] {
-    return {
-      type: "agent",
-      source: "agent_jwt",
-      agentId: seed.agentId,
-      companyId: seed.companyId,
-      runId: seed.runId,
-      onBehalfOfUserId: seed.responsibleUserId,
-      onBehalfOfMemberships: [{
-        companyId: seed.companyId,
-        membershipRole: "operator",
-        status: "active",
-      }],
-    };
-  }
-
-  it("preserves board idempotency and returns the resolved user", async () => {
-    const seeded = await seed();
-    const app = appFor({
-      type: "board",
-      source: "session",
-      userId: seeded.responsibleUserId,
-      companyIds: [seeded.companyId],
-      memberships: [{ companyId: seeded.companyId, membershipRole: "operator", status: "active" }],
-      isInstanceAdmin: false,
-    });
-
-    const first = await request(app).post(`/api/issues/${seeded.issueId}/inbox-archive`).send({}).expect(200);
-    const second = await request(app).post(`/api/issues/${seeded.issueId}/inbox-archive`).send({}).expect(200);
-    expect(first.body).toMatchObject({ userId: seeded.responsibleUserId, archivedByActorType: "user" });
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ id: archiveRow.id, userId, archivedByActorType: "user" });
     expect(second.body.id).toBe(first.body.id);
-    expect(await db.select().from(issueInboxArchives)).toHaveLength(1);
-
-    await request(app).delete(`/api/issues/${seeded.issueId}/inbox-archive`).send({}).expect(200);
-    await request(app)
-      .delete(`/api/issues/${seeded.issueId}/inbox-archive`)
-      .send({})
-      .expect(200)
-      .expect(({ body }) => expect(body).toEqual({ ok: true, userId: seeded.responsibleUserId }));
+    expect(removed.body).toMatchObject({ id: archiveRow.id, userId });
+    expect(repeated.body).toEqual({ ok: true, userId });
+    expect(routeMocks.archiveInbox).toHaveBeenCalledTimes(2);
+    expect(routeMocks.archiveInbox).toHaveBeenCalledWith(
+      companyId,
+      issueId,
+      userId,
+      expect.any(Date),
+      { archivedByActorType: "user" },
+    );
+    expect(routeMocks.unarchiveInbox).toHaveBeenCalledTimes(2);
+    expect(routeMocks.logActivity).toHaveBeenCalledTimes(4);
+    expect(harness.calls).toEqual([]);
   });
 
-  it("archives for the responsible user with agent/run attribution and resurfaces after new activity", async () => {
-    const seeded = await seed();
-    const app = appFor(agentActor(seeded));
-
-    await request(app)
-      .post(`/api/issues/${seeded.issueId}/inbox-archive`)
-      .send({})
-      .expect(200)
-      .expect(({ body }) => expect(body).toMatchObject({
-        userId: seeded.responsibleUserId,
-        archivedByActorType: "agent",
-        archivedByAgentId: seeded.agentId,
-        archivedByRunId: seeded.runId,
-      }));
-
-    const [audit] = await db.select().from(activityLog);
-    expect(audit).toMatchObject({
-      action: "issue.inbox_archived",
-      actorType: "agent",
-      agentId: seeded.agentId,
-      runId: seeded.runId,
-      details: {
-        userId: seeded.responsibleUserId,
-        targetResolvedFrom: "responsible_user",
-        policyMode: "open",
-      },
+  it("projects an active archive and drops it when newer issue activity resurfaces the issue", async () => {
+    const activeHarness = createMockDb({
+      select: [[{
+        issueId,
+        latestCommentAt: new Date("2026-01-01T12:00:00.000Z"),
+      }], [], [archiveRow]],
+    });
+    const resurfacedHarness = createMockDb({
+      select: [[{
+        issueId,
+        latestCommentAt: new Date("2026-01-03T00:00:00.000Z"),
+      }], [], [archiveRow]],
     });
 
-    const archivedList = await request(app)
-      .get(`/api/companies/${seeded.companyId}/issues`)
-      .query({ touchedByUserId: seeded.responsibleUserId })
-      .expect(200);
-    expect(archivedList.body[0]).toMatchObject({
-      id: seeded.issueId,
-      archivedByActorType: "agent",
-      archivedByAgentId: seeded.agentId,
-      archivedByRunId: seeded.runId,
+    await expect(createIssueService(activeHarness.db).getActiveInboxArchiveFields(issue, userId)).resolves.toEqual({
+      archivedAt,
+      archivedByActorType: "user",
+      archivedByAgentId: null,
+      archivedByRunId: null,
     });
-
-    const boardApp = appFor({
-      type: "board",
-      source: "session",
-      userId: seeded.responsibleUserId,
-      companyIds: [seeded.companyId],
-      memberships: [{ companyId: seeded.companyId, membershipRole: "operator", status: "active" }],
-      isInstanceAdmin: false,
-    });
-    await request(boardApp)
-      .get(`/api/issues/${seeded.issueId}`)
-      .expect(200)
-      .expect(({ body }) => expect(body).toMatchObject({
-        id: seeded.issueId,
-        archivedAt: expect.any(String),
-        archivedByActorType: "agent",
-        archivedByAgentId: seeded.agentId,
-        archivedByRunId: seeded.runId,
-      }));
-
-    await db.insert(issueComments).values({
-      companyId: seeded.companyId,
-      issueId: seeded.issueId,
-      authorUserId: seeded.targetUserId,
-      body: "New work arrived",
-      createdAt: new Date(Date.now() + 1000),
-      updatedAt: new Date(Date.now() + 1000),
-    });
-    const resurfaced = await request(app)
-      .get(`/api/companies/${seeded.companyId}/issues`)
-      .query({
-        touchedByUserId: seeded.responsibleUserId,
-        inboxArchivedByUserId: seeded.responsibleUserId,
-      })
-      .expect(200);
-    expect(resurfaced.body[0]).toMatchObject({ id: seeded.issueId });
-    expect(resurfaced.body[0].archivedByAgentId).toBeUndefined();
-    await request(boardApp)
-      .get(`/api/issues/${seeded.issueId}`)
-      .expect(200)
-      .expect(({ body }) => expect(body.archivedByAgentId).toBeUndefined());
+    await expect(createIssueService(resurfacedHarness.db).getActiveInboxArchiveFields(issue, userId)).resolves.toEqual({});
+    expect(activeHarness.remaining("select")).toBe(0);
+    expect(resurfacedHarness.remaining("select")).toBe(0);
   });
 
-  it("returns stable typed denials for unresolved, disabled, allowlist, and low-trust actors", async () => {
-    const unresolved = await seed();
-    const unresolvedActor = agentActor(unresolved);
-    unresolvedActor.onBehalfOfUserId = null;
-    unresolvedActor.onBehalfOfMemberships = [];
-    await request(appFor(unresolvedActor))
-      .post(`/api/issues/${unresolved.issueId}/inbox-archive`)
-      .send({})
-      .expect(403)
-      .expect(({ body }) => expect(body.code).toBe("inbox_target_user_unresolved"));
+  it("rejects agent archive and unarchive requests at the generic REST boundary", async () => {
+    const harness = createMockDb();
+    const actor = {
+      type: "agent",
+      source: "internal",
+      agentId,
+      companyId,
+      runId: "00000000-0000-4000-8000-000000000040",
+      onBehalfOfUserId: userId,
+      onBehalfOfMemberships: [{ companyId, membershipRole: "operator", status: "active" }],
+    } as const;
+    const app = createApp(harness.db, actor);
 
-    const disabled = await seed();
-    await db.insert(userInboxAgentPolicies).values({
-      companyId: disabled.companyId,
-      userId: disabled.responsibleUserId,
-      mode: "disabled",
-    });
-    await request(appFor(agentActor(disabled)))
-      .post(`/api/issues/${disabled.issueId}/inbox-archive`)
-      .send({})
-      .expect(403)
-      .expect(({ body }) => expect(body.code).toBe("inbox_management_disabled"));
+    const archive = await request(app).post(`/api/issues/${issueId}/inbox-archive`).send({});
+    const unarchive = await request(app).delete(`/api/issues/${issueId}/inbox-archive`).send({});
 
-    const allowlist = await seed();
-    await db.insert(userInboxAgentPolicies).values({
-      companyId: allowlist.companyId,
-      userId: allowlist.responsibleUserId,
-      mode: "allowlist",
-      allowedAgentIds: [],
-    });
-    await request(appFor(agentActor(allowlist)))
-      .post(`/api/issues/${allowlist.issueId}/inbox-archive`)
-      .send({})
-      .expect(403)
-      .expect(({ body }) => expect(body.code).toBe("inbox_agent_not_allowed"));
-    await db
-      .update(userInboxAgentPolicies)
-      .set({ allowedAgentIds: [allowlist.agentId] })
-      .where(eq(userInboxAgentPolicies.companyId, allowlist.companyId));
-    await request(appFor(agentActor(allowlist)))
-      .post(`/api/issues/${allowlist.issueId}/inbox-archive`)
-      .send({})
-      .expect(200);
-
-    const lowTrust = await seed({ lowTrust: true });
-    await request(appFor(agentActor(lowTrust)))
-      .post(`/api/issues/${lowTrust.issueId}/inbox-archive`)
-      .send({})
-      .expect(403)
-      .expect(({ body }) => expect(body.code).toBe("inbox_agent_not_allowed"));
+    expect(archive.status).toBe(403);
+    expect(unarchive.status).toBe(403);
+    expect(archive.body.code).toBe("compiled_run_interface_required");
+    expect(unarchive.body.code).toBe("compiled_run_interface_required");
+    expect(routeMocks.getById).not.toHaveBeenCalled();
+    expect(routeMocks.archiveInbox).not.toHaveBeenCalled();
+    expect(routeMocks.unarchiveInbox).not.toHaveBeenCalled();
+    expect(harness.calls).toEqual([]);
   });
 
-  it("requires a scoped grant for cross-user archive and unarchive", async () => {
-    const seeded = await seed();
-    const app = appFor(agentActor(seeded));
+  it("rejects the retired explicit target-user body before loading the issue", async () => {
+    const harness = createMockDb();
+    const app = createApp(harness.db);
 
-    await request(app)
-      .post(`/api/issues/${seeded.issueId}/inbox-archive`)
-      .send({ userId: seeded.targetUserId })
-      .expect(403)
-      .expect(({ body }) => expect(body.code).toBe("inbox_cross_user_grant_required"));
+    const archive = await request(app)
+      .post(`/api/issues/${issueId}/inbox-archive`)
+      .send({ userId: targetUserId });
+    const unarchive = await request(app)
+      .delete(`/api/issues/${issueId}/inbox-archive`)
+      .send({ userId: targetUserId });
 
-    await db.insert(companyMemberships).values({
-      companyId: seeded.companyId,
-      principalType: "agent",
-      principalId: seeded.agentId,
-      status: "active",
-      membershipRole: "member",
-    });
-    await db.insert(principalPermissionGrants).values({
-      companyId: seeded.companyId,
-      principalType: "agent",
-      principalId: seeded.agentId,
-      permissionKey: "inbox:manage",
-      scope: { userIds: [seeded.targetUserId] },
-    });
-    await db.insert(userInboxAgentPolicies).values({
-      companyId: seeded.companyId,
-      userId: seeded.targetUserId,
-      mode: "disabled",
-    });
-
-    await request(app)
-      .post(`/api/issues/${seeded.issueId}/inbox-archive`)
-      .send({ userId: seeded.targetUserId })
-      .expect(200)
-      .expect(({ body }) => expect(body).toMatchObject({ userId: seeded.targetUserId }));
-    await request(app)
-      .delete(`/api/issues/${seeded.issueId}/inbox-archive`)
-      .send({ userId: seeded.targetUserId })
-      .expect(200)
-      .expect(({ body }) => expect(body).toMatchObject({ userId: seeded.targetUserId }));
-
-    const auditRows = await db.select().from(activityLog);
-    expect(auditRows.find((row) => row.action === "issue.inbox_unarchived")).toMatchObject({
-      actorType: "agent",
-      agentId: seeded.agentId,
-      runId: seeded.runId,
-    });
-    expect(auditRows.map((row) => row.details)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        userId: seeded.targetUserId,
-        targetResolvedFrom: "explicit",
-        policyMode: "grant_override",
-      }),
-    ]));
+    expect(archive.status).toBe(400);
+    expect(unarchive.status).toBe(400);
+    expect(routeMocks.getById).not.toHaveBeenCalled();
+    expect(routeMocks.archiveInbox).not.toHaveBeenCalled();
+    expect(routeMocks.unarchiveInbox).not.toHaveBeenCalled();
+    expect(harness.calls).toEqual([]);
   });
 });

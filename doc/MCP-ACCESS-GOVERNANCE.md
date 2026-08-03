@@ -17,7 +17,7 @@ Operator guide for Paperclip's MCP tool access surface. Audience: board users an
 - [Approval flow and trust rules](#approval-flow-and-trust-rules)
 - [Runtime slots](#runtime-slots)
 - [Audit and the call event log](#audit-and-the-call-event-log)
-- [Local trusted deployment](#local-trusted-deployment)
+- [Local process trust](#local-process-trust)
 - [Known limitations](#known-limitations)
 - [Reference](#reference)
 
@@ -93,36 +93,32 @@ Expected: `ok: true` with three green checks: `allow_read_tool`, `deny_write_too
 
 If the smoke fails, fix the failing check before introducing any production connection. The bundled fixture only depends on local code, so any failure is a control-plane problem rather than an upstream MCP issue.
 
-## Paperclip as MCP endpoint vs MCP gateway
+## Paperclip as an MCP gateway
 
-Paperclip plays two roles in the MCP graph, and confusing them is the most common operator error.
+Paperclip exposes governed company tools through the run-scoped gateway. It is
+not a generic MCP endpoint for manipulating Paperclip issues or agents.
 
 ```
-              Paperclip as MCP endpoint
-              (clients call Paperclip)
-                       ┌──────────────┐
-   Claude Code  ─────▶ │   Paperclip  │
-   IDE / CLI    ─────▶ │ /mcp surface │
-                       └──────────────┘
-                          (task ops, agent ops)
-
-
-              Paperclip as MCP gateway / proxy
-              (agents call upstream MCP through Paperclip)
-
    ┌─────┐       ┌────────────┐       ┌──────────────┐
-   │Agent│──────▶│ Paperclip  │──────▶│ Upstream MCP │
+   │Issue│──────▶│ Paperclip  │──────▶│ Upstream MCP │
    │ run │       │  gateway   │       │ (GitHub etc.)│
    └─────┘       │  + policy  │       └──────────────┘
                  │  + audit   │
                  └────────────┘
 ```
 
-**Endpoint mode** — Paperclip exposes its own MCP surface so external clients (Claude Code, IDEs, scripts) can manipulate Paperclip tasks and agents. This is what `doc/TASKS-mcp.md` covers. Access control here is the standard Paperclip auth model ([DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md)): bearer keys, sessions, board API key.
+Paperclip proxies a concrete selected tool call from an authorized issue
+execution to an upstream MCP server (GitHub, Linear, a local stdio fixture,
+etc.). Every call goes through the immutable run-interface binding, selection
+intersection, policy evaluation, optional human approval, rate limiting,
+redaction, and audit. The former generic Paperclip issue/agent MCP endpoint was
+retired; provider actors use only the six dynamically compiled Paperclip action
+tools.
 
-**Gateway mode** — Paperclip proxies tool calls from a Paperclip agent to an upstream MCP server (GitHub, Linear, a local stdio fixture, etc.). Every call goes through profile selection, policy evaluation, optional human approval, rate limiting, redaction, and audit. This is what the rest of this document covers.
-
-Operators usually mean *gateway* when they say "MCP access governance". For Paperclip-managed local adapter runs, Paperclip writes adapter MCP config that points at named gateway endpoints with short-lived scoped bearer tokens. Policies, approvals, and the audit log only exist for calls that enter gateway mode.
+For local adapter runs, the compiler delivers only the selected concrete
+descriptors and a short-lived bearer bound to the exact issue execution.
+Policies, approvals, and the audit log apply only to calls that enter this
+gateway.
 
 V1 does not claim host-wide MCP enforcement. If an unmanaged external client, hand-edited adapter config, or process outside the Paperclip-controlled workspace calls an upstream MCP server directly, Paperclip can warn about known overlapping config entries but cannot prevent or audit that bypass. Treat managed MCP config as a control-plane containment feature for Paperclip-launched agents, not as an endpoint firewall for the operator's whole machine.
 
@@ -133,7 +129,7 @@ A connection is an enabled, governed link to one MCP server. Two transports are 
 | Transport | When to use | Trust posture |
 | --- | --- | --- |
 | `remote_http` | Hosted SaaS MCP servers (GitHub, Linear, custom remote MCP). Default for cloud. | Paperclip authenticates with stored credential refs and proxies calls. Process supervision is upstream's problem. |
-| `local_stdio` | Local fixtures or approved stdio templates that must run as a child process. | Only allowed when the host is explicitly trusted; see [Local trusted deployment](#local-trusted-deployment). Cloud public deployments fail closed unless a trusted runtime host is configured. |
+| `local_stdio` | Local fixtures or approved stdio templates that must run as a child process. | Only allowed when the host is explicitly trusted; see [Local process trust](#local-process-trust). Public deployments fail closed unless a trusted runtime host is configured. |
 
 Operators do not paste arbitrary `command` / `args` for stdio. Allowed stdio entries are limited to the approved template catalog (e.g. `paperclip.echo-calculator-time`, `paperclip.synthetic-todo-kv`). To add a new template, ship a code change.
 
@@ -235,7 +231,7 @@ Selector types:
 
 Effects: `include` adds to the allowed set, `exclude` removes. `defaultAction` is the fallback when no entry matches.
 
-Binding scopes, narrowest first: `issue` > `routine` > `agent` > `project` > `company`. The effective profile for an agent is computed at session time and cached on the gateway session. To preview:
+Binding scopes, narrowest first: `issue` > `routine` > `agent` > `project` > `company`. Effective access is resolved at each governed call. To preview an agent's board-managed profile state:
 
 ```sh
 curl -fsS -H "Authorization: Bearer $BOARD_API_KEY" \
@@ -287,28 +283,18 @@ Decisions: `allow`, `deny`, `require_approval`, `rate_limited`, `defer_runtime`.
 When a call resolves to `require_approval`, the gateway opens an **Action Request** carrying:
 - the agent, run, and tool identity,
 - a canonical hash of the arguments (so we can match later trust rules),
-- a `signedArguments` payload the approver sees verbatim,
-- a linked issue-thread `request_confirmation` interaction for the in-app card,
+- a redacted review projection while the exact arguments remain private in the canonical action-request row,
 - an expiry.
 
-The gateway responds to the agent's tool call with HTTP `409`, `reasonCode: "approval_required"`, and the new `actionRequestId` in the body. The agent's run is paused on this exact call until a decision lands. Once approved, the agent retries the same tool call with `approvedActionRequestId` set; the gateway re-validates that the canonical arguments hash matches and then executes the tool.
+The gateway responds to the agent's tool call with HTTP `409`, `reasonCode: "approval_required"`, and the new `actionRequestId` in the body. That call is complete: the agent does not retry it and approval does not wake or reinvoke the provider. The board approval resolver authenticates and authorizes the Better Auth user, locks the immutable action request, verifies its policy and binding snapshot, records the execution idempotency key, and executes the stored call server-side once. Concurrent approval requests observe the recorded terminal result.
 
 After approval, the operator can promote that approval into a **trust rule**: a policy of `policyType: trust_rule` that allows the same tool with the same argument shape for the same actor scope, optionally for a limited number of approvals or until an expiry. This is how you avoid clicking *Approve* on every safe repetition of the same action.
 
 ```sh
-# Approve via API (UI does the same). Approval requires companyId — body or query.
+# Approve via API (UI does the same). The company scope is canonical in the route.
 curl -fsS -X POST -H "Authorization: Bearer $BOARD_API_KEY" -H "Content-Type: application/json" \
-  "$PAPERCLIP_URL/api/tool-gateway/action-requests/$ACTION_REQUEST_ID/approve" \
-  -d '{ "companyId": "'"$COMPANY_ID"'" }' | jq '{id, status, resolvedAt, resolvedByUserId}'
-
-# Retry the original tool call with approvedActionRequestId (the agent does this).
-curl -fsS -X POST -H "X-Paperclip-Tool-Gateway-Token: $GATEWAY_TOKEN" -H "Content-Type: application/json" \
-  "$PAPERCLIP_URL/api/tool-gateway/tools/call" \
-  -d '{
-    "tool": "create_item",
-    "parameters": { "title": "Approved item" },
-    "approvedActionRequestId": "'"$ACTION_REQUEST_ID"'"
-  }' | jq '{invocationId, status, tool, result}'
+  "$PAPERCLIP_URL/api/companies/$COMPANY_ID/tools/action-requests/$ACTION_REQUEST_ID/approve" \
+  -d '{}' | jq '{id, status, resolvedAt, resolvedByUserId}'
 
 # Promote the approval to a trust rule
 curl -fsS -X POST -H "Authorization: Bearer $BOARD_API_KEY" -H "Content-Type: application/json" \
@@ -324,7 +310,7 @@ curl -fsS -X POST -H "Authorization: Bearer $BOARD_API_KEY" -H "Content-Type: ap
   -d '{ "reason": "Catalog schema changed." }' | jq '{id, enabled, config: {revokedAt: .config.trustRule.revokedAt}}'
 ```
 
-Trust rules carry the catalog and schema hashes captured at approval time. If the upstream tool changes its schema or the canonical argument hash drifts, the trust rule stops applying — the next matching call falls back to `require_approval`. The retry-with-`approvedActionRequestId` flow enforces the same invariant for a single approval: change the arguments between approval and retry and the call fails with `reasonCode: "signed_arguments_mismatch"`. This is intentional: an approval is for a specific argument shape, not for "future versions of this tool, sight unseen".
+Trust rules carry the catalog and schema hashes captured at approval time. If the upstream tool changes its schema or the canonical argument hash drifts, the trust rule stops applying — the next matching call falls back to `require_approval`. For a single approval, the board resolver executes only the immutable reviewed argument payload; callers cannot substitute a new call shape after review. This is intentional: an approval is for a specific argument shape, not for "future versions of this tool, sight unseen".
 
 In v1, trust-rule promotion is deliberately narrow: the server derives the reviewed actor/tool scope from the approved invocation and stores the exact reviewed argument hash. Promotion requests that try to widen the scope or replace exact-hash matching with broader argument predicates are rejected. Broader trust authoring needs a separately governed mechanism.
 
@@ -340,7 +326,9 @@ You don't normally touch slots. They're spun up on first call and evicted after 
 
 Day-to-day runtime response — health summary, stuck-slot diagnosis, stop/restart, restart-storm playbook — lives in [MCP-RUNTIME-OPERATIONS.md](./MCP-RUNTIME-OPERATIONS.md). Read that doc when paged.
 
-Cloud reminder: in `authenticated/public`, local stdio slots fail closed unless `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` is set on a worker explicitly designated to supervise local processes. Set it on one worker, not on the API edge.
+Public-exposure reminder: local stdio slots fail closed unless
+`PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` is set on a worker explicitly designated
+to supervise local processes. Set it on one worker, not on the API edge.
 
 ## Audit and the call event log
 
@@ -368,7 +356,7 @@ Two practical patterns:
 
 Audit is the source of truth for the security memo. It is intentionally append-only — there is no edit or delete route.
 
-## Local trusted deployment
+## Local process trust
 
 Local stdio MCP connections introduce a different trust model from remote_http: Paperclip is running a child process under its own credentials. Two questions decide whether this is safe in your deployment:
 
@@ -377,19 +365,19 @@ Local stdio MCP connections introduce a different trust model from remote_http: 
 
 The decision matrix:
 
-| Deployment mode | Local stdio default | When to enable |
+| Exposure and host | Local stdio default | When to enable |
 | --- | --- | --- |
-| `local_trusted` | Available, used for fixtures and developer flows | Always; this mode exists for it. |
-| `authenticated/private` (Tailnet/VPN/LAN) | Available with explicit opt-in | When the operator has root on the host and trusts the template list. |
-| `authenticated/public` (internet-facing) | Fail closed | Only when one worker is designated trusted by setting `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` and is isolated from the public-facing edge. |
+| Single-operator loopback host | Available with explicit opt-in | When the operator controls the host and trusts the template list. |
+| Private Tailnet/VPN/LAN host | Available with explicit opt-in | When the operator controls the host and trusts the template list. |
+| Public internet-facing host | Fail closed | Only when one worker is designated trusted by setting `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` and is isolated from the public-facing edge. |
 
-In all modes:
+In every environment:
 
 - `remote_http` is the preferred path. If you can replace a local stdio fixture with a remote_http endpoint, do.
 - Never set `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` on the same worker that serves public HTTP traffic.
 - Treat the approved-template list as a code-review surface: a PR that adds a new template ships a new code-execution path.
 
-For deployment mode and bind semantics generally, see [DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md).
+For exposure and bind semantics generally, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Known limitations
 
@@ -400,7 +388,7 @@ These are intentional gaps as of the MCP Access Governance v1 launch. Track or w
 - **No bulk catalog review.** When an upstream server adds many new tools at once, you review each quarantined entry individually. Bulk operations are planned but not in v1.
 - **Trust rules match exact argument shapes only.** A trust rule built from one approval covers calls whose canonical argument hash matches and whose catalog schema hash is unchanged. Wildcards and structural filters across the rest of the schema are not supported in v1.
 - **Rate limits are per-policy.** Rate limit counters are scoped to the matching policy and counter key. There is no cross-policy aggregation (e.g. "300 requests/hour across all GitHub policies"). Operators who need that wire two `rate_limit` policies and accept the additive behavior.
-- **Action request expiry is fixed by policy.** The approval card carries a server-set expiry; the human approver cannot extend it from the UI. If a request expires before approval, the agent must retry the tool call.
+- **Action request expiry is fixed by policy.** The board request carries a server-set expiry; the human approver cannot extend it from the UI. An expired request is terminal and is never replayed; a later provider call is evaluated as a new request.
 - **Endpoint mode (Paperclip as MCP server) is not policy-governed.** Tool access governance applies only to *gateway mode* — Paperclip's own MCP endpoint surface (`/mcp`) uses standard Paperclip auth and is not subject to the profile/policy stack.
 - **No multi-region runtime supervisor.** Local stdio slots run on the worker that serves the request that started them. If you scale workers, slots do not migrate. Plan capacity per worker, not per cluster.
 
@@ -417,9 +405,9 @@ These are intentional gaps as of the MCP Access Governance v1 launch. Track or w
 | Effective profile | `GET /api/companies/:companyId/tools/profiles/effective/agents/:agentId` | Use for QA proofs and debugging selector misses. |
 | Policies | `GET\|POST /api/companies/:companyId/tools/policies`, `PATCH\|DELETE /api/companies/:companyId/tools/policies/:id` | Types: `allow`, `block`, `require_approval`, `rate_limit`, `trust_rule`. |
 | Policy dry-run | `POST /api/companies/:companyId/tools/policy/test` | Structured `{ companyId, actor, request, runContext? }` body; decision returned under `.decision`. |
-| Gateway sessions | `POST /api/tool-gateway/sessions`, `POST /api/tool-gateway/sessions/:sessionId/revoke` | Board callers must supply `companyId`, `agentId`, `runId` to create and `companyId` to revoke; agent JWTs auto-fill from the token. Revocation invalidates the session immediately and emits `tool_gateway.session_revoked` without logging the raw session token. |
-| Gateway calls | `POST /api/tool-gateway/tools/call` | `X-Paperclip-Tool-Gateway-Token` header; body uses `tool` + `parameters`. Approval-required calls respond `409` with `reasonCode: approval_required` and an `actionRequestId`; the agent retries with `approvedActionRequestId`. |
-| Action requests | `POST /api/tool-gateway/action-requests/:id/approve` | Requires `companyId` (body or query). Listing is via the audit log: filter for `tool_gateway.approval_requested`. |
+| Compiled run interface | `POST /api/run-tools` | The runtime compiler mints a `paperclip.run-tools/v1` bearer only for a leased issue-execution ref. JSON-RPC `tools/list` and `tools/call` recompile against that binding; callers cannot select an agent, run, issue, project, profile, or ambient catalog. |
+| Named external MCP gateways | `POST /api/tool-gateway/gateways/:gatewayId/mcp`, `POST /mcp/gateways/:gatewayPublicId` | Explicit gateway profile plus a separately minted `pcgw_…` bearer. Named gateway tokens never authenticate to the compiled run interface and run-interface bearers never authenticate here. |
+| Action requests | `POST /api/companies/:companyId/tools/action-requests/:id/approve` | Requires an authenticated Better Auth board user with company mutation access. Listing is via the audit log: filter for `tool_gateway.approval_requested`. |
 | Trust rules | `POST /api/companies/:companyId/tools/action-requests/:id/trust-rule`, `POST /api/companies/:companyId/tools/trust-rules/:id/revoke` | Approval-derived allow policies. |
 | Runtime health | `GET /api/companies/:companyId/tools/runtime-health` | Alerts and metrics. Pair with [MCP-RUNTIME-OPERATIONS.md](./MCP-RUNTIME-OPERATIONS.md). |
 | Runtime slots | `GET /api/companies/:companyId/tools/runtime-slots`, `POST /api/companies/:companyId/tools/runtime-slots/:id/stop\|restart` | Process supervision. |
@@ -428,4 +416,4 @@ These are intentional gaps as of the MCP Access Governance v1 launch. Track or w
 | Bulk import preview | `POST /api/companies/:companyId/tools/mcp/import-json` | Inspect a discovery JSON without persisting anything. |
 | Demo script | [MCP-DEMO-SCRIPT.md](./MCP-DEMO-SCRIPT.md) | Walks read / approval-gated write / denied flows end-to-end. |
 | Runtime runbook | [MCP-RUNTIME-OPERATIONS.md](./MCP-RUNTIME-OPERATIONS.md) | Alerts, stuck slots, recovery. |
-| Deployment modes | [DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md) | Auth, exposure, bind. |
+| Deployment | [DEPLOYMENT.md](./DEPLOYMENT.md) | Better Auth, exposure, and bind. |

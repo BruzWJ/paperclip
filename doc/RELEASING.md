@@ -157,43 +157,39 @@ The repo intentionally does not run this through GitHub Actions because:
 - stable notes are the only public narrative surface that needs LLM help
 - maintainer LLM tokens should not live in Actions
 
-## Smoke Testing
+## Release Artifact Validation
 
-For a canary:
-
-```bash
-PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
-```
-
-For the current stable:
+Release validation is artifact-only. Locally, build the source and run the
+release contracts:
 
 ```bash
-PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+pnpm build
+pnpm run test:release-registry
+pnpm run test:release-smoke
+docker build \
+  --build-arg USER_UID="$(id -u)" \
+  --build-arg USER_GID="$(id -g)" \
+  -f Dockerfile \
+  -t paperclip-release-artifact-smoke .
+docker image inspect paperclip-release-artifact-smoke
 ```
 
-Useful isolated variants:
+For published canary or stable bytes, dispatch the release workflow against the
+matching source ref and exact published version or dist-tag:
 
 ```bash
-HOST_PORT=3232 DATA_DIR=./data/release-smoke-canary PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
-HOST_PORT=3233 DATA_DIR=./data/release-smoke-stable PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+gh workflow run release-smoke.yml -f ref=master -f paperclip_version=canary
+gh workflow run release-smoke.yml -f ref=vYYYY.MDD.P -f paperclip_version=YYYY.MDD.P
 ```
 
-Automated browser smoke is also available:
+The contract requires:
 
-```bash
-gh workflow run release-smoke.yml -f paperclip_version=canary
-gh workflow run release-smoke.yml -f paperclip_version=latest
-```
-
-Minimum checks:
-
-- `npx paperclipai@canary onboard` installs
-- onboarding completes without crashes
-- authenticated login works with the smoke credentials
-- the browser lands in onboarding on a fresh instance
-- company creation succeeds
-- the first CEO agent is created
-- the first CEO heartbeat run is triggered
+- the published archive contains its expected package metadata and JavaScript entrypoints
+- forbidden retired database artifacts are absent
+- built entrypoints and the canonical root `Dockerfile` are valid artifacts
+- production configuration rejects a missing external database target before startup
+- the server/client lifecycle passes with explicit mocks
+- no application, container, or database service is started by release validation
 
 ## Rollback
 
@@ -210,7 +206,7 @@ Then fix forward with a new stable patch slot or release date.
 
 ## Failure Playbooks
 
-### If the canary publishes but smoke testing fails
+### If the canary publishes but artifact validation fails
 
 Do not run stable.
 
@@ -219,7 +215,7 @@ Instead:
 1. fix the issue on `master`
 2. merge the fix
 3. wait for the next automatic canary
-4. rerun smoke testing
+4. rerun artifact validation
 
 ### If stable npm publish succeeds but tag push or GitHub release creation fails
 

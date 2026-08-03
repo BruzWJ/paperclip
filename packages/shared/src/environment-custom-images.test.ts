@@ -31,7 +31,7 @@ describe("environment customImage validators", () => {
       capturedAt: "2026-06-25T12:00:00.000Z",
       lastUsedAt: null,
       supersededByTemplateId: null,
-      metadata: { adapterType: "codex_local" },
+      metadata: { adapterType: "codex" },
       createdAt: "2026-06-25T12:00:00.000Z",
       updatedAt: "2026-06-25T12:00:00.000Z",
     });
@@ -97,7 +97,7 @@ describe("environment customImage redaction", () => {
       templateRef: "daytona-snapshot-secret-ref",
       sourceTemplateRef: "base-image-secret-ref",
       metadata: {
-        safeLabel: "codex template",
+        safeLabel: "fixture template",
         apiToken: "token-value",
         userMetadata: {
           safe: "kept",
@@ -112,7 +112,7 @@ describe("environment customImage redaction", () => {
     expect(redacted.templateRef).toBe(REDACTED_ENVIRONMENT_CUSTOM_IMAGE_VALUE);
     expect(redacted.sourceTemplateRef).toBe(REDACTED_ENVIRONMENT_CUSTOM_IMAGE_VALUE);
     expect(redacted.metadata).toEqual({
-      safeLabel: "codex template",
+      safeLabel: "fixture template",
       apiToken: REDACTED_ENVIRONMENT_CUSTOM_IMAGE_VALUE,
       userMetadata: {
         safe: "kept",

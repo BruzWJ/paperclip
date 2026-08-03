@@ -7,7 +7,7 @@ import { api, type RequestOptions } from "./client";
 
 export interface DecisionTrainingListItem {
   example: DecisionTrainingExample;
-  issueTitle: string;
+  issueTitle: string | null;
   issueIdentifier: string;
 }
 

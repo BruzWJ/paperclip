@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { toolAccessAuditEvents, toolRuntimeSlots } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode, ToolRuntimeSlotStatus } from "@paperclipai/shared";
+import type { DeploymentExposure, ToolRuntimeSlotStatus } from "@paperclipai/shared";
 import { logActivity } from "./activity-log.js";
 
 const ACTIVE_SLOT_STATUSES: ToolRuntimeSlotStatus[] = ["starting", "running", "idle"];
@@ -29,7 +29,6 @@ export class ToolRuntimeSupervisorError extends Error {
 }
 
 export interface ToolRuntimeSupervisorOptions {
-  deploymentMode?: DeploymentMode;
   deploymentExposure?: DeploymentExposure;
   trustedLocalStdioRuntimeHost?: string | null;
   hostId?: string;
@@ -130,7 +129,6 @@ function slotView(row: typeof toolRuntimeSlots.$inferSelect): ToolRuntimeSlotVie
 }
 
 export function createToolRuntimeSupervisor(db: Db, options: ToolRuntimeSupervisorOptions = {}) {
-  const deploymentMode = options.deploymentMode ?? "local_trusted";
   const deploymentExposure = options.deploymentExposure ?? "private";
   const trustedLocalStdioRuntimeHost =
     options.trustedLocalStdioRuntimeHost
@@ -152,12 +150,12 @@ export function createToolRuntimeSupervisor(db: Db, options: ToolRuntimeSupervis
   const now = options.now ?? (() => new Date());
 
   function assertLocalStdioAvailable() {
-    if (deploymentMode === "authenticated" && deploymentExposure === "public" && !trustedLocalStdioRuntimeHost) {
+    if (deploymentExposure === "public" && !trustedLocalStdioRuntimeHost) {
       throw new ToolRuntimeSupervisorError(
         403,
-        "Local stdio MCP runtime is unavailable in authenticated public deployments without a trusted runtime host",
-        "local_stdio_unavailable_in_public_mode",
-        { deploymentMode, deploymentExposure },
+        "Local stdio MCP runtime is unavailable on public deployments without a trusted runtime host",
+        "local_stdio_unavailable_for_public_exposure",
+        { deploymentExposure },
       );
     }
   }

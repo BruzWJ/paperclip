@@ -1,5 +1,7 @@
 # CEO Agent Creation and Hiring Governance Plan (V1.1)
 
+> Historical only. CEO authority/defaults, Paperclip-authored instructions, and provider operational skills described here were retired by the roleless issue-execution cutover and have no runtime reader.
+
 Status: Proposed  
 Date: 2026-02-19  
 Owner: Product + Server + UI + Skills
@@ -16,7 +18,9 @@ Enable a CEO agent to create new agents directly, with lightweight but explicit 
 
 ## 2. Current State (Repo Reality)
 
-- Agent creation is board-only at `POST /api/companies/:companyId/agents` (`server/src/routes/agents.ts`).
+- The former mixed board agent-creation endpoint is retired. Ordinary identity,
+  immutable adapter revision, and operational configuration now have separate
+  board-owned contracts.
 - Approvals support `pending/approved/rejected/cancelled` and `hire_agent` + `approve_ceo_strategy` (`packages/shared/src/constants.ts`, `server/src/services/approvals.ts`).
 - `hire_agent` approval currently creates the agent only on approval; there is no pre-created limbo agent.
 - There is no agent permissions system today.
@@ -74,7 +78,7 @@ Add column:
 
 Sync required:
 
-- `packages/db/src/schema/companies.ts`
+- `packages/db/schema/companies.ts`
 - `packages/shared/src/types/company.ts`
 - `packages/shared/src/validators/company.ts`
 - UI company API type usage and company advanced settings form
@@ -88,7 +92,7 @@ Add columns:
 
 Sync required:
 
-- `packages/db/src/schema/agents.ts`
+- `packages/db/schema/agents.ts`
 - `packages/shared/src/constants.ts` (`AGENT_STATUSES`)
 - `packages/shared/src/types/agent.ts`
 - `packages/shared/src/validators/agent.ts`
@@ -119,24 +123,25 @@ Purpose:
 
 ## 5. API and AuthZ Plan
 
-## 5.1 Permission helpers
+## 5.1 Authorization helpers
 
 Add server-side authz helpers:
 
 - `assertCanCreateAgents(req, companyId)`
-- `assertCanManageAgentPermissions(req, companyId)`
+- protected agent configuration authorization
 
 Rules:
 
 - Board always passes.
-- Agent passes `can_create_agents` check if self permission true and same company.
-- Permission management by CEO or board.
+- Agent creation requires an explicit normalized grant.
+- Agent governance and runtime configuration are board-managed protected changes.
 
 ## 5.2 Hire creation flow
 
 Add route:
 
-- `POST /api/companies/:companyId/agent-hires`
+- Retired mixed hire endpoint (replaced by the separated runtime-agent,
+  adapter-revision, and operational configuration surfaces)
 
 Behavior:
 
@@ -167,15 +172,10 @@ Update existing approve/reject semantics:
 - approve of hire transitions linked agent `pending_approval -> idle`
 - reject keeps linked agent in non-active state (`pending_approval` or `terminated`/purged later)
 
-## 5.4 Agent permission management endpoints
+## 5.4 Agent governance and runtime configuration endpoints
 
-Add:
-
-- `PATCH /api/agents/:id/permissions`
-
-Supports initial key only:
-
-- `{ "canCreateAgents": boolean }`
+Agent trust governance and runtime context/action grants use their canonical,
+separate board-managed endpoints. Coarse agent capability switches are retired.
 
 ## 5.5 Read config endpoints (protected)
 
@@ -328,7 +328,7 @@ New/updated invariants:
 ## Phase 2: Server authz + hire flow
 
 - permission resolver and authz guards
-- `agent-hires` route
+- separated runtime-agent and board configuration routes
 - limbo status enforcement in heartbeat/issue/key flows
 - approval revision/comment endpoints
 

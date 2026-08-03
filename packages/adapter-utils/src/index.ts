@@ -1,70 +1,36 @@
 export type {
-  AdapterAgent,
-  AdapterRuntime,
-  UsageSummary,
-  AdapterBillingType,
   AdapterRuntimeServiceReport,
-  AdapterExecutionResult,
-  AdapterInvocationMeta,
-  AdapterRuntimeEvent,
-  AdapterRuntimeMcpServer,
-  AdapterRuntimeMcpAccess,
-  AdapterExecutionContext,
-  AdapterEnvironmentCheckLevel,
-  AdapterEnvironmentCheck,
-  AdapterEnvironmentTestStatus,
-  AdapterEnvironmentTestResult,
-  AdapterEnvironmentTestContext,
-  AdapterSkillSyncMode,
-  AdapterSkillState,
-  AdapterSkillOrigin,
-  AdapterSkillEntry,
-  AdapterSkillSnapshot,
-  AdapterSkillContext,
-  AdapterSessionCodec,
   AdapterModel,
+  AdapterModelLimits,
   AdapterModelProfileKey,
   AdapterModelProfileDefinition,
-  HireApprovedPayload,
-  HireApprovedHookResult,
   ConfigFieldOption,
   ConfigFieldSchema,
   AdapterConfigSchema,
-  AdapterRuntimeCommandSpec,
-  AcpTargetDescriptor,
+  AcpAdapterConfigValue,
+  AcpAdapterConfigOption,
+  AcpAdapterLaunchProfile,
+  AcpAdapterEnvironmentRequirements,
+  AcpAdapterReadinessFacts,
+  AcpAdapterUiMetadata,
+  AcpSubprocessAdapterDefinition,
+  AcpAdapterRevisionConfiguration,
   ServerAdapterModule,
-  QuotaWindow,
-  ProviderQuotaResult,
-  TranscriptEntry,
-  StdoutLineParser,
-  CLIAdapterModule,
   CreateConfigValues,
 } from "./types.js";
-export type {
-  SessionCompactionPolicy,
-  NativeContextManagement,
-  AdapterSessionManagement,
-  ResolvedSessionCompactionPolicy,
-} from "./session-compaction.js";
 export {
-  ADAPTER_SESSION_MANAGEMENT,
-  LEGACY_SESSIONED_ADAPTER_TYPES,
-  getAdapterSessionManagement,
-  readSessionCompactionOverride,
-  resolveSessionCompactionPolicy,
-  hasSessionCompactionThresholds,
-} from "./session-compaction.js";
+  requireAdapterCatalogModel,
+  sameAdapterModel,
+  validateAdapterModel,
+  validateAdapterModelLimits,
+} from "./adapter-model.js";
 export {
-  REDACTED_HOME_PATH_USER,
-  redactHomePathUserSegments,
-  redactHomePathUserSegmentsInValue,
-  redactTranscriptEntryPaths,
-} from "./log-redaction.js";
+  resolveAcpAdapterRevisionConfiguration,
+} from "./adapter-configuration.js";
 export {
   REDACTED_COMMAND_TEXT_VALUE,
   redactCommandText,
 } from "./command-redaction.js";
-export { buildSandboxNpmInstallCommand } from "./sandbox-install-command.js";
 export { createRuntimeProgressReporter } from "./runtime-progress.js";
 export type {
   RuntimeProgressSink,
@@ -77,16 +43,8 @@ export type {
   RuntimeStatusSink,
   RuntimeStatusUpdate,
 } from "./runtime-progress.js";
-export { inferOpenAiCompatibleBiller } from "./billing.js";
-// Keep the root adapter-utils entry browser-safe because the UI imports it.
-// The sandbox callback bridge stays available via its dedicated subpath export.
+export { validateServerAdapterModule } from "./server-adapter-contract.js";
+export { validateAdapterConfigSchema } from "./config-schema-validation.js";
 export type {
-  SandboxCallbackBridgeRequest,
-  SandboxCallbackBridgeResponse,
-  SandboxCallbackBridgeAsset,
-  SandboxCallbackBridgeDirectories,
-  SandboxCallbackBridgeRouteRule,
-  SandboxCallbackBridgeQueueClient,
-  SandboxCallbackBridgeWorkerHandle,
-  StartedSandboxCallbackBridgeServer,
-} from "./sandbox-callback-bridge.js";
+  AdapterConfigSchemaValidationResult,
+} from "./config-schema-validation.js";

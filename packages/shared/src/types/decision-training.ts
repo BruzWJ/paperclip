@@ -1,4 +1,4 @@
-export type DecisionTrainingSourceKind = "interaction" | "approval" | "execution_decision";
+export type DecisionTrainingSourceKind = "approval" | "execution_decision";
 
 export const DECISION_TRAINING_RETENTION_POLICY = "scrub_deleted_comments_v1" as const;
 export type DecisionTrainingRetentionPolicy = typeof DECISION_TRAINING_RETENTION_POLICY;
@@ -35,7 +35,7 @@ export interface DecisionTrainingSnapshotV1 {
     repoUrl: string | null;
     ref: string | null;
     commitSha: string | null;
-    resolution: "exact" | "nearest_run" | "workspace" | "none";
+    resolution: "workspace" | "none";
   };
 }
 

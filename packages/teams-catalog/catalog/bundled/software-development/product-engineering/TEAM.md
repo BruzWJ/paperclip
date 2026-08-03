@@ -1,11 +1,11 @@
 ---
 name: Product Engineering
-description: Bundled engineering team that pairs a CTO with a senior coder and a QA engineer to deliver, review, and verify product changes.
+description: Bundled engineering team that pairs an engineering lead with a senior coder and a QA engineer for implementation and verification work.
 schema: agentcompanies/v1
 slug: product-engineering
 category: software-development
 key: paperclipai/bundled/software-development/product-engineering
-manager: agents/cto/AGENTS.md
+manager: agents/engineering-lead/AGENTS.md
 includes:
   - agents/senior-coder/AGENTS.md
   - agents/qa/AGENTS.md
@@ -23,29 +23,27 @@ tags:
 requiredSkills:
   - paperclipai/bundled/software-development/github-pr-workflow
   - paperclipai/bundled/quality/qa-acceptance
-  - paperclipai/bundled/paperclip-operations/task-planning
   - paperclipai/bundled/docs/doc-maintenance
 ---
 
 # Product Engineering
 
-An optional drop-in engineering pod for companies that want a working software-delivery loop without going through the catalog's `core-exec-team` first. Install it under an existing CEO/manager and the imported CTO will own engineering execution.
+An optional engineering pod for companies that want a small implementation and verification reporting tree. Install it under an explicitly selected existing manager or as a standalone package.
 
 ## Contents
 
-- `CTO` — engineering manager and team root. Reviews PRs, owns code-quality standards, and breaks product priorities into engineering tasks.
-- `senior-coder` — primary implementer. Picks up engineering tasks, ships PRs, and asks QA for verification.
+- `Engineering Lead` — ordinary team root identity.
+- `senior-coder` — primary implementer. Picks up engineering issues, ships PRs, and asks QA for verification.
 - `QA` — verifies fixes and captures acceptance evidence.
 - `product-engineering` project — the rolling backlog this pod works against.
-- `weekly-engineering-sync` routine — recurring CTO-owned check-in to surface blockers and confirm the next deliverable.
+- `weekly-engineering-sync` routine — recurring Engineering Lead-owned issue definition.
 
 ## Skill rationale
 
 - `github-pr-workflow` keeps logical commits, branch hygiene, and merge discipline consistent across the pod.
 - `qa-acceptance` gives QA a structured pass/fail format coders can act on.
-- `task-planning` lets the CTO turn larger asks into well-scoped child issues.
 - `doc-maintenance` keeps docs aligned with shipped changes — install if the company has any user-facing docs surface.
 
 ## Migration notes
 
-This entry is derived from the `Coder` and `QA` role templates in `skills/paperclip-create-agent/references/agents/` plus the historical CTO persona under `server/src/onboarding-assets/`. Adapter-type defaults (claude_local vs codex_local) are intentionally left out of frontmatter so the import preview can let operators choose per-agent. SecurityEngineer is intentionally deferred to the future `optional/quality/security-review` entry, since most installs will not want a dedicated security agent on day one.
+Agent files contain identity frontmatter only. The operator must explicitly select each imported agent's adapter and provider target configuration; the catalog supplies neither a default nor a fallback.

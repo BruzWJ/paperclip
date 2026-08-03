@@ -5,7 +5,7 @@ import type { DevServerHealthStatus } from "@/api/health";
 const restartRequired: DevServerHealthStatus = {
   enabled: true,
   restartRequired: true,
-  reason: "backend_changes_and_pending_migrations",
+  reason: "backend_changes",
   lastChangedAt: new Date(Date.now() - 7 * 60_000).toISOString(),
   changedPathCount: 4,
   changedPathsSample: [
@@ -13,7 +13,6 @@ const restartRequired: DevServerHealthStatus = {
     "server/src/dev-runner.ts",
     "packages/shared/src/api.ts",
   ],
-  pendingMigrations: ["0042_dev_server_health.sql"],
   autoRestartEnabled: false,
   activeRunCount: 0,
   waitingForIdle: false,
@@ -23,7 +22,6 @@ const restartRequired: DevServerHealthStatus = {
 const restartWaitingForIdle: DevServerHealthStatus = {
   ...restartRequired,
   reason: "backend_changes",
-  pendingMigrations: [],
   autoRestartEnabled: true,
   activeRunCount: 2,
   waitingForIdle: true,

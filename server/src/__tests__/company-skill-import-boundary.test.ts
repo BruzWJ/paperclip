@@ -2,67 +2,109 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { companies, companySkills, createDb, projects, projectWorkspaces } from "@paperclipai/db";
-import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "./helpers/mock-db.js";
+
+const projectListMock = vi.hoisted(() => vi.fn());
+const folderMocks = vi.hoisted(() => ({
+  ensureBundledCategory: vi.fn(),
+  ensureProjectFolder: vi.fn(),
+  getFolder: vi.fn(),
+  pruneEmptyBundledCategories: vi.fn(async () => undefined),
+}));
+
+vi.mock("../services/projects.js", () => ({
+  projectService: () => ({ list: projectListMock }),
+}));
+
+vi.mock("../services/folders.js", () => ({
+  folderService: () => folderMocks,
+}));
+
 import { companySkillService } from "../services/company-skills.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-
-describeEmbeddedPostgres("company skill local import boundary", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+describe("company skill local import boundary", () => {
   const cleanupDirs = new Set<string>();
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-skill-import-boundary-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
   afterEach(async () => {
-    await db.delete(companySkills);
-    await db.delete(projectWorkspaces);
-    await db.delete(projects);
-    await db.delete(companies);
+    vi.clearAllMocks();
     await Promise.all([...cleanupDirs].map((dir) => fs.rm(dir, { recursive: true, force: true })));
     cleanupDirs.clear();
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
   it("allows configured workspace imports and rejects out-of-tree and symlink escapes", async () => {
     const companyId = randomUUID();
-    const projectId = randomUUID();
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-approved-workspace-"));
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-outside-skill-"));
     cleanupDirs.add(workspace);
     cleanupDirs.add(outside);
-    await fs.writeFile(path.join(outside, "SKILL.md"), "---\nname: escaped\ndescription: escaped\n---\n# Escaped\n", "utf8");
+    await fs.writeFile(
+      path.join(outside, "SKILL.md"),
+      "---\nname: escaped\ndescription: escaped\n---\n# Escaped\n",
+      "utf8",
+    );
     const allowedSkill = path.join(workspace, ".agents", "skills", "allowed");
     await fs.mkdir(allowedSkill, { recursive: true });
-    await fs.writeFile(path.join(allowedSkill, "SKILL.md"), "---\nname: allowed\ndescription: allowed\n---\n# Allowed\n", "utf8");
+    await fs.writeFile(
+      path.join(allowedSkill, "SKILL.md"),
+      "---\nname: allowed\ndescription: allowed\n---\n# Allowed\n",
+      "utf8",
+    );
     const symlink = path.join(workspace, "escaped-link");
     await fs.symlink(outside, symlink);
 
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Boundary Co",
-      issuePrefix: `B${companyId.replaceAll("-", "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
-    });
-    await db.insert(projects).values({ id: projectId, companyId, name: "Approved project" });
-    await db.insert(projectWorkspaces).values({
+    projectListMock.mockResolvedValue([{
+      id: randomUUID(),
       companyId,
-      projectId,
-      name: "Primary",
-      cwd: workspace,
-      isPrimary: true,
-    });
+      workspaces: [{ cwd: workspace }],
+    }]);
 
-    const service = companySkillService(db);
+    const persistedSkill = {
+      id: randomUUID(),
+      companyId,
+      folderId: null,
+      key: `${companyId}/allowed`,
+      slug: "allowed",
+      name: "allowed",
+      description: "allowed",
+      markdown: "---\nname: allowed\ndescription: allowed\n---\n# Allowed\n",
+      sourceType: "local_path",
+      sourceLocator: allowedSkill,
+      sourceRef: null,
+      trustLevel: "trusted",
+      compatibility: "compatible",
+      fileInventory: [{ path: "SKILL.md", kind: "markdown" }],
+      iconUrl: null,
+      color: null,
+      tagline: null,
+      authorName: null,
+      homepageUrl: null,
+      categories: [],
+      sharingScope: "company",
+      publicShareToken: null,
+      forkedFromSkillId: null,
+      forkedFromCompanyId: null,
+      starCount: 0,
+      installCount: 1,
+      forkCount: 0,
+      currentVersionId: null,
+      metadata: { sourceKind: "local_path" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const companyExists = [{ id: companyId }];
+    const harness = createMockDb({
+      select: [
+        companyExists, [], [], [],
+        companyExists, [], [],
+        companyExists, [], [],
+        companyExists, [], [],
+        companyExists, [], [],
+      ],
+      insert: [[persistedSkill]],
+    });
+    const service = companySkillService(harness.db);
+
     await expect(service.importFromSource(companyId, allowedSkill)).resolves.toMatchObject({
       imported: [expect.objectContaining({ slug: "allowed" })],
     });
@@ -82,5 +124,10 @@ describeEmbeddedPostgres("company skill local import boundary", () => {
       status: 422,
       details: { code: "skill_source_validation_failed" },
     });
+
+    expect(projectListMock).toHaveBeenCalledTimes(3);
+    expect(folderMocks.pruneEmptyBundledCategories).toHaveBeenCalledTimes(5);
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("insert")).toBe(0);
   });
 });

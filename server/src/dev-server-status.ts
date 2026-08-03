@@ -1,25 +1,34 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 const MAX_PERSISTED_DEV_SERVER_STATUS_BYTES = 64 * 1024;
+const MAX_DEV_SERVER_RESTART_REQUEST_BYTES = 4 * 1024;
 
 export type PersistedDevServerStatus = {
   dirty: boolean;
   lastChangedAt: string | null;
   changedPathCount: number;
   changedPathsSample: string[];
-  pendingMigrations: string[];
   lastRestartAt: string | null;
 };
 
 export type DevServerHealthStatus = {
   enabled: true;
   restartRequired: boolean;
-  reason: "backend_changes" | "pending_migrations" | "backend_changes_and_pending_migrations" | null;
+  reason: "backend_changes" | null;
   lastChangedAt: string | null;
   changedPathCount: number;
   changedPathsSample: string[];
-  pendingMigrations: string[];
   autoRestartEnabled: boolean;
   activeRunCount: number;
   waitingForIdle: boolean;
@@ -28,7 +37,7 @@ export type DevServerHealthStatus = {
 
 export type DevServerRestartRequest = {
   requestedAt: string;
-  reason: "manual_restart_now";
+  reason: "manual_restart_now" | "auto_restart_when_idle";
 };
 
 export function getDevServerRestartRequestFilePath(
@@ -42,13 +51,46 @@ export function getDevServerRestartRequestFilePath(
 export function writeDevServerRestartRequest(
   request: DevServerRestartRequest,
   env: NodeJS.ProcessEnv = process.env,
+  opts: { preserveExisting?: boolean } = {},
 ): boolean {
   const filePath = getDevServerRestartRequestFilePath(env);
   if (!filePath) return false;
+  if (
+    !isCanonicalTimestamp(request.requestedAt) ||
+    (request.reason !== "manual_restart_now" &&
+      request.reason !== "auto_restart_when_idle")
+  ) {
+    return false;
+  }
 
   mkdirSync(path.dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(request, null, 2)}\n`, "utf8");
-  return true;
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tempPath, `${JSON.stringify(request, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    if (opts.preserveExisting) {
+      try {
+        linkSync(tempPath, filePath);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "EEXIST"
+        ) {
+          return false;
+        }
+        throw error;
+      }
+    } else {
+      renameSync(tempPath, filePath);
+    }
+    return true;
+  } finally {
+    rmSync(tempPath, { force: true });
+  }
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -65,6 +107,60 @@ function normalizeTimestamp(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function isCanonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0) return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+export function readDevServerRestartRequest(
+  env: NodeJS.ProcessEnv = process.env,
+): DevServerRestartRequest | null {
+  const filePath = getDevServerRestartRequestFilePath(env);
+  if (!filePath || !existsSync(filePath)) return null;
+
+  try {
+    if (statSync(filePath).size > MAX_DEV_SERVER_RESTART_REQUEST_BYTES) {
+      return null;
+    }
+    const raw = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return null;
+    }
+    const record = raw as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    if (keys.length !== 2 || keys[0] !== "reason" || keys[1] !== "requestedAt") {
+      return null;
+    }
+    if (!isCanonicalTimestamp(record.requestedAt)) {
+      return null;
+    }
+    if (
+      record.reason !== "manual_restart_now" &&
+      record.reason !== "auto_restart_when_idle"
+    ) {
+      return null;
+    }
+    return {
+      requestedAt: record.requestedAt,
+      reason: record.reason,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function consumeDevServerRestartRequest(
+  env: NodeJS.ProcessEnv = process.env,
+): DevServerRestartRequest | null {
+  const filePath = getDevServerRestartRequestFilePath(env);
+  if (!filePath) return null;
+  const request = readDevServerRestartRequest(env);
+  if (!request) return null;
+  rmSync(filePath, { force: true });
+  return request;
+}
+
 export function readPersistedDevServerStatus(
   env: NodeJS.ProcessEnv = process.env,
 ): PersistedDevServerStatus | null {
@@ -77,7 +173,6 @@ export function readPersistedDevServerStatus(
     }
     const raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
     const changedPathsSample = normalizeStringArray(raw.changedPathsSample).slice(0, 5);
-    const pendingMigrations = normalizeStringArray(raw.pendingMigrations);
     const changedPathCountRaw = raw.changedPathCount;
     const changedPathCount =
       typeof changedPathCountRaw === "number" && Number.isFinite(changedPathCountRaw)
@@ -87,14 +182,13 @@ export function readPersistedDevServerStatus(
     const dirty =
       typeof dirtyRaw === "boolean"
         ? dirtyRaw
-        : changedPathCount > 0 || pendingMigrations.length > 0;
+        : changedPathCount > 0;
 
     return {
       dirty,
       lastChangedAt: normalizeTimestamp(raw.lastChangedAt),
       changedPathCount,
       changedPathsSample,
-      pendingMigrations,
       lastRestartAt: normalizeTimestamp(raw.lastRestartAt),
     };
   } catch {
@@ -107,15 +201,7 @@ export function toDevServerHealthStatus(
   opts: { autoRestartEnabled: boolean; activeRunCount: number },
 ): DevServerHealthStatus {
   const hasPathChanges = persisted.changedPathCount > 0;
-  const hasPendingMigrations = persisted.pendingMigrations.length > 0;
-  const reason =
-    hasPathChanges && hasPendingMigrations
-      ? "backend_changes_and_pending_migrations"
-      : hasPendingMigrations
-        ? "pending_migrations"
-        : hasPathChanges
-          ? "backend_changes"
-          : null;
+  const reason = hasPathChanges ? "backend_changes" : null;
   const restartRequired = persisted.dirty || reason !== null;
 
   return {
@@ -125,7 +211,6 @@ export function toDevServerHealthStatus(
     lastChangedAt: persisted.lastChangedAt,
     changedPathCount: persisted.changedPathCount,
     changedPathsSample: persisted.changedPathsSample,
-    pendingMigrations: persisted.pendingMigrations,
     autoRestartEnabled: opts.autoRestartEnabled,
     activeRunCount: opts.activeRunCount,
     waitingForIdle: restartRequired && opts.autoRestartEnabled && opts.activeRunCount > 0,

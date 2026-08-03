@@ -3,7 +3,7 @@ import {
   LOW_TRUST_REVIEW_PRESET,
   LOW_TRUST_REVIEW_PRESET_VERSION,
   LOW_TRUST_REVIEW_RAW_OUTPUT_DISPOSITION,
-  type AgentPermissions,
+  type AgentGovernancePolicy,
   type LowTrustBoundary,
   type SourceTrustMetadata,
   type TrustAuthorizationPolicy,
@@ -26,8 +26,8 @@ export const TRUST_PRESET_DESCRIPTIONS: Record<TrustPreset, string> = {
     "Contained for hostile or untrusted input. Narrow Paperclip API, quarantined output. Use for PR review and external-content triage.",
 };
 
-export function getTrustPreset(permissions: Partial<AgentPermissions> | null | undefined): TrustPreset {
-  return permissions?.trustPreset === LOW_TRUST_REVIEW_PRESET ? LOW_TRUST_REVIEW_PRESET : DEFAULT_TRUST_PRESET;
+export function getTrustPreset(governance: Partial<AgentGovernancePolicy> | null | undefined): TrustPreset {
+  return governance?.trustPreset === LOW_TRUST_REVIEW_PRESET ? LOW_TRUST_REVIEW_PRESET : DEFAULT_TRUST_PRESET;
 }
 
 export function buildLowTrustReviewPolicy(
@@ -44,11 +44,11 @@ export function buildLowTrustReviewPolicy(
   };
 }
 
-export function buildPermissionsForTrustPreset(
-  permissions: Partial<AgentPermissions> | null | undefined,
+export function buildGovernanceForTrustPreset(
+  governance: Partial<AgentGovernancePolicy> | null | undefined,
   preset: TrustPreset,
-): Partial<AgentPermissions> {
-  const current = permissions ?? {};
+): Partial<AgentGovernancePolicy> {
+  const current = governance ?? {};
   if (preset === LOW_TRUST_REVIEW_PRESET) {
     return {
       ...current,
@@ -72,9 +72,9 @@ export function buildPermissionsForTrustPreset(
 }
 
 export function getLowTrustBoundary(
-  permissions: Partial<AgentPermissions> | null | undefined,
+  governance: Partial<AgentGovernancePolicy> | null | undefined,
 ): LowTrustBoundary | null {
-  const boundary = permissions?.authorizationPolicy?.trustBoundary;
+  const boundary = governance?.authorizationPolicy?.trustBoundary;
   return boundary?.mode === LOW_TRUST_REVIEW_PRESET ? boundary : null;
 }
 
@@ -103,11 +103,11 @@ export function isCeLowTrustBoundaryEditable(boundary: LowTrustBoundary | null |
 }
 
 export function setSingleLowTrustBoundaryTarget(
-  permissions: Partial<AgentPermissions> | null | undefined,
+  governance: Partial<AgentGovernancePolicy> | null | undefined,
   companyId: string,
   target: LowTrustBoundaryTarget,
-): Partial<AgentPermissions> {
-  const current = buildPermissionsForTrustPreset(permissions, LOW_TRUST_REVIEW_PRESET);
+): Partial<AgentGovernancePolicy> {
+  const current = buildGovernanceForTrustPreset(governance, LOW_TRUST_REVIEW_PRESET);
   const currentPolicy = current.authorizationPolicy ?? {};
   const existingBoundary = currentPolicy.trustBoundary ?? { mode: LOW_TRUST_REVIEW_PRESET };
   const { projectIds: _projectIds, rootIssueId: _rootIssueId, issueIds: _issueIds, ...nonScopeBoundary } = existingBoundary;
@@ -136,9 +136,9 @@ export function setSingleLowTrustBoundaryTarget(
 }
 
 export function clearSingleLowTrustBoundaryTarget(
-  permissions: Partial<AgentPermissions> | null | undefined,
-): Partial<AgentPermissions> {
-  const current = buildPermissionsForTrustPreset(permissions, LOW_TRUST_REVIEW_PRESET);
+  governance: Partial<AgentGovernancePolicy> | null | undefined,
+): Partial<AgentGovernancePolicy> {
+  const current = buildGovernanceForTrustPreset(governance, LOW_TRUST_REVIEW_PRESET);
   const currentPolicy = current.authorizationPolicy ?? {};
   const boundary = currentPolicy.trustBoundary;
   if (!boundary) return current;

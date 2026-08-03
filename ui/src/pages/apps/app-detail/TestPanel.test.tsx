@@ -130,7 +130,6 @@ function agent(overrides: Record<string, unknown> = {}) {
   return {
     id: "agent-claude",
     name: "ClaudeCoder",
-    role: "engineer",
     title: "Engineer",
     status: "active",
     effectiveAccess: {

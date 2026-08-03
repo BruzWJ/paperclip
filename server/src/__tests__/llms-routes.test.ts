@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -50,61 +51,49 @@ describe("llm routes", () => {
     registerModuleMocks();
     vi.clearAllMocks();
     mockListServerAdapters.mockReturnValue([
-      { type: "codex_local", agentConfigurationDoc: "# codex_local agent configuration" },
+      {
+        type: "codex",
+        definition: {
+          configurationDoc: "# Codex ACP agent configuration",
+        },
+      },
     ]);
   });
 
-  it("documents timer heartbeats as opt-in for new hires", async () => {
-    const app = await createApp({
-      type: "board",
+  it("documents persisted issue references and routines as the execution model", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
       companyIds: ["company-1"],
-      source: "local_implicit",
       isInstanceAdmin: true,
-    });
+    }));
 
     const res = await request(app).get("/api/llms/agent-configuration.txt");
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain("Use the paperclip-create-agent skill for end-to-end hiring");
-    expect(res.text).toContain("desiredSkills");
-    expect(res.text).toContain("sourceIssueId/sourceIssueIds");
-    expect(res.text).toContain("Timer heartbeats are opt-in for new hires.");
-    expect(res.text).toContain("Leave runtimeConfig.heartbeat.enabled false");
-  });
+    expect(res.text).toContain(
+      "Agents run only from persisted issue-execution references.",
+    );
+    expect(res.text).toContain(
+      "Recurring work must be modeled as a routine that creates ordinary issues.",
+    );
+    expect(res.text).not.toContain("desiredSkills");
+    expect(res.text).not.toContain("sourceIssueId");
+    expect(res.text).not.toContain("heartbeat");
+  }, 20_000);
 
-  it("serves static Hermes Gateway configuration docs before the plugin is installed", async () => {
-    const app = await createApp({
-      type: "board",
+  it("serves documentation from the declarative adapter definition", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
       companyIds: ["company-1"],
-      source: "local_implicit",
       isInstanceAdmin: true,
-    });
+    }));
 
-    const indexRes = await request(app).get("/api/llms/agent-configuration.txt");
-    expect(indexRes.status).toBe(200);
-    expect(indexRes.text).toContain(
-      "- hermes_gateway: /llms/agent-configuration/hermes_gateway.txt",
+    const res = await request(app).get(
+      "/api/llms/agent-configuration/codex.txt",
     );
 
-    const res = await request(app).get("/api/llms/agent-configuration/hermes_gateway.txt");
-
     expect(res.status).toBe(200);
-    expect(res.text).toContain("Adapter: hermes_gateway");
-    expect(res.text).toContain('adapterType": "hermes_gateway"');
-    expect(res.text).toContain("API_SERVER_ENABLED=true");
-    expect(res.text).toContain("API_SERVER_KEY");
-    expect(res.text).toContain("hermes gateway run --replace --accept-hooks");
-    expect(res.text).toContain("Default Hermes API server port: 8642");
-    expect(res.text).toContain("agentDefaultsPayload.apiBaseUrl");
-    expect(res.text).toContain("agentDefaultsPayload.paperclipApiUrl");
-    expect(res.text).toContain("hermes_local");
-    expect(res.text).toContain("Hermes-originated Paperclip API usage");
-    expect(res.text).toContain("http://127.0.0.1:8642");
-    expect(res.text).toContain("http://192.168.1.25:8642");
-    expect(res.text).toContain("tailnet-name.ts.net:8642");
-    expect(res.text).toContain("http://host.docker.internal:8642");
-    expect(res.text).toContain("https://hermes-gateway.example");
-  });
+    expect(res.text).toBe("# Codex ACP agent configuration");
+  }, 20_000);
+
 });

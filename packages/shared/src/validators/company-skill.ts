@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { budgetCurrencySchema, moneyAmountSchema } from "../money.js";
 
 export const companySkillSourceTypeSchema = z.enum(["local_path", "github", "url", "catalog", "skills_sh"]);
 export const companySkillTrustLevelSchema = z.enum(["markdown_only", "assets", "scripts_executables"]);
@@ -391,7 +392,6 @@ export const companySkillTestRunTemplateSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullable(),
   body: z.string().min(1),
-  builtIn: z.boolean(),
   createdByAgentId: z.string().uuid().nullable(),
   createdByUserId: z.string().nullable(),
   updatedByAgentId: z.string().uuid().nullable(),
@@ -428,10 +428,10 @@ export const companySkillTestRunTemplateSnapshotSchema = z.object({
 );
 
 export const companySkillTestRunCostSummarySchema = z.object({
-  costCents: z.number().int().nonnegative(),
-  inputTokens: z.number().int().nonnegative(),
-  cachedInputTokens: z.number().int().nonnegative(),
-  outputTokens: z.number().int().nonnegative(),
+  budgetCurrency: budgetCurrencySchema,
+  knownCostAmount: moneyAmountSchema,
+  pricedPromptCount: z.number().int().nonnegative(),
+  unpricedPromptCount: z.number().int().nonnegative(),
 });
 
 export const companySkillTestRunSchema = z.object({
@@ -448,7 +448,7 @@ export const companySkillTestRunSchema = z.object({
   templateName: z.string().nullable(),
   templateBody: z.string().nullable(),
   renderedTemplateBody: z.string().nullable(),
-  harnessIssueDescription: z.string(),
+  harnessIssueRequest: z.string(),
   status: companySkillTestRunStatusSchema,
   outputDocumentKey: z.string().min(1),
   outputSnapshot: z.string(),
@@ -460,7 +460,7 @@ export const companySkillTestRunSchema = z.object({
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   cost: companySkillTestRunCostSummarySchema,
-  taskExpired: z.boolean(),
+  issueExpired: z.boolean(),
 });
 
 export const companySkillTestRunCreateSchema = z.object({
@@ -515,7 +515,6 @@ export const catalogSkillSchema = z.object({
   trustLevel: companySkillTrustLevelSchema,
   compatibility: companySkillCompatibilitySchema,
   defaultInstall: z.boolean(),
-  recommendedForRoles: z.array(z.string()),
   requires: z.array(z.string()),
   tags: z.array(z.string()),
   files: z.array(catalogSkillFileSchema),

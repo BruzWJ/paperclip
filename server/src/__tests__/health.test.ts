@@ -8,6 +8,7 @@ import type { Db } from "@paperclipai/db";
 import { healthRoutes } from "../routes/health.js";
 import * as devServerStatus from "../dev-server-status.js";
 import { serverVersion } from "../version.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockReadPersistedDevServerStatus = vi.hoisted(() => vi.fn());
 const testServerInfo = {
@@ -32,6 +33,11 @@ const testServerInfo = {
 function createHealthyDb(): Db {
   return {
     execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn().mockResolvedValue([{ count: 1 }]),
+      })),
+    })),
   } as unknown as Db;
 }
 
@@ -46,10 +52,21 @@ function createApp(
   databaseBackupHealth?: Parameters<typeof healthRoutes>[1]["databaseBackupHealth"],
 ) {
   const app = express();
+  app.use((req, _res, next) => {
+    (req as any).actor = testBoardSessionActor({
+      userId: "user-1",
+      userName: "User One",
+      userEmail: "user-1@paperclip.test",
+      sessionId: "session-user-1",
+      companyIds: [],
+      memberships: [],
+      isInstanceAdmin: true,
+    });
+    next();
+  });
   app.use(
     "/health",
     healthRoutes(db, {
-      deploymentMode: "local_trusted",
       deploymentExposure: "private",
       authReady: true,
       companyDeletionEnabled: true,
@@ -78,9 +95,7 @@ describe("GET /health", () => {
   }, 15_000);
 
   it("returns 200 when the database probe succeeds", async () => {
-    const db = {
-      execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
-    } as unknown as Db;
+    const db = createHealthyDb();
     const app = createApp(db);
 
     const res = await request(app).get("/health");
@@ -91,6 +106,31 @@ describe("GET /health", () => {
       status: "ok",
       version: serverVersion,
       serverInfo: testServerInfo,
+    });
+  });
+
+  it("does not expose full health details to runtime-agent actors", async () => {
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).actor = {
+        type: "agent",
+        source: "internal",
+        agentId: "agent-1",
+        companyId: "company-1",
+        runId: "run-1",
+      };
+      next();
+    });
+    app.use("/health", healthRoutes(undefined));
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      status: "ok",
+      deploymentExposure: "private",
+      bootstrapStatus: "bootstrap_pending",
+      bootstrapInviteActive: false,
     });
   });
 
@@ -109,6 +149,34 @@ describe("GET /health", () => {
       serverVersion,
       error: "database_unreachable",
       serverInfo: testServerInfo,
+    });
+  });
+
+  it("returns only the stable failure code when the anonymous database probe fails", async () => {
+    const db = {
+      execute: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")),
+    } as unknown as Db;
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).actor = { type: "none", source: "none" };
+      next();
+    });
+    app.use(
+      "/health",
+      healthRoutes(db, {
+        deploymentExposure: "public",
+        authReady: true,
+        companyDeletionEnabled: false,
+        serverInfo: testServerInfo,
+      }),
+    );
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      status: "unhealthy",
+      error: "database_unreachable",
     });
   });
 
@@ -135,8 +203,9 @@ describe("GET /health", () => {
 
   it("surfaces a stale database backup warning in full health details", async () => {
     const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
-    const backupFile = path.join(backupDir, "paperclip-20260705-031702.sql.gz");
+    const backupFile = path.join(backupDir, "paperclip-20260705-031702.dump");
     fs.writeFileSync(backupFile, "backup");
+    fs.writeFileSync(`${backupFile}.manifest.json`, "{}");
     fs.utimesSync(
       backupFile,
       new Date("2026-07-05T03:17:02.000Z"),
@@ -157,7 +226,7 @@ describe("GET /health", () => {
       backupDir,
       maxAgeHours: 26,
       latestBackup: {
-        name: "paperclip-20260705-031702.sql.gz",
+        name: "paperclip-20260705-031702.dump",
         ageHours: 33.7,
       },
       warnings: [
@@ -169,11 +238,39 @@ describe("GET /health", () => {
     expect(res.body.warnings).toEqual(res.body.databaseBackup.warnings);
   });
 
+  it("does not treat an unmanifested payload as a complete backup", async () => {
+    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-incomplete-backups-"));
+    fs.writeFileSync(
+      path.join(backupDir, "paperclip-20260706-031702.dump"),
+      "unmanifested payload",
+    );
+    const app = createApp(createHealthyDb(), testServerInfo, {
+      enabled: true,
+      backupDir,
+      maxAgeHours: 26,
+      now: new Date("2026-07-06T04:00:00.000Z"),
+    });
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.databaseBackup).toMatchObject({
+      status: "warning",
+      latestBackup: null,
+      warnings: [
+        {
+          code: "database_backup_missing",
+        },
+      ],
+    });
+  });
+
   it("surfaces database backup failure markers in full health details", async () => {
     const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
-    const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
+    const backupFile = path.join(backupDir, "paperclip-20260706-031702.dump");
     const alertFile = path.join(backupDir, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
+    fs.writeFileSync(`${backupFile}.manifest.json`, "{}");
     fs.writeFileSync(alertFile, "db-backup-to-s3 failed at 2026-07-06T03:17:00.000Z exit=1\n");
     const app = createApp(createHealthyDb(), testServerInfo, {
       enabled: true,
@@ -205,9 +302,10 @@ describe("GET /health", () => {
     const backupRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-root-"));
     const backupDir = path.join(backupRoot, "backups");
     fs.mkdirSync(backupDir);
-    const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
+    const backupFile = path.join(backupDir, "paperclip-20260706-031702.dump");
     const alertFile = path.join(backupRoot, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
+    fs.writeFileSync(`${backupFile}.manifest.json`, "{}");
     fs.writeFileSync(alertFile, "db-backup-to-s3 failed beside backups\n");
     const app = createApp(createHealthyDb(), testServerInfo, {
       enabled: true,
@@ -234,10 +332,11 @@ describe("GET /health", () => {
     });
   });
 
-  it("surfaces redacted database backup warnings for anonymous authenticated probes", async () => {
+  it("keeps database backup details out of anonymous health responses", async () => {
     const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-redacted-backups-"));
-    const backupFile = path.join(backupDir, "paperclip-20260705-031702.sql.gz");
+    const backupFile = path.join(backupDir, "paperclip-20260705-031702.dump");
     fs.writeFileSync(backupFile, "backup");
+    fs.writeFileSync(`${backupFile}.manifest.json`, "{}");
     fs.utimesSync(
       backupFile,
       new Date("2026-07-05T03:17:02.000Z"),
@@ -260,7 +359,6 @@ describe("GET /health", () => {
     app.use(
       "/health",
       healthRoutes(db, {
-        deploymentMode: "authenticated",
         deploymentExposure: "public",
         authReady: true,
         companyDeletionEnabled: false,
@@ -279,26 +377,9 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "public",
       bootstrapStatus: "ready",
       bootstrapInviteActive: false,
-      databaseBackup: {
-        enabled: true,
-        status: "warning",
-        warnings: [
-          {
-            code: "database_backup_stale",
-            message: "Latest database backup is stale.",
-          },
-        ],
-      },
-      warnings: [
-        {
-          code: "database_backup_stale",
-          message: "Latest database backup is stale.",
-        },
-      ],
     });
   });
 
@@ -322,7 +403,6 @@ describe("GET /health", () => {
     app.use(
       "/health",
       healthRoutes(db, {
-        deploymentMode: "authenticated",
         deploymentExposure: "public",
         authReady: true,
         companyDeletionEnabled: false,
@@ -335,7 +415,6 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "public",
       bootstrapStatus: "ready",
       bootstrapInviteActive: false,
@@ -359,7 +438,6 @@ describe("GET /health", () => {
     app.use(
       "/health",
       healthRoutes(db, {
-        deploymentMode: "authenticated",
         deploymentExposure: "public",
         authReady: true,
         companyDeletionEnabled: false,
@@ -372,7 +450,6 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "public",
       bootstrapStatus: "ready",
       bootstrapInviteActive: false,
@@ -394,13 +471,20 @@ describe("GET /health", () => {
     } as unknown as Db;
     const app = express();
     app.use((req, _res, next) => {
-      (req as any).actor = { type: "board", userId: "user-1", source: "session" };
+      (req as any).actor = testBoardSessionActor({
+        userId: "user-1",
+        userName: "User One",
+        userEmail: "user-1@paperclip.test",
+        sessionId: "session-user-1",
+        companyIds: [],
+        memberships: [],
+        isInstanceAdmin: true,
+      });
       next();
     });
     app.use(
       "/health",
       healthRoutes(db, {
-        deploymentMode: "authenticated",
         deploymentExposure: "public",
         authReady: true,
         companyDeletionEnabled: false,
@@ -415,7 +499,6 @@ describe("GET /health", () => {
       status: "ok",
       version: serverVersion,
       serverVersion,
-      deploymentMode: "authenticated",
       deploymentExposure: "public",
       authReady: true,
       bootstrapStatus: "ready",
@@ -445,7 +528,6 @@ describe("GET /health", () => {
     app.use(
       "/health",
       healthRoutes(db, {
-        deploymentMode: "authenticated",
         deploymentExposure: "public",
         authReady: true,
         companyDeletionEnabled: false,
@@ -463,8 +545,8 @@ describe("GET /health", () => {
     });
   });
 
-  it("reports bootstrapStatus ready for cloud-managed instances regardless of instance admin count", async () => {
-    vi.stubEnv("PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN", "test-tenant-server-token");
+  it("does not bypass first-admin bootstrap when retired cloud headers are present", async () => {
+    vi.stubEnv("PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN", "ignored-retired-token"); // paperclip:canonical-human-auth-removal-proof
     const { healthRoutes } = await import("../routes/health.js");
     const db = {
       execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
@@ -482,7 +564,6 @@ describe("GET /health", () => {
     app.use(
       "/health",
       healthRoutes(db, {
-        deploymentMode: "authenticated",
         deploymentExposure: "public",
         authReady: true,
         companyDeletionEnabled: false,
@@ -495,7 +576,7 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       status: "ok",
-      bootstrapStatus: "ready",
+      bootstrapStatus: "bootstrap_pending",
       bootstrapInviteActive: false,
     });
   });

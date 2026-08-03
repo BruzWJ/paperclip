@@ -1,8 +1,19 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    "noEmit": true,
+    "rootDir": "."
   },
-  "include": ["src"]
+  "include": [
+    "index.ts",
+    "schema.ts",
+    "backup-lib.ts",
+    "database-identity.ts",
+    "drizzle.config.ts",
+    "runtime-config.ts",
+    "schema/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["dist", "migrations", "node_modules"]
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { HeartbeatRun, Issue } from "@paperclipai/shared";
+import type { Issue, IssueExecutionRunEnvelopeRecord } from "@paperclipai/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -47,9 +47,10 @@ import { useDialog } from "@/context/DialogContext";
 import { queryKeys } from "@/lib/queryKeys";
 import {
   createIssue,
+  createIssueExecutionRun,
   storybookAgents,
   storybookIssues,
-  storybookLiveRuns,
+  storybookIssueRuns,
 } from "../fixtures/paperclipData";
 
 const companyId = "company-storybook";
@@ -90,81 +91,44 @@ function daysAgo(days: number, hour = 12): Date {
   return date;
 }
 
-function makeHeartbeatRun(overrides: Partial<HeartbeatRun>): HeartbeatRun {
-  const createdAt = overrides.createdAt ?? daysAgo(1);
-  const run: HeartbeatRun = {
-    id: "run-fixture",
-    companyId,
-    agentId: "agent-codex",
-    responsibleUserId: null,
-    invocationSource: "on_demand",
-    triggerDetail: "manual",
+function makeRun(
+  overrides: Partial<IssueExecutionRunEnvelopeRecord>,
+): IssueExecutionRunEnvelopeRecord {
+  const createdAt = overrides.createdAt ?? daysAgo(1).toISOString();
+  return createIssueExecutionRun({
     status: "succeeded",
+    currentAttemptId: null,
+    currentLeaseId: null,
+    terminalClassification: "succeeded",
+    terminalFinalizationId: "finalization-run-fixture",
     startedAt: createdAt,
-    finishedAt: new Date(createdAt.getTime() + 11 * 60_000),
-    error: null,
-    wakeupRequestId: null,
-    exitCode: 0,
-    signal: null,
-    usageJson: null,
-    resultJson: null,
-    sessionIdBefore: null,
-    sessionIdAfter: null,
-    logStore: null,
-    logRef: null,
-    logBytes: 0,
-    logSha256: null,
-    logCompressed: false,
-    lastOutputAt: null,
-    lastOutputSeq: 0,
-    lastOutputStream: null,
-    lastOutputBytes: null,
-    stdoutExcerpt: null,
-    stderrExcerpt: null,
-    errorCode: null,
-    externalRunId: null,
-    processPid: null,
-    processGroupId: null,
-    processStartedAt: createdAt,
-    retryOfRunId: null,
-    processLossRetryCount: 0,
-    scheduledRetryAt: null,
-    scheduledRetryAttempt: 0,
-    scheduledRetryReason: null,
-    retryExhaustedReason: null,
-    livenessState: "completed",
-    livenessReason: null,
-    continuationAttempt: 0,
-    lastUsefulActionAt: null,
-    nextAction: null,
-    contextSnapshot: null,
-    ...overrides,
+    finishedAt: new Date(new Date(createdAt).getTime() + 11 * 60_000).toISOString(),
     createdAt,
-    updatedAt: overrides.updatedAt ?? createdAt,
-  };
-  return run;
+    updatedAt: createdAt,
+    ...overrides,
+  });
 }
 
-const activityRuns: HeartbeatRun[] = [
-  makeHeartbeatRun({ id: "run-chart-1", status: "succeeded", createdAt: daysAgo(13), startedAt: daysAgo(13) }),
-  makeHeartbeatRun({ id: "run-chart-2", status: "succeeded", createdAt: daysAgo(10), startedAt: daysAgo(10) }),
-  makeHeartbeatRun({ id: "run-chart-3", status: "failed", createdAt: daysAgo(10), startedAt: daysAgo(10, 15), exitCode: 1 }),
-  makeHeartbeatRun({ id: "run-chart-4", status: "running", createdAt: daysAgo(7), startedAt: daysAgo(7), finishedAt: null }),
-  makeHeartbeatRun({ id: "run-chart-5", status: "succeeded", createdAt: daysAgo(5), startedAt: daysAgo(5) }),
-  makeHeartbeatRun({ id: "run-chart-6", status: "timed_out", createdAt: daysAgo(3), startedAt: daysAgo(3), errorCode: "timeout" }),
-  makeHeartbeatRun({ id: "run-chart-7", status: "succeeded", createdAt: daysAgo(1), startedAt: daysAgo(1) }),
-  makeHeartbeatRun({ id: "run-chart-8", status: "succeeded", createdAt: daysAgo(1, 16), startedAt: daysAgo(1, 16) }),
+const activityRuns: IssueExecutionRunEnvelopeRecord[] = [
+  makeRun({ id: "run-chart-1", createdAt: daysAgo(13).toISOString(), startedAt: daysAgo(13).toISOString() }),
+  makeRun({ id: "run-chart-2", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10).toISOString() }),
+  makeRun({ id: "run-chart-3", status: "failed", terminalClassification: "failed", terminalReasonCode: "process_exit", createdAt: daysAgo(10).toISOString(), startedAt: daysAgo(10, 15).toISOString(), processExitCode: 1 }),
+  makeRun({ id: "run-chart-4", status: "running", terminalClassification: null, terminalFinalizationId: null, currentAttemptId: "attempt-run-chart-4", currentLeaseId: "lease-run-chart-4", createdAt: daysAgo(7).toISOString(), startedAt: daysAgo(7).toISOString(), finishedAt: null }),
+  makeRun({ id: "run-chart-5", createdAt: daysAgo(5).toISOString(), startedAt: daysAgo(5).toISOString() }),
+  makeRun({ id: "run-chart-6", status: "timed_out", terminalClassification: "timed_out", terminalReasonCode: "timeout", createdAt: daysAgo(3).toISOString(), startedAt: daysAgo(3).toISOString() }),
+  makeRun({ id: "run-chart-7", createdAt: daysAgo(1).toISOString(), startedAt: daysAgo(1).toISOString() }),
+  makeRun({ id: "run-chart-8", createdAt: daysAgo(1, 16).toISOString(), startedAt: daysAgo(1, 16).toISOString() }),
 ];
 
 const activityIssues = [
-  { priority: "high", status: "in_progress", createdAt: daysAgo(13) },
-  { priority: "critical", status: "blocked", createdAt: daysAgo(11) },
-  { priority: "medium", status: "todo", createdAt: daysAgo(9) },
-  { priority: "medium", status: "in_review", createdAt: daysAgo(9, 16) },
-  { priority: "low", status: "done", createdAt: daysAgo(6) },
-  { priority: "high", status: "todo", createdAt: daysAgo(4) },
-  { priority: "critical", status: "in_progress", createdAt: daysAgo(2) },
-  { priority: "medium", status: "done", createdAt: daysAgo(1) },
+  { priority: "high", boardPresentationStatus: "in_progress", createdAt: daysAgo(13) },
+  { priority: "critical", boardPresentationStatus: "blocked", createdAt: daysAgo(11) },
+  { priority: "medium", boardPresentationStatus: "todo", createdAt: daysAgo(9) },
+  { priority: "medium", boardPresentationStatus: "in_review", createdAt: daysAgo(9, 16) },
+  { priority: "low", boardPresentationStatus: "done", createdAt: daysAgo(6) },
+  { priority: "high", boardPresentationStatus: "todo", createdAt: daysAgo(4) },
+  { priority: "critical", boardPresentationStatus: "in_progress", createdAt: daysAgo(2) },
+  { priority: "medium", boardPresentationStatus: "done", createdAt: daysAgo(1) },
 ];
 
 const kanbanIssues: Issue[] = [
@@ -174,18 +138,18 @@ const kanbanIssues: Issue[] = [
     identifier: "PAP-1701",
     issueNumber: 1701,
     title: "Sketch company analytics dashboard",
-    status: "backlog",
+    boardPresentationStatus: "backlog",
     priority: "low",
-    assigneeAgentId: "agent-cto",
+    owner: { kind: "agent", agentId: "agent-cto" },
   }),
   createIssue({
     id: "issue-kanban-cancelled",
     identifier: "PAP-1702",
     issueNumber: 1702,
     title: "Remove obsolete color token migration",
-    status: "cancelled",
+    boardPresentationStatus: "cancelled",
     priority: "medium",
-    assigneeAgentId: null,
+    owner: { kind: "board" },
   }),
 ];
 
@@ -214,7 +178,7 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
     <StoryShell>
       <Section eyebrow="ActivityCharts" title={empty ? "Empty activity timelines" : "Two-week activity timelines"}>
         <div className="grid gap-4 md:grid-cols-2">
-          <ChartCard title="Run activity" subtitle="Succeeded, failed, and in-flight heartbeats">
+          <ChartCard title="Run activity" subtitle="Succeeded, failed, and in-flight executions">
             <RunActivityChart runs={runs} />
           </ChartCard>
           <ChartCard title="Success rate" subtitle="Daily completion ratio">
@@ -233,21 +197,16 @@ function ActivityChartsMatrix({ empty = false }: { empty?: boolean }) {
 }
 
 function KanbanBoardDemo({ empty = false }: { empty?: boolean }) {
-  const [issues, setIssues] = useState<Issue[]>(empty ? [] : kanbanIssues);
+  const issues: Issue[] = empty ? [] : kanbanIssues;
   const liveIssueIds = useMemo(() => new Set(["issue-storybook-1", "issue-kanban-backlog"]), []);
 
   return (
     <StoryShell>
-      <Section eyebrow="KanbanBoard" title={empty ? "Collapsed empty workflow columns" : "Draggable issue cards by status"}>
+      <Section eyebrow="KanbanBoard" title={empty ? "Collapsed empty workflow columns" : "Read-only issue cards by status"}>
         <KanbanBoard
           issues={issues}
           agents={storybookAgents}
           liveIssueIds={liveIssueIds}
-          onUpdateIssue={(id, data) => {
-            setIssues((current) =>
-              current.map((issue) => (issue.id === id ? { ...issue, ...data } : issue)),
-            );
-          }}
         />
       </Section>
     </StoryShell>
@@ -292,8 +251,10 @@ function LiveRunWidgetStory({ empty = false, loading = false }: { empty?: boolea
 
   useEffect(() => {
     if (loading) return;
-    queryClient.setQueryData(queryKeys.issues.liveRuns(primaryIssueId), empty ? [] : storybookLiveRuns);
-    queryClient.setQueryData(queryKeys.issues.activeRun(primaryIssueId), empty ? null : storybookLiveRuns[0]);
+    queryClient.setQueryData(queryKeys.issues.runs(primaryIssueId, ["queued", "scheduled_retry", "running"]), {
+      items: empty ? [] : storybookIssueRuns.filter((run) => run.status === "running"),
+      nextCursor: null,
+    });
   }, [empty, loading, queryClient]);
 
   if (loading) {
@@ -329,9 +290,9 @@ function OpenOnboardingOnMount({ initialStep }: { initialStep: 1 | 2 }) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    queryClient.setQueryData(queryKeys.agents.adapterModels(companyId, "claude_local"), [
-      { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-      { id: "claude-opus-4-1", label: "Claude Opus 4.1" },
+    queryClient.setQueryData(queryKeys.agents.adapterModels(companyId, "codex"), [
+      { id: "gpt-5.6", label: "GPT-5.6" },
+      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
     ]);
     openOnboarding(initialStep === 1 ? { initialStep } : { initialStep, companyId });
   }, [initialStep, openOnboarding, queryClient]);

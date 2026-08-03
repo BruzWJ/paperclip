@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import type { ExecutionWorkspace, Issue } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueWorkspaceCard } from "./IssueWorkspaceCard";
+import { createTestIssue } from "../test-utils/issue";
 
 function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> | undefined;
@@ -78,49 +79,26 @@ function createExecutionWorkspace(overrides: Partial<ExecutionWorkspace> = {}): 
 }
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
+  return createTestIssue({
     identifier: "PAPA-81",
-    companyId: "company-1",
     projectId: "project-1",
     projectWorkspaceId: "project-workspace-1",
-    goalId: null,
-    parentId: null,
     title: "Sandboxing",
-    description: null,
-    status: "in_progress",
-    priority: "medium",
-    assigneeAgentId: "agent-1",
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
+    boardPresentationStatus: "in_progress",
+    ownerAgentId: "agent-1",
     issueNumber: 81,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: "workspace-1",
     executionWorkspacePreference: "isolated_workspace",
     executionWorkspaceSettings: {
       mode: "isolated_workspace",
       environmentId: "env-issue",
     },
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     createdAt: new Date("2026-04-16T04:30:00.000Z"),
     updatedAt: new Date("2026-04-16T05:30:00.000Z"),
     labels: [],
     labelIds: [],
     currentExecutionWorkspace: null,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 describe("IssueWorkspaceCard", () => {
@@ -144,7 +122,7 @@ describe("IssueWorkspaceCard", () => {
     container.remove();
   });
 
-  it("clears the legacy issue environment override when reusing a workspace", () => {
+  it("uses the canonical current workspace binding when reusing a workspace", () => {
     const root = createRoot(container);
     const onUpdate = vi.fn();
     const reusableWorkspace = createExecutionWorkspace();
@@ -167,7 +145,7 @@ describe("IssueWorkspaceCard", () => {
     act(() => {
       root.render(
         <IssueWorkspaceCard
-          issue={createIssue()}
+          issue={createIssue({ currentExecutionWorkspace: reusableWorkspace })}
           project={{
             id: "project-1",
             executionWorkspacePolicy: {
@@ -229,7 +207,7 @@ describe("IssueWorkspaceCard", () => {
     act(() => {
       root.render(
         <IssueWorkspaceCard
-          issue={createIssue()}
+          issue={createIssue({ currentExecutionWorkspace: createExecutionWorkspace() })}
           project={{
             id: "project-1",
             executionWorkspacePolicy: {

@@ -10,8 +10,8 @@ type IssueDetailBreadcrumb = {
 export type IssueDetailHeaderSeed = {
   id: string;
   identifier: string | null;
-  title: string;
-  status: string;
+  title: string | null;
+  boardPresentationStatus: string;
   blockerAttention?: Issue["blockerAttention"];
   priority: string;
   projectId: string | null;
@@ -22,7 +22,7 @@ export type IssueDetailHeaderSeed = {
 
 type IssueDetailHeaderSeedSource = Pick<Issue, "id" | "title"> & {
   identifier?: string | null;
-  status: string;
+  boardPresentationStatus: string;
   blockerAttention?: Issue["blockerAttention"];
   priority: string;
   projectId?: string | null;
@@ -65,8 +65,8 @@ function isIssueDetailHeaderSeed(value: unknown): value is IssueDetailHeaderSeed
   return (
     typeof candidate.id === "string"
     && (candidate.identifier === null || typeof candidate.identifier === "string")
-    && typeof candidate.title === "string"
-    && typeof candidate.status === "string"
+    && (candidate.title === null || typeof candidate.title === "string")
+    && typeof candidate.boardPresentationStatus === "string"
     && hasBlockerAttention
     && typeof candidate.priority === "string"
     && (candidate.projectId === null || typeof candidate.projectId === "string")
@@ -81,7 +81,7 @@ function createIssueDetailHeaderSeed(issue: IssueDetailHeaderSeedSource): IssueD
     id: issue.id,
     identifier: issue.identifier ?? null,
     title: issue.title,
-    status: issue.status,
+    boardPresentationStatus: issue.boardPresentationStatus,
     blockerAttention: issue.blockerAttention,
     priority: issue.priority,
     projectId: issue.projectId ?? null,

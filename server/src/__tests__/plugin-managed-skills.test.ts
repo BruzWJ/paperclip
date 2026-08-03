@@ -1,42 +1,43 @@
-import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  activityLog,
-  companies,
-  companySkills,
-  createDb,
-  pluginManagedResources,
-  plugins,
-} from "@paperclipai/db";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { buildHostServices } from "../services/plugin-host-services.js";
+import { pluginManagedSkillService } from "../services/plugin-managed-skills.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const skills = vi.hoisted(() => ({
+  getById: vi.fn(),
+  getByKey: vi.fn(),
+  importPackageFiles: vi.fn(),
+  readFile: vi.fn(),
+}));
+const logActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
-function createEventBusStub() {
-  return {
-    forPlugin() {
-      return {
-        emit: async () => {},
-        subscribe: () => {},
-      };
-    },
-  } as any;
-}
+vi.mock("../services/company-skills.js", () => ({
+  companySkillService: vi.fn(() => skills),
+}));
+vi.mock("../services/activity-log.js", () => ({ logActivity }));
 
-function issuePrefix(id: string) {
-  return `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-}
+const companyId = "11111111-1111-4111-8111-111111111111";
+const pluginId = "22222222-2222-4222-8222-222222222222";
+const skillId = "33333333-3333-4333-8333-333333333333";
+const pluginKey = "paperclip.managed-skills-test";
+const canonicalKey = "plugin/paperclip-managed-skills-test/wiki-maintainer";
+const referenceContent = "# Wiki style\n\nKeep pages cited and terse.\n";
+const defaultMarkdown = [
+  "---",
+  'name: "Wiki Maintainer Skill"',
+  'description: "Use LLM Wiki tools to maintain company knowledge."',
+  `key: "${canonicalKey}"`,
+  "---",
+  "",
+  "# Wiki Maintainer Skill",
+  "",
+  "Use LLM Wiki tools to maintain company knowledge.",
+  "",
+].join("\n");
 
 function manifest(): PaperclipPluginManifestV1 {
   return {
-    id: "paperclip.managed-skills-test",
+    id: pluginKey,
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Managed Skills Test",
@@ -51,231 +52,229 @@ function manifest(): PaperclipPluginManifestV1 {
       description: "Use LLM Wiki tools to maintain company knowledge.",
       files: [{
         path: "references/wiki-style.md",
-        content: "# Wiki style\n\nKeep pages cited and terse.\n",
+        content: referenceContent,
       }],
     }],
   };
 }
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres plugin-managed skill tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+function skill(overrides: Record<string, unknown> = {}) {
+  return {
+    id: skillId,
+    companyId,
+    key: canonicalKey,
+    name: "Wiki Maintainer Skill",
+    description: "Use LLM Wiki tools to maintain company knowledge.",
+    sourceType: "catalog",
+    markdown: defaultMarkdown,
+    fileInventory: [
+      { path: "SKILL.md", kind: "skill" },
+      { path: "references/wiki-style.md", kind: "reference" },
+    ],
+    createdAt: new Date("2026-08-01T10:00:00.000Z"),
+    updatedAt: new Date("2026-08-01T10:00:00.000Z"),
+    ...overrides,
+  };
 }
 
-describeEmbeddedPostgres("plugin-managed skills", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+function defaultsJson() {
+  return {
+    skillKey: "wiki-maintainer",
+    displayName: "Wiki Maintainer Skill",
+    slug: "wiki-maintainer",
+    description: "Use LLM Wiki tools to maintain company knowledge.",
+    canonicalKey,
+    files: ["SKILL.md", "references/wiki-style.md"],
+  };
+}
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-managed-skills-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+function binding(resourceId = skillId) {
+  return {
+    id: "44444444-4444-4444-8444-444444444444",
+    companyId,
+    pluginId,
+    pluginKey,
+    resourceKind: "skill",
+    resourceKey: "wiki-maintainer",
+    resourceId,
+    defaultsJson: defaultsJson(),
+    createdAt: new Date("2026-08-01T10:00:00.000Z"),
+    updatedAt: new Date("2026-08-01T10:00:00.000Z"),
+  };
+}
 
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(pluginManagedResources);
-    await db.delete(companySkills);
-    await db.delete(plugins);
-    await db.delete(companies);
+function service(
+  db: ReturnType<typeof createMockDb>["db"],
+  pluginManifest = manifest(),
+) {
+  return pluginManagedSkillService(db, {
+    pluginId,
+    pluginKey,
+    manifest: pluginManifest,
   });
+}
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  skills.getById.mockResolvedValue(skill());
+  skills.getByKey.mockResolvedValue(null);
+  skills.importPackageFiles.mockResolvedValue([
+    { skill: skill(), originalSlug: "wiki-maintainer" },
+  ]);
+  skills.readFile.mockImplementation(
+    async (_companyId: string, _skillId: string, filePath: string) =>
+      filePath === "references/wiki-style.md"
+        ? { content: referenceContent }
+        : null,
+  );
+});
 
-  async function seedCompanyAndPlugin(pluginManifest = manifest()) {
-    const companyId = randomUUID();
-    const pluginId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: issuePrefix(companyId),
+describe("plugin-managed skills", () => {
+  it("imports and binds a declared skill by its canonical key", async () => {
+    const harness = createMockDb({
+      select: [[], []],
+      insert: [[binding()]],
     });
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-skills-test",
-      version: pluginManifest.version,
-      apiVersion: pluginManifest.apiVersion,
-      categories: pluginManifest.categories,
-      manifestJson: pluginManifest,
-      status: "ready",
-      installOrder: 1,
-    });
-    const services = buildHostServices(db, pluginId, pluginManifest.id, createEventBusStub(), undefined, {
-      manifest: pluginManifest,
-    });
-    return { companyId, pluginId, pluginManifest, services };
-  }
 
-  it("installs and resolves managed company skills by stable resource key", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
+    await expect(
+      service(harness.db).reconcile("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "created",
+      skillId,
+      defaultDrift: null,
+      skill: {
+        key: canonicalKey,
+        fileInventory: expect.arrayContaining([
+          expect.objectContaining({ path: "SKILL.md", kind: "skill" }),
+          expect.objectContaining({
+            path: "references/wiki-style.md",
+            kind: "reference",
+          }),
+        ]),
+      },
+    });
 
-    const created = await services.skills.managedReconcile({
+    expect(skills.importPackageFiles).toHaveBeenCalledWith(
       companyId,
-      skillKey: "wiki-maintainer",
-    });
-
-    expect(created.status).toBe("created");
-    expect(created.skill).toMatchObject({
-      name: "Wiki Maintainer Skill",
-      key: "plugin/paperclip-managed-skills-test/wiki-maintainer",
-      sourceType: "catalog",
-      fileInventory: expect.arrayContaining([
-        expect.objectContaining({ path: "SKILL.md", kind: "skill" }),
-        expect.objectContaining({ path: "references/wiki-style.md", kind: "reference" }),
-      ]),
-    });
-
-    const resolved = await services.skills.managedGet({
+      {
+        "wiki-maintainer/SKILL.md": defaultMarkdown,
+        "wiki-maintainer/references/wiki-style.md": referenceContent,
+      },
+      { onConflict: "replace" },
+    );
+    const bindingValues = harness.calls.find(
+      (call) => call.operation === "insert" && call.method === "values",
+    )?.args[0];
+    expect(bindingValues).toMatchObject({
       companyId,
-      skillKey: "wiki-maintainer",
-    });
-    expect(resolved.status).toBe("resolved");
-    expect(resolved.skillId).toBe(created.skillId);
-
-    const [binding] = await db.select().from(pluginManagedResources);
-    expect(binding).toMatchObject({
-      companyId,
+      pluginId,
+      pluginKey,
       resourceKind: "skill",
       resourceKey: "wiki-maintainer",
-      resourceId: created.skillId,
+      resourceId: skillId,
+      defaultsJson: defaultsJson(),
     });
+    expect(logActivity).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({ action: "plugin.managed_skill.reconciled" }),
+    );
   });
 
-  it("preserves operator edits during reconcile and restores manifest defaults on reset", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const created = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    expect(created.skillId).toBeTruthy();
+  it("resolves a bound skill without rewriting an unchanged binding", async () => {
+    const harness = createMockDb({
+      select: [[binding()], [binding()]],
+    });
 
-    await db
-      .update(companySkills)
-      .set({
-        name: "Custom Wiki Skill",
-        markdown: "# Custom instructions\n",
-        updatedAt: new Date(),
-      })
-      .where(eq(companySkills.id, created.skillId!));
+    await expect(
+      service(harness.db).reconcile("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "resolved",
+      skillId,
+      defaultDrift: null,
+    });
 
-    const reconciled = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    expect(reconciled.status).toBe("resolved");
-    expect(reconciled.skill).toMatchObject({
+    expect(skills.getById).toHaveBeenCalledWith(companyId, skillId);
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
+    expect(logActivity).not.toHaveBeenCalled();
+  });
+
+  it("preserves operator edits and reports their drift during reconcile", async () => {
+    const edited = skill({
       name: "Custom Wiki Skill",
       markdown: "# Custom instructions\n",
     });
+    skills.getById.mockResolvedValue(edited);
+    const harness = createMockDb({ select: [[binding()], [binding()]] });
 
-    const reset = await services.skills.managedReset({ companyId, skillKey: "wiki-maintainer" });
-    expect(reset.status).toBe("reset");
-    expect(reset.skill).toMatchObject({
-      name: "Wiki Maintainer Skill",
-      description: "Use LLM Wiki tools to maintain company knowledge.",
-    });
-    expect(reset.skill?.markdown).toContain("key: \"plugin/paperclip-managed-skills-test/wiki-maintainer\"");
-  });
-
-  it("does not rewrite managed skill bindings when defaults are unchanged", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const created = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    expect(created.skillId).toBeTruthy();
-
-    const [binding] = await db.select().from(pluginManagedResources);
-    const oldUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
-    await db
-      .update(pluginManagedResources)
-      .set({ updatedAt: oldUpdatedAt })
-      .where(eq(pluginManagedResources.id, binding.id));
-
-    const reconciled = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    const [bindingAfter] = await db.select().from(pluginManagedResources);
-
-    expect(reconciled.status).toBe("resolved");
-    expect(bindingAfter.updatedAt.toISOString()).toBe(oldUpdatedAt.toISOString());
-  });
-
-  it("relinks an existing canonical skill without overwriting operator edits", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const created = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    expect(created.skillId).toBeTruthy();
-
-    await db.delete(pluginManagedResources).where(eq(pluginManagedResources.resourceId, created.skillId!));
-    await db
-      .update(companySkills)
-      .set({
-        name: "Existing Customized Wiki Skill",
-        markdown: "# Existing customized instructions\n",
-        updatedAt: new Date(),
-      })
-      .where(eq(companySkills.id, created.skillId!));
-
-    const relinked = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-
-    expect(relinked.status).toBe("relinked");
-    expect(relinked.skillId).toBe(created.skillId);
-    expect(relinked.skill).toMatchObject({
-      name: "Existing Customized Wiki Skill",
-      markdown: "# Existing customized instructions\n",
-    });
-    expect(relinked.defaultDrift).toEqual({ changedFiles: ["SKILL.md"] });
-
-    const [binding] = await db.select().from(pluginManagedResources);
-    expect(binding).toMatchObject({
-      companyId,
-      resourceKind: "skill",
-      resourceKey: "wiki-maintainer",
-      resourceId: created.skillId,
-    });
-  });
-
-  it("reports drift when installed skill files differ from plugin defaults", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const created = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    expect(created.defaultDrift).toBeNull();
-
-    await db
-      .update(companySkills)
-      .set({
+    await expect(
+      service(harness.db).reconcile("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "resolved",
+      skill: {
+        name: "Custom Wiki Skill",
         markdown: "# Custom instructions\n",
-        updatedAt: new Date(),
-      })
-      .where(eq(companySkills.id, created.skillId!));
+      },
+      defaultDrift: { changedFiles: ["SKILL.md"] },
+    });
 
-    const drifted = await services.skills.managedReconcile({ companyId, skillKey: "wiki-maintainer" });
-    expect(drifted.status).toBe("resolved");
-    expect(drifted.defaultDrift).toEqual({ changedFiles: ["SKILL.md"] });
-
-    const reset = await services.skills.managedReset({ companyId, skillKey: "wiki-maintainer" });
-    expect(reset.defaultDrift).toBeNull();
+    expect(skills.importPackageFiles).not.toHaveBeenCalled();
+    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("adds the canonical managed key to manifest-provided markdown skills", async () => {
+  it("resets through the manifest package while retaining the stable binding", async () => {
+    const harness = createMockDb({ select: [[binding()]] });
+
+    await expect(
+      service(harness.db).reset("wiki-maintainer", companyId),
+    ).resolves.toMatchObject({
+      status: "reset",
+      skillId,
+      skill: { markdown: defaultMarkdown },
+      defaultDrift: null,
+    });
+
+    expect(skills.getByKey).not.toHaveBeenCalled();
+    expect(skills.importPackageFiles).toHaveBeenCalledOnce();
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
+    expect(logActivity).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({ action: "plugin.managed_skill.reset" }),
+    );
+  });
+
+  it("injects the canonical managed key into manifest-provided markdown", async () => {
     const pluginManifest = manifest();
-    pluginManifest.skills = [
-      ...(pluginManifest.skills ?? []),
-      {
-        skillKey: "markdown-skill",
-        displayName: "Markdown Skill",
-        markdown: [
-          "---",
-          "name: markdown-skill",
-          "description: Markdown source without a key.",
-          "---",
-          "",
-          "# Markdown Skill",
-          "",
-          "Follow the managed markdown.",
-        ].join("\n"),
-      },
-    ];
-    const { companyId, services } = await seedCompanyAndPlugin(pluginManifest);
-
-    const created = await services.skills.managedReconcile({ companyId, skillKey: "markdown-skill" });
-
-    expect(created.status).toBe("created");
-    expect(created.skill).toMatchObject({
+    pluginManifest.skills = [{
+      skillKey: "markdown-skill",
+      displayName: "Markdown Skill",
+      markdown: [
+        "---",
+        "name: markdown-skill",
+        "description: Markdown source without a key.",
+        "---",
+        "",
+        "# Markdown Skill",
+      ].join("\n"),
+    }];
+    const markdownSkill = skill({
       key: "plugin/paperclip-managed-skills-test/markdown-skill",
       name: "markdown-skill",
+      markdown: "ignored by this import-boundary assertion",
+      fileInventory: [{ path: "SKILL.md", kind: "skill" }],
     });
-    expect(created.skill?.markdown).toContain("key: \"plugin/paperclip-managed-skills-test/markdown-skill\"");
+    skills.importPackageFiles.mockResolvedValue([
+      { skill: markdownSkill, originalSlug: "markdown-skill" },
+    ]);
+    skills.readFile.mockResolvedValue(null);
+    const harness = createMockDb({ select: [[], []], insert: [[binding(skillId)]] });
+
+    await service(harness.db, pluginManifest).reconcile("markdown-skill", companyId);
+
+    const files = skills.importPackageFiles.mock.calls[0]?.[1] as Record<string, string>;
+    expect(files["markdown-skill/SKILL.md"]).toContain(
+      'key: "plugin/paperclip-managed-skills-test/markdown-skill"',
+    );
   });
 });

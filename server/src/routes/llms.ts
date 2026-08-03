@@ -3,31 +3,13 @@ import type { Db } from "@paperclipai/db";
 import { AGENT_ICON_NAMES } from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
 import { listServerAdapters } from "../adapters/index.js";
-import { hermesGatewayAgentConfigurationDoc } from "../adapters/hermes-gateway-doc.js";
-import { agentService } from "../services/agents.js";
+import { assertBoard } from "./authz.js";
 
-const pluginOnlyAdapterDocs = new Map<string, string>([
-  ["hermes_gateway", hermesGatewayAgentConfigurationDoc],
-]);
-
-function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
-  if (!agent.permissions || typeof agent.permissions !== "object") return false;
-  return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
-}
-
-export function llmRoutes(db: Db) {
+export function llmRoutes(_db: Db) {
   const router = Router();
-  const agentsSvc = agentService(db);
 
   async function assertCanRead(req: Request) {
-    if (req.actor.type === "board") return;
-    if (req.actor.type !== "agent" || !req.actor.agentId) {
-      throw forbidden("Board or permitted agent authentication required");
-    }
-    const actorAgent = await agentsSvc.getById(req.actor.agentId);
-    if (!actorAgent || !hasCreatePermission(actorAgent)) {
-      throw forbidden("Missing permission to read agent configuration reflection");
-    }
+    assertBoard(req);
   }
 
   router.get("/llms/agent-configuration.txt", async (req, res) => {
@@ -39,28 +21,23 @@ export function llmRoutes(db: Db) {
       "Installed adapters:",
       ...adapters.map((adapter) => `- ${adapter.type}: /llms/agent-configuration/${adapter.type}.txt`),
       "",
-      "Plugin-only adapter docs:",
-      ...Array.from(pluginOnlyAdapterDocs.keys())
-        .filter(
-          (adapterType) => !adapters.some((adapter) => adapter.type === adapterType),
-        )
-        .map(
-          (adapterType) => `- ${adapterType}: /llms/agent-configuration/${adapterType}.txt`,
-        ),
-      "",
       "Related API endpoints:",
       "- GET /api/companies/:companyId/agent-configurations",
       "- GET /api/agents/:id/configuration",
-      "- POST /api/companies/:companyId/agent-hires",
+      "- POST /api/companies/:companyId/runtime-agents",
+      "- GET /api/companies/:companyId/runtime-agent-tool-options",
+      "- GET/PATCH /api/agents/:id/runtime-configuration",
+      "- GET /api/agents/:id/runtime-configuration/tool-options",
+      "- GET/POST /api/agents/:id/adapter-config-revisions",
+      "- PATCH /api/agents/:id/operational-configuration",
       "",
       "Agent identity references:",
       "- GET /llms/agent-icons.txt",
       "",
       "Notes:",
       "- Sensitive values are redacted in configuration read APIs.",
-      "- New hires may be created in pending_approval state depending on company settings.",
-      "- Use the paperclip-create-agent skill for end-to-end hiring: adapter reflection, config comparison, instruction source selection, icon choice, desiredSkills, sourceIssueId/sourceIssueIds, and approval follow-up.",
-      "- Timer heartbeats are opt-in for new hires. Leave runtimeConfig.heartbeat.enabled false unless the role truly needs scheduled work or the user explicitly asked for it.",
+      "- Runtime-agent identity and grants, adapter/provider revisions, and operational fields have separate write contracts.",
+      "- Agents run only from persisted issue-execution references. Recurring work must be modeled as a routine that creates ordinary issues.",
       "",
     ];
     res.type("text/plain").send(lines.join("\n"));
@@ -71,11 +48,11 @@ export function llmRoutes(db: Db) {
     const lines = [
       "# Paperclip Agent Icon Names",
       "",
-      "Set the `icon` field on hire/create payloads to one of:",
+      "Set `icon` through PATCH /api/agents/:id/operational-configuration to one of:",
       ...AGENT_ICON_NAMES.map((name) => `- ${name}`),
       "",
       "Example:",
-      '{ "name": "SearchOps", "role": "researcher", "icon": "search" }',
+      '{ "name": "SearchOps", "title": "Researcher", "icon": "search" }',
       "",
     ];
     res.type("text/plain").send(lines.join("\n"));
@@ -86,20 +63,12 @@ export function llmRoutes(db: Db) {
     const adapterType = req.params.adapterType as string;
     const adapter = listServerAdapters().find((entry) => entry.type === adapterType);
     if (!adapter) {
-      const pluginOnlyDoc = pluginOnlyAdapterDocs.get(adapterType);
-      if (pluginOnlyDoc) {
-        res.type("text/plain").send(pluginOnlyDoc);
-        return;
-      }
       res.status(404).type("text/plain").send(`Unknown adapter type: ${adapterType}`);
       return;
     }
     res
       .type("text/plain")
-      .send(
-        adapter.agentConfigurationDoc ??
-          `# ${adapterType} agent configuration\n\nNo adapter-specific documentation registered.`,
-      );
+      .send(adapter.definition.configurationDoc);
   });
 
   return router;

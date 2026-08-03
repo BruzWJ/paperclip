@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Company } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Company } from "@paperclipai/shared";
 import { assertDeleteConfirmation, resolveCompanyForDeletion } from "../commands/client/company.js";
 
 function makeCompany(overrides: Partial<Company>): Company {
@@ -12,8 +12,9 @@ function makeCompany(overrides: Partial<Company>): Company {
     pausedAt: null,
     issuePrefix: "ALP",
     issueCounter: 1,
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetCurrency: "USD",
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     attachmentMaxBytes: 10 * 1024 * 1024,
     requireBoardApprovalForNewAgents: false,
     feedbackDataSharingEnabled: false,

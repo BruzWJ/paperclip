@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, ChevronDown, Loader2, Search, Store, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Search, Store } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 import { agentsApi } from "../../api/agents";
 import { companySkillsApi } from "../../api/companySkills";
 import { queryKeys } from "../../lib/queryKeys";
 import { resolveSkillSummaryText } from "../../lib/company-skill-summary";
-import { adapterLabels } from "../../components/agent-config-primitives";
-import { cn } from "../../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PageSkeleton } from "../../components/PageSkeleton";
 import {
-  applyAgentSkillSnapshot,
-  isReadOnlyUnmanagedSkillEntry,
+  applyAgentCompanySkillPins,
   sameSkillSelection,
   shouldScheduleSkillAutosave,
 } from "../../lib/agent-skills-state";
@@ -25,14 +21,13 @@ import { filterAgentSkills } from "./agent-skill-filter";
 import { buildAgentSkillSourceMeta } from "./agent-skill-source";
 
 const MATERIALIZATION_NOTE =
-  "Enabled skills are materialized into the stable Paperclip-managed prompt bundle on the agent's next run.";
+  "Selected company skills are exposed as workspace content for the next issue execution. They are never injected into the conversation or granted runtime authority.";
 
 export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?: string }) {
   const queryClient = useQueryClient();
   const [skillDraft, setSkillDraft] = useState<string[]>([]);
   const [lastSavedSkills, setLastSavedSkills] = useState<string[]>([]);
   const [search, setSearch] = useState("");
-  const [detectedOpen, setDetectedOpen] = useState(false);
   const lastSavedSkillsRef = useRef<string[]>([]);
   const hasHydratedSkillSnapshotRef = useRef(false);
   const skipNextSkillAutosaveRef = useRef(true);
@@ -40,9 +35,9 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   // payload on every `isPending` flip (that was an infinite 422 retry storm).
   const failedSkillDraftRef = useRef<string[] | null>(null);
 
-  const { data: skillSnapshot, isLoading } = useQuery({
-    queryKey: queryKeys.agents.skills(agent.id),
-    queryFn: () => agentsApi.skills(agent.id, companyId),
+  const { data: skillSelection, isLoading } = useQuery({
+    queryKey: queryKeys.agents.companySkillPins(agent.id),
+    queryFn: () => agentsApi.companySkillPins(agent.id, companyId),
     enabled: Boolean(companyId),
   });
 
@@ -52,21 +47,47 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     enabled: Boolean(companyId),
   });
 
-  const syncSkills = useMutation({
-    mutationFn: (desiredSkills: string[]) => agentsApi.syncSkills(agent.id, desiredSkills, companyId),
-    onSuccess: async (snapshot) => {
-      queryClient.setQueryData(queryKeys.agents.skills(agent.id), snapshot);
-      lastSavedSkillsRef.current = snapshot.desiredSkills;
-      setLastSavedSkills(snapshot.desiredSkills);
+  const saveSelection = useMutation({
+    mutationFn: (selectedKeys: string[]) => {
+      const selectedByKey = new Map(
+        (skillSelection?.entries ?? []).map((entry) => [entry.key, entry]),
+      );
+      const availableByKey = new Map(
+        (companySkills ?? []).map((skill) => [skill.key, skill]),
+      );
+      return agentsApi.replaceCompanySkillPins(
+        agent.id,
+        selectedKeys.map((key) => {
+          const existing = selectedByKey.get(key);
+          if (existing) return existing;
+          const versionId = availableByKey.get(key)?.currentVersionId;
+          if (!versionId) {
+            throw new Error(
+              `Company skill ${key} has no immutable version to pin.`,
+            );
+          }
+          return { key, versionId };
+        }),
+        companyId,
+      );
+    },
+    onSuccess: async (selection) => {
+      queryClient.setQueryData(
+        queryKeys.agents.companySkillPins(agent.id),
+        selection,
+      );
+      const selectedKeys = selection.entries.map((entry) => entry.key);
+      lastSavedSkillsRef.current = selectedKeys;
+      setLastSavedSkills(selectedKeys);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) }),
       ]);
     },
-    onError: (_error, attemptedDesiredSkills) => {
+    onError: (_error, attemptedSelection) => {
       // Remember the payload that failed so the autosave effect stops retrying
       // it until the user edits the draft again.
-      failedSkillDraftRef.current = attemptedDesiredSkills;
+      failedSkillDraftRef.current = attemptedSelection;
     },
   });
 
@@ -80,29 +101,29 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   }, [agent.id]);
 
   useEffect(() => {
-    if (!skillSnapshot) return;
-    const nextState = applyAgentSkillSnapshot(
+    if (!skillSelection) return;
+    const nextState = applyAgentCompanySkillPins(
       {
         draft: skillDraft,
         lastSaved: lastSavedSkillsRef.current,
         hasHydratedSnapshot: hasHydratedSkillSnapshotRef.current,
       },
-      skillSnapshot.desiredSkills,
+      skillSelection.entries.map((entry) => entry.key),
     );
     skipNextSkillAutosaveRef.current = nextState.shouldSkipAutosave;
     hasHydratedSkillSnapshotRef.current = nextState.hasHydratedSnapshot;
     setSkillDraft(nextState.draft);
     lastSavedSkillsRef.current = nextState.lastSaved;
     setLastSavedSkills(nextState.lastSaved);
-  }, [skillDraft, skillSnapshot]);
+  }, [skillDraft, skillSelection]);
 
   useEffect(() => {
-    if (!skillSnapshot) return;
+    if (!skillSelection) return;
     if (skipNextSkillAutosaveRef.current) {
       skipNextSkillAutosaveRef.current = false;
       return;
     }
-    if (syncSkills.isPending) return;
+    if (saveSelection.isPending) return;
     if (
       !shouldScheduleSkillAutosave({
         draft: skillDraft,
@@ -121,27 +142,18 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
           failedDraft: failedSkillDraftRef.current,
         })
       ) {
-        syncSkills.mutate(skillDraft);
+        saveSelection.mutate(skillDraft);
       }
     }, 250);
 
     return () => window.clearTimeout(timeout);
-  }, [skillDraft, skillSnapshot, syncSkills.isPending, syncSkills.isError, syncSkills.mutate]);
-
-  const companySkillByKey = useMemo(
-    () => new Map((companySkills ?? []).map((skill) => [skill.key, skill])),
-    [companySkills],
-  );
-  const companySkillKeys = useMemo(
-    () => new Set((companySkills ?? []).map((skill) => skill.key)),
-    [companySkills],
-  );
-  const adapterEntryByKey = useMemo(
-    () => new Map((skillSnapshot?.entries ?? []).map((entry) => [entry.key, entry])),
-    [skillSnapshot],
-  );
-
-  const unsupported = skillSnapshot?.mode === "unsupported";
+  }, [
+    skillDraft,
+    skillSelection,
+    saveSelection.isPending,
+    saveSelection.isError,
+    saveSelection.mutate,
+  ]);
 
   // Library skills → row models (the store's visual language, tuned for rows).
   const libraryRows = useMemo<AgentSkillRowData[]>(
@@ -170,24 +182,6 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     [companySkills],
   );
 
-  // Adapter-detected, user-installed / unmanaged skills → read-only rows.
-  const detectedRows = useMemo<AgentSkillRowData[]>(
-    () =>
-      (skillSnapshot?.entries ?? [])
-        .filter((entry) => isReadOnlyUnmanagedSkillEntry(entry, companySkillKeys))
-        .map((entry) => ({
-          key: entry.key,
-          name: entry.runtimeName ?? entry.key,
-          icon: { key: entry.key, name: entry.runtimeName ?? entry.key, slug: null, iconUrl: null, color: null },
-          summary: entry.detail ?? null,
-          chip: null,
-          linkTo: null,
-          originLabel: entry.originLabel ?? null,
-          locationLabel: entry.locationLabel ?? null,
-        })),
-    [companySkillKeys, skillSnapshot],
-  );
-
   const enabledRows = useMemo(
     () => libraryRows.filter((row) => skillDraft.includes(row.key)),
     [libraryRows, skillDraft],
@@ -197,43 +191,8 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     [libraryRows, skillDraft],
   );
 
-  // Desired keys that no longer exist in the library → actionable warnings.
-  const staleDesiredKeys = useMemo(
-    () => skillDraft.filter((key) => !companySkillByKey.has(key)),
-    [companySkillByKey, skillDraft],
-  );
-
   const filteredEnabled = useMemo(() => filterAgentSkills(enabledRows, search), [enabledRows, search]);
   const filteredAvailable = useMemo(() => filterAgentSkills(availableRows, search), [availableRows, search]);
-  const filteredDetected = useMemo(() => filterAgentSkills(detectedRows, search), [detectedRows, search]);
-
-  const applicationLabel = useMemo(() => {
-    switch (skillSnapshot?.mode) {
-      case "persistent":
-        return "Kept in workspace";
-      case "ephemeral":
-        return "Applied on next run";
-      case "unsupported":
-        return "Tracked only";
-      default:
-        return null;
-    }
-  }, [skillSnapshot?.mode]);
-
-  const unsupportedMessage = useMemo(() => {
-    if (!unsupported) return null;
-    if (
-      agent.adapterType === "acpx_local" &&
-      typeof agent.adapterConfig.agent === "string" &&
-      agent.adapterConfig.agent === "custom"
-    ) {
-      return "Paperclip cannot manage skills for custom ACP commands yet.";
-    }
-    if (agent.adapterType === "openclaw_gateway") {
-      return "Paperclip cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
-    }
-    return "Paperclip cannot manage skills for this adapter yet. Manage them in the adapter directly.";
-  }, [agent.adapterConfig.agent, agent.adapterType, unsupported]);
 
   const hasUnsavedChanges = !sameSkillSelection(skillDraft, lastSavedSkills);
 
@@ -251,8 +210,6 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
       variant={variant}
       data={row}
       checked={variant === "enabled"}
-      disabled={unsupported}
-      disabledReason={unsupportedMessage}
       onCheckedChange={(next) => toggleSkill(row.key, next)}
     />
   );
@@ -267,22 +224,20 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
           <span className="text-sm font-medium text-foreground">
             {enabledRows.length} of {libraryRows.length} enabled
           </span>
-          {applicationLabel ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex cursor-default items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
-                  {applicationLabel}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs">
-                {unsupported ? unsupportedMessage : MATERIALIZATION_NOTE}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex cursor-default items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">
+                Applied on next issue execution
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              {MATERIALIZATION_NOTE}
+            </TooltipContent>
+          </Tooltip>
           <SaveStatusChip
-            pending={syncSkills.isPending}
+            pending={saveSelection.isPending}
             unsaved={hasUnsavedChanges}
-            error={syncSkills.isError && hasUnsavedChanges}
+            error={saveSelection.isError && hasUnsavedChanges}
           />
           <div className="ml-auto flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
             <div className="relative w-full sm:w-auto">
@@ -304,47 +259,18 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
           </div>
         </div>
 
-        {syncSkills.isError ? (
+        {saveSelection.isError ? (
           <p className="text-xs text-destructive">
-            {syncSkills.error instanceof Error ? syncSkills.error.message : "Failed to update skills"}
+            {saveSelection.error instanceof Error
+              ? saveSelection.error.message
+              : "Failed to update company-skill selection"}
           </p>
         ) : null}
       </div>
 
-      {/* Unsupported adapter banner */}
-      {unsupportedMessage ? (
-        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          {unsupportedMessage}
-        </div>
-      ) : null}
-
-      {/* Stale desired-skill warnings — one compact, removable row per key */}
-      {staleDesiredKeys.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-amber-300/60 dark:border-amber-500/30">
-          {staleDesiredKeys.map((key) => (
-            <div
-              key={key}
-              className="flex items-center justify-between gap-3 border-b border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 last:border-b-0 dark:border-amber-500/20 dark:bg-amber-950/20 dark:text-amber-200"
-            >
-              <span className="min-w-0 truncate">
-                <span className="font-medium">{key}</span> is enabled but missing from the company library.
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleSkill(key, false)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/50 px-2 py-0.5 font-medium transition-colors hover:bg-amber-100/60 dark:hover:bg-amber-900/30"
-              >
-                <X className="h-3 w-3" />
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
       {isLoading ? (
         <PageSkeleton variant="list" />
-      ) : libraryEmpty && detectedRows.length === 0 ? (
+      ) : libraryEmpty ? (
         <EmptyLibraryCard />
       ) : (
         <div className="space-y-4">
@@ -372,37 +298,6 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
             )}
           </SkillSection>
 
-          {detectedRows.length > 0 ? (
-            <Collapsible open={detectedOpen} onOpenChange={setDetectedOpen}>
-              <div className="overflow-hidden rounded-lg border border-border">
-                <CollapsibleTrigger className="flex w-full items-center gap-2 bg-muted/50 px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <ChevronDown
-                    className={cn(
-                      "h-3.5 w-3.5 text-muted-foreground transition-transform",
-                      detectedOpen ? "" : "-rotate-90",
-                    )}
-                  />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Detected on adapter (read-only)
-                  </span>
-                  <span className="text-xs text-muted-foreground/70">{filteredDetected.length}</span>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  {filteredDetected.length > 0 ? (
-                    filteredDetected.map((row) => (
-                      <AgentSkillRow key={row.key} variant="readonly" data={row} />
-                    ))
-                  ) : (
-                    <SectionEmpty>No detected skills match your search.</SectionEmpty>
-                  )}
-                </CollapsibleContent>
-              </div>
-            </Collapsible>
-          ) : null}
-
-          <div className="text-xs text-muted-foreground">
-            Adapter: {adapterLabels[agent.adapterType] ?? agent.adapterType}
-          </div>
         </div>
       )}
     </div>

@@ -2,14 +2,12 @@
  * Builds a kubernetes-sigs/agent-sandbox Sandbox CR manifest.
  *
  * The Sandbox CR creates a long-lived pod (sleep infinity entrypoint) into
- * which paperclip-server can exec arbitrary commands. This solves the
- * architectural mismatch with the batch/v1 Job backend, which only supports
- * a single one-shot entrypoint — not the multi-command adapter-install pattern
- * used by paperclip-server.
+ * which paperclip-server can exec arbitrary commands for the worker's
+ * multi-command adapter-install and provider-execution flow.
  *
- * Security baseline is identical to buildJobManifest (pod-spec-builder.ts):
- * non-root, drop ALL caps, read-only rootFS, Tini PID 1, seccomp
- * RuntimeDefault, fsGroupChangePolicy OnRootMismatch, automountSAToken=false.
+ * Security baseline: non-root, drop ALL caps, read-only rootFS, Tini PID 1,
+ * seccomp RuntimeDefault, fsGroupChangePolicy OnRootMismatch, and
+ * automountSAToken=false.
  *
  * NOTE: paperclip-server runs OUTSIDE the cluster, so we cannot set ownerReferences
  * on the Sandbox CR (the owner would need to be an in-cluster resource). The
@@ -19,9 +17,7 @@
 export interface BuildSandboxCrManifestInput {
   namespace: string;
   sandboxName: string;
-  adapterType: string;
   image: string;
-  envSecretName: string;
   serviceAccountName: string;
   labels: Record<string, string>;
   resources: {
@@ -101,7 +97,6 @@ export function buildSandboxCrManifest(
                // Claude (and most agent runtimes) silently exit with code 0
                // and no output when HOME is unwritable, so set this explicitly.
               env: [{ name: "HOME", value: "/home/paperclip" }],
-              envFrom: [{ secretRef: { name: input.envSecretName } }],
               securityContext: {
                 runAsNonRoot: true,
                 runAsUser: 1000,

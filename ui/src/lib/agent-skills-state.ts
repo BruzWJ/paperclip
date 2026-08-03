@@ -1,12 +1,11 @@
-import type { AgentSkillEntry } from "@paperclipai/shared";
-
 export interface AgentSkillDraftState {
   draft: string[];
   lastSaved: string[];
   hasHydratedSnapshot: boolean;
 }
 
-export interface AgentSkillSnapshotApplyResult extends AgentSkillDraftState {
+export interface AgentCompanySkillPinsApplyResult
+  extends AgentSkillDraftState {
   shouldSkipAutosave: boolean;
 }
 
@@ -34,15 +33,15 @@ export function sameSkillSelection(a: string[], b: string[]): boolean {
   return true;
 }
 
-export function applyAgentSkillSnapshot(
+export function applyAgentCompanySkillPins(
   state: AgentSkillDraftState,
-  desiredSkills: string[],
-): AgentSkillSnapshotApplyResult {
+  selectedKeys: string[],
+): AgentCompanySkillPinsApplyResult {
   const shouldReplaceDraft = !state.hasHydratedSnapshot || arraysEqual(state.draft, state.lastSaved);
 
   return {
-    draft: shouldReplaceDraft ? desiredSkills : state.draft,
-    lastSaved: desiredSkills,
+    draft: shouldReplaceDraft ? selectedKeys : state.draft,
+    lastSaved: selectedKeys,
     hasHydratedSnapshot: true,
     shouldSkipAutosave: shouldReplaceDraft,
   };
@@ -63,13 +62,4 @@ export function shouldScheduleSkillAutosave(params: {
   if (sameSkillSelection(params.draft, params.lastSaved)) return false;
   if (params.failedDraft && sameSkillSelection(params.draft, params.failedDraft)) return false;
   return true;
-}
-
-export function isReadOnlyUnmanagedSkillEntry(
-  entry: AgentSkillEntry,
-  companySkillKeys: Set<string>,
-): boolean {
-  if (companySkillKeys.has(entry.key)) return false;
-  if (entry.origin === "user_installed" || entry.origin === "external_unknown") return true;
-  return entry.managed === false && entry.state === "external";
 }

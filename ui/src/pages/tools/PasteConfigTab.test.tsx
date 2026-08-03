@@ -165,7 +165,7 @@ describe("PasteConfigTab — discoverability copy (PAP-11091)", () => {
   });
 });
 
-describe("PasteConfigTab — activation handoff (PAP-11092)", () => {
+describe("PasteConfigTab — activation transition (PAP-11092)", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {

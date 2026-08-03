@@ -42,11 +42,22 @@ import type {
   PluginRecord,
   PaperclipPluginManifestV1,
 } from "@paperclipai/shared";
-import { pluginRegistryService } from "./plugin-registry.js";
-import { pluginLoader, type PluginLoader } from "./plugin-loader.js";
+import {
+  lockPluginInstallationInTransaction,
+  persistPluginStatusInTransaction,
+  pluginRegistryService,
+  purgePluginOperationalDataInTransaction,
+} from "./plugin-registry.js";
+import type { PluginLoader } from "./plugin-loader.js";
 import type { PluginWorkerManager, WorkerStartOptions } from "./plugin-worker-manager.js";
 import { badRequest, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import {
+  pausePluginManagedAgentsIntoTriageInTransaction,
+} from "./plugin-managed-agents.js";
+import type { AgentSuspensionService } from "./agents.js";
+import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
+import { terminalizePluginCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
 
 // ---------------------------------------------------------------------------
 // Lifecycle state machine
@@ -74,7 +85,8 @@ import { logger } from "../middleware/logger.js";
  *   upgrade_pending → error       (upgrade worker fails)
  *   upgrade_pending → uninstalled (reject upgrade and uninstall)
  *
- *   uninstalled → installed (reinstall)
+ *   uninstalled is terminal for that immutable installation identity.
+ *   Reinstall creates a new installation row.
  */
 const VALID_TRANSITIONS: Record<string, readonly PluginStatus[]> = {
   installed: ["ready", "error", "uninstalled"],
@@ -82,7 +94,7 @@ const VALID_TRANSITIONS: Record<string, readonly PluginStatus[]> = {
   disabled: ["ready", "uninstalled"],
   error: ["ready", "uninstalled"],
   upgrade_pending: ["ready", "error", "uninstalled"],
-  uninstalled: ["installed"], // reinstall
+  uninstalled: [],
 };
 
 /**
@@ -109,7 +121,7 @@ export interface PluginLifecycleEvents {
   /** Emitted after a plugin is disabled (ready → disabled). */
   "plugin.disabled": { pluginId: string; pluginKey: string; reason?: string };
   /** Emitted after a plugin is unloaded (any → uninstalled). */
-  "plugin.unloaded": { pluginId: string; pluginKey: string; removeData: boolean };
+  "plugin.unloaded": { pluginId: string; pluginKey: string; purge: boolean };
   /** Emitted on any status change. */
   "plugin.status_changed": {
     pluginId: string;
@@ -160,10 +172,11 @@ export interface PluginLifecycleManager {
    * Unload (uninstall) a plugin from any active state.
    * Transitions → `uninstalled`.
    *
-   * When `removeData` is true, the plugin row and cascaded config are
-   * hard-deleted.  Otherwise a soft-delete sets status to `uninstalled`.
+   * The immutable installation row is always retained as an `uninstalled`
+   * tombstone. When `purge` is true, only operational installation data is
+   * removed.
    */
-  unload(pluginId: string, removeData?: boolean): Promise<PluginRecord | null>;
+  unload(pluginId: string, purge?: boolean): Promise<PluginRecord>;
 
   /**
    * Mark a plugin as errored (e.g. worker crash, health-check failure).
@@ -265,8 +278,8 @@ export interface PluginLifecycleManager {
  * Options for constructing a PluginLifecycleManager.
  */
 export interface PluginLifecycleManagerOptions {
-  /** Plugin loader instance. Falls back to the default if omitted. */
-  loader?: PluginLoader;
+  /** The single configured loader that owns this installation lifecycle. */
+  loader: PluginLoader;
 
   /**
    * Worker process manager. When provided, lifecycle transitions that bring
@@ -278,6 +291,12 @@ export interface PluginLifecycleManagerOptions {
    * caller is responsible for managing worker processes externally.
    */
   workerManager?: PluginWorkerManager;
+
+  /** Prepares and notifies each committed causal execution ref. */
+  dispatchRef(refId: string): Promise<void>;
+
+  /** Canonical transaction owner of triage fencing and run suspension. */
+  issueExecutionCancellation: AgentSuspensionService;
 }
 
 /**
@@ -292,7 +311,10 @@ export interface PluginLifecycleManagerOptions {
  * Usage:
  * ```ts
  * const lifecycle = pluginLifecycleManager(db, {
+ *   loader,
  *   workerManager: createPluginWorkerManager(),
+ *   dispatchRef,
+ *   issueExecutionCancellation,
  * });
  * lifecycle.on("plugin.enabled", ({ pluginId }) => { ... });
  * await lifecycle.load(pluginId);
@@ -303,24 +325,15 @@ export interface PluginLifecycleManagerOptions {
  */
 export function pluginLifecycleManager(
   db: Db,
-  options?: PluginLoader | PluginLifecycleManagerOptions,
+  options: PluginLifecycleManagerOptions,
 ): PluginLifecycleManager {
-  // Support the legacy signature: pluginLifecycleManager(db, loader)
-  // as well as the new options object form.
-  let loaderArg: PluginLoader | undefined;
-  let workerManager: PluginWorkerManager | undefined;
-
-  if (options && typeof options === "object" && "discoverAll" in options) {
-    // Legacy: second arg is a PluginLoader directly
-    loaderArg = options as PluginLoader;
-  } else if (options && typeof options === "object") {
-    const opts = options as PluginLifecycleManagerOptions;
-    loaderArg = opts.loader;
-    workerManager = opts.workerManager;
-  }
+  const pluginLoaderInstance = options.loader;
+  const workerManager = options.workerManager;
+  const dispatchRef = options.dispatchRef;
+  const issueExecutionCancellation = options.issueExecutionCancellation;
 
   const registry = pluginRegistryService(db);
-  const pluginLoaderInstance = loaderArg ?? pluginLoader(db);
+  const canonicalSessions = createIssueSessionAdmissionService(db);
   const emitter = new EventEmitter();
   emitter.setMaxListeners(100); // plugins may have many listeners; 100 is a safe upper bound
 
@@ -377,6 +390,95 @@ export function pluginLifecycleManager(
     });
 
     return result;
+  }
+
+  async function commitUnavailableTransition(
+    pluginId: string,
+    to: "disabled" | "uninstalled",
+    options: {
+      lastError: string | null;
+      managedAgentReason: string;
+      purge: boolean;
+    },
+  ): Promise<{
+    previousStatus: PluginStatus;
+    plugin: PluginRecord;
+  }> {
+    const committed = await db.transaction(async (tx) => {
+      // Global lock order for plugin-originated work is installation first,
+      // then managed bindings/agents, then creator edges/deliveries.
+      const locked = await lockPluginInstallationInTransaction(tx, pluginId);
+      if (!locked) throw notFound(`Plugin not found: ${pluginId}`);
+      const plugin = locked as PluginRecord;
+      assertTransition(plugin, to);
+      const now = new Date();
+
+      const managedAgentTransition =
+        await pausePluginManagedAgentsIntoTriageInTransaction(
+          tx,
+          {
+            pluginId,
+            pluginKey: plugin.pluginKey,
+            reason: options.managedAgentReason,
+            actorType: "system",
+            actorId: pluginId,
+          },
+          issueExecutionCancellation,
+          now,
+        );
+      const pluginEscalations =
+        await terminalizePluginCreatorEdgesInTransaction(
+          tx,
+          canonicalSessions,
+          {
+            pluginInstallationId: pluginId,
+            reason:
+              to === "disabled"
+                ? "plugin_disabled"
+                : "plugin_uninstalled",
+            sourceId:
+              to === "disabled"
+                ? `plugin-disabled:${pluginId}`
+                : `plugin-uninstalled:${pluginId}`,
+            now,
+          },
+        );
+      if (options.purge) {
+        await purgePluginOperationalDataInTransaction(tx, pluginId);
+      }
+      const updated = await persistPluginStatusInTransaction(
+        tx,
+        pluginId,
+        {
+          status: to,
+          lastError: options.lastError,
+        },
+        now,
+      );
+      if (!updated) {
+        throw notFound(`Plugin not found after status update: ${pluginId}`);
+      }
+      return {
+        previousStatus: plugin.status,
+        plugin: updated as PluginRecord,
+        suspensionRequests:
+          managedAgentTransition.suspensionRequests,
+        dispatchRefIds: pluginEscalations.flatMap((escalation) =>
+          escalation.dispatchRefId ? [escalation.dispatchRefId] : [],
+        ),
+      };
+    });
+    for (const suspensionRequests of committed.suspensionRequests) {
+      await issueExecutionCancellation
+        .reconcileRequestedAgentSuspensions(suspensionRequests);
+    }
+    for (const refId of committed.dispatchRefIds) {
+      await dispatchRef(refId);
+    }
+    return {
+      previousStatus: committed.previousStatus,
+      plugin: committed.plugin,
+    };
   }
 
   function emitDomain(
@@ -521,8 +623,33 @@ export function pluginLifecycleManager(
       }
 
       await deactivatePluginRuntime(pluginId, plugin.pluginKey);
-
-      const result = await transition(pluginId, "disabled", reason ?? null, plugin);
+      const transitionResult = await commitUnavailableTransition(
+        pluginId,
+        "disabled",
+        {
+          lastError: reason ?? null,
+          managedAgentReason: reason?.trim()
+            ? `plugin_disabled: ${reason.trim()}`
+            : "plugin_disabled",
+          purge: false,
+        },
+      );
+      const result = transitionResult.plugin;
+      log.info(
+        {
+          pluginId,
+          pluginKey: result.pluginKey,
+          from: transitionResult.previousStatus,
+          to: "disabled",
+        },
+        `plugin lifecycle: ${transitionResult.previousStatus} → disabled`,
+      );
+      emitter.emit("plugin.status_changed", {
+        pluginId,
+        pluginKey: result.pluginKey,
+        previousStatus: transitionResult.previousStatus,
+        newStatus: "disabled",
+      });
       emitDomain("plugin.disabled", {
         pluginId,
         pluginKey: result.pluginKey,
@@ -534,57 +661,44 @@ export function pluginLifecycleManager(
     // -- unload -----------------------------------------------------------
     async unload(
       pluginId: string,
-      removeData = false,
-    ): Promise<PluginRecord | null> {
+      purge = false,
+    ): Promise<PluginRecord> {
       const plugin = await requirePlugin(pluginId);
-
-      // If already uninstalled and removeData, hard-delete
-      if (plugin.status === "uninstalled") {
-        if (removeData) {
-          await pluginLoaderInstance.cleanupInstallArtifacts(plugin);
-          const deleted = await registry.uninstall(pluginId, true);
-          log.info(
-            { pluginId, pluginKey: plugin.pluginKey },
-            "plugin lifecycle: hard-deleted already-uninstalled plugin",
-          );
-          emitDomain("plugin.unloaded", {
-            pluginId,
-            pluginKey: plugin.pluginKey,
-            removeData: true,
-          });
-          return deleted as PluginRecord | null;
-        }
-        throw badRequest(
-          `Plugin ${plugin.pluginKey} is already uninstalled. ` +
-            `Use removeData=true to permanently delete it.`,
-        );
-      }
-
       await deactivatePluginRuntime(pluginId, plugin.pluginKey);
+      // Filesystem cleanup is external to the database invariant. Complete it
+      // before the one locked database transition so no transaction is held
+      // across package-manager/filesystem work.
       await pluginLoaderInstance.cleanupInstallArtifacts(plugin);
-
-      // Perform the uninstall via registry (handles soft/hard delete)
-      const result = await registry.uninstall(pluginId, removeData);
+      const transitionResult = await commitUnavailableTransition(
+        pluginId,
+        "uninstalled",
+        {
+          lastError: null,
+          managedAgentReason: "plugin_uninstalled",
+          purge,
+        },
+      );
+      const result = transitionResult.plugin;
 
       log.info(
-        { pluginId, pluginKey: plugin.pluginKey, removeData },
-        `plugin lifecycle: ${plugin.status} → uninstalled${removeData ? " (hard delete)" : ""}`,
+        { pluginId, pluginKey: plugin.pluginKey, purge },
+        `plugin lifecycle: ${transitionResult.previousStatus} → uninstalled${purge ? " (operational data purged)" : ""}`,
       );
 
       emitter.emit("plugin.status_changed", {
         pluginId,
         pluginKey: plugin.pluginKey,
-        previousStatus: plugin.status,
+        previousStatus: transitionResult.previousStatus,
         newStatus: "uninstalled" as PluginStatus,
       });
 
       emitDomain("plugin.unloaded", {
         pluginId,
         pluginKey: plugin.pluginKey,
-        removeData,
+        purge,
       });
 
-      return result as PluginRecord | null;
+      return result;
     },
 
     // -- markError --------------------------------------------------------

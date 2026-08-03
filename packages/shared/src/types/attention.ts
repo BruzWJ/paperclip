@@ -1,23 +1,20 @@
 import type { InboxDismissalKind } from "./inbox-dismissal.js";
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export type AttentionSourceKind =
   | "approval"
-  | "issue_thread_interaction"
   | "join_request"
-  | "recovery_action"
-  | "productivity_review"
   | "blocker_attention"
   | "review"
   | "failed_run"
   | "budget_alert"
-  | "agent_error_alert";
+  | "agent_error_alert"
+  | "agent_liveness";
 
 export type AttentionSubjectKind =
   | "approval"
   | "issue"
-  | "interaction"
   | "join_request"
-  | "recovery_action"
   | "run"
   | "budget_incident"
   | "agent";
@@ -74,43 +71,6 @@ export type AttentionItemDetail =
       images: AttentionDetailImage[];
     }
   | {
-      kind: "plan_approval";
-      issueTitle: string | null;
-      planTitle: string | null;
-      summaryExcerpt: string | null;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "confirmation";
-      promptExcerpt: string | null;
-      isPlanTarget: false;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "questions";
-      questionCount: number;
-      firstQuestionText: string | null;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "suggested_tasks";
-      taskCount: number;
-      firstTaskTitle: string | null;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "checkbox_confirmation";
-      optionCount: number;
-      promptExcerpt: string | null;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "item_verdicts";
-      itemCount: number;
-      promptExcerpt: string | null;
-      images: AttentionDetailImage[];
-    }
-  | {
       kind: "failed_run";
       agentName: string | null;
       failureReasonExcerpt: string | null;
@@ -128,8 +88,9 @@ export type AttentionItemDetail =
   | {
       kind: "budget";
       observedPercent: number;
-      amountObserved: number;
-      amountLimit: number;
+      budgetCurrency: BudgetCurrency;
+      observedAmount: MoneyAmount;
+      limitAmount: MoneyAmount;
       images: AttentionDetailImage[];
     }
   | {

@@ -52,21 +52,11 @@ const mockSecretsApi = vi.hoisted(() => ({
   removeMyUserSecret: vi.fn(),
 }));
 
-const mockAgentsApi = vi.hoisted(() => ({
-  list: vi.fn(),
-  get: vi.fn(),
-  update: vi.fn(),
-}));
-
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
 const mockPushToast = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/secrets", () => ({
   secretsApi: mockSecretsApi,
-}));
-
-vi.mock("../api/agents", () => ({
-  agentsApi: mockAgentsApi,
 }));
 
 vi.mock("../context/CompanyContext", () => ({
@@ -364,7 +354,6 @@ describe("Secrets page layout", () => {
     mockSecretsApi.listUserSecretDefinitions.mockResolvedValue([]);
     mockSecretsApi.userSecretDefinitionCoverage.mockResolvedValue(userSecretCoverage);
     mockSecretsApi.listMyUserSecrets.mockResolvedValue([]);
-    mockAgentsApi.list.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -1301,121 +1290,6 @@ describe("Secrets page layout", () => {
     });
   });
 
-  it("grants and revokes agent access from the secret detail sheet", async () => {
-    mockSecretsApi.list.mockResolvedValue([makeCompanySecret()]);
-    mockSecretsApi.usage.mockResolvedValue({ secretId: "secret-openai", bindings: [] });
-    mockSecretsApi.accessEvents.mockResolvedValue([]);
-    const coder = {
-      id: "agent-coder",
-      name: "CodexCoder",
-      status: "active",
-      adapterConfig: {},
-    };
-    const reviewer = {
-      id: "agent-reviewer",
-      name: "Reviewer",
-      status: "active",
-      adapterConfig: {
-        env: { OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai" } },
-      },
-    };
-    mockAgentsApi.list.mockResolvedValue([coder, reviewer]);
-    mockAgentsApi.get.mockImplementation(async (id: string) =>
-      id === "agent-coder" ? coder : reviewer,
-    );
-    mockAgentsApi.update.mockImplementation(async (id: string) =>
-      id === "agent-coder" ? coder : reviewer,
-    );
-
-    const root = createRoot(container);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <QueryClientProvider client={queryClient}>
-            <Secrets />
-          </QueryClientProvider>
-        </MemoryRouter>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    const companyRow = Array.from(container.querySelectorAll("[role='row']")).find(
-      (row) => row.textContent?.includes("OPENAI_API_KEY"),
-    ) as HTMLElement | undefined;
-    await act(async () => {
-      companyRow?.click();
-    });
-    await flushReact();
-    await flushReact();
-
-    // Existing access is listed right in the Details tab.
-    expect(document.body.textContent).toContain("Agent access");
-    expect(document.body.textContent).toContain("Reviewer");
-
-    const agentSelect = document.getElementById("agent-access-agent") as HTMLButtonElement;
-    const envKeyInput = document.getElementById("agent-access-env-key") as HTMLInputElement;
-    expect(envKeyInput.value).toBe("OPENAI_API_KEY");
-
-    await act(async () => {
-      agentSelect.click();
-    });
-    await flushReact();
-
-    // Agents that already have access are not offered again.
-    expect(document.body.textContent).toContain("CodexCoder");
-    expect(document.body.querySelector('[aria-label="Select Reviewer"]')).toBeNull();
-
-    await act(async () => {
-      (document.body.querySelector('[aria-label="Select CodexCoder"]') as HTMLButtonElement | null)?.click();
-    });
-    await flushReact();
-
-    const addButton = Array.from(document.body.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Add",
-    ) as HTMLButtonElement | undefined;
-    await act(async () => {
-      addButton?.click();
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(mockAgentsApi.update).toHaveBeenCalledWith(
-      "agent-coder",
-      {
-        adapterConfig: {
-          env: { OPENAI_API_KEY: { type: "secret_ref", secretId: "secret-openai" } },
-        },
-        replaceAdapterConfig: true,
-      },
-      "company-1",
-    );
-
-    const revokeButton = document.body.querySelector(
-      'button[aria-label="Remove access for Reviewer"]',
-    ) as HTMLButtonElement | null;
-    expect(revokeButton).not.toBeNull();
-    await act(async () => {
-      revokeButton?.click();
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(mockAgentsApi.update).toHaveBeenCalledWith(
-      "agent-reviewer",
-      { adapterConfig: { env: {} }, replaceAdapterConfig: true },
-      "company-1",
-    );
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
   it("shows an empty AWS discovery result without blocking manual entry", async () => {
     mockSecretsApi.providerConfigDiscoveryPreview.mockResolvedValueOnce(
       makeDiscoveryPreview({ candidates: [], sampledSecretCount: 0 }),
@@ -1474,7 +1348,6 @@ describe("Secrets folder view (PAP-14698)", () => {
     mockSecretsApi.listUserSecretDefinitions.mockResolvedValue([]);
     mockSecretsApi.userSecretDefinitionCoverage.mockResolvedValue(userSecretCoverage);
     mockSecretsApi.listMyUserSecrets.mockResolvedValue([]);
-    mockAgentsApi.list.mockResolvedValue([]);
   }
 
   async function renderAt(path: string) {

@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
+import {
+  canonicalizeMoneyAmount,
+  createTestHarness,
+} from "@paperclipai/plugin-sdk/testing";
 import type { Agent, Issue, PluginManagedRoutineResolution, Project } from "@paperclipai/plugin-sdk";
 import manifest, {
   CURSOR_WINDOW_ROUTINE_KEY,
@@ -18,8 +21,6 @@ import manifest, {
   WIKI_PROJECT_KEY,
 } from "../src/manifest.js";
 import {
-  DEFAULT_AGENT_INSTRUCTION_FILES,
-  DEFAULT_AGENT_INSTRUCTIONS,
   DEFAULT_IDEA,
   DEFAULT_INDEX,
   DEFAULT_LOG,
@@ -30,11 +31,13 @@ import {
 } from "../src/templates.js";
 import { SettingsPage, SidebarLink, WikiPage, WikiRouteSidebar } from "../src/ui/index.js";
 import plugin from "../src/worker.js";
-import { OPERATION_ORIGIN_KIND, type WikiSkillResource } from "../src/wiki.js";
+import type { WikiSkillResource } from "../src/wiki.js";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_COMPANY_ID = "99999999-9999-4999-8999-999999999999";
-const ORIGINAL_DEPLOYMENT_MODE = process.env.PAPERCLIP_DEPLOYMENT_MODE;
+const SYSTEM_ACTION_OPTIONS = {
+  actor: { type: "system", companyId: COMPANY_ID },
+} as const;
 const ORIGINAL_DEPLOYMENT_EXPOSURE = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
 type TestBridgeGlobal = typeof globalThis & {
   __paperclipPluginBridge__?: {
@@ -100,11 +103,6 @@ let mockPageMetadataByPath: Record<string, {
 }> = {};
 
 beforeEach(() => {
-  if (ORIGINAL_DEPLOYMENT_MODE == null) {
-    delete process.env.PAPERCLIP_DEPLOYMENT_MODE;
-  } else {
-    process.env.PAPERCLIP_DEPLOYMENT_MODE = ORIGINAL_DEPLOYMENT_MODE;
-  }
   if (ORIGINAL_DEPLOYMENT_EXPOSURE == null) {
     delete process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
   } else {
@@ -146,7 +144,7 @@ beforeEach(() => {
                 problems: [],
                 checkedAt: new Date().toISOString(),
               },
-              managedAgent: { status: "resolved", source: "managed", agentId: "agent-1", resourceKey: "wiki-maintainer", details: { name: "Wiki Maintainer", status: "idle", adapterType: "claude_local", icon: "book-open", urlKey: "wiki-maintainer" } },
+              managedAgent: { status: "resolved", source: "managed", agentId: "agent-1", resourceKey: "wiki-maintainer", details: { name: "Wiki Maintainer", status: "idle", adapterType: "codex", icon: "book-open", urlKey: "wiki-maintainer" } },
               managedProject: { status: "resolved", projectId: "project-1", details: { name: "LLM Wiki", status: "in_progress" } },
               managedSkills: DEFAULT_MANAGED_SKILLS,
               operationCount: 0,
@@ -246,7 +244,7 @@ beforeEach(() => {
                 problems: [],
                 checkedAt: new Date().toISOString(),
               },
-              managedAgent: mockSettingsManagedAgent ?? { status: "resolved", source: "managed", agentId: "agent-1", resourceKey: "wiki-maintainer", details: { name: "Wiki Maintainer", status: "idle", adapterType: "claude_local", icon: "book-open", urlKey: "wiki-maintainer" } },
+              managedAgent: mockSettingsManagedAgent ?? { status: "resolved", source: "managed", agentId: "agent-1", resourceKey: "wiki-maintainer", details: { name: "Wiki Maintainer", status: "idle", adapterType: "codex", icon: "book-open", urlKey: "wiki-maintainer" } },
               managedProject: { status: "resolved", source: "managed", projectId: "project-1", resourceKey: "llm-wiki", details: { name: "LLM Wiki", status: "in_progress" } },
               managedSkills: mockSettingsManagedSkills.length > 0 ? mockSettingsManagedSkills : DEFAULT_MANAGED_SKILLS,
               managedRoutines: mockSettingsManagedRoutines,
@@ -320,7 +318,7 @@ beforeEach(() => {
         if (key === "page-content") {
           const path = typeof params?.path === "string" ? params.path : "wiki/index.md";
           const contents = mockPageContentsByPath[path] ?? (path === "AGENTS.md"
-            ? DEFAULT_AGENT_INSTRUCTIONS
+            ? DEFAULT_WIKI_SCHEMA
             : path === "IDEA.md"
               ? DEFAULT_IDEA
               : `# ${path}\n`);
@@ -381,11 +379,10 @@ beforeEach(() => {
       },
       IssuesList: (props: {
         projectId?: string | null;
-        filters?: { originKindPrefix?: string };
       }) => createElement(
         "div",
         { "data-testid": "plugin-issues-list" },
-        `Issues table · ${props.projectId ?? "no-project"} · ${props.filters?.originKindPrefix ?? "no-origin-filter"}`,
+        `Issues table · ${props.projectId ?? "no-project"}`,
       ),
       MarkdownBlock: ({ content }: { content: string }) => createElement("div", { "data-testid": "markdown-block" }, content),
       MarkdownEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => createElement("textarea", {
@@ -393,18 +390,18 @@ beforeEach(() => {
         value,
         onChange: (event: { currentTarget: { value: string } }) => onChange(event.currentTarget.value),
       }),
-      AssigneePicker: (props: {
+      OwnerPicker: (props: {
         value: string;
         placeholder?: string;
-        onChange: (value: string, selection: { assigneeAgentId: string | null; assigneeUserId: string | null }) => void;
+        onChange: (value: string, selection: { ownerAgentId: string | null }) => void;
       }) => createElement(
         "button",
         {
           type: "button",
-          "data-testid": "assignee-picker",
-          onClick: () => props.onChange("agent:agent-1", { assigneeAgentId: "agent-1", assigneeUserId: null }),
+          "data-testid": "owner-picker",
+          onClick: () => props.onChange("agent-1", { ownerAgentId: "agent-1" }),
         },
-        props.value === "agent:agent-1" ? "Wiki Maintainer" : (props.placeholder ?? "Select assignee"),
+        props.value === "agent-1" ? "Wiki Maintainer" : (props.placeholder ?? "Select owner"),
       ),
       ProjectPicker: (props: {
         value: string;
@@ -459,11 +456,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (ORIGINAL_DEPLOYMENT_MODE == null) {
-    delete process.env.PAPERCLIP_DEPLOYMENT_MODE;
-  } else {
-    process.env.PAPERCLIP_DEPLOYMENT_MODE = ORIGINAL_DEPLOYMENT_MODE;
-  }
   if (ORIGINAL_DEPLOYMENT_EXPOSURE == null) {
     delete process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
   } else {
@@ -479,21 +471,20 @@ function wikiMaintainerAgent(): Agent {
     companyId: COMPANY_ID,
     name: "Wiki Maintainer",
     urlKey: "wiki-maintainer",
-    role: "general",
     title: "LLM Wiki Maintainer",
     icon: "book-open",
     status: "idle",
     reportsTo: null,
     capabilities: "Maintains the wiki",
-    adapterType: "claude_local",
-    adapterConfig: {},
+    adapterType: "codex",
+    adapterConfig: { model: "gpt-5.6" },
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    currentAdapterConfigRevisionId: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
-    lastHeartbeatAt: null,
+    governance: {},
     metadata: {
       paperclipManagedResource: {
         pluginKey: manifest.id,
@@ -559,6 +550,16 @@ function existingProject(): Project {
 
 function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
   const now = new Date();
+  const boardPresentationStatus =
+    overrides.boardPresentationStatus ?? "todo";
+  const lifecycleStatus = overrides.lifecycleStatus
+    ?? (boardPresentationStatus === "done"
+      ? "done"
+      : boardPresentationStatus === "cancelled"
+        ? "cancelled"
+        : boardPresentationStatus === "blocked"
+          ? "blocked"
+          : "open");
   return {
     id: "66666666-6666-4666-8666-666666666666",
     companyId: COMPANY_ID,
@@ -567,30 +568,33 @@ function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
     goalId: null,
     parentId: null,
     title: "Design event ingestion controls",
-    description: "Decide which Paperclip issues, comments, and documents can be ingested into the wiki.",
-    status: "todo",
+    request: "Decide which Paperclip issues, comments, and documents can be ingested into the wiki.",
+    boardPresentationStatus,
     workMode: "standard",
     priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
+    ownerKind: "agent",
+    ownerAgentId: wikiMaintainerAgent().id,
+    ownerUserId: null,
+    ownerAssignmentSource: null,
+    ownershipEpoch: 1,
+    attentionMask: null,
+    creatorKind: "user/board",
+    creatorAuthorityId: null,
+    creatorAdapterConfigRevisionId: null,
+    creatorUserId: null,
+    creatorPluginInstallationId: null,
+    creatorPluginKey: null,
+    creatorCallbackKey: null,
+    creatorCallbackVersion: null,
+    creatorRoutineId: null,
+    creatorRoutineDispatchId: null,
+    creatorSystemSourceKind: null,
+    creatorSystemSourceId: null,
     responsibleUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
     issueNumber: 3204,
     identifier: "PAP-3204",
-    originId: null,
-    originRunId: null,
-    originFingerprint: null,
     requestDepth: 0,
     billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionPolicy: null,
-    executionState: null,
-    executionWorkspaceId: null,
     executionWorkspacePreference: null,
     executionWorkspaceSettings: null,
     startedAt: null,
@@ -600,7 +604,8 @@ function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
     createdAt: now,
     updatedAt: now,
     ...overrides,
-  };
+    lifecycleStatus,
+  } as Issue;
 }
 
 function wikiSpaceRow(space: Record<string, unknown>) {
@@ -668,16 +673,15 @@ describe("LLM Wiki plugin scaffold", () => {
       "wiki/log.md",
     ]);
     expect(manifest.agents?.[0]?.agentKey).toBe("wiki-maintainer");
-    expect(manifest.agents?.[0]?.adapterType).toBe("claude_local");
-    expect(manifest.agents?.[0]?.adapterConfig).toMatchObject({
-      dangerouslySkipPermissions: false,
-      dangerouslyBypassApprovalsAndSandbox: false,
-      sandbox: true,
-    });
-    expect(manifest.agents?.[0]?.instructions?.entryFile).toBe("AGENTS.md");
-    expect(manifest.agents?.[0]?.instructions?.content).toContain("You are the maintainer of this personal wiki");
-    expect(manifest.agents?.[0]?.instructions?.files?.["AGENTS.md"]).toContain("{{localFolders.wiki-root.path}}");
-    expect(manifest.agents?.[0]?.instructions?.assetPath).toBe("agents/wiki-maintainer");
+    expect(manifest.agents?.[0]).not.toHaveProperty("adapterType");
+    expect(manifest.agents?.[0]).not.toHaveProperty("adapterPreference");
+    expect(manifest.agents?.[0]).not.toHaveProperty("adapterConfig");
+    expect(manifest.agents?.[0]).not.toHaveProperty("runtimeConfig");
+    expect(manifest.agents?.[0]).not.toHaveProperty("status");
+    expect(manifest.agents?.[0]).not.toHaveProperty("budgetMonthlyAmount");
+    expect(manifest.agents?.[0]).not.toHaveProperty("icon");
+    expect(manifest.agents?.[0]).not.toHaveProperty("instructions");
+    expect(manifest.agents?.[0]).not.toHaveProperty("runtimeConfig.modelProfiles");
     expect(manifest.projects?.[0]?.projectKey).toBe("llm-wiki");
     expect(manifest.routines?.map((routine) => routine.routineKey)).toEqual([
       CURSOR_WINDOW_ROUTINE_KEY,
@@ -691,12 +695,9 @@ describe("LLM Wiki plugin scaffold", () => {
         projectRef: { resourceKind: "project", resourceKey: WIKI_PROJECT_KEY },
         concurrencyPolicy: "skip_if_active",
         catchUpPolicy: "skip_missed",
-        issueTemplate: expect.objectContaining({
-          surfaceVisibility: "plugin_operation",
-          billingCode: expect.stringMatching(/^plugin-llm-wiki:/),
-        }),
       })),
     );
+    expect(manifest.routines?.every((routine) => !("issueTemplate" in routine))).toBe(true);
     for (const routine of manifest.routines ?? []) {
       expect(routine.description).toContain("Run procedure:");
       expect(routine.description).toContain("Target space: default (slug: default)");
@@ -730,7 +731,7 @@ describe("LLM Wiki plugin scaffold", () => {
       routePath: "wiki",
     });
     expect(packageJson.dependencies).toBeUndefined();
-    expect(packageJson.devDependencies?.react).toBeUndefined();
+    expect(packageJson.devDependencies?.react).toBe("^19.2.7");
     expect(packageJson.devDependencies?.["react-dom"]).toBeDefined();
     expect(packageJson.devDependencies?.["@types/react-dom"]).toBeDefined();
     expect(packageJson.peerDependencies?.react).toBe(">=18");
@@ -761,15 +762,8 @@ describe("LLM Wiki plugin scaffold", () => {
     expect(DEFAULT_WIKI_SCHEMA).toContain("wiki/");
     expect(DEFAULT_WIKI_SCHEMA).toContain("AGENTS.md");
     expect(DEFAULT_IDEA).toContain("persistent, compounding artifact");
-    expect(DEFAULT_AGENT_INSTRUCTIONS).toContain("You are the maintainer of this personal wiki");
-    expect(DEFAULT_AGENT_INSTRUCTIONS).toContain("ingest, query, lint, index, or maintenance work");
-    expect(DEFAULT_AGENT_INSTRUCTIONS).toContain("dedicated LLM Wiki skill installed on this agent");
-    expect(DEFAULT_AGENT_INSTRUCTIONS).not.toContain("skills/<name>/SKILL.md");
-    expect(DEFAULT_AGENT_INSTRUCTION_FILES["skills/wiki-ingest/SKILL.md"]).toBeUndefined();
     expect(manifest.skills?.map((skill) => skill.skillKey)).toEqual([...WIKI_MANAGED_SKILL_KEYS]);
-    expect(manifest.agents?.[0]?.adapterConfig?.paperclipSkillSync).toEqual({
-      desiredSkills: WIKI_MANAGED_SKILL_CANONICAL_KEYS,
-    });
+    expect(manifest.agents?.[0]).not.toHaveProperty("adapterConfig");
     expect(QUERY_PROMPT).toContain("wiki-query skill");
     expect(QUERY_PROMPT).not.toContain("skills/wiki-query/SKILL.md");
     expect(QUERY_PROMPT).toContain("filed back into wiki/");
@@ -809,13 +803,14 @@ describe("LLM Wiki plugin scaffold", () => {
     expect(markup).toContain('data-has-file-badges="false"');
   });
 
-  it("routes legacy Wiki operations URLs to the History issue table", () => {
+  it("routes the former Wiki operations URL to the ordinary History issue table", () => {
     mockPathname = "/PAP/wiki/operations";
     const markup = renderToStaticMarkup(createElement(WikiPage, {
       context: { companyId: COMPANY_ID, companyPrefix: "PAP" },
     } as never));
 
-    expect(markup).toContain("Issues table · project-1 · plugin:paperclipai.plugin-llm-wiki:operation");
+    expect(markup).toContain("Issues table · project-1");
+    expect(markup).not.toContain("plugin:paperclipai.plugin-llm-wiki:operation");
     expect(markup).not.toContain("Recent runs");
     expect(markup).not.toContain(">Operations</h2>");
   });
@@ -830,7 +825,6 @@ describe("LLM Wiki plugin scaffold", () => {
     expect(markup).toContain(">AGENTS.md</h1>");
     expect(markup).not.toContain(">LLM Wiki Maintainer</h1>");
     expect(markup).toContain("You are the maintainer of this personal wiki");
-    expect(markup).toContain("wiki-root `AGENTS.md`");
     expect(markup).toContain("Edit page");
     expect(markup).toContain("Updated —");
     expect(markup).not.toContain("0 backlinks");
@@ -999,7 +993,7 @@ Duplicate headings receive stable suffixes.
     } as never));
 
     expect(markup).toContain("Wiki Maintainer");
-    expect(markup).toContain("Adapter: claude local");
+    expect(markup).toContain("Adapter: codex");
     expect(markup).toContain("Maintainer");
     expect(markup).toContain("Repair");
     expect(markup).toContain("Reset to defaults");
@@ -1018,7 +1012,7 @@ Duplicate headings receive stable suffixes.
       source: "managed",
       agentId: "agent-1",
       resourceKey: "wiki-maintainer",
-      details: { name: "Wiki Maintainer", status: "pending_approval", adapterType: "claude_local", icon: "book-open", urlKey: "wiki-maintainer" },
+      details: { name: "Wiki Maintainer", status: "pending_approval", adapterType: "codex", icon: "book-open", urlKey: "wiki-maintainer" },
     };
 
     const markup = renderToStaticMarkup(createElement(WikiPage, {
@@ -1027,7 +1021,7 @@ Duplicate headings receive stable suffixes.
 
     expect(markup).toContain("pending approval");
     expect(markup).toContain("Approve the agent");
-    expect(markup).toContain("Adapter: claude local");
+    expect(markup).toContain("Adapter: codex");
   });
 
   it("renders root settings as a compact health checklist with the shared path picker", () => {
@@ -1045,7 +1039,7 @@ Duplicate headings receive stable suffixes.
     expect(markup.indexOf(">Managed Agents</h2>")).toBeLessThan(markup.indexOf(">Managed Skills</h2>"));
     expect(markup.indexOf(">Managed Skills</h2>")).toBeLessThan(markup.indexOf(">Managed Projects</h2>"));
     expect(markup.indexOf(">Managed Projects</h2>")).toBeLessThan(markup.indexOf(">Managed Routines</h2>"));
-    expect(markup).toContain("Adapter: claude local");
+    expect(markup).toContain("Adapter: codex");
     expect(markup).toContain("Status: in progress");
     expect(markup).toContain("Wiki root health checklist");
     expect(markup).toContain("Health check");
@@ -1212,7 +1206,7 @@ Duplicate headings receive stable suffixes.
     expect(markup).not.toContain("Permissions are stored but not enforced");
   });
 
-  it("renders distillation settings with assigned-agent model selection and cheap path without budget controls", () => {
+  it("renders distillation settings with agent-owned model selection and no issue-level model override", () => {
     mockPathname = "/PAP/wiki/settings/distillation";
     mockDistillationOverviewData = {
       counts: { cursors: 1, runningRuns: 0, failedRuns24h: 0, reviewRequired: 0 },
@@ -1234,15 +1228,14 @@ Duplicate headings receive stable suffixes.
 
     expect(markup).toContain("Agent execution");
     expect(markup).toContain("Assigned maintainer");
-    expect(markup).toContain("Wiki Maintainer · claude local");
-    expect(markup).toContain("Cheap path");
-    expect(markup).toContain("assigneeAdapterOverrides.modelProfile = cheap");
+    expect(markup).toContain("Wiki Maintainer · codex");
+    expect(markup).not.toContain("Cheap path");
+    expect(markup).not.toContain("Cheap path");
     expect(markup).toContain("All sections — apply when source hash matches and confidence");
     expect(markup).not.toContain("Per-task budget");
     expect(markup).not.toContain("Project total budget");
     expect(markup).not.toContain("/task");
     expect(markup).not.toContain("Model lanes");
-    expect(markup).not.toContain("Claude Haiku");
     expect(markup).not.toContain("Daily plugin cap");
     expect(markup).not.toContain("Monthly plugin cap");
   });
@@ -1307,7 +1300,7 @@ Duplicate headings receive stable suffixes.
     expect(markup).toContain(">Reset</button>");
   });
 
-  it("shows managed agent instruction drift in the setup health check", () => {
+  it("does not treat local AGENTS.md content as managed agent configuration drift", () => {
     mockPathname = "/PAP/wiki/settings";
     mockSettingsManagedAgent = {
       status: "resolved",
@@ -1315,15 +1308,15 @@ Duplicate headings receive stable suffixes.
       agentId: "agent-1",
       resourceKey: "wiki-maintainer",
       defaultDrift: { entryFile: "AGENTS.md", changedFiles: ["AGENTS.md"] },
-      details: { name: "Wiki Maintainer", status: "idle", adapterType: "claude_local", icon: "book-open", urlKey: "wiki-maintainer" },
+      details: { name: "Wiki Maintainer", status: "idle", adapterType: "codex", icon: "book-open", urlKey: "wiki-maintainer" },
     };
 
     const markup = renderToStaticMarkup(createElement(WikiPage, {
       context: { companyId: COMPANY_ID, companyPrefix: "PAP" },
     } as never));
 
-    expect(markup).toContain("Wiki Maintainer instructions differ from the plugin default: AGENTS.md.");
-    expect(markup).toContain("Wiki Maintainer instruction defaults changed: AGENTS.md");
+    expect(markup).not.toContain("instructions differ from the plugin default");
+    expect(markup).not.toContain("instruction defaults changed");
   });
 
   it("shows one routine repair warning instead of per-routine reconcile controls", () => {
@@ -1402,20 +1395,20 @@ Duplicate headings receive stable suffixes.
     const missing = await harness.performAction<PluginManagedRoutineResolution>("reconcile-managed-routine", {
       companyId: COMPANY_ID,
       routineKey: NIGHTLY_LINT_ROUTINE_KEY,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(missing.status).toBe("missing_refs");
     expect(missing.missingRefs).toEqual([
       expect.objectContaining({ resourceKind: "agent", resourceKey: WIKI_MAINTAINER_AGENT_KEY }),
       expect.objectContaining({ resourceKind: "project", resourceKey: WIKI_PROJECT_KEY }),
     ]);
 
-    await harness.performAction("bootstrap-root", { companyId: COMPANY_ID, path: "/tmp/company-wiki" });
+    await harness.performAction("bootstrap-root", { companyId: COMPANY_ID, path: "/tmp/company-wiki" }, SYSTEM_ACTION_OPTIONS);
     const reconciled = await Promise.all(
       WIKI_MAINTENANCE_ROUTINE_KEYS.map((routineKey) =>
         harness.performAction<PluginManagedRoutineResolution>("reconcile-managed-routine", {
           companyId: COMPANY_ID,
           routineKey,
-        })),
+        }, SYSTEM_ACTION_OPTIONS)),
     );
 
     expect(reconciled.map((routine) => routine.resourceKey)).toEqual([...WIKI_MAINTENANCE_ROUTINE_KEYS]);
@@ -1427,9 +1420,7 @@ Duplicate headings receive stable suffixes.
             projectId: expect.any(String),
             assigneeAgentId: expect.any(String),
             managedByPlugin: expect.objectContaining({
-              defaultsJson: expect.objectContaining({
-                issueTemplate: expect.objectContaining({ surfaceVisibility: "plugin_operation" }),
-              }),
+              defaultsJson: expect.objectContaining({ issueTemplate: null }),
             }),
           }),
         }),
@@ -1444,17 +1435,17 @@ Duplicate headings receive stable suffixes.
 
     await expect(harness.performAction("reconcile-managed-routine", {
       companyId: COMPANY_ID,
-    })).rejects.toThrow("routineKey is required");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("routineKey is required");
   });
 
   it("repairs all managed maintenance routines through one action", async () => {
     const harness = createTestHarness({ manifest });
     await plugin.definition.setup(harness.ctx);
-    await harness.performAction("bootstrap-root", { companyId: COMPANY_ID, path: "/tmp/company-wiki" });
+    await harness.performAction("bootstrap-root", { companyId: COMPANY_ID, path: "/tmp/company-wiki" }, SYSTEM_ACTION_OPTIONS);
 
     const repaired = await harness.performAction<{
       managedRoutines: PluginManagedRoutineResolution[];
-    }>("reconcile-managed-routines", { companyId: COMPANY_ID });
+    }>("reconcile-managed-routines", { companyId: COMPANY_ID }, SYSTEM_ACTION_OPTIONS);
 
     expect(repaired.managedRoutines).toHaveLength(WIKI_MAINTENANCE_ROUTINE_KEYS.length);
     expect(repaired.managedRoutines.map((routine) => routine.resourceKey)).toEqual([...WIKI_MAINTENANCE_ROUTINE_KEYS]);
@@ -1482,7 +1473,7 @@ Duplicate headings receive stable suffixes.
 
     const repaired = await harness.performAction<{
       managedSkills: WikiSkillResource[];
-    }>("reconcile-managed-skills", { companyId: COMPANY_ID });
+    }>("reconcile-managed-skills", { companyId: COMPANY_ID }, SYSTEM_ACTION_OPTIONS);
     expect(repaired.managedSkills).toHaveLength(WIKI_MANAGED_SKILL_KEYS.length);
     expect(repaired.managedSkills[0]).toMatchObject({
       status: "created",
@@ -1505,11 +1496,28 @@ Duplicate headings receive stable suffixes.
 
     const reset = await harness.performAction<{
       managedSkills: WikiSkillResource[];
-    }>("reset-managed-skills", { companyId: COMPANY_ID });
+    }>("reset-managed-skills", { companyId: COMPANY_ID }, SYSTEM_ACTION_OPTIONS);
     expect(reset.managedSkills[0]).toMatchObject({
       status: "reset",
       skillId: expect.any(String),
       resourceKey: WIKI_MAINTAINER_SKILL_KEY,
+    });
+  });
+
+  it("returns only the effective public-exposure distillation decision", async () => {
+    process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "public";
+    const harness = createTestHarness({ manifest });
+    await plugin.definition.setup(harness.ctx);
+
+    const settings = await harness.getData<{
+      distillationPolicy: Record<string, unknown>;
+    }>("settings", {
+      companyId: COMPANY_ID,
+    });
+
+    expect(settings.distillationPolicy).toEqual({
+      autoApplyAllowed: false,
+      autoApplyRestriction: "Public exposure always requires manual review before wiki writes.",
     });
   });
 
@@ -1686,7 +1694,7 @@ Duplicate headings receive stable suffixes.
         companyId: COMPANY_ID,
         enabled: true,
         sources: { issues: true, comments: false, documents: false },
-      },
+      }, SYSTEM_ACTION_OPTIONS
     );
     expect(policy).toMatchObject({ enabled: true, sources: { issues: true, comments: false, documents: false } });
 
@@ -1698,11 +1706,6 @@ Duplicate headings receive stable suffixes.
     });
 
     expect(writes).toHaveLength(0);
-    const operations = await harness.ctx.issues.list({
-      companyId: COMPANY_ID,
-      originKindPrefix: String(OPERATION_ORIGIN_KIND),
-    });
-    expect(operations).toHaveLength(0);
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_sources"))).toBe(false);
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_operations"))).toBe(false);
     const cursorUpsert = harness.dbExecutes.find((execute) => execute.sql.includes("paperclip_distillation_cursors"));
@@ -1723,7 +1726,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       enabled: true,
       sources: { issues: true, comments: true, documents: true },
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     const disabled = await harness.performAction<{
       enabled: boolean;
@@ -1731,7 +1734,7 @@ Duplicate headings receive stable suffixes.
     }>("update-event-ingestion-settings", {
       companyId: COMPANY_ID,
       enabled: false,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(disabled).toMatchObject({
       enabled: false,
       sources: { issues: true, comments: true, documents: true },
@@ -1743,14 +1746,14 @@ Duplicate headings receive stable suffixes.
     }>("update-event-ingestion-settings", {
       companyId: COMPANY_ID,
       enabled: true,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(reenabled).toMatchObject({
       enabled: true,
       sources: { issues: true, comments: true, documents: true },
     });
   });
 
-  it("keeps Paperclip event cursor observations company scoped and ignores plugin-operation issues", async () => {
+  it("keeps Paperclip event cursor observations company scoped and ignores plugin-correlated operation issues", async () => {
     const harness = createTestHarness({ manifest });
     const visibleIssue = paperclipIssue({ projectId: "77777777-7777-4777-8777-777777777777" });
     const otherCompanyIssue = paperclipIssue({
@@ -1761,16 +1764,26 @@ Duplicate headings receive stable suffixes.
     });
     const operationIssue = paperclipIssue({
       id: "77777777-7777-4777-8777-777777777780",
-      originKind: `${OPERATION_ORIGIN_KIND}:ingest`,
     });
     harness.seed({ issues: [visibleIssue, otherCompanyIssue, operationIssue] });
+    const originalQuery = harness.ctx.db.query.bind(harness.ctx.db);
+    harness.ctx.db.query = async <T,>(sql: string, params?: unknown[]) => {
+      if (
+        sql.includes("wiki_operations")
+        && sql.includes("issue_id")
+        && params?.[1] === operationIssue.id
+      ) {
+        return [{ found: true }] as T[];
+      }
+      return originalQuery<T>(sql, params);
+    };
 
     await plugin.definition.setup(harness.ctx);
     await harness.performAction("update-event-ingestion-settings", {
       companyId: COMPANY_ID,
       enabled: true,
       sources: { issues: true, comments: true, documents: true },
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     await harness.emit("issue.updated", {}, {
       companyId: COMPANY_ID,
@@ -1788,7 +1801,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       entityId: operationIssue.id,
       entityType: "issue",
-      eventId: "event-plugin-operation",
+      eventId: "event-wiki-operation",
     });
 
     const cursorWrites = harness.dbExecutes.filter((execute) => execute.sql.includes("paperclip_distillation_cursors"));
@@ -1812,12 +1825,12 @@ Duplicate headings receive stable suffixes.
     }>("create-space", {
       companyId: COMPANY_ID,
       displayName: "Team Research",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("update-event-ingestion-settings", {
       companyId: COMPANY_ID,
       enabled: true,
       sources: { issues: true, comments: true, documents: true },
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     await harness.emit("issue.created", {}, {
       companyId: COMPANY_ID,
@@ -1860,7 +1873,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       displayName: "Engineering Wiki",
       accessScope: "shared",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     mockPersistedWikiSpace(harness, created.space as unknown as Record<string, unknown>);
     const enabledProfile = {
       version: 1,
@@ -1874,7 +1887,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       profile: enabledProfile,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { paperclipIngestion: enabledProfile } });
 
     await harness.emit("issue.created", {}, {
@@ -1901,7 +1914,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       displayName: "Support Wiki",
       accessScope: "shared",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     mockPersistedWikiSpace(harness, created.space as unknown as Record<string, unknown>);
     const enabledProfile = {
       version: 1,
@@ -1915,7 +1928,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       profile: enabledProfile,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { paperclipIngestion: enabledProfile } });
     await harness.emit("issue.created", {}, {
       companyId: COMPANY_ID,
@@ -1927,7 +1940,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       profile: { ...enabledProfile, enabled: false },
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { paperclipIngestion: { ...enabledProfile, enabled: false } } });
     await harness.emit("issue.updated", {}, {
       companyId: COMPANY_ID,
@@ -1941,7 +1954,7 @@ Duplicate headings receive stable suffixes.
     expect(nonDefaultCursorWrites).toHaveLength(1);
   });
 
-  it("assembles deterministic Paperclip source bundles with issue, document, and comment provenance", async () => {
+  it("assembles deterministic issue-source bundles without copying comment or document bodies", async () => {
     const harness = createTestHarness({ manifest });
     const root = paperclipIssue({
       id: "77777777-7777-4777-8777-777777777781",
@@ -1956,131 +1969,41 @@ Duplicate headings receive stable suffixes.
       title: "Child source issue",
       parentId: root.id,
       projectId: root.projectId,
-      description: "Child issue has a decision and implementation notes.",
+      request: "Child issue has a decision and implementation notes.",
       updatedAt: new Date("2026-05-02T10:00:00Z"),
     });
-    harness.seed({
-      issues: [root, child],
-      issueComments: [{
-        id: "77777777-7777-4777-8777-777777777783",
-        companyId: COMPANY_ID,
-        issueId: child.id,
-        authorType: "user",
-        authorAgentId: null,
-        authorUserId: null,
-        body: "Comment evidence for the source bundle.",
-        presentation: null,
-        metadata: null,
-        createdAt: new Date("2026-05-03T10:00:00Z"),
-        updatedAt: new Date("2026-05-03T10:00:00Z"),
-      }],
-    });
+    harness.seed({ issues: [root, child] });
 
     await plugin.definition.setup(harness.ctx);
-    await harness.ctx.issues.documents.upsert({
-      companyId: COMPANY_ID,
-      issueId: child.id,
-      key: "plan",
-      title: "Plan",
-      body: "Document evidence for the source bundle.",
-    });
 
     const first = await harness.performAction<{
       markdown: string;
       sourceRefs: Array<{ kind: string; issueIdentifier: string | null; documentKey?: string; commentId?: string }>;
       sourceHash: string;
       sourceWindowEnd: string | null;
+      warnings: string[];
     }>("assemble-paperclip-source-bundle", {
       companyId: COMPANY_ID,
       rootIssueId: root.id,
       maxCharacters: 20000,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     const second = await harness.performAction<typeof first>("assemble-paperclip-source-bundle", {
       companyId: COMPANY_ID,
       rootIssueId: root.id,
       maxCharacters: 20000,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(second.sourceHash).toBe(first.sourceHash);
     expect(first.markdown).toContain("Root distillation issue");
     expect(first.markdown).toContain("Child issue has a decision");
-    expect(first.markdown).toContain("Document evidence for the source bundle.");
-    expect(first.markdown).toContain("Comment evidence for the source bundle.");
     expect(first.sourceRefs).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "issue", issueIdentifier: "PAP-4001" }),
-      expect.objectContaining({ kind: "document", documentKey: "plan" }),
-      expect.objectContaining({ kind: "comment", commentId: "77777777-7777-4777-8777-777777777783" }),
     ]));
+    expect(first.sourceRefs.some((ref) => ref.kind === "comment" || ref.kind === "document")).toBe(false);
+    expect(first.warnings).toContain(
+      "Comment and document bodies are not copied through the plugin control plane; agents may read only the run-scoped context granted to their ordinary issue execution.",
+    );
     expect(first.sourceWindowEnd).toEqual(expect.any(String));
-  });
-
-  it("suppresses secret-like comment and document bodies before storing distillation snapshots", async () => {
-    const harness = createTestHarness({ manifest });
-    const issue = paperclipIssue({
-      id: "77777777-7777-4777-8777-777777777784",
-      identifier: "PAP-4002",
-      title: "Sensitive source issue",
-      projectId: "77777777-7777-4777-8777-777777777777",
-      description: "Keep the project page current without copying credential material into the wiki.",
-      updatedAt: new Date("2026-05-04T10:00:00Z"),
-    });
-    harness.seed({
-      issues: [issue],
-      issueComments: [{
-        id: "77777777-7777-4777-8777-777777777785",
-        companyId: COMPANY_ID,
-        issueId: issue.id,
-        authorType: "user",
-        authorAgentId: null,
-        authorUserId: null,
-        body: "Authorization: Bearer ghp_supersecretcommenttoken1234567890",
-        presentation: null,
-        metadata: null,
-        createdAt: new Date("2026-05-04T11:00:00Z"),
-        updatedAt: new Date("2026-05-04T11:00:00Z"),
-      }],
-    });
-
-    await plugin.definition.setup(harness.ctx);
-    await harness.ctx.issues.documents.upsert({
-      companyId: COMPANY_ID,
-      issueId: issue.id,
-      key: "plan",
-      title: "Plan",
-      body: "OPENAI_API_KEY=sk-supersecretdocumentvalue1234567890",
-    });
-
-    const run = await harness.performAction<{
-      bundle: {
-        markdown: string;
-        warnings: string[];
-        sourceRefs: Array<Record<string, unknown>>;
-      };
-    }>("create-paperclip-distillation-run", {
-      companyId: COMPANY_ID,
-      projectId: issue.projectId,
-      maxCharacters: 20000,
-    });
-
-    expect(run.bundle.markdown).toContain("Suppressed by LLM Wiki distillation security policy");
-    expect(run.bundle.markdown).not.toContain("ghp_supersecretcommenttoken1234567890");
-    expect(run.bundle.markdown).not.toContain("sk-supersecretdocumentvalue1234567890");
-    expect(run.bundle.warnings).toEqual(expect.arrayContaining([
-      expect.stringContaining("Suppressed comment content"),
-      expect.stringContaining("Suppressed document content"),
-    ]));
-    expect(run.bundle.sourceRefs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "comment", redactionStatus: "suppressed_sensitive_content" }),
-      expect.objectContaining({ kind: "document", redactionStatus: "suppressed_sensitive_content" }),
-    ]));
-
-    const snapshotInsert = harness.dbExecutes.find((execute) => execute.sql.includes("paperclip_source_snapshots"));
-    const storedSourceRefs = String(snapshotInsert?.params?.[9] ?? "");
-    const storedMarkdown = String(snapshotInsert?.params?.[10] ?? "");
-    expect(storedSourceRefs).toContain("suppressed_sensitive_content");
-    expect(storedMarkdown).toContain("Suppressed by LLM Wiki distillation security policy");
-    expect(storedMarkdown).not.toContain("ghp_supersecretcommenttoken1234567890");
-    expect(storedMarkdown).not.toContain("sk-supersecretdocumentvalue1234567890");
   });
 
   it("creates source snapshots and only advances cursors after successful distillation outcomes", async () => {
@@ -2100,7 +2023,7 @@ Duplicate headings receive stable suffixes.
     }>("create-paperclip-distillation-run", {
       companyId: COMPANY_ID,
       projectId: issue.projectId,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(run.snapshotId).toEqual(expect.any(String));
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("paperclip_source_snapshots"))).toBe(true);
 
@@ -2112,7 +2035,7 @@ Duplicate headings receive stable suffixes.
       sourceHash: run.bundle.sourceHash,
       sourceWindowEnd: run.bundle.sourceWindowEnd,
       warning: "writer failed",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(failed.cursorAdvanced).toBe(false);
     const cursorUpdatesAfterFailure = harness.dbExecutes.filter((execute) =>
       execute.sql.trim().startsWith("UPDATE") && execute.sql.includes("paperclip_distillation_cursors"));
@@ -2125,7 +2048,7 @@ Duplicate headings receive stable suffixes.
       status: "succeeded",
       sourceHash: run.bundle.sourceHash,
       sourceWindowEnd: run.bundle.sourceWindowEnd,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(succeeded.cursorAdvanced).toBe(true);
     const cursorSuccessUpdate = harness.dbExecutes.find((execute) =>
       execute.sql.trim().startsWith("UPDATE") && execute.sql.includes("paperclip_distillation_cursors"));
@@ -2147,7 +2070,7 @@ Duplicate headings receive stable suffixes.
       identifier: "PAP-4099",
       title: "Existing cursor target",
       projectId: project.id,
-      status: "in_progress",
+      boardPresentationStatus: "in_progress",
     });
     const existingCursorId = "77777777-7777-4777-8777-777777777899";
     const originalQuery = harness.ctx.db.query.bind(harness.ctx.db);
@@ -2163,7 +2086,7 @@ Duplicate headings receive stable suffixes.
     const result = await harness.performAction<{ cursorId: string }>("create-paperclip-distillation-run", {
       companyId: COMPANY_ID,
       projectId: project.id,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.cursorId).toBe(existingCursorId);
     const runInsert = harness.dbExecutes.find((execute) =>
@@ -2180,14 +2103,14 @@ Duplicate headings receive stable suffixes.
       kind: "manual",
       projectId: "77777777-7777-4777-8777-777777777777",
       idempotencyKey: "manual:project:77777777-7777-4777-8777-777777777777",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("create-paperclip-distillation-work-item", {
       companyId: COMPANY_ID,
       kind: "retry",
       rootIssueId: "77777777-7777-4777-8777-777777777781",
       priority: "high",
       idempotencyKey: "retry:run:1",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("create-paperclip-distillation-work-item", {
       companyId: COMPANY_ID,
       kind: "backfill",
@@ -2195,7 +2118,7 @@ Duplicate headings receive stable suffixes.
       priority: "low",
       metadata: { window: "last-30-days" },
       idempotencyKey: "backfill:last-30-days",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     const workItemWrites = harness.dbExecutes.filter((execute) => execute.sql.includes("paperclip_distillation_work_items"));
     expect(workItemWrites).toHaveLength(3);
@@ -2208,7 +2131,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       kind: "backfill",
       idempotencyKey: "backfill:company",
-    })).rejects.toThrow("whole-company backfill is not allowed");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("whole-company backfill is not allowed");
   });
 
   it("records estimated Paperclip distillation cost without refusing on legacy cost config", async () => {
@@ -2226,9 +2149,9 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777795",
       identifier: "PAP-4104",
       title: "Large source bundle",
-      description: `Accepted plan. ${"Detailed implementation note. ".repeat(160)}`,
+      request: `Accepted plan. ${"Detailed implementation note. ".repeat(160)}`,
       projectId: project.id,
-      status: "in_progress",
+      boardPresentationStatus: "in_progress",
     });
     harness.seed({ projects: [project], issues: [issue] });
 
@@ -2241,7 +2164,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       projectId: project.id,
       routineRun: true,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("source_ready");
     expect(result.estimatedCostCents).toBeGreaterThan(1);
@@ -2267,8 +2190,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777796",
       identifier: "PAP-4105",
       title: "Manual distillation target",
-      description: "Implemented enough evidence to manually distill into the wiki.",
-      status: "done",
+      request: "Implemented enough evidence to manually distill into the wiki.",
+      boardPresentationStatus: "done",
       projectId: project.id,
     });
     harness.seed({ agents: [wikiMaintainerAgent()], projects: [project], issues: [issue] });
@@ -2276,25 +2199,22 @@ Duplicate headings receive stable suffixes.
     await plugin.definition.setup(harness.ctx);
     const result = await harness.performAction<{
       status: string;
-      operation: { issue: { originKind: string; billingCode: string | null; assigneeAgentId: string | null; assigneeAdapterOverrides: { modelProfile?: string } | null; description: string | null } };
+      operation: { issue: Issue };
       workItem: { kind: string; workItemId: string };
     }>("distill-paperclip-now", {
       companyId: COMPANY_ID,
       autoApply: false,
-      useCheapModelProfile: true,
       includeSupportingPages: false,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("queued");
     expect(result.workItem.kind).toBe("manual");
-    expect(result.operation.issue.originKind).toBe(`${OPERATION_ORIGIN_KIND}:distill`);
-    expect(result.operation.issue.billingCode).toBe("plugin-llm-wiki:default");
-    expect(result.operation.issue.assigneeAgentId).toBe(wikiMaintainerAgent().id);
-    expect(result.operation.issue.assigneeAdapterOverrides).toEqual({ modelProfile: "cheap" });
-    expect(result.operation.issue.description).toContain("Prompt source: LLM Wiki plugin action `distill-paperclip-now`");
-    expect(result.operation.issue.description).toContain(`Required skill: use the installed \`${PAPERCLIP_DISTILL_SKILL_KEY}\` skill`);
-    expect(result.operation.issue.description).toContain("Do not hardcode a single project");
-    expect(result.operation.issue.description).not.toContain(`Source project ID: ${project.id}`);
+    expect(result.operation.issue.creatorKind).toBe("plugin");
+    expect(result.operation.issue.ownerAgentId).toBe(wikiMaintainerAgent().id);
+    expect(result.operation.issue.request).toContain("Prompt source: LLM Wiki plugin action `distill-paperclip-now`");
+    expect(result.operation.issue.request).toContain(`Required skill: use the installed \`${PAPERCLIP_DISTILL_SKILL_KEY}\` skill`);
+    expect(result.operation.issue.request).toContain("Do not hardcode a single project");
+    expect(result.operation.issue.request).not.toContain(`Source project ID: ${project.id}`);
     const workItemInsert = harness.dbExecutes.find((execute) =>
       execute.sql.includes("paperclip_distillation_work_items") && execute.params?.[3] === "manual");
     expect(workItemInsert?.params).toEqual(expect.arrayContaining([
@@ -2367,7 +2287,7 @@ Duplicate headings receive stable suffixes.
     }>("enable-paperclip-distillation-active-projects", {
       companyId: COMPANY_ID,
       limit: 2,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.selectedProjects.map((project) => project.id)).toEqual([recentProject.id, olderProject.id]);
     expect(result.eventIngestion).toMatchObject({
@@ -2388,8 +2308,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777797",
       identifier: "PAP-4106",
       title: "Backfill in-window decision",
-      description: "Accepted historical decision that should appear in the backfill page.",
-      status: "done",
+      request: "Accepted historical decision that should appear in the backfill page.",
+      boardPresentationStatus: "done",
       projectId: project.id,
       updatedAt: new Date("2026-04-15T12:00:00Z"),
     });
@@ -2397,8 +2317,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777798",
       identifier: "PAP-4107",
       title: "Backfill out-of-window decision",
-      description: "This old decision must not be included in the selected date window.",
-      status: "done",
+      request: "This old decision must not be included in the selected date window.",
+      boardPresentationStatus: "done",
       projectId: project.id,
       updatedAt: new Date("2026-03-01T12:00:00Z"),
     });
@@ -2406,8 +2326,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777799",
       identifier: "PAP-4108",
       title: "Other project decision",
-      description: "This issue belongs to a different project and must not be included.",
-      status: "done",
+      request: "This issue belongs to a different project and must not be included.",
+      boardPresentationStatus: "done",
       projectId: "88888888-8888-4888-8888-888888888888",
       updatedAt: new Date("2026-04-16T12:00:00Z"),
     });
@@ -2418,7 +2338,7 @@ Duplicate headings receive stable suffixes.
       status: string;
       patches: Array<{ operationType: string; proposedContents: string }>;
       workItem: { kind: string };
-      operation: { issue: { originKind: string } };
+      operation: { issue: Issue };
     }>("backfill-paperclip-distillation", {
       companyId: COMPANY_ID,
       projectId: project.id,
@@ -2426,11 +2346,15 @@ Duplicate headings receive stable suffixes.
       backfillEndAt: "2026-04-30T23:59:59Z",
       autoApply: false,
       includeSupportingPages: false,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("review_required");
     expect(result.workItem.kind).toBe("backfill");
-    expect(result.operation.issue.originKind).toBe(`${OPERATION_ORIGIN_KIND}:backfill`);
+    expect(result.operation.issue).toMatchObject({
+      creatorKind: "plugin",
+      ownerKind: "agent",
+      ownerAgentId: wikiMaintainerAgent().id,
+    });
     const projectPatch = result.patches.find((patch) => patch.operationType === "project_page_distill");
     expect(projectPatch?.proposedContents).toContain("PAP-4106");
     expect(projectPatch?.proposedContents).not.toContain("PAP-4107");
@@ -2447,8 +2371,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777791",
       identifier: "PAP-4100",
       title: "Approved project page distillation plan",
-      description: "Accepted plan: write stable project overview sections with source provenance.",
-      status: "in_progress",
+      request: "Accepted plan: write stable project overview sections with source provenance.",
+      boardPresentationStatus: "in_progress",
       projectId: project.id,
       updatedAt: new Date("2026-05-03T10:00:00Z"),
     });
@@ -2480,7 +2404,7 @@ Duplicate headings receive stable suffixes.
       autoApply: false,
       maxCharacters: 20000,
       includeSupportingPages: false,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("review_required");
     expect(writes).toHaveLength(0);
@@ -2506,85 +2430,15 @@ Duplicate headings receive stable suffixes.
     expect(result.warnings).toContain("Auto-apply policy disabled; proposed patches require review.");
   });
 
-  it("keeps suppressed secret-like source content out of generated wiki patches", async () => {
-    const harness = createTestHarness({ manifest });
-    const project = existingProject();
-    const issue = paperclipIssue({
-      id: "77777777-7777-4777-8777-777777777796",
-      identifier: "PAP-4104",
-      title: "Distill sanitized provenance",
-      description: "Publish enough project state for a reviewable project page without leaking credentials.",
-      status: "in_progress",
-      projectId: project.id,
-      updatedAt: new Date("2026-05-04T10:00:00Z"),
-    });
-    const files = new Map<string, string>([
-      ["wiki/index.md", DEFAULT_INDEX],
-      ["wiki/log.md", DEFAULT_LOG],
-    ]);
-    harness.seed({
-      projects: [project],
-      issues: [issue],
-      issueComments: [{
-        id: "77777777-7777-4777-8777-777777777797",
-        companyId: COMPANY_ID,
-        issueId: issue.id,
-        authorType: "user",
-        authorAgentId: null,
-        authorUserId: null,
-        body: "Authorization: Bearer ghp_patchsecretcommenttoken1234567890",
-        presentation: null,
-        metadata: null,
-        createdAt: new Date("2026-05-04T11:00:00Z"),
-        updatedAt: new Date("2026-05-04T11:00:00Z"),
-      }],
-    });
-    harness.ctx.localFolders.readText = async (_companyId, _folderKey, relativePath) => {
-      const contents = files.get(relativePath);
-      if (contents == null) throw new Error(`missing ${relativePath}`);
-      return contents;
-    };
-    harness.ctx.localFolders.writeTextAtomic = async (_companyId, _folderKey, relativePath, contents) => {
-      files.set(relativePath, contents);
-      return harness.ctx.localFolders.status(COMPANY_ID, "wiki-root");
-    };
-
-    await plugin.definition.setup(harness.ctx);
-    await harness.ctx.issues.documents.upsert({
-      companyId: COMPANY_ID,
-      issueId: issue.id,
-      key: "plan",
-      title: "Plan",
-      body: "OPENAI_API_KEY=sk-patchsecretdocumentvalue1234567890",
-    });
-
-    const result = await harness.performAction<{
-      status: string;
-      patches: Array<{ operationType: string; proposedContents: string }>;
-    }>("distill-paperclip-project-page", {
-      companyId: COMPANY_ID,
-      projectId: project.id,
-      maxCharacters: 20000,
-      includeSupportingPages: false,
-    });
-
-    expect(result.status).toBe("review_required");
-    const combinedPatchContents = result.patches.map((patch) => patch.proposedContents).join("\n");
-    expect(combinedPatchContents).toContain("redaction=suppressed_sensitive_content");
-    expect(combinedPatchContents).toContain("redaction_reasons=secret_like_token");
-    expect(combinedPatchContents).not.toContain("ghp_patchsecretcommenttoken1234567890");
-    expect(combinedPatchContents).not.toContain("sk-patchsecretdocumentvalue1234567890");
-  });
-
-  it("auto-applies Paperclip project page patches by default when policy allows and records page bindings", async () => {
+  it("auto-applies issue-only Paperclip project page patches when policy allows and records page bindings", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
     const issue = paperclipIssue({
       id: "77777777-7777-4777-8777-777777777792",
       identifier: "PAP-4101",
       title: "Implement project page writer",
-      description: "Implementation completed enough to publish the generated project page.",
-      status: "done",
+      request: "Implementation completed enough to publish the generated project page.",
+      boardPresentationStatus: "done",
       projectId: project.id,
       updatedAt: new Date("2026-05-04T10:00:00Z"),
     });
@@ -2612,9 +2466,11 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       projectId: project.id,
       autoApply: true,
+      includeComments: false,
+      includeDocuments: false,
       maxCharacters: 20000,
       includeSupportingPages: false,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("applied");
     expect(result.appliedPages).toEqual([
@@ -2640,8 +2496,7 @@ Duplicate headings receive stable suffixes.
     ]));
   });
 
-  it("refuses auto-apply Paperclip project page patches in authenticated/public deployments", async () => {
-    process.env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
+  it("refuses auto-apply Paperclip project page patches under public exposure", async () => {
     process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "public";
     const harness = createTestHarness({ manifest, config: { autoApplyIngestPatches: true } });
     const project = existingProject();
@@ -2649,8 +2504,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-77777777779a",
       identifier: "PAP-4101",
       title: "Implement project page writer",
-      description: "Implementation completed enough to publish the generated project page.",
-      status: "done",
+      request: "Implementation completed enough to publish the generated project page.",
+      boardPresentationStatus: "done",
       projectId: project.id,
       updatedAt: new Date("2026-05-04T10:00:00Z"),
     });
@@ -2682,13 +2537,13 @@ Duplicate headings receive stable suffixes.
       autoApply: true,
       maxCharacters: 20000,
       includeSupportingPages: false,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("review_required");
     expect(result.appliedPages).toEqual([]);
     expect(writes).toHaveLength(0);
     expect(result.warnings).toContain(
-      "Authenticated/public deployments always require manual review before wiki writes.",
+      "Public exposure always requires manual review before wiki writes.",
     );
   });
 
@@ -2699,8 +2554,8 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-777777777793",
       identifier: "PAP-4102",
       title: "Publish project page",
-      description: "Ready to publish.",
-      status: "done",
+      request: "Ready to publish.",
+      boardPresentationStatus: "done",
       projectId: project.id,
     });
     const files = new Map<string, string>([
@@ -2728,19 +2583,19 @@ Duplicate headings receive stable suffixes.
       autoApply: true,
       expectedProjectPageHash: "stale",
       includeSupportingPages: false,
-    })).rejects.toThrow("Refusing to overwrite");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("Refusing to overwrite");
     expect(writes).toHaveLength(0);
   });
 
-  it("skips low-signal Paperclip source windows without proposing wiki writes", async () => {
+  it("skips low-signal immutable issue requests without proposing wiki writes", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
     const issue = paperclipIssue({
       id: "77777777-7777-4777-8777-777777777794",
       identifier: "PAP-4103",
       title: "Routine heartbeat",
-      description: "",
-      status: "todo",
+      request: "Routine heartbeat",
+      boardPresentationStatus: "todo",
       projectId: project.id,
     });
     const writes: string[] = [];
@@ -2755,7 +2610,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       projectId: project.id,
       maxCharacters: 20000,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.status).toBe("skipped");
     expect(result.reason).toBe("low_signal");
@@ -2775,7 +2630,7 @@ Duplicate headings receive stable suffixes.
     const result = await harness.performAction<{ writtenFiles: string[]; managedSkills: WikiSkillResource[] }>("bootstrap-root", {
       companyId: COMPANY_ID,
       path: "/tmp/company-wiki",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.writtenFiles).toContain("AGENTS.md");
     expect(result.writtenFiles).toContain("IDEA.md");
@@ -2821,7 +2676,7 @@ Duplicate headings receive stable suffixes.
     }>("create-space", {
       companyId: COMPANY_ID,
       displayName: "QA Space",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(created.space).toMatchObject({
       slug: "qa-space",
@@ -2847,7 +2702,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: "default",
       status: "archived",
-    })).rejects.toThrow("The default LLM Wiki space cannot be archived.");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("The default LLM Wiki space cannot be archived.");
     const defaultSpaceInsert = harness.dbExecutes.find((execute) =>
       execute.sql.includes("INSERT INTO") && execute.sql.includes("wiki_spaces"));
     expect(defaultSpaceInsert?.params?.[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -2892,7 +2747,7 @@ Duplicate headings receive stable suffixes.
       displayName: "Archived QA",
       settings: { archivedBy: "test" },
       status: "archived",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(updated.status).toBe("ok");
     expect(updated.space).toMatchObject({
@@ -2940,7 +2795,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: "qa-space",
       status: "active",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(updated.status).toBe("ok");
     expect(updated.space).toMatchObject({
@@ -2958,7 +2813,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: "default",
       status: "suspended",
-    })).rejects.toThrow("LLM Wiki space status must be active or archived.");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("LLM Wiki space status must be active or archived.");
     expect(harness.dbExecutes.some((execute) =>
       execute.sql.includes("UPDATE") &&
       execute.sql.includes("wiki_spaces") &&
@@ -3018,7 +2873,7 @@ Duplicate headings receive stable suffixes.
       wikiId: "default",
       title: "Plugin Boundaries",
       contents: "# Plugin Boundaries\n\nKeep wiki logic in the plugin.",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.rawPath).toMatch(/^raw\/\d{4}-\d{2}-\d{2}-plugin-boundaries-/);
     expect(result.hash).toHaveLength(64);
@@ -3053,7 +2908,7 @@ Duplicate headings receive stable suffixes.
     }>("create-space", {
       companyId: COMPANY_ID,
       displayName: "Team Research",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     spaces.set(created.space.slug, {
       id: created.space.id,
       company_id: created.space.companyId,
@@ -3080,7 +2935,7 @@ Duplicate headings receive stable suffixes.
       spaceSlug: created.space.slug,
       title: "Team notes",
       contents: "# Team notes\n\nManual source ingest still belongs to the selected space.",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(source.spaceSlug).toBe(created.space.slug);
     expect(writes.map((write) => write.path)).toContain(`spaces/${created.space.slug}/${source.rawPath}`);
@@ -3088,7 +2943,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       projectId: existingProject().id,
-    })).rejects.toThrow("Paperclip ingestion policy denied queue");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("Paperclip ingestion policy denied queue");
   });
 
   it("fails closed for direct Paperclip ingestion actions against restricted spaces", async () => {
@@ -3105,7 +2960,7 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       displayName: "Private Notes",
       accessScope: "personal",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(created.space.accessScope).toBe("personal");
     const originalQuery = harness.ctx.db.query.bind(harness.ctx.db);
@@ -3138,12 +2993,9 @@ Duplicate headings receive stable suffixes.
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       projectId: existingProject().id,
-    })).rejects.toThrow("Paperclip ingestion policy denied queue");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("Paperclip ingestion policy denied queue");
 
-    const operations = await harness.ctx.issues.list({
-      companyId: COMPANY_ID,
-      originKindPrefix: String(OPERATION_ORIGIN_KIND),
-    });
+    const operations = await harness.ctx.issues.list({ companyId: COMPANY_ID });
     expect(operations).toHaveLength(0);
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("paperclip_distillation_work_items"))).toBe(false);
   });
@@ -3155,9 +3007,9 @@ Duplicate headings receive stable suffixes.
       id: "77777777-7777-4777-8777-7777777777b0",
       identifier: "PAP-4111",
       title: "Queued distillation source",
-      description: "Accepted queued work should not run after policy changes.",
+      request: "Accepted queued work should not run after policy changes.",
       projectId: project.id,
-      status: "done",
+      boardPresentationStatus: "done",
     });
     harness.seed({ agents: [wikiMaintainerAgent()], projects: [project], issues: [issue] });
 
@@ -3165,7 +3017,7 @@ Duplicate headings receive stable suffixes.
     const queued = await harness.performAction<{ status: string }>("distill-paperclip-now", {
       companyId: COMPANY_ID,
       projectId: project.id,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     expect(queued.status).toBe("queued");
 
     const originalQuery = harness.ctx.db.query.bind(harness.ctx.db);
@@ -3198,14 +3050,20 @@ Duplicate headings receive stable suffixes.
     await expect(harness.performAction("create-paperclip-distillation-run", {
       companyId: COMPANY_ID,
       projectId: project.id,
-    })).rejects.toThrow("personal spaces cannot ingest Paperclip sources");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("personal spaces cannot ingest Paperclip sources");
     expect(harness.dbExecutes.some((execute) =>
       execute.sql.includes("paperclip_distillation_runs") && execute.sql.includes("'source_ready'"))).toBe(false);
   });
 
   it("queues Paperclip ingestion backfills for every selected project scope", async () => {
     const harness = createTestHarness({ manifest });
+    const agent = wikiMaintainerAgent();
+    harness.seed({ agents: [agent] });
     await plugin.definition.setup(harness.ctx);
+    await harness.performAction("select-managed-agent", {
+      companyId: COMPANY_ID,
+      agentId: agent.id,
+    }, SYSTEM_ACTION_OPTIONS);
 
     const queued = await harness.performAction<{
       status: string;
@@ -3223,7 +3081,7 @@ Duplicate headings receive stable suffixes.
       },
       backfillStartAt: "2026-05-01T00:00:00.000Z",
       backfillEndAt: "2026-05-02T00:00:00.000Z",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(queued.status).toBe("queued");
     expect(queued.workItems).toHaveLength(2);
@@ -3245,24 +3103,24 @@ Duplicate headings receive stable suffixes.
       enabled: true,
       maxCharacters: 20001,
       sources: { issues: true },
-    })).rejects.toThrow("maxCharacters exceeds the hard Paperclip ingestion cap");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("maxCharacters exceeds the hard Paperclip ingestion cap");
 
     await expect(harness.performAction("enable-paperclip-distillation-active-projects", {
       companyId: COMPANY_ID,
       limit: 26,
-    })).rejects.toThrow("fan-out exceeds the hard cap");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("fan-out exceeds the hard cap");
 
     await expect(harness.performAction("assemble-paperclip-source-bundle", {
       companyId: COMPANY_ID,
       projectId: "77777777-7777-4777-8777-777777777777",
       rootIssueId: "77777777-7777-4777-8777-777777777778",
-    })).rejects.toThrow("either projectId or rootIssueId");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("either projectId or rootIssueId");
 
     await expect(harness.performAction("assemble-paperclip-source-bundle", {
       companyId: COMPANY_ID,
       projectId: "77777777-7777-4777-8777-777777777777",
       maxCharacters: 60001,
-    })).rejects.toThrow("maxCharacters exceeds the hard Paperclip ingestion cap");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("maxCharacters exceeds the hard Paperclip ingestion cap");
   });
 
   it("keeps default-space files at the root and isolates managed spaces under slug prefixes", async () => {
@@ -3295,7 +3153,7 @@ Duplicate headings receive stable suffixes.
     }>("create-space", {
       companyId: COMPANY_ID,
       displayName: "Research Space",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     spaces.set(created.space.slug, {
       id: created.space.id,
       company_id: created.space.companyId,
@@ -3319,27 +3177,27 @@ Duplicate headings receive stable suffixes.
     await harness.performAction("bootstrap-space", {
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("write-page", {
       companyId: COMPANY_ID,
       wikiId: "default",
       path: "wiki/concepts/shared.md",
       contents: "# Default Shared\n",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("write-page", {
       companyId: COMPANY_ID,
       wikiId: "default",
       spaceSlug: created.space.slug,
       path: "wiki/concepts/shared.md",
       contents: "# Space Shared\n",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("capture-source", {
       companyId: COMPANY_ID,
       wikiId: "default",
       rawPath: "raw/shared.md",
       title: "Shared Source",
       contents: "# Default Raw\n",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     await harness.performAction("capture-source", {
       companyId: COMPANY_ID,
       wikiId: "default",
@@ -3347,7 +3205,7 @@ Duplicate headings receive stable suffixes.
       rawPath: "raw/shared.md",
       title: "Shared Source",
       contents: "# Space Raw\n",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(created.space).toMatchObject({
       slug: "research-space",
@@ -3365,7 +3223,7 @@ Duplicate headings receive stable suffixes.
     expect(sourceWrites.every((write) => write.sql.includes("space_id"))).toBe(true);
   });
 
-  it("ingests source metadata and creates a hidden plugin-operation issue", async () => {
+  it("ingests source metadata and creates an ordinary callback-bound issue", async () => {
     const harness = createTestHarness({ manifest });
     harness.seed({ agents: [wikiMaintainerAgent()] });
     const writes: Array<{ path: string; contents: string }> = [];
@@ -3377,7 +3235,7 @@ Duplicate headings receive stable suffixes.
     await plugin.definition.setup(harness.ctx);
     const result = await harness.performAction<{
       source: { rawPath: string; title: string; hash: string };
-      operation: { operationId: string; issue: { originKind: string; originId: string | null; billingCode: string | null; assigneeAgentId: string | null } };
+      operation: { operationId: string; issue: Issue };
     }>("ingest-source", {
       companyId: COMPANY_ID,
       wikiId: "engineering",
@@ -3387,7 +3245,7 @@ Duplicate headings receive stable suffixes.
       contents: "# Standalone Plugin Notes\n\nKeep wiki behavior in the plugin package.",
       rawPath: "raw/standalone-plugin-notes.md",
       metadata: { importedBy: "alpha-verification" },
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.source.rawPath).toBe("raw/standalone-plugin-notes.md");
     expect(result.source.title).toBe("Standalone Plugin Notes");
@@ -3398,10 +3256,14 @@ Duplicate headings receive stable suffixes.
         contents: expect.stringContaining("Keep wiki behavior in the plugin package."),
       }),
     ]);
-    expect(result.operation.issue.originKind).toBe(`${OPERATION_ORIGIN_KIND}:ingest`);
-    expect(result.operation.issue.originId).toBe(`wiki:engineering:operation:${result.operation.operationId}`);
-    expect(result.operation.issue.billingCode).toBe("plugin-llm-wiki:engineering");
-    expect(result.operation.issue.assigneeAgentId).toBe(wikiMaintainerAgent().id);
+    expect(result.operation.issue).toMatchObject({
+      creatorKind: "plugin",
+      creatorCallbackKey: "wiki-operation",
+      ownerKind: "agent",
+      ownerAgentId: wikiMaintainerAgent().id,
+    });
+    expect(result.operation.issue.request).toContain("Wiki ID: engineering");
+    expect(result.operation.issue.request).toContain("Space: default (default)");
 
     const sourceInsert = harness.dbExecutes.find((execute) => execute.sql.includes("wiki_sources"));
     expect(sourceInsert?.params).toEqual(expect.arrayContaining([
@@ -3439,15 +3301,12 @@ Duplicate headings receive stable suffixes.
       sourceType: "text",
       title: "Oversized source",
       contents: "x".repeat(17),
-    })).rejects.toThrow("exceeds the configured LLM Wiki source limit");
+    }, SYSTEM_ACTION_OPTIONS)).rejects.toThrow("exceeds the configured LLM Wiki source limit");
 
     expect(writes).toHaveLength(0);
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_sources"))).toBe(false);
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_operations"))).toBe(false);
-    const operations = await harness.ctx.issues.list({
-      companyId: COMPANY_ID,
-      originKindPrefix: String(OPERATION_ORIGIN_KIND),
-    });
+    const operations = await harness.ctx.issues.list({ companyId: COMPANY_ID });
     expect(operations).toHaveLength(0);
   });
 
@@ -3518,34 +3377,39 @@ Duplicate headings receive stable suffixes.
       wikiId: "default",
       path: "AGENTS.md",
       contents: "# LLM Wiki Maintainer\n\nBoard-updated instructions.\n",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.hash).toHaveLength(64);
     expect(files.get("AGENTS.md")).toContain("Board-updated instructions.");
   });
 
-  it("creates plugin-operation issues for LLM workflows", async () => {
+  it("creates ordinary callback-bound issues for LLM workflows", async () => {
     const harness = createTestHarness({ manifest });
     harness.seed({ agents: [wikiMaintainerAgent()] });
     await plugin.definition.setup(harness.ctx);
 
-    const result = await harness.performAction<{ issue: { originKind: string; billingCode: string | null } }>(
+    const result = await harness.performAction<{ issue: Issue }>(
       "create-operation",
       {
         companyId: COMPANY_ID,
         operationType: "query",
         title: "Ask the wiki about plugin boundaries",
         prompt: "Which files own wiki behavior?",
-      },
+      }, SYSTEM_ACTION_OPTIONS
     );
 
-    expect(result.issue.originKind).toBe(`${OPERATION_ORIGIN_KIND}:query`);
-    expect(result.issue.billingCode).toBe("plugin-llm-wiki:default");
+    expect(result.issue).toMatchObject({
+      creatorKind: "plugin",
+      creatorCallbackKey: "wiki-operation",
+      ownerKind: "agent",
+      ownerAgentId: wikiMaintainerAgent().id,
+      lifecycleStatus: "open",
+    });
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_resource_bindings"))).toBe(true);
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_operations"))).toBe(true);
   });
 
-  it("stamps resolved space context into hidden operation issues and operation metadata", async () => {
+  it("stamps resolved space context into ordinary operation issue requests and plugin metadata", async () => {
     const harness = createTestHarness({ manifest });
     harness.seed({ agents: [wikiMaintainerAgent()] });
     const spaces = new Map<string, Record<string, unknown>>();
@@ -3564,7 +3428,7 @@ Duplicate headings receive stable suffixes.
     }>("create-space", {
       companyId: COMPANY_ID,
       displayName: "Research Space",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     spaces.set(created.space.slug, {
       id: created.space.id,
       company_id: created.space.companyId,
@@ -3588,22 +3452,25 @@ Duplicate headings receive stable suffixes.
 
     const result = await harness.performAction<{
       operationId: string;
-      issue: { title: string; description: string | null; billingCode: string | null; originId: string | null };
+      issue: Issue;
     }>("create-operation", {
       companyId: COMPANY_ID,
       operationType: "lint",
       title: "Run LLM Wiki lint",
       prompt: "Audit wiki structure.",
       spaceSlug: created.space.slug,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(result.issue.title).toBe("Run LLM Wiki lint [space: Research Space / research-space]");
-    expect(result.issue.description).toContain("Space: Research Space (research-space)");
-    expect(result.issue.description).toContain("Space root: wiki-root/spaces/research-space");
-    expect(result.issue.description).toContain("Pass wikiId `default` and spaceSlug `research-space`");
-    expect(result.issue.description).toContain("Manual ingest, query, lint, index, and file-as-page operations follow the named destination space");
-    expect(result.issue.billingCode).toBe("plugin-llm-wiki:default:research-space");
-    expect(result.issue.originId).toBe(`wiki:default:space:research-space:operation:${result.operationId}`);
+    expect(result.issue.request).toContain("Space: Research Space (research-space)");
+    expect(result.issue.request).toContain("Space root: wiki-root/spaces/research-space");
+    expect(result.issue.request).toContain("Pass wikiId `default` and spaceSlug `research-space`");
+    expect(result.issue.request).toContain("Manual ingest, query, lint, index, and file-as-page operations follow the named destination space");
+    expect(result.issue).toMatchObject({
+      creatorKind: "plugin",
+      ownerKind: "agent",
+      ownerAgentId: wikiMaintainerAgent().id,
+    });
     const operationInsert = harness.dbExecutes.find((execute) =>
       execute.sql.includes("wiki_operations") && execute.params?.[0] === result.operationId);
     const metadata = JSON.parse(String(operationInsert?.params?.[8]));
@@ -3629,11 +3496,11 @@ Duplicate headings receive stable suffixes.
     const selectedAgent = await harness.performAction<{ source: string; agentId: string }>("select-managed-agent", {
       companyId: COMPANY_ID,
       agentId: agent.id,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
     const selectedProject = await harness.performAction<{ source: string; projectId: string }>("select-managed-project", {
       companyId: COMPANY_ID,
       projectId: project.id,
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
     expect(selectedAgent).toMatchObject({ source: "selected", agentId: agent.id });
     expect(selectedProject).toMatchObject({ source: "selected", projectId: project.id });
@@ -3651,72 +3518,95 @@ Duplicate headings receive stable suffixes.
       return [];
     };
 
-    const result = await harness.performAction<{
-      issue: { assigneeAgentId: string | null; projectId: string | null };
-    }>("create-operation", {
+    const result = await harness.performAction<{ issue: Issue }>("create-operation", {
       companyId: COMPANY_ID,
       operationType: "lint",
       title: "Lint selected wiki",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
-    expect(result.issue.assigneeAgentId).toBe(agent.id);
+    expect(result.issue.ownerAgentId).toBe(agent.id);
     expect(result.issue.projectId).toBe(project.id);
   });
 
-  it("starts query sessions, records run ids, and forwards session events to plugin streams", async () => {
+  it("starts a callback-bound query issue and acknowledges durable creator delivery", async () => {
     const harness = createTestHarness({ manifest });
     harness.seed({ agents: [wikiMaintainerAgent()] });
-    const streamEvents: unknown[] = [];
-    harness.ctx.streams.emit = (_channel, event) => {
-      streamEvents.push(event);
+    const creatorCallbacks: Array<Parameters<typeof harness.ctx.issues.registerCreatorCallback>[1]> = [];
+    const registerCreatorCallback = harness.ctx.issues.registerCreatorCallback.bind(harness.ctx.issues);
+    harness.ctx.issues.registerCreatorCallback = async (registration, handler) => {
+      creatorCallbacks.push(handler);
+      await registerCreatorCallback(registration, handler);
     };
     await plugin.definition.setup(harness.ctx);
 
     const result = await harness.performAction<{
+      status: string;
       operationId: string;
-      querySessionId: string;
-      sessionId: string;
-      runId: string;
-      channel: string;
+      issue: Issue;
     }>("start-query", {
       companyId: COMPANY_ID,
       question: "Which files own wiki behavior?",
-    });
+    }, SYSTEM_ACTION_OPTIONS);
 
-    expect(result.querySessionId).toBe(result.operationId);
-    expect(result.channel).toBe(`llm-wiki:query:${result.operationId}`);
-    expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_query_sessions"))).toBe(true);
-    expect(harness.dbExecutes.some((execute) => execute.sql.includes("run_ids"))).toBe(true);
-
-    harness.simulateSessionEvent(result.sessionId, {
-      runId: result.runId,
-      seq: 1,
-      eventType: "chunk",
-      stream: "stdout",
-      message: "Keep wiki behavior in the plugin.",
-      payload: null,
+    expect(result.status).toBe("queued");
+    expect(result.issue).toMatchObject({
+      creatorKind: "plugin",
+      creatorCallbackKey: "wiki-operation",
+      creatorCallbackVersion: "1",
+      ownerKind: "agent",
+      ownerAgentId: wikiMaintainerAgent().id,
+      lifecycleStatus: "open",
     });
-    harness.simulateSessionEvent(result.sessionId, {
-      runId: result.runId,
-      seq: 2,
-      eventType: "done",
-      stream: "system",
-      message: "Run completed",
-      payload: null,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(result.issue.request).toContain("Question: Which files own wiki behavior?");
+    expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_operations"))).toBe(true);
 
-    expect(streamEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "query.started", operationId: result.operationId }),
-      expect.objectContaining({ type: "agent.event", message: "Keep wiki behavior in the plugin." }),
-      expect.objectContaining({ type: "query.done", answer: "Keep wiki behavior in the plugin." }),
-    ]));
+    const creatorCallback = creatorCallbacks[0];
+    if (!creatorCallback) throw new Error("Wiki creator callback was not registered");
+    const progressAcknowledgement = await creatorCallback({
+      deliveryId: "delivery-progress",
+      issueId: result.issue.id,
+      companyId: COMPANY_ID,
+      ownershipEpoch: result.issue.ownershipEpoch,
+      updateId: "update-progress",
+      commentId: "comment-progress",
+      message: "Indexing is still in progress.",
+      status: null,
+      disposition: null,
+      committedSequence: 0,
+    });
+    expect(progressAcknowledgement).toEqual({
+      deliveryId: "delivery-progress",
+      accepted: true,
+    });
     expect(harness.dbExecutes.some((execute) =>
-      execute.sql.includes("wiki_query_sessions") && execute.params?.includes("completed"),
+      execute.sql.includes("COALESCE($3, status)")
+      && execute.params?.[2] === null
+      && String(execute.params?.[3]).includes('"commentId":"comment-progress"'),
+    )).toBe(true);
+
+    const acknowledgement = await creatorCallback({
+      deliveryId: "delivery-1",
+      issueId: result.issue.id,
+      companyId: COMPANY_ID,
+      ownershipEpoch: result.issue.ownershipEpoch,
+      updateId: "update-1",
+      commentId: "comment-1",
+      message: "The plugin boundary is documented in wiki/concepts/plugin-boundaries.md.",
+      status: "done",
+      disposition: {
+        message: "Answered with durable citations.",
+      },
+      committedSequence: 1,
+    });
+    expect(acknowledgement).toEqual({ deliveryId: "delivery-1", accepted: true });
+    expect(harness.dbExecutes.some((execute) =>
+      execute.sql.includes("wiki_operations")
+      && execute.params?.includes("done")
+      && String(execute.params?.[3]).includes('"commentId":"comment-1"'),
     )).toBe(true);
   });
 
-  it("files a streamed query answer as a page through a hidden file-as-page operation", async () => {
+  it("queues reviewed query text as an ordinary file-as-page issue", async () => {
     const harness = createTestHarness({ manifest });
     harness.seed({ agents: [wikiMaintainerAgent()] });
     const writes: Array<{ path: string; contents: string }> = [];
@@ -3726,23 +3616,26 @@ Duplicate headings receive stable suffixes.
     };
     await plugin.definition.setup(harness.ctx);
 
-    const result = await harness.performAction<{ path: string; operationId: string; page: { revisionId: string } }>(
+    const result = await harness.performAction<{ path: string; operationId: string; issue: Issue }>(
       "file-as-page",
       {
         companyId: COMPANY_ID,
-        querySessionId: "33333333-3333-4333-8333-333333333333",
         question: "Where should wiki code live?",
         answer: "Wiki-specific code lives in the standalone plugin package.",
         path: "wiki/concepts/plugin-boundaries.md",
         title: "Plugin Boundaries",
-      },
+      }, SYSTEM_ACTION_OPTIONS
     );
 
     expect(result.path).toBe("wiki/concepts/plugin-boundaries.md");
-    expect(writes[0]).toMatchObject({ path: "wiki/concepts/plugin-boundaries.md" });
-    expect(writes[0]?.contents).toContain("Wiki-specific code lives in the standalone plugin package.");
+    expect(writes).toHaveLength(0);
+    expect(result.issue).toMatchObject({
+      creatorKind: "plugin",
+      ownerKind: "agent",
+      ownerAgentId: wikiMaintainerAgent().id,
+    });
+    expect(result.issue.request).toContain("Wiki-specific code lives in the standalone plugin package.");
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_operations"))).toBe(true);
-    expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_page_revisions"))).toBe(true);
-    expect(harness.dbExecutes.some((execute) => execute.sql.includes("filed_outputs"))).toBe(true);
+    expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_page_revisions"))).toBe(false);
   });
 });

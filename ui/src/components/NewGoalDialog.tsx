@@ -40,7 +40,7 @@ export function NewGoalDialog() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("planned");
-  const [level, setLevel] = useState("task");
+  const [level, setLevel] = useState("issue");
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
 
@@ -79,7 +79,7 @@ export function NewGoalDialog() {
     setTitle("");
     setDescription("");
     setStatus("planned");
-    setLevel("task");
+    setLevel("issue");
     setParentId("");
     setExpanded(false);
   }

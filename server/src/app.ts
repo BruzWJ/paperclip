@@ -3,22 +3,28 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import type { DeploymentExposure } from "@paperclipai/shared";
 import type { InspectDatabaseBackupHealthOptions } from "./services/database-backup-health.js";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
-import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
 import { applyTrustProxy, parseTrustProxyEnv } from "./middleware/trust-proxy.js";
+import {
+  createRequestAuthorityBoundary,
+  createRequestAuthorityPolicy,
+  type RequestAuthorityBoundary,
+  type TrustProxyPredicate,
+} from "./http/request-authority.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { companySkillRoutes } from "./routes/company-skills.js";
 import { companySkillPolicyRoutes } from "./routes/company-skill-policy.js";
+import { changeConsentRoutes } from "./routes/change-consents.js";
 import { inboxAgentPolicyRoutes } from "./routes/inbox-agent-policy.js";
-import { builtInAgentRoutes } from "./routes/built-in-agents.js";
 import { folderRoutes } from "./routes/folders.js";
 import { summarySlotRoutes } from "./routes/summary-slots.js";
+import { sessionCompactionRoutes } from "./routes/session-compactions.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -38,6 +44,7 @@ import { toolAccessRoutes } from "./routes/tool-access.js";
 import { smokeLabRoutes } from "./routes/smoke-lab.js";
 import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
+import { runRoutes } from "./routes/runs.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionTrainingRoutes } from "./routes/decision-training.js";
@@ -53,11 +60,11 @@ import {
   type InstanceDatabaseBackupService,
 } from "./routes/instance-database-backups.js";
 import { llmRoutes } from "./routes/llms.js";
-import { authRoutes } from "./routes/auth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { mcpGatewayProtocolRoutes, toolGatewayRoutes } from "./routes/tool-gateway.js";
+import { runToolsRoutes } from "./routes/run-tools.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
@@ -68,21 +75,44 @@ import { createPluginWorkerManager, type PluginWorkerManager } from "./services/
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
 import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
-import { createToolGatewayService } from "./services/tool-gateway.js";
+import {
+  createToolGatewayService,
+  type ToolGatewayService,
+} from "./services/tool-gateway.js";
+import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
+import type { IssueExecutionRunService } from "./services/issue-execution-run-service.js";
 import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
 import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
-import { buildHostServices, flushPluginLogBuffer } from "./services/plugin-host-services.js";
+import {
+  buildHostServices,
+  flushPluginLogBuffer,
+  type PluginRunIssueContextReader,
+} from "./services/plugin-host-services.js";
+import { createPluginIssueControlPlane } from "./services/plugin-issue-control-plane.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
 import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
+import type { OrdinaryIssueRuntime } from "./services/ordinary-issue-runtime.js";
+import type { PostgresIssueSessionCompactionRuntime } from "./services/issue-session-compaction-postgres.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
 import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
+import { denyGenericAgentRest } from "./routes/compiled-interface-only.js";
+import { rejectRunInterfaceBearerFromGenericApi } from "./middleware/prompt-capability-boundary.js";
+import type { IssueSessionStore } from "./services/issue-session/store.js";
+import type { IssueExecutionCancellationService } from "./services/issue-execution-cancellation.js";
+import {
+  environmentRunOrchestrator,
+  type EnvironmentRunOrchestrator,
+} from "./services/environment-run-orchestrator.js";
+import {
+  createPostgresAdapterConfigurationPreflightService,
+} from "./services/adapter-configuration-preflight.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
@@ -131,16 +161,6 @@ export function shouldServeViteDevHtml(req: ExpressRequest): boolean {
   return req.accepts(["html"]) === "html";
 }
 
-export function shouldEnablePrivateHostnameGuard(opts: {
-  deploymentMode: DeploymentMode;
-  deploymentExposure: DeploymentExposure;
-}): boolean {
-  return (
-    opts.deploymentExposure === "private" &&
-    (opts.deploymentMode === "local_trusted" || opts.deploymentMode === "authenticated")
-  );
-}
-
 export async function createApp(
   db: Db,
   opts: {
@@ -157,8 +177,8 @@ export async function createApp(
     };
     databaseBackupService?: InstanceDatabaseBackupService;
     databaseBackupHealth?: InspectDatabaseBackupHealthOptions;
-    deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
+    canonicalPublicUrl?: string;
     allowedHostnames: string[];
     bindHost: string;
     authReady: boolean;
@@ -168,11 +188,43 @@ export async function createApp(
     localPluginDir?: string;
     pluginMigrationDb?: Db;
     pluginWorkerManager?: PluginWorkerManager;
-    betterAuthHandler?: express.RequestHandler;
-    resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    betterAuthHandler: express.RequestHandler;
+    resolveSession: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    promptCapabilityGateway?: PromptCapabilityGateway;
+    pluginRunIssueContextReader?: PluginRunIssueContextReader;
+    issueSessionStore?: IssueSessionStore;
+    bindPromptCapabilityCompanyTools?: (
+      execute: ToolGatewayService["executePromptCapabilityTool"],
+    ) => void;
+    ordinaryIssueRuntime: OrdinaryIssueRuntime;
+    issueExecutionRunService: Pick<
+      IssueExecutionRunService,
+      "readJoinedRunDetail"
+    >;
+    issueExecutionCancellation: Pick<
+      IssueExecutionCancellationService,
+      | "suspendBudgetScopeWork"
+      | "resumeBudgetScopeWork"
+      | "cancelRun"
+      | "requestAgentCancellationsInTransaction"
+      | "reconcileRequestedAgentCancellations"
+      | "requestAgentSuspensionsInTransaction"
+      | "reconcileRequestedAgentSuspensions"
+      | "releaseAgentSuspensionsInTransaction"
+    >;
+    issueSessionCompactionRuntime?: PostgresIssueSessionCompactionRuntime;
+    adapterReadinessEnvironmentOrchestrator?: Pick<
+      EnvironmentRunOrchestrator,
+      "acquireExecutionTargetForRun"
+    >;
   },
 ) {
   const app = express();
+  const ordinaryIssues = opts.ordinaryIssueRuntime;
+  const pluginIssueControlPlane = createPluginIssueControlPlane(
+    db,
+    ordinaryIssues,
+  );
   app.locals.paperclipDb = db;
   const captureRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
     (req as unknown as { rawBody: Buffer }).rawBody = buf;
@@ -182,6 +234,18 @@ export async function createApp(
   // Default is unset → Express trusts nothing, which is the only safe choice
   // when the server may be reachable without a known reverse proxy in front.
   applyTrustProxy(app, parseTrustProxyEnv(process.env.TRUST_PROXY));
+  const requestAuthorityBoundary = createRequestAuthorityBoundary({
+    trustProxy: app.get("trust proxy fn") as TrustProxyPredicate,
+    policy: createRequestAuthorityPolicy({
+      deploymentExposure: opts.deploymentExposure,
+      canonicalPublicUrl: opts.canonicalPublicUrl,
+      allowedHostnames: opts.allowedHostnames,
+      bindHost: opts.bindHost,
+    }),
+  });
+  (app.locals as { paperclipRequestAuthorityBoundary?: RequestAuthorityBoundary })
+    .paperclipRequestAuthorityBoundary = requestAuthorityBoundary;
+  app.use(requestAuthorityBoundary.middleware);
 
   app.use(COMPANY_IMPORT_API_PATH, express.json({
     limit: PORTABLE_JSON_BODY_LIMIT,
@@ -193,35 +257,36 @@ export async function createApp(
   }));
   app.use("/api", apiCompression());
   app.use(httpLogger);
-  const privateHostnameGateEnabled = shouldEnablePrivateHostnameGuard({
-    deploymentMode: opts.deploymentMode,
-    deploymentExposure: opts.deploymentExposure,
-  });
-  const privateHostnameAllowSet = resolvePrivateHostnameAllowSet({
-    allowedHostnames: opts.allowedHostnames,
-    bindHost: opts.bindHost,
-  });
-  app.use(
-    privateHostnameGuard({
-      enabled: privateHostnameGateEnabled,
-      allowedHostnames: opts.allowedHostnames,
-      bindHost: opts.bindHost,
-    }),
-  );
+  // Prompt-capability authentication is intentionally isolated from the
+  // generic API actor middleware and from named-gateway credentials.
+  if (opts.promptCapabilityGateway) {
+    app.use("/api", runToolsRoutes(opts.promptCapabilityGateway));
+  }
+  app.use("/api", rejectRunInterfaceBearerFromGenericApi());
   app.use(
     actorMiddleware(db, {
-      deploymentMode: opts.deploymentMode,
       resolveSession: opts.resolveSession,
     }),
   );
-  app.use("/api/auth", authRoutes(db));
-  if (opts.betterAuthHandler) {
-    app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
-  }
+  app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
+  // The run interface is mounted before generic actor resolution. Any exact
+  // runtime-agent actor reaching this point is categorically denied from the
+  // ambient REST surface.
+  app.use("/api", denyGenericAgentRest("REST"));
   app.use(llmRoutes(db));
 
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = opts.pluginWorkerManager ?? createPluginWorkerManager();
+  const adapterReadinessEnvironmentOrchestrator =
+    opts.adapterReadinessEnvironmentOrchestrator ??
+    environmentRunOrchestrator(db, {
+      pluginWorkerManager: workerManager,
+    });
+  const adapterConfigurationPreflight =
+    createPostgresAdapterConfigurationPreflightService(db, {
+      environmentOrchestrator:
+        adapterReadinessEnvironmentOrchestrator,
+    });
 
   // Mount API routes
   const api = Router();
@@ -229,7 +294,6 @@ export async function createApp(
   api.use(
     "/health",
     healthRoutes(db, {
-      deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
       companyDeletionEnabled: opts.companyDeletionEnabled,
@@ -237,35 +301,67 @@ export async function createApp(
     }),
   );
   api.use(openApiRoutes());
-  api.use("/companies", companyRoutes(db, opts.storageService));
+  api.use("/companies", companyRoutes(db, opts.storageService, ordinaryIssues));
   api.use(llmRoutes(db));
   api.use(folderRoutes(db));
-  api.use(companySkillRoutes(db));
+  api.use(companySkillRoutes(db, {
+    ordinaryIssues,
+    issueExecutionCancellation: opts.issueExecutionCancellation,
+  }));
   api.use(companySkillPolicyRoutes(db));
+  api.use(changeConsentRoutes(db));
   api.use(inboxAgentPolicyRoutes(db));
-  api.use(builtInAgentRoutes(db));
-  api.use(summarySlotRoutes(db));
-  api.use(teamsCatalogRoutes(db));
-  api.use(agentRoutes(db, { pluginWorkerManager: workerManager }));
+  api.use(summarySlotRoutes(db, { ordinaryIssues }));
+  if (opts.issueSessionCompactionRuntime) {
+    api.use(sessionCompactionRoutes(db, opts.issueSessionCompactionRuntime));
+  }
+  api.use(teamsCatalogRoutes(db, ordinaryIssues));
+  api.use(
+    agentRoutes(db, {
+      pluginWorkerManager: workerManager,
+      issueSessionStore: opts.issueSessionStore,
+      ordinaryIssues,
+      issueExecutionCancellation: opts.issueExecutionCancellation,
+    }),
+  );
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
-  api.use(issueTreeControlRoutes(db));
+  api.use(issueTreeControlRoutes(
+    db,
+    opts.issueExecutionCancellation,
+  ));
   api.use(fileResourceRoutes(db));
-  api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db));
+  api.use(routineRoutes(db, { ordinaryIssues }));
+  api.use(pipelineRoutes(db, { ordinaryIssues }));
   api.use(environmentRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(goalRoutes(db));
-  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
-  api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
+  api.use(
+    boardChatRoutes(db, { ordinaryIssues }),
+  );
+  api.use(approvalRoutes(db, {
+    pluginWorkerManager: workerManager,
+    ordinaryIssues,
+    issueExecutionCancellation: opts.issueExecutionCancellation,
+  }));
   api.use(secretRoutes(db));
   const trustedLocalStdioRuntimeHost =
     process.env.PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST
     ?? process.env.PAPERCLIP_TOOL_RUNTIME_TRUSTED_HOST
     ?? null;
-  api.use(costRoutes(db, { pluginWorkerManager: workerManager }));
+  api.use(costRoutes(db, {
+    pluginWorkerManager: workerManager,
+    issueExecutionCancellation: opts.issueExecutionCancellation,
+  }));
   api.use(activityRoutes(db));
+  api.use(
+    runRoutes(
+      db,
+      opts.issueExecutionRunService,
+      adapterConfigurationPreflight,
+    ),
+  );
   api.use(dashboardRoutes(db));
   api.use(attentionRoutes(db));
   api.use(decisionTrainingRoutes(db));
@@ -282,7 +378,16 @@ export async function createApp(
   const eventBus = createPluginEventBus();
   setPluginEventBus(eventBus);
   const jobStore = pluginJobStore(db);
-  const lifecycle = pluginLifecycleManager(db, { workerManager });
+  const loader = pluginLoader(db, {
+    localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
+    migrationDb: opts.pluginMigrationDb,
+  });
+  const lifecycle = pluginLifecycleManager(db, {
+    loader,
+    workerManager,
+    dispatchRef: ordinaryIssues.dispatchRef,
+    issueExecutionCancellation: opts.issueExecutionCancellation,
+  });
   const scheduler = createPluginJobScheduler({
     db,
     jobStore,
@@ -293,29 +398,63 @@ export async function createApp(
     lifecycleManager: lifecycle,
     db,
   });
+  loader.bindRuntimeServices({
+    workerManager,
+    eventBus,
+    jobScheduler: scheduler,
+    jobStore,
+    toolDispatcher,
+    lifecycleManager: lifecycle,
+    instanceInfo: {
+      instanceId: opts.instanceId ?? "default",
+      hostVersion: opts.hostVersion ?? "0.0.0",
+      deploymentExposure: opts.deploymentExposure,
+    },
+    buildHostHandlers: (pluginId, manifest) => {
+      const notifyWorker = (method: string, params: unknown) => {
+        const handle = workerManager.getWorker(pluginId);
+        if (handle) handle.notify(method, params);
+      };
+      const services = buildHostServices(db, pluginId, manifest.id, eventBus, notifyWorker, {
+        pluginWorkerManager: workerManager,
+        manifest,
+        pluginIssueControlPlane,
+        pluginRunIssueContextReader: opts.pluginRunIssueContextReader,
+        ordinaryIssues,
+        issueExecutionCancellation: opts.issueExecutionCancellation,
+      });
+      hostServicesDisposers.set(pluginId, () => services.dispose());
+      return createHostClientHandlers({
+        pluginId,
+        capabilities: manifest.capabilities,
+        services,
+      });
+    },
+  });
   const toolGateway = createToolGatewayService(db, {
     pluginToolDispatcher: toolDispatcher,
-    deploymentMode: opts.deploymentMode,
     deploymentExposure: opts.deploymentExposure,
     trustedLocalStdioRuntimeHost,
   });
+  opts.bindPromptCapabilityCompanyTools?.(
+    toolGateway.executePromptCapabilityTool.bind(toolGateway),
+  );
   // Issue routes are intentionally mounted after the gateway is constructed because
   // issue approval endpoints delegate to it. The intervening routers use distinct
   // route prefixes, so this dependency does not change issue-route precedence.
   api.use(issueRoutes(db, opts.storageService, {
     feedbackExportService: opts.feedbackExportService,
     pluginWorkerManager: workerManager,
-    approveToolActionRequest: (input) => toolGateway.approveActionRequest(input),
+    ordinaryIssues,
   }));
   app.use(mcpGatewayProtocolRoutes(toolGateway));
   api.use(toolAccessRoutes(db, {
-    deploymentMode: opts.deploymentMode,
     deploymentExposure: opts.deploymentExposure,
+    canonicalPublicUrl: opts.canonicalPublicUrl,
     trustedLocalStdioRuntimeHost,
     toolGateway,
   }));
   api.use(smokeLabRoutes(db, {
-    deploymentMode: opts.deploymentMode,
     deploymentExposure: opts.deploymentExposure,
   }));
   const jobCoordinator = createPluginJobCoordinator({
@@ -326,43 +465,6 @@ export async function createApp(
   });
   const hostServiceCleanup = createPluginHostServiceCleanup(lifecycle, hostServicesDisposers);
   let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null = null;
-  const loader = pluginLoader(
-    db,
-    {
-      localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
-      migrationDb: opts.pluginMigrationDb,
-    },
-    {
-      workerManager,
-      eventBus,
-      jobScheduler: scheduler,
-      jobStore,
-      toolDispatcher,
-      lifecycleManager: lifecycle,
-      instanceInfo: {
-        instanceId: opts.instanceId ?? "default",
-        hostVersion: opts.hostVersion ?? "0.0.0",
-        deploymentMode: opts.deploymentMode,
-        deploymentExposure: opts.deploymentExposure,
-      },
-      buildHostHandlers: (pluginId, manifest) => {
-        const notifyWorker = (method: string, params: unknown) => {
-          const handle = workerManager.getWorker(pluginId);
-          if (handle) handle.notify(method, params);
-        };
-        const services = buildHostServices(db, pluginId, manifest.id, eventBus, notifyWorker, {
-          pluginWorkerManager: workerManager,
-          manifest,
-        });
-        hostServicesDisposers.set(pluginId, () => services.dispose());
-        return createHostClientHandlers({
-          pluginId,
-          capabilities: manifest.capabilities,
-          services,
-        });
-      },
-    },
-  );
   api.use(
     toolGatewayRoutes(db, toolGateway),
   );
@@ -370,20 +472,17 @@ export async function createApp(
     pluginRoutes(
       db,
       loader,
+      lifecycle,
       { scheduler, jobStore },
       { workerManager },
       { toolDispatcher },
       { workerManager },
-      { toolGateway },
     ),
   );
   api.use(adapterRoutes());
   api.use(
     accessRoutes(db, {
-      deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
-      bindHost: opts.bindHost,
-      allowedHostnames: opts.allowedHostnames,
     }),
   );
   app.use("/api", api);
@@ -465,7 +564,9 @@ export async function createApp(
           port: hmrPort,
           clientPort: hmrPort,
         },
-        allowedHosts: privateHostnameGateEnabled ? Array.from(privateHostnameAllowSet) : undefined,
+        allowedHosts: opts.deploymentExposure === "private"
+          ? Array.from(requestAuthorityBoundary.policy.privateAllowedHostnames)
+          : undefined,
       },
     });
     viteHtmlRenderer = createCachedViteHtmlRenderer({

@@ -4,9 +4,7 @@ import { buildSandboxCrManifest } from "../../src/sandbox-cr-builder.js";
 const baseInput = {
   namespace: "paperclip-acme",
   sandboxName: "pc-01h00000000000000000000000",
-  adapterType: "claude_local",
-  image: "ghcr.io/paperclipai/agent-runtime-claude:v1",
-  envSecretName: "pc-01h00000000000000000000000-env",
+  image: "registry.example/provider-runtime:v1",
   serviceAccountName: "paperclip-tenant-sa",
   labels: { "paperclip.io/run-id": "r1" },
   resources: {
@@ -51,7 +49,7 @@ describe("buildSandboxCrManifest", () => {
     ]);
   });
 
-  it("applies the same security baseline as Job backend (non-root, drop ALL, RO rootFS, seccomp)", () => {
+  it("applies the required security baseline (non-root, drop ALL, RO rootFS, seccomp)", () => {
     const cr = buildSandboxCrManifest(baseInput);
     const podSec = cr.spec.podTemplate.spec.securityContext;
     expect(podSec.runAsNonRoot).toBe(true);
@@ -90,10 +88,11 @@ describe("buildSandboxCrManifest", () => {
     ).toBe(true);
   });
 
-  it("envFrom references the per-run secret", () => {
+  it("does not inherit provider configuration through a pod-level secret", () => {
     const cr = buildSandboxCrManifest(baseInput);
-    const envFrom = cr.spec.podTemplate.spec.containers[0].envFrom;
-    expect(envFrom[0].secretRef.name).toBe(baseInput.envSecretName);
+    const container = cr.spec.podTemplate.spec.containers[0];
+    expect(container.envFrom).toBeUndefined();
+    expect(container.env).toEqual([{ name: "HOME", value: "/home/paperclip" }]);
   });
 
   it("applies runtimeClassName when set", () => {

@@ -3,16 +3,18 @@ title: Secrets Management
 summary: Master key, encryption, and strict mode
 ---
 
-Paperclip encrypts secrets at rest using a local master key. Agent environment variables that contain sensitive values (API keys, tokens) are stored as encrypted secret references.
+Paperclip encrypts secrets at rest using a local master key. Project environment
+variables that contain sensitive values are stored as encrypted secret
+references.
 
 ## Custody Boundaries
 
-Paperclip protects secret values up to the moment they are handed to an agent
-or workload:
+Paperclip protects secret values up to the moment they are handed to a run
+workload:
 
 - Storage: values are encrypted at rest by the active provider. The local
   provider keeps them encrypted with a key that never leaves the host.
-- Transport: values are decrypted server-side and injected into the agent
+- Transport: values are decrypted server-side and injected into the run
   process environment, SSH command env, sandbox driver, or HTTP request
   immediately before the call. Paperclip does not return decrypted values to
   the board UI.
@@ -20,24 +22,21 @@ or workload:
   provider id, consumer, outcome) without the value or provider credentials.
 
 Once a value reaches the consuming process, Paperclip can no longer guarantee
-secrecy. The agent (or sandbox, or remote host) can read the value, write it to
-its own logs or transcript, or pass it to downstream tools. Treat any secret
-you bind to an agent as exposed to that agent. Limit blast radius with bindings
-(only bind what each agent needs), short-lived provider credentials where the
-provider supports them, and rotation when an agent transcript or downstream
-system might have captured a value.
+secrecy. The sandbox or remote host can read the value, write it to logs, or
+pass it to downstream tools. Limit blast radius with project-scoped bindings,
+short-lived credentials where the provider supports them, and rotation when a
+run or downstream system might have captured a value.
 
 ## Using Secrets In Runs
 
 Creating a company secret does not automatically create an environment variable.
-You use a secret by binding it into an agent, project, environment, or plugin
+You use a secret by binding it into a project, environment, or plugin
 configuration field that supports secret references.
 
-For agent and project environment variables:
+For project environment variables:
 
 1. Create or link the secret in `Company Settings > Secrets`.
-2. Open the agent's `Environment variables` field, or the project's `Env`
-   field.
+2. Open the project's `Env` field.
 3. Add the environment variable key the process expects, such as `GH_TOKEN` or
    `OPENAI_API_KEY`.
 4. Set the row source to `Secret`, select the stored secret, and choose either
@@ -45,15 +44,14 @@ For agent and project environment variables:
 
 At runtime, Paperclip resolves the selected secret server-side and injects the
 resolved value under the env key from the binding row. The stored secret name
-can be human-readable; the binding key is what the agent process receives.
+can be human-readable; the binding key is what the run process receives.
 
-Project env applies to every issue run in that project. When a project env key
-matches an agent env key, the project value wins before Paperclip injects its
-own `PAPERCLIP_*` runtime variables.
+Project env applies to every issue run in that project. Paperclip injects its
+own reserved `PAPERCLIP_*` runtime variables separately.
 
 ## User-Specific Secrets
 
-User-specific secrets let a shared agent or project declare a slot such as
+User-specific secrets let a project or plugin declare a slot such as
 `github_api_token`, then resolve the value owned by the run's responsible user
 at dispatch time. The environment binding stores only the definition key:
 
@@ -215,9 +213,9 @@ When strict mode is enabled, sensitive env keys (matching `*_API_KEY`, `*_TOKEN`
 PAPERCLIP_SECRETS_STRICT_MODE=true
 ```
 
-Recommended for any deployment beyond local trusted.
+Recommended whenever the Paperclip host is shared or remotely reachable.
 
-Authenticated deployments default strict mode on unless explicitly overridden by
+Public deployments default strict mode on unless explicitly overridden by
 configuration or `PAPERCLIP_SECRETS_STRICT_MODE=false`.
 
 ## External References
@@ -463,23 +461,6 @@ Paperclip secrets. Bootstrap material belongs in infrastructure IAM/workload
 identity, the process environment, an AWS profile, or the orchestrator secret
 store.
 
-## Migrating Inline Secrets
-
-If you have existing agents with inline API keys in their config, migrate them to encrypted secret refs:
-
-```sh
-pnpm paperclipai secrets migrate-inline-env --company-id <company-id>
-pnpm paperclipai secrets migrate-inline-env --company-id <company-id> --apply
-
-# low-level script for direct database maintenance
-pnpm secrets:migrate-inline-env         # dry run
-pnpm secrets:migrate-inline-env --apply # apply migration
-```
-
-Use the CLI command for normal operations because it goes through the Paperclip
-API, creates or rotates secret records, and updates agent env bindings with
-audit logging.
-
 ## Portable Declarations
 
 Company exports include only environment declarations. They do not include
@@ -495,9 +476,9 @@ For hosted providers such as AWS Secrets Manager, the hosted provider remains
 the value custodian; Paperclip stores metadata and provider version references,
 not provider credentials or plaintext secret values.
 
-## Secret References in Agent Config
+## Secret References in Project Environment
 
-Agent environment variables use secret references:
+Project environment variables use secret references:
 
 ```json
 {
@@ -511,4 +492,5 @@ Agent environment variables use secret references:
 }
 ```
 
-The server resolves and decrypts these at runtime, injecting the real value into the agent process environment.
+The server resolves and decrypts these at runtime, injecting the real value
+into the run process environment.

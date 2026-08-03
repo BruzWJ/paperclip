@@ -228,7 +228,7 @@ export function RoutineRunVariablesDialog({
       ).map((agent) => ({
         id: agent.id,
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
     [agents, recentAssigneeIds],
   );

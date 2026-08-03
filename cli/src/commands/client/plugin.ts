@@ -35,7 +35,6 @@ interface PluginRecord {
 interface TargetHealth {
   status?: string;
   version?: string;
-  deploymentMode?: string;
   deploymentExposure?: string;
 }
 
@@ -98,7 +97,7 @@ interface PluginCompanyOptions extends PluginJsonOptions {
 function requireCompanyId(ctx: { companyId?: string }): string {
   if (!ctx.companyId) {
     throw new Error(
-      "Company ID is required. Pass --company-id, set PAPERCLIP_COMPANY_ID, or set context profile companyId via `paperclipai context set`.",
+      "Company ID is required. Pass --company-id, set PAPERCLIP_BOARD_COMPANY_ID, or set context profile companyId via `paperclipai context set`.",
     );
   }
   return ctx.companyId;
@@ -176,7 +175,7 @@ export function buildPluginInstallRequest(
 
 export function renderLocalPluginInstallHint(packagePath: string): string {
   return [
-    pc.dim("Local plugin installs run trusted local code from your machine."),
+    pc.dim("Plugins installed from local paths execute code from your machine."),
     pc.dim(`Keep ${pc.cyan("pnpm dev")} running in ${packagePath}; Paperclip watches rebuilt dist output and reloads the plugin worker.`),
   ].join("\n");
 }
@@ -219,7 +218,7 @@ export function formatTargetDiagnostics(diag: TargetDiagnostics): string {
     lines.push(pc.yellow(`  health: unreachable${diag.error ? ` (${diag.error.split("\n")[0]})` : ""}`));
     lines.push(
       pc.dim(
-        `  Verify the right instance is running, then pass ${pc.cyan("--api-base <url>")} or set ${pc.cyan("PAPERCLIP_API_URL")} if it lives elsewhere.`,
+        `  Verify the right instance is running, then pass ${pc.cyan("--api-base <url>")} or set ${pc.cyan("PAPERCLIP_BOARD_API_URL")} if it lives elsewhere.`,
       ),
     );
     return lines.join("\n");
@@ -229,7 +228,6 @@ export function formatTargetDiagnostics(diag: TargetDiagnostics): string {
   const detailParts: string[] = [];
   if (health.status) detailParts.push(`status=${health.status}`);
   if (health.version) detailParts.push(`version=${health.version}`);
-  if (health.deploymentMode) detailParts.push(`mode=${health.deploymentMode}`);
   if (health.deploymentExposure) detailParts.push(`exposure=${health.deploymentExposure}`);
 
   lines.push(
@@ -510,9 +508,9 @@ export function registerPluginCommands(program: Command): void {
       .command("uninstall <pluginKey>")
       .description(
         "Uninstall a plugin by its plugin key or database ID.\n" +
-          "  Use --force to hard-purge all state and config.",
+          "  Use --force to also purge operational state, config, jobs, webhooks, and custom database objects.",
       )
-      .option("--force", "Purge all plugin state and config (hard delete)", false)
+      .option("--force", "Also purge operational plugin data", false)
       .action(async (pluginKey: string, opts: PluginUninstallOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -529,7 +527,7 @@ export function registerPluginCommands(program: Command): void {
             );
           }
 
-          const result = await ctx.api.delete<PluginRecord | null>(
+          const result = await ctx.api.delete<PluginRecord>(
             `/api/plugins/${encodeURIComponent(pluginKey)}${qs}`,
           );
 

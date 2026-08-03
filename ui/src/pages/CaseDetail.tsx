@@ -419,7 +419,8 @@ function CasePropertiesContent({
                     id: link.issue.id,
                     identifier: link.issue.identifier,
                     title: link.issue.title,
-                    status: issueReferenceStatus(link.issue.status),
+                    boardPresentationStatus:
+                      issueReferenceStatus(link.issue.boardPresentationStatus),
                   }}
                 />
               ))}
@@ -556,7 +557,6 @@ export function CaseDetail() {
         });
       },
       hideSystemDocuments: false,
-      legacyPlanDocument: null,
       annotations: {
         issueId: caseData.id,
         target: (documentKey: string) => ({ kind: "case" as const, caseId: caseData.id, documentKey }),

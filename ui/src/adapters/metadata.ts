@@ -1,20 +1,17 @@
 /**
  * Adapter metadata utilities — built on top of the display registry and UI adapter list.
  *
- * This module bridges the static display metadata with the dynamic adapter registry.
- * "Coming soon" status is derived from the display registry's `comingSoon` flag.
- * "Hidden" status comes from the disabled-adapter store (server-side toggle).
+ * This module bridges optional presentation metadata with the exact dynamic
+ * server catalog. Admission and labels always come from that catalog.
  */
 import type { UIAdapterModule } from "./types";
-import { listUIAdapters } from "./registry";
-import { isAdapterTypeHidden } from "./disabled-store";
-import { getAdapterLabel, getAdapterDisplay } from "./adapter-display-registry";
+import { findUIAdapter, listUIAdapters } from "./registry";
+import { getAdapterDisplay } from "./adapter-display-registry";
 
 export interface AdapterOptionMetadata {
   value: string;
   label: string;
   comingSoon: boolean;
-  hidden: boolean;
   experimental: boolean;
 }
 
@@ -24,24 +21,20 @@ export function listKnownAdapterTypes(): string[] {
 
 /**
  * Check whether an adapter type is enabled (not "coming soon").
- * Unknown types (external adapters) are always considered enabled.
+ * Only exact entries in the server-admitted UI catalog are enabled.
  */
 export function isEnabledAdapterType(type: string): boolean {
-  // Check display registry first — built-in adapters like process/http are
-  // intentionally withheld even though they're registered as UI adapters.
+  if (!findUIAdapter(type)) return false;
   if (getAdapterDisplay(type).comingSoon) return false;
-  // All other types (registered or external) are enabled.
   return true;
 }
 
 /**
  * Check whether an adapter type is a valid choice for new agent creation.
- * Includes all registered UI adapters (built-in + external) and
- * any non-"coming soon" adapter from the display registry.
+ * Includes only exact server-admitted, non-withheld adapter names.
  */
 export function isValidAdapterType(type: string): boolean {
-  if (getAdapterDisplay(type).comingSoon) return false;
-  return true;
+  return isEnabledAdapterType(type);
 }
 
 /**
@@ -50,7 +43,7 @@ export function isValidAdapterType(type: string): boolean {
  * dropdowns without being recommended during onboarding or setup flows.
  */
 export function isVisualAdapterChoice(type: string): boolean {
-  return !getAdapterDisplay(type).hideFromVisualSelection;
+  return isEnabledAdapterType(type) && !getAdapterDisplay(type).hideFromVisualSelection;
 }
 
 /**
@@ -61,21 +54,19 @@ export function listAdapterOptions(
   labelFor?: (type: string) => string,
   adapters: UIAdapterModule[] = listUIAdapters(),
 ): AdapterOptionMetadata[] {
-  const getLabel = labelFor ?? getAdapterLabel;
   return adapters.map((adapter) => ({
     value: adapter.type,
-    label: getLabel(adapter.type),
+    label: labelFor ? labelFor(adapter.type) : adapter.label,
     comingSoon: !!getAdapterDisplay(adapter.type).comingSoon,
-    hidden: isAdapterTypeHidden(adapter.type),
     experimental: !!getAdapterDisplay(adapter.type).experimental,
   }));
 }
 
 /**
- * List UI adapters excluding those hidden via the Adapters settings page.
+ * List exact server-admitted UI adapters.
  */
 export function listVisibleUIAdapters(): UIAdapterModule[] {
-  return listUIAdapters().filter((a) => !isAdapterTypeHidden(a.type));
+  return listUIAdapters();
 }
 
 /**

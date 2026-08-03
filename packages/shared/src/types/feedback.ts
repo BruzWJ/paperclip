@@ -49,7 +49,7 @@ export interface FeedbackTrace {
   issueId: string;
   projectId: string | null;
   issueIdentifier: string | null;
-  issueTitle: string;
+  issueTitle: string | null;
   authorUserId: string;
   targetType: FeedbackTargetType;
   targetId: string;
@@ -82,21 +82,7 @@ export interface FeedbackTraceBundleFile {
   byteLength: number;
   sha256: string;
   source:
-    | "paperclip_run"
-    | "paperclip_run_events"
-    | "paperclip_run_log"
-    | "codex_session"
-    | "claude_stream_json"
-    | "claude_project_session"
-    | "claude_project_artifact"
-    | "claude_debug_log"
-    | "claude_task_metadata"
-    | "opencode_session"
-    | "opencode_session_diff"
-    | "opencode_message"
-    | "opencode_message_part"
-    | "opencode_project"
-    | "opencode_todo";
+    | "paperclip_issue_session_trace";
   contents: string;
 }
 
@@ -112,8 +98,6 @@ export interface FeedbackTraceBundle {
   envelope: Record<string, unknown>;
   surface: Record<string, unknown> | null;
   paperclipRun: Record<string, unknown> | null;
-  rawAdapterTrace: Record<string, unknown> | null;
-  normalizedAdapterTrace: Record<string, unknown> | null;
   privacy: Record<string, unknown> | null;
   integrity: Record<string, unknown>;
   files: FeedbackTraceBundleFile[];

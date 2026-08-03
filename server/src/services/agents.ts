@@ -1,81 +1,505 @@
-import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
   agentConfigRevisions,
-  agentApiKeys,
   agentRuntimeState,
-  agentTaskSessions,
-  agentWakeupRequests,
-  activityLog,
-  costEvents,
-  heartbeatRunEvents,
-  heartbeatRuns,
-  issueExecutionDecisions,
+  approvals,
+  instanceSettings,
+  issueCreatorEdgeReceivability,
+  issueExecutionAuthorities,
   issues,
-  issueComments,
+  issueSessions,
+  issueUpdates,
 } from "@paperclipai/db";
 import {
-  AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+  canonicalizeMoneyAmount,
   getAgentWorkEligibility,
   isUuidLike,
-  normalizeAgentApiKeyScope,
   normalizeAgentUrlKey,
+  type AgentRuntimeState,
   type AgentEligibilityAgent,
-  type AgentApiKeyScope,
 } from "@paperclipai/shared";
-import { conflict, notFound, unprocessable } from "../errors.js";
-import { syncAgentAdapterEnvBindings } from "./agent-secret-bindings.js";
-import { normalizeAgentPermissions } from "./agent-permissions.js";
-import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
-import { secretService } from "./secrets.js";
+import { conflict, notFound } from "../errors.js";
+import { normalizeAgentGovernancePolicy } from "./agent-governance-policy.js";
+import { createIssueSessionAdmissionService } from "./issue-session/admission.js";
+import { terminalizeAgentCreatorEdgesInTransaction } from "./system-escalation-postgres.js";
+import { enqueueCreatorDelivery } from "./creator-delivery-enqueue.js";
 import {
-  builtInAgentMarkersEqual,
-  readBuiltInAgentMarker,
-} from "./built-in-agent-metadata.js";
+  listCompanyAgentGraphDescendants,
+  lockCompanyAgentGraph,
+} from "./agent-org-graph-lock.js";
+import { budgetService } from "./budgets.js";
+import { logActivity } from "./activity-log.js";
+import type {
+  IssueExecutionCancellationActor,
+  IssueExecutionCancellationService,
+  RequestedAgentRunCancellations,
+  RequestedAgentSuspensions,
+} from "./issue-execution-cancellation.js";
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+export type AgentLifecycleTransaction =
+  Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+export interface AgentTerminationCommit {
+  tombstone: typeof agents.$inferSelect;
+  creatorDeliveryIds: string[];
+  dispatchRefIds: string[];
+  cancellationRequests: RequestedAgentRunCancellations | null;
+  suspensionRequests: RequestedAgentSuspensions | null;
 }
 
-function createToken() {
-  return `pcp_${randomBytes(24).toString("hex")}`;
+export type AgentLifecycleCancellationService = Pick<
+  IssueExecutionCancellationService,
+  | "requestAgentCancellationsInTransaction"
+  | "reconcileRequestedAgentCancellations"
+  | "requestAgentSuspensionsInTransaction"
+  | "reconcileRequestedAgentSuspensions"
+>;
+
+export type AgentSuspensionService = Pick<
+  IssueExecutionCancellationService,
+  | "requestAgentSuspensionsInTransaction"
+  | "reconcileRequestedAgentSuspensions"
+>;
+
+export type AgentResumptionService = Pick<
+  IssueExecutionCancellationService,
+  "releaseAgentSuspensionsInTransaction"
+>;
+
+export type AgentControlLifecycleService =
+  & AgentSuspensionService
+  & AgentResumptionService;
+
+export interface AgentSuspensionPostCommit {
+  issueExecutionCancellation: AgentSuspensionService;
+  actor: AgentTerminationActor;
 }
 
-const CONFIG_REVISION_FIELDS = [
-  "name",
-  "role",
-  "title",
-  "icon",
-  "reportsTo",
-  "capabilities",
-  "adapterType",
-  "adapterConfig",
-  "runtimeConfig",
-  "defaultEnvironmentId",
-  "budgetMonthlyCents",
-  "metadata",
-] as const;
+export type AgentTerminationActor = Extract<
+  IssueExecutionCancellationActor,
+  { readonly kind: "system" } | { readonly kind: "user" }
+>;
 
-type ConfigRevisionField = (typeof CONFIG_REVISION_FIELDS)[number];
-type AgentConfigSnapshot = Pick<typeof agents.$inferSelect, ConfigRevisionField>;
-
-interface RevisionMetadata {
-  createdByAgentId?: string | null;
-  createdByUserId?: string | null;
-  source?: string;
-  rolledBackFromRevisionId?: string | null;
+export interface AgentLifecyclePostCommit {
+  issueExecutionCancellation: AgentLifecycleCancellationService;
+  dispatchRef(refId: string): Promise<void>;
+  notifyCreatorDelivery(deliveryId: string): Promise<void>;
 }
 
-interface UpdateAgentOptions {
-  recordRevision?: RevisionMetadata;
-  allowBuiltInAgentMetadata?: boolean;
-  allowPendingApprovalConfigUpdate?: boolean;
+export interface AgentTerminationPostCommit extends AgentLifecyclePostCommit {
+  actor: AgentTerminationActor;
 }
 
-interface CreateAgentOptions {
-  allowBuiltInAgentMetadata?: boolean;
+function lifecycleUuid(namespace: string, key: string): string {
+  const bytes = Buffer.from(
+    createHash("sha256")
+      .update(`${namespace}\0${key}`)
+      .digest("hex")
+      .slice(0, 32),
+    "hex",
+  );
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function enqueueOwnedIssueTerminationRecoveryInTransaction(
+  tx: AgentLifecycleTransaction,
+  input: {
+    companyId: string;
+    agentId: string;
+    agentName: string;
+    sourceId: string;
+    now: Date;
+  },
+): Promise<string[]> {
+  const sessions = createIssueSessionAdmissionService(
+    tx as unknown as Db,
+  );
+  const ownedIssues = await tx
+    .select()
+    .from(issues)
+    .where(
+      and(
+        eq(issues.companyId, input.companyId),
+        eq(issues.ownerKind, "agent"),
+        eq(issues.ownerAgentId, input.agentId),
+        eq(issues.lifecycleStatus, "open"),
+      ),
+    )
+    .orderBy(issues.id)
+    .for("update");
+  if (ownedIssues.length === 0) return [];
+
+  const deliveryIds: string[] = [];
+  for (const issue of ownedIssues) {
+    if (!issue.ownershipEpoch) {
+      throw new Error(
+        `Owned issue ${issue.id} has no current ownership epoch`,
+      );
+    }
+    const session = await tx
+      .select()
+      .from(issueSessions)
+      .where(
+        and(
+          eq(issueSessions.companyId, input.companyId),
+          eq(issueSessions.issueId, issue.id),
+        ),
+      )
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    const authority = await tx
+      .select()
+      .from(issueExecutionAuthorities)
+      .where(
+        and(
+          eq(
+            issueExecutionAuthorities.companyId,
+            input.companyId,
+          ),
+          eq(issueExecutionAuthorities.issueId, issue.id),
+          eq(
+            issueExecutionAuthorities.ownershipEpoch,
+            issue.ownershipEpoch,
+          ),
+          eq(issueExecutionAuthorities.agentId, input.agentId),
+          eq(issueExecutionAuthorities.state, "current"),
+        ),
+      )
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    const edge = await tx
+      .select()
+      .from(issueCreatorEdgeReceivability)
+      .where(
+        and(
+          eq(
+            issueCreatorEdgeReceivability.companyId,
+            input.companyId,
+          ),
+          eq(
+            issueCreatorEdgeReceivability.issueId,
+            issue.id,
+          ),
+          eq(
+            issueCreatorEdgeReceivability.ownershipEpoch,
+            issue.ownershipEpoch,
+          ),
+        ),
+      )
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (!session || !authority || !edge) {
+      throw new Error(
+        `Owned issue ${issue.id} is missing its canonical recovery graph`,
+      );
+    }
+    const recoveryKey =
+      `${input.sourceId}:owned-issue:${issue.id}:${issue.ownershipEpoch}`;
+    const exactText =
+      `Agent ${input.agentName} was terminated. This issue is blocked because its owner is no longer executable; recovery has been delivered to its immutable creator.`;
+    const notice = await sessions.appendNonDispatchControlNotice(
+      {
+        companyId: input.companyId,
+        issueId: issue.id,
+        sessionId: session.id,
+        sourceKind: "agent_termination_recovery",
+        immutableSourceKey: recoveryKey,
+        sourceRecordId: input.sourceId,
+        exactText,
+        comment: {
+          author: { kind: "system", source: "control" },
+          producingRun: null,
+        },
+        allowTerminal: false,
+      },
+      tx,
+    );
+    if (!notice.comment) {
+      throw new Error(
+        `Owned issue ${issue.id} termination recovery has no system comment`,
+      );
+    }
+    const blockedIssue = await tx
+      .update(issues)
+      .set({
+        lifecycleStatus: "blocked",
+        boardPresentationStatus: "blocked",
+        disposition: null,
+        completedAt: null,
+        cancelledAt: null,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(issues.id, issue.id),
+          eq(issues.companyId, input.companyId),
+          eq(issues.ownershipEpoch, issue.ownershipEpoch),
+          eq(issues.lifecycleStatus, "open"),
+        ),
+      )
+      .returning({ id: issues.id })
+      .then((rows) => rows[0] ?? null);
+    if (!blockedIssue) {
+      throw conflict(
+        `Owned issue ${issue.id} lost its locked termination-recovery transition`,
+      );
+    }
+    const update = await tx
+      .insert(issueUpdates)
+      .values({
+        id: lifecycleUuid(
+          "agent-termination-recovery-update",
+          recoveryKey,
+        ),
+        companyId: input.companyId,
+        issueId: issue.id,
+        sessionId: session.id,
+        ownershipEpoch: issue.ownershipEpoch,
+        form: "owner",
+        sourceKind: "system",
+        sourceAuthorityId: authority.id,
+        sourceIdentity: {
+          sourceKind: "agent_termination",
+          sourceId: input.sourceId,
+          terminatedAgentId: input.agentId,
+        },
+        runId: null,
+        gatewayInvocationId: recoveryKey,
+        runSequence: 0,
+        message: exactText,
+        status: "blocked",
+        disposition: null,
+        commentId: notice.comment.id,
+        creatorEdgeId: edge.id,
+        createdAt: input.now,
+      })
+      .returning()
+      .then((rows) => rows[0] ?? null);
+    if (!update) {
+      throw new Error(
+        `Owned issue ${issue.id} termination update was not persisted`,
+      );
+    }
+    if (edge.state === "receivable") {
+      const policy = await tx
+        .select({ value: instanceSettings.creatorDelivery })
+        .from(instanceSettings)
+        .where(eq(instanceSettings.singletonKey, "default"))
+        .for("share")
+        .then((rows) => rows[0]?.value ?? null);
+      if (!policy) {
+        throw new Error(
+          "Agent termination requires the configured creator-delivery policy",
+        );
+      }
+      const delivery = await enqueueCreatorDelivery(tx, {
+        update,
+        edge,
+        recipientKind: edge.endpointKind,
+        recipientRef: {
+          endpointId: edge.endpointId,
+          ...edge.endpointSnapshot,
+        },
+        counterpartRefId: null,
+        policy,
+        now: input.now,
+      });
+      deliveryIds.push(delivery.id);
+    }
+  }
+  return deliveryIds;
+}
+
+/**
+ * Canonical in-transaction agent termination. Callers that must atomically
+ * couple another control-plane transition (for example hire rejection) use
+ * this exact implementation rather than replaying configuration or deleting
+ * the agent.
+ */
+export async function terminateAgentToTombstoneInTransaction(
+  tx: AgentLifecycleTransaction,
+  input: {
+    companyId?: string;
+    agentId: string;
+    sourceId: string;
+    actor: AgentTerminationActor;
+    now: Date;
+  },
+  cancellation: AgentLifecycleCancellationService,
+): Promise<AgentTerminationCommit | null> {
+  const companyId =
+    input.companyId ??
+    (await tx
+      .select({ companyId: agents.companyId })
+      .from(agents)
+      .where(eq(agents.id, input.agentId))
+      .then((rows) => rows[0]?.companyId ?? null));
+  if (!companyId) return null;
+
+  const locked = await lockCompanyAgentGraph(tx, companyId);
+  if (!locked.company) return null;
+  const existing = locked.agents.find(
+    (candidate) =>
+      candidate.id === input.agentId &&
+      (!input.companyId || candidate.companyId === input.companyId),
+  );
+  if (!existing) return null;
+  if (existing.status === "terminated") {
+    return {
+      tombstone: existing,
+      creatorDeliveryIds: [],
+      dispatchRefIds: [],
+      cancellationRequests: null,
+      suspensionRequests: null,
+    };
+  }
+
+  const descendants = listCompanyAgentGraphDescendants(
+    existing.id,
+    locked.agents,
+  );
+  const nonTerminatedDescendantIds = descendants
+    .filter((descendant) => descendant.status !== "terminated")
+    .map((descendant) => descendant.id);
+
+  const tombstone = await tx
+    .update(agents)
+    .set({
+      status: "terminated",
+      pauseReason: null,
+      pausedAt: null,
+      errorReason: null,
+      updatedAt: input.now,
+    })
+    .where(
+      and(
+        eq(agents.id, existing.id),
+        eq(agents.companyId, existing.companyId),
+        ne(agents.status, "terminated"),
+      ),
+    )
+    .returning()
+    .then((rows) => rows[0] ?? null);
+  if (!tombstone) {
+    throw conflict("Agent termination lost its locked tombstone transition");
+  }
+
+  if (nonTerminatedDescendantIds.length > 0) {
+    const pausedDescendants = await tx
+      .update(agents)
+      .set({
+        status: "paused",
+        pauseReason: "system",
+        pausedAt: input.now,
+        errorReason: null,
+        updatedAt: input.now,
+      })
+      .where(
+        and(
+          eq(agents.companyId, existing.companyId),
+          inArray(agents.id, nonTerminatedDescendantIds),
+          ne(agents.status, "terminated"),
+        ),
+      )
+      .returning({ id: agents.id });
+    const pausedDescendantIds = new Set(
+      pausedDescendants.map((descendant) => descendant.id),
+    );
+    if (
+      pausedDescendantIds.size !== nonTerminatedDescendantIds.length ||
+      nonTerminatedDescendantIds.some(
+        (descendantId) => !pausedDescendantIds.has(descendantId),
+      )
+    ) {
+      throw conflict(
+        "Agent termination lost a locked descendant pause transition",
+      );
+    }
+  }
+
+  const escalations = await terminalizeAgentCreatorEdgesInTransaction(
+    tx,
+    createIssueSessionAdmissionService(tx as unknown as Db),
+    {
+      companyId: tombstone.companyId,
+      agentId: tombstone.id,
+      sourceId: input.sourceId,
+      now: input.now,
+    },
+  );
+  const cancellationRequests =
+    await cancellation.requestAgentCancellationsInTransaction(tx, {
+      companyId: existing.companyId,
+      agentIds: [existing.id],
+      reason:
+        "Cancelled because the agent was terminated",
+      actor: input.actor,
+      now: input.now,
+    });
+  const suspensionRequests = nonTerminatedDescendantIds.length > 0
+    ? await cancellation.requestAgentSuspensionsInTransaction(tx, {
+        companyId: existing.companyId,
+        agentIds: nonTerminatedDescendantIds,
+        reason:
+          "Suspended because the reporting chain contains a terminated agent",
+        actor: input.actor,
+        now: input.now,
+      })
+    : null;
+  const creatorDeliveryIds =
+    await enqueueOwnedIssueTerminationRecoveryInTransaction(tx, {
+      companyId: existing.companyId,
+      agentId: existing.id,
+      agentName: existing.name,
+      sourceId: input.sourceId,
+      now: input.now,
+    });
+  const dispatchRefIds = escalations.flatMap((escalation) =>
+    escalation.dispatchRefId ? [escalation.dispatchRefId] : [],
+  );
+  await logActivity(tx as unknown as Db, {
+    companyId: existing.companyId,
+    actorType: input.actor.kind,
+    actorId: input.actor.kind === "user"
+      ? input.actor.userId
+      : input.sourceId,
+    action: "agent.terminated",
+    entityType: "agent",
+    entityId: existing.id,
+    details: {
+      sourceId: input.sourceId,
+      descendantPausedAgentIds: nonTerminatedDescendantIds,
+      cancellationRequestedRunIds: cancellationRequests.requests.map(
+        (request) => request.runId,
+      ),
+      suspensionRequestedRunIds:
+        suspensionRequests?.requests.map((request) => request.runId) ?? [],
+      fencedExecutionRefIds: cancellationRequests.fence.refIds,
+      fencedCreatorDeliveryIds: cancellationRequests.fence.deliveryIds,
+      fencedTargetCorrelationIds:
+        cancellationRequests.fence.correlationIds,
+      suspendedExecutionRefIds: suspensionRequests?.fence.refIds ?? [],
+      heldDescendantCreatorDeliveryIds:
+        suspensionRequests?.fence.deliveryIds ?? [],
+      supersededDescendantCorrelationIds:
+        suspensionRequests?.fence.correlationIds ?? [],
+      creatorDeliveryIds,
+      dispatchRefIds,
+    },
+  });
+  return {
+    tombstone,
+    creatorDeliveryIds,
+    dispatchRefIds,
+    cancellationRequests,
+    suspensionRequests,
+  };
 }
 
 interface AgentShortnameRow {
@@ -86,164 +510,6 @@ interface AgentShortnameRow {
 
 interface AgentShortnameCollisionOptions {
   excludeAgentId?: string | null;
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function jsonEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function buildConfigSnapshot(
-  row: Pick<typeof agents.$inferSelect, ConfigRevisionField>,
-): AgentConfigSnapshot {
-  const adapterConfig =
-    typeof row.adapterConfig === "object" && row.adapterConfig !== null && !Array.isArray(row.adapterConfig)
-      ? sanitizeRecord(row.adapterConfig as Record<string, unknown>)
-      : {};
-  const runtimeConfig =
-    typeof row.runtimeConfig === "object" && row.runtimeConfig !== null && !Array.isArray(row.runtimeConfig)
-      ? sanitizeRecord(row.runtimeConfig as Record<string, unknown>)
-      : {};
-  const metadata =
-    typeof row.metadata === "object" && row.metadata !== null && !Array.isArray(row.metadata)
-      ? sanitizeRecord(row.metadata as Record<string, unknown>)
-      : row.metadata ?? null;
-  return {
-    name: row.name,
-    role: row.role,
-    title: row.title,
-    icon: row.icon,
-    reportsTo: row.reportsTo,
-    capabilities: row.capabilities,
-    adapterType: row.adapterType,
-    adapterConfig,
-    runtimeConfig,
-    defaultEnvironmentId: row.defaultEnvironmentId,
-    budgetMonthlyCents: row.budgetMonthlyCents,
-    metadata,
-  };
-}
-
-function containsRedactedMarker(value: unknown): boolean {
-  if (value === REDACTED_EVENT_VALUE) return true;
-  if (Array.isArray(value)) return value.some((item) => containsRedactedMarker(item));
-  if (typeof value !== "object" || value === null) return false;
-  return Object.values(value as Record<string, unknown>).some((entry) => containsRedactedMarker(entry));
-}
-
-function hasConfigPatchFields(data: Partial<typeof agents.$inferInsert>) {
-  return CONFIG_REVISION_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(data, field));
-}
-
-function changedPendingApprovalConfigFields(
-  existing: typeof agents.$inferSelect,
-  data: Partial<typeof agents.$inferInsert>,
-) {
-  return CONFIG_REVISION_FIELDS.filter((field) =>
-    Object.prototype.hasOwnProperty.call(data, field) && !jsonEqual(data[field], existing[field]),
-  );
-}
-
-function configPatchFromApprovalPayload(payload: Record<string, unknown>) {
-  const patch: Partial<typeof agents.$inferInsert> = {};
-  if (typeof payload.name === "string") patch.name = payload.name;
-  if (typeof payload.role === "string") patch.role = payload.role;
-  if (Object.prototype.hasOwnProperty.call(payload, "title")) {
-    patch.title = typeof payload.title === "string" ? payload.title : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "icon")) {
-    patch.icon = typeof payload.icon === "string" ? payload.icon : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "reportsTo")) {
-    patch.reportsTo = typeof payload.reportsTo === "string" ? payload.reportsTo : null;
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "capabilities")) {
-    patch.capabilities = typeof payload.capabilities === "string" ? payload.capabilities : null;
-  }
-  if (typeof payload.adapterType === "string") patch.adapterType = payload.adapterType;
-  if (isPlainRecord(payload.adapterConfig)) patch.adapterConfig = payload.adapterConfig;
-  if (isPlainRecord(payload.runtimeConfig)) patch.runtimeConfig = payload.runtimeConfig;
-  if (Object.prototype.hasOwnProperty.call(payload, "defaultEnvironmentId")) {
-    patch.defaultEnvironmentId =
-      typeof payload.defaultEnvironmentId === "string" ? payload.defaultEnvironmentId : null;
-  }
-  if (typeof payload.budgetMonthlyCents === "number") {
-    patch.budgetMonthlyCents = payload.budgetMonthlyCents;
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "metadata")) {
-    patch.metadata = isPlainRecord(payload.metadata) ? payload.metadata : null;
-  }
-  if (isPlainRecord(payload.permissions)) {
-    patch.permissions = payload.permissions;
-  }
-  return patch;
-}
-
-function parseFiniteNumberLike(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value !== "string") return null;
-  const parsed = Number(value.trim());
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function normalizeRuntimeConfigForNewAgent(runtimeConfig: unknown): Record<string, unknown> {
-  const normalizedRuntimeConfig = isPlainRecord(runtimeConfig) ? { ...runtimeConfig } : {};
-  const heartbeat = isPlainRecord(normalizedRuntimeConfig.heartbeat)
-    ? { ...normalizedRuntimeConfig.heartbeat }
-    : {};
-  if (parseFiniteNumberLike(heartbeat.maxConcurrentRuns) == null) {
-    heartbeat.maxConcurrentRuns = AGENT_DEFAULT_MAX_CONCURRENT_RUNS;
-  }
-  normalizedRuntimeConfig.heartbeat = heartbeat;
-  return normalizedRuntimeConfig;
-}
-
-function diffConfigSnapshot(
-  before: AgentConfigSnapshot,
-  after: AgentConfigSnapshot,
-): string[] {
-  return CONFIG_REVISION_FIELDS.filter((field) => !jsonEqual(before[field], after[field]));
-}
-
-function configPatchFromSnapshot(snapshot: unknown): Partial<typeof agents.$inferInsert> {
-  if (!isPlainRecord(snapshot)) throw unprocessable("Invalid revision snapshot");
-
-  if (typeof snapshot.name !== "string" || snapshot.name.length === 0) {
-    throw unprocessable("Invalid revision snapshot: name");
-  }
-  if (typeof snapshot.role !== "string" || snapshot.role.length === 0) {
-    throw unprocessable("Invalid revision snapshot: role");
-  }
-  if (typeof snapshot.adapterType !== "string" || snapshot.adapterType.length === 0) {
-    throw unprocessable("Invalid revision snapshot: adapterType");
-  }
-  if (typeof snapshot.budgetMonthlyCents !== "number" || !Number.isFinite(snapshot.budgetMonthlyCents)) {
-    throw unprocessable("Invalid revision snapshot: budgetMonthlyCents");
-  }
-
-  return {
-    name: snapshot.name,
-    role: snapshot.role,
-    title: typeof snapshot.title === "string" || snapshot.title === null ? snapshot.title : null,
-    reportsTo:
-      typeof snapshot.reportsTo === "string" || snapshot.reportsTo === null ? snapshot.reportsTo : null,
-    capabilities:
-      typeof snapshot.capabilities === "string" || snapshot.capabilities === null
-        ? snapshot.capabilities
-        : null,
-    adapterType: snapshot.adapterType,
-    adapterConfig: isPlainRecord(snapshot.adapterConfig) ? snapshot.adapterConfig : {},
-    runtimeConfig: isPlainRecord(snapshot.runtimeConfig) ? snapshot.runtimeConfig : {},
-    defaultEnvironmentId:
-      typeof snapshot.defaultEnvironmentId === "string" || snapshot.defaultEnvironmentId === null
-        ? snapshot.defaultEnvironmentId
-        : null,
-    budgetMonthlyCents: Math.max(0, Math.floor(snapshot.budgetMonthlyCents)),
-    metadata: isPlainRecord(snapshot.metadata) || snapshot.metadata === null ? snapshot.metadata : null,
-  };
 }
 
 export function hasAgentShortnameCollision(
@@ -278,16 +544,7 @@ export function deduplicateAgentName(
 }
 
 export function agentService(db: Db) {
-  const secretsSvc = secretService(db);
-
-  function currentUtcMonthWindow(now = new Date()) {
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth();
-    return {
-      start: new Date(Date.UTC(year, month, 1, 0, 0, 0, 0)),
-      end: new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0)),
-    };
-  }
+  const budgets = budgetService(db);
 
   function withUrlKey<T extends { id: string; name: string }>(row: T) {
     return {
@@ -297,9 +554,10 @@ export function agentService(db: Db) {
   }
 
   function normalizeAgentBaseRow(row: typeof agents.$inferSelect) {
+    const { permissions, ...agent } = row;
     return withUrlKey({
-      ...row,
-      permissions: normalizeAgentPermissions(row.permissions, row.role),
+      ...agent,
+      governance: normalizeAgentGovernancePolicy(permissions),
     });
   }
 
@@ -336,34 +594,17 @@ export function agentService(db: Db) {
   }
 
   async function getMonthlySpendByAgentIds(companyId: string, agentIds: string[]) {
-    if (agentIds.length === 0) return new Map<string, number>();
-    const { start, end } = currentUtcMonthWindow();
-    const rows = await db
-      .select({
-        agentId: costEvents.agentId,
-        spentMonthlyCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::double precision`,
-      })
-      .from(costEvents)
-      .where(
-        and(
-          eq(costEvents.companyId, companyId),
-          inArray(costEvents.agentId, agentIds),
-          gte(costEvents.occurredAt, start),
-          lt(costEvents.occurredAt, end),
-        ),
-      )
-      .groupBy(costEvents.agentId);
-    return new Map(rows.map((row) => [row.agentId, Number(row.spentMonthlyCents ?? 0)]));
+    return budgets.getAgentMonthlyKnownSpend(companyId, agentIds);
   }
 
-  async function hydrateAgentSpend<T extends { id: string; companyId: string; spentMonthlyCents: number }>(rows: T[]) {
+  async function hydrateAgentSpend<T extends { id: string; companyId: string }>(rows: T[]) {
     const agentIds = rows.map((row) => row.id);
     const companyId = rows[0]?.companyId;
     if (!companyId || agentIds.length === 0) return rows;
     const spendByAgentId = await getMonthlySpendByAgentIds(companyId, agentIds);
     return rows.map((row) => ({
       ...row,
-      spentMonthlyCents: spendByAgentId.get(row.id) ?? 0,
+      knownSpendAmount: spendByAgentId.get(row.id)!,
     }));
   }
 
@@ -387,189 +628,6 @@ export function agentService(db: Db) {
     return agent;
   }
 
-  async function ensureManager(companyId: string, managerId: string) {
-    const manager = await getById(managerId);
-    if (!manager) throw notFound("Manager not found");
-    if (manager.companyId !== companyId) {
-      throw unprocessable("Manager must belong to same company");
-    }
-    return manager;
-  }
-
-  async function assertNoCycle(agentId: string, reportsTo: string | null | undefined) {
-    if (!reportsTo) return;
-    if (reportsTo === agentId) throw unprocessable("Agent cannot report to itself");
-
-    let cursor: string | null = reportsTo;
-    while (cursor) {
-      if (cursor === agentId) throw unprocessable("Reporting relationship would create cycle");
-      const next = await getById(cursor);
-      cursor = next?.reportsTo ?? null;
-    }
-  }
-
-  async function assertCompanyShortnameAvailable(
-    companyId: string,
-    candidateName: string,
-    options?: AgentShortnameCollisionOptions,
-  ) {
-    const candidateShortname = normalizeAgentUrlKey(candidateName);
-    if (!candidateShortname) return;
-
-    const existingAgents = await db
-      .select({
-        id: agents.id,
-        name: agents.name,
-        status: agents.status,
-      })
-      .from(agents)
-      .where(eq(agents.companyId, companyId));
-
-    const hasCollision = hasAgentShortnameCollision(candidateName, existingAgents, options);
-    if (hasCollision) {
-      throw conflict(
-        `Agent shortname '${candidateShortname}' is already in use in this company`,
-      );
-    }
-  }
-
-  async function syncAgentSecretBindings(
-    agent: { id: string; companyId: string; adapterConfig: unknown },
-    dbClient: Db = db,
-  ) {
-    const scopedSecretsSvc = dbClient === db ? secretsSvc : secretService(dbClient);
-    await syncAgentAdapterEnvBindings({
-      secretsSvc: scopedSecretsSvc,
-      companyId: agent.companyId,
-      agentId: agent.id,
-      adapterConfig: agent.adapterConfig,
-    });
-  }
-
-  function assertBuiltInAgentMetadataMutationAllowed(
-    beforeMetadata: unknown,
-    afterMetadata: unknown,
-    options?: { allowBuiltInAgentMetadata?: boolean },
-  ) {
-    if (options?.allowBuiltInAgentMetadata) return;
-    const beforeMarker = readBuiltInAgentMarker(beforeMetadata);
-    const afterMarker = readBuiltInAgentMarker(afterMetadata);
-    if (builtInAgentMarkersEqual(beforeMarker, afterMarker)) return;
-    throw conflict("Built-in agent marker is managed by Paperclip and cannot be edited directly", {
-      code: "built_in_agent_marker_readonly",
-      key: beforeMarker?.key ?? afterMarker?.key ?? null,
-    });
-  }
-
-  async function updateAgent(
-    id: string,
-    data: Partial<typeof agents.$inferInsert>,
-    options?: UpdateAgentOptions,
-  ) {
-    const existing = await getById(id);
-    if (!existing) return null;
-
-    if (existing.status === "terminated" && data.status && data.status !== "terminated") {
-      throw conflict("Terminated agents cannot be resumed");
-    }
-    if (
-      existing.status === "pending_approval" &&
-      data.status &&
-      data.status !== "pending_approval" &&
-      data.status !== "terminated"
-    ) {
-      throw conflict("Pending approval agents cannot be activated directly");
-    }
-    if (existing.status === "pending_approval" && !options?.allowPendingApprovalConfigUpdate) {
-      const changedFields = changedPendingApprovalConfigFields(existing as typeof agents.$inferSelect, data);
-      if (changedFields.length > 0) {
-        throw conflict("Pending approval agent configuration cannot be changed before board approval", {
-          code: "pending_approval_agent_config_frozen",
-          agentId: id,
-          fields: changedFields,
-        });
-      }
-    }
-
-    if (data.reportsTo !== undefined) {
-      if (data.reportsTo) {
-        await ensureManager(existing.companyId, data.reportsTo);
-      }
-      await assertNoCycle(id, data.reportsTo);
-    }
-
-    if (data.name !== undefined) {
-      const previousShortname = normalizeAgentUrlKey(existing.name);
-      const nextShortname = normalizeAgentUrlKey(data.name);
-      if (previousShortname !== nextShortname) {
-        await assertCompanyShortnameAvailable(existing.companyId, data.name, { excludeAgentId: id });
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(data, "metadata")) {
-      assertBuiltInAgentMetadataMutationAllowed(existing.metadata, data.metadata, options);
-    }
-
-    const normalizedPatch = { ...data } as Partial<typeof agents.$inferInsert>;
-    if (data.permissions !== undefined) {
-      const role = (data.role ?? existing.role) as string;
-      normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(normalizedPatch, "adapterConfig") &&
-      isPlainRecord(normalizedPatch.adapterConfig)
-    ) {
-      normalizedPatch.adapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
-        existing.companyId,
-        normalizedPatch.adapterConfig,
-        { adapterType: (normalizedPatch.adapterType ?? existing.adapterType) as string },
-      );
-    }
-
-    const shouldRecordRevision = Boolean(options?.recordRevision) && hasConfigPatchFields(normalizedPatch);
-    const beforeConfig = shouldRecordRevision ? buildConfigSnapshot(existing) : null;
-
-    return db.transaction(async (tx) => {
-      const txDb = tx as unknown as Db;
-      const updated = await tx
-        .update(agents)
-        .set({ ...normalizedPatch, updatedAt: new Date() })
-        .where(eq(agents.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
-      if (!updated) return null;
-
-      if (Object.prototype.hasOwnProperty.call(normalizedPatch, "adapterConfig")) {
-        await syncAgentSecretBindings(updated, txDb);
-      }
-
-      const normalizedUpdated = await agentService(txDb).getById(updated.id);
-      if (!normalizedUpdated) {
-        throw notFound("Agent not found");
-      }
-
-      if (shouldRecordRevision && beforeConfig) {
-        const afterConfig = buildConfigSnapshot(normalizedUpdated);
-        const changedKeys = diffConfigSnapshot(beforeConfig, afterConfig);
-        if (changedKeys.length > 0) {
-          await tx.insert(agentConfigRevisions).values({
-            companyId: normalizedUpdated.companyId,
-            agentId: normalizedUpdated.id,
-            createdByAgentId: options?.recordRevision?.createdByAgentId ?? null,
-            createdByUserId: options?.recordRevision?.createdByUserId ?? null,
-            source: options?.recordRevision?.source ?? "patch",
-            rolledBackFromRevisionId: options?.recordRevision?.rolledBackFromRevisionId ?? null,
-            changedKeys,
-            beforeConfig: beforeConfig as unknown as Record<string, unknown>,
-            afterConfig: afterConfig as unknown as Record<string, unknown>,
-          });
-        }
-      }
-
-      return normalizedUpdated;
-    });
-  }
-
   return {
     list: async (companyId: string, options?: { includeTerminated?: boolean }) => {
       const conditions = [eq(agents.companyId, companyId)];
@@ -586,93 +644,185 @@ export function agentService(db: Db) {
 
     getById,
 
-    create: async (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId">, options?: CreateAgentOptions) => {
-      assertBuiltInAgentMetadataMutationAllowed(null, data.metadata, options);
-      if (data.reportsTo) {
-        await ensureManager(companyId, data.reportsTo);
-      }
+    getRuntimeState: async (agentId: string): Promise<AgentRuntimeState | null> => {
+      const row = await db
+        .select()
+        .from(agentRuntimeState)
+        .where(eq(agentRuntimeState.agentId, agentId))
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      return {
+        ...row,
+        aggregateKnownCostAmount: canonicalizeMoneyAmount(
+          row.aggregateKnownCostAmount,
+        ),
+      };
+    },
 
-      const existingAgents = await db
-        .select({ id: agents.id, name: agents.name, status: agents.status })
-        .from(agents)
-        .where(eq(agents.companyId, companyId));
-      const uniqueName = deduplicateAgentName(data.name, existingAgents);
+    pause: async (
+      id: string,
+      postCommit: AgentSuspensionPostCommit,
+      reason: "manual" | "budget" | "system" = "manual",
+    ) => {
+      const committed = await db.transaction(async (tx) => {
+        const companyId = await tx
+          .select({ companyId: agents.companyId })
+          .from(agents)
+          .where(eq(agents.id, id))
+          .then((rows) => rows[0]?.companyId ?? null);
+        if (!companyId) return null;
 
-      const role = data.role ?? "general";
-      const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
-      const runtimeConfig = normalizeRuntimeConfigForNewAgent(data.runtimeConfig);
-      const adapterType = data.adapterType ?? "process";
-      const adapterConfig = isPlainRecord(data.adapterConfig)
-        ? await secretsSvc.normalizeAdapterConfigForPersistence(companyId, data.adapterConfig, { adapterType })
-        : {};
-      return db.transaction(async (tx) => {
-        const txDb = tx as unknown as Db;
-        const created = await tx
-          .insert(agents)
-          .values({
-            ...data,
-            name: uniqueName,
-            companyId,
-            role,
-            adapterType,
-            adapterConfig,
-            permissions: normalizedPermissions,
-            runtimeConfig,
-          })
-          .returning()
-          .then((rows) => rows[0]);
-        await syncAgentSecretBindings(created, txDb);
-        const normalizedCreated = await agentService(txDb).getById(created.id);
-        if (!normalizedCreated) {
-          throw notFound("Agent not found");
+        const locked = await lockCompanyAgentGraph(tx, companyId);
+        const existing = locked.agents.find((candidate) => candidate.id === id);
+        if (!existing) return null;
+        if (existing.status === "terminated") {
+          throw conflict("Cannot pause terminated agent");
         }
-        return normalizedCreated;
+        if (existing.status === "pending_approval") {
+          throw conflict(
+            "Pending approval agents must be rejected instead of paused",
+            { code: "pending_hire_requires_rejection", agentId: id },
+          );
+        }
+
+        const now = new Date();
+        if (existing.status !== "paused") {
+          const updated = await tx
+            .update(agents)
+            .set({
+              status: "paused",
+              pauseReason: reason,
+              pausedAt: now,
+              errorReason: null,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(agents.id, existing.id),
+                eq(agents.companyId, existing.companyId),
+                eq(agents.status, existing.status),
+              ),
+            )
+            .returning({ id: agents.id })
+            .then((rows) => rows[0] ?? null);
+          if (!updated) {
+            throw conflict("Agent pause lost its locked lifecycle transition");
+          }
+        }
+
+        const suspensionRequests =
+          await postCommit.issueExecutionCancellation
+            .requestAgentSuspensionsInTransaction(tx, {
+              companyId: existing.companyId,
+              agentIds: [existing.id],
+              reason: "Suspended because the agent was paused",
+              actor: postCommit.actor,
+              now,
+            });
+        return { agentId: existing.id, suspensionRequests };
       });
+      if (!committed) return null;
+      await postCommit.issueExecutionCancellation
+        .reconcileRequestedAgentSuspensions(committed.suspensionRequests);
+      return getById(committed.agentId);
     },
 
-    update: updateAgent,
+    resume: async (id: string, resumption: AgentResumptionService) => {
+      const updatedId = await db.transaction(async (tx) => {
+        const companyId = await tx
+          .select({ companyId: agents.companyId })
+          .from(agents)
+          .where(eq(agents.id, id))
+          .then((rows) => rows[0]?.companyId ?? null);
+        if (!companyId) return null;
+        const locked = await lockCompanyAgentGraph(tx, companyId);
+        const existing = locked.agents.find(
+          (candidate) => candidate.id === id,
+        );
+        if (!existing) return null;
+        if (existing.status === "terminated") {
+          throw conflict("Cannot resume terminated agent");
+        }
+        if (existing.pauseReason === "budget") {
+          throw conflict(
+            "Budget-paused agents must be resumed through budget resolution",
+            {
+              code: "budget_resume_requires_budget_resolution",
+              agentId: existing.id,
+            },
+          );
+        }
 
-    pause: async (id: string, reason: "manual" | "budget" | "system" = "manual") => {
-      const existing = await getById(id);
-      if (!existing) return null;
-      if (existing.status === "terminated") throw conflict("Cannot pause terminated agent");
+        const eligibility = getAgentWorkEligibility({
+          agent: toEligibilityAgent(existing),
+          agents: locked.agents.map(toEligibilityAgent),
+        });
+        if (eligibility.orgChainHealth.status === "invalid_org_chain") {
+          throw conflict(
+            eligibility.orgChainHealth.repairGuidance ??
+              "Repair this agent's reporting chain before resuming it",
+            {
+              code: "invalid_agent_org_chain",
+              agentId: existing.id,
+            },
+          );
+        }
 
-      const updated = await db
-        .update(agents)
-        .set({
-          status: "paused",
-          pauseReason: reason,
-          pausedAt: new Date(),
-          errorReason: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
-      return updated ? getById(updated.id) : null;
-    },
+        const openHireApproval = await tx
+          .select({ id: approvals.id })
+          .from(approvals)
+          .where(
+            and(
+              eq(approvals.companyId, existing.companyId),
+              eq(approvals.type, "hire_agent"),
+              inArray(approvals.status, ["pending", "revision_requested"]),
+              sql`${approvals.payload} ->> 'agentId' = ${existing.id}`,
+            ),
+          )
+          .orderBy(approvals.id)
+          .for("update")
+          .then((rows) => rows[0] ?? null);
+        if (
+          existing.status === "pending_approval" ||
+          openHireApproval
+        ) {
+          throw conflict("Pending approval agents cannot be resumed", {
+            code: "pending_hire_requires_approval",
+            agentId: existing.id,
+            approvalId: openHireApproval?.id ?? null,
+          });
+        }
 
-    resume: async (id: string) => {
-      const existing = await getById(id);
-      if (!existing) return null;
-      if (existing.status === "terminated") throw conflict("Cannot resume terminated agent");
-      if (existing.status === "pending_approval") {
-        throw conflict("Pending approval agents cannot be resumed");
-      }
-
-      const updated = await db
-        .update(agents)
-        .set({
-          status: "idle",
-          pauseReason: null,
-          pausedAt: null,
-          errorReason: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
-      return updated ? getById(updated.id) : null;
+        const now = new Date();
+        const updated = await tx
+          .update(agents)
+          .set({
+            status: "idle",
+            pauseReason: null,
+            pausedAt: null,
+            errorReason: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(agents.id, existing.id),
+              eq(agents.companyId, existing.companyId),
+              eq(agents.status, existing.status),
+            ),
+          )
+          .returning({ id: agents.id })
+          .then((rows) => rows[0] ?? null);
+        if (!updated) {
+          throw conflict("Agent resume lost its locked lifecycle transition");
+        }
+        await resumption.releaseAgentSuspensionsInTransaction(tx, {
+          companyId: existing.companyId,
+          agentIds: [existing.id],
+          now,
+        });
+        return updated.id;
+      });
+      return updatedId ? getById(updatedId) : null;
     },
 
     clearError: async (id: string) => {
@@ -705,138 +855,42 @@ export function agentService(db: Db) {
       return getById(updated.id);
     },
 
-    terminate: async (id: string) => {
-      const existing = await getById(id);
-      if (!existing) return null;
-
-      await db
-        .update(agents)
-        .set({
-          status: "terminated",
-          pauseReason: null,
-          pausedAt: null,
-          errorReason: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, id));
-
-      await db
-        .update(agentApiKeys)
-        .set({ revokedAt: new Date() })
-        .where(eq(agentApiKeys.agentId, id));
-
-      return getById(id);
-    },
-
-    remove: async (id: string) => {
-      const existing = await getById(id);
-      if (!existing) return null;
-      const builtInMarker = readBuiltInAgentMarker(existing.metadata);
-      if (builtInMarker) {
-        throw conflict("Built-in agents cannot be deleted; pause them instead", {
-          code: "built_in_agent_undeletable",
-          key: builtInMarker.key,
-          featureKeys: builtInMarker.featureKeys,
-        });
-      }
-
-      return db.transaction(async (tx) => {
-        await tx.update(agents).set({ reportsTo: null }).where(eq(agents.reportsTo, id));
-        await tx
-          .update(issues)
-          .set({ assigneeAgentId: null, createdByAgentId: null })
-          .where(or(eq(issues.assigneeAgentId, id), eq(issues.createdByAgentId, id)));
-        await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.agentId, id));
-        await tx.delete(agentTaskSessions).where(eq(agentTaskSessions.agentId, id));
-        await tx.delete(activityLog).where(
-          or(
-            eq(activityLog.agentId, id),
-            sql`${activityLog.runId} in (select ${heartbeatRuns.id} from ${heartbeatRuns} where ${heartbeatRuns.agentId} = ${id})`,
-          ),
+    terminate: async (
+      id: string,
+      postCommit: AgentTerminationPostCommit,
+    ) => {
+      const committed = await db.transaction(async (tx) => {
+        const now = new Date();
+        return terminateAgentToTombstoneInTransaction(
+          tx,
+          {
+            agentId: id,
+            sourceId: `agent-termination:${id}`,
+            actor: postCommit.actor,
+            now,
+          },
+          postCommit.issueExecutionCancellation,
         );
-        await tx.delete(issueExecutionDecisions).where(eq(issueExecutionDecisions.actorAgentId, id));
-        await tx.delete(issueComments).where(eq(issueComments.authorAgentId, id));
-        await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.agentId, id));
-        await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.agentId, id));
-        await tx.delete(agentApiKeys).where(eq(agentApiKeys.agentId, id));
-        await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.agentId, id));
-        const deleted = await tx
-          .delete(agents)
-          .where(eq(agents.id, id))
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        return deleted ? normalizeAgentRow(deleted) : null;
       });
-    },
-
-    activatePendingApproval: async (id: string, approvedPayload?: Record<string, unknown> | null) => {
-      const activatedAgent = await db.transaction(async (tx) => {
-        const txDb = tx as unknown as Db;
-        const existing = await agentService(txDb).getById(id);
-        if (!existing || existing.status !== "pending_approval") return null;
-        const approvedPatch = approvedPayload ? configPatchFromApprovalPayload(approvedPayload) : {};
-        let patch = { ...approvedPatch } as Partial<typeof agents.$inferInsert>;
-        if (
-          Object.prototype.hasOwnProperty.call(patch, "adapterConfig") &&
-          isPlainRecord(patch.adapterConfig)
-        ) {
-          patch.adapterConfig = await secretService(txDb).normalizeAdapterConfigForPersistence(
-            existing.companyId,
-            patch.adapterConfig,
-            { adapterType: (patch.adapterType ?? existing.adapterType) as string },
+      if (committed?.cancellationRequests) {
+        await postCommit.issueExecutionCancellation
+          .reconcileRequestedAgentCancellations(
+            committed.cancellationRequests,
           );
-        }
-        if (patch.permissions !== undefined) {
-          patch.permissions = normalizeAgentPermissions(
-            patch.permissions,
-            (patch.role ?? existing.role) as string,
+      }
+      if (committed?.suspensionRequests) {
+        await postCommit.issueExecutionCancellation
+          .reconcileRequestedAgentSuspensions(
+            committed.suspensionRequests,
           );
-        }
-        const updated = await tx
-          .update(agents)
-          .set({ ...patch, status: "idle", updatedAt: new Date() })
-          .where(and(eq(agents.id, id), eq(agents.status, "pending_approval")))
-          .returning()
-          .then((rows) => rows[0] ?? null);
-        if (!updated) return null;
-        await syncAgentSecretBindings(updated, txDb);
-        const agent = await agentService(txDb).getById(updated.id);
-        if (!agent) {
-          throw notFound("Agent not found");
-        }
-        return agent;
-      });
-
-      if (activatedAgent) {
-        return { agent: activatedAgent, activated: true };
       }
-
-      const existing = await getById(id);
-      return existing ? { agent: existing, activated: false } : null;
-    },
-
-    updatePermissions: async (id: string, permissions: Record<string, unknown> & { canCreateAgents: boolean }) => {
-      const existing = await getById(id);
-      if (!existing) return null;
-      if (existing.status === "pending_approval") {
-        throw conflict("Pending approval agent permissions cannot be changed before board approval", {
-          code: "pending_approval_agent_config_frozen",
-          agentId: id,
-          fields: ["permissions"],
-        });
+      for (const refId of committed?.dispatchRefIds ?? []) {
+        await postCommit.dispatchRef(refId);
       }
-
-      const updated = await db
-        .update(agents)
-        .set({
-          permissions: normalizeAgentPermissions({ ...existing.permissions, ...permissions }, existing.role),
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
-
-      return updated ? getById(updated.id) : null;
+      for (const deliveryId of committed?.creatorDeliveryIds ?? []) {
+        await postCommit.notifyCreatorDelivery(deliveryId);
+      }
+      return committed ? getById(id) : null;
     },
 
     listConfigRevisions: async (id: string) =>
@@ -852,126 +906,6 @@ export function agentService(db: Db) {
         .from(agentConfigRevisions)
         .where(and(eq(agentConfigRevisions.agentId, id), eq(agentConfigRevisions.id, revisionId)))
         .then((rows) => rows[0] ?? null),
-
-    rollbackConfigRevision: async (
-      id: string,
-      revisionId: string,
-      actor: { agentId?: string | null; userId?: string | null },
-    ) => {
-      const revision = await db
-        .select()
-        .from(agentConfigRevisions)
-        .where(and(eq(agentConfigRevisions.agentId, id), eq(agentConfigRevisions.id, revisionId)))
-        .then((rows) => rows[0] ?? null);
-      if (!revision) return null;
-      if (containsRedactedMarker(revision.afterConfig)) {
-        throw unprocessable("Cannot roll back a revision that contains redacted secret values");
-      }
-
-      const patch = configPatchFromSnapshot(revision.afterConfig);
-      return updateAgent(id, patch, {
-        recordRevision: {
-          createdByAgentId: actor.agentId ?? null,
-          createdByUserId: actor.userId ?? null,
-          source: "rollback",
-          rolledBackFromRevisionId: revision.id,
-        },
-      });
-    },
-
-    createApiKey: async (
-      id: string,
-      name: string,
-      scope: AgentApiKeyScope = { kind: "standard" },
-      options?: { responsibleUserId?: string | null },
-    ) => {
-      const existing = await getById(id);
-      if (!existing) throw notFound("Agent not found");
-      if (existing.status === "pending_approval") {
-        throw conflict("Cannot create keys for pending approval agents");
-      }
-      if (existing.status === "terminated") {
-        throw conflict("Cannot create keys for terminated agents");
-      }
-
-      const token = createToken();
-      const keyHash = hashToken(token);
-      const created = await db
-        .insert(agentApiKeys)
-        .values({
-          agentId: id,
-          companyId: existing.companyId,
-          name,
-          keyHash,
-          responsibleUserId: options?.responsibleUserId?.trim() || null,
-          scopeConfig: scope.kind === "standard" ? null : scope,
-        })
-        .returning()
-        .then((rows) => rows[0]);
-
-      return {
-        id: created.id,
-        name: created.name,
-        scope: normalizeAgentApiKeyScope(created.scopeConfig),
-        responsibleUserId: created.responsibleUserId,
-        token,
-        createdAt: created.createdAt,
-      };
-    },
-
-    listKeys: (id: string) =>
-      db
-        .select({
-          id: agentApiKeys.id,
-          name: agentApiKeys.name,
-          responsibleUserId: agentApiKeys.responsibleUserId,
-          scopeConfig: agentApiKeys.scopeConfig,
-          createdAt: agentApiKeys.createdAt,
-          revokedAt: agentApiKeys.revokedAt,
-        })
-        .from(agentApiKeys)
-        .where(eq(agentApiKeys.agentId, id))
-        .then((rows) => rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          scope: normalizeAgentApiKeyScope(row.scopeConfig),
-          responsibleUserId: row.responsibleUserId,
-          createdAt: row.createdAt,
-          revokedAt: row.revokedAt,
-        }))),
-
-    getKeyById: async (keyId: string) =>
-      db
-        .select({
-          id: agentApiKeys.id,
-          agentId: agentApiKeys.agentId,
-          companyId: agentApiKeys.companyId,
-          name: agentApiKeys.name,
-          responsibleUserId: agentApiKeys.responsibleUserId,
-          scopeConfig: agentApiKeys.scopeConfig,
-          createdAt: agentApiKeys.createdAt,
-          revokedAt: agentApiKeys.revokedAt,
-        })
-        .from(agentApiKeys)
-        .where(eq(agentApiKeys.id, keyId))
-        .then((rows) => {
-          const row = rows[0] ?? null;
-          return row
-            ? {
-              ...row,
-              scope: normalizeAgentApiKeyScope(row.scopeConfig),
-            }
-            : null;
-        }),
-
-    revokeKey: async (agentId: string, keyId: string) => {
-      const rows = await db
-        .update(agentApiKeys)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(agentApiKeys.id, keyId), eq(agentApiKeys.agentId, agentId)))
-        .returning();
-      return rows[0] ?? null;
-    },
 
     orgForCompany: async (companyId: string) => {
       const allCompanyRows = await listCompanyAgentRows(companyId);
@@ -997,7 +931,7 @@ export function agentService(db: Db) {
     },
 
     getChainOfCommand: async (agentId: string) => {
-      const chain: { id: string; name: string; role: string; title: string | null }[] = [];
+      const chain: { id: string; name: string; title: string | null }[] = [];
       const visited = new Set<string>([agentId]);
       const start = await getById(agentId);
       let currentId = start?.reportsTo ?? null;
@@ -1005,17 +939,11 @@ export function agentService(db: Db) {
         visited.add(currentId);
         const mgr = await getById(currentId);
         if (!mgr) break;
-        chain.push({ id: mgr.id, name: mgr.name, role: mgr.role, title: mgr.title ?? null });
+        chain.push({ id: mgr.id, name: mgr.name, title: mgr.title ?? null });
         currentId = mgr.reportsTo ?? null;
       }
       return chain;
     },
-
-    runningForAgent: (agentId: string) =>
-      db
-        .select()
-        .from(heartbeatRuns)
-        .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"]))),
 
     resolveByReference: async (companyId: string, reference: string) => {
       const raw = reference.trim();

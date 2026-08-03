@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { expect, request as pwRequest, test, type APIRequestContext, type APIResponse, type Locator, type Page } from "@playwright/test";
-import { createLocalAgentJwt } from "../../server/src/agent-auth-jwt";
+import { expect, request as pwRequest, test, type APIRequestContext, type APIResponse, type Locator, type Page } from "./fixtures";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+} from "../../packages/shared/src/index";
 
 const PORT = Number(process.env.PAPERCLIP_E2E_PORT ?? 3199);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -53,64 +57,26 @@ async function createCompany(board: APIRequestContext) {
 async function createCompanyAgent(
   board: APIRequestContext,
   companyId: string,
-  input: { name: string; role: string; title?: string; capabilities?: string },
+  input: { name: string; title?: string; capabilities?: string },
 ) {
-  const response = await board.post(`/api/companies/${companyId}/agents`, {
+  const disabledMap = (keys: readonly string[]) =>
+    Object.fromEntries(keys.map((key) => [key, false]));
+  const response = await board.post(`/api/companies/${companyId}/runtime-agents`, {
+    headers: { "Idempotency-Key": randomUUID() },
     data: {
       name: input.name,
-      role: input.role,
-      title: input.title,
-      capabilities: input.capabilities,
-      adapterType: "process",
-      adapterConfig: { command: process.execPath, args: ["-e", "process.stdout.write('ok\\n')"] },
+      title: input.title ?? null,
+      capabilities: input.capabilities ?? null,
+      reportsTo: null,
+      contextGrants: disabledMap(AGENT_CONTEXT_GRANT_KEYS),
+      actionGrants: disabledMap(PAPERCLIP_ACTION_KEYS),
+      mentionReachGrants: disabledMap(AGENT_MENTION_REACH_GRANT_KEYS),
+      companyToolIds: [],
     },
   });
   await expectOk(response, `create ${input.name}`);
-  return response.json() as Promise<{ id: string }>;
-}
-
-async function createPipelineWriterAgentKey(board: APIRequestContext, companyId: string) {
-  await createCompanyAgent(board, companyId, {
-    name: "Pipeline CEO",
-    role: "ceo",
-    title: "CEO",
-    capabilities: "Approves agent join requests during e2e setup.",
-  });
-
-  const inviteResponse = await board.post(`/api/companies/${companyId}/invites`, {
-    data: {
-      allowedJoinTypes: "agent",
-      defaultsPayload: {
-        agent: {
-          grants: [
-            { permissionKey: "pipelines:write", scope: null },
-          ],
-        },
-      },
-    },
-  });
-  await expectOk(inviteResponse, "create pipeline-writer invite");
-  const invite = await inviteResponse.json() as { token: string };
-
-  const acceptResponse = await board.post(`/api/invites/${invite.token}/accept`, {
-    data: {
-      requestType: "agent",
-      agentName: "Pipeline Fanout Agent",
-      adapterType: "process",
-      capabilities: "Creates pipeline child work during e2e coverage.",
-    },
-  });
-  await expectOk(acceptResponse, "accept pipeline-writer invite");
-  const accepted = await acceptResponse.json() as { id: string };
-
-  const approveResponse = await board.post(`/api/companies/${companyId}/join-requests/${accepted.id}/approve`);
-  await expectOk(approveResponse, "approve pipeline-writer join");
-  const approved = await approveResponse.json() as { createdAgentId: string };
-
-  const runId = randomUUID();
-  const token = createLocalAgentJwt(approved.createdAgentId, companyId, "process", runId);
-  if (!token) throw new Error("PAPERCLIP_AGENT_JWT_SECRET is required for pipeline writer JWT setup");
-  return { agentId: approved.createdAgentId, runId, token };
+  const created = await response.json() as { agent: { id: string } };
+  return created.agent;
 }
 
 async function createPipeline(board: APIRequestContext, companyId: string) {
@@ -282,14 +248,6 @@ test.describe("Pipelines tutorial UI flow", () => {
     const board = await pwRequest.newContext({ baseURL: BASE_URL });
     const company = await createCompany(board);
     const pipeline = await createPrimitivePipeline(board, company.id);
-    const key = await createPipelineWriterAgentKey(board, company.id);
-    const agentApi = await pwRequest.newContext({
-      baseURL: BASE_URL,
-      extraHTTPHeaders: {
-        Authorization: `Bearer ${key.token}`,
-        "X-Paperclip-Run-Id": key.runId,
-      },
-    });
 
     const parent = await createItem(board, pipeline.id, {
       caseKey: "fanout-parent",
@@ -298,7 +256,7 @@ test.describe("Pipelines tutorial UI flow", () => {
       fields: { expectedChildren: 2, release: "v1" },
     });
 
-    const childA = await createItem(agentApi, pipeline.id, {
+    const childA = await createItem(board, pipeline.id, {
       caseKey: "asset-a",
       title: "Asset A",
       stageKey: "dependent_work",
@@ -309,7 +267,7 @@ test.describe("Pipelines tutorial UI flow", () => {
     expect(childA.parentCaseVersion).toBe(parent.version);
     expect(childA.requestKey).toBe("fanout:asset-a");
 
-    const retryResponse = await agentApi.post(`/api/pipelines/${pipeline.id}/cases`, {
+    const retryResponse = await board.post(`/api/pipelines/${pipeline.id}/cases`, {
       data: {
         caseKey: "asset-a-retry",
         title: "Duplicate Asset A",
@@ -324,7 +282,7 @@ test.describe("Pipelines tutorial UI flow", () => {
     expect(retry.created).toBe(false);
     expect(retry.case.id).toBe(childA.id);
 
-    const childB = await createItem(agentApi, pipeline.id, {
+    const childB = await createItem(board, pipeline.id, {
       caseKey: "asset-b",
       title: "Asset B",
       stageKey: "dependent_work",
@@ -347,7 +305,7 @@ test.describe("Pipelines tutorial UI flow", () => {
     );
 
     await expectError(
-      await agentApi.post(`/api/cases/${childB.id}/transition`, {
+      await board.post(`/api/cases/${childB.id}/transition`, {
         data: { toStageKey: "approved", expectedVersion: childB.version },
       }),
       "blocked sibling sequencing",
@@ -364,9 +322,9 @@ test.describe("Pipelines tutorial UI flow", () => {
     await expectOk(changedA, "materially edit upstream child");
     const editedA = await changedA.json() as CaseSummary;
 
-    await moveItem(agentApi, childA.id, "done");
+    await moveItem(board, childA.id, "done");
     await expectError(
-      await agentApi.post(`/api/cases/${childB.id}/transition`, {
+      await board.post(`/api/cases/${childB.id}/transition`, {
         data: { toStageKey: "review", expectedVersion: childB.version },
       }),
       "unacknowledged drift gate",
@@ -380,7 +338,7 @@ test.describe("Pipelines tutorial UI flow", () => {
     });
     await expectOk(ackResponse, "acknowledge drift");
     expect((await ackResponse.json() as { acknowledged: boolean }).acknowledged).toBe(true);
-    await moveItem(agentApi, childB.id, "done");
+    await moveItem(board, childB.id, "done");
 
     const refreshedParent = await getItem(board, parent.id);
     expect(refreshedParent.case.childCount).toBe(2);
@@ -431,7 +389,6 @@ test.describe("Pipelines tutorial UI flow", () => {
     expect(editedA.version).toBeGreaterThan(childA.version);
     expect(rereviewed.case.version).toBeGreaterThan(changedReview.version);
 
-    await agentApi.dispose();
     await board.dispose();
   });
 
@@ -440,7 +397,6 @@ test.describe("Pipelines tutorial UI flow", () => {
     const company = await createCompany(board);
     await createCompanyAgent(board, company.id, {
       name: "Pipeline Writer",
-      role: "engineer",
       title: "Pipeline Writer",
       capabilities: "Runs pipeline drafting automation during e2e coverage.",
     });

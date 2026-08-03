@@ -36,8 +36,6 @@ function issueListFixture(count: number) {
     goalId: "goal-1",
     createdAt: "2026-07-03T00:00:00.000Z",
     updatedAt: "2026-07-03T00:00:00.000Z",
-    successfulRunHandoff: null,
-    activeRecoveryAction: null,
   }));
 }
 

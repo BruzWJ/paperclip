@@ -8,8 +8,8 @@ export interface CompanySearchParams {
   offset?: number;
   status?: IssueStatus[];
   priority?: IssuePriority[];
-  assigneeAgentId?: string | null;
-  assigneeUserId?: string;
+  ownerAgentId?: string | null;
+  ownerUserId?: string;
   projectId?: string;
   labelId?: string;
   updatedWithin?: string;
@@ -30,8 +30,8 @@ export const searchApi = {
     if (params.offset !== undefined) search.set("offset", String(params.offset));
     appendMulti(search, "status", params.status);
     appendMulti(search, "priority", params.priority);
-    if (params.assigneeAgentId !== undefined) search.set("assigneeAgentId", params.assigneeAgentId ?? "null");
-    if (params.assigneeUserId !== undefined) search.set("assigneeUserId", params.assigneeUserId);
+    if (params.ownerAgentId !== undefined) search.set("ownerAgentId", params.ownerAgentId ?? "null");
+    if (params.ownerUserId !== undefined) search.set("ownerUserId", params.ownerUserId);
     if (params.projectId !== undefined) search.set("projectId", params.projectId);
     if (params.labelId !== undefined) search.set("labelId", params.labelId);
     if (params.updatedWithin !== undefined) search.set("updatedWithin", params.updatedWithin);

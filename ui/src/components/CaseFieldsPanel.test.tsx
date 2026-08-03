@@ -46,7 +46,7 @@ describe("CaseFieldsPanel", () => {
 
   it("renders all four generic value types per spec", () => {
     const root = render({
-      slug: "hermes-agent-post",
+      slug: "external-agent-post",
       word_count: 1850,
       published: true,
       draft_only: false,
@@ -58,7 +58,7 @@ describe("CaseFieldsPanel", () => {
     });
 
     // string
-    expect(container.textContent).toContain("hermes-agent-post");
+    expect(container.textContent).toContain("external-agent-post");
     // number — locale grouped, tabular
     expect(container.textContent).toContain("1,850");
     // string[] — chips

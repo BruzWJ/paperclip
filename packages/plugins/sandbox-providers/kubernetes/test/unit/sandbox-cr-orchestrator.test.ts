@@ -53,24 +53,21 @@ describe("createSandboxCr", () => {
 });
 
 describe("getSandboxCrStatus", () => {
-  it("maps phase=Ready to SandboxStatus.phase=Running with active=1", async () => {
+  it("maps phase=Ready to the Running worker lifecycle", async () => {
     const get = vi.fn().mockResolvedValue(makeCr("Ready"));
     const clients = { custom: { getNamespacedCustomObject: get } };
     const status = await getSandboxCrStatus(clients as never, "ns", "pc-abc");
-    expect(status.phase).toBe("Running");
-    expect(status.active).toBe(1);
-    expect(status.complete).toBe(false);
+    expect(status).toEqual({ phase: "Running" });
   });
 
-  it("maps phase=Pending to SandboxStatus.phase=Pending", async () => {
+  it("maps phase=Pending to the Pending worker lifecycle", async () => {
     const get = vi.fn().mockResolvedValue(makeCr("Pending"));
     const clients = { custom: { getNamespacedCustomObject: get } };
     const status = await getSandboxCrStatus(clients as never, "ns", "pc-abc");
-    expect(status.phase).toBe("Pending");
-    expect(status.active).toBe(0);
+    expect(status).toEqual({ phase: "Pending" });
   });
 
-  it("maps phase=Failed to SandboxStatus.phase=Failed with failed=1", async () => {
+  it("maps phase=Failed with its reason and message", async () => {
     const get = vi.fn().mockResolvedValue({
       metadata: { uid: "uid-1" },
       status: {
@@ -83,11 +80,11 @@ describe("getSandboxCrStatus", () => {
     const clients = { custom: { getNamespacedCustomObject: get } };
     const status = await getSandboxCrStatus(clients as never, "ns", "pc-abc");
     expect(status.phase).toBe("Failed");
-    expect(status.failed).toBe(1);
     expect(status.reason).toBe("ImagePullFailed");
+    expect(status.message).toBe("no image");
   });
 
-  it("maps phase=Terminating to SandboxStatus.phase=Running with reason=Terminating", async () => {
+  it("maps phase=Terminating to Running with reason=Terminating", async () => {
     const get = vi.fn().mockResolvedValue(makeCr("Terminating"));
     const clients = { custom: { getNamespacedCustomObject: get } };
     const status = await getSandboxCrStatus(clients as never, "ns", "pc-abc");

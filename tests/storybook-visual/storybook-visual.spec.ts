@@ -29,7 +29,7 @@ const THEMES = ["dark", "light"] as const;
 // focused" highlight that clears via setTimeout). Wait past the flip so the
 // screenshot always captures the settled terminal state.
 const EXTRA_SETTLE_MS: Record<string, number> = {
-  // IssueContinuationHandoff clears its focus highlight after 3s + 1s fade.
+  // Delayed visual effects clear after 3s plus a 1s fade.
   "product-issue-management--full-surface-matrix": 4500,
 };
 

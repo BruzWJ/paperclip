@@ -452,8 +452,8 @@ export function WorkTimelineChart({
     const related = layout.connectors.filter((c) => c.sourceRunId === bar.span.runId || c.targetRunId === bar.span.runId);
     if (related.length === 0) return null;
     return related.some((c) => c.dashed)
-      ? "dashed handoff: retry or changes requested"
-      : "solid handoff: delegation or assignment";
+      ? "dashed transition: retry or changes requested"
+      : "solid transition: delegation or assignment";
   };
 
   const showTooltip = (evt: React.MouseEvent, bar: PositionedBar) => {
@@ -545,7 +545,7 @@ export function WorkTimelineChart({
           <line x1={layout.gutter} y1={0} x2={layout.gutter} y2={layout.height} stroke="var(--color-foreground)" strokeWidth={1.5} />
           <line x1={0} y1={AXIS_H} x2={layout.width} y2={AXIS_H} stroke="var(--color-foreground)" strokeWidth={1.5} />
 
-          {/* connectors (behind bars): hover reveals the connected handoff graph. */}
+          {/* Connectors sit behind bars; hover reveals the connected work graph. */}
           {visibleConnectors.map((c, i) => {
             const y1 = c.y1 + AXIS_H;
             const y2 = c.y2 + AXIS_H;

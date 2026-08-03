@@ -47,13 +47,6 @@ const mockCompanySkillsApi = vi.hoisted(() => ({
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
 }));
-const mockIssuesApi = vi.hoisted(() => ({
-  listInteractions: vi.fn(),
-  acceptInteraction: vi.fn(),
-  respondToInteraction: vi.fn(),
-  rejectInteraction: vi.fn(),
-}));
-
 vi.mock("@/lib/router", () => ({
   Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>{children}</a>
@@ -78,10 +71,6 @@ vi.mock("@/api/companySkills", () => ({
 
 vi.mock("@/api/agents", () => ({
   agentsApi: mockAgentsApi,
-}));
-
-vi.mock("@/api/issues", () => ({
-  issuesApi: mockIssuesApi,
 }));
 
 vi.mock("@/components/SearchableSelect", () => ({
@@ -305,10 +294,6 @@ beforeEach(() => {
   mockCompanySkillsApi.versions.mockResolvedValue([]);
   mockCompanySkillsApi.createVersion.mockResolvedValue({ id: "version-1" });
   mockAgentsApi.list.mockResolvedValue([]);
-  mockIssuesApi.listInteractions.mockResolvedValue([]);
-  mockIssuesApi.acceptInteraction.mockResolvedValue({});
-  mockIssuesApi.respondToInteraction.mockResolvedValue({});
-  mockIssuesApi.rejectInteraction.mockResolvedValue({});
 });
 
 afterEach(() => {

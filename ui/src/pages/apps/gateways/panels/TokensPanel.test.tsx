@@ -48,7 +48,7 @@ function token(overrides: Partial<ToolMcpGatewayToken> = {}): ToolMcpGatewayToke
     id: "token-1",
     companyId: "company-1",
     gatewayId: "gateway-1",
-    name: "cto-cursor",
+    name: "architect-cursor",
     tokenPrefix: "pcgw_live_8x4Pa",
     subjectType: "gateway_client",
     subjectId: null,
@@ -75,9 +75,9 @@ function gateway(overrides: Partial<ToolMcpGatewayWithTokens> = {}): ToolMcpGate
     id: "gateway-1",
     companyId: "company-1",
     gatewayPublicId: "gw",
-    name: "CTO agents",
-    displaySlug: "cto-agents",
-    slug: "cto-agents",
+    name: "Engineering agents",
+    displaySlug: "architect-agents",
+    slug: "architect-agents",
     description: null,
     status: "active",
     profileId: "profile-1",
@@ -88,11 +88,10 @@ function gateway(overrides: Partial<ToolMcpGatewayWithTokens> = {}): ToolMcpGate
     projectId: null,
     issueId: null,
     approvalIssueId: null,
-    endpointPath: "/g/cto-agents/mcp",
+    endpointPath: "/g/architect-agents/mcp",
     authConfig: {} as ToolMcpGatewayWithTokens["authConfig"],
     headerPolicy: {} as ToolMcpGatewayWithTokens["headerPolicy"],
     metadataPolicy: {} as ToolMcpGatewayWithTokens["metadataPolicy"],
-    onDemandToolsConfig: {} as ToolMcpGatewayWithTokens["onDemandToolsConfig"],
     metadata: null,
     createdByAgentId: null,
     createdByUserId: "user-1",
@@ -165,7 +164,7 @@ describe("TokensPanel", () => {
     await render(<TokensPanel companyId="company-1" gateway={gateway()} />);
 
     await clickButton("Mint token"); // open the mint form
-    await setInput('input[placeholder="cto-cursor"]', "cto-cursor");
+    await setInput('input[placeholder="build-cursor"]', "architect-cursor");
     const form = container.querySelector("form");
     if (!form) throw new Error("mint form not found");
     await act(async () => {
@@ -192,7 +191,7 @@ describe("TokensPanel", () => {
     ) as HTMLButtonElement;
     expect(confirmButton.disabled).toBe(true);
 
-    await setInput('input[aria-label="Type the token name to confirm"]', "cto-cursor");
+    await setInput('input[aria-label="Type the token name to confirm"]', "architect-cursor");
     expect(confirmButton.disabled).toBe(false);
 
     await clickButton("Revoke token");

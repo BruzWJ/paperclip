@@ -9,8 +9,57 @@ on:
         type: string
 
 jobs:
+  production_boundaries:
+    name: Production boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Require an immutable source commit
+        env:
+          VERIFIED_REF: ${{ inputs.ref }}
+        run: |
+          if [[ ! "$VERIFIED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release verification requires a full immutable commit SHA." >&2
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout pinned Session design reference
+        uses: actions/checkout@v7
+        with:
+          repository: anomalyco/opencode
+          ref: 2b2aacc93975330f9fd045d4306f698b0c6a8f8f
+          path: reference/opencode
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run canonical production gates and gate self-tests
+        env:
+          OPENCODE_SESSION_DONOR: ${{ github.workspace }}/reference/opencode
+        run: pnpm run check:production-boundaries
+
   typecheck:
     name: Typecheck
+    needs: [production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -30,7 +79,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Validate release package manifest
@@ -44,6 +93,7 @@ jobs:
 
   general_tests:
     name: General tests (${{ matrix.group_label }})
+    needs: [production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -83,7 +133,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -100,6 +150,7 @@ jobs:
 
   serialized_tests:
     name: Serialized tests (${{ matrix.shard_label }})
+    needs: [production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -135,7 +186,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -146,6 +197,7 @@ jobs:
 
   build:
     name: Build
+    needs: [production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -165,7 +217,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -173,3 +225,56 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  token_gates:
+    name: UI token gates
+    needs: [production_boundaries, typecheck, general_tests, serialized_tests, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
+
+      - name: Enforce UI design tokens
+        run: pnpm run check:token-gates
+
+  verify:
+    name: Release verification
+    if: ${{ always() }}
+    needs: [production_boundaries, typecheck, general_tests, serialized_tests, build, token_gates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Require every production verification lane
+        env:
+          PRODUCTION_BOUNDARIES_RESULT: ${{ needs.production_boundaries.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          GENERAL_TESTS_RESULT: ${{ needs.general_tests.result }}
+          SERIALIZED_TESTS_RESULT: ${{ needs.serialized_tests.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          TOKEN_GATES_RESULT: ${{ needs.token_gates.result }}
+        run: |
+          test "$PRODUCTION_BOUNDARIES_RESULT" = "success"
+          test "$TYPECHECK_RESULT" = "success"
+          test "$GENERAL_TESTS_RESULT" = "success"
+          test "$SERIALIZED_TESTS_RESULT" = "success"
+          test "$BUILD_RESULT" = "success"
+          test "$TOKEN_GATES_RESULT" = "success"

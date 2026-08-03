@@ -80,24 +80,24 @@ function buildItem(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {
     id: "row-1",
     companyId: "c1",
-    sourceKind: "issue_thread_interaction",
+    sourceKind: "approval",
     subject: {
-      kind: "interaction",
-      id: "interaction-1",
+      kind: "approval",
+      id: "approval-1",
       companyId: "c1",
       title: "Approve the migration plan?",
       identifier: null,
       status: "pending",
-      href: "/tasks/task-1",
-      metadata: { issueId: "issue-1", kind: "request_confirmation" },
+      href: "/approvals/approval-1",
+      metadata: { issueId: "issue-1" },
     },
     whyNow: "",
     decisionVerbs: [],
     inlineResolvable: true,
     entryRule: "",
     exitRule: "",
-    dedupKey: "interaction:interaction-1",
-    dismissalKey: "attention:interaction:interaction-1",
+    dedupKey: "approval:approval-1",
+    dismissalKey: "attention:approval:approval-1",
     severity: "medium",
     rank: 0,
     activityAt: "2026-07-09T12:00:00Z",
@@ -121,8 +121,8 @@ function buildSnapshot(): DecisionTrainingExample["snapshot"] {
     issue: {},
     comments: [{}, {}, {}],
     runs: [{}, {}],
-    decision: { kind: "interaction", payload: {}, actor: null, outcome: "accepted" },
-    code: { repoUrl: "r", ref: "main", commitSha: "0123456789abcdef", resolution: "exact" },
+    decision: { kind: "approval", payload: {}, actor: null, outcome: "accepted" },
+    code: { repoUrl: "r", ref: "main", commitSha: "0123456789abcdef", resolution: "workspace" },
   };
 }
 
@@ -134,8 +134,8 @@ function buildExample(overrides: Partial<DecisionTrainingExample> = {}): Decisio
   return {
     id: "example-1",
     companyId: "c1",
-    sourceKind: "interaction",
-    sourceId: "interaction-1",
+    sourceKind: "approval",
+    sourceId: "approval-1",
     issueId: "issue-1",
     cutoffAt: "2026-07-10T00:00:00Z",
     notes: "I accepted because the plan covered rollback.",
@@ -204,8 +204,8 @@ describe("DecisionTrainingDrawer — create state", () => {
     await waitFor(() => mockApi.create.mock.calls.length > 0);
 
     expect(mockApi.create).toHaveBeenCalledWith("c1", {
-      sourceKind: "interaction",
-      sourceId: "interaction-1",
+      sourceKind: "approval",
+      sourceId: "approval-1",
       issueId: "issue-1",
       notes: "Trusting the rollback plan.",
     });

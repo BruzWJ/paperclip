@@ -42,6 +42,7 @@ import {
   readTemplate,
   readWikiPage,
   recordPaperclipDistillationOutcome,
+  registerWikiCreatorCallback,
   reconcileWikiAgentResource,
   reconcileWikiProjectResource,
   reconcileWikiRoutineResources,
@@ -52,7 +53,7 @@ import {
   resetWikiProjectResource,
   selectWikiAgentResource,
   selectWikiProjectResource,
-  startWikiQuerySession,
+  startWikiQuery,
   spaceFolderStatus,
   updateEventIngestionSettings,
   updatePaperclipIngestionProfile,
@@ -140,7 +141,7 @@ function buildManualDistillPrompt(input: { companyId: string; projectId?: string
     "",
     "Process:",
     "1. Read the wiki root AGENTS.md, wiki/index.md, and recent wiki/log.md entries.",
-    "2. Assemble bounded Paperclip source bundles for every eligible project or root issue, excluding LLM Wiki plugin-operation issues.",
+    "2. Assemble bounded Paperclip source bundles for every eligible project or root issue, excluding issues correlated to LLM Wiki operations.",
     "3. Turn durable signal into project standups, wiki-insightful project pages, decisions, history, index, and log updates per the paperclip-distill skill.",
     "4. Surface clipped, low-signal, stale-hash, or source-window warnings instead of hiding them.",
   ].filter((line): line is string => line !== null).join("\n");
@@ -186,6 +187,7 @@ function withManagedRoutineDefaultDrift(
 const plugin = definePlugin({
   async setup(ctx) {
     activeContext = ctx;
+    await registerWikiCreatorCallback(ctx);
     await registerWikiTools(ctx);
 
     for (const eventName of PAPERCLIP_EVENT_INGESTION_EVENTS) {
@@ -296,7 +298,6 @@ const plugin = definePlugin({
         operationType,
         title: stringField(params.title),
         prompt: stringField(params.prompt),
-        useCheapModelProfile: params.useCheapModelProfile === true,
       });
     });
 
@@ -447,7 +448,6 @@ const plugin = definePlugin({
           spaceSlug,
           operationType: "backfill",
           title: scope.rootIssueId ? "Backfill Paperclip root issue wiki history" : "Backfill Paperclip project wiki history",
-          useCheapModelProfile: params.useCheapModelProfile === true,
           prompt: [
             "Backfill LLM Wiki distillation was queued from a per-space Paperclip ingestion profile.",
             scope.projectId ? `Project ID: ${scope.projectId}` : null,
@@ -618,7 +618,6 @@ const plugin = definePlugin({
           : projectId
             ? "Distill Paperclip project into wiki"
             : "Distill Paperclip changes into wiki",
-        useCheapModelProfile: params.useCheapModelProfile === true,
         prompt: buildManualDistillPrompt({ companyId, projectId, rootIssueId }),
       });
       return { status: "queued", workItem, operation };
@@ -660,7 +659,6 @@ const plugin = definePlugin({
         spaceSlug,
         operationType: "backfill",
         title: rootIssueId ? "Backfill Paperclip root issue wiki history" : "Backfill Paperclip project wiki history",
-        useCheapModelProfile: params.useCheapModelProfile === true,
         prompt: [
           "Backfill LLM Wiki distillation requested for a bounded Paperclip source window.",
           projectId ? `Project ID: ${projectId}` : null,
@@ -726,7 +724,6 @@ const plugin = definePlugin({
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
-        querySessionId: stringField(params.querySessionId),
         question: stringField(params.question),
         answer: stringField(params.answer),
         path: stringField(params.path) ?? "",
@@ -737,7 +734,7 @@ const plugin = definePlugin({
     });
 
     ctx.actions.register("start-query", async (params) => {
-      return startWikiQuerySession(ctx, {
+      return startWikiQuery(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -1034,7 +1031,7 @@ const plugin = definePlugin({
       const body = input.body as Record<string, unknown> | null;
       return {
         status: 201,
-        body: await startWikiQuerySession(ctx, {
+        body: await startWikiQuery(ctx, {
           companyId: input.companyId,
           wikiId: stringField(body?.wikiId),
           spaceSlug: stringField(body?.spaceSlug),
@@ -1052,7 +1049,6 @@ const plugin = definePlugin({
           companyId: input.companyId,
           wikiId: stringField(body?.wikiId),
           spaceSlug: stringField(body?.spaceSlug),
-          querySessionId: stringField(body?.querySessionId),
           question: stringField(body?.question),
           answer: stringField(body?.answer),
           path: stringField(body?.path) ?? "",

@@ -8,6 +8,7 @@ import type { Issue, Project } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssuesList } from "./IssuesList";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { createTestExecutionWorkspace, createTestIssue } from "../test-utils/issue";
 
 const companyState = vi.hoisted(() => ({
   selectedCompanyId: "company-1",
@@ -181,40 +182,8 @@ vi.mock("./KanbanBoard", () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
-    identifier: "PAP-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
+  return createTestIssue({
     title: "Issue title",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
-    createdAt: new Date("2026-04-07T00:00:00.000Z"),
-    updatedAt: new Date("2026-04-07T00:00:00.000Z"),
     labels: [],
     labelIds: [],
     myLastTouchAt: null,
@@ -222,8 +191,7 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     lastActivityAt: null,
     isUnreadForMe: false,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 async function flush() {
@@ -374,7 +342,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -396,7 +363,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -452,7 +418,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -485,7 +450,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         initialSearch="server"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -519,7 +483,6 @@ describe("IssuesList", () => {
         viewStateKey="paperclip:test-issues"
         initialSearch="server"
         searchFilters={{ parentId: "parent-1" }}
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -549,7 +512,6 @@ describe("IssuesList", () => {
         viewStateKey="paperclip:test-issues"
         baseCreateIssueDefaults={{ parentId: "parent-1", projectId: "project-1" }}
         createIssueLabel="Sub-issue"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -598,7 +560,11 @@ describe("IssuesList", () => {
       id: "issue-workspace",
       projectId: "project-1",
       projectWorkspaceId: "project-workspace-1",
-      executionWorkspaceId: "execution-workspace-1",
+      currentExecutionWorkspace: createTestExecutionWorkspace({
+        id: "execution-workspace-1",
+        projectId: "project-1",
+        projectWorkspaceId: "project-workspace-1",
+      }),
     });
     const project = {
       id: "project-1",
@@ -615,7 +581,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[project]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -648,37 +613,37 @@ describe("IssuesList", () => {
       id: "issue-done",
       identifier: "PAP-1",
       title: "Completed setup",
-      status: "done",
+      boardPresentationStatus: "done",
       createdAt: new Date("2026-04-01T00:00:00.000Z"),
     });
     const nextIssue = createIssue({
       id: "issue-next",
       identifier: "PAP-2",
       title: "Implement next slice",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-02T00:00:00.000Z"),
       blockedBy: [{
         id: "issue-done",
         identifier: "PAP-1",
         title: "Completed setup",
-        status: "done",
+        boardPresentationStatus: "done",
         priority: "medium",
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
       }],
     });
     const blockedIssue = createIssue({
       id: "issue-blocked",
       identifier: "PAP-3",
       title: "Blocked follow-up",
-      status: "blocked",
+      boardPresentationStatus: "blocked",
       createdAt: new Date("2026-04-03T00:00:00.000Z"),
     });
     const cancelledIssue = createIssue({
       id: "issue-cancelled",
       identifier: "PAP-4",
       title: "Cancelled follow-up",
-      status: "cancelled",
+      boardPresentationStatus: "cancelled",
       createdAt: new Date("2026-04-04T00:00:00.000Z"),
     });
 
@@ -689,7 +654,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         showProgressSummary
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -719,22 +683,22 @@ describe("IssuesList", () => {
       id: "issue-done",
       identifier: "PAP-1",
       title: "Done first",
-      status: "done",
+      boardPresentationStatus: "done",
       createdAt: new Date("2026-04-01T00:00:00.000Z"),
     });
     const issueBlocked = createIssue({
       id: "issue-blocked",
       identifier: "PAP-2",
       title: "Blocked issue",
-      status: "blocked",
-      blockedBy: [{ id: "issue-active", identifier: "PAP-3", title: "Active blocker", status: "todo", priority: "medium", assigneeAgentId: null, assigneeUserId: null }],
+      boardPresentationStatus: "blocked",
+      blockedBy: [{ id: "issue-active", identifier: "PAP-3", title: "Active blocker", boardPresentationStatus: "todo", priority: "medium", ownerAgentId: null, ownerUserId: null }],
       createdAt: new Date("2026-04-02T00:00:00.000Z"),
     });
     const issueActive = createIssue({
       id: "issue-active",
       identifier: "PAP-3",
       title: "Active blocker",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-03T00:00:00.000Z"),
     });
 
@@ -745,7 +709,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         defaultSortField="workflow"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -773,7 +736,7 @@ describe("IssuesList", () => {
       identifier: "PAP-1",
       parentId: "issue-parent",
       title: "First child",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-01T00:00:00.000Z"),
     });
     const secondChild = createIssue({
@@ -781,16 +744,16 @@ describe("IssuesList", () => {
       identifier: "PAP-2",
       parentId: "issue-parent",
       title: "Second child",
-      status: "blocked",
+      boardPresentationStatus: "blocked",
       blockedBy: [
         {
           id: "issue-first-child",
           identifier: "PAP-1",
           title: "First child",
-          status: "todo",
+          boardPresentationStatus: "todo",
           priority: "medium",
-          assigneeAgentId: null,
-          assigneeUserId: null,
+          ownerAgentId: null,
+          ownerUserId: null,
         },
       ],
       createdAt: new Date("2026-04-02T00:00:00.000Z"),
@@ -803,7 +766,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         defaultSortField="workflow"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -825,62 +787,62 @@ describe("IssuesList", () => {
       id: "issue-done",
       identifier: "PAP-1",
       title: "Done first",
-      status: "done",
+      boardPresentationStatus: "done",
       createdAt: new Date("2026-04-01T00:00:00.000Z"),
     });
     const firstBlocker = createIssue({
       id: "issue-first-blocker",
       identifier: "PAP-2",
       title: "First blocker",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-02T00:00:00.000Z"),
     });
     const secondBlocker = createIssue({
       id: "issue-second-blocker",
       identifier: "PAP-3",
       title: "Second blocker",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-03T00:00:00.000Z"),
     });
     const thirdBlocker = createIssue({
       id: "issue-third-blocker",
       identifier: "PAP-4",
       title: "Third blocker",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-04T00:00:00.000Z"),
     });
     const issueBlocked = createIssue({
       id: "issue-blocked",
       identifier: "PAP-5",
       title: "Blocked issue",
-      status: "blocked",
+      boardPresentationStatus: "blocked",
       blockedBy: [
         {
           id: "issue-first-blocker",
           identifier: "PAP-2",
           title: "First blocker",
-          status: "todo",
+          boardPresentationStatus: "todo",
           priority: "medium",
-          assigneeAgentId: null,
-          assigneeUserId: null,
+          ownerAgentId: null,
+          ownerUserId: null,
         },
         {
           id: "issue-second-blocker",
           identifier: "PAP-3",
           title: "Second blocker",
-          status: "todo",
+          boardPresentationStatus: "todo",
           priority: "medium",
-          assigneeAgentId: null,
-          assigneeUserId: null,
+          ownerAgentId: null,
+          ownerUserId: null,
         },
         {
           id: "issue-third-blocker",
           identifier: "PAP-4",
           title: "Third blocker",
-          status: "todo",
+          boardPresentationStatus: "todo",
           priority: "medium",
-          assigneeAgentId: null,
-          assigneeUserId: null,
+          ownerAgentId: null,
+          ownerUserId: null,
         },
       ],
       createdAt: new Date("2026-04-05T00:00:00.000Z"),
@@ -893,7 +855,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         defaultSortField="workflow"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -919,28 +880,28 @@ describe("IssuesList", () => {
       id: "issue-first-root",
       identifier: "PAP-1",
       title: "First root",
-      status: "done",
+      boardPresentationStatus: "done",
       createdAt: new Date("2026-04-01T00:00:00.000Z"),
     });
     const parent = createIssue({
       id: "issue-parent",
       identifier: "PAP-2",
       title: "Parent slice",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-02T00:00:00.000Z"),
     });
     const nextRoot = createIssue({
       id: "issue-next-root",
       identifier: "PAP-3",
       title: "Next root",
-      status: "todo",
+      boardPresentationStatus: "todo",
       createdAt: new Date("2026-04-03T00:00:00.000Z"),
     });
     const grandchild = createIssue({
       id: "issue-grandchild",
       identifier: "PAP-4",
       title: "Nested cancelled cleanup",
-      status: "cancelled",
+      boardPresentationStatus: "cancelled",
       parentId: "issue-parent",
       createdAt: new Date("2026-04-04T00:00:00.000Z"),
     });
@@ -952,7 +913,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         defaultSortField="workflow"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -982,7 +942,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         showProgressSummary
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1004,14 +963,14 @@ describe("IssuesList", () => {
             id: "issue-done",
             identifier: "PAP-1",
             title: "Completed setup",
-            status: "done",
+            boardPresentationStatus: "done",
             createdAt: new Date("2026-04-01T00:00:00.000Z"),
           }),
           createIssue({
             id: "issue-blocked",
             identifier: "PAP-2",
             title: "Blocked follow-up",
-            status: "blocked",
+            boardPresentationStatus: "blocked",
             createdAt: new Date("2026-04-02T00:00:00.000Z"),
           }),
         ]}
@@ -1019,7 +978,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         showProgressSummary
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1048,7 +1006,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         onSearchChange={onSearchChange}
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1109,7 +1066,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         initialSearch="server"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1132,17 +1088,17 @@ describe("IssuesList", () => {
     const parentIssue = createIssue({
       id: "issue-parent-total-limit",
       title: "Parent total-limited issue",
-      status: "todo",
+      boardPresentationStatus: "todo",
     });
     const backlogIssue = createIssue({
       id: "issue-backlog",
       title: "Backlog column issue",
-      status: "backlog",
+      boardPresentationStatus: "backlog",
     });
     const doneIssue = createIssue({
       id: "issue-done",
       title: "Done column issue",
-      status: "done",
+      boardPresentationStatus: "done",
     });
 
     mockIssuesApi.list.mockImplementation((_companyId, filters) => {
@@ -1158,7 +1114,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         enableRoutineVisibilityFilter
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1201,7 +1156,7 @@ describe("IssuesList", () => {
         id: `issue-backlog-${index + 1}`,
         identifier: `PAP-${index + 1}`,
         title: `Backlog issue ${index + 1}`,
-        status: "backlog",
+        boardPresentationStatus: "backlog",
       }),
     );
 
@@ -1216,7 +1171,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1247,7 +1201,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1305,7 +1258,7 @@ describe("IssuesList", () => {
         id: `issue-backlog-${index + 1}`,
         identifier: `PAP-${index + 1}`,
         title: `Backlog issue ${index + 1}`,
-        status: "backlog",
+        boardPresentationStatus: "backlog",
       }),
     );
 
@@ -1320,7 +1273,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1349,7 +1301,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1379,7 +1330,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1430,7 +1380,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1477,7 +1426,6 @@ describe("IssuesList", () => {
         viewStateKey="paperclip:test-issues"
         hasMoreIssues
         onLoadMoreIssues={onLoadMoreIssues}
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1525,7 +1473,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1548,13 +1495,13 @@ describe("IssuesList", () => {
   });
 
   it("uses context-scoped persisted column visibility", async () => {
-    localStorage.setItem("paperclip:test-issues:company-1:issue-columns", JSON.stringify(["id", "assignee"]));
+    localStorage.setItem("paperclip:test-issues:company-1:issue-columns", JSON.stringify(["id", "owner"]));
 
     const assignedIssue = createIssue({
       id: "issue-assigned",
       identifier: "PAP-9",
       title: "Assigned issue",
-      assigneeAgentId: "agent-1",
+      ownerAgentId: "agent-1",
     });
 
     const { root } = renderWithQueryClient(
@@ -1563,7 +1510,6 @@ describe("IssuesList", () => {
         agents={[{ id: "agent-1", name: "Agent One" }]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1583,8 +1529,8 @@ describe("IssuesList", () => {
     });
   });
 
-  it("shows human assignee names from company member profiles", async () => {
-    localStorage.setItem("paperclip:test-issues:company-1:issue-columns", JSON.stringify(["id", "assignee"]));
+  it("shows exceptional human owner names from company member profiles", async () => {
+    localStorage.setItem("paperclip:test-issues:company-1:issue-columns", JSON.stringify(["id", "owner"]));
     mockAccessApi.listUserDirectory.mockResolvedValue({
       users: [
         {
@@ -1604,7 +1550,7 @@ describe("IssuesList", () => {
       id: "issue-human",
       identifier: "PAP-12",
       title: "Human assigned issue",
-      assigneeUserId: "user-2",
+      ownerUserId: "user-2",
     });
 
     const { root } = renderWithQueryClient(
@@ -1613,7 +1559,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1627,14 +1572,14 @@ describe("IssuesList", () => {
     });
   });
 
-  it("preserves stored grouping across refresh when initial assignees are applied", async () => {
+  it("preserves stored grouping across refresh when initial owners are applied", async () => {
     localStorage.setItem(
       "paperclip:test-issues:company-1",
       JSON.stringify({ groupBy: "status", sortField: "updated", sortDir: "desc" }),
     );
 
-    const todoIssue = createIssue({ id: "issue-todo", title: "Alpha", status: "todo", assigneeAgentId: "agent-1" });
-    const doneIssue = createIssue({ id: "issue-done", title: "Beta", status: "done", assigneeAgentId: "agent-1" });
+    const todoIssue = createIssue({ id: "issue-todo", title: "Alpha", boardPresentationStatus: "todo", ownerAgentId: "agent-1" });
+    const doneIssue = createIssue({ id: "issue-done", title: "Beta", boardPresentationStatus: "done", ownerAgentId: "agent-1" });
 
     const { root } = renderWithQueryClient(
       <IssuesList
@@ -1642,8 +1587,7 @@ describe("IssuesList", () => {
         agents={[{ id: "agent-1", name: "Agent One" }]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        initialAssignees={["agent-1"]}
-        onUpdateIssue={() => undefined}
+        initialOwners={["agent-1"]}
       />,
       container,
     );
@@ -1684,13 +1628,13 @@ describe("IssuesList", () => {
       id: "issue-alpha",
       identifier: "PAP-20",
       title: "Alpha issue",
-      executionWorkspaceId: "workspace-alpha",
+      currentExecutionWorkspace: createTestExecutionWorkspace({ id: "workspace-alpha", name: "Alpha" }),
     });
     const betaIssue = createIssue({
       id: "issue-beta",
       identifier: "PAP-21",
       title: "Beta issue",
-      executionWorkspaceId: "workspace-beta",
+      currentExecutionWorkspace: createTestExecutionWorkspace({ id: "workspace-beta", name: "Beta" }),
     });
 
     const { root } = renderWithQueryClient(
@@ -1699,7 +1643,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1736,13 +1679,13 @@ describe("IssuesList", () => {
       id: "issue-alpha",
       identifier: "PAP-30",
       title: "Alpha issue",
-      executionWorkspaceId: "workspace-alpha",
+      currentExecutionWorkspace: createTestExecutionWorkspace({ id: "workspace-alpha", name: "Alpha" }),
     });
     const betaIssue = createIssue({
       id: "issue-beta",
       identifier: "PAP-31",
       title: "Beta issue",
-      executionWorkspaceId: "workspace-beta",
+      currentExecutionWorkspace: createTestExecutionWorkspace({ id: "workspace-beta", name: "Beta" }),
     });
 
     const { root } = renderWithQueryClient(
@@ -1752,7 +1695,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         initialWorkspaces={["workspace-alpha"]}
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1788,7 +1730,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         enableRoutineVisibilityFilter
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1838,7 +1779,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         initialSearch="bug"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1874,7 +1814,6 @@ describe("IssuesList", () => {
         projects={[]}
         viewStateKey="paperclip:test-issues"
         initialSearch=""
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1911,7 +1850,6 @@ describe("IssuesList", () => {
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );
@@ -1933,11 +1871,10 @@ describe("IssuesList", () => {
   it("renders the desktop row status glyph at md (16px)", async () => {
     const { root } = renderWithQueryClient(
       <IssuesList
-        issues={[createIssue({ status: "in_progress" })]}
+        issues={[createIssue({ boardPresentationStatus: "in_progress" })]}
         agents={[]}
         projects={[]}
         viewStateKey="paperclip:test-issues"
-        onUpdateIssue={() => undefined}
       />,
       container,
     );

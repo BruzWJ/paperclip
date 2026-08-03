@@ -5,23 +5,50 @@ describe("adapterRegistrySchema", () => {
   it("parses a full entry", () => {
     const parsed = adapterRegistrySchema.parse([
       {
-        adapterType: "opencode_local",
-        runtimeImage: "ghcr.io/paperclipai/agent-runtime-opencode:v1",
-        envKeys: ["ANTHROPIC_API_KEY"],
+        adapterType: "codex",
+        runtimeImage: "ghcr.io/example/codex-acp-runtime:v1",
         allowFqdns: [],
-        probeCommand: ["opencode", "--version"],
-        defaultEnv: { ANTHROPIC_BASE_URL: "http://bifrost.bifrost.svc.cluster.local:8080" },
+        probeCommand: ["codex-acp", "--version"],
       },
     ]);
-    expect(parsed[0].adapterType).toBe("opencode_local");
+    expect(parsed[0].adapterType).toBe("codex");
     expect(parsed[0].enabled).toBe(true); // defaulted
-    expect(parsed[0].defaultEnv?.ANTHROPIC_BASE_URL).toContain("bifrost");
+    expect(parsed[0].runtimeImage).toContain("codex-acp-runtime");
+  });
+
+  it("rejects implicit server-environment provider configuration", () => {
+    expect(() =>
+      adapterRegistrySchema.parse([
+        {
+          adapterType: "codex",
+          envKeys: ["EXTERNAL_AGENT_API_KEY"],
+        },
+      ]),
+    ).toThrow();
+    expect(() =>
+      adapterRegistrySchema.parse([
+        {
+          adapterType: "codex",
+          defaultEnv: {
+            EXTERNAL_AGENT_BASE_URL: "http://provider.invalid",
+          },
+        },
+      ]),
+    ).toThrow();
   });
 
   it("defaults enabled to true and optional collections to undefined", () => {
-    const parsed = adapterRegistrySchema.parse([{ adapterType: "pi_local" }]);
-    expect(parsed[0]).toMatchObject({ adapterType: "pi_local", enabled: true });
+    const parsed = adapterRegistrySchema.parse([{ adapterType: "codex" }]);
+    expect(parsed[0]).toMatchObject({ adapterType: "codex", enabled: true });
     expect(parsed[0].runtimeImage).toBeUndefined();
+  });
+
+  it("rejects blank and whitespace-normalized adapter identities", () => {
+    for (const adapterType of ["", "   ", " codex", "codex "]) {
+      expect(() =>
+        adapterRegistrySchema.parse([{ adapterType }]),
+      ).toThrow();
+    }
   });
 
   it("rejects an entry with no adapterType", () => {

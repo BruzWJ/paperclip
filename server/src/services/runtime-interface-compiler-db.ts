@@ -1,0 +1,745 @@
+import {
+  agentActionGrants,
+  agentAdapterConfigRevisions,
+  agentCompanyToolSelections,
+  agentContextGrants,
+  agentMentionReachGrants,
+  agents,
+  issues,
+  plugins,
+  principalPermissionGrants,
+  toolApplications,
+  toolCatalogEntries,
+  toolConnectionInstalls,
+  toolConnections,
+  type Db,
+} from "@paperclipai/db";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+  type AgentContextGrantKey,
+  type AgentMentionReachGrantKey,
+  type PaperclipActionKey,
+  type RuntimeAgentCompanyToolOption,
+} from "@paperclipai/shared";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import {
+  evaluateAgentInvokability,
+  resolveInvokableIssueOwnerCatalog,
+  type InvokableIssueOwnerRevision,
+  type AgentOrgRow,
+} from "./agent-invokability.js";
+import { resolveContextDial } from "./context-dial-resolver.js";
+import type {
+  PromptCapabilityCompileScope,
+} from "./prompt-capability-gateway.js";
+import type {
+  AgentCatalogEntry,
+  IssueAssignOwnerCatalog,
+  IssueCreateOwnerCatalogEntry,
+  JsonSchema,
+  RuntimeAgentConfigureTarget,
+  RuntimeInterfaceCompileInput,
+  SelectedCompanyTool,
+} from "./runtime-interface-compiler.js";
+import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-executor.js";
+import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.js";
+import {
+  resolveMentionReach,
+  type MentionReachIssue,
+} from "./mention-reach-resolver.js";
+import {
+  listRuntimeAgentCreateCompanyToolOptions,
+} from "./runtime-agent-configuration.js";
+import {
+  isServerAdapterImplementationAvailable,
+} from "../adapters/registry.js";
+
+type AgentRow = AgentOrgRow & {
+  title: string | null;
+  capabilities: string | null;
+  currentAdapterConfigRevisionId: string | null;
+  governance: Record<string, unknown>;
+};
+
+type ConfigureGrant = {
+  permissionKey: string;
+  scope: Record<string, unknown> | null;
+};
+
+type SelectedToolRow = {
+  id: string;
+  connectionId: string;
+  connectionInstallId: string;
+  catalogEntryId: string;
+  catalogVersionHash: string;
+  selectionStatus: "selected" | "revoked";
+  installTargetType: string;
+  installTargetAgentId: string | null;
+  entryKind: string;
+  entryName: string;
+  toolName: string;
+  title: string | null;
+  description: string | null;
+  inputSchema: Record<string, unknown>;
+  entryStatus: string;
+  entryVersionHash: string;
+  connectionStatus: string;
+  connectionEnabled: boolean;
+  applicationStatus: string;
+  pluginInstallationId: string | null;
+  pluginStatus: string | null;
+};
+
+export interface RuntimeInterfaceCompilerSnapshot {
+  capability: PromptCapabilityCompileScope;
+  issue: {
+    companyId: string;
+    ownerKind: string | null;
+    ownerAgentId: string | null;
+    ownershipEpoch: number | null;
+    attentionMask:
+      | Partial<Record<AgentContextGrantKey, false>>
+      | null;
+    workMode: string;
+    harnessKind: string | null;
+    originKind: string;
+    executionPolicy: Record<string, unknown> | null;
+    projectExecutionPolicy: Record<string, unknown> | null;
+  };
+  agents: readonly AgentRow[];
+  adapterRevisions: readonly InvokableIssueOwnerRevision[];
+  contextGrantKeys: readonly AgentContextGrantKey[];
+  actionGrantKeys: readonly PaperclipActionKey[];
+  mentionReachGrantKeys: readonly AgentMentionReachGrantKey[];
+  configureGrants: readonly ConfigureGrant[];
+  childIssues: readonly {
+    id: string;
+    identifier: string | null;
+    lifecycleStatus: string | null;
+    creatorKind: string | null;
+    creatorAuthorityId: string | null;
+  }[];
+  issueTree: readonly MentionReachIssue[];
+  agentHireCompanyToolOptions: readonly RuntimeAgentCompanyToolOption[];
+  selectedTools: readonly SelectedToolRow[];
+}
+
+export interface PostgresPromptCapabilityCompiler {
+  resolve(
+    capability: PromptCapabilityCompileScope,
+  ): Promise<RuntimeInterfaceCompileInput>;
+  resolvePluginCompanyTool(input: {
+    capability: PromptCapabilityCompileScope;
+    companyToolSelectionId: string;
+  }): Promise<{ readonly pluginInstallationId: string } | null>;
+}
+
+function booleanRecord<const Key extends string>(
+  keys: readonly Key[],
+  enabled: readonly Key[],
+): Partial<Record<Key, boolean>> {
+  const enabledSet = new Set(enabled);
+  return Object.fromEntries(
+    keys.map((key) => [key, enabledSet.has(key)]),
+  ) as Partial<Record<Key, boolean>>;
+}
+
+function agentCatalogEntry(agent: AgentRow): AgentCatalogEntry {
+  return {
+    id: agent.id,
+    name: agent.name,
+    capabilities: agent.capabilities,
+  };
+}
+
+function scopeValueList(value: unknown): string[] {
+  if (typeof value === "string" && value.length > 0) return [value];
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (entry): entry is string =>
+      typeof entry === "string" && entry.length > 0,
+  );
+}
+
+function prefixedScopeValues(
+  scope: Record<string, unknown>,
+  prefix: string,
+): string[] {
+  return Object.entries(scope)
+    .filter(
+      ([key, value]) =>
+        key.startsWith(prefix) && value === true && key.length > prefix.length,
+    )
+    .map(([key]) => key.slice(prefix.length));
+}
+
+function explicitConfigureTargets(
+  sourceAgent: AgentRow,
+  companyAgents: readonly AgentRow[],
+  grants: readonly ConfigureGrant[],
+): Set<string> {
+  const targets = new Set<string>([sourceAgent.id]);
+  for (const grant of grants) {
+    if (
+      grant.permissionKey !== "agents:configure" &&
+      grant.permissionKey !== "agents:suggest-changes"
+    ) {
+      continue;
+    }
+    const scope = grant.scope;
+    if (!scope || Object.keys(scope).length === 0) {
+      for (const agent of companyAgents) targets.add(agent.id);
+      continue;
+    }
+
+    const exactIds = [
+      ...scopeValueList(scope.agentId),
+      ...scopeValueList(scope.agentIds),
+      ...scopeValueList(scope.assigneeAgentId),
+      ...scopeValueList(scope.assigneeAgentIds),
+      ...scopeValueList(scope.targetAgentId),
+      ...scopeValueList(scope.targetAgentIds),
+      ...prefixedScopeValues(scope, "agent:"),
+    ];
+    for (const id of exactIds) targets.add(id);
+  }
+  return targets;
+}
+
+function selectedCompanyTools(
+  capability: PromptCapabilityCompileScope,
+  rows: readonly SelectedToolRow[],
+): SelectedCompanyTool[] {
+  return rows
+    .filter((row) => {
+      const installMatches =
+        row.installTargetType === "agent" &&
+        row.installTargetAgentId === capability.targetAgentId;
+      return (
+        row.selectionStatus === "selected" &&
+        installMatches &&
+        row.entryKind === "tool" &&
+        row.entryStatus === "active" &&
+        row.catalogVersionHash === row.entryVersionHash &&
+        row.connectionStatus === "active" &&
+        row.connectionEnabled &&
+        row.applicationStatus === "active" &&
+        (row.pluginInstallationId === null || row.pluginStatus === "ready")
+      );
+    })
+    .map((row) => ({
+      selectionId: row.id,
+      catalogEntryId: row.catalogEntryId,
+      name: row.toolName,
+      title: row.title ?? row.entryName,
+      description: row.description ?? "",
+      inputSchema: row.inputSchema as JsonSchema,
+      pluginInstallationId: row.pluginInstallationId,
+    }))
+    .sort((left, right) =>
+      left.name.localeCompare(right.name) ||
+      left.selectionId.localeCompare(right.selectionId),
+    );
+}
+
+export function buildRuntimeInterfaceCompileInput(
+  snapshot: RuntimeInterfaceCompilerSnapshot,
+): RuntimeInterfaceCompileInput {
+  const { capability, issue } = snapshot;
+  if (
+    issue.companyId !== capability.companyId ||
+    issue.ownershipEpoch !== capability.ownershipEpoch
+  ) {
+    throw new Error("Prompt-capability issue scope changed during compilation");
+  }
+  const companyAgents = snapshot.agents.filter(
+    (agent) => agent.companyId === capability.companyId,
+  );
+  const invokableOwners = resolveInvokableIssueOwnerCatalog({
+    companyId: capability.companyId,
+    companyAgents,
+    adapterRevisions: snapshot.adapterRevisions,
+  });
+  const byId = new Map(companyAgents.map((agent) => [agent.id, agent]));
+  const sourceAgent = byId.get(capability.targetAgentId);
+  if (
+    !sourceAgent ||
+    !evaluateAgentInvokability(sourceAgent, companyAgents).invokable
+  ) {
+    throw new Error("Prompt-capability target agent is not invokable");
+  }
+
+  const contextGrants = booleanRecord(
+    AGENT_CONTEXT_GRANT_KEYS,
+    snapshot.contextGrantKeys,
+  );
+  const actionGrants = booleanRecord(
+    PAPERCLIP_ACTION_KEYS,
+    snapshot.actionGrantKeys,
+  );
+  const mentionReachGrants = booleanRecord(
+    AGENT_MENTION_REACH_GRANT_KEYS,
+    snapshot.mentionReachGrantKeys,
+  );
+  const contextDial = resolveContextDial({
+    agent: contextGrants,
+    assignment: issue.attentionMask,
+    executionMode: resolveExecutionModeContextMask({
+      workMode: issue.workMode,
+      harnessKind: issue.harnessKind,
+      originKind: issue.originKind,
+      agentGovernance: sourceAgent.governance,
+      issueExecutionPolicy: issue.executionPolicy,
+      projectExecutionPolicy: issue.projectExecutionPolicy,
+    }),
+  }).effective;
+
+  const directChildren = companyAgents
+    .filter(
+      (candidate) =>
+        candidate.reportsTo === sourceAgent.id &&
+        invokableOwners.has(candidate.id),
+    )
+    .sort((left, right) =>
+      left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+    );
+  const issueCreateDirectChildren: IssueCreateOwnerCatalogEntry[] =
+    directChildren.map((agent) => ({
+      ...agentCatalogEntry(agent),
+      kind: "agent",
+    }));
+
+  const authorityId =
+    capability.executionMode === "owner"
+      ? capability.issueExecutionAuthorityId
+      : null;
+  const eligibleCreatedIssues = authorityId
+    ? snapshot.childIssues
+        .filter(
+          (child) =>
+            (child.lifecycleStatus === "open" ||
+              child.lifecycleStatus === "blocked") &&
+            child.creatorKind === "agent-execution" &&
+            child.creatorAuthorityId === authorityId,
+        )
+        .sort((left, right) =>
+          (left.identifier ?? left.id).localeCompare(
+            right.identifier ?? right.id,
+          ),
+        )
+    : [];
+  const owners = [
+    { kind: "self" as const },
+    ...issueCreateDirectChildren,
+  ];
+  const issueAssignTargets: IssueAssignOwnerCatalog[] =
+    eligibleCreatedIssues.map((child) => ({
+      issueId: child.id,
+      identifier: child.identifier,
+      owners,
+    }));
+  const creatorUpdateTargets = eligibleCreatedIssues.map((child) => ({
+    issueId: child.id,
+  }));
+
+  const reachableMentionIds = resolveMentionReach({
+    sourceAgentId: sourceAgent.id,
+    companyAgents,
+    issueTree: snapshot.issueTree,
+    mentionReach: mentionReachGrants,
+  }).targetAgentIds;
+  const mentionTargets = companyAgents
+    .filter(
+      (candidate) =>
+        reachableMentionIds.has(candidate.id) &&
+        invokableOwners.has(candidate.id),
+    )
+    .sort((left, right) =>
+      left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+    )
+    .map(agentCatalogEntry);
+
+  const configureTargets: RuntimeAgentConfigureTarget[] =
+    actionGrants.agent_configure === true
+      ? (() => {
+          const configureTargetIds = explicitConfigureTargets(
+            sourceAgent,
+            companyAgents,
+            snapshot.configureGrants,
+          );
+          return companyAgents
+            .filter(
+              (candidate) =>
+                configureTargetIds.has(candidate.id) &&
+                candidate.status !== "terminated",
+            )
+            .sort((left, right) =>
+              left.name.localeCompare(right.name) ||
+              left.id.localeCompare(right.id),
+            )
+            .map((agent) => ({ id: agent.id }));
+        })()
+      : [];
+
+  return {
+    mode: capability.executionMode,
+    contextDial,
+    actionGrants,
+    mentionReachGrants,
+    isCurrentOwner:
+      capability.executionMode === "owner" &&
+      issue.ownerKind === "agent" &&
+      issue.ownerAgentId === sourceAgent.id,
+    issueCreateDirectChildren,
+    issueAssignTargets,
+    creatorUpdateTargets,
+    mentionTargets,
+    configureTargets,
+    agentHireCompanyToolOptions: snapshot.agentHireCompanyToolOptions,
+    selectedCompanyTools: selectedCompanyTools(capability, snapshot.selectedTools),
+  };
+}
+
+async function loadSelectedToolRows(
+  db: Db,
+  capability: PromptCapabilityCompileScope,
+): Promise<SelectedToolRow[]> {
+  return db
+    .select({
+      id: agentCompanyToolSelections.id,
+      connectionId: agentCompanyToolSelections.connectionId,
+      connectionInstallId: agentCompanyToolSelections.connectionInstallId,
+      catalogEntryId: agentCompanyToolSelections.catalogEntryId,
+      catalogVersionHash: agentCompanyToolSelections.catalogVersionHash,
+      selectionStatus: agentCompanyToolSelections.status,
+      installTargetType: toolConnectionInstalls.targetType,
+      installTargetAgentId: toolConnectionInstalls.targetAgentId,
+      entryKind: toolCatalogEntries.entryKind,
+      entryName: toolCatalogEntries.name,
+      toolName: toolCatalogEntries.toolName,
+      title: toolCatalogEntries.title,
+      description: toolCatalogEntries.description,
+      inputSchema: toolCatalogEntries.inputSchema,
+      entryStatus: toolCatalogEntries.status,
+      entryVersionHash: toolCatalogEntries.versionHash,
+      connectionStatus: toolConnections.status,
+      connectionEnabled: toolConnections.enabled,
+      applicationStatus: toolApplications.status,
+      pluginInstallationId: toolApplications.pluginId,
+      pluginStatus: plugins.status,
+    })
+    .from(agentCompanyToolSelections)
+    .innerJoin(
+      toolConnectionInstalls,
+      and(
+        eq(
+          toolConnectionInstalls.companyId,
+          agentCompanyToolSelections.companyId,
+        ),
+        eq(
+          toolConnectionInstalls.connectionId,
+          agentCompanyToolSelections.connectionId,
+        ),
+        eq(
+          toolConnectionInstalls.id,
+          agentCompanyToolSelections.connectionInstallId,
+        ),
+      ),
+    )
+    .innerJoin(
+      toolCatalogEntries,
+      and(
+        eq(toolCatalogEntries.companyId, agentCompanyToolSelections.companyId),
+        eq(
+          toolCatalogEntries.connectionId,
+          agentCompanyToolSelections.connectionId,
+        ),
+        eq(toolCatalogEntries.id, agentCompanyToolSelections.catalogEntryId),
+      ),
+    )
+    .innerJoin(
+      toolConnections,
+      and(
+        eq(toolConnections.companyId, agentCompanyToolSelections.companyId),
+        eq(toolConnections.id, agentCompanyToolSelections.connectionId),
+      ),
+    )
+    .innerJoin(
+      toolApplications,
+      and(
+        eq(toolApplications.companyId, agentCompanyToolSelections.companyId),
+        eq(toolApplications.id, toolConnections.applicationId),
+      ),
+    )
+    .leftJoin(plugins, eq(plugins.id, toolApplications.pluginId))
+    .where(
+      and(
+        eq(agentCompanyToolSelections.companyId, capability.companyId),
+        eq(agentCompanyToolSelections.agentId, capability.targetAgentId),
+        eq(agentCompanyToolSelections.status, "selected"),
+        eq(toolConnectionInstalls.targetType, "agent"),
+        eq(
+          toolConnectionInstalls.targetAgentId,
+          capability.targetAgentId,
+        ),
+      ),
+    );
+}
+
+async function loadSnapshot(
+  db: Db,
+  capability: PromptCapabilityCompileScope,
+): Promise<RuntimeInterfaceCompilerSnapshot> {
+  const [
+    issueRows,
+    agentRows,
+    adapterRevisionRows,
+    contextRows,
+    actionRows,
+    mentionRows,
+    configureRows,
+    childRows,
+    issueTreeRows,
+    agentHireCompanyToolOptions,
+    selectedTools,
+  ] = await Promise.all([
+    db
+      .select({
+        companyId: issues.companyId,
+        ownerKind: issues.ownerKind,
+        ownerAgentId: issues.ownerAgentId,
+        ownershipEpoch: issues.ownershipEpoch,
+        attentionMask: issues.attentionMask,
+        workMode: issues.workMode,
+        harnessKind: issues.harnessKind,
+        originKind: issues.originKind,
+        executionPolicy: issues.executionPolicy,
+        projectExecutionPolicy:
+          sql<Record<string, unknown> | null>`(
+            SELECT project.execution_workspace_policy
+            FROM projects project
+            WHERE project.id = ${issues.projectId}
+              AND project.company_id = ${issues.companyId}
+            LIMIT 1
+          )`,
+      })
+      .from(issues)
+      .where(eq(issues.id, capability.issueId))
+      .limit(1),
+    db
+      .select({
+        id: agents.id,
+        companyId: agents.companyId,
+        name: agents.name,
+        title: agents.title,
+        capabilities: agents.capabilities,
+        reportsTo: agents.reportsTo,
+        status: agents.status,
+        currentAdapterConfigRevisionId:
+          agents.currentAdapterConfigRevisionId,
+        governance: agents.permissions,
+      })
+      .from(agents)
+      .where(eq(agents.companyId, capability.companyId)),
+    db
+      .select({
+        id: agentAdapterConfigRevisions.id,
+        companyId: agentAdapterConfigRevisions.companyId,
+        agentId: agentAdapterConfigRevisions.agentId,
+        adapterType: agentAdapterConfigRevisions.adapterType,
+        implementationIdentity:
+          agentAdapterConfigRevisions.implementationIdentity,
+      })
+      .from(agentAdapterConfigRevisions)
+      .innerJoin(
+        agents,
+        and(
+          eq(agentAdapterConfigRevisions.companyId, agents.companyId),
+          eq(agentAdapterConfigRevisions.agentId, agents.id),
+          eq(
+            agentAdapterConfigRevisions.id,
+            agents.currentAdapterConfigRevisionId,
+          ),
+        ),
+      )
+      .where(eq(agents.companyId, capability.companyId)),
+    db
+      .select({ key: agentContextGrants.key })
+      .from(agentContextGrants)
+      .where(
+        and(
+          eq(agentContextGrants.companyId, capability.companyId),
+          eq(agentContextGrants.agentId, capability.targetAgentId),
+        ),
+      ),
+    db
+      .select({ key: agentActionGrants.key })
+      .from(agentActionGrants)
+      .where(
+        and(
+          eq(agentActionGrants.companyId, capability.companyId),
+          eq(agentActionGrants.agentId, capability.targetAgentId),
+        ),
+      ),
+    db
+      .select({ key: agentMentionReachGrants.key })
+      .from(agentMentionReachGrants)
+      .where(
+        and(
+          eq(agentMentionReachGrants.companyId, capability.companyId),
+          eq(agentMentionReachGrants.agentId, capability.targetAgentId),
+        ),
+      ),
+    db
+      .select({
+        permissionKey: principalPermissionGrants.permissionKey,
+        scope: principalPermissionGrants.scope,
+      })
+      .from(principalPermissionGrants)
+      .where(
+        and(
+          eq(principalPermissionGrants.companyId, capability.companyId),
+          eq(principalPermissionGrants.principalType, "agent"),
+          eq(
+            principalPermissionGrants.principalAgentId,
+            capability.targetAgentId,
+          ),
+          inArray(principalPermissionGrants.permissionKey, [
+            "agents:configure",
+            "agents:suggest-changes",
+          ]),
+        ),
+      ),
+    db
+      .select({
+        id: issues.id,
+        identifier: issues.identifier,
+        lifecycleStatus: issues.lifecycleStatus,
+        creatorKind: issues.creatorKind,
+        creatorAuthorityId: issues.creatorAuthorityId,
+      })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, capability.companyId),
+          eq(issues.parentId, capability.issueId),
+        ),
+      ),
+    db.execute(sql<MentionReachIssue>`
+      WITH RECURSIVE ancestors(id, parent_id, depth, visited) AS (
+        SELECT issue.id, issue.parent_id, 0, ARRAY[issue.id]
+        FROM issues issue
+        WHERE issue.company_id = ${capability.companyId}
+          AND issue.id = ${capability.issueId}
+          AND issue.hidden_at IS NULL
+        UNION ALL
+        SELECT parent.id, parent.parent_id, ancestors.depth + 1, ancestors.visited || parent.id
+        FROM issues parent
+        JOIN ancestors ON parent.id = ancestors.parent_id
+        WHERE parent.company_id = ${capability.companyId}
+          AND parent.hidden_at IS NULL
+          AND NOT parent.id = ANY(ancestors.visited)
+      ),
+      tree_root AS (
+        SELECT id
+        FROM ancestors
+        ORDER BY depth DESC
+        LIMIT 1
+      ),
+      issue_tree(id, parent_id, owner_kind, owner_agent_id, visited) AS (
+        SELECT issue.id, issue.parent_id, issue.owner_kind, issue.owner_agent_id, ARRAY[issue.id]
+        FROM issues issue
+        JOIN tree_root ON tree_root.id = issue.id
+        UNION ALL
+        SELECT child.id, child.parent_id, child.owner_kind, child.owner_agent_id, issue_tree.visited || child.id
+        FROM issues child
+        JOIN issue_tree ON child.parent_id = issue_tree.id
+        WHERE child.company_id = ${capability.companyId}
+          AND child.hidden_at IS NULL
+          AND NOT child.id = ANY(issue_tree.visited)
+      )
+      SELECT
+        id::text AS "id",
+        parent_id::text AS "parentId",
+        owner_kind AS "ownerKind",
+        owner_agent_id::text AS "ownerAgentId"
+      FROM issue_tree
+    `),
+    listRuntimeAgentCreateCompanyToolOptions(db, capability.companyId),
+    loadSelectedToolRows(db, capability),
+  ]);
+  const issue = issueRows[0];
+  if (!issue) throw new Error("Prompt-capability issue no longer exists");
+  return {
+    capability,
+    issue,
+    agents: agentRows,
+    adapterRevisions: adapterRevisionRows.map((revision) => ({
+      ...revision,
+      implementationAvailable:
+        isServerAdapterImplementationAvailable(
+          revision.adapterType,
+          revision.implementationIdentity,
+        ),
+    })),
+    contextGrantKeys: contextRows.map((row) => row.key),
+    actionGrantKeys: actionRows.map((row) => row.key),
+    mentionReachGrantKeys: mentionRows.map((row) => row.key),
+    configureGrants: configureRows,
+    childIssues: childRows,
+    issueTree: (
+      Array.isArray(issueTreeRows)
+        ? issueTreeRows
+        : Array.from(issueTreeRows as Iterable<unknown>)
+    ) as unknown as MentionReachIssue[],
+    agentHireCompanyToolOptions,
+    selectedTools,
+  };
+}
+
+/**
+ * Resolves the provider-visible interface from current canonical rows. No
+ * descriptor or catalog is cached on the bearer: each list/call reloads this
+ * snapshot through the exact prompt-capability generation.
+ */
+export function createPostgresRuntimeInterfaceCompiler(
+  db: Db,
+): PostgresPromptCapabilityCompiler {
+  return {
+    async resolve(capability) {
+      return buildRuntimeInterfaceCompileInput(
+        await loadSnapshot(db, capability),
+      );
+    },
+
+    async resolvePluginCompanyTool({
+      capability,
+      companyToolSelectionId,
+    }) {
+      const row = (await loadSelectedToolRows(db, capability)).find(
+        (candidate) => candidate.id === companyToolSelectionId,
+      );
+      if (!row || !row.pluginInstallationId) return null;
+      const selected = selectedCompanyTools(capability, [row]);
+      if (selected.length !== 1) return null;
+      return { pluginInstallationId: row.pluginInstallationId };
+    },
+  };
+}
+
+export function createRuntimeRetrievalScopeResolver(
+  compiler: PostgresPromptCapabilityCompiler,
+): RuntimeRetrievalScopeResolver {
+  return {
+    async resolve(capability) {
+      const input = await compiler.resolve(capability);
+      return {
+        companyId: capability.companyId,
+        activeIssueId: capability.issueId,
+        dial: input.contextDial,
+      };
+    },
+  };
+}

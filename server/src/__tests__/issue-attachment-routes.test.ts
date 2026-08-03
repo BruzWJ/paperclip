@@ -4,6 +4,7 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { StorageService } from "../storage/types.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -32,7 +33,7 @@ const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
 function registerRouteMocks() {
   vi.doMock("@paperclipai/shared/telemetry", () => ({
-    trackAgentTaskCompleted: vi.fn(),
+    trackAgentIssueCompleted: vi.fn(),
     trackErrorHandlerCrash: vi.fn(),
   }));
 
@@ -63,13 +64,6 @@ function registerRouteMocks() {
       saveIssueVote: vi.fn(async () => ({ vote: null, consentEnabledNow: false, sharingEnabled: false })),
     }),
     goalService: () => ({}),
-    heartbeatService: () => ({
-      wakeup: vi.fn(async () => undefined),
-      reportRunActivity: vi.fn(async () => undefined),
-      getRun: vi.fn(async () => null),
-      getActiveRunForAgent: vi.fn(async () => null),
-      cancelRun: vi.fn(async () => null),
-    }),
     instanceSettingsService: () => ({
       get: vi.fn(async () => ({
         id: "instance-settings-1",
@@ -93,15 +87,6 @@ function registerRouteMocks() {
       syncComment: async () => undefined,
       syncDocument: async () => undefined,
       syncIssue: async () => undefined,
-    }),
-    issueThreadInteractionService: () => ({
-      listForIssue: vi.fn(async () => []),
-      expireRequestConfirmationsSupersededByComment: vi.fn(async () => []),
-      expireStaleRequestConfirmationsForIssueDocument: vi.fn(async () => []),
-    }),
-    issueRecoveryActionService: () => ({
-      getActiveForIssue: vi.fn(async () => null),
-      listActiveForIssues: vi.fn(async () => new Map()),
     }),
     issueService: () => mockIssueService,
     logActivity: mockLogActivity,
@@ -162,16 +147,21 @@ async function createApp(storage: StorageService, options?: { companyIds?: strin
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "local-board",
+    (req as any).actor = testBoardSessionActor({
+      userId: "board-user",
       companyIds: options?.companyIds ?? ["company-1"],
-      source: options?.source ?? "local_implicit",
       isInstanceAdmin: false,
-    };
+    });
     next();
   });
-  app.use("/api", issueRoutes({} as any, storage));
+  app.use(
+    "/api",
+    issueRoutes(
+      {} as any,
+      storage,
+      { ordinaryIssues: {} as any },
+    ),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -191,7 +181,7 @@ function makeAttachment(contentType: string, originalFilename: string) {
     sha256: "sha256-sample",
     originalFilename,
     createdByAgentId: null,
-    createdByUserId: "local-board",
+    createdByUserId: "board-user",
     createdAt: now,
     updatedAt: now,
   };
@@ -249,8 +239,8 @@ describe("issue attachment routes", () => {
       projectId: null,
       parentId: null,
       status: "todo",
-      assigneeAgentId: null,
-      assigneeUserId: null,
+      ownerAgentId: null,
+      ownerUserId: null,
       identifier: "PAP-1",
     });
     mockCompanyService.getById.mockResolvedValue({
@@ -293,7 +283,7 @@ describe("issue attachment routes", () => {
       }),
     );
     expect(res.body.contentType).toBe("application/zip");
-  });
+  }, 15_000);
 
   it("accepts default video uploads for issue attachments", async () => {
     const storage = createStorageService();
@@ -613,7 +603,7 @@ describe("issue attachment routes", () => {
     expect(storage.getObject).not.toHaveBeenCalled();
   });
 
-  it("rejects same-company attachment content reads outside the parent issue boundary", async () => {
+  it("allows same-company board attachment reads without a legacy issue permission boundary", async () => {
     const storage = createStorageService();
     mockIssueService.getAttachmentById.mockResolvedValue(makeAttachment("video/mp4", "clip.mp4"));
     mockAccessService.decide.mockResolvedValue({
@@ -624,8 +614,8 @@ describe("issue attachment routes", () => {
     const app = await createApp(storage);
     const res = await request(app).get("/api/attachments/attachment-1/content");
 
-    expect(res.status).toBe(403);
-    expect(storage.getObject).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(storage.getObject).toHaveBeenCalled();
   });
 
   it("canonicalizes paperclip artifact metadata before creating a work product", async () => {

@@ -115,9 +115,9 @@ function makeGroup(args: {
   return {
     group: {
       object: args.object,
-      mentions: [makeMention({ id: `${args.object.id}-m`, objectId: args.object.id, sourceKind: "description" })],
+      mentions: [makeMention({ id: `${args.object.id}-m`, objectId: args.object.id, sourceKind: "request" })],
       mentionCount: args.mentionCount ?? 1,
-      sourceLabels: args.sourceLabels ?? ["description"],
+      sourceLabels: args.sourceLabels ?? ["request"],
     },
     pill: {
       providerKey: args.object.providerKey,

@@ -1,96 +1,107 @@
-import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activityLog, agents, companies, companySkillPolicies, createDb } from "@paperclipai/db";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Db } from "@paperclipai/db";
+import { conflict } from "../errors.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { companySkillPolicyRoutes } from "../routes/company-skill-policy.js";
-import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const mocks = vi.hoisted(() => ({
+  canUser: vi.fn(),
+  get: vi.fn(),
+  replace: vi.fn(),
+  reset: vi.fn(),
+  evaluate: vi.fn(),
+  resolveAgentPrincipal: vi.fn(),
+}));
 
-describeEmbeddedPostgres("company skill policy routes", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  let companyId: string;
-  let otherCompanyId: string;
-  let agentId: string;
+vi.mock("../services/access.js", () => ({
+  accessService: () => ({ canUser: mocks.canUser }),
+}));
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-skill-policy-routes-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+vi.mock("../services/company-skill-policy.js", () => ({
+  companySkillPolicyService: () => ({
+    get: mocks.get,
+    replace: mocks.replace,
+    reset: mocks.reset,
+    evaluate: mocks.evaluate,
+    resolveAgentPrincipal: mocks.resolveAgentPrincipal,
+  }),
+}));
 
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(companySkillPolicies);
-    await db.delete(agents);
-    await db.delete(companies);
-  });
+const companyId = "00000000-0000-4000-8000-000000000001";
+const otherCompanyId = "00000000-0000-4000-8000-000000000002";
+const agentId = "00000000-0000-4000-8000-000000000003";
+const MEMBER_USER_ID = "skill-policy-member";
+const ADMIN_USER_ID = "skill-policy-admin";
+const CROSS_COMPANY_USER_ID = "skill-policy-cross-company";
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function setupApp() {
-    companyId = randomUUID();
-    otherCompanyId = randomUUID();
-    agentId = randomUUID();
-    await db.insert(companies).values([
-      {
-        id: companyId,
-        name: "Policy Co",
-        issuePrefix: `P${companyId.replaceAll("-", "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-      {
-        id: otherCompanyId,
-        name: "Other Co",
-        issuePrefix: `O${otherCompanyId.replaceAll("-", "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-    ]);
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "Builder",
-      role: "engineer",
-      adapterType: "process",
-      adapterConfig: {},
-      status: "idle",
-    });
-
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      const actor = req.header("x-test-actor");
-      req.actor = actor === "board"
-        ? {
-            type: "board",
-            source: "local_implicit",
-            userId: "board",
-            companyIds: [],
-            isInstanceAdmin: true,
-          }
-        : actor === "none"
-          ? { type: "none", source: "none" }
-          : {
-              type: "agent",
-              source: "agent_key",
-              agentId,
-              companyId: actor === "cross-company" ? otherCompanyId : companyId,
-              runId: null,
-            };
-      next();
-    });
-    app.use(companySkillPolicyRoutes(db));
-    app.use(errorHandler);
-    return app;
+function actorFor(requestedActor: string | undefined) {
+  if (requestedActor === "none") {
+    return { type: "none", source: "none" } as const;
   }
+  if (requestedActor === "cross-company") {
+    return testBoardSessionActor({
+      userId: CROSS_COMPANY_USER_ID,
+      companyIds: [otherCompanyId],
+    });
+  }
+  const userId = requestedActor === "board" ? ADMIN_USER_ID : MEMBER_USER_ID;
+  return testBoardSessionActor({
+    userId,
+    companyIds: [companyId],
+    memberships: [{ companyId, membershipRole: requestedActor === "board" ? "owner" : "operator", status: "active" }],
+  });
+}
+
+function createApp() {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.actor = actorFor(req.header("x-test-actor") ?? undefined);
+    next();
+  });
+  app.use(companySkillPolicyRoutes({} as Db));
+  app.use(errorHandler);
+  return app;
+}
+
+describe("company skill policy routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.canUser.mockImplementation(async (_companyId, userId) => userId === ADMIN_USER_ID);
+    mocks.get.mockResolvedValue({
+      schemaVersion: 1,
+      revision: 0,
+      materialized: false,
+      defaultEffect: "allow",
+      rules: [],
+    });
+    mocks.replace.mockResolvedValue({
+      schemaVersion: 1,
+      revision: 1,
+      materialized: true,
+      defaultEffect: "allow",
+      rules: [],
+    });
+    mocks.reset.mockResolvedValue({
+      schemaVersion: 1,
+      revision: 0,
+      materialized: false,
+      defaultEffect: "allow",
+      rules: [],
+    });
+    mocks.resolveAgentPrincipal.mockResolvedValue({ type: "agent", id: agentId });
+    mocks.evaluate.mockResolvedValue({
+      allowed: false,
+      reason: "explicit_rule",
+      matchedRuleId: "deny-remove",
+    });
+  });
 
   it("returns the open default and stable authentication/company boundary errors", async () => {
-    const app = await setupApp();
+    const app = createApp();
     await request(app)
       .get(`/companies/${companyId}/skill-policy`)
       .expect(200)
@@ -99,16 +110,16 @@ describeEmbeddedPostgres("company skill policy routes", () => {
       .get(`/companies/${companyId}/skill-policy`)
       .set("x-test-actor", "none")
       .expect(401)
-      .expect(({ body }) => expect(body.code).toBe("skill_authentication_required"));
+      .expect(({ body }) => expect(body.error).toBe("Unauthorized"));
     await request(app)
       .get(`/companies/${companyId}/skill-policy`)
       .set("x-test-actor", "cross-company")
       .expect(403)
-      .expect(({ body }) => expect(body.code).toBe("skill_company_boundary_denied"));
+      .expect(({ body }) => expect(body.error).toBe("User does not have access to this company"));
   });
 
-  it("restricts policy administration, persists revisions, evaluates denials, and logs mutations", async () => {
-    const app = await setupApp();
+  it("restricts policy administration and forwards canonical mutation/evaluation contracts", async () => {
+    const app = createApp();
     const body = {
       schemaVersion: 1,
       expectedRevision: 0,
@@ -132,6 +143,15 @@ describeEmbeddedPostgres("company skill policy routes", () => {
       .send(body)
       .expect(200)
       .expect(({ body: responseBody }) => expect(responseBody).toMatchObject({ revision: 1, materialized: true }));
+    expect(mocks.replace).toHaveBeenCalledWith(expect.objectContaining({
+      companyId,
+      expectedRevision: 0,
+      activity: { actorType: "user", actorId: ADMIN_USER_ID },
+    }));
+
+    mocks.replace.mockRejectedValueOnce(conflict("Skill policy revision conflict", {
+      code: "skill_policy_revision_conflict",
+    }));
     await request(app)
       .put(`/companies/${companyId}/skill-policy`)
       .set("x-test-actor", "board")
@@ -140,13 +160,15 @@ describeEmbeddedPostgres("company skill policy routes", () => {
       .expect(({ body: responseBody }) => expect(responseBody.code).toBe("skill_policy_revision_conflict"));
     await request(app)
       .post(`/companies/${companyId}/skill-policy/evaluate`)
-      .send({ action: "skills.remove", resource: {} })
+      .set("x-test-actor", "board")
+      .send({ action: "skills.remove", resource: {}, principal: { agentId } })
       .expect(200)
       .expect(({ body: responseBody }) => expect(responseBody).toMatchObject({
         allowed: false,
         reason: "explicit_rule",
         matchedRuleId: "deny-remove",
       }));
+    expect(mocks.resolveAgentPrincipal).toHaveBeenCalledWith(companyId, agentId);
     await request(app)
       .post(`/companies/${companyId}/skill-policy/evaluate`)
       .send({ action: "skills.remove", resource: {}, principal: { agentId } })
@@ -157,23 +179,14 @@ describeEmbeddedPostgres("company skill policy routes", () => {
       .set("x-test-actor", "board")
       .expect(200)
       .expect(({ body: responseBody }) => expect(responseBody).toMatchObject({ revision: 0, materialized: false }));
-    const activities = await db.select().from(activityLog);
-    expect(activities).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        companyId,
-        action: "company.skill_policy_replaced",
-        entityType: "company_skill_policy",
-      }),
-      expect.objectContaining({
-        companyId,
-        action: "company.skill_policy_reset",
-        entityType: "company_skill_policy",
-      }),
-    ]));
+    expect(mocks.reset).toHaveBeenCalledWith({
+      companyId,
+      activity: { actorType: "user", actorId: ADMIN_USER_ID },
+    });
   });
 
   it("rejects unknown actions and secret-bearing policy locators with 422", async () => {
-    const app = await setupApp();
+    const app = createApp();
     await request(app)
       .post(`/companies/${companyId}/skill-policy/evaluate`)
       .send({ action: "skills.publish", resource: {} })

@@ -31,7 +31,7 @@ const EXECUTION_WORKSPACE_OPTIONS = [
 function shouldPresentExistingWorkspaceSelection(
   issue: Pick<
     Issue,
-    "executionWorkspaceId" | "executionWorkspacePreference" | "executionWorkspaceSettings" | "currentExecutionWorkspace"
+    "executionWorkspacePreference" | "executionWorkspaceSettings" | "currentExecutionWorkspace"
   >,
 ) {
   const persistedMode =
@@ -39,7 +39,7 @@ function shouldPresentExistingWorkspaceSelection(
     ?? issue.executionWorkspaceSettings?.mode
     ?? issue.executionWorkspacePreference;
   return Boolean(
-    issue.executionWorkspaceId &&
+    issue.currentExecutionWorkspace?.id &&
     (persistedMode === "isolated_workspace" || persistedMode === "operator_branch"),
   );
 }
@@ -162,7 +162,6 @@ interface IssueWorkspaceCardProps {
       | "companyId"
       | "projectId"
       | "projectWorkspaceId"
-      | "executionWorkspaceId"
       | "executionWorkspacePreference"
       | "executionWorkspaceSettings"
     >,
@@ -215,6 +214,7 @@ export function IssueWorkspaceCard({
     && Boolean(project?.executionWorkspacePolicy?.enabled);
 
   const workspace = issue.currentExecutionWorkspace as ExecutionWorkspace | null | undefined;
+  const configuredReusableWorkspaceId = workspace?.id ?? "";
   const { data: environments } = useQuery({
     queryKey: queryKeys.environments.list(companyId!),
     queryFn: () => environmentsApi.list(companyId!),
@@ -243,7 +243,7 @@ export function IssueWorkspaceCard({
   const selectableReusableWorkspaces = reusableExecutionWorkspaces ?? [];
 
   const selectedReusableExecutionWorkspace =
-    selectableReusableWorkspaces.find((w) => w.id === issue.executionWorkspaceId)
+    selectableReusableWorkspaces.find((w) => w.id === configuredReusableWorkspaceId)
     ?? workspace
     ?? null;
 
@@ -256,7 +256,7 @@ export function IssueWorkspaceCard({
       );
 
   const [draftSelection, setDraftSelection] = useState(currentSelection);
-  const [draftExecutionWorkspaceId, setDraftExecutionWorkspaceId] = useState(issue.executionWorkspaceId ?? "");
+  const [draftExecutionWorkspaceId, setDraftExecutionWorkspaceId] = useState(configuredReusableWorkspaceId);
   const projectEnvironmentId = environmentsEnabled
     ? project?.executionWorkspacePolicy?.environmentId ?? null
     : null;
@@ -275,14 +275,14 @@ export function IssueWorkspaceCard({
   useEffect(() => {
     if (editing) return;
     setDraftSelection(currentSelection);
-    setDraftExecutionWorkspaceId(issue.executionWorkspaceId ?? "");
-  }, [currentSelection, editing, issue.executionWorkspaceId]);
+    setDraftExecutionWorkspaceId(configuredReusableWorkspaceId);
+  }, [configuredReusableWorkspaceId, currentSelection, editing]);
 
   const activeNonDefaultWorkspace = Boolean(workspace && workspace.mode !== "shared_workspace");
 
   const configuredReusableWorkspace =
     selectableReusableWorkspaces.find((w) => w.id === draftExecutionWorkspaceId)
-    ?? (draftExecutionWorkspaceId === issue.executionWorkspaceId ? selectedReusableExecutionWorkspace : null);
+    ?? (draftExecutionWorkspaceId === configuredReusableWorkspaceId ? selectedReusableExecutionWorkspace : null);
 
   const selectedReusableWorkspaceLink = workspaceDetailLink({
     projectId: project?.id,
@@ -337,9 +337,9 @@ export function IssueWorkspaceCard({
 
   const handleCancel = useCallback(() => {
     setDraftSelection(currentSelection);
-    setDraftExecutionWorkspaceId(issue.executionWorkspaceId ?? "");
+    setDraftExecutionWorkspaceId(configuredReusableWorkspaceId);
     setEditing(false);
-  }, [currentSelection, issue.executionWorkspaceId]);
+  }, [configuredReusableWorkspaceId, currentSelection]);
 
   if (!policyEnabled || !project) return null;
 
@@ -468,8 +468,8 @@ export function IssueWorkspaceCard({
               setDraftSelection(nextMode);
               if (nextMode !== "reuse_existing") {
                 setDraftExecutionWorkspaceId("");
-              } else if (!draftExecutionWorkspaceId && issue.executionWorkspaceId) {
-                setDraftExecutionWorkspaceId(issue.executionWorkspaceId);
+              } else if (!draftExecutionWorkspaceId && configuredReusableWorkspaceId) {
+                setDraftExecutionWorkspaceId(configuredReusableWorkspaceId);
               }
             }}
           >

@@ -1,186 +1,165 @@
 import { z } from "zod";
-import {
-  AGENT_ICON_NAMES,
-  AGENT_ROLES,
-  AGENT_STATUSES,
-  INBOX_MINE_ISSUE_STATUS_FILTER,
-} from "../constants.js";
-import { agentAdapterTypeSchema } from "../adapter-type.js";
+import { INBOX_MINE_ISSUE_STATUS_FILTER } from "../constants.js";
 import { envConfigSchema } from "./secret.js";
 import { trustAuthorizationPolicySchema, trustPresetSchema } from "./trust-policy.js";
-import { agentDesiredSkillSelectionSchema } from "./adapter-skills.js";
+import { isProviderChildReservedEnvironmentKey } from "../provider-child-boundary.js";
 
-export const agentPermissionsSchema = z.object({
-  canCreateAgents: z.boolean().optional().default(false),
-  canCreateSkills: z.boolean().optional().default(true),
+export const agentGovernancePolicySchema = z.object({
   trustPreset: trustPresetSchema.optional(),
-  authorizationPolicy: trustAuthorizationPolicySchema.optional(),
-}).catchall(z.unknown());
-
-export const agentInstructionsBundleModeSchema = z.enum(["managed", "external"]);
-
-export const updateAgentInstructionsBundleSchema = z.object({
-  mode: agentInstructionsBundleModeSchema.optional(),
-  rootPath: z.string().trim().min(1).nullable().optional(),
-  entryFile: z.string().trim().min(1).optional(),
-  clearLegacyPromptTemplate: z.boolean().optional().default(false),
-});
-
-export type UpdateAgentInstructionsBundle = z.infer<typeof updateAgentInstructionsBundleSchema>;
-
-export const upsertAgentInstructionsFileSchema = z.object({
-  path: z.string().trim().min(1),
-  content: z.string(),
-  clearLegacyPromptTemplate: z.boolean().optional().default(false),
-});
-
-export type UpsertAgentInstructionsFile = z.infer<typeof upsertAgentInstructionsFileSchema>;
-
-const adapterConfigSchema = z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
-  const envValue = value.env;
-  if (envValue === undefined) return;
-  const parsed = envConfigSchema.safeParse(envValue);
-  if (!parsed.success) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "adapterConfig.env must be a map of valid env bindings",
-      path: ["env"],
-    });
+  authorizationPolicy: trustAuthorizationPolicySchema.optional().nullable(),
+}).catchall(z.unknown()).superRefine((value, ctx) => {
+  for (const key of Object.keys(value)) {
+    if (/^can[A-Z]/.test(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Coarse capability switches are not governance policy; use explicit action and management grants",
+        path: [key],
+      });
+    }
   }
 });
 
-export const createAgentInstructionsBundleSchema = z.object({
-  entryFile: z.string().trim().min(1).optional(),
-  files: z.record(z.string(), z.string()).refine((files) => Object.keys(files).length > 0, {
-    message: "instructionsBundle.files must contain at least one file",
-  }),
+const FORBIDDEN_ADAPTER_BRIDGE_KEYS = new Set([
+  "codexhome",
+  "cwd",
+  "homedir",
+  "homedirectory",
+  "paperclipagentid",
+  "paperclipapikey",
+  "paperclipapiurl",
+  "paperclipbridge",
+  "paperclipcompanyid",
+  "papercliprunid",
+  "paperclipruntime",
+  "paperclipruntimeconfig",
+  "paperclipruntimeskills",
+  "paperclipruntimeservice",
+  "runtimeservice",
+  "runtimeservices",
+  "runtimeservicesjson",
+  "workspaceruntime",
+  "workingdirectory",
+]);
+
+function normalizedAdapterConfigKey(key: string): string {
+  return key.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function rejectCompanySkillRevisionFields(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number> = [],
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      rejectCompanySkillRevisionFields(entry, ctx, [...path, index]),
+    );
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+
+  for (const [key, entry] of Object.entries(value)) {
+    const entryPath = [...path, key];
+    if (
+      normalizedAdapterConfigKey(key) === "paperclipskillsync" ||
+      normalizedAdapterConfigKey(key) === "companyskillpins" ||
+      normalizedAdapterConfigKey(key) === "skillchannel"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Company skill pins and channel belong only to the immutable ACP revision",
+        path: entryPath,
+      });
+      continue;
+    }
+    rejectCompanySkillRevisionFields(entry, ctx, entryPath);
+  }
+}
+
+function rejectAdapterBridgeFields(
+  value: unknown,
+  ctx: z.RefinementCtx,
+  path: Array<string | number> = [],
+): void {
+  if (typeof value === "string") return;
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      rejectAdapterBridgeFields(entry, ctx, [...path, index]),
+    );
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+
+  const record = value as Record<string, unknown>;
+  const parentKey = typeof path.at(-1) === "string" ? String(path.at(-1)) : "";
+  for (const [key, entry] of Object.entries(record)) {
+    const normalizedKey = normalizedAdapterConfigKey(key);
+    const isEnvironmentEntry = parentKey.toLowerCase() === "env";
+    if (
+      (FORBIDDEN_ADAPTER_BRIDGE_KEYS.has(normalizedKey) &&
+        !(isEnvironmentEntry && key === "CODEX_HOME")) ||
+      /^paperclip(?:api|bridge|runtime)/.test(normalizedKey) ||
+      /^(?:agent|managed)home(?:dir|directory|path)?$/.test(normalizedKey)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Adapter configuration field is server-owned or forbidden: ${key}`,
+        path: [...path, key],
+      });
+      continue;
+    }
+    if (isEnvironmentEntry && isProviderChildReservedEnvironmentKey(key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Adapter environment cannot contain control-plane state: ${key}`,
+        path: [...path, key],
+      });
+      continue;
+    }
+    rejectAdapterBridgeFields(entry, ctx, [...path, key]);
+  }
+}
+
+const providerAdapterConfigSchema = z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+  const envValue = value.env;
+  if (envValue !== undefined) {
+    const parsed = envConfigSchema.safeParse(envValue);
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "adapterConfig.env must be a map of valid env bindings",
+        path: ["env"],
+      });
+    }
+  }
+  rejectAdapterBridgeFields(value, ctx);
+});
+
+export const adapterConfigSchema = providerAdapterConfigSchema.superRefine((value, ctx) => {
+  rejectCompanySkillRevisionFields(value, ctx);
 });
 
 const agentModelProfileConfigSchema = z.object({
   enabled: z.boolean().optional(),
   label: z.string().trim().min(1).optional(),
-  adapterConfig: adapterConfigSchema,
+  adapterConfig: providerAdapterConfigSchema,
 }).strict();
 
 export const agentRuntimeConfigSchema = z.object({
+  /**
+   * Raw runtime transport limits. These are not model capabilities and remain
+   * separate from the immutable catalog descriptor captured in a revision.
+   */
+  runtimeFlags: z.object({
+    outputTokenMax: z.number().int().nonnegative().optional(),
+  }).strict().optional(),
   modelProfiles: z.object({
     cheap: agentModelProfileConfigSchema.optional(),
   }).strict().optional(),
-}).catchall(z.unknown());
-
-export const createAgentSchema = z.object({
-  name: z.string().min(1),
-  role: z.enum(AGENT_ROLES).optional().default("general"),
-  title: z.string().optional().nullable(),
-  icon: z.enum(AGENT_ICON_NAMES).optional().nullable(),
-  reportsTo: z.string().uuid().optional().nullable(),
-  capabilities: z.string().optional().nullable(),
-  desiredSkills: z.array(agentDesiredSkillSelectionSchema).optional(),
-  adapterType: agentAdapterTypeSchema,
-  adapterConfig: adapterConfigSchema.optional().default({}),
-  instructionsBundle: createAgentInstructionsBundleSchema.optional(),
-  runtimeConfig: agentRuntimeConfigSchema.optional().default({}),
-  defaultEnvironmentId: z.string().uuid().optional().nullable(),
-  budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
-  permissions: agentPermissionsSchema.optional(),
-  metadata: z.record(z.string(), z.unknown()).optional().nullable(),
-});
-
-export type CreateAgent = z.infer<typeof createAgentSchema>;
-
-export const builtInAgentProvisionSchema = z.object({
-  adapterType: agentAdapterTypeSchema.optional(),
-  adapterConfig: adapterConfigSchema.optional(),
-  budgetMonthlyCents: z.number().int().nonnegative().optional(),
-}).strict();
-
-export type BuiltInAgentProvision = z.infer<typeof builtInAgentProvisionSchema>;
-
-export const builtInAgentEmptyMutationSchema = z.object({}).strict().default({});
-
-export type BuiltInAgentEmptyMutation = z.infer<typeof builtInAgentEmptyMutationSchema>;
-
-export const builtInAgentResetSchema = z.object({
-  resources: z.array(z.enum(["agent", "instructions", "skill", "routine"])).optional(),
-}).strict().default({});
-
-export type BuiltInAgentReset = z.infer<typeof builtInAgentResetSchema>;
-
-export const createAgentHireSchema = createAgentSchema.extend({
-  sourceIssueId: z.string().uuid().optional().nullable(),
-  sourceIssueIds: z.array(z.string().uuid()).optional(),
-});
-
-export type CreateAgentHire = z.infer<typeof createAgentHireSchema>;
-
-export const updateAgentSchema = createAgentSchema
-  .omit({ permissions: true })
-  .partial()
-  .extend({
-    permissions: z.never().optional(),
-    replaceAdapterConfig: z.boolean().optional(),
-    status: z.enum(AGENT_STATUSES).optional(),
-    spentMonthlyCents: z.number().int().nonnegative().optional(),
-  });
-
-export type UpdateAgent = z.infer<typeof updateAgentSchema>;
-
-export const updateAgentInstructionsPathSchema = z.object({
-  path: z.string().trim().min(1).nullable(),
-  adapterConfigKey: z.string().trim().min(1).optional(),
-});
-
-export type UpdateAgentInstructionsPath = z.infer<typeof updateAgentInstructionsPathSchema>;
-
-export const taskBridgeAgentKeyScopeSchema = z.object({
-  kind: z.literal("task_bridge"),
-  projectId: z.string().uuid().optional().nullable(),
-  projectIds: z.array(z.string().uuid()).max(50).optional(),
-  parentIssueId: z.string().uuid().optional().nullable(),
-  parentIssueIds: z.array(z.string().uuid()).max(50).optional(),
-  allowedAssigneeAgentIds: z.array(z.string().uuid()).max(50).optional(),
 }).strict().superRefine((value, ctx) => {
-  const hasProjectBoundary = Boolean(value.projectId) || Boolean(value.projectIds?.length);
-  const hasParentBoundary = Boolean(value.parentIssueId) || Boolean(value.parentIssueIds?.length);
-  if (!hasProjectBoundary && !hasParentBoundary) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "task_bridge keys require at least one project or parent issue boundary",
-      path: ["projectId"],
-    });
-  }
+  rejectCompanySkillRevisionFields(value, ctx);
 });
-
-export const standardAgentKeyScopeSchema = z.object({
-  kind: z.literal("standard"),
-}).strict();
-
-export const skillTestAgentKeyScopeSchema = z.object({
-  kind: z.literal("skill_test"),
-  issueId: z.string().uuid(),
-}).strict();
-
-export const agentApiKeyScopeSchema = z.union([
-  standardAgentKeyScopeSchema,
-  taskBridgeAgentKeyScopeSchema,
-  skillTestAgentKeyScopeSchema,
-]);
-
-export type AgentApiKeyScope = z.infer<typeof agentApiKeyScopeSchema>;
-export type TaskBridgeAgentKeyScope = z.infer<typeof taskBridgeAgentKeyScopeSchema>;
-export type SkillTestAgentKeyScope = z.infer<typeof skillTestAgentKeyScopeSchema>;
-
-export function normalizeAgentApiKeyScope(value: unknown): AgentApiKeyScope {
-  const parsed = agentApiKeyScopeSchema.safeParse(value);
-  return parsed.success ? parsed.data : { kind: "standard" };
-}
-
-export const createAgentKeySchema = z.object({
-  name: z.string().min(1).default("default"),
-  scope: agentApiKeyScopeSchema.optional().default({ kind: "standard" }),
-});
-
-export type CreateAgentKey = z.infer<typeof createAgentKeySchema>;
 
 export const agentMineInboxQuerySchema = z.object({
   userId: z.string().trim().min(1),
@@ -188,46 +167,3 @@ export const agentMineInboxQuerySchema = z.object({
 });
 
 export type AgentMineInboxQuery = z.infer<typeof agentMineInboxQuerySchema>;
-
-export const wakeAgentSchema = z.object({
-  source: z.enum(["timer", "assignment", "on_demand", "automation"]).optional().default("on_demand"),
-  triggerDetail: z.enum(["manual", "ping", "callback", "system"]).optional(),
-  reason: z.string().optional().nullable(),
-  payload: z.record(z.string(), z.unknown()).optional().nullable(),
-  idempotencyKey: z.string().optional().nullable(),
-  forceFreshSession: z.preprocess(
-    (value) => (value === null ? undefined : value),
-    z.boolean().optional().default(false),
-  ),
-});
-
-export type WakeAgent = z.infer<typeof wakeAgentSchema>;
-
-export const resetAgentSessionSchema = z.object({
-  taskKey: z.string().min(1).optional().nullable(),
-});
-
-export type ResetAgentSession = z.infer<typeof resetAgentSessionSchema>;
-
-export const testAdapterEnvironmentSchema = z.object({
-  adapterConfig: adapterConfigSchema.optional().default({}),
-  /**
-   * Optional environment to run the adapter test inside. When omitted, the
-   * test runs against the local Paperclip host. When provided and the
-   * environment is non-local (SSH/sandbox), the test probes are executed
-   * inside that environment so the result reflects real agent execution.
-   */
-  environmentId: z.string().uuid().optional().nullable(),
-});
-
-export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
-
-export const updateAgentPermissionsSchema = z.object({
-  canCreateAgents: z.boolean(),
-  canCreateSkills: z.boolean().optional(),
-  canAssignTasks: z.boolean(),
-  trustPreset: trustPresetSchema.optional(),
-  authorizationPolicy: trustAuthorizationPolicySchema.optional(),
-});
-
-export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;

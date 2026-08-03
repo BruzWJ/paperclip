@@ -3,9 +3,9 @@ import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import { validate } from "../middleware/validate.js";
 import { decisionTrainingService, logActivity } from "../services/index.js";
-import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { assertBoard, assertCompanyAccess, hasCompanyAccess } from "./authz.js";
 
-const sourceKindSchema = z.enum(["interaction", "approval", "execution_decision"]);
+const sourceKindSchema = z.enum(["approval", "execution_decision"]);
 const exampleIdSchema = z.string().uuid();
 const createSchema = z.object({
   sourceKind: sourceKindSchema,
@@ -19,18 +19,6 @@ const previewSchema = z.object({
   sourceId: z.string().uuid(),
   issueId: z.string().uuid(),
 }).strict();
-
-function requireHumanUser(req: Request, res: Response) {
-  if (req.actor.type !== "board") {
-    res.status(403).json({ error: "Decision training writes require a human user" });
-    return null;
-  }
-  if (!req.actor.userId) {
-    res.status(403).json({ error: "Board user context required" });
-    return null;
-  }
-  return req.actor.userId;
-}
 
 function parseExampleId(req: Request, res: Response) {
   const parsed = exampleIdSchema.safeParse(req.params.id);
@@ -59,8 +47,6 @@ export function decisionTrainingRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
-      const userId = requireHumanUser(req, res);
-      if (!userId) return;
 
       const example = await svc.create({
         companyId,
@@ -68,15 +54,12 @@ export function decisionTrainingRoutes(db: Db) {
         sourceId: req.body.sourceId,
         issueId: req.body.issueId,
         notes: req.body.notes,
-        createdByUserId: userId,
+        createdByUserId: req.actor.userId,
       });
-      const actor = getActorInfo(req);
       await logActivity(db, {
         companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "decision_training.created",
         entityType: "decision_training_example",
         entityId: example.id,
@@ -95,8 +78,6 @@ export function decisionTrainingRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
-      const userId = requireHumanUser(req, res);
-      if (!userId) return;
       const preview = await svc.preview({
         companyId,
         sourceKind: req.body.sourceKind,
@@ -145,13 +126,10 @@ export function decisionTrainingRoutes(db: Db) {
         label: { outcome: example.decisionOutcome, notes: example.notes },
       }))
       .join("\n");
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "decision_training.exported",
       entityType: "decision_training_export",
       entityId: companyId,
@@ -169,13 +147,10 @@ export function decisionTrainingRoutes(db: Db) {
       res.status(404).json({ error: "Decision training example not found" });
       return;
     }
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: example.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "decision_training.read",
       entityType: "decision_training_example",
       entityId: example.id,
@@ -185,6 +160,7 @@ export function decisionTrainingRoutes(db: Db) {
   });
 
   router.patch("/decision-training/:id", validate(updateSchema), async (req, res) => {
+    assertBoard(req);
     const exampleId = parseExampleId(req, res);
     if (!exampleId) return;
     const existing = await svc.getById(exampleId);
@@ -192,8 +168,7 @@ export function decisionTrainingRoutes(db: Db) {
       res.status(404).json({ error: "Decision training example not found" });
       return;
     }
-    const userId = requireHumanUser(req, res);
-    if (!userId) return;
+    const userId = req.actor.userId;
     if (!requireExampleOwner(res, userId, existing.createdByUserId)) return;
     const notesChanged = req.body.notes !== existing.notes;
     const updated = await svc.updateNotes(existing.id, userId, req.body.notes);
@@ -202,13 +177,10 @@ export function decisionTrainingRoutes(db: Db) {
       return;
     }
     if (notesChanged) {
-      const actor = getActorInfo(req);
       await logActivity(db, {
         companyId: existing.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "decision_training.notes_updated",
         entityType: "decision_training_example",
         entityId: updated.id,
@@ -219,6 +191,7 @@ export function decisionTrainingRoutes(db: Db) {
   });
 
   router.delete("/decision-training/:id", async (req, res) => {
+    assertBoard(req);
     const exampleId = parseExampleId(req, res);
     if (!exampleId) return;
     const existing = await svc.getById(exampleId);
@@ -226,21 +199,17 @@ export function decisionTrainingRoutes(db: Db) {
       res.status(404).json({ error: "Decision training example not found" });
       return;
     }
-    const userId = requireHumanUser(req, res);
-    if (!userId) return;
+    const userId = req.actor.userId;
     if (!requireExampleOwner(res, userId, existing.createdByUserId)) return;
     const deleted = await svc.delete(existing.id);
     if (deleted.length === 0) {
       res.status(404).json({ error: "Decision training example not found" });
       return;
     }
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "decision_training.deleted",
       entityType: "decision_training_example",
       entityId: existing.id,

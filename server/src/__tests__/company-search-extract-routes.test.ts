@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   CompanySearchExtractQuery,
   CompanySearchExtractResponse,
@@ -9,6 +9,19 @@ import type {
 } from "@paperclipai/shared";
 import { issueRoutes } from "../routes/issues.js";
 import { createCompanySearchRateLimiter } from "../services/company-search-rate-limit.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
+
+const mockAccessService = vi.hoisted(() => ({
+  decide: vi.fn(),
+}));
+
+vi.mock("../services/index.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/index.js")>();
+  return {
+    ...actual,
+    accessService: () => mockAccessService,
+  };
+});
 
 function extractResponse(query: CompanySearchExtractQuery): CompanySearchExtractResponse {
   return {
@@ -31,16 +44,14 @@ function unusedSearch(_companyId: string, _query: CompanySearchQuery): Promise<C
 function createApp(companyIds: string[], extract: (companyId: string, query: CompanySearchExtractQuery) => Promise<CompanySearchExtractResponse>) {
   const app = express();
   app.use((req, _res, next) => {
-    req.actor = {
-      type: "board",
+    req.actor = testBoardSessionActor({
       userId: "user-1",
       companyIds,
-      source: "session",
-      isInstanceAdmin: true,
-    };
+    });
     next();
   });
   app.use("/api", issueRoutes({} as never, {} as never, {
+    ordinaryIssues: {} as never,
     searchService: { search: unusedSearch, extract },
     searchRateLimiter: createCompanySearchRateLimiter({
       maxRequests: 1,
@@ -52,6 +63,16 @@ function createApp(companyIds: string[], extract: (companyId: string, query: Com
 }
 
 describe("company extract-search route", () => {
+  beforeEach(() => {
+    mockAccessService.decide.mockReset();
+    mockAccessService.decide.mockResolvedValue({
+      allowed: true,
+      action: "company_scope:read",
+      reason: "allow_company_member",
+      explanation: "The authenticated user has a persisted active company membership.",
+    });
+  });
+
   it("parses the extraction query and invokes the service", async () => {
     const extract = vi.fn(async (_companyId: string, query: CompanySearchExtractQuery) => extractResponse(query));
     const app = createApp(["company-1"], extract);

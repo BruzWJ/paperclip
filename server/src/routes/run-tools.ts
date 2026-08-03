@@ -1,0 +1,285 @@
+import { Router, type Request } from "express";
+import { RUN_TOOLS_INGRESS_ORDINAL_HEADER } from "@paperclipai/adapter-utils/run-tools-stdio-proxy";
+import {
+  PromptCapabilityAuthenticationError,
+  PromptCapabilityAuthorityError,
+  type PromptCapabilityGateway,
+} from "../services/prompt-capability-gateway.js";
+import { RuntimeToolUnavailable } from "../services/runtime-interface-compiler.js";
+
+type JsonRpcId = string | number | null;
+
+interface JsonRpcRequest {
+  jsonrpc: "2.0";
+  id?: JsonRpcId;
+  method: "initialize" | "tools/list" | "tools/call";
+  params?: unknown;
+}
+
+function bearer(req: Request): string {
+  const authorization = req.header("authorization")?.trim() ?? "";
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  if (!match?.[1]) {
+    throw new PromptCapabilityAuthenticationError(
+      "paperclip.run-tools/v1 requires its prompt-capability bearer",
+    );
+  }
+  return match[1];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requestBody(value: unknown): JsonRpcRequest {
+  if (!isRecord(value) || value.jsonrpc !== "2.0") {
+    throw new Error("Invalid JSON-RPC request");
+  }
+  if (
+    value.method !== "initialize" &&
+    value.method !== "tools/list" &&
+    value.method !== "tools/call"
+  ) {
+    throw new Error("Unsupported paperclip.run-tools method");
+  }
+  return value as unknown as JsonRpcRequest;
+}
+
+function callParams(value: unknown): {
+  name: string;
+  arguments: unknown;
+} {
+  if (
+    !isRecord(value) ||
+    typeof value.name !== "string" ||
+    value.name.length === 0 ||
+    Object.keys(value).some((key) => key !== "name" && key !== "arguments")
+  ) {
+    throw new Error("Invalid tools/call parameters");
+  }
+  return {
+    name: value.name,
+    arguments: value.arguments ?? {},
+  };
+}
+
+function ingressOrdinal(req: Request): number {
+  const raw = req.header(RUN_TOOLS_INGRESS_ORDINAL_HEADER)?.trim();
+  if (!raw || !/^(?:0|[1-9][0-9]*)$/.test(raw)) {
+    throw new Error(
+      "tools/call requires its private nonnegative ingress ordinal",
+    );
+  }
+  const ordinal = Number(raw);
+  if (!Number.isSafeInteger(ordinal)) {
+    throw new Error(
+      "tools/call ingress ordinal exceeds the supported integer range",
+    );
+  }
+  return ordinal;
+}
+
+async function registerTerminalInvalidToolsCall(input: {
+  gateway: PromptCapabilityGateway;
+  bearer: string;
+  ingressOrdinal: number;
+  body: Record<string, unknown>;
+  error: unknown;
+}): Promise<void> {
+  const params = isRecord(input.body.params) ? input.body.params : null;
+  const callIdentity =
+    Object.prototype.hasOwnProperty.call(input.body, "id")
+    && (
+      typeof input.body.id === "string"
+      || typeof input.body.id === "number"
+    )
+      ? { source: "jsonrpc" as const, id: input.body.id }
+      : null;
+  await input.gateway.registerTerminalInvalidToolCall({
+    bearer: input.bearer,
+    toolName:
+      typeof params?.name === "string" && params.name.length > 0
+        ? params.name
+        : null,
+    // A terminal-invalid row digests the exact malformed params envelope so
+    // identity replay cannot silently change an extra/invalid params field.
+    arguments: input.body.params ?? null,
+    callIdentity,
+    ingressOrdinal: input.ingressOrdinal,
+    error: input.error,
+  });
+}
+
+function jsonRpcError(
+  id: JsonRpcId,
+  code: number,
+  message: string,
+  data?: Record<string, unknown>,
+) {
+  return {
+    jsonrpc: "2.0" as const,
+    id,
+    error: {
+      code,
+      message,
+      ...(data ? { data } : {}),
+    },
+  };
+}
+
+/**
+ * The only provider-facing Paperclip capability endpoint. It has no selector,
+ * session-creation, generic API, profile, or named-gateway fallback.
+ */
+export function runToolsRoutes(gateway: PromptCapabilityGateway) {
+  const router = Router();
+
+  router.post("/run-tools", async (req, res) => {
+    let body: JsonRpcRequest;
+    try {
+      const rawToolsCall =
+        isRecord(req.body) && req.body.method === "tools/call"
+          ? req.body
+          : null;
+      const rawCallBearer = rawToolsCall ? bearer(req) : null;
+      const rawCallIngressOrdinal = rawToolsCall
+        ? ingressOrdinal(req)
+        : null;
+      try {
+        body = requestBody(req.body);
+      } catch (error) {
+        if (
+          rawToolsCall
+          && rawCallBearer
+          && rawCallIngressOrdinal !== null
+        ) {
+          await registerTerminalInvalidToolsCall({
+            gateway,
+            bearer: rawCallBearer,
+            ingressOrdinal: rawCallIngressOrdinal,
+            body: rawToolsCall,
+            error,
+          });
+        }
+        throw error;
+      }
+      const token = rawCallBearer ?? bearer(req);
+      if (body.method === "initialize") {
+        // Authentication is exercised by dynamic discovery; initialize never
+        // returns identity, issue scope, or a static catalog.
+        await gateway.listTools(token);
+        res.json({
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          result: {
+            protocolVersion: "2025-03-26",
+            capabilities: { tools: { listChanged: true } },
+            serverInfo: {
+              name: "paperclip.run-tools",
+              version: "1",
+            },
+          },
+        });
+        return;
+      }
+      if (body.method === "tools/list") {
+        const tools = await gateway.listTools(token);
+        res.json({
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          result: {
+            tools: tools.map((tool) => ({
+              name: tool.name,
+              title: tool.title,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+            })),
+          },
+        });
+        return;
+      }
+
+      const ordinal = rawCallIngressOrdinal!;
+      const callIdentity =
+        Object.prototype.hasOwnProperty.call(body, "id")
+        && (typeof body.id === "string" || typeof body.id === "number")
+          ? { source: "jsonrpc" as const, id: body.id }
+          : null;
+      let params: ReturnType<typeof callParams>;
+      try {
+        if (!callIdentity) {
+          throw new Error(
+            "tools/call requires a string or number JSON-RPC id",
+          );
+        }
+        params = callParams(body.params);
+      } catch (error) {
+        await registerTerminalInvalidToolsCall({
+          gateway,
+          bearer: token,
+          ingressOrdinal: ordinal,
+          body: body as unknown as Record<string, unknown>,
+          error,
+        });
+        throw error;
+      }
+      const result = await gateway.callTool({
+        bearer: token,
+        toolName: params.name,
+        arguments: params.arguments,
+        ingressOrdinal: ordinal,
+        callIdentity,
+      });
+      res.json({
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: {
+          content: [
+            {
+              type: "text",
+              text:
+                typeof result === "string"
+                  ? result
+                  : JSON.stringify(result),
+            },
+          ],
+          structuredContent: result,
+        },
+      });
+    } catch (error) {
+      const id =
+        typeof req.body?.id === "string" ||
+        typeof req.body?.id === "number" ||
+        req.body?.id === null
+          ? req.body.id
+          : null;
+      if (error instanceof PromptCapabilityAuthenticationError) {
+        res
+          .status(401)
+          .json(jsonRpcError(id, -32001, error.message, { code: error.code }));
+        return;
+      }
+      if (error instanceof PromptCapabilityAuthorityError) {
+        res
+          .status(409)
+          .json(jsonRpcError(id, -32002, error.message, { code: error.code }));
+        return;
+      }
+      if (error instanceof RuntimeToolUnavailable) {
+        res
+          .status(403)
+          .json(jsonRpcError(id, -32601, error.message, { code: error.code }));
+        return;
+      }
+      res.status(400).json(
+        jsonRpcError(
+          id,
+          -32600,
+          error instanceof Error ? error.message : "Invalid request",
+        ),
+      );
+    }
+  });
+
+  return router;
+}

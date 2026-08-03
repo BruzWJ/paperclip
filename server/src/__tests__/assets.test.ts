@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import type { StorageService } from "../storage/types.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const { createAssetMock, getAssetByIdMock, logActivityMock } = vi.hoisted(() => ({
   createAssetMock: vi.fn(),
@@ -95,11 +96,18 @@ async function createApp(storage: ReturnType<typeof createStorageService>) {
   const { assetRoutes } = await vi.importActual<typeof import("../routes/assets.js")>("../routes/assets.js");
   const app = express();
   app.use((req, _res, next) => {
-    req.actor = {
-      type: "board",
-      source: "local_implicit",
+    req.actor = testBoardSessionActor({
       userId: "user-1",
-    };
+      companyIds: ["company-1"],
+      memberships: [
+        {
+          companyId: "company-1",
+          membershipRole: "operator",
+          status: "active",
+        },
+      ],
+      isInstanceAdmin: false,
+    });
     next();
   });
   app.use("/api", assetRoutes({} as any, storage));

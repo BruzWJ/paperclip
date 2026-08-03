@@ -1,44 +1,21 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
-const AGENT_NAME = "Chief of staff";
-const TASK_TITLE = "Hire your first engineer and create a hiring plan";
+const AGENT_NAME = "Planning coordinator";
+const CODEX_MODEL = "gpt-5.6";
+const ISSUE_TITLE = "Prepare planning-mode evidence";
+const ISSUE_REQUEST =
+  "  Produce planning-mode visual evidence for this assigned issue.\nKeep this request unchanged.  ";
 
-test("captures planning mode UI for desktop and mobile", async ({ page }) => {
+test("captures planning mode UI for desktop and mobile", async ({ page, request }) => {
   const timestamp = Date.now();
   const companyName = `PAP-3413-${timestamp}`;
   const screenshotDir = "test-results/planning-mode";
 
-  await page.route("**/test-environment", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ status: "pass", checks: [] }),
-    }),
+  const flagResponse = await request.patch(
+    "/api/instance/settings/experimental",
+    { data: { enableEnvironments: true } },
   );
-
-  await page.route("**/agent-hires", async (route) => {
-    const req = route.request();
-    const body = JSON.parse(req.postData() || "{}");
-    const auth = req.headers().authorization;
-    const real = await fetch(new URL(req.url()).toString(), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(auth ? { Authorization: auth } : {}),
-      },
-      body: JSON.stringify({
-        name: body.name,
-        role: body.role,
-        adapterType: "http",
-        adapterConfig: { url: "http://127.0.0.1:1/dead" },
-        runtimeConfig: { heartbeat: { enabled: false } },
-      }),
-    });
-    await route.fulfill({
-      status: real.status,
-      contentType: "application/json",
-      body: await real.text(),
-    });
-  });
+  expect(flagResponse.ok()).toBe(true);
 
   await page.goto("/onboarding");
   const startBtn = page.getByRole("button", { name: /Start Onboarding|New Company|Add Agent/ });
@@ -55,33 +32,98 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Define your mission" })).toBeVisible({ timeout: 30_000 });
   await page
     .getByPlaceholder("What is your team trying to achieve?")
-    .fill("Capture planning mode visual evidence for the graduated task UI.");
+    .fill("Capture planning mode visual evidence for the issue UI.");
   await page.getByRole("button", { name: /Confirm mission/ }).click();
 
-  await page.waitForSelector('input[placeholder="Chief of staff"]', { timeout: 30_000 });
-  await expect(page.locator('input[placeholder="Chief of staff"]')).toHaveValue(AGENT_NAME);
+  await page.waitForSelector('input[placeholder="Agent name"]', { timeout: 30_000 });
+  await page.getByPlaceholder("Agent name").fill(AGENT_NAME);
+  await page.getByPlaceholder("Optional title").fill("Visual QA coordinator");
+  await page
+    .getByPlaceholder(
+      "What work can another agent select this agent to handle?",
+    )
+    .fill("Captures and verifies planning-mode interface evidence.");
+  await expect(page.getByPlaceholder("Agent name")).toHaveValue(AGENT_NAME);
 
   await page.getByRole("button", { name: /^Next/ }).click();
-  await page.getByRole("button", { name: /Give it a heartbeat/ }).click();
+  await page.getByRole("button", { name: /Codex/ }).first().click();
+  const modelField = page.locator("label").filter({ hasText: /^Model$/ }).locator("../..");
+  await expect(modelField).toBeVisible({ timeout: 15_000 });
+  await modelField.getByRole("button").last().click();
+  await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
+  const environmentSelect = page
+    .locator("select")
+    .filter({ hasText: "Local · local" });
+  await expect(environmentSelect).toBeVisible({ timeout: 15_000 });
+  await environmentSelect.selectOption({ label: "Local · local" });
+  const createAgentButton = page.getByRole("button", { name: "Create agent" });
+  await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
+  await createAgentButton.click();
 
   await expect(page.getByRole("heading", { name: "Review" })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /Get started/ }).click();
-  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
 
-  const baseOrigin = new URL(page.url()).origin;
-  const companyRes = await page.request.get(`${baseOrigin}/api/companies`);
+  const companyRes = await request.get("/api/companies");
   expect(companyRes.ok()).toBe(true);
   const companies = await companyRes.json();
   const company = companies.find((c: { name: string }) => c.name === companyName);
   expect(company).toBeTruthy();
-  const issueRes = await page.request.get(`${baseOrigin}/api/companies/${company.id}/issues`);
+  const agentsResponse = await request.get(
+    `/api/companies/${company.id}/agents`,
+  );
+  expect(agentsResponse.ok()).toBe(true);
+  const agent = (
+    (await agentsResponse.json()) as Array<{
+      id: string;
+      name: string;
+      reportsTo: string | null;
+      adapterType: string | null;
+      adapterConfig: Record<string, unknown> | null;
+    }>
+  ).find((candidate) => candidate.name === AGENT_NAME);
+  expect(agent).toMatchObject({
+    name: AGENT_NAME,
+    reportsTo: null,
+    adapterType: "codex",
+    adapterConfig: {
+      model: CODEX_MODEL,
+    },
+  });
+  const runsBeforeIssue = await request.get(
+    `/api/companies/${company.id}/runs?agentId=${agent!.id}`,
+  );
+  expect(runsBeforeIssue.ok()).toBe(true);
+  expect(await runsBeforeIssue.json()).toEqual({
+    items: [],
+    nextCursor: null,
+  });
+
+  await page.getByPlaceholder("Issue title (optional)").fill(ISSUE_TITLE);
+  await page
+    .getByPlaceholder(/Describe .* first concrete assignment/)
+    .fill(ISSUE_REQUEST);
+  await page.getByRole("button", { name: /Get started/ }).click();
+  await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
+
+  const issueRes = await request.get(`/api/companies/${company.id}/issues`);
   expect(issueRes.ok()).toBe(true);
   const issues = await issueRes.json();
   const planningSeedIssue = issues.find(
-    (candidate: { id: string; identifier?: string; title: string }) =>
-      candidate.title === TASK_TITLE,
+    (candidate: {
+      id: string;
+      identifier?: string;
+      title: string;
+      request: string;
+      ownerAgentId: string | null;
+    }) =>
+      candidate.title === ISSUE_TITLE,
   );
-  expect(planningSeedIssue).toBeTruthy();
+  expect(planningSeedIssue).toEqual(
+    expect.objectContaining({
+      title: ISSUE_TITLE,
+      request: ISSUE_REQUEST,
+      ownerAgentId: agent!.id,
+    }),
+  );
 
   const issue = planningSeedIssue;
   const issueIdentifier = issue.identifier ?? issue.id;
@@ -90,13 +132,13 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
   const issueLinkSelector = `a[href$="/issues/${issueIdentifier}"]`;
 
   const setMode = async (mode: "standard" | "planning") => {
-    const patchRes = await page.request.patch(`${baseOrigin}/api/issues/${issue.id}`, {
+    const patchRes = await request.patch(`/api/issues/${issue.id}`, {
       data: { workMode: mode },
     });
     expect(patchRes.ok()).toBe(true);
     await expect
       .poll(async () => {
-        const currentRes = await page.request.get(`${baseOrigin}/api/issues/${issue.id}`);
+        const currentRes = await request.get(`/api/issues/${issue.id}`);
         expect(currentRes.ok()).toBe(true);
         const current = await currentRes.json();
         return current.workMode;

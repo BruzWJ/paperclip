@@ -66,7 +66,7 @@ body:
   - type: dropdown
     id: deployment
     attributes:
-      label: Deployment mode
+      label: Exposure and bind
       options:
         - Local dev (pnpm dev)
         - Docker
@@ -93,12 +93,9 @@ body:
       label: Agent adapter(s) involved
       description: Select all that apply. If unsure, leave unchecked and describe in additional context.
       options:
-        - label: Claude Code
-        - label: Codex
-        - label: Cursor
-        - label: Droid
-        - label: Hermes
-        - label: Custom / external plugin adapter
+        - label: Process transport
+        - label: HTTP transport
+        - label: External full-ABI adapter
         - label: Not adapter-specific (core bug)
 
   - type: dropdown
@@ -106,7 +103,7 @@ body:
     attributes:
       label: Database mode
       options:
-        - Embedded PGlite (default — `DATABASE_URL` unset)
+        - External PostgreSQL (`DATABASE_URL` supplied)
         - External Postgres
         - Not database-related
     validations:

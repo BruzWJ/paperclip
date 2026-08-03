@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Clock3, Coins, GanttChartSquare, Minus, Plus, RotateCcw, type LucideIcon } from "lucide-react";
+import { Bot, Clock3, GanttChartSquare, Minus, Plus, RotateCcw, type LucideIcon } from "lucide-react";
 import type { WorkTimelineResult } from "@paperclipai/shared";
 import { workTimelineApi, type WorkTimelineParams } from "@/api/workTimeline";
 import { queryKeys } from "@/lib/queryKeys";
@@ -73,13 +73,6 @@ function formatInteger(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
-function formatCompactInteger(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
 function spanStartMs(span: WorkTimelineResult["spans"][number]) {
   return new Date(span.start).getTime();
 }
@@ -104,13 +97,6 @@ function spanWindowOverlap(
   };
 }
 
-function spanWindowTokens(span: WorkTimelineResult["spans"][number], rawMs: number, clippedMs: number) {
-  const totalTokens = span.usage?.totalTokens ?? 0;
-  if (totalTokens <= 0 || clippedMs <= 0) return 0;
-  if (rawMs <= 0 || clippedMs >= rawMs) return totalTokens;
-  return Math.round(totalTokens * (clippedMs / rawMs));
-}
-
 function dataWindow(data: WorkTimelineResult): VisibleTimelineWindow {
   return {
     fromMs: new Date(data.window.from).getTime(),
@@ -125,7 +111,6 @@ export function timelineSummary(data: WorkTimelineResult, visibleWindow: Visible
   const windowFromMs = Math.max(fullWindow.fromMs, Math.min(fullWindow.toMs, visibleWindow.fromMs));
   const windowToMs = Math.max(windowFromMs, Math.min(fullWindow.toMs, visibleWindow.toMs));
   let activeMs = 0;
-  let totalTokens = 0;
   let runs = 0;
 
   for (const span of data.spans) {
@@ -134,14 +119,12 @@ export function timelineSummary(data: WorkTimelineResult, visibleWindow: Visible
     runs += 1;
     if (actorById.get(span.actorId)?.type === "agent") activeAgentIds.add(span.actorId);
     activeMs += overlap.clippedMs;
-    totalTokens += spanWindowTokens(span, overlap.rawMs, overlap.clippedMs);
   }
 
   return {
     runs,
     agents: activeAgentIds.size,
     activeMs,
-    totalTokens,
   };
 }
 
@@ -213,15 +196,10 @@ function TimelineSummaryStats({
     { label: "Runs", value: formatInteger(summary.runs), icon: GanttChartSquare },
     { label: "Agents", value: formatInteger(summary.agents), icon: Bot },
     { label: "Run time", value: formatDuration(0, summary.activeMs), icon: Clock3 },
-    {
-      label: "Tokens used",
-      value: summary.totalTokens > 0 ? formatCompactInteger(summary.totalTokens) : "Not tracked",
-      icon: Coins,
-    },
   ];
 
   return (
-    <dl className="grid flex-1 grid-cols-2 gap-3 border-y border-border py-3 md:grid-cols-4">
+    <dl className="grid flex-1 grid-cols-2 gap-3 border-y border-border py-3 md:grid-cols-3">
       {stats.map((stat) => {
         const Icon = stat.icon;
         return (

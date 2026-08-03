@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Issue, IssueBlockedInboxAttention } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestIssue } from "../test-utils/issue";
 
 const mockIssuesApi = vi.hoisted(() => ({
   list: vi.fn(),
@@ -22,14 +23,19 @@ vi.mock("@/lib/router", () => ({
     disableIssueQuicklook: _disableIssueQuicklook,
     issuePrefetch: _issuePrefetch,
     ...props
-  }: React.ComponentProps<"a"> & { disableIssueQuicklook?: boolean; issuePrefetch?: Issue | null }) => (
+  }: React.ComponentProps<"a"> & {
+    disableIssueQuicklook?: boolean;
+    issuePrefetch?: Issue | null;
+  }) => (
     <a className={className} {...props}>
       {children}
     </a>
   ),
 }));
 
-(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> | undefined;
@@ -55,9 +61,7 @@ function attention(
     action: { label: "Resolve PAP-77", detail: null },
     sourceIssue: null,
     leafIssue: null,
-    recoveryIssue: null,
     approvalId: null,
-    interactionId: null,
     sampleIssueIdentifier: null,
     redaction: { externalDetailsRedacted: false, secretFieldsOmitted: true },
     ...overrides,
@@ -70,42 +74,16 @@ function makeIssue(
   title: string,
   attentionPayload: IssueBlockedInboxAttention,
 ): Issue {
-  return {
+  return createTestIssue({
     id,
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title,
-    description: null,
-    status: "in_progress",
-    workMode: "standard",
-    priority: "medium",
-    assigneeAgentId: "agent-1",
-    assigneeUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
+    boardPresentationStatus: "in_progress",
+    ownerAgentId: "agent-1",
     identifier,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     blockedInboxAttention: attentionPayload,
     createdAt: new Date("2026-05-09T00:00:00.000Z"),
     updatedAt: new Date("2026-05-09T00:00:00.000Z"),
-  } as Issue;
+  });
 }
 
 function renderWithClient(node: React.ReactNode, container: HTMLDivElement) {
@@ -114,7 +92,9 @@ function renderWithClient(node: React.ReactNode, container: HTMLDivElement) {
   });
   const root = createRoot(container);
   act(() => {
-    root.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>);
+    root.render(
+      <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>,
+    );
   });
   return { root, queryClient };
 }
@@ -127,7 +107,7 @@ const blockedViewProps = {
   groupBy: "none" as const,
   sortBy: "most_recent" as const,
   issueFilters: defaultIssueFilterState,
-  currentUserId: "local-board",
+  currentUserId: "user-1",
   liveIssueIds: new Set<string>(),
   subtreeLiveCounts: new Map<string, number>(),
   workspaceFilterContext: {},
@@ -162,13 +142,16 @@ describe("BlockedInboxView", () => {
   it("shows the empty state when no blocked issues are returned", async () => {
     mockIssuesApi.list.mockResolvedValue([]);
     const { root } = renderWithClient(
-      <BlockedInboxView
-        {...blockedViewProps}
-      />,
+      <BlockedInboxView {...blockedViewProps} />,
       container,
     );
-    await waitFor(() => container.querySelector('[data-testid="blocked-inbox-empty"]') !== null);
-    expect(container.querySelector('[data-testid="blocked-inbox-empty"]')).not.toBeNull();
+    await waitFor(
+      () =>
+        container.querySelector('[data-testid="blocked-inbox-empty"]') !== null,
+    );
+    expect(
+      container.querySelector('[data-testid="blocked-inbox-empty"]'),
+    ).not.toBeNull();
     act(() => root.unmount());
   });
 
@@ -225,17 +208,24 @@ describe("BlockedInboxView", () => {
     );
     await waitFor(() => container.querySelectorAll("a").length === 4);
 
-    expect(container.querySelectorAll('[data-testid^="blocked-inbox-group-"]')).toHaveLength(0);
+    expect(
+      container.querySelectorAll('[data-testid^="blocked-inbox-group-"]'),
+    ).toHaveLength(0);
 
-    const titles = Array.from(container.querySelectorAll("a")).map((a) => a.textContent ?? "");
+    const titles = Array.from(container.querySelectorAll("a")).map(
+      (a) => a.textContent ?? "",
+    );
     expect(titles[0]).toContain("Critical stalled row");
     expect(titles[1]).toContain("Stalled chain row");
 
-    expect(mockIssuesApi.list).toHaveBeenCalledWith("company-1", expect.objectContaining({
-      attention: "blocked",
-      includeBlockedInboxAttention: true,
-      includeBlockedBy: true,
-    }));
+    expect(mockIssuesApi.list).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({
+        attention: "blocked",
+        includeBlockedInboxAttention: true,
+        includeBlockedBy: true,
+      }),
+    );
 
     act(() => root.unmount());
   });
@@ -256,19 +246,24 @@ describe("BlockedInboxView", () => {
     ]);
 
     const { root } = renderWithClient(
-      <BlockedInboxView
-        {...blockedViewProps}
-      />,
+      <BlockedInboxView {...blockedViewProps} />,
       container,
     );
     await waitFor(() => container.querySelector("a") !== null);
 
     const rowText = container.querySelector("a")?.textContent ?? "";
     expect(rowText.indexOf("Pending board decision")).toBeGreaterThanOrEqual(0);
-    expect(rowText.indexOf("Needs decision")).toBeGreaterThan(rowText.indexOf("Pending board decision"));
-    expect(rowText.indexOf("Board")).toBeGreaterThan(rowText.indexOf("Needs decision"));
+    expect(rowText.indexOf("Needs decision")).toBeGreaterThan(
+      rowText.indexOf("Pending board decision"),
+    );
+    expect(rowText.indexOf("Board")).toBeGreaterThan(
+      rowText.indexOf("Needs decision"),
+    );
     expect(rowText).not.toContain("Accept or reject");
-    expect(container.querySelector('[data-testid="blocked-row-reason-column"]')?.textContent).toContain("Needs decision");
+    expect(
+      container.querySelector('[data-testid="blocked-row-reason-column"]')
+        ?.textContent,
+    ).toContain("Needs decision");
 
     act(() => root.unmount());
   });
@@ -280,8 +275,13 @@ describe("BlockedInboxView", () => {
         "PAP-77",
         "Resume parked work",
         attention({
-          reason: "blocked_by_assigned_backlog_issue",
-          owner: { type: "agent", agentId: null, userId: null, label: "Charlie" },
+          reason: "blocked_chain_stalled",
+          owner: {
+            type: "agent",
+            agentId: null,
+            userId: null,
+            label: "Charlie",
+          },
           action: { label: "Resume parked blocker", detail: null },
         }),
       ),
@@ -291,7 +291,12 @@ describe("BlockedInboxView", () => {
         "Other unrelated thing",
         attention({
           reason: "external_owner_action",
-          owner: { type: "external", agentId: null, userId: null, label: "Vendor" },
+          owner: {
+            type: "external",
+            agentId: null,
+            userId: null,
+            label: "Vendor",
+          },
           action: { label: "Awaiting Vendor", detail: null },
         }),
       ),
@@ -299,10 +304,7 @@ describe("BlockedInboxView", () => {
     mockIssuesApi.list.mockResolvedValue(issues);
 
     const { root } = renderWithClient(
-      <BlockedInboxView
-        {...blockedViewProps}
-        searchQuery="charlie"
-      />,
+      <BlockedInboxView {...blockedViewProps} searchQuery="charlie" />,
       container,
     );
     await waitFor(() => container.querySelectorAll("a").length > 0);
@@ -324,7 +326,7 @@ describe("BlockedInboxView", () => {
           "Blocked parent with active child",
           attention({ reason: "blocked_chain_stalled" }),
         ),
-        status: "blocked",
+        boardPresentationStatus: "blocked",
         blockerAttention: null,
         liveDescendantCount: undefined,
       } as unknown as Issue,
@@ -339,7 +341,11 @@ describe("BlockedInboxView", () => {
     );
     await waitFor(() => container.querySelector("a") !== null);
 
-    expect(container.querySelector('[aria-label="Blocked · waiting on 1 active sub-task"]')).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[aria-label="Blocked · waiting on 1 active sub-task"]',
+      ),
+    ).not.toBeNull();
 
     act(() => root.unmount());
   });
@@ -348,16 +354,17 @@ describe("BlockedInboxView", () => {
     mockIssuesApi.list.mockRejectedValue(new Error("network down"));
 
     const { root } = renderWithClient(
-      <BlockedInboxView
-        {...blockedViewProps}
-      />,
+      <BlockedInboxView {...blockedViewProps} />,
       container,
     );
-    await waitFor(() =>
-      container.querySelector('[data-testid="blocked-inbox-error"]') !== null,
+    await waitFor(
+      () =>
+        container.querySelector('[data-testid="blocked-inbox-error"]') !== null,
     );
 
-    const banner = container.querySelector('[data-testid="blocked-inbox-error"]');
+    const banner = container.querySelector(
+      '[data-testid="blocked-inbox-error"]',
+    );
     expect(banner).not.toBeNull();
     expect(banner?.getAttribute("role")).toBe("alert");
     expect(banner?.textContent).toContain("Couldn't load the Blocked tab");

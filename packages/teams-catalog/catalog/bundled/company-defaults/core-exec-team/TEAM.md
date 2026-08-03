@@ -1,13 +1,13 @@
 ---
-name: Core Exec Team
-description: Default leadership and engineering team for bootstrapping a Paperclip company with a CEO, CTO, QA Engineer, starter project, and a recurring CEO heartbeat review task.
+name: Core Team
+description: Default leadership and engineering team with an ordinary company lead, engineering lead, QA engineer, starter project, and priority-review routine.
 schema: agentcompanies/v1
 slug: core-exec-team
 category: company-defaults
 key: paperclipai/bundled/company-defaults/core-exec-team
-manager: agents/ceo/AGENTS.md
+manager: agents/company-lead/AGENTS.md
 includes:
-  - agents/cto/AGENTS.md
+  - agents/engineering-lead/AGENTS.md
   - agents/qa/AGENTS.md
   - projects/first-project/PROJECT.md
 defaultInstall: true
@@ -17,28 +17,26 @@ recommendedForCompanyTypes:
   - generalist
 tags:
   - default
-  - executive
+  - leadership
   - engineering
   - qa
 requiredSkills:
-  - paperclipai/bundled/paperclip-operations/task-planning
-  - paperclipai/bundled/paperclip-operations/issue-triage
   - paperclipai/bundled/software-development/github-pr-workflow
   - paperclipai/bundled/quality/qa-acceptance
 ---
 
-# Core Exec Team
+# Core Team
 
-The Core Exec Team is the bundled default install for a new Paperclip company. It boots the smallest org that can take a board prompt, plan it, implement it, and verify it.
+The Core Team is the bundled default install for a new company. It provides a small, ordinary reporting tree and a starter project without granting any identity special authority.
 
 ## Contents
 
-- `CEO` — strategy, prioritization, delegation. Uses `task-planning` and `issue-triage` to keep the inbox moving.
-- `CTO` — technical execution and engineering oversight. Reports to CEO. Uses `github-pr-workflow` for code review and merge hygiene.
-- `QA` — verifies fixes and captures evidence. Reports to CTO. Uses `qa-acceptance` for structured acceptance reports.
-- `first-project` — starter project under the CTO for converting the company goal into the first implementation task.
-- `first-heartbeat` — recurring CEO heartbeat to review priorities and confirm the next useful task.
+- `Company Lead` — an ordinary root agent identity.
+- `Engineering Lead` — an ordinary engineering agent that reports to Company Lead.
+- `QA` — an ordinary verification agent that reports to Engineering Lead.
+- `first-project` — starter project owned by Engineering Lead.
+- `priority-review` — recurring issue definition for reviewing priorities and recording the next action.
 
 ## Migration notes
 
-This entry mirrors the historical `server/src/onboarding-assets/ceo/` template family while staying inside the catalog package boundary. Per-agent persona files (the legacy `SOUL.md`, `HEARTBEAT.md`, `TOOLS.md` siblings) are intentionally collapsed into a single `AGENTS.md` per agent so importer/portability semantics stay simple. The richer persona content can move into `references/` files in a follow-up once onboarding actually switches to the catalog service.
+Agent files contain identity frontmatter only. The catalog does not author provider instructions, choose an adapter, infer a provider target, or grant authority from an agent's display name or position.

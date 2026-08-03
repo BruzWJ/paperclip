@@ -1,7 +1,6 @@
 import {
   KubeConfig,
   CoreV1Api,
-  BatchV1Api,
   CustomObjectsApi,
   NetworkingV1Api,
   RbacAuthorizationV1Api,
@@ -27,7 +26,6 @@ export function createKubeConfig(input: CreateKubeConfigInput): KubeConfig {
 
 export interface KubeClients {
   core: CoreV1Api;
-  batch: BatchV1Api;
   custom: CustomObjectsApi;
   networking: NetworkingV1Api;
   rbac: RbacAuthorizationV1Api;
@@ -36,7 +34,6 @@ export interface KubeClients {
 export function makeKubeClients(kc: KubeConfig): KubeClients {
   return {
     core: kc.makeApiClient(CoreV1Api),
-    batch: kc.makeApiClient(BatchV1Api),
     custom: kc.makeApiClient(CustomObjectsApi),
     networking: kc.makeApiClient(NetworkingV1Api),
     rbac: kc.makeApiClient(RbacAuthorizationV1Api),

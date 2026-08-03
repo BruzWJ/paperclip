@@ -170,7 +170,6 @@ describe("plugin target diagnostics", () => {
     const get = vi.fn(async () => ({
       status: "ok",
       version: "1.2.3",
-      deploymentMode: "local_trusted",
       deploymentExposure: "private",
     }));
 
@@ -183,7 +182,6 @@ describe("plugin target diagnostics", () => {
       health: {
         status: "ok",
         version: "1.2.3",
-        deploymentMode: "local_trusted",
         deploymentExposure: "private",
       },
     });
@@ -201,16 +199,16 @@ describe("plugin target diagnostics", () => {
     expect(diag.error).toContain("Could not reach the Paperclip API.");
   });
 
-  it("formats reachable diagnostics with version and mode", () => {
+  it("formats reachable diagnostics with version and exposure", () => {
     const rendered = formatTargetDiagnostics({
       apiBase: "http://127.0.0.1:3100",
       reachable: true,
-      health: { status: "ok", version: "9.9.9", deploymentMode: "local_trusted" },
+      health: { status: "ok", version: "9.9.9", deploymentExposure: "private" },
     });
 
     expect(rendered).toContain("http://127.0.0.1:3100");
     expect(rendered).toContain("version=9.9.9");
-    expect(rendered).toContain("mode=local_trusted");
+    expect(rendered).toContain("exposure=private");
   });
 
   it("formats unreachable diagnostics with a remediation hint", () => {
@@ -222,6 +220,6 @@ describe("plugin target diagnostics", () => {
 
     expect(rendered).toContain("unreachable");
     expect(rendered).toContain("--api-base");
-    expect(rendered).toContain("PAPERCLIP_API_URL");
+    expect(rendered).toContain("PAPERCLIP_BOARD_API_URL");
   });
 });

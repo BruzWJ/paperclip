@@ -159,7 +159,7 @@ export const agentStatusColorDefault: AgentBadgeColor = "gray";
 // straight into it. (A byte-identical `agentStatusBadge` duplicate map was
 // collapsed into `brandChipBadge` in the Run 2 review; DECISION-SHEET.md A1.)
 
-/** Heartbeat-capsule fill (solid) per colour name. gray darkens in dark mode. */
+/** Status-capsule fill (solid) per colour name. gray darkens in dark mode. */
 export const agentStatusCapsule: Record<AgentBadgeColor, string> = {
   gray: "bg-[#A8AEB2] dark:bg-[#6E6960]",
   blue: "bg-[#2563EB]",
@@ -196,7 +196,7 @@ export const liveBlueBadge = "bg-blue-500/10 border-blue-500/30 text-blue-600 da
  */
 
 // ---------------------------------------------------------------------------
-// Inline banner tones (built-in agents provenance / paused notices)
+// Inline banner tones (feature-management provenance / paused notices)
 //
 // Softer, full-width banner surface derived from the same brand hue anchors as
 // `brandChipBadge`. `info` carries provenance/informational context, `warning`

@@ -596,31 +596,30 @@ describe("sandbox managed runtime", () => {
     expect(downloadMembers).not.toContain("./");
   });
 
-  it("excludes transient symlinked home dirs from the asset tar while keeping required content", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-sandbox-home-tmp-"));
+  it("excludes transient symlinked bundle dirs from a selected asset tar while keeping required content", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-sandbox-selection-tmp-"));
     cleanupDirs.push(rootDir);
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
     const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
-    const homeDir = path.join(rootDir, "codex-home");
+    const selectionDir = path.join(rootDir, "selected-skill-bundle");
     await mkdir(localWorkspaceDir, { recursive: true });
 
-    // Simulate a host Codex binary that a stale `tmp/arg0` symlink points at.
+    // Simulate a host binary that a stale `tmp/arg0` symlink points at.
     // With followSymlinks the archive would otherwise inline this whole file.
-    const hostBinary = path.join(rootDir, "codex-host-binary");
-    const binaryMarker = "HOST_CODEX_BINARY_BYTES";
+    const hostBinary = path.join(rootDir, "host-binary");
+    const binaryMarker = "HOST_BINARY_BYTES";
     await writeFile(hostBinary, `${binaryMarker}\n`.repeat(4096), "utf8");
 
-    // Required managed-home content that MUST still reach the sandbox.
-    await mkdir(path.join(homeDir, "skills"), { recursive: true });
-    await writeFile(path.join(homeDir, "auth.json"), "{\"OPENAI_API_KEY\":\"sk-test\"}\n", "utf8");
-    await writeFile(path.join(homeDir, "config.toml"), "model = \"gpt\"\n", "utf8");
-    await writeFile(path.join(homeDir, "skills", "demo.md"), "skill body\n", "utf8");
+    // Required selection-scoped skill content still reaches the sandbox.
+    await mkdir(path.join(selectionDir, "skills"), { recursive: true });
+    await writeFile(path.join(selectionDir, "manifest.json"), "{\"selection\":\"alpha\"}\n", "utf8");
+    await writeFile(path.join(selectionDir, "skills", "demo.md"), "skill body\n", "utf8");
 
     // Transient dirs holding symlinks to the host binary (the bloat source).
-    await mkdir(path.join(homeDir, "tmp", "arg0"), { recursive: true });
-    await mkdir(path.join(homeDir, ".tmp"), { recursive: true });
-    await symlink(hostBinary, path.join(homeDir, "tmp", "arg0", "codex"));
-    await symlink(hostBinary, path.join(homeDir, ".tmp", "codex"));
+    await mkdir(path.join(selectionDir, "tmp", "arg0"), { recursive: true });
+    await mkdir(path.join(selectionDir, ".tmp"), { recursive: true });
+    await symlink(hostBinary, path.join(selectionDir, "tmp", "arg0", "tool"));
+    await symlink(hostBinary, path.join(selectionDir, ".tmp", "tool"));
 
     const uploadedTars: { remotePath: string; bytes: Buffer }[] = [];
     const client: SandboxManagedRuntimeClient = {
@@ -652,39 +651,44 @@ describe("sandbox managed runtime", () => {
         timeoutMs: 30_000,
         apiKey: null,
       },
-      adapterKey: "codex",
+      adapterKey: "test-adapter",
       client,
       workspaceLocalDir: localWorkspaceDir,
       assets: [{
-        key: "home",
-        localDir: homeDir,
+        key: "selection",
+        localDir: selectionDir,
         followSymlinks: true,
         exclude: ["tmp", ".tmp"],
       }],
     });
 
-    const homeTar = uploadedTars.find(({ remotePath }) => path.basename(remotePath) === "home-upload.tar");
-    expect(homeTar).toBeDefined();
-    const members = await listTarMembers(rootDir, "home-members.tar", homeTar!.bytes);
+    const selectionTar = uploadedTars.find(
+      ({ remotePath }) => path.basename(remotePath) === "selection-upload.tar",
+    );
+    expect(selectionTar).toBeDefined();
+    const members = await listTarMembers(
+      rootDir,
+      "selection-members.tar",
+      selectionTar!.bytes,
+    );
 
     // Transient symlink trees must be filtered out entirely.
     expect(members.some((entry) => entry === "tmp" || entry.startsWith("tmp/"))).toBe(false);
     expect(members.some((entry) => entry === ".tmp" || entry.startsWith(".tmp/"))).toBe(false);
-    // Required managed-home content must survive.
-    expect(members).toContain("auth.json");
-    expect(members).toContain("config.toml");
+    // Required selected content must survive.
+    expect(members).toContain("manifest.json");
     expect(members.some((entry) => entry === "skills/demo.md")).toBe(true);
 
     // The host binary bytes must not have been inlined into the upload.
-    expect(homeTar!.bytes.includes(Buffer.from(binaryMarker))).toBe(false);
+    expect(selectionTar!.bytes.includes(Buffer.from(binaryMarker))).toBe(false);
 
-    // The extracted sandbox home keeps required content and omits the transient dirs.
-    await expect(readFile(path.join(prepared.assetDirs.home, "auth.json"), "utf8"))
-      .resolves.toBe("{\"OPENAI_API_KEY\":\"sk-test\"}\n");
-    await expect(readFile(path.join(prepared.assetDirs.home, "skills", "demo.md"), "utf8"))
+    // The extracted selected bundle keeps required content and omits the transient dirs.
+    await expect(readFile(path.join(prepared.assetDirs.selection, "manifest.json"), "utf8"))
+      .resolves.toBe("{\"selection\":\"alpha\"}\n");
+    await expect(readFile(path.join(prepared.assetDirs.selection, "skills", "demo.md"), "utf8"))
       .resolves.toBe("skill body\n");
-    await expect(lstat(path.join(prepared.assetDirs.home, "tmp"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(lstat(path.join(prepared.assetDirs.home, ".tmp"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(prepared.assetDirs.selection, "tmp"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(path.join(prepared.assetDirs.selection, ".tmp"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("emits throttled, labeled upload and restore progress with direction and percentages", async () => {
@@ -825,7 +829,7 @@ describe("sandbox managed runtime", () => {
     expect(emptyArchiveCommand).not.toContain("/dev/null");
   });
 
-  it("provisions a contribution-less asset via a plain tar extract and restores it as a no-op", async () => {
+  it("copies a runtime asset via a plain tar extract without copying it back", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-sandbox-default-asset-"));
     cleanupDirs.push(rootDir);
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -870,13 +874,12 @@ describe("sandbox managed runtime", () => {
       adapterKey: "test-adapter",
       client,
       workspaceLocalDir: localWorkspaceDir,
-      // No `provision` / `restore` on the asset: it must ride the default path.
       assets: [{ key: "plain", localDir: localAssetsDir }],
     });
 
     // Extracted through the default `tar -xf` path.
     await expect(readFile(path.join(prepared.assetDirs.plain, "plain.txt"), "utf8")).resolves.toBe("plain asset\n");
-    // A contribution-less asset stages no extra files beyond its own tar.
+    // A runtime asset stages no extra files beyond its own tar.
     expect(stagedWrites.filter((name) => name.includes("plain"))).toEqual([]);
     // The extract command is the generic tar path, not an adapter-specific script.
     const assetExtract = runCommands.find((command) => command.includes(`${path.posix.basename(prepared.assetDirs.plain)}-upload.tar`));
@@ -884,153 +887,9 @@ describe("sandbox managed runtime", () => {
     expect(assetExtract).toContain("tar -xf");
     expect(assetExtract).not.toMatch(/\.sh|\.cjs/);
 
-    // Restore is a clean no-op for a contribution-less asset (no throw, asset dir untouched).
+    // Workspace restore does not copy runtime assets back to the host.
     await expect(prepared.restoreWorkspace()).resolves.toBeUndefined();
     await expect(readFile(path.join(prepared.assetDirs.plain, "plain.txt"), "utf8")).resolves.toBe("plain asset\n");
-  });
-
-  it("round-trips a non-codex asset through generic provision + restore contributions", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-sandbox-seam-"));
-    cleanupDirs.push(rootDir);
-    const localWorkspaceDir = path.join(rootDir, "local-workspace");
-    const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
-    const localAssetsDir = path.join(rootDir, "local-assets");
-    await mkdir(localWorkspaceDir, { recursive: true });
-    await mkdir(localAssetsDir, { recursive: true });
-    await writeFile(path.join(localWorkspaceDir, "README.md"), "workspace\n", "utf8");
-    await writeFile(path.join(localAssetsDir, "seed.txt"), "seed\n", "utf8");
-
-    const client: SandboxManagedRuntimeClient = {
-      makeDir: async (remotePath) => {
-        await mkdir(remotePath, { recursive: true });
-      },
-      writeFile: async (remotePath, bytes) => {
-        await mkdir(path.dirname(remotePath), { recursive: true });
-        await writeFile(remotePath, Buffer.from(bytes));
-      },
-      readFile: async (remotePath) => await readFile(remotePath),
-      listFiles: async () => [],
-      remove: async (remotePath) => {
-        await rm(remotePath, { recursive: true, force: true });
-      },
-      run: async (command) => {
-        await execFile("sh", ["-c", command], { maxBuffer: 32 * 1024 * 1024 });
-      },
-    };
-
-    // A minimal shell quoter local to the test's custom extract command; the seam
-    // itself carries no adapter knowledge — the fake asset supplies everything.
-    const q = (value: string) => `'${value.replace(/'/g, `'\"'\"'`)}'`;
-    const restored: string[] = [];
-    const stagedContentSeen: string[] = [];
-
-    const prepared = await prepareSandboxManagedRuntime({
-      spec: {
-        transport: "sandbox",
-        provider: "test",
-        sandboxId: "sandbox-1",
-        remoteCwd: remoteWorkspaceDir,
-        timeoutMs: 30_000,
-        apiKey: null,
-      },
-      adapterKey: "generic-adapter",
-      client,
-      workspaceLocalDir: localWorkspaceDir,
-      assets: [{
-        key: "widget",
-        localDir: localAssetsDir,
-        provision: {
-          stageFiles: [{ name: "widget-helper.txt", contents: "helper-bytes\n" }],
-          // Extract the asset AND consume the staged helper file, proving both
-          // stageFiles and extractCommand flow through the core generically.
-          extractCommand: ({ assetTarPath, assetDir, runtimeRootDir }) =>
-            `rm -rf ${q(assetDir)} && mkdir -p ${q(assetDir)} && ` +
-            `tar -xf ${q(assetTarPath)} -C ${q(assetDir)} && rm -f ${q(assetTarPath)} && ` +
-            `cp ${q(path.posix.join(runtimeRootDir, "widget-helper.txt"))} ${q(path.posix.join(assetDir, "helper.copied.txt"))}`,
-        },
-        restore: async ({ assetDir, readFile: readRemote }) => {
-          const bytes = await readRemote(path.posix.join(assetDir, "refreshed.txt"));
-          restored.push(bytes.toString("utf8"));
-        },
-      }],
-    });
-
-    // provision: the asset's own content extracted...
-    await expect(readFile(path.join(prepared.assetDirs.widget, "seed.txt"), "utf8")).resolves.toBe("seed\n");
-    // ...the staged helper file was written to the runtime root and consumed by the custom extract command.
-    await expect(readFile(path.join(prepared.assetDirs.widget, "helper.copied.txt"), "utf8")).resolves.toBe("helper-bytes\n");
-    stagedContentSeen.push("provisioned");
-
-    // Simulate the sandbox refreshing a file inside the asset dir, then restore.
-    await writeFile(path.join(prepared.assetDirs.widget, "refreshed.txt"), "refreshed-by-sandbox\n", "utf8");
-    await prepared.restoreWorkspace();
-
-    // restore contribution was invoked with a working remote readFile against assetDir.
-    expect(restored).toEqual(["refreshed-by-sandbox\n"]);
-    expect(stagedContentSeen).toEqual(["provisioned"]);
-  });
-
-  it("rejects a provision stageFile.name that is not a simple basename", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-sandbox-traversal-"));
-    cleanupDirs.push(rootDir);
-    const localWorkspaceDir = path.join(rootDir, "local-workspace");
-    const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
-    const localAssetsDir = path.join(rootDir, "local-assets");
-    await mkdir(localWorkspaceDir, { recursive: true });
-    await mkdir(localAssetsDir, { recursive: true });
-    await writeFile(path.join(localWorkspaceDir, "README.md"), "workspace\n", "utf8");
-    await writeFile(path.join(localAssetsDir, "seed.txt"), "seed\n", "utf8");
-
-    const writtenPaths: string[] = [];
-    const client: SandboxManagedRuntimeClient = {
-      makeDir: async (remotePath) => {
-        await mkdir(remotePath, { recursive: true });
-      },
-      writeFile: async (remotePath, bytes) => {
-        writtenPaths.push(remotePath);
-        await mkdir(path.dirname(remotePath), { recursive: true });
-        await writeFile(remotePath, Buffer.from(bytes));
-      },
-      readFile: async (remotePath) => await readFile(remotePath),
-      listFiles: async () => [],
-      remove: async (remotePath) => {
-        await rm(remotePath, { recursive: true, force: true });
-      },
-      run: async (command) => {
-        await execFile("sh", ["-c", command], { maxBuffer: 32 * 1024 * 1024 });
-      },
-    };
-
-    // A compromised adapter supplying a traversal name must be rejected before
-    // the core ever writes outside the runtime root.
-    for (const maliciousName of ["../evil.txt", "..", "nested/child.txt", "back\\slash.txt", "../../etc/passwd"]) {
-      writtenPaths.length = 0;
-      await expect(
-        prepareSandboxManagedRuntime({
-          spec: {
-            transport: "sandbox",
-            provider: "test",
-            sandboxId: "sandbox-1",
-            remoteCwd: remoteWorkspaceDir,
-            timeoutMs: 30_000,
-            apiKey: null,
-          },
-          adapterKey: "generic-adapter",
-          client,
-          workspaceLocalDir: localWorkspaceDir,
-          assets: [{
-            key: "widget",
-            localDir: localAssetsDir,
-            provision: {
-              stageFiles: [{ name: maliciousName, contents: "payload\n" }],
-            },
-          }],
-        }),
-      ).rejects.toThrow(/must be a simple basename/);
-
-      // The guard fires before the offending write, so nothing landed under the runtime root.
-      expect(writtenPaths.some((p) => p.endsWith("evil.txt") || p.endsWith("passwd") || p.endsWith("child.txt"))).toBe(false);
-    }
   });
 
   it("keeps the sandbox runtime core free of Codex-specific string literals", async () => {

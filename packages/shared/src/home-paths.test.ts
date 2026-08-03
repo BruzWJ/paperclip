@@ -4,7 +4,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   resolveDefaultBackupDir,
-  resolveDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir,
   resolveDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir,
@@ -27,7 +26,6 @@ describe("home path resolution", () => {
     const instanceRoot = path.join(home, "instances", "default");
     expect(resolvePaperclipInstanceRoot()).toBe(instanceRoot);
     expect(resolvePaperclipConfigPathForInstance()).toBe(path.join(instanceRoot, "config.json"));
-    expect(resolveDefaultEmbeddedPostgresDir()).toBe(path.join(instanceRoot, "db"));
     expect(resolveDefaultBackupDir()).toBe(path.join(instanceRoot, "data", "backups"));
     expect(resolveDefaultLogsDir()).toBe(path.join(instanceRoot, "logs"));
     expect(resolveDefaultStorageDir()).toBe(path.join(instanceRoot, "data", "storage"));

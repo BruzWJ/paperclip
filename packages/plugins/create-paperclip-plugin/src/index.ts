@@ -649,7 +649,11 @@ describe("plugin scaffold", () => {
     const data = await harness.getData<{ status: string }>("health");
     expect(data.status).toBe("ok");
 
-    const action = await harness.performAction<{ pong: boolean }>("ping");
+    const action = await harness.performAction<{ pong: boolean }>(
+      "ping",
+      {},
+      { actor: { type: "system", companyId: null } },
+    );
     expect(action.pong).toBe(true);
   });
 });

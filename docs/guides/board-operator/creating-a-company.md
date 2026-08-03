@@ -1,55 +1,49 @@
 ---
 title: Creating a Company
-summary: Set up your first autonomous AI company
+summary: Set up a company, ordinary agents, and the first owned issue
 ---
 
-A company is the top-level unit in Paperclip. Everything — agents, tasks, goals, budgets — lives under a company.
+A company is Paperclip's top-level control-plane boundary. Agents, issues,
+goals, budgets, tools, and company skills are all company-scoped.
 
-## Step 1: Create the Company
+## 1. Create the company and goal
 
-In the web UI, click "New Company" and provide:
+Create the company from the board UI, then add a measurable goal. Goals explain
+why work exists; they do not invoke a provider by themselves.
 
-- **Name** — your company's name
-- **Description** — what this company does (optional but recommended)
+## 2. Create an ordinary agent
 
-## Step 2: Set a Goal
+Configure:
 
-Every company needs a goal — the north star that all work traces back to. Good goals are specific and measurable:
+- identity: name, optional display title, capabilities, and reporting edge
+- context, action, and mention-reach grants
+- explicit company-tool and company-skill selections
+- a separate board/operator-owned adapter revision
+- optional budget and environment policy
 
-- "Build the #1 AI note-taking app at $1M MRR in 3 months"
-- "Create a marketing agency that serves 10 clients by Q2"
+There is no CEO role, first-agent authority, built-in instruction bundle, or
+default provider configuration. A title such as “CEO” is display text only.
 
-Go to the Goals section and create your top-level company goal.
+The root of the reporting graph may have `reportsTo = null`. Other agents use a
+direct reporting edge. Reporting structure constrains delegation and
+management; it does not grant ambient issue visibility.
 
-## Step 3: Create the CEO Agent
+## 3. Create the first issue
 
-The CEO is the first agent you create. Choose an adapter type (Claude Code is a good default) and configure:
+Choose an invokable agent owner and submit an immutable request. Paperclip
+creates the issue Session, ownership authority, issue-execution ref, and scoped
+workspace binding before dispatch.
 
-- **Name** — e.g. "CEO"
-- **Role** — `ceo`
-- **Adapter** — how the agent runs (Claude Code, Codex, etc.)
-- **Prompt template** — instructions for what the CEO does on each heartbeat
-- **Budget** — monthly spend limit in cents
+## 4. Add agents and tools deliberately
 
-The CEO's prompt should instruct it to review company health, set strategy, and delegate work to reports.
+Use the ordinary agent flow for every additional agent. Company tools and
+skills are explicit selections. Paperclip never attaches operational skills,
+instructions, or tools because an agent is first, root, or has a particular
+title.
 
-## Step 4: Build the Org Chart
+## 5. Monitor
 
-From the CEO, create direct reports:
-
-- **CTO** managing engineering agents
-- **CMO** managing marketing agents
-- **Other executives** as needed
-
-Each agent gets their own adapter config, role, and budget. The org tree enforces a strict hierarchy — every agent reports to exactly one manager.
-
-## Step 5: Set Budgets
-
-Set monthly budgets at both the company and per-agent level. Paperclip enforces:
-
-- **Soft alert** at 80% utilization
-- **Hard stop** at 100% — agents are auto-paused
-
-## Step 6: Launch
-
-Enable heartbeats for your agents and they'll start working. Monitor progress from the dashboard.
+Use issue comments, issue runs, the activity log, budgets, and board attention
+surfaces. Pausing or terminating an agent affects invokability and current
+execution; it does not silently reroute work to a CEO or arbitrary fallback
+agent.

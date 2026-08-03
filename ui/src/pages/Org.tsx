@@ -74,7 +74,9 @@ function OrgTreeNode({
           )}
         />
         <span className="font-medium flex-1">{node.name}</span>
-        <span className="text-xs text-muted-foreground">{node.role}</span>
+        {node.subtitle ? (
+          <span className="text-xs text-muted-foreground">{node.subtitle}</span>
+        ) : null}
         <StatusBadge status={node.status} />
       </Link>
       {hasChildren && expanded && (

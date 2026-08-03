@@ -72,7 +72,9 @@ describe("Novita sandbox provider plugin", () => {
     });
 
     expect(command).toContain("cd '/workspace/project'");
-    expect(command).toContain("export MESSAGE='hello world';");
+    expect(command).toContain(
+      "env -i PATH=\"${PATH:-/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin}\" HOME=\"$paperclip_provider_home\" USERPROFILE=\"$paperclip_provider_home\" MESSAGE='hello world'",
+    );
     expect(command).toContain("'node' '-e' 'console.log(process.env.MESSAGE)'");
     expect(command).toContain("printf '%s' 'input body' > '/tmp/.paperclip-stdin-");
     expect(command).toMatch(/< '\/tmp\/\.paperclip-stdin-[^']+'/);
@@ -126,6 +128,7 @@ describe("Novita sandbox provider plugin", () => {
       runId: "run-1",
       config: { apiKey: "sk-test" },
       lease: { providerLeaseId: "sb-expired", metadata: {} },
+      executionId: "execution-expired",
       command: "true",
     });
 
@@ -141,5 +144,45 @@ describe("Novita sandbox provider plugin", () => {
         expired: true,
       },
     });
+  });
+
+  it("reconnects and cancels the exact command after worker-local registry loss", async () => {
+    const run = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+    mockSandboxConnect.mockResolvedValueOnce({
+      sandboxId: "sb-live",
+      commands: { run },
+    });
+
+    await expect(
+      plugin.definition.onEnvironmentCancelExecution?.({
+        driverKey: "novita",
+        companyId: "company-1",
+        environmentId: "env-1",
+        issueId: "issue-1",
+        config: {
+          apiKey: "sk-test",
+          requestTimeoutMs: 30_000,
+        },
+        lease: {
+          providerLeaseId: "sb-live",
+          metadata: {},
+        },
+        executionId: "run-immutable",
+        reason: "fresh_session_reset",
+      }),
+    ).resolves.toEqual({
+      executionId: "run-immutable",
+      cancelled: true,
+    });
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining(
+        ".paperclip-execution-72756e2d696d6d757461626c65",
+      ),
+      expect.objectContaining({ cwd: "/" }),
+    );
   });
 });

@@ -7,6 +7,7 @@ import { registerPipelineCommands } from "../commands/pipelines.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
+const OWNER_AGENT_ID = "44444444-4444-4444-8444-444444444444";
 
 function createProgram(): Command {
   const program = new Command();
@@ -34,8 +35,8 @@ async function run(args: string[]): Promise<void> {
 describe("pipeline CLI commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -65,6 +66,34 @@ describe("pipeline CLI commands", () => {
       decision: "request_changes",
       reason: "Needs edits",
       expectedVersion: 2,
+    });
+  });
+
+  it("opens a case conversation with the canonical issue request contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ issue: { id: CASE_ID } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run([
+      "pipelines",
+      "case",
+      "open-conversation",
+      CASE_ID,
+      "--owner-agent-id",
+      OWNER_AGENT_ID,
+      "--request",
+      "Discuss the evidence.",
+      "--idempotency-key",
+      "case-discussion-1",
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `http://localhost:3100/api/cases/${CASE_ID}/open-conversation`,
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      ownerAgentId: OWNER_AGENT_ID,
+      request: "Discuss the evidence.",
+      idempotencyKey: "case-discussion-1",
     });
   });
 

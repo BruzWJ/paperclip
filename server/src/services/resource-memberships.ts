@@ -109,7 +109,7 @@ function assertBoardSelfMembershipAccess(actor: BoardActor, companyId: string, u
   if (actor.userId !== userId) {
     throw forbidden("Users may only update their own resource memberships");
   }
-  if (actor.source === "local_implicit" || actor.isInstanceAdmin) {
+  if (actor.isInstanceAdmin) {
     return;
   }
   const membership = actor.memberships?.find((item) => item.companyId === companyId);

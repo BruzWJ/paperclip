@@ -4,7 +4,7 @@ import { createGoalSchema, updateGoalSchema } from "@paperclipai/shared";
 import { trackGoalCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
-import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource } from "./authz.js";
 import { getTelemetryClient } from "../telemetry.js";
 
 export function goalRoutes(db: Db) {
@@ -29,12 +29,10 @@ export function goalRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const goal = await svc.create(companyId, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "goal.created",
       entityType: "goal",
       entityId: goal.id,
@@ -51,18 +49,17 @@ export function goalRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!existing) return;
+    assertBoard(req);
     const goal = await svc.update(id, req.body);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });
       return;
     }
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: goal.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "goal.updated",
       entityType: "goal",
       entityId: goal.id,
@@ -76,18 +73,17 @@ export function goalRoutes(db: Db) {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!existing) return;
+    assertBoard(req);
     const goal = await svc.remove(id);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });
       return;
     }
 
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: goal.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "goal.deleted",
       entityType: "goal",
       entityId: goal.id,

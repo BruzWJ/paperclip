@@ -441,7 +441,7 @@ describe("CommandPalette", () => {
       const chips = Array.from(container.querySelectorAll('button[data-testid="command-filter-chip"]'));
       expect(chips.map((chip) => chip.textContent)).toEqual(
         expect.arrayContaining([
-          expect.stringContaining("assignee:me"),
+          expect.stringContaining("owner:me"),
           expect.stringContaining("is:open"),
           expect.stringContaining("updated:>7d"),
         ]),
@@ -454,7 +454,7 @@ describe("CommandPalette", () => {
 
     const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
     await waitForAssertion(() => {
-      expect(input.value).toBe("assignee:me");
+      expect(input.value).toBe("owner:me");
     });
 
     act(() => {
@@ -462,7 +462,7 @@ describe("CommandPalette", () => {
     });
   });
 
-  it("parses operators for lightweight issue search but keeps filters for command-enter handoff", async () => {
+  it("parses operators for lightweight issue search but keeps filters for command-enter navigation", async () => {
     mockIssuesApi.list.mockResolvedValue([]);
     const { root } = renderWithQueryClient(<CommandPalette />, container);
 

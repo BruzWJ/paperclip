@@ -53,10 +53,12 @@ function buildIssueResult(overrides: IssueResultOverrides): CompanySearchResult 
     id: overrides.issue?.id ?? "issue-1",
     identifier: overrides.issue?.identifier ?? "PAP-3142",
     title: overrides.issue?.title ?? "Auth middleware flakes on cold-start when session token is rotated",
-    status: overrides.issue?.status ?? "in_progress",
+    request: overrides.issue?.request ?? storybookIssues[0]?.request ?? "",
+    boardPresentationStatus:
+      overrides.issue?.boardPresentationStatus ?? "in_progress",
     priority: overrides.issue?.priority ?? "high",
-    assigneeAgentId: overrides.issue?.assigneeAgentId ?? storybookAgents[0]?.id ?? null,
-    assigneeUserId: overrides.issue?.assigneeUserId ?? null,
+    ownerAgentId: overrides.issue?.ownerAgentId ?? storybookAgents[0]?.id ?? null,
+    ownerUserId: overrides.issue?.ownerUserId ?? null,
     projectId: overrides.issue?.projectId ?? storybookProjects[0]?.id ?? null,
     updatedAt: overrides.issue?.updatedAt ?? new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
   } satisfies NonNullable<CompanySearchResult["issue"]>;
@@ -103,8 +105,8 @@ const fixtureResults: CompanySearchResult[] = [
       id: "issue-2",
       identifier: "PAP-3091",
       title: "Audit auth flake telemetry from last quarter",
-      status: "in_review",
-      assigneeAgentId: storybookAgents[1]?.id ?? null,
+      boardPresentationStatus: "in_review",
+      ownerAgentId: storybookAgents[1]?.id ?? null,
     },
     matchedFields: ["title", "document"],
     sourceLabel: "Document",
@@ -132,8 +134,8 @@ const fixtureResults: CompanySearchResult[] = [
       id: "issue-3",
       identifier: "PAP-2748",
       title: "Pin worker registration to a single auth backend",
-      status: "done",
-      assigneeAgentId: null,
+      boardPresentationStatus: "done",
+      ownerAgentId: null,
     },
     matchedFields: ["title", "identifier"],
     snippets: [
@@ -212,8 +214,8 @@ const fixtureResponse: CompanySearchResponse = {
   filterOptionCounts: {
     status: {},
     priority: {},
-    assigneeAgentId: {},
-    assigneeUserId: {},
+    ownerAgentId: {},
+    ownerUserId: {},
     projectId: {},
     labelId: {},
     updatedWithin: {},
@@ -540,7 +542,7 @@ function CommandPaletteWithSearchAll({
                   <CircleDot className="mr-2 h-4 w-4" />
                   <span className="mr-2 font-mono text-xs text-muted-foreground">{issue.identifier}</span>
                   <span className="flex-1 truncate">{issue.title}</span>
-                  <StatusBadge status={issue.status} />
+                  <StatusBadge status={issue.boardPresentationStatus} />
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -565,8 +567,8 @@ const noop = () => {};
 const searchFilterCounts: CompanySearchFilterOptionCounts = {
   status: { in_progress: 4, todo: 3, backlog: 2, in_review: 1, blocked: 1, done: 8 },
   priority: { critical: 1, high: 3, medium: 5, low: 2 },
-  assigneeAgentId: storybookAgents[0]?.id ? { [storybookAgents[0].id]: 4 } : {},
-  assigneeUserId: {},
+  ownerAgentId: storybookAgents[0]?.id ? { [storybookAgents[0].id]: 4 } : {},
+  ownerUserId: {},
   projectId: storybookProjects[0]?.id ? { [storybookProjects[0].id]: 6 } : {},
   labelId: { "label-infra": 3 },
   updatedWithin: { "24h": 2, "7d": 5, "30d": 9, "90d": 11 },
@@ -613,7 +615,7 @@ function SearchStories() {
       <main className="paperclip-story__inner max-w-[1320px] space-y-6">
         <section className="paperclip-story__frame p-6">
           <div className="paperclip-story__label">Search</div>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Full search page and Command K handoff</h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Full search page and Command K transition</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
             Snippet-forward results, scope tabs, match-source chips, and the supporting empty / loading / initial
             states. Cmd K palette renders the persistent &ldquo;Search all for…&rdquo; row when a query is non-empty.
@@ -770,7 +772,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Full search page surfaces and Command K Search-all handoff. Reuses StatusIcon, StatusBadge, Identity, IssueGroupHeader, and PageTabBar; adds MatchSourceChip + SearchResultRow.",
+          "Full search page surfaces and Command K Search-all transition. Reuses StatusIcon, StatusBadge, Identity, IssueGroupHeader, and PageTabBar; adds MatchSourceChip + SearchResultRow.",
       },
     },
   },

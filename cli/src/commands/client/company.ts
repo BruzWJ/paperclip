@@ -30,15 +30,12 @@ import {
   normalizeFeedbackTraceExportFormat,
   serializeFeedbackTraces,
 } from "./feedback.js";
+import { parseExplicitAdapterOverrides } from "./adapter-overrides.js";
 
 interface CompanyCommandOptions extends BaseClientOptions {}
 interface CompanyJsonOptions extends BaseClientOptions {
   companyId?: string;
   payloadJson?: string;
-}
-interface AgentMeResponse {
-  id: string;
-  companyId: string;
 }
 type CompanyDeleteSelectorMode = "auto" | "id" | "prefix";
 type CompanyImportTargetMode = "new" | "existing";
@@ -85,6 +82,10 @@ interface CompanyImportOptions extends BaseClientOptions {
   paperclipUrl?: string;
   yes?: boolean;
   dryRun?: boolean;
+  adapterOverride?: string[];
+  adapterConfig?: string[];
+  defaultEnvironmentId?: string[];
+  skillChannel?: string[];
 }
 
 const DEFAULT_EXPORT_INCLUDE: CompanyPortabilityInclude = {
@@ -110,12 +111,16 @@ const IMPORT_INCLUDE_OPTIONS: Array<{
 }> = [
   { value: "company", label: "Company", hint: "name, branding, and company settings" },
   { value: "projects", label: "Projects", hint: "projects and workspace metadata" },
-  { value: "issues", label: "Tasks", hint: "tasks and recurring routines" },
+  { value: "issues", label: "Issues", hint: "issues and recurring routines" },
   { value: "agents", label: "Agents", hint: "agent records and org structure" },
   { value: "skills", label: "Skills", hint: "company skill packages and references" },
 ];
 
 const IMPORT_PREVIEW_SAMPLE_LIMIT = 6;
+
+function collectOptionValue(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
 
 type ImportSelectableGroup = "projects" | "issues" | "agents" | "skills";
 
@@ -172,11 +177,11 @@ function parseInclude(
     company: values.includes("company"),
     agents: values.includes("agents"),
     projects: values.includes("projects"),
-    issues: values.includes("issues") || values.includes("tasks"),
+    issues: values.includes("issues"),
     skills: values.includes("skills"),
   };
   if (!include.company && !include.agents && !include.projects && !include.issues && !include.skills) {
-    throw new Error("Invalid --include value. Use one or more of: company,agents,projects,issues,tasks,skills");
+    throw new Error("Invalid --include value. Use one or more of: company,agents,projects,issues,skills");
   }
   return include;
 }
@@ -288,7 +293,7 @@ export function buildImportSelectionCatalog(preview: CompanyPortabilityPreviewRe
     }),
     issues: preview.manifest.issues.map((issue) => ({
       key: issue.slug,
-      label: issue.title,
+      label: issue.title ?? issue.identifier ?? `Issue ${issue.slug}`,
       hint: issue.identifier ?? issue.slug,
       files: collectEntityFiles(preview.files, normalizePortablePath(issue.path)),
     })),
@@ -341,7 +346,7 @@ function getGroupLabel(group: ImportSelectableGroup): string {
     case "projects":
       return "Projects";
     case "issues":
-      return "Tasks";
+      return "Issues";
     case "agents":
       return "Agents";
     case "skills":
@@ -378,37 +383,6 @@ export function buildSelectedFilesFromImportSelection(
   return Array.from(selected).sort((left, right) => left.localeCompare(right));
 }
 
-export function buildDefaultImportAdapterOverrides(
-  preview: Pick<CompanyPortabilityPreviewResult, "manifest" | "selectedAgentSlugs">,
-): Record<string, { adapterType: string }> | undefined {
-  const selectedAgentSlugs = new Set(preview.selectedAgentSlugs);
-  const overrides = Object.fromEntries(
-    preview.manifest.agents
-      .filter((agent) => selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug))
-      .filter((agent) => agent.adapterType === "process")
-      .map((agent) => [
-        agent.slug,
-        {
-          // TODO: replace this temporary claude_local fallback with adapter selection in the import TUI.
-          adapterType: "claude_local",
-        },
-      ]),
-  );
-  return Object.keys(overrides).length > 0 ? overrides : undefined;
-}
-
-function buildDefaultImportAdapterMessages(
-  overrides: Record<string, { adapterType: string }> | undefined,
-): string[] {
-  if (!overrides) return [];
-  const adapterTypes = Array.from(new Set(Object.values(overrides).map((override) => override.adapterType)))
-    .map((adapterType) => adapterType.replace(/_/g, "-"));
-  const agentCount = Object.keys(overrides).length;
-  return [
-    `Using ${adapterTypes.join(", ")} adapter${adapterTypes.length === 1 ? "" : "s"} for ${agentCount} imported ${pluralize(agentCount, "agent")} without an explicit adapter.`,
-  ];
-}
-
 async function promptForImportSelection(preview: CompanyPortabilityPreviewResult): Promise<string[]> {
   const catalog = buildImportSelectionCatalog(preview);
   const state = buildDefaultImportSelectionState(catalog);
@@ -429,7 +403,7 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
         },
         {
           value: "issues",
-          label: "Select Tasks",
+          label: "Select Issues",
           hint: summarizeGroupSelection(catalog, state, "issues"),
         },
         {
@@ -632,7 +606,7 @@ export function renderCompanyImportPreview(
     `- company: ${preview.manifest.company?.name ?? preview.manifest.source?.companyName ?? "not included"}`,
     `- agents: ${preview.manifest.agents.length}`,
     `- projects: ${preview.manifest.projects.length}`,
-    `- tasks: ${preview.manifest.issues.length}`,
+    `- issues: ${preview.manifest.issues.length}`,
     `- skills: ${preview.manifest.skills.length}`,
   ];
 
@@ -646,7 +620,7 @@ export function renderCompanyImportPreview(
   lines.push(`- company: ${actionChip(preview.plan.companyAction === "none" ? "unchanged" : preview.plan.companyAction)}`);
   lines.push(`- agents: ${summarizePlanCounts(preview.plan.agentPlans, "agent")}`);
   lines.push(`- projects: ${summarizePlanCounts(preview.plan.projectPlans, "project")}`);
-  lines.push(`- tasks: ${summarizePlanCounts(preview.plan.issuePlans, "task")}`);
+  lines.push(`- issues: ${summarizePlanCounts(preview.plan.issuePlans, "issue")}`);
   if (preview.include.skills) {
     lines.push(`- skills: ${preview.manifest.skills.length} ${pluralize(preview.manifest.skills.length, "skill")} packaged`);
   }
@@ -671,7 +645,7 @@ export function renderCompanyImportPreview(
   );
   appendPreviewExamples(
     lines,
-    "Task examples",
+    "Issue examples",
     preview.plan.issuePlans.map((plan) => ({
       action: plan.action,
       label: `${plan.slug} -> ${plan.plannedTitle}`,
@@ -1114,8 +1088,9 @@ export function registerCompanyCommands(program: Command): void {
             id: row.id,
             name: row.name,
             status: row.status,
-            budgetMonthlyCents: row.budgetMonthlyCents,
-            spentMonthlyCents: row.spentMonthlyCents,
+            budgetCurrency: row.budgetCurrency,
+            budgetMonthlyAmount: row.budgetMonthlyAmount,
+            knownSpendAmount: row.knownSpendAmount,
             requireBoardApprovalForNewAgents: row.requireBoardApprovalForNewAgents,
           }));
           for (const row of formatted) {
@@ -1332,7 +1307,7 @@ export function registerCompanyCommands(program: Command): void {
       .description("Export a company into a portable markdown package")
       .argument("<companyId>", "Company ID")
       .requiredOption("--out <path>", "Output directory")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,tasks,skills", "company,agents")
+      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,skills", "company,agents")
       .option("--skills <values>", "Comma-separated skill slugs/keys to export")
       .option("--projects <values>", "Comma-separated project shortnames/ids to export")
       .option("--issues <values>", "Comma-separated issue identifiers/ids to export")
@@ -1385,7 +1360,7 @@ export function registerCompanyCommands(program: Command): void {
       .command("import")
       .description("Import a portable markdown company package from local path, URL, or GitHub")
       .argument("<fromPathOrUrl>", "Source path or URL")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,tasks,skills")
+      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,skills")
       .option("--target <mode>", "Target mode: new | existing")
       .option("-C, --company-id <id>", "Existing target company ID")
       .option("--new-company-name <name>", "Name override for --target new")
@@ -1393,6 +1368,10 @@ export function registerCompanyCommands(program: Command): void {
       .option("--collision <mode>", "Collision strategy: rename | skip | replace", "rename")
       .option("--ref <value>", "Git ref to use for GitHub imports (branch, tag, or commit)")
       .option("--paperclip-url <url>", "Alias for --api-base on this command")
+      .option("--adapter-override <slug=type>", "Explicit adapter type for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--adapter-config <slug=json>", "Explicit adapter config JSON object for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--default-environment-id <slug=id>", "Explicit execution environment UUID for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
+      .option("--skill-channel <slug=channel>", "Exact company-skill channel (isolated_skills_home or operator_native) for an imported agent slug; may be repeated", collectOptionValue, [] as string[])
       .option("--yes", "Accept default selection and skip the pre-import confirmation prompt", false)
       .option("--dry-run", "Run preview only without applying", false)
       .action(async (fromPathOrUrl: string, opts: CompanyImportOptions) => {
@@ -1413,6 +1392,12 @@ export function registerCompanyCommands(program: Command): void {
           if (!["rename", "skip", "replace"].includes(collision)) {
             throw new Error("Invalid --collision value. Use: rename, skip, replace");
           }
+          const adapterOverrides = parseExplicitAdapterOverrides(
+            opts.adapterOverride,
+            opts.adapterConfig,
+            opts.defaultEnvironmentId,
+            opts.skillChannel,
+          );
 
           const inferredTarget = opts.target ?? (opts.companyId || ctx.companyId ? "existing" : "new");
           const target = inferredTarget.toLowerCase() as CompanyImportTargetMode;
@@ -1479,6 +1464,7 @@ export function registerCompanyCommands(program: Command): void {
               target: targetPayload,
               agents,
               collisionStrategy: collision,
+              adapterOverrides,
             });
             if (!initialPreview) {
               throw new Error("Import preview returned no data.");
@@ -1493,13 +1479,12 @@ export function registerCompanyCommands(program: Command): void {
             agents,
             collisionStrategy: collision,
             selectedFiles,
+            adapterOverrides,
           };
           const preview = await ctx.api.post<CompanyPortabilityPreviewResult>(previewApiPath, previewPayload);
           if (!preview) {
             throw new Error("Import preview returned no data.");
           }
-          const adapterOverrides = buildDefaultImportAdapterOverrides(preview);
-          const adapterMessages = buildDefaultImportAdapterMessages(adapterOverrides);
 
           if (opts.dryRun) {
             if (ctx.json) {
@@ -1510,7 +1495,6 @@ export function registerCompanyCommands(program: Command): void {
                 renderCompanyImportPreview(preview, {
                   sourceLabel,
                   targetLabel: formatTargetLabel(targetPayload, preview),
-                  infoMessages: adapterMessages,
                 }),
                 { interactive: interactiveView },
               );
@@ -1524,7 +1508,6 @@ export function registerCompanyCommands(program: Command): void {
               renderCompanyImportPreview(preview, {
                 sourceLabel,
                 targetLabel: formatTargetLabel(targetPayload, preview),
-                infoMessages: adapterMessages,
               }),
               { interactive: interactiveView },
             );
@@ -1553,7 +1536,6 @@ export function registerCompanyCommands(program: Command): void {
           });
           const imported = await ctx.api.post<CompanyPortabilityImportResult>(importApiPath, {
             ...previewPayload,
-            adapterOverrides,
           });
           if (!imported) {
             throw new Error("Import request returned no data.");
@@ -1584,7 +1566,6 @@ export function registerCompanyCommands(program: Command): void {
               renderCompanyImportResult(imported, {
                 targetLabel,
                 companyUrl,
-                infoMessages: adapterMessages,
               }),
               { interactive: interactiveView },
             );
@@ -1719,7 +1700,7 @@ async function createCompanyForContext(ctx: {
   } catch (error) {
     if (isBoardAccessRequiredError(error) || isInstanceAdminRequiredError(error)) {
       throw new Error(
-        "Creating companies requires board/instance-admin authentication. Agent API keys are scoped to one company; use `paperclipai company list --json` or `paperclipai company current --json` to select the scoped company, or rerun create with a board token/login.",
+        "Creating companies requires board/instance-admin authentication. Use `paperclipai company list --json` or `paperclipai company current --json` to select a company, or rerun create with a board token/login.",
       );
     }
     throw error;
@@ -1729,23 +1710,8 @@ async function createCompanyForContext(ctx: {
 async function resolveCurrentCompanyId(ctx: { companyId?: string; api: { get<T>(path: string): Promise<T | null> } }): Promise<string> {
   const fromContext = ctx.companyId?.trim();
   if (fromContext) return fromContext;
-
-  let agent: AgentMeResponse | null = null;
-  try {
-    agent = await ctx.api.get<AgentMeResponse>("/api/agents/me");
-  } catch (error) {
-    if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
-      throw new Error(
-        "Current company is not available. Pass --company-id, set PAPERCLIP_COMPANY_ID, set a context profile companyId, or authenticate with an agent API key.",
-      );
-    }
-    throw error;
-  }
-
-  const fromAgent = agent?.companyId?.trim();
-  if (fromAgent) return fromAgent;
   throw new Error(
-    "Current company is not available. Pass --company-id, set PAPERCLIP_COMPANY_ID, set a context profile companyId, or authenticate with an agent API key.",
+    "Current company is not available. Pass --company-id, set PAPERCLIP_BOARD_COMPANY_ID, or set a context profile companyId.",
   );
 }
 

@@ -3,12 +3,20 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type {
-  CatalogTeam,
-  CatalogTeamImportPreviewResult,
+import {
+  canonicalizeMoneyAmount,
+  type CatalogTeam,
+  type CatalogTeamImportPreviewResult,
 } from "@paperclipai/shared";
+import type { AdapterConfigSchema } from "@paperclipai/adapter-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TeamCatalog, parseTeamRoute, teamRoute } from "./TeamCatalog";
+import {
+  TeamCatalog,
+  catalogAdapterConfigurationIsReady,
+  materializeCatalogAdapterOverride,
+  parseTeamRoute,
+  teamRoute,
+} from "./TeamCatalog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockTeamCatalogApi = vi.hoisted(() => ({
@@ -97,6 +105,109 @@ describe("TeamCatalog routes", () => {
   });
 });
 
+describe("TeamCatalog adapter-schema readiness", () => {
+  const schema: AdapterConfigSchema = {
+    fields: [
+      {
+        key: "model",
+        label: "Model",
+        type: "select",
+        required: true,
+        options: [
+          { value: "gpt-5.6", label: "GPT-5.6" },
+          { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+        ],
+      },
+    ],
+  };
+  const base = {
+    schema,
+    isLoading: false,
+    schemaError: null,
+    defaultEnvironmentId:
+      "11111111-1111-4111-8111-111111111111",
+  } as const;
+
+  it("fails closed while the server schema is absent, loading, or failed", () => {
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        schema: null,
+        adapterConfig: { model: "gpt-5.6" },
+      }),
+    ).toBe(false);
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        isLoading: true,
+        adapterConfig: { model: "gpt-5.6" },
+      }),
+    ).toBe(false);
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        schemaError: "schema unavailable",
+        adapterConfig: { model: "gpt-5.6" },
+      }),
+    ).toBe(false);
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        defaultEnvironmentId: "",
+        adapterConfig: { model: "gpt-5.6" },
+      }),
+    ).toBe(false);
+  });
+
+  it("requires the exact server-admitted model selection", () => {
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        adapterConfig: {},
+      }),
+    ).toBe(false);
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        adapterConfig: { model: "unadmitted-model" },
+      }),
+    ).toBe(false);
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        adapterConfig: { model: "gpt-5.6" },
+      }),
+    ).toBe(true);
+  });
+
+  it("materializes only the explicit server-schema values", () => {
+    expect(
+      materializeCatalogAdapterOverride(
+        "codex",
+        {
+          adapterType: "codex",
+          defaultEnvironmentId:
+            "11111111-1111-4111-8111-111111111111",
+          adapterSchemaValues: {
+            model: "gpt-5.6",
+          },
+        } as unknown as Parameters<
+          typeof materializeCatalogAdapterOverride
+        >[1],
+        "operator_native",
+      ),
+    ).toEqual({
+      adapterType: "codex",
+      adapterConfig: {
+        model: "gpt-5.6",
+      },
+      defaultEnvironmentId:
+        "11111111-1111-4111-8111-111111111111",
+      skillChannel: "operator_native",
+    });
+  });
+});
+
 async function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> = undefined;
   flushSync(() => {
@@ -119,25 +230,25 @@ function makeTeam(overrides: Partial<CatalogTeam> = {}): CatalogTeam {
     kind: "bundled",
     category: "company-defaults",
     slug: "team-no-deps",
-    name: "Core Exec Team",
-    description: "A starter executive team.",
+    name: "Core Team",
+    description: "A starter team with ordinary agent identities.",
     path: "catalog/bundled/company-defaults/team-no-deps",
     entrypoint: "TEAM.md",
     schema: "agentcompanies/v1",
     defaultInstall: true,
     recommendedForCompanyTypes: [],
-    tags: ["exec"],
+    tags: ["starter"],
     counts: {
       agents: 2,
       projects: 1,
-      tasks: 0,
+      issues: 0,
       routines: 1,
       localSkills: 0,
       catalogSkills: 0,
       externalSkillSources: 0,
     },
     rootAgentSlugs: [],
-    agentSlugs: ["ceo", "cto"],
+    agentSlugs: [],
     projectSlugs: ["launch"],
     requiredSkills: [],
     envInputs: [],
@@ -158,12 +269,12 @@ function makePreview(): CatalogTeamImportPreviewResult {
       targetCompanyId: "company-1",
       targetCompanyName: "Paperclip",
       collisionStrategy: "rename",
-      selectedAgentSlugs: ["ceo", "cto"],
+      selectedAgentSlugs: ["company-lead", "engineering-lead"],
       plan: {
         companyAction: "none",
         agentPlans: [
-          { slug: "ceo", action: "create", plannedName: "CEO", existingAgentId: null, reason: null },
-          { slug: "cto", action: "create", plannedName: "CTO", existingAgentId: null, reason: null },
+          { slug: "company-lead", action: "create", plannedName: "Company Lead", existingAgentId: null, reason: null },
+          { slug: "engineering-lead", action: "create", plannedName: "Engineering Lead", existingAgentId: null, reason: null },
         ],
         projectPlans: [
           { slug: "launch", action: "create", plannedName: "Launch", existingProjectId: null, reason: null },
@@ -255,8 +366,8 @@ describe("TeamCatalog install preview path", () => {
 
   it("renders the detail pane for the selected team", async () => {
     await renderPage();
-    expect(document.body.textContent).toContain("Core Exec Team");
-    expect(document.body.textContent).toContain("A starter executive team.");
+    expect(document.body.textContent).toContain("Core Team");
+    expect(document.body.textContent).toContain("A starter team with ordinary agent identities.");
     // summary grid counts
     expect(document.body.textContent).toContain("Agents");
     expect(document.body.textContent).toContain("Projects");
@@ -283,7 +394,7 @@ describe("TeamCatalog install preview path", () => {
     );
     expect(document.body.textContent).toContain("Summary");
     // categorized plan rows
-    expect(document.body.textContent?.toLowerCase()).toContain("ceo");
+    expect(document.body.textContent?.toLowerCase()).toContain("company-lead");
     expect(document.body.textContent?.toLowerCase()).toContain("launch");
 
     // Submit install from the footer.
@@ -305,9 +416,8 @@ describe("TeamCatalog install preview path", () => {
     preview.portabilityPreview.envInputs = [
       {
         key: "OPENAI_API_KEY",
-        description: "OpenAI API key",
-        agentSlug: "ceo",
-        projectSlug: null,
+        description: "Launch project API key",
+        projectSlug: "launch",
         kind: "secret",
         requirement: "required",
         defaultValue: null,
@@ -348,7 +458,7 @@ describe("TeamCatalog install preview path", () => {
       "team-no-deps",
       expect.objectContaining({
         secretValues: {
-          "agent:ceo:OPENAI_API_KEY": "sk-imported",
+          "project:launch:OPENAI_API_KEY": "sk-imported",
         },
       }),
     );
@@ -357,7 +467,7 @@ describe("TeamCatalog install preview path", () => {
   it("requires a target manager before continuing when the team has root agents", async () => {
     currentRoute = "team-with-root";
     mockTeamCatalogApi.catalogList.mockResolvedValue([
-      makeTeam({ id: "team-with-root", slug: "team-with-root", rootAgentSlugs: ["ceo"], agentSlugs: ["ceo", "cto"] }),
+      makeTeam({ id: "team-with-root", slug: "team-with-root", rootAgentSlugs: ["company-lead"], agentSlugs: ["company-lead", "engineering-lead"] }),
     ]);
     mockAgentsApi.list.mockResolvedValue([
       {
@@ -365,21 +475,19 @@ describe("TeamCatalog install preview path", () => {
         companyId: "company-1",
         name: "Founder",
         urlKey: "founder",
-        role: "ceo",
         title: null,
         icon: null,
         status: "active",
         reportsTo: null,
         capabilities: null,
-        adapterType: "claude_local",
+        adapterType: "codex",
         adapterConfig: {},
         runtimeConfig: {},
-        budgetMonthlyCents: 0,
-        spentMonthlyCents: 0,
+        budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+        knownSpendAmount: canonicalizeMoneyAmount("0"),
         pauseReason: null,
         pausedAt: null,
-        permissions: {},
-        lastHeartbeatAt: null,
+        governance: {},
         metadata: null,
         createdAt: new Date(),
         updatedAt: new Date(),

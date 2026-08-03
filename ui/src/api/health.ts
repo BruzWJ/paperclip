@@ -3,11 +3,10 @@ import type { ServerInfoSnapshot } from "@paperclipai/shared";
 export type DevServerHealthStatus = {
   enabled: true;
   restartRequired: boolean;
-  reason: "backend_changes" | "pending_migrations" | "backend_changes_and_pending_migrations" | null;
+  reason: "backend_changes" | null;
   lastChangedAt: string | null;
   changedPathCount: number;
   changedPathsSample: string[];
-  pendingMigrations: string[];
   autoRestartEnabled: boolean;
   activeRunCount: number;
   waitingForIdle: boolean;
@@ -17,7 +16,6 @@ export type DevServerHealthStatus = {
 export type HealthStatus = {
   status: "ok";
   version?: string;
-  deploymentMode?: "local_trusted" | "authenticated";
   deploymentExposure?: "private" | "public";
   authReady?: boolean;
   bootstrapStatus?: "ready" | "bootstrap_pending";
@@ -36,8 +34,12 @@ export const healthApi = {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) {
-      const payload = await res.json().catch(() => null) as { error?: string } | null;
-      throw new Error(payload?.error ?? `Failed to load health (${res.status})`);
+      const payload = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(
+        payload?.error ?? `Failed to load health (${res.status})`,
+      );
     }
     return res.json();
   },
@@ -48,8 +50,12 @@ export const healthApi = {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) {
-      const payload = await res.json().catch(() => null) as { error?: string } | null;
-      throw new Error(payload?.error ?? `Failed to request restart (${res.status})`);
+      const payload = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      throw new Error(
+        payload?.error ?? `Failed to request restart (${res.status})`,
+      );
     }
   },
 };

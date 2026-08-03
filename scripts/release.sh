@@ -49,7 +49,7 @@ restore_publish_artifacts() {
   rm -f "$CLI_DIR/README.md"
   rm -rf "$REPO_ROOT/server/ui-dist"
 
-  for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do
+  for pkg_dir in server; do
     rm -rf "$REPO_ROOT/$pkg_dir/skills"
   done
 }
@@ -228,7 +228,7 @@ cd "$REPO_ROOT"
 pnpm build
 node "$REPO_ROOT/scripts/build-standalone-public-packages.mjs"
 bash "$REPO_ROOT/scripts/prepare-server-ui-dist.sh"
-for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do
+for pkg_dir in server; do
   rm -rf "$REPO_ROOT/$pkg_dir/skills"
   cp -r "$REPO_ROOT/skills" "$REPO_ROOT/$pkg_dir/skills"
 done

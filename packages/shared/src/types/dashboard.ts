@@ -1,3 +1,5 @@
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
+
 export interface DashboardRunActivityDay {
   date: string;
   succeeded: number;
@@ -32,16 +34,19 @@ export interface DashboardSummary {
     paused: number;
     error: number;
   };
-  tasks: {
+  issues: {
     open: number;
     inProgress: number;
     blocked: number;
     done: number;
   };
   costs: {
-    monthSpendCents: number;
-    monthBudgetCents: number;
+    budgetCurrency: BudgetCurrency;
+    monthKnownSpendAmount: MoneyAmount;
+    monthBudgetAmount: MoneyAmount;
+    monthRemainingAmount: MoneyAmount;
     monthUtilizationPercent: number;
+    unpricedPromptCount: number;
   };
   pendingApprovals: number;
   budgets: {

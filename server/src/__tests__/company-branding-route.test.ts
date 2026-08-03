@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockCompanyService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -63,8 +65,9 @@ function createCompany() {
     status: "active",
     issuePrefix: "PAP",
     issueCounter: 568,
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetCurrency: "USD",
+    budgetMonthlyAmount: "0",
+    knownSpendAmount: "0",
     requireBoardApprovalForNewAgents: false,
     brandColor: "#123456",
     logoAssetId: "11111111-1111-4111-8111-111111111111",
@@ -72,6 +75,21 @@ function createCompany() {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function companyOperatorActor() {
+  return testBoardSessionActor({
+    userId: "user-1",
+    companyIds: ["company-1"],
+    memberships: [
+      {
+        companyId: "company-1",
+        membershipRole: "operator",
+        status: "active",
+      },
+    ],
+    isInstanceAdmin: false,
+  });
 }
 
 async function createApp(actor: Record<string, unknown>) {
@@ -85,7 +103,11 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api/companies", companyRoutes({} as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use(
+    "/api/companies",
+    companyRoutes({} as any, undefined, {} as never),
+  );
   app.use(errorHandler);
   return app;
 }
@@ -99,40 +121,12 @@ describe("PATCH /api/companies/:companyId/branding", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects non-CEO agent callers", async () => {
-    mockAgentService.getById.mockResolvedValue({
-      id: "agent-1",
-      companyId: "company-1",
-      role: "engineer",
-    });
+  it("denies generic agent REST callers before validating branding fields", async () => {
     const app = await createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({ logoAssetId: "11111111-1111-4111-8111-111111111111" });
-
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Only CEO agents");
-    expect(mockCompanyService.update).not.toHaveBeenCalled();
-  });
-
-  it("rejects non-CEO agent callers before validating branding body shape", async () => {
-    mockAgentService.getById.mockResolvedValue({
-      id: "agent-1",
-      companyId: "company-1",
-      role: "engineer",
-    });
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -141,54 +135,8 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       .send({ status: "archived" });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Only CEO agents");
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockCompanyService.update).not.toHaveBeenCalled();
-  });
-
-  it("allows CEO agent callers to update branding fields", async () => {
-    const company = createCompany();
-    mockAgentService.getById.mockResolvedValue({
-      id: "agent-1",
-      companyId: "company-1",
-      role: "ceo",
-    });
-    mockCompanyService.update.mockResolvedValue(company);
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "agent_key",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({
-        logoAssetId: "11111111-1111-4111-8111-111111111111",
-        brandColor: "#123456",
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.logoAssetId).toBe(company.logoAssetId);
-    expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", {
-      logoAssetId: "11111111-1111-4111-8111-111111111111",
-      brandColor: "#123456",
-    });
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-1",
-        actorType: "agent",
-        actorId: "agent-1",
-        agentId: "agent-1",
-        runId: "run-1",
-        action: "company.branding_updated",
-        details: {
-          logoAssetId: "11111111-1111-4111-8111-111111111111",
-          brandColor: "#123456",
-        },
-      }),
-    );
   });
 
   it("allows board callers to update branding fields", async () => {
@@ -199,11 +147,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       logoAssetId: null,
       logoUrl: null,
     });
-    const app = await createApp({
-      type: "board",
-      userId: "user-1",
-      source: "local_implicit",
-    });
+    const app = await createApp(companyOperatorActor());
 
     const res = await request(app)
       .patch("/api/companies/company-1/branding")
@@ -215,11 +159,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
   });
 
   it("rejects non-branding fields in the request body", async () => {
-    const app = await createApp({
-      type: "board",
-      userId: "user-1",
-      source: "local_implicit",
-    });
+    const app = await createApp(companyOperatorActor());
 
     const res = await request(app)
       .patch("/api/companies/company-1/branding")
@@ -243,17 +183,12 @@ describe("PATCH /api/companies/:companyId", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects non-CEO agent callers before loading the company or validating settings body shape", async () => {
-    mockAgentService.getById.mockResolvedValue({
-      id: "agent-1",
-      companyId: "company-1",
-      role: "engineer",
-    });
+  it("denies generic agent REST callers before loading the company or validating settings", async () => {
     const app = await createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -262,73 +197,9 @@ describe("PATCH /api/companies/:companyId", () => {
       .send({ status: "archived" });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Only CEO agents");
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockCompanyService.getById).not.toHaveBeenCalled();
     expect(mockCompanyService.update).not.toHaveBeenCalled();
-  });
-
-  it("allows CEO agent callers to update only branding fields through the general settings route", async () => {
-    const company = createCompany();
-    mockAgentService.getById.mockResolvedValue({
-      id: "agent-1",
-      companyId: "company-1",
-      role: "ceo",
-    });
-    mockCompanyService.getById.mockResolvedValue(company);
-    mockCompanyService.update.mockResolvedValue({
-      ...company,
-      name: "New Name",
-    });
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "agent_key",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .patch("/api/companies/company-1")
-      .send({ name: "New Name" });
-
-    expect(res.status).toBe(200);
-    expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", { name: "New Name" }, expect.objectContaining({
-      actorType: "agent",
-      actorId: "agent-1",
-    }));
-  });
-
-  it("rejects CEO agent attempts to update lifecycle, budget, consent, or prefix fields", async () => {
-    const company = createCompany();
-    mockAgentService.getById.mockResolvedValue({
-      id: "agent-1",
-      companyId: "company-1",
-      role: "ceo",
-    });
-    mockCompanyService.getById.mockResolvedValue(company);
-    const app = await createApp({
-      type: "agent",
-      agentId: "agent-1",
-      companyId: "company-1",
-      source: "agent_key",
-      runId: "run-1",
-    });
-
-    const res = await request(app)
-      .patch("/api/companies/company-1")
-      .send({
-        status: "archived",
-        budgetMonthlyCents: 1000,
-        spentMonthlyCents: 500,
-        requireBoardApprovalForNewAgents: true,
-        feedbackDataSharingEnabled: true,
-        issuePrefix: "BAD",
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe("Validation error");
-    expect(mockCompanyService.update).not.toHaveBeenCalled();
-    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("keeps full company settings updates board-only", async () => {
@@ -338,11 +209,7 @@ describe("PATCH /api/companies/:companyId", () => {
       ...company,
       status: "paused",
     });
-    const app = await createApp({
-      type: "board",
-      userId: "user-1",
-      source: "local_implicit",
-    });
+    const app = await createApp(companyOperatorActor());
 
     const res = await request(app)
       .patch("/api/companies/company-1")

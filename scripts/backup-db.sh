@@ -8,7 +8,10 @@ set -euo pipefail
 #   ./scripts/backup-db.sh
 #   pnpm db:backup
 #
-# The embedded postgres must be running (start with: pnpm dev)
+# DATABASE_URL or database.connectionString must point at an already-running
+# external PostgreSQL server. BETTER_AUTH_SECRET must be the deployment's
+# durable secret, and compatible pg_dump/pg_restore client tools must be
+# installed. The command writes a complete payload plus its required manifest.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

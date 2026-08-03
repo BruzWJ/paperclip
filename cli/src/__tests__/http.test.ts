@@ -7,7 +7,7 @@ describe("PaperclipApiClient", () => {
     vi.restoreAllMocks();
   });
 
-  it("adds authorization and run-id headers", async () => {
+  it("adds the board authorization header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 200 }),
     );
@@ -16,7 +16,6 @@ describe("PaperclipApiClient", () => {
     const client = new PaperclipApiClient({
       apiBase: "http://localhost:3100",
       apiKey: "token-123",
-      runId: "run-abc",
     });
 
     await client.post("/api/test", { hello: "world" });
@@ -27,8 +26,32 @@ describe("PaperclipApiClient", () => {
 
     const headers = call[1].headers as Record<string, string>;
     expect(headers.authorization).toBe("Bearer token-123");
-    expect(headers["x-paperclip-run-id"]).toBe("run-abc");
     expect(headers["content-type"]).toBe("application/json");
+  });
+
+  it("forwards explicit per-request headers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new PaperclipApiClient({
+      apiBase: "http://localhost:3100",
+      apiKey: "token-123",
+    });
+
+    await client.post(
+      "/api/test",
+      { hello: "world" },
+      { headers: { "Idempotency-Key": "agent-create-1" } },
+    );
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<
+      string,
+      string
+    >;
+    expect(headers["Idempotency-Key"]).toBe("agent-create-1");
+    expect(headers.authorization).toBe("Bearer token-123");
   });
 
   it("returns null on ignoreNotFound", async () => {
@@ -45,7 +68,7 @@ describe("PaperclipApiClient", () => {
   it("throws ApiRequestError with details", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ error: "Issue checkout conflict", details: { issueId: "1" } }),
+        JSON.stringify({ error: "Request conflict", details: { resourceId: "1" } }),
         { status: 409 },
       ),
     );
@@ -53,10 +76,10 @@ describe("PaperclipApiClient", () => {
 
     const client = new PaperclipApiClient({ apiBase: "http://localhost:3100" });
 
-    await expect(client.post("/api/issues/1/checkout", {})).rejects.toMatchObject({
+    await expect(client.post("/api/test", {})).rejects.toMatchObject({
       status: 409,
-      message: "Issue checkout conflict",
-      details: { issueId: "1" },
+      message: "Request conflict",
+      details: { resourceId: "1" },
     } satisfies Partial<ApiRequestError>);
   });
 

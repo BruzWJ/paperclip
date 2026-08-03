@@ -1,29 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { classifyRunLiveness } from "../services/run-liveness.ts";
+import {
+  classifyRunLiveness,
+  type RunLivenessClassificationInput,
+} from "../services/run-liveness.ts";
 
 const baseInput = {
   runStatus: "succeeded",
-  issue: {
-    status: "in_progress",
-    title: "Implement feature",
-    description: "Add the requested behavior.",
+  issueLifecycleStatus: "open",
+  assistantTextParts: [],
+  failureFacts: {
+    terminalReasonCode: "protocol_settled",
+    assistantErrors: [],
   },
-  resultJson: null,
-  stdoutExcerpt: null,
-  stderrExcerpt: null,
-  error: null,
-  errorCode: null,
   continuationAttempt: 0,
   evidence: null,
-};
+} satisfies RunLivenessClassificationInput;
 
 describe("run liveness classifier", () => {
   it("classifies text-only future work as plan_only", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "I will inspect the repo next and then implement the fix.",
-      },
+      assistantTextParts: [
+        "I will inspect the repo next and then implement the fix.",
+      ],
     });
 
     expect(classification.livenessState).toBe("plan_only");
@@ -38,15 +37,12 @@ describe("run liveness classifier", () => {
     expect(classification.actionability).toBe("unknown");
   });
 
-  it("treats issue comments, documents, products, and actions as progress", () => {
+  it("treats documents, products, and actions as progress", () => {
     const latestEvidenceAt = new Date("2026-04-18T12:00:00Z");
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "Updated implementation.",
-      },
+      assistantTextParts: ["Updated implementation."],
       evidence: {
-        issueCommentsCreated: 1,
         documentRevisionsCreated: 1,
         workProductsCreated: 1,
         toolOrActionEventsCreated: 1,
@@ -61,9 +57,7 @@ describe("run liveness classifier", () => {
   it("does not treat workspace operations alone as concrete progress", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "I will inspect the repo next.",
-      },
+      assistantTextParts: ["I will inspect the repo next."],
       evidence: {
         workspaceOperationsCreated: 1,
         latestEvidenceAt: new Date("2026-04-18T12:00:00Z"),
@@ -74,28 +68,23 @@ describe("run liveness classifier", () => {
     expect(classification.lastUsefulActionAt).toBeNull();
   });
 
-  it("exempts planning/document tasks from plan-only retry classification", () => {
+  it("does not infer a planning exemption without typed action evidence", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      issue: {
-        status: "in_progress",
-        title: "Draft implementation plan",
-        description: "Create a plan for the work.",
-      },
-      resultJson: {
-        summary: "Plan:\n- Inspect files\n- Implement after approval",
-      },
+      assistantTextParts: [
+        "Plan:\n- Inspect files\n- Implement after approval",
+      ],
     });
 
-    expect(classification.livenessState).toBe("advanced");
+    expect(classification.livenessState).toBe("plan_only");
   });
 
   it("exempts runs that update the plan document from plan-only classification", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "Next steps:\n- inspect files\n- implement the service",
-      },
+      assistantTextParts: [
+        "Next steps:\n- inspect files\n- implement the service",
+      ],
       evidence: {
         documentRevisionsCreated: 1,
         planDocumentRevisionsCreated: 1,
@@ -109,13 +98,8 @@ describe("run liveness classifier", () => {
   it("classifies done issues as completed", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      issue: {
-        ...baseInput.issue,
-        status: "done",
-      },
-      resultJson: {
-        summary: "Finished the implementation.",
-      },
+      issueLifecycleStatus: "done",
+      assistantTextParts: ["Finished the implementation."],
     });
 
     expect(classification.livenessState).toBe("completed");
@@ -124,23 +108,32 @@ describe("run liveness classifier", () => {
   it("classifies declared blockers as blocked", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "I cannot proceed because I need access credentials.",
-      },
+      assistantTextParts: [
+        "I cannot proceed because I need access credentials.",
+      ],
     });
 
     expect(classification.livenessState).toBe("blocked");
     expect(classification.actionability).toBe("blocked_external");
   });
 
-  it("treats PAP-2000-style validation output as runnable follow-up, not an external blocker", () => {
+  it("preserves the typed blocked lifecycle fact", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "PAP-1949 remains blocked until PAP-2000 is resolved.",
-      },
-      issueCommentBodies: [
+      issueLifecycleStatus: "blocked",
+      assistantTextParts: ["Recorded the current state."],
+    });
+
+    expect(classification.livenessState).toBe("blocked");
+    expect(classification.livenessReason).toBe("Issue status is blocked");
+  });
+
+  it("treats issue-chain validation output as runnable follow-up", () => {
+    const classification = classifyRunLiveness({
+      ...baseInput,
+      assistantTextParts: [
         [
+          "PAP-1949 remains blocked until PAP-2000 is resolved.",
           "Validation is ready for the next pass.",
           "",
           "- Blocked chain context: PAP-1949 -> PAP-1999 -> PAP-2000",
@@ -151,77 +144,96 @@ describe("run liveness classifier", () => {
 
     expect(classification.livenessState).toBe("plan_only");
     expect(classification.actionability).toBe("runnable");
-    expect(classification.nextAction).toBe("run npm test and report the row counts.");
+    expect(classification.nextAction).toBe(
+      "run npm test and report the row counts.",
+    );
   });
 
-  it("prefers durable comments over raw transcript next-action noise", () => {
+  it("uses the ordered canonical Session assistant parts", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      issueCommentBodies: ["Next action: run pnpm test -- --runInBand."],
-      stdoutExcerpt: [
-        "tool_call: write",
-        "command: rm -rf production-data",
-        "Next action: deploy to production",
-      ].join("\n"),
+      assistantTextParts: [
+        "Next action: run pnpm test -- --runInBand.",
+        "Completed additional verification.",
+      ],
     });
 
     expect(classification.actionability).toBe("runnable");
-    expect(classification.nextAction).toBe("run pnpm test -- --runInBand.");
+    expect(classification.nextAction).toBe(
+      "run pnpm test -- --runInBand.",
+    );
   });
 
   it("keeps approval requests out of automatic continuation", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "Next action: wait for board approval before continuing.",
-      },
+      assistantTextParts: [
+        "Next action: wait for board approval before continuing.",
+      ],
     });
 
     expect(classification.livenessState).toBe("blocked");
     expect(classification.actionability).toBe("approval_required");
-    expect(classification.nextAction).toBe("wait for board approval before continuing.");
+    expect(classification.nextAction).toBe(
+      "wait for board approval before continuing.",
+    );
   });
 
   it("routes production-sensitive next actions to manager review", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "Next action: deploy to production and verify live traffic.",
-      },
+      assistantTextParts: [
+        "Next action: deploy to production and verify live traffic.",
+      ],
     });
 
     expect(classification.livenessState).toBe("needs_followup");
     expect(classification.actionability).toBe("manager_review");
-    expect(classification.nextAction).toBe("deploy to production and verify live traffic.");
+    expect(classification.nextAction).toBe(
+      "deploy to production and verify live traffic.",
+    );
   });
 
-
-  it("uses killed background-task evidence instead of a generic failed-run reason", () => {
+  it("uses the typed background-task terminal reason", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
       runStatus: "failed",
-      errorCode: "process_lost",
-      resultJson: {
-        stopReason: "unmanaged_background_task_stopped",
-        unmanagedBackgroundTask: {
-          kind: "orphaned_process_group_cleanup",
-          stopped: true,
-          stopReason: "unmanaged_background_task_stopped",
-          reason: "unmanaged background task stopped; no durable live path",
-        },
+      failureFacts: {
+        terminalReasonCode: "unmanaged_background_task_stopped",
+        assistantErrors: [],
       },
     });
 
     expect(classification.livenessState).toBe("failed");
-    expect(classification.livenessReason).toBe("unmanaged background task stopped; no durable live path");
+    expect(classification.livenessReason).toBe(
+      "unmanaged background task stopped; no durable live path",
+    );
+  });
+
+  it("derives failed-run detail from typed assistant error kinds", () => {
+    const classification = classifyRunLiveness({
+      ...baseInput,
+      runStatus: "failed",
+      failureFacts: {
+        terminalReasonCode: "provider_error",
+        assistantErrors: [
+          { type: "AuthError" },
+          { type: "AuthError" },
+        ],
+      },
+    });
+
+    expect(classification.livenessReason).toBe(
+      "Run ended with failed (provider_error; assistant error AuthError)",
+    );
   });
 
   it("marks unclear useful output as unknown actionability", () => {
     const classification = classifyRunLiveness({
       ...baseInput,
-      resultJson: {
-        summary: "Observed mixed output and left notes for a later pass.",
-      },
+      assistantTextParts: [
+        "Observed mixed output and left notes for a later pass.",
+      ],
     });
 
     expect(classification.livenessState).toBe("needs_followup");

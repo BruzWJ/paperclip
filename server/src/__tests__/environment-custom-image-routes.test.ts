@@ -6,6 +6,7 @@ import {
   environmentCustomImageTerminalConnectionRegistry,
   environmentCustomImageTerminalSessionStore,
 } from "../services/environment-custom-image-terminal-sessions.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const now = new Date("2026-06-25T20:00:00.000Z");
 
@@ -197,14 +198,12 @@ function createApp(actor: Record<string, unknown>) {
 }
 
 function boardActor(overrides: Record<string, unknown> = {}) {
-  return {
-    type: "board",
+  return testBoardSessionActor({
     userId: "user-1",
-    source: "session",
     companyIds: ["company-1"],
     isInstanceAdmin: true,
     ...overrides,
-  };
+  });
 }
 
 function agentActor() {
@@ -212,7 +211,7 @@ function agentActor() {
     type: "agent",
     agentId: "agent-1",
     companyId: "company-1",
-    source: "agent_key",
+    source: "internal",
     runId: "run-1",
   };
 }
@@ -304,7 +303,6 @@ describe("environment customImage setup routes", () => {
       ttlSeconds: 3600,
       actor: {
         userId: "user-1",
-        agentId: null,
       },
       secretContextCompanyId: "company-1",
     });

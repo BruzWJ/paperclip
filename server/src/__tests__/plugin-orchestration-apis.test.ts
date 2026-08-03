@@ -1,135 +1,127 @@
+// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: requestWakeup, requestWakeups, agentSessions
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  activityLog,
-  agentWakeupRequests,
-  agents,
-  companies,
-  costEvents,
-  createDb,
-  executionWorkspaces,
-  heartbeatRuns,
-  issueRelations,
-  issues,
-  pluginManagedResources,
-  plugins,
-  projects,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { buildHostServices } from "../services/plugin-host-services.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const hostMocks = vi.hoisted(() => ({
+  assertPluginInstallationAvailableForCompany: vi.fn(async () => undefined),
+  getCompanySettings: vi.fn(async () => null as Record<string, unknown> | null),
+  upsertCompanySettings: vi.fn(async () => undefined),
+  getExecutionWorkspaceById: vi.fn(async () => null as Record<string, unknown> | null),
+  resolveManagedProject: vi.fn(async () => ({
+    status: "missing",
+    projectId: null,
+    project: null,
+  })),
+}));
+
+vi.mock("../services/plugin-issue-authorization.js", () => ({
+  assertPluginInstallationAvailableForCompany:
+    hostMocks.assertPluginInstallationAvailableForCompany,
+}));
+
+vi.mock("../services/plugin-registry.js", () => ({
+  pluginRegistryService: () => ({
+    getCompanySettings: hostMocks.getCompanySettings,
+    upsertCompanySettings: hostMocks.upsertCompanySettings,
+  }),
+}));
+
+vi.mock("../services/execution-workspaces.js", () => ({
+  executionWorkspaceService: () => ({
+    getById: hostMocks.getExecutionWorkspaceById,
+  }),
+}));
+
+vi.mock("../services/projects.js", () => ({
+  projectService: () => ({
+    resolveManagedProject: hostMocks.resolveManagedProject,
+  }),
+}));
+
+import {
+  buildHostServices,
+  type PluginIssueControlPlane,
+} from "../services/plugin-host-services.js";
 
 function createEventBusStub() {
   return {
     forPlugin() {
       return {
-        emit: async () => {},
-        subscribe: () => {},
+        emit: async () => undefined,
+        subscribe: () => undefined,
       };
     },
-  } as any;
+  } as never;
 }
 
-function issuePrefix(id: string) {
-  return `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+function createPluginIssueControlPlaneStub(
+  overrides: Partial<PluginIssueControlPlane> = {},
+): PluginIssueControlPlane {
+  return {
+    list: vi.fn(async () => []),
+    get: vi.fn(async () => null),
+    create: vi.fn(async () => {
+      throw new Error("Unexpected plugin issue creation");
+    }),
+    update: vi.fn(async () => {
+      throw new Error("Unexpected plugin issue update");
+    }),
+    withdraw: vi.fn(async () => {
+      throw new Error("Unexpected plugin issue withdrawal");
+    }),
+    ...overrides,
+  };
 }
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres plugin orchestration API tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
+const pluginId = "00000000-0000-4000-8000-000000000001";
+const companyId = "00000000-0000-4000-8000-000000000002";
+const agentId = "00000000-0000-4000-8000-000000000003";
+
+function services(input: {
+  pluginKey?: string;
+  manifest?: Record<string, unknown>;
+  pluginIssueControlPlane?: PluginIssueControlPlane;
+} = {}) {
+  return buildHostServices(
+    createMockDb().db,
+    pluginId,
+    input.pluginKey ?? "paperclip.missions",
+    createEventBusStub(),
+    undefined,
+    {
+      manifest: input.manifest as never,
+      pluginIssueControlPlane:
+        input.pluginIssueControlPlane ?? createPluginIssueControlPlaneStub(),
+      ordinaryIssues: {} as never,
+      issueExecutionCancellation: {} as never,
+    },
   );
 }
 
-describeEmbeddedPostgres("plugin orchestration APIs", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+describe("plugin orchestration APIs without a database process", () => {
   const tempRoots: string[] = [];
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-orchestration-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
   afterEach(async () => {
-    await Promise.all(tempRoots.map((root) => fs.rm(root, { recursive: true, force: true })));
-    tempRoots.length = 0;
-    await db.delete(activityLog);
-    await db.delete(costEvents);
-    await db.delete(heartbeatRuns);
-    await db.delete(agentWakeupRequests);
-    await db.delete(issueRelations);
-    await db.delete(issues);
-    await db.delete(executionWorkspaces);
-    await db.delete(pluginManagedResources);
-    await db.delete(projects);
-    await db.delete(plugins);
-    await db.delete(agents);
-    await db.delete(companies);
+    vi.clearAllMocks();
+    await Promise.all(
+      tempRoots.splice(0).map((root) =>
+        fs.rm(root, { recursive: true, force: true })
+      ),
+    );
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedCompanyAndAgent() {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: issuePrefix(companyId),
-      requireBoardApprovalForNewAgents: false,
-    });
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "Engineer",
-      role: "engineer",
-      status: "idle",
-      adapterType: "process",
-      adapterConfig: { command: "true" },
-      runtimeConfig: {},
-      permissions: {},
-    });
-    return { companyId, agentId };
-  }
-
-  async function makeLocalRoot() {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-host-folder-"));
-    tempRoots.push(root);
-    return root;
-  }
-
-  it("returns plugin-safe execution workspace metadata scoped to the company", async () => {
-    const { companyId } = await seedCompanyAndAgent();
-    const otherCompanyId = randomUUID();
-    const projectId = randomUUID();
+  it("returns only plugin-safe execution workspace metadata for its company", async () => {
     const workspaceId = randomUUID();
-    await db.insert(companies).values({
-      id: otherCompanyId,
-      name: "Other",
-      issuePrefix: issuePrefix(otherCompanyId),
-      requireBoardApprovalForNewAgents: false,
-    });
-    await db.insert(projects).values({
-      id: projectId,
-      companyId,
-      name: "Workspaces",
-      status: "in_progress",
-    });
-    await db.insert(executionWorkspaces).values({
+    const projectId = randomUUID();
+    hostMocks.getExecutionWorkspaceById.mockResolvedValue({
       id: workspaceId,
       companyId,
       projectId,
+      projectWorkspaceId: null,
       mode: "isolated_workspace",
       strategyType: "git_worktree",
       name: "Feature workspace",
@@ -145,246 +137,234 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
         workspaceRealizationRequest: { hiddenInternal: true },
       },
     });
+    const host = services({ pluginKey: "paperclip.workspace" });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.workspace", createEventBusStub());
-
-    await expect(services.executionWorkspaces.get({ workspaceId, companyId })).resolves.toMatchObject({
+    await expect(
+      host.executionWorkspaces.get({ workspaceId, companyId }),
+    ).resolves.toMatchObject({
       id: workspaceId,
       companyId,
       projectId,
-      projectWorkspaceId: null,
       path: "/tmp/paperclip-feature",
-      cwd: "/tmp/paperclip-feature",
-      repoUrl: "https://example.com/paperclip.git",
-      baseRef: "main",
-      branchName: "feature/workspace",
       providerType: "git_worktree",
       providerMetadata: { sandboxId: "sandbox-1" },
     });
-    await expect(services.executionWorkspaces.get({ workspaceId, companyId: otherCompanyId })).resolves.toBeNull();
+    await expect(
+      host.executionWorkspaces.get({
+        workspaceId,
+        companyId: "00000000-0000-4000-8000-000000000099",
+      }),
+    ).resolves.toBeNull();
   });
 
-  it("creates plugin-origin issues with full orchestration fields and audit activity", async () => {
-    const { companyId, agentId } = await seedCompanyAndAgent();
-    const blockerIssueId = randomUUID();
-    const originRunId = randomUUID();
-    await db.insert(heartbeatRuns).values({
-      id: originRunId,
+  it("exposes only the retained plugin issue control-plane surface", () => {
+    const host = services();
+
+    expect(Object.keys(host.issues).sort()).toEqual([
+      "create",
+      "get",
+      "list",
+      "registerCreatorCallback",
+      "update",
+      "withdraw",
+    ]);
+    const issueSurface = host.issues as unknown as Record<string, unknown>;
+    expect(issueSurface.requestWakeup).toBeUndefined();
+    expect(issueSurface.requestWakeups).toBeUndefined();
+    expect(issueSurface.getOrchestrationSummary).toBeUndefined();
+    expect(issueSurface.assertCheckoutOwner).toBeUndefined();
+    expect(issueSurface.createComment).toBeUndefined();
+    expect(issueSurface.setStatus).toBeUndefined();
+    expect(issueSurface.updateDescription).toBeUndefined();
+
+    const hostSurface = host as unknown as Record<string, unknown>;
+    expect(hostSurface.agentSessions).toBeUndefined();
+    expect((host.agents as unknown as Record<string, unknown>).invoke)
+      .toBeUndefined();
+  });
+
+  it("requires a registered callback before forwarding immutable creation", async () => {
+    const createdIssue = {
+      id: randomUUID(),
       companyId,
-      agentId,
-      status: "running",
-      invocationSource: "assignment",
-      contextSnapshot: { issueId: blockerIssueId },
+      request: "Investigate mission alpha",
+      ownerAgentId: agentId,
+    } as Awaited<ReturnType<PluginIssueControlPlane["create"]>>;
+    const create = vi.fn(async () => createdIssue);
+    const host = services({
+      pluginIssueControlPlane: createPluginIssueControlPlaneStub({ create }),
     });
-    await db.insert(issues).values({
-      id: blockerIssueId,
+    const input = {
       companyId,
-      title: "Blocker",
-      status: "todo",
-      priority: "medium",
-      identifier: `${issuePrefix(companyId)}-blocker`,
-    });
+      request: "Investigate mission alpha",
+      ownerAgentId: agentId,
+      callbackKey: "mission-progress",
+      callbackVersion: "1",
+      title: "Mission alpha",
+      attentionMask: { read_issue_comments: false },
+    };
+    const operation = { hostRpcOperationId: "rpc-create-1" };
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
-    const issue = await services.issues.create({
-      companyId,
-      title: "Plugin child issue",
-      status: "todo",
-      assigneeAgentId: agentId,
-      billingCode: "mission:alpha",
-      originId: "mission-alpha",
-      blockedByIssueIds: [blockerIssueId],
-      actorAgentId: agentId,
-      actorRunId: originRunId,
-    });
-
-    const [stored] = await db.select().from(issues).where(eq(issues.id, issue.id));
-    expect(stored?.originKind).toBe("plugin:paperclip.missions");
-    expect(stored?.originId).toBe("mission-alpha");
-    expect(stored?.billingCode).toBe("mission:alpha");
-    expect(stored?.assigneeAgentId).toBe(agentId);
-    expect(stored?.createdByAgentId).toBe(agentId);
-    expect(stored?.originRunId).toBe(originRunId);
-
-    const [relation] = await db
-      .select()
-      .from(issueRelations)
-      .where(and(eq(issueRelations.issueId, blockerIssueId), eq(issueRelations.relatedIssueId, issue.id)));
-    expect(relation?.type).toBe("blocks");
-
-    const activities = await db
-      .select()
-      .from(activityLog)
-      .where(and(eq(activityLog.entityType, "issue"), eq(activityLog.entityId, issue.id)));
-    expect(activities).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          actorType: "plugin",
-          actorId: "plugin-record-id",
-          action: "issue.created",
-          agentId,
-          details: expect.objectContaining({
-            sourcePluginId: "plugin-record-id",
-            sourcePluginKey: "paperclip.missions",
-            initiatingActorType: "agent",
-            initiatingActorId: agentId,
-            initiatingRunId: originRunId,
-          }),
-        }),
-      ]),
+    await expect(host.issues.create(input, operation)).rejects.toThrow(
+      "Creator callback is not registered: mission-progress@1",
     );
-  });
+    expect(create).not.toHaveBeenCalled();
 
-  it("enforces plugin origin namespaces", async () => {
-    const { companyId } = await seedCompanyAndAgent();
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
-
-    const featureIssue = await services.issues.create({
-      companyId,
-      title: "Feature issue",
-      originKind: "plugin:paperclip.missions:feature",
-      originId: "mission-alpha:feature-1",
+    await expect(host.issues.registerCreatorCallback({
+      callbackKey: " mission-progress ",
+      callbackVersion: " 1 ",
+    })).resolves.toEqual({
+      callbackKey: "mission-progress",
+      callbackVersion: "1",
+      registered: true,
     });
-    expect(featureIssue.originKind).toBe("plugin:paperclip.missions:feature");
-
-    await expect(
-      services.issues.create({
-        companyId,
-        title: "Spoofed issue",
-        originKind: "plugin:other.plugin:feature",
-      }),
-    ).rejects.toThrow("Plugin may only use originKind values under plugin:paperclip.missions");
-
-    await expect(
-      services.issues.update({
-        issueId: featureIssue.id,
-        companyId,
-        patch: { originKind: "plugin:other.plugin:feature" },
-      }),
-    ).rejects.toThrow("Plugin may only use originKind values under plugin:paperclip.missions");
+    await expect(host.issues.create(input, operation)).resolves.toBe(createdIssue);
+    expect(create).toHaveBeenCalledExactlyOnceWith({
+      ...input,
+      pluginInstallationId: pluginId,
+      pluginKey: "paperclip.missions",
+      hostRpcOperationId: "rpc-create-1",
+      callbackRegistrationActive: true,
+    });
   });
 
-  it("creates plugin operation issues with the generic operation origin", async () => {
-    const { companyId } = await seedCompanyAndAgent();
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
-
-    const issue = await services.issues.create({
+  it("forwards only creator-message, reassignment, and withdrawal mutations", async () => {
+    const issueId = randomUUID();
+    const updatedIssue = {
+      id: issueId,
       companyId,
-      title: "Background operation",
-      surfaceVisibility: "plugin_operation",
-      originId: "mission-alpha:operation-1",
+      request: "Investigate mission alpha",
+      ownerAgentId: agentId,
+    } as Awaited<ReturnType<PluginIssueControlPlane["update"]>>;
+    const update = vi.fn(async () => updatedIssue);
+    const withdrawResult = {
+      operationId: "rpc-withdraw-1",
+      issue: { ...updatedIssue, status: "cancelled", lifecycleStatus: "cancelled" },
+      retried: false,
+    } as Awaited<ReturnType<PluginIssueControlPlane["withdraw"]>>;
+    const withdraw = vi.fn(async () => withdrawResult);
+    const host = services({
+      pluginIssueControlPlane: createPluginIssueControlPlaneStub({
+        update,
+        withdraw,
+      }),
     });
 
-    expect(issue.originKind).toBe("plugin:paperclip.missions:operation");
-    expect(issue.originId).toBe("mission-alpha:operation-1");
+    await expect(host.issues.update({
+      issueId,
+      companyId,
+      input: { kind: "message", message: "Use the durable creator thread." },
+    }, { hostRpcOperationId: "rpc-update-message-1" }))
+      .resolves.toBe(updatedIssue);
+    await expect(host.issues.update({
+      issueId,
+      companyId,
+      input: { kind: "reassign", ownerAgentId: agentId },
+    }, { hostRpcOperationId: "rpc-update-reassign-1" }))
+      .resolves.toBe(updatedIssue);
+    await expect(host.issues.withdraw({
+      issueId,
+      companyId,
+      message: "Withdraw this plugin-created issue.",
+    }, { hostRpcOperationId: "rpc-withdraw-1" }))
+      .resolves.toBe(withdrawResult);
+
+    expect(update).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      issueId,
+      input: { kind: "message", message: "Use the durable creator thread." },
+      pluginInstallationId: pluginId,
+      hostRpcOperationId: "rpc-update-message-1",
+    }));
+    expect(update).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      issueId,
+      input: { kind: "reassign", ownerAgentId: agentId },
+      pluginInstallationId: pluginId,
+      hostRpcOperationId: "rpc-update-reassign-1",
+    }));
+    expect(withdraw).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      issueId,
+      pluginInstallationId: pluginId,
+      hostRpcOperationId: "rpc-withdraw-1",
+    }));
   });
 
-  it("lets bootstrap-style actions initialize required local folders from an empty root", async () => {
-    const { companyId } = await seedCompanyAndAgent();
-    const pluginId = randomUUID();
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: "paperclipai.plugin-llm-wiki",
-      packageName: "@paperclipai/plugin-llm-wiki",
+  it("initializes declared local-folder structure from an empty root", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-folder-"));
+    tempRoots.push(root);
+    const declaration = {
+      folderKey: "wiki-root",
+      displayName: "Wiki root",
+      access: "readWrite",
+      requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
+      requiredFiles: ["WIKI.md", "AGENTS.md"],
+    };
+    const manifest = {
+      id: llmWikiPluginKey,
+      apiVersion: 1,
       version: "0.1.0",
-      manifestJson: {
-        id: "paperclipai.plugin-llm-wiki",
-        apiVersion: 1,
-        version: "0.1.0",
-        displayName: "LLM Wiki",
-        description: "Local-file LLM Wiki plugin",
-        author: "Paperclip",
-        categories: ["automation"],
-        capabilities: ["local.folders"],
-        entrypoints: { worker: "./dist/worker.js" },
-        localFolders: [
-          {
-            folderKey: "wiki-root",
-            displayName: "Wiki root",
-            access: "readWrite",
-            requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
-            requiredFiles: ["WIKI.md", "AGENTS.md"],
-          },
-        ],
-      },
-      status: "ready",
-    });
-    const root = await makeLocalRoot();
-    const services = buildHostServices(
-      db,
-      pluginId,
-      "paperclipai.plugin-llm-wiki",
-      createEventBusStub(),
-      undefined,
-      {
-        manifest: {
-          id: "paperclipai.plugin-llm-wiki",
-          apiVersion: 1,
-          version: "0.1.0",
-          displayName: "LLM Wiki",
-          description: "Local-file LLM Wiki plugin",
-          author: "Paperclip",
-          categories: ["automation"],
-          capabilities: ["local.folders"],
-          entrypoints: { worker: "./dist/worker.js" },
-          localFolders: [
-            {
-              folderKey: "wiki-root",
-              displayName: "Wiki root",
-              access: "readWrite",
-              requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
-              requiredFiles: ["WIKI.md", "AGENTS.md"],
-            },
-          ],
-        },
-      },
-    );
+      displayName: "LLM Wiki",
+      description: "Local-file LLM Wiki plugin",
+      author: "Paperclip",
+      categories: ["automation"],
+      capabilities: ["local.folders"],
+      entrypoints: { worker: "./dist/worker.js" },
+      localFolders: [declaration],
+    };
+    const host = services({ pluginKey: llmWikiPluginKey, manifest });
+    hostMocks.getCompanySettings.mockResolvedValueOnce(null);
 
-    const configured = await services.localFolders.configure({
+    const configured = await host.localFolders.configure({
       companyId,
       folderKey: "wiki-root",
       path: root,
       access: "readWrite",
-      requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
-      requiredFiles: ["WIKI.md", "AGENTS.md"],
+      requiredDirectories: declaration.requiredDirectories,
+      requiredFiles: declaration.requiredFiles,
     });
-    expect(configured.healthy).toBe(false);
-    expect(configured.missingDirectories).toEqual([]);
-    expect(configured.missingFiles).toEqual(["WIKI.md", "AGENTS.md"]);
+    expect(configured).toMatchObject({
+      healthy: false,
+      missingDirectories: [],
+      missingFiles: ["WIKI.md", "AGENTS.md"],
+    });
 
+    const persistedSettings = hostMocks.upsertCompanySettings.mock.calls[0]?.[2];
+    hostMocks.getCompanySettings.mockResolvedValue({
+      enabled: true,
+      settingsJson: (persistedSettings as { settingsJson: Record<string, unknown> })
+        .settingsJson,
+    });
     await fs.rm(path.join(root, "raw"), { recursive: true, force: true });
     await fs.rm(path.join(root, "wiki"), { recursive: true, force: true });
-    await expect(services.localFolders.readText({ companyId, folderKey: "wiki-root", relativePath: "WIKI.md" }))
-      .rejects.toThrow("Local folder is not healthy");
-    await services.localFolders.writeTextAtomic({
+    await expect(host.localFolders.readText({
+      companyId,
+      folderKey: "wiki-root",
+      relativePath: "WIKI.md",
+    })).rejects.toThrow("Local folder is not healthy");
+
+    await host.localFolders.writeTextAtomic({
       companyId,
       folderKey: "wiki-root",
       relativePath: "WIKI.md",
       contents: "# Wiki\n",
     });
-    await services.localFolders.writeTextAtomic({
+    await host.localFolders.writeTextAtomic({
       companyId,
       folderKey: "wiki-root",
       relativePath: "AGENTS.md",
       contents: "# Agents\n",
     });
 
-    const finalStatus = await services.localFolders.status({ companyId, folderKey: "wiki-root" });
-    expect(finalStatus.healthy).toBe(true);
-    await expect(fs.stat(path.join(root, "raw"))).resolves.toMatchObject({});
+    await expect(host.localFolders.status({ companyId, folderKey: "wiki-root" }))
+      .resolves.toMatchObject({ healthy: true });
     await expect(fs.stat(path.join(root, "wiki/concepts"))).resolves.toMatchObject({});
-    await expect(fs.readFile(path.join(root, "WIKI.md"), "utf8")).resolves.toBe("# Wiki\n");
+    await expect(fs.readFile(path.join(root, "WIKI.md"), "utf8"))
+      .resolves.toBe("# Wiki\n");
   });
 
-  it("rejects worker local-folder access for undeclared manifest keys", async () => {
-    const { companyId } = await seedCompanyAndAgent();
-    const pluginId = randomUUID();
-    await db.insert(plugins).values({
-      id: pluginId,
+  it("rejects local-folder access for undeclared manifest keys", async () => {
+    const host = services({
       pluginKey: "paperclip.local-folders",
-      packageName: "@paperclip/plugin-local-folders",
-      version: "0.1.0",
-      manifestJson: {
+      manifest: {
         id: "paperclip.local-folders",
         apiVersion: 1,
         version: "0.1.0",
@@ -394,54 +374,28 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
         categories: ["automation"],
         capabilities: ["local.folders"],
         entrypoints: { worker: "./dist/worker.js" },
-        localFolders: [
-          {
-            folderKey: "content-root",
-            displayName: "Content root",
-            access: "readWrite",
-          },
-        ],
+        localFolders: [{
+          folderKey: "content-root",
+          displayName: "Content root",
+          access: "readWrite",
+        }],
       },
-      status: "ready",
     });
-    const services = buildHostServices(
-      db,
-      pluginId,
-      "paperclip.local-folders",
-      createEventBusStub(),
-      undefined,
-      {
-        manifest: {
-          id: "paperclip.local-folders",
-          apiVersion: 1,
-          version: "0.1.0",
-          displayName: "Local Folders",
-          description: "Local folder fixture",
-          author: "Paperclip",
-          categories: ["automation"],
-          capabilities: ["local.folders"],
-          entrypoints: { worker: "./dist/worker.js" },
-          localFolders: [
-            {
-              folderKey: "content-root",
-              displayName: "Content root",
-              access: "readWrite",
-            },
-          ],
-        },
-      },
-    );
-    await expect(services.localFolders.configure({
+
+    await expect(host.localFolders.configure({
       companyId,
       folderKey: "ssh",
       path: "/tmp",
       access: "read",
     })).rejects.toThrow("Local folder key is not declared");
-    await expect(services.localFolders.status({ companyId, folderKey: "ssh" }))
+    await expect(host.localFolders.status({ companyId, folderKey: "ssh" }))
       .rejects.toThrow("Local folder key is not declared");
-    await expect(services.localFolders.readText({ companyId, folderKey: "ssh", relativePath: "id_rsa" }))
-      .rejects.toThrow("Local folder key is not declared");
-    await expect(services.localFolders.writeTextAtomic({
+    await expect(host.localFolders.readText({
+      companyId,
+      folderKey: "ssh",
+      relativePath: "id_rsa",
+    })).rejects.toThrow("Local folder key is not declared");
+    await expect(host.localFolders.writeTextAtomic({
       companyId,
       folderKey: "ssh",
       relativePath: "id_rsa",
@@ -449,286 +403,56 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     })).rejects.toThrow("Local folder key is not declared");
   });
 
-  it("resolves plugin-managed projects by stable key without overwriting user edits", async () => {
-    const { companyId } = await seedCompanyAndAgent();
-    const pluginId = randomUUID();
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: "paperclip.missions",
-      packageName: "@paperclip/plugin-missions",
-      version: "0.1.0",
-      apiVersion: 1,
-      categories: ["automation"],
-      status: "ready",
-      manifestJson: {
-        id: "paperclip.missions",
-        apiVersion: 1,
-        version: "0.1.0",
-        displayName: "Missions",
-        description: "Mission orchestration",
-        author: "Paperclip",
-        categories: ["automation"],
-        capabilities: ["projects.managed"],
-        entrypoints: { worker: "./dist/worker.js" },
-        projects: [{
-          projectKey: "operations",
-          displayName: "Mission Operations",
-          description: "Plugin operation inspection area",
-          status: "in_progress",
-          color: "#14b8a6",
-          settings: { surface: "operations" },
-        }],
+  it("forwards managed-project resolution without overwriting it in the host layer", async () => {
+    const projectId = randomUUID();
+    const created = {
+      status: "created",
+      projectId,
+      project: {
+        id: projectId,
+        companyId,
+        name: "Mission Operations",
+        description: "Plugin operation inspection area",
       },
-    });
+    };
+    const resolved = {
+      status: "resolved",
+      projectId,
+      project: {
+        ...created.project,
+        name: "Renamed by operator",
+        description: "User-owned text",
+      },
+    };
+    hostMocks.resolveManagedProject
+      .mockResolvedValueOnce({ status: "missing", projectId: null, project: null })
+      .mockResolvedValueOnce(created)
+      .mockResolvedValueOnce(resolved);
+    const host = services({ pluginKey: "paperclip.missions" });
 
-    const services = buildHostServices(db, pluginId, "paperclip.missions", createEventBusStub());
-    const missing = await services.projects.getManaged({ companyId, projectKey: "operations" });
-    expect(missing.status).toBe("missing");
-    expect(missing.projectId).toBeNull();
-    await expect(
-      db
-        .select()
-        .from(pluginManagedResources)
-        .where(and(
-          eq(pluginManagedResources.companyId, companyId),
-          eq(pluginManagedResources.pluginId, pluginId),
-          eq(pluginManagedResources.resourceKind, "project"),
-          eq(pluginManagedResources.resourceKey, "operations"),
-        )),
-    ).resolves.toHaveLength(0);
+    await expect(host.projects.getManaged({ companyId, projectKey: "operations" }))
+      .resolves.toMatchObject({ status: "missing", projectId: null });
+    await expect(host.projects.reconcileManaged({ companyId, projectKey: "operations" }))
+      .resolves.toBe(created);
+    await expect(host.projects.reconcileManaged({ companyId, projectKey: "operations" }))
+      .resolves.toBe(resolved);
 
-    const created = await services.projects.reconcileManaged({ companyId, projectKey: "operations" });
-
-    expect(created.status).toBe("created");
-    expect(created.projectId).toEqual(expect.any(String));
-    expect(created.project?.managedByPlugin).toMatchObject({
+    expect(hostMocks.resolveManagedProject).toHaveBeenNthCalledWith(1, {
+      companyId,
       pluginId,
       pluginKey: "paperclip.missions",
-      pluginDisplayName: "Missions",
-      resourceKind: "project",
-      resourceKey: "operations",
+      projectKey: "operations",
+      createIfMissing: false,
     });
-
-    await db
-      .update(projects)
-      .set({ name: "Renamed by operator", description: "User-owned text", updatedAt: new Date() })
-      .where(eq(projects.id, created.projectId!));
-    await db
-      .update(plugins)
-      .set({
-        manifestJson: {
-          id: "paperclip.missions",
-          apiVersion: 1,
-          version: "0.2.0",
-          displayName: "Missions",
-          description: "Mission orchestration",
-          author: "Paperclip",
-          categories: ["automation"],
-          capabilities: ["projects.managed"],
-          entrypoints: { worker: "./dist/worker.js" },
-          projects: [{
-            projectKey: "operations",
-            displayName: "Upgraded Default Name",
-            description: "Upgraded default description",
-            status: "planned",
-            color: "#f97316",
-            settings: { surface: "operations", upgraded: true },
-          }],
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(plugins.id, pluginId));
-
-    const resolved = await services.projects.reconcileManaged({ companyId, projectKey: "operations" });
-
-    expect(resolved.status).toBe("resolved");
-    expect(resolved.projectId).toBe(created.projectId);
-    expect(resolved.project?.name).toBe("Renamed by operator");
-    expect(resolved.project?.description).toBe("User-owned text");
-    expect(resolved.project?.managedByPlugin?.defaultsJson).toMatchObject({
-      displayName: "Upgraded Default Name",
-      settings: { upgraded: true },
-    });
-  });
-
-  it("asserts checkout ownership for run-scoped plugin actions", async () => {
-    const { companyId, agentId } = await seedCompanyAndAgent();
-    const issueId = randomUUID();
-    const runId = randomUUID();
-    await db.insert(heartbeatRuns).values({
-      id: runId,
+    expect(hostMocks.resolveManagedProject).toHaveBeenNthCalledWith(2, {
       companyId,
-      agentId,
-      status: "running",
-      invocationSource: "assignment",
-      contextSnapshot: { issueId },
+      pluginId,
+      pluginKey: "paperclip.missions",
+      projectKey: "operations",
     });
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      title: "Checked out issue",
-      status: "in_progress",
-      priority: "medium",
-      assigneeAgentId: agentId,
-      checkoutRunId: runId,
-      executionRunId: runId,
-    });
-
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
-    await expect(
-      services.issues.assertCheckoutOwner({
-        issueId,
-        companyId,
-        actorAgentId: agentId,
-        actorRunId: runId,
-      }),
-    ).resolves.toMatchObject({
-      issueId,
-      status: "in_progress",
-      assigneeAgentId: agentId,
-      checkoutRunId: runId,
-    });
-  });
-
-  it("refuses plugin wakeups for issues with unresolved blockers", async () => {
-    const { companyId, agentId } = await seedCompanyAndAgent();
-    const blockerIssueId = randomUUID();
-    const blockedIssueId = randomUUID();
-    await db.insert(issues).values([
-      {
-        id: blockerIssueId,
-        companyId,
-        title: "Unresolved blocker",
-        status: "todo",
-        priority: "medium",
-      },
-      {
-        id: blockedIssueId,
-        companyId,
-        title: "Blocked issue",
-        status: "todo",
-        priority: "medium",
-        assigneeAgentId: agentId,
-      },
-    ]);
-    await db.insert(issueRelations).values({
-      companyId,
-      issueId: blockerIssueId,
-      relatedIssueId: blockedIssueId,
-      type: "blocks",
-    });
-
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
-    await expect(
-      services.issues.requestWakeup({
-        issueId: blockedIssueId,
-        companyId,
-        reason: "mission_advance",
-      }),
-    ).rejects.toThrow("Issue is blocked by unresolved blockers");
-  });
-
-  it("narrows orchestration cost summaries by subtree and billing code", async () => {
-    const { companyId, agentId } = await seedCompanyAndAgent();
-    const rootIssueId = randomUUID();
-    const childIssueId = randomUUID();
-    const unrelatedIssueId = randomUUID();
-    await db.insert(issues).values([
-      {
-        id: rootIssueId,
-        companyId,
-        title: "Root mission",
-        status: "todo",
-        priority: "medium",
-        billingCode: "mission:alpha",
-      },
-      {
-        id: childIssueId,
-        companyId,
-        parentId: rootIssueId,
-        title: "Child mission",
-        status: "todo",
-        priority: "medium",
-        billingCode: "mission:alpha",
-      },
-      {
-        id: unrelatedIssueId,
-        companyId,
-        title: "Different mission",
-        status: "todo",
-        priority: "medium",
-        billingCode: "mission:alpha",
-      },
-    ]);
-    await db.insert(costEvents).values([
-      {
-        companyId,
-        agentId,
-        issueId: rootIssueId,
-        billingCode: "mission:alpha",
-        provider: "test",
-        model: "unit",
-        inputTokens: 10,
-        cachedInputTokens: 1,
-        outputTokens: 2,
-        costCents: 100,
-        occurredAt: new Date(),
-      },
-      {
-        companyId,
-        agentId,
-        issueId: childIssueId,
-        billingCode: "mission:alpha",
-        provider: "test",
-        model: "unit",
-        inputTokens: 20,
-        cachedInputTokens: 2,
-        outputTokens: 4,
-        costCents: 200,
-        occurredAt: new Date(),
-      },
-      {
-        companyId,
-        agentId,
-        issueId: childIssueId,
-        billingCode: "mission:beta",
-        provider: "test",
-        model: "unit",
-        inputTokens: 30,
-        cachedInputTokens: 3,
-        outputTokens: 6,
-        costCents: 300,
-        occurredAt: new Date(),
-      },
-      {
-        companyId,
-        agentId,
-        issueId: unrelatedIssueId,
-        billingCode: "mission:alpha",
-        provider: "test",
-        model: "unit",
-        inputTokens: 40,
-        cachedInputTokens: 4,
-        outputTokens: 8,
-        costCents: 400,
-        occurredAt: new Date(),
-      },
-    ]);
-
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
-    const summary = await services.issues.getOrchestrationSummary({
-      companyId,
-      issueId: rootIssueId,
-      includeSubtree: true,
-    });
-
-    expect(new Set(summary.subtreeIssueIds)).toEqual(new Set([rootIssueId, childIssueId]));
-    expect(summary.costs).toMatchObject({
-      billingCode: "mission:alpha",
-      costCents: 300,
-      inputTokens: 30,
-      cachedInputTokens: 3,
-      outputTokens: 6,
-    });
+    expect(resolved.project.name).toBe("Renamed by operator");
+    expect(resolved.project.description).toBe("User-owned text");
   });
 });
+
+const llmWikiPluginKey = "paperclipai.plugin-llm-wiki";

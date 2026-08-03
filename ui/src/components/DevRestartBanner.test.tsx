@@ -26,7 +26,6 @@ const devServer = {
   lastChangedAt: "2026-03-20T12:00:00.000Z",
   changedPathCount: 1,
   changedPathsSample: ["server/src/routes/health.ts"],
-  pendingMigrations: [],
   autoRestartEnabled: true,
   activeRunCount: 1,
   waitingForIdle: true,

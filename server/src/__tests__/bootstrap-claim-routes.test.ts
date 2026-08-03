@@ -3,8 +3,11 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { accessRoutes } from "../routes/access.js";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { boardMutationGuard } from "../middleware/board-mutation-guard.js";
 import { errorHandler } from "../middleware/index.js";
+import { testBoardKeyActor, testBoardSessionActor } from "./helpers/request-actor.js";
+import { installTestRequestAuthority } from "./helpers/request-authority.js";
 
 const claimFirstInstanceAdminMock = vi.hoisted(() => vi.fn());
 const accessServiceMock = vi.hoisted(() => ({
@@ -30,9 +33,12 @@ vi.mock("../services/index.js", () => ({
     assertCurrentBoardKey: vi.fn(),
     revokeBoardApiKey: vi.fn(),
   }),
+  createRuntimeAgentConfigurationService: () => ({}),
+  createAgentAdapterConfigurationService: () => ({}),
+  createAgentOperationalConfigurationService: () => ({}),
+  createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
   deduplicateAgentName: vi.fn(),
   logActivity: vi.fn(),
-  notifyHireApproved: vi.fn(),
 }));
 
 function hashToken(token: string) {
@@ -51,31 +57,35 @@ function createDb(invite?: Record<string, unknown>) {
 
 function createApp(input: {
   actor?: Record<string, unknown>;
-  deploymentMode?: "authenticated" | "local_trusted";
   deploymentExposure?: "private" | "public";
   guardMutations?: boolean;
   db?: Record<string, unknown>;
 }) {
   const app = express();
   app.use(express.json());
+  installTestRequestAuthority(app, {
+    allowedHostnames: ["paperclip.local"],
+  });
   app.use((req, _res, next) => {
-    (req as any).actor = input.actor ?? {
-      type: "board",
-      source: "session",
+    (req as any).actor = input.actor ?? testBoardSessionActor({
       userId: "user-1",
-    };
+      sessionId: "session-1",
+      userName: "User One",
+      userEmail: "user@example.com",
+      companyIds: [],
+      memberships: [],
+      isInstanceAdmin: false,
+    });
     next();
   });
+  app.use("/api", denyGenericAgentRest("REST"));
   if (input.guardMutations) {
     app.use(boardMutationGuard());
   }
   app.use(
     "/api",
     accessRoutes(input.db as any ?? createDb(), {
-      deploymentMode: input.deploymentMode ?? "authenticated",
       deploymentExposure: input.deploymentExposure ?? "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
     }),
   );
   app.use(errorHandler);
@@ -102,17 +112,8 @@ describe("POST /bootstrap/claim", () => {
     expect(claimFirstInstanceAdminMock).toHaveBeenCalledWith(expect.anything(), { userId: "user-1" });
   });
 
-  it("is not exposed in authenticated public mode", async () => {
+  it("is not exposed with public exposure", async () => {
     const app = createApp({ deploymentExposure: "public" });
-
-    const res = await request(app).post("/api/bootstrap/claim").send({});
-
-    expect(res.status).toBe(404);
-    expect(claimFirstInstanceAdminMock).not.toHaveBeenCalled();
-  });
-
-  it("is not exposed in local trusted mode", async () => {
-    const app = createApp({ deploymentMode: "local_trusted" });
 
     const res = await request(app).post("/api/bootstrap/claim").send({});
 
@@ -122,15 +123,40 @@ describe("POST /bootstrap/claim", () => {
 
   it.each([
     [{ type: "none", source: "none" }, "anonymous caller"],
-    [{ type: "agent", source: "agent_key", agentId: "agent-1" }, "agent key"],
-    [{ type: "board", source: "board_key", userId: "user-1" }, "board API key"],
-    [{ type: "board", source: "local_implicit", userId: "local-board" }, "local implicit board"],
+    [testBoardKeyActor({
+      userId: "user-1",
+      keyId: "board-key-1",
+      userName: "User One",
+      userEmail: "user@example.com",
+      companyIds: [],
+      memberships: [],
+      isInstanceAdmin: false,
+    }), "board API key"],
+    [{ type: "board", source: "session", userId: null }, "session without a user"],
   ])("rejects %s before opening the first-admin transaction", async (actor) => {
     const app = createApp({ actor });
 
     const res = await request(app).post("/api/bootstrap/claim").send({});
 
     expect(res.status).toBe(401);
+    expect(claimFirstInstanceAdminMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an exact runtime-agent actor at the generic REST boundary", async () => {
+    const app = createApp({
+      actor: {
+        type: "agent",
+        source: "internal",
+        agentId: "agent-1",
+        companyId: "company-1",
+        runId: "run-1",
+      },
+    });
+
+    const res = await request(app).post("/api/bootstrap/claim").send({});
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(claimFirstInstanceAdminMock).not.toHaveBeenCalled();
   });
 
@@ -174,7 +200,8 @@ describe("bootstrap invite first-admin acceptance", () => {
     return {
       id: "invite-1",
       companyId: null,
-      inviteType: "bootstrap_ceo",
+      inviteType: "bootstrap_admin",
+      source: "bootstrap_admin_cli",
       allowedJoinTypes: "human",
       tokenHash: hashToken("pcp_invite_test"),
       defaultsPayload: {},
@@ -203,7 +230,7 @@ describe("bootstrap invite first-admin acceptance", () => {
     expect(res.status).toBe(202);
     expect(res.body).toMatchObject({
       inviteId: "invite-1",
-      inviteType: "bootstrap_ceo",
+      inviteType: "bootstrap_admin",
       bootstrapAccepted: true,
       userId: "user-1",
     });

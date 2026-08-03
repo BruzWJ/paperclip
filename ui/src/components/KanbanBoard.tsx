@@ -1,29 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "@/lib/router";
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-  type DragOverEvent,
-} from "@dnd-kit/core";
-import { useDroppable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
 import type { Issue, IssueStatus } from "@paperclipai/shared";
-import { AlertTriangle } from "lucide-react";
-import { isSuccessfulRunHandoffRequired } from "../lib/successful-run-handoff";
 import { collectSubtreeLiveCounts } from "../lib/liveIssueIds";
+import { issueDisplayTitle } from "../lib/issue-display";
 import { cn } from "../lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -133,13 +115,6 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function resolveKanbanTargetStatus(overId: string, issues: Issue[]): IssueStatus | null {
-  if ((boardStatuses as readonly string[]).includes(overId)) {
-    return overId as IssueStatus;
-  }
-  return issues.find((issue) => issue.id === overId)?.status ?? null;
-}
-
 interface Agent {
   id: string;
   name: string;
@@ -153,7 +128,6 @@ interface KanbanBoardProps {
   collapsedStatuses?: string[];
   initialVisibleCount?: number;
   revealIncrement?: number;
-  onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
 /* ── Droppable Column ── */
@@ -181,8 +155,6 @@ function KanbanColumn({
   revealIncrement: number;
   onShowMore: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: status });
-
   const isEmpty = issues.length === 0;
   const visibleIssues = collapsed ? [] : issues.slice(0, visibleCount);
   const hiddenCount = Math.max(issues.length - visibleIssues.length, 0);
@@ -192,11 +164,9 @@ function KanbanColumn({
   if (collapsed) {
     return (
       <div
-        ref={setNodeRef}
         className={cn(
           "flex min-h-(--sz-220px) w-(--sz-52px) shrink-0 flex-col items-center rounded-md border px-1.5 py-2 transition-colors",
           tone.rail,
-          isOver && tone.railOver,
         )}
         title={`${statusLabel(status)}: ${issues.length}`}
       >
@@ -223,29 +193,22 @@ function KanbanColumn({
         </span>
       </div>
       <div
-        ref={setNodeRef}
         className={cn(
           "flex-1 min-h-(--sz-120px) rounded-md p-2 space-y-1 transition-colors",
-          isOver ? tone.bodyOver : tone.body,
+          tone.body,
         )}
       >
-        {/* Hidden cards are intentionally excluded from sort targets until revealed. */}
-        <SortableContext
-          items={visibleIssues.map((i) => i.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          {visibleIssues.map((issue) => (
-            <KanbanCard
-              key={issue.id}
-              issue={issue}
-              agents={agents}
-              isLive={liveIssueIds?.has(issue.id)}
-              subtreeLiveCount={subtreeLiveCounts?.get(issue.id) ?? 0}
-              compact={compactCards}
-              className={tone.card}
-            />
-          ))}
-        </SortableContext>
+        {visibleIssues.map((issue) => (
+          <KanbanCard
+            key={issue.id}
+            issue={issue}
+            agents={agents}
+            isLive={liveIssueIds?.has(issue.id)}
+            subtreeLiveCount={subtreeLiveCounts?.get(issue.id) ?? 0}
+            compact={compactCards}
+            className={tone.card}
+          />
+        ))}
         {hiddenCount > 0 ? (
           <button
             type="button"
@@ -272,7 +235,6 @@ function KanbanCard({
   agents,
   isLive,
   subtreeLiveCount = 0,
-  isOverlay,
   compact = false,
   className,
 }: {
@@ -280,24 +242,9 @@ function KanbanCard({
   agents?: Agent[];
   isLive?: boolean;
   subtreeLiveCount?: number;
-  isOverlay?: boolean;
   compact?: boolean;
   className?: string;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: issue.id, data: { issue } });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
     return agents.find((a) => a.id === id)?.name ?? null;
@@ -305,14 +252,8 @@ function KanbanCard({
 
   return (
     <Card
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
       className={cn(
-        "block cursor-grab active:cursor-grabbing transition-shadow",
-        isDragging && !isOverlay ? "opacity-30" : "",
-        isOverlay ? "shadow-lg ring-1 ring-primary/20" : "hover:shadow-sm",
+        "block transition-shadow hover:shadow-sm",
         compact ? "p-2" : "p-2.5",
         className,
       )}
@@ -321,25 +262,11 @@ function KanbanCard({
         to={`/issues/${issue.identifier ?? issue.id}`}
         disableIssueQuicklook
         className="block no-underline text-inherit"
-        onClick={(e) => {
-          // Prevent navigation during drag
-          if (isDragging) e.preventDefault();
-        }}
       >
         <div className={`flex items-start gap-1.5 ${compact ? "mb-1" : "mb-1.5"}`}>
           <span className="text-xs text-muted-foreground font-mono shrink-0">
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
-          {isSuccessfulRunHandoffRequired(issue) ? (
-            <Badge variant="outline"
-              className="border-amber-400/45 bg-amber-50/60 px-1.5 text-(length:--text-nano) text-amber-700 dark:border-amber-300/35 dark:bg-amber-400/10 dark:text-amber-300"
-              title="This task needs a next step"
-              aria-label="Needs next step"
-            >
-              <AlertTriangle className="h-3 w-3" />
-              Next step
-            </Badge>
-          ) : null}
           {isLive && (
             <span className="inline-flex shrink-0 items-center gap-1 text-(length:--text-nano) font-medium text-blue-600 dark:text-blue-400">
               <span className="relative flex h-2 w-2">
@@ -359,16 +286,16 @@ function KanbanCard({
             </Badge>
           )}
         </div>
-        <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{issue.title}</p>
+        <p className={`${compact ? "mb-1.5 text-xs" : "mb-2 text-sm"} leading-snug line-clamp-2`}>{issueDisplayTitle(issue)}</p>
         <div className="flex items-center gap-2 min-w-0">
           <PriorityIcon priority={issue.priority} />
-          {issue.assigneeAgentId && (() => {
-            const name = agentName(issue.assigneeAgentId);
+          {issue.ownerAgentId && (() => {
+            const name = agentName(issue.ownerAgentId);
             return name ? (
               <Identity name={name} size="xs" />
             ) : (
               <span className="text-xs text-muted-foreground font-mono">
-                {issue.assigneeAgentId.slice(0, 8)}
+                {issue.ownerAgentId.slice(0, 8)}
               </span>
             );
           })()}
@@ -388,9 +315,7 @@ export function KanbanBoard({
   collapsedStatuses = [],
   initialVisibleCount = KANBAN_COLUMN_INITIAL_VISIBLE_LIMIT,
   revealIncrement = KANBAN_COLUMN_REVEAL_INCREMENT,
-  onUpdateIssue,
 }: KanbanBoardProps) {
-  const [activeId, setActiveId] = useState<string | null>(null);
   const paginationKey = `${initialVisibleCount}:${revealIncrement}`;
   const [visibleState, setVisibleState] = useState<{
     paginationKey: string;
@@ -399,67 +324,26 @@ export function KanbanBoard({
   const visibleCountByStatus = visibleState.paginationKey === paginationKey ? visibleState.counts : {};
   const collapsedStatusSet = useMemo(() => new Set(collapsedStatuses), [collapsedStatuses]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
-
   const columnIssues = useMemo(() => {
     const grouped: Record<IssueStatus, Issue[]> = {} as Record<IssueStatus, Issue[]>;
     for (const status of boardStatuses) {
       grouped[status] = [];
     }
     for (const issue of issues) {
-      if (grouped[issue.status]) {
-        grouped[issue.status].push(issue);
+      if (grouped[issue.boardPresentationStatus]) {
+        grouped[issue.boardPresentationStatus].push(issue);
       }
     }
     return grouped;
   }, [issues]);
-
-  const activeIssue = useMemo(
-    () => (activeId ? issues.find((i) => i.id === activeId) : null),
-    [activeId, issues]
-  );
 
   const subtreeLiveCounts = useMemo(
     () => collectSubtreeLiveCounts(issues, liveIssueIds ?? new Set<string>()),
     [issues, liveIssueIds],
   );
 
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string);
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    setActiveId(null);
-    const { active, over } = event;
-    if (!over) return;
-
-    const issueId = active.id as string;
-    const issue = issues.find((i) => i.id === issueId);
-    if (!issue) return;
-
-    // Determine target status: the "over" could be a column id (status string)
-    // or another card's id. Find which column the "over" belongs to.
-    const targetStatus = resolveKanbanTargetStatus(over.id as string, issues);
-
-    if (targetStatus && targetStatus !== issue.status) {
-      onUpdateIssue(issueId, { status: targetStatus });
-    }
-  }
-
-  function handleDragOver(_event: DragOverEvent) {
-    // Could be used for visual feedback; keeping simple for now
-  }
-
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="flex gap-3 overflow-x-auto pb-4 -mx-2 px-2">
+    <div className="flex gap-3 overflow-x-auto pb-4 -mx-2 px-2">
         {boardStatuses.map((status) => (
           <KanbanColumn
             key={status}
@@ -489,12 +373,6 @@ export function KanbanBoard({
             }}
           />
         ))}
-      </div>
-      <DragOverlay>
-        {activeIssue ? (
-          <KanbanCard issue={activeIssue} agents={agents} isOverlay compact={compactCards} />
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+    </div>
   );
 }

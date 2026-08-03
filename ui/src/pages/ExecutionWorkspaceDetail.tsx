@@ -14,7 +14,7 @@ import { ExecutionWorkspaceCloseDialog } from "../components/ExecutionWorkspaceC
 import { MissingPluginTabPlaceholder } from "../components/MissingPluginTabPlaceholder";
 import { agentsApi } from "../api/agents";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
-import { heartbeatsApi } from "../api/heartbeats";
+import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { routinesApi } from "../api/routines";
@@ -442,36 +442,25 @@ function ExecutionWorkspaceIssuesList({
     enabled: !!companyId,
   });
 
-  const liveRunsQueryKey = queryKeys.liveRuns(companyId);
-  const sharedLiveRuns = useSharedPollingQuery({
+  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const sharedActiveRuns = useSharedPollingQuery({
     companyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!companyId,
     // Event-sourced via LiveUpdatesProvider (issue 9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    enabled: sharedActiveRuns.enabled,
+    refetchInterval: sharedActiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
+  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
 
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
-
-  const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByExecutionWorkspace(companyId, workspace.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-      if (project?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, project.id) });
-      }
-    },
-  });
+  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
 
   const projectOptions = useMemo(
     () => (project ? [{ id: project.id, name: project.name, workspaces: project.workspaces ?? [] }] : undefined),
@@ -498,7 +487,6 @@ function ExecutionWorkspaceIssuesList({
       projectId={project?.id}
       viewStateKey="paperclip:execution-workspace-issues-view"
       baseCreateIssueDefaults={createIssueDefaults}
-      onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
     />
   );
 }
@@ -711,11 +699,14 @@ export function ExecutionWorkspaceDetail() {
     enabled: Boolean(workspaceId),
   });
   const workspace = workspaceQuery.data ?? null;
+  const workspaceProjectId = workspace?.projectId ?? null;
 
   const projectQuery = useQuery({
-    queryKey: workspace ? [...queryKeys.projects.detail(workspace.projectId), workspace.companyId] : ["projects", "detail", "__pending__"],
-    queryFn: () => projectsApi.get(workspace!.projectId, workspace!.companyId),
-    enabled: Boolean(workspace?.projectId),
+    queryKey: workspaceProjectId && workspace
+      ? [...queryKeys.projects.detail(workspaceProjectId), workspace.companyId]
+      : ["projects", "detail", "__pending__"],
+    queryFn: () => projectsApi.get(workspaceProjectId!, workspace!.companyId),
+    enabled: Boolean(workspaceProjectId && workspace),
   });
   const project = projectQuery.data ?? null;
 
@@ -853,7 +844,9 @@ export function ExecutionWorkspaceDetail() {
       queryClient.setQueryData(queryKeys.executionWorkspaces.detail(result.workspace.id), result.workspace);
       queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.overview(result.workspace.companyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.executionWorkspaces.workspaceOperations(result.workspace.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(result.workspace.projectId) });
+      if (result.workspace.projectId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(result.workspace.projectId) });
+      }
       setRuntimeActionErrorMessage(null);
       setRuntimeActionMessage(
         request.action === "run"
@@ -1283,7 +1276,13 @@ export function ExecutionWorkspaceDetail() {
               </CardHeader>
               <CardContent>
               <DetailRow label="Project">
-                {project ? <Link to={`/projects/${projectRef}`} className="hover:underline">{project.name}</Link> : <MonoValue value={workspace.projectId} />}
+                {project ? (
+                  <Link to={`/projects/${projectRef}`} className="hover:underline">{project.name}</Link>
+                ) : workspace.projectId ? (
+                  <MonoValue value={workspace.projectId} />
+                ) : (
+                  "None"
+                )}
               </DetailRow>
               <DetailRow label="Project workspace">
                 {project && linkedProjectWorkspace ? (
@@ -1417,7 +1416,7 @@ export function ExecutionWorkspaceDetail() {
                 scopeKind="project_workspace"
                 scopeId={workspace.projectWorkspaceId}
                 title="Workspace summary"
-                description="Summarizer keeps the latest workspace status, next step, and operator-needed items here."
+                description="A configured routine keeps the latest workspace status and operator-needed items here."
               />
             ) : null}
             <ExecutionWorkspaceIssuesList

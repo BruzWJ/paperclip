@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
-  AgentDesiredSkillEntry,
+  CompanySkillPin,
   CompanySkillDetail,
   CompanySkillUsageAgent,
   CompanySkillVersion,
@@ -18,8 +18,8 @@ import {
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
-  skills: vi.fn(),
-  syncSkills: vi.fn(),
+  companySkillPins: vi.fn(),
+  replaceCompanySkillPins: vi.fn(),
 }));
 const mockCompanySkillsApi = vi.hoisted(() => ({
   versions: vi.fn(),
@@ -31,15 +31,6 @@ vi.mock("@/lib/router", () => ({
 }));
 vi.mock("@/api/agents", () => ({ agentsApi: mockAgentsApi }));
 vi.mock("@/api/companySkills", () => ({ companySkillsApi: mockCompanySkillsApi }));
-vi.mock("@/adapters/use-adapter-capabilities", () => ({
-  useAdapterCapabilities: () => () => ({
-    supportsInstructionsBundle: true,
-    supportsSkills: true,
-    supportsLocalAgentJwt: true,
-    requiresMaterializedRuntimeSkills: false,
-    supportsModelProfiles: false,
-  }),
-}));
 vi.mock("@/context/ToastContext", () => ({
   useOptionalToastActions: () => ({ pushToast: mockPushToast }),
 }));
@@ -107,7 +98,7 @@ function makeAgent(overrides: Partial<CompanySkillUsageAgent> = {}): CompanySkil
     id: "agent-1",
     name: "Reviewer",
     urlKey: "reviewer",
-    adapterType: "claude_local",
+    adapterType: "codex",
     desired: true,
     actualState: null,
     versionId: null,
@@ -178,16 +169,12 @@ function makeSkill(overrides: Partial<CompanySkillDetail> = {}): CompanySkillDet
 
 beforeEach(() => {
   mockAgentsApi.list.mockResolvedValue([]);
-  mockAgentsApi.skills.mockResolvedValue({
-    adapterType: "claude_local",
-    supported: true,
-    mode: "managed",
-    desiredSkills: [],
-    desiredSkillEntries: [],
+  mockAgentsApi.companySkillPins.mockResolvedValue({
     entries: [],
-    warnings: [],
   });
-  mockAgentsApi.syncSkills.mockResolvedValue({});
+  mockAgentsApi.replaceCompanySkillPins.mockResolvedValue({
+    entries: [],
+  });
   mockCompanySkillsApi.versions.mockResolvedValue([]);
   mockPushToast.mockReset();
 });
@@ -260,18 +247,12 @@ describe("AgentsUsingSkillDialog", () => {
     expect(document.body.textContent).toContain("2 versions behind latest");
   });
 
-  it("removes via GET-then-sync and preserves the agent's other skills", async () => {
-    mockAgentsApi.skills.mockResolvedValue({
-      adapterType: "claude_local",
-      supported: true,
-      mode: "managed",
-      desiredSkills: ["paperclip/demo", "paperclip/other"],
-      desiredSkillEntries: [
-        { key: "paperclip/demo", versionId: null },
-        { key: "paperclip/other", versionId: null },
-      ] satisfies AgentDesiredSkillEntry[],
-      entries: [],
-      warnings: [],
+  it("removes via GET-then-replace and preserves the agent's other selected skills", async () => {
+    mockAgentsApi.companySkillPins.mockResolvedValue({
+      entries: [
+        { key: "paperclip/demo", versionId: "ver-3" },
+        { key: "paperclip/other", versionId: "ver-other" },
+      ] satisfies CompanySkillPin[],
     });
     const skill = makeSkill({ usedByAgents: [makeAgent()] });
     await renderNode(
@@ -288,10 +269,14 @@ describe("AgentsUsingSkillDialog", () => {
     );
     await click(confirm!);
 
-    expect(mockAgentsApi.skills).toHaveBeenCalledWith("agent-1", "company-1");
-    expect(mockAgentsApi.syncSkills).toHaveBeenCalledTimes(1);
-    const [, sentEntries] = mockAgentsApi.syncSkills.mock.calls[0];
-    expect(sentEntries).toEqual([{ key: "paperclip/other", versionId: null }]);
+    expect(mockAgentsApi.companySkillPins).toHaveBeenCalledWith("agent-1", "company-1");
+    expect(mockAgentsApi.replaceCompanySkillPins).toHaveBeenCalledTimes(1);
+    const [, sentEntries, sentCompanyId] =
+      mockAgentsApi.replaceCompanySkillPins.mock.calls[0];
+    expect(sentEntries).toEqual([
+      { key: "paperclip/other", versionId: "ver-other" },
+    ]);
+    expect(sentCompanyId).toBe("company-1");
   });
 
   it("pins a version by sending the full set with the target repinned", async () => {
@@ -299,17 +284,11 @@ describe("AgentsUsingSkillDialog", () => {
       makeVersion({ id: "ver-3", revisionNumber: 3 }),
       makeVersion({ id: "ver-2", revisionNumber: 2 }),
     ]);
-    mockAgentsApi.skills.mockResolvedValue({
-      adapterType: "claude_local",
-      supported: true,
-      mode: "managed",
-      desiredSkills: ["paperclip/demo", "paperclip/other"],
-      desiredSkillEntries: [
-        { key: "paperclip/demo", versionId: null },
-        { key: "paperclip/other", versionId: null },
-      ] satisfies AgentDesiredSkillEntry[],
-      entries: [],
-      warnings: [],
+    mockAgentsApi.companySkillPins.mockResolvedValue({
+      entries: [
+        { key: "paperclip/demo", versionId: "ver-3" },
+        { key: "paperclip/other", versionId: "ver-other" },
+      ] satisfies CompanySkillPin[],
     });
     const skill = makeSkill({ usedByAgents: [makeAgent()] });
     await renderNode(
@@ -323,10 +302,12 @@ describe("AgentsUsingSkillDialog", () => {
     });
     await flush();
 
-    expect(mockAgentsApi.syncSkills).toHaveBeenCalledTimes(1);
-    const [, sentEntries] = mockAgentsApi.syncSkills.mock.calls[0];
-    expect(sentEntries).toContainEqual({ key: "paperclip/other", versionId: null });
+    expect(mockAgentsApi.replaceCompanySkillPins).toHaveBeenCalledTimes(1);
+    const [, sentEntries, sentCompanyId] =
+      mockAgentsApi.replaceCompanySkillPins.mock.calls[0];
+    expect(sentEntries).toContainEqual({ key: "paperclip/other", versionId: "ver-other" });
     expect(sentEntries).toContainEqual({ key: "paperclip/demo", versionId: "ver-2" });
+    expect(sentCompanyId).toBe("company-1");
   });
 
   it("hides mutating controls in read-only mode but keeps the roster", async () => {

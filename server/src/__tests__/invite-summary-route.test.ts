@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
+import { installTestRequestAuthority } from "./helpers/request-authority.js";
 
 const mockStorage = vi.hoisted(() => ({
   headObject: vi.fn(),
@@ -54,6 +56,7 @@ async function createApp(
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
   ]);
   const app = express();
+  installTestRequestAuthority(app);
   app.use((req, _res, next) => {
     (req as any).actor = actor;
     next();
@@ -61,10 +64,7 @@ async function createApp(
   app.use(
     "/api",
     accessRoutes(db as any, {
-      deploymentMode: "local_trusted",
       deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
     }),
   );
   app.use(errorHandler);
@@ -87,11 +87,12 @@ describe("GET /invites/:token", () => {
       id: "invite-1",
       companyId: "company-1",
       inviteType: "company_join",
+      source: "board_api",
       allowedJoinTypes: "human",
       tokenHash: "hash",
       defaultsPayload: null,
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
-      invitedByUserId: null,
+      invitedByUserId: "board-user",
       revokedAt: null,
       acceptedAt: null,
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
@@ -136,11 +137,12 @@ describe("GET /invites/:token", () => {
       id: "invite-1",
       companyId: "company-1",
       inviteType: "company_join",
+      source: "board_api",
       allowedJoinTypes: "human",
       tokenHash: "hash",
       defaultsPayload: null,
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
-      invitedByUserId: null,
+      invitedByUserId: "board-user",
       revokedAt: null,
       acceptedAt: null,
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
@@ -179,11 +181,12 @@ describe("GET /invites/:token", () => {
       id: "invite-1",
       companyId: "company-1",
       inviteType: "company_join",
+      source: "board_api",
       allowedJoinTypes: "human",
       tokenHash: "hash",
       defaultsPayload: null,
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
-      invitedByUserId: null,
+      invitedByUserId: "board-user",
       revokedAt: null,
       acceptedAt: new Date("2026-03-07T00:05:00.000Z"),
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
@@ -225,11 +228,12 @@ describe("GET /invites/:token", () => {
       id: "invite-2",
       companyId: "company-1",
       inviteType: "company_join",
+      source: "board_api",
       allowedJoinTypes: "human",
       tokenHash: "hash",
       defaultsPayload: null,
       expiresAt: new Date("2027-03-07T00:10:00.000Z"),
-      invitedByUserId: null,
+      invitedByUserId: "board-user",
       revokedAt: null,
       acceptedAt: new Date("2026-03-07T00:05:00.000Z"),
       createdAt: new Date("2026-03-07T00:00:00.000Z"),
@@ -266,7 +270,7 @@ describe("GET /invites/:token", () => {
         [logoAsset],
         [logoAsset],
       ),
-      { type: "board", userId: "user-1", source: "session" },
+      testBoardSessionActor({ userId: "user-1",}),
     );
 
     const res = await request(app).get("/api/invites/pcp_invite_test");

@@ -1,0 +1,221 @@
+import {
+  type AnyPgColumn,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { agents } from "./agents.js";
+import { authUsers } from "./auth.js";
+import { companies } from "./companies.js";
+import { environments } from "./environments.js";
+import type {
+  AdapterImplementationIdentity,
+  AgentAdapterAcpConfiguration,
+  EnvironmentDriver,
+} from "@paperclipai/shared";
+
+export const agentAdapterConfigRevisions = pgTable(
+  "agent_adapter_config_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references((): AnyPgColumn => agents.id, { onDelete: "cascade" }),
+    revisionNumber: integer("revision_number").notNull(),
+    adapterType: text("adapter_type").notNull(),
+    implementationIdentity: jsonb("implementation_identity")
+      .$type<AdapterImplementationIdentity>()
+      .notNull(),
+    adapterConfigSchemaVersion: text("adapter_config_schema_version").notNull(),
+    defaultEnvironmentId: uuid("default_environment_id")
+      .notNull()
+      .references(() => environments.id, { onDelete: "restrict" }),
+    executionTargetDriver: text("execution_target_driver")
+      .$type<EnvironmentDriver>()
+      .notNull(),
+    executionTargetDigest: text("execution_target_digest").notNull(),
+    normalizedConfig: jsonb("normalized_config")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    runtimeConfig: jsonb("runtime_config")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    acpConfiguration: jsonb("acp_configuration")
+      .$type<AgentAdapterAcpConfiguration>()
+      .notNull(),
+    digest: text("digest").notNull(),
+    parentRevisionId: uuid("parent_revision_id").references(
+      (): AnyPgColumn => agentAdapterConfigRevisions.id,
+      { onDelete: "restrict" },
+    ),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, {
+      onDelete: "set null",
+    }),
+    createdByUserId: text("created_by_user_id").references(() => authUsers.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("agent_adapter_config_revisions_scope_id_uq").on(
+      table.companyId,
+      table.agentId,
+      table.id,
+    ),
+    uniqueIndex("agent_adapter_config_revisions_agent_number_uq").on(
+      table.companyId,
+      table.agentId,
+      table.revisionNumber,
+    ),
+    index("agent_adapter_config_revisions_agent_digest_idx").on(
+      table.companyId,
+      table.agentId,
+      table.digest,
+    ),
+    index("agent_adapter_config_revisions_agent_created_idx").on(
+      table.companyId,
+      table.agentId,
+      table.createdAt,
+    ),
+    index("agent_adapter_config_revisions_environment_idx").on(
+      table.defaultEnvironmentId,
+    ),
+    check(
+      "agent_adapter_config_revisions_execution_target_driver_check",
+      sql`${table.executionTargetDriver} in ('local', 'ssh', 'sandbox', 'plugin')`,
+    ),
+    check(
+      "agent_adapter_config_revisions_acp_configuration_shape_check",
+      sql`
+        jsonb_typeof(${table.acpConfiguration}) = 'object'
+        and ${table.acpConfiguration} ?& array[
+          'contractVersion',
+          'launchProfile',
+          'sessionConfigSelections',
+          'model',
+          'executionTargetSelector',
+          'workspaceSelector',
+          'companySkillPins',
+          'skillChannel'
+        ]::text[]
+        and ${table.acpConfiguration} - array[
+          'contractVersion',
+          'launchProfile',
+          'sessionConfigSelections',
+          'model',
+          'executionTargetSelector',
+          'workspaceSelector',
+          'companySkillPins',
+          'skillChannel'
+        ]::text[] = '{}'::jsonb
+        and ${table.acpConfiguration} ->> 'contractVersion' = 'acp-subprocess/v1'
+        and jsonb_typeof(${table.acpConfiguration} -> 'launchProfile') = 'object'
+        and (${table.acpConfiguration} -> 'launchProfile') ?& array[
+          'registryName',
+          'targetNativeCli',
+          'command',
+          'args',
+          'frontendPackage',
+          'frontendVersion',
+          'frontendDigest'
+        ]::text[]
+        and (${table.acpConfiguration} -> 'launchProfile') - array[
+          'registryName',
+          'targetNativeCli',
+          'command',
+          'args',
+          'frontendPackage',
+          'frontendVersion',
+          'frontendDigest'
+        ]::text[] = '{}'::jsonb
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,registryName}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,targetNativeCli}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,command}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,args}') = 'array'
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,frontendPackage}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,frontendVersion}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,frontendDigest}') = 'string'
+        and ${table.acpConfiguration} #>> '{launchProfile,registryName}' = btrim(${table.acpConfiguration} #>> '{launchProfile,registryName}')
+        and ${table.acpConfiguration} #>> '{launchProfile,registryName}' <> ''
+        and ${table.acpConfiguration} #>> '{launchProfile,targetNativeCli}' = btrim(${table.acpConfiguration} #>> '{launchProfile,targetNativeCli}')
+        and ${table.acpConfiguration} #>> '{launchProfile,targetNativeCli}' <> ''
+        and ${table.acpConfiguration} #>> '{launchProfile,command}' = btrim(${table.acpConfiguration} #>> '{launchProfile,command}')
+        and ${table.acpConfiguration} #>> '{launchProfile,command}' <> ''
+        and ${table.acpConfiguration} #>> '{launchProfile,frontendPackage}' = btrim(${table.acpConfiguration} #>> '{launchProfile,frontendPackage}')
+        and ${table.acpConfiguration} #>> '{launchProfile,frontendPackage}' <> ''
+        and ${table.acpConfiguration} #>> '{launchProfile,frontendVersion}' = btrim(${table.acpConfiguration} #>> '{launchProfile,frontendVersion}')
+        and ${table.acpConfiguration} #>> '{launchProfile,frontendVersion}' <> ''
+        and ${table.acpConfiguration} #>> '{launchProfile,frontendDigest}' ~ '^[0-9a-f]{64}$'
+        and case
+          when jsonb_typeof(${table.acpConfiguration} -> 'sessionConfigSelections') = 'array'
+          then jsonb_array_length(${table.acpConfiguration} -> 'sessionConfigSelections') > 0
+          else false
+        end
+        and jsonb_typeof(${table.acpConfiguration} -> 'model') = 'object'
+        and (${table.acpConfiguration} -> 'model') ?& array[
+          'id', 'label', 'value', 'limits'
+        ]::text[]
+        and (${table.acpConfiguration} -> 'model') - array[
+          'id', 'label', 'value', 'limits'
+        ]::text[] = '{}'::jsonb
+        and jsonb_typeof(${table.acpConfiguration} #> '{model,id}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{model,label}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{model,value}') = 'string'
+        and jsonb_typeof(${table.acpConfiguration} #> '{model,limits}') = 'object'
+        and ${table.acpConfiguration} #>> '{model,id}' = btrim(${table.acpConfiguration} #>> '{model,id}')
+        and ${table.acpConfiguration} #>> '{model,id}' <> ''
+        and ${table.acpConfiguration} #>> '{model,label}' = btrim(${table.acpConfiguration} #>> '{model,label}')
+        and ${table.acpConfiguration} #>> '{model,label}' <> ''
+        and ${table.acpConfiguration} #>> '{model,value}' = btrim(${table.acpConfiguration} #>> '{model,value}')
+        and ${table.acpConfiguration} #>> '{model,value}' <> ''
+        and (${table.acpConfiguration} #> '{model,limits}') ?& array[
+          'contextTokenLimit', 'outputTokenLimit'
+        ]::text[]
+        and (${table.acpConfiguration} #> '{model,limits}') - array[
+          'contextTokenLimit', 'inputTokenLimit', 'outputTokenLimit'
+        ]::text[] = '{}'::jsonb
+        and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,contextTokenLimit}') = 'number'
+        and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,outputTokenLimit}') = 'number'
+        and ${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}' ~ '^[1-9][0-9]*$'
+        and ${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}' ~ '^[1-9][0-9]*$'
+        and (${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
+        and (
+          not (${table.acpConfiguration} #> '{model,limits}') ? 'inputTokenLimit'
+          or (
+            jsonb_typeof(${table.acpConfiguration} #> '{model,limits,inputTokenLimit}') = 'number'
+            and ${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}' ~ '^[1-9][0-9]*$'
+            and (${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
+          )
+        )
+        and jsonb_typeof(${table.acpConfiguration} -> 'executionTargetSelector') = 'object'
+        and (${table.acpConfiguration} -> 'executionTargetSelector') ?& array[
+          'defaultEnvironmentId', 'executionTargetDriver', 'executionTargetDigest'
+        ]::text[]
+        and (${table.acpConfiguration} -> 'executionTargetSelector') - array[
+          'defaultEnvironmentId', 'executionTargetDriver', 'executionTargetDigest'
+        ]::text[] = '{}'::jsonb
+        and ${table.acpConfiguration} #>> '{executionTargetSelector,defaultEnvironmentId}' = ${table.defaultEnvironmentId}::text
+        and ${table.acpConfiguration} #>> '{executionTargetSelector,executionTargetDriver}' = ${table.executionTargetDriver}
+        and ${table.acpConfiguration} #>> '{executionTargetSelector,executionTargetDigest}' = ${table.executionTargetDigest}
+        and ${table.executionTargetDigest} ~ '^[0-9a-f]{64}$'
+        and jsonb_typeof(${table.acpConfiguration} -> 'workspaceSelector') = 'object'
+        and (${table.acpConfiguration} -> 'workspaceSelector') - 'kind' = '{}'::jsonb
+        and ${table.acpConfiguration} #>> '{workspaceSelector,kind}' = 'issue_execution_workspace'
+        and jsonb_typeof(${table.acpConfiguration} -> 'companySkillPins') = 'array'
+        and ${table.acpConfiguration} ->> 'skillChannel' in ('isolated_skills_home', 'operator_native')
+      `,
+    ),
+  ],
+);

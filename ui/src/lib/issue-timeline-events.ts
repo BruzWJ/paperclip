@@ -1,8 +1,9 @@
 import type { ActivityEvent } from "@paperclipai/shared";
 
-export interface IssueTimelineAssignee {
-  agentId: string | null;
-  userId: string | null;
+export interface IssueTimelineOwner {
+  ownerKind: "agent" | "user" | "board";
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
 }
 
 export interface IssueTimelineEvent {
@@ -11,13 +12,13 @@ export interface IssueTimelineEvent {
   actorType: ActivityEvent["actorType"];
   actorId: string;
   runId?: string | null;
-  statusChange?: {
+  lifecycleStatusChange?: {
     from: string | null;
     to: string | null;
   };
-  assigneeChange?: {
-    from: IssueTimelineAssignee;
-    to: IssueTimelineAssignee;
+  ownerChange?: {
+    from: IssueTimelineOwner;
+    to: IssueTimelineOwner;
   };
   workspaceChange?: {
     from: IssueTimelineWorkspace;
@@ -56,8 +57,28 @@ function toTimestamp(value: Date | string) {
   return new Date(value).getTime();
 }
 
-function sameAssignee(left: IssueTimelineAssignee, right: IssueTimelineAssignee) {
-  return left.agentId === right.agentId && left.userId === right.userId;
+function sameOwner(left: IssueTimelineOwner, right: IssueTimelineOwner) {
+  return left.ownerKind === right.ownerKind
+    && left.ownerAgentId === right.ownerAgentId
+    && left.ownerUserId === right.ownerUserId;
+}
+
+function ownerFromRecord(value: unknown): IssueTimelineOwner | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const ownerKind = record.ownerKind;
+  const ownerAgentId = nullableString(record.ownerAgentId);
+  const ownerUserId = nullableString(record.ownerUserId);
+  if (ownerKind === "agent" && ownerAgentId && ownerUserId === null) {
+    return { ownerKind, ownerAgentId, ownerUserId: null };
+  }
+  if (ownerKind === "user" && ownerAgentId === null && ownerUserId) {
+    return { ownerKind, ownerAgentId: null, ownerUserId };
+  }
+  if (ownerKind === "board" && ownerAgentId === null && ownerUserId === null) {
+    return { ownerKind, ownerAgentId: null, ownerUserId: null };
+  }
+  return null;
 }
 
 function sameWorkspace(left: IssueTimelineWorkspace, right: IssueTimelineWorkspace) {
@@ -133,32 +154,21 @@ export function extractIssueTimelineEvents(activity: ActivityEvent[] | null | un
       timelineEvent.commentId = nullableString(details.commentId);
     }
 
-    if (hasOwn(details, "status")) {
-      const from = nullableString(previous?.status) ?? nullableString(details.reopenedFrom);
-      const to = nullableString(details.status);
+    if (hasOwn(details, "lifecycleStatus")) {
+      const from = nullableString(previous?.lifecycleStatus);
+      const to = nullableString(details.lifecycleStatus);
       if (from !== to) {
-        timelineEvent.statusChange = { from, to };
+        timelineEvent.lifecycleStatusChange = { from, to };
       }
     }
 
-    if (hasOwn(details, "assigneeAgentId") || hasOwn(details, "assigneeUserId")) {
-      const previousAssignee: IssueTimelineAssignee = {
-        agentId: nullableString(previous?.assigneeAgentId),
-        userId: nullableString(previous?.assigneeUserId),
-      };
-      const nextAssignee: IssueTimelineAssignee = {
-        agentId: hasOwn(details, "assigneeAgentId")
-          ? nullableString(details.assigneeAgentId)
-          : previousAssignee.agentId,
-        userId: hasOwn(details, "assigneeUserId")
-          ? nullableString(details.assigneeUserId)
-          : previousAssignee.userId,
-      };
-
-      if (!sameAssignee(previousAssignee, nextAssignee)) {
-        timelineEvent.assigneeChange = {
-          from: previousAssignee,
-          to: nextAssignee,
+    if (hasOwn(details, "ownerKind") || hasOwn(details, "ownerAgentId") || hasOwn(details, "ownerUserId")) {
+      const previousOwner = ownerFromRecord(previous);
+      const nextOwner = ownerFromRecord(details);
+      if (previousOwner && nextOwner && !sameOwner(previousOwner, nextOwner)) {
+        timelineEvent.ownerChange = {
+          from: previousOwner,
+          to: nextOwner,
         };
       }
     }
@@ -169,8 +179,8 @@ export function extractIssueTimelineEvents(activity: ActivityEvent[] | null | un
     }
 
     if (
-      timelineEvent.statusChange
-      || timelineEvent.assigneeChange
+      timelineEvent.lifecycleStatusChange
+      || timelineEvent.ownerChange
       || timelineEvent.workspaceChange
       || timelineEvent.followUpRequested
     ) {

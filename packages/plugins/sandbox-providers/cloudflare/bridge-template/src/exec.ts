@@ -5,6 +5,7 @@ import { cleanupTimedOutExecution, resolveExecutionTarget, type SessionStrategy 
 
 export interface BridgeExecuteParams {
   sandbox: CloudflareSandbox;
+  executionId?: string;
   command: string;
   args?: string[];
   cwd?: string;
@@ -14,6 +15,65 @@ export interface BridgeExecuteParams {
   sessionStrategy: SessionStrategy;
   sessionId?: string;
   onOutput?: (stream: "stdout" | "stderr", data: string) => void | Promise<void>;
+}
+
+function requireExecutionId(executionId: string): string {
+  if (typeof executionId !== "string" || executionId.length === 0 || executionId.length > 512) {
+    throw new Error("Cloudflare bridge executionId must be 1-512 characters.");
+  }
+  return executionId;
+}
+
+function executionControlDir(executionId: string): string {
+  const bytes = new TextEncoder().encode(requireExecutionId(executionId));
+  const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `/tmp/.paperclip-execution-${token}`;
+}
+
+function wrapCancellableCommand(executionId: string, commandScript: string): string {
+  const controlDir = executionControlDir(executionId);
+  const commandRunner = (kind: "group" | "process") => [
+    `paperclip_control=${shellQuote(controlDir)}`,
+    `printf ${shellQuote(`${kind}:%s\\n`)} "$$" > "$paperclip_control/pid"`,
+    'if [ -f "$paperclip_control/cancelled" ]; then exit 130; fi',
+    `exec sh -c ${shellQuote(commandScript)}`,
+  ].join("\n");
+  return [
+    `paperclip_control=${shellQuote(controlDir)}`,
+    'mkdir -p "$paperclip_control"',
+    'paperclip_cleanup() { rm -rf -- "$paperclip_control"; }',
+    "trap paperclip_cleanup EXIT",
+    'if [ -f "$paperclip_control/cancelled" ]; then exit 130; fi',
+    "if command -v setsid >/dev/null 2>&1; then",
+    `  setsid sh -c ${shellQuote(commandRunner("group"))} &`,
+    "else",
+    `  sh -c ${shellQuote(commandRunner("process"))} &`,
+    "fi",
+    "paperclip_pid=$!",
+    'wait "$paperclip_pid"',
+    "exit $?",
+  ].join("\n");
+}
+
+function buildCancelCommand(executionId: string): string {
+  const controlDir = executionControlDir(executionId);
+  return [
+    `paperclip_control=${shellQuote(controlDir)}`,
+    'mkdir -p "$paperclip_control"',
+    ': > "$paperclip_control/cancelled"',
+    "paperclip_wait=0",
+    'while [ ! -s "$paperclip_control/pid" ] && [ "$paperclip_wait" -lt 100 ]; do sleep 0.02; paperclip_wait=$((paperclip_wait + 1)); done',
+    'if [ ! -s "$paperclip_control/pid" ]; then exit 0; fi',
+    'IFS=: read -r paperclip_kind paperclip_pid < "$paperclip_control/pid"',
+    'case "$paperclip_pid" in ""|*[!0-9]*) exit 0 ;; esac',
+    'paperclip_alive() { if [ "$paperclip_kind" = "group" ]; then kill -0 "-$paperclip_pid" 2>/dev/null; else kill -0 "$paperclip_pid" 2>/dev/null; fi; }',
+    'paperclip_signal() { if [ "$paperclip_kind" = "group" ]; then kill "-$1" "-$paperclip_pid" 2>/dev/null || true; else kill "-$1" "$paperclip_pid" 2>/dev/null || true; fi; }',
+    'if paperclip_alive; then paperclip_signal TERM; fi',
+    "paperclip_wait=0",
+    'while paperclip_alive && [ "$paperclip_wait" -lt 50 ]; do sleep 0.1; paperclip_wait=$((paperclip_wait + 1)); done',
+    'if paperclip_alive; then paperclip_signal KILL; fi',
+    "exit 0",
+  ].join("\n");
 }
 
 function isValidShellEnvKey(value: string): boolean {
@@ -40,25 +100,37 @@ export function buildLoginShellScript(input: {
     }
   }
 
-  const envArgs = Object.entries(env)
+  const configuredHome =
+    env.HOME?.trim() || env.USERPROFILE?.trim() || null;
+  const effectiveEnv = { ...env };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const envArgs = Object.entries(effectiveEnv)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
     .map(([key, value]) => `${key}=${shellQuote(value)}`);
   const commandParts = [shellQuote(input.command), ...input.args.map(shellQuote)].join(" ");
   const stdinRedirect = input.stdinFile ? ` < ${shellQuote(input.stdinFile)}` : "";
   const lines = [
     'if [ -f /etc/profile ]; then . /etc/profile >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; elif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
   ];
   if (input.cwd) {
     lines.push(`cd ${shellQuote(input.cwd)}`);
   }
-  const execLine = envArgs.length > 0
-    ? `exec env ${envArgs.join(" ")} ${commandParts}${stdinRedirect}`
-    : `exec ${commandParts}${stdinRedirect}`;
+  if (!configuredHome) {
+    lines.push(
+      'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+      'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+    );
+  }
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const execPrefix = configuredHome ? "exec " : "";
+  const execLine =
+    `${execPrefix}env -i PATH="$PATH"${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${commandParts}${stdinRedirect}`;
   lines.push(execLine);
   return lines.join(" && ");
 }
@@ -112,7 +184,9 @@ export async function executeInSandbox(params: BridgeExecuteParams) {
       env: params.env,
       stdinFile,
     });
-    const fullCommand = `sh -lc ${shellQuote(script)}`;
+    const fullCommand = `sh -lc ${shellQuote(
+      wrapCancellableCommand(params.executionId ?? `bridge-${randomToken()}`, script),
+    )}`;
     const result = await target.exec(fullCommand, {
       cwd: "/",
       timeout: params.timeoutMs,
@@ -144,4 +218,20 @@ export async function executeInSandbox(params: BridgeExecuteParams) {
       await params.sandbox.deleteFile?.(stdinFile).catch(() => undefined);
     }
   }
+}
+
+export async function cancelExecutionInSandbox(params: {
+  sandbox: CloudflareSandbox;
+  executionId: string;
+  timeoutMs?: number;
+}): Promise<boolean> {
+  const result = await params.sandbox.exec(
+    `sh -lc ${shellQuote(buildCancelCommand(params.executionId))}`,
+    {
+      cwd: "/",
+      timeout: params.timeoutMs,
+    },
+  );
+  const coerced = coerceExecuteResult(result);
+  return !coerced.timedOut && coerced.exitCode === 0;
 }

@@ -36,13 +36,13 @@ describe("companyArtifactsQuerySchema", () => {
   it("accepts grouped artifact query parameters", () => {
     expect(
       companyArtifactsQuerySchema.parse({
-        groupBy: "parent_task",
+        groupBy: "parent_issue",
         groupIssueId: issue.id,
         kind: "video",
         q: "render",
       }),
     ).toMatchObject({
-      groupBy: "parent_task",
+      groupBy: "parent_issue",
       groupIssueId: issue.id,
       kind: "video",
       q: "render",
@@ -58,15 +58,15 @@ describe("companyArtifactsQuerySchema", () => {
 describe("companyArtifactsResponseSchema", () => {
   it("accepts grouped artifact responses with selected group metadata", () => {
     const group = {
-      id: `task:${issue.id}`,
-      groupBy: "task",
+      id: `issue:${issue.id}`,
+      groupBy: "issue",
       issue,
       title: issue.title,
       count: 1,
       mediaKinds: ["document"],
       previewArtifacts: [artifact],
       updatedAt: "2026-06-06T12:00:00.000Z",
-      href: `/PAP/artifacts?groupBy=task&groupIssueId=${issue.id}`,
+      href: `/PAP/artifacts?groupBy=issue&groupIssueId=${issue.id}`,
     };
 
     expect(

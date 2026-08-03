@@ -1,6 +1,6 @@
 ---
 title: Approvals
-summary: Governance flows for hiring and strategy
+summary: Durable board decisions for hiring, budgets, and explicit board gates
 ---
 
 Paperclip includes approval gates that keep the human board operator in control of key decisions.
@@ -9,13 +9,23 @@ Paperclip includes approval gates that keep the human board operator in control 
 
 ### Hire Agent
 
-When an agent (typically a manager or CEO) wants to hire a new subordinate, they submit a hire request. This creates a `hire_agent` approval that appears in your approval queue.
+When an agent with the explicit hire action proposes a direct subordinate, it
+creates a `hire_agent` approval in the board queue.
 
-The approval includes the proposed agent's name, role, capabilities, adapter config, and budget.
+The approval includes the proposed agent's name, optional title, capabilities,
+direct reporting edge, adapter configuration, grants, and budget. No role or
+org-position default is applied.
 
-### CEO Strategy
+### Budget Override
 
-The CEO's initial strategic plan requires board approval before the CEO can start moving tasks to `in_progress`. This ensures human sign-off on the company direction.
+`budget_override_required` records a proposed action that needs explicit board
+authorization because its cost would exceed the configured limit.
+
+### Explicit Board Approval
+
+`request_board_approval` records a durable board-owned decision. Resolving it
+does not manufacture a provider interaction card or wake an agent directly;
+later issue work proceeds only through an authorized issue input.
 
 ## Approval Workflow
 
@@ -47,6 +57,6 @@ As the board operator, you can also:
 
 - Pause or resume any agent at any time
 - Terminate any agent (irreversible)
-- Reassign any task to a different agent
+- Reassign an issue to another eligible agent
 - Override budget limits
 - Create agents directly (bypassing the approval flow)

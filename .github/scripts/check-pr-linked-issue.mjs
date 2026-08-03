@@ -34,7 +34,7 @@ const TEMPLATE_FIELDS = {
     ['Expected behavior', 'Expected behaviour'],
     ['Steps to reproduce', 'Reproduction steps', 'Repro steps'],
     ['Paperclip version', 'Paperclip version or commit', 'Version or commit', 'Version/commit'],
-    ['Deployment mode'],
+    ['Exposure and bind'],
   ],
   feature: [
     ['Problem or motivation', 'Problem', 'Motivation'],

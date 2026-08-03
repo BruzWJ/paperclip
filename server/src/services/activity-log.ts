@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, agentApiKeys, companies, heartbeatRuns, issues } from "@paperclipai/db";
+import { activityLog, companies, issues } from "@paperclipai/db";
 import { isUuidLike, PLUGIN_EVENT_TYPES, type PluginEventType } from "@paperclipai/shared";
 import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { publishLiveEvent } from "./live-events.js";
@@ -60,7 +60,6 @@ export interface LogActivityInput {
   entityId: string;
   agentId?: string | null;
   runId?: string | null;
-  agentApiKeyId?: string | null;
   issueId?: string | null;
   details?: Record<string, unknown> | null;
 }
@@ -72,17 +71,6 @@ function readNonEmptyString(value: unknown) {
 export async function resolveResponsibleUserIdForActivity(db: Db, input: LogActivityInput) {
   if (input.actorType === "user") return readNonEmptyString(input.actorId);
 
-  const runId = readNonEmptyString(input.runId);
-  if (runId && isUuidLike(runId)) {
-    const run = await db
-      .select({ responsibleUserId: heartbeatRuns.responsibleUserId })
-      .from(heartbeatRuns)
-      .where(and(eq(heartbeatRuns.companyId, input.companyId), eq(heartbeatRuns.id, runId)))
-      .then((rows) => rows[0] ?? null);
-    const runResponsibleUserId = readNonEmptyString(run?.responsibleUserId);
-    if (runResponsibleUserId) return runResponsibleUserId;
-  }
-
   const issueIdCandidate = readNonEmptyString(input.issueId)
     ?? (input.entityType === "issue" ? readNonEmptyString(input.entityId) : null);
   const issueId = isUuidLike(issueIdCandidate) ? issueIdCandidate : null;
@@ -90,30 +78,14 @@ export async function resolveResponsibleUserIdForActivity(db: Db, input: LogActi
     const issue = await db
       .select({
         responsibleUserId: issues.responsibleUserId,
-        createdByUserId: issues.createdByUserId,
+        creatorUserId: issues.creatorUserId,
       })
       .from(issues)
       .where(and(eq(issues.companyId, input.companyId), eq(issues.id, issueId)))
       .then((rows) => rows[0] ?? null);
     const issueResponsibleUserId = readNonEmptyString(issue?.responsibleUserId)
-      ?? readNonEmptyString(issue?.createdByUserId);
+      ?? readNonEmptyString(issue?.creatorUserId);
     if (issueResponsibleUserId) return issueResponsibleUserId;
-  }
-
-  const agentApiKeyId = readNonEmptyString(input.agentApiKeyId);
-  const agentId = readNonEmptyString(input.agentId);
-  if (agentApiKeyId && isUuidLike(agentApiKeyId)) {
-    const apiKey = await db
-      .select({ responsibleUserId: agentApiKeys.responsibleUserId })
-      .from(agentApiKeys)
-      .where(and(
-        eq(agentApiKeys.companyId, input.companyId),
-        eq(agentApiKeys.id, agentApiKeyId),
-        ...(agentId && isUuidLike(agentId) ? [eq(agentApiKeys.agentId, agentId)] : []),
-      ))
-      .then((rows) => rows[0] ?? null);
-    const apiKeyResponsibleUserId = readNonEmptyString(apiKey?.responsibleUserId);
-    if (apiKeyResponsibleUserId) return apiKeyResponsibleUserId;
   }
 
   const company = await db

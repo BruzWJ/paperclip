@@ -62,6 +62,7 @@ const mockProjectsApi = vi.hoisted(() => ({
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
+  listInvokableIssueOwners: vi.fn(),
   adapterModels: vi.fn(),
 }));
 
@@ -142,21 +143,6 @@ vi.mock("../lib/recent-assignees", () => ({
   getRecentAssigneeIds: () => [],
   sortAgentsByRecency: (agents: unknown[]) => agents,
   trackRecentAssignee: vi.fn(),
-}));
-
-vi.mock("../lib/assignees", () => ({
-  assigneeValueFromSelection: ({
-    assigneeAgentId,
-    assigneeUserId,
-  }: {
-    assigneeAgentId?: string;
-    assigneeUserId?: string;
-  }) => assigneeAgentId ? `agent:${assigneeAgentId}` : assigneeUserId ? `user:${assigneeUserId}` : "",
-  currentUserAssigneeOption: () => [],
-  parseAssigneeValue: (value: string) => ({
-    assigneeAgentId: value.startsWith("agent:") ? value.slice("agent:".length) : null,
-    assigneeUserId: value.startsWith("user:") ? value.slice("user:".length) : null,
-  }),
 }));
 
 vi.mock("./MarkdownEditor", async () => {
@@ -351,6 +337,9 @@ describe("NewIssueDialog", () => {
       },
     ]);
     mockAgentsApi.list.mockResolvedValue([]);
+    mockAgentsApi.listInvokableIssueOwners.mockResolvedValue([
+      { id: "agent-1", name: "Owner", title: null, icon: null },
+    ]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" } });
     mockAssetsApi.uploadImage.mockResolvedValue({ contentPath: "/uploads/asset.png" });
@@ -435,6 +424,8 @@ describe("NewIssueDialog", () => {
       projectId: "project-1",
       executionWorkspaceId: "workspace-1",
       goalId: "goal-1",
+      ownerAgentId: "agent-1",
+      request: "Implement the child issue",
     };
 
     const { root } = renderDialog(container);
@@ -464,14 +455,74 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Implement the child issue",
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title: "Child issue",
         parentId: "issue-1",
         goalId: "goal-1",
         projectId: "project-1",
-        executionWorkspaceId: "workspace-1",
-        workMode: "standard",
       }),
     );
+
+    act(() => root.unmount());
+  });
+
+  it("normalizes a persisted raw attention mask before rendering and submission", async () => {
+    localStorage.setItem(
+      "paperclip:issue-request-draft:v2",
+      JSON.stringify({
+        title: "Focused issue",
+        request: "Use only the narrowed context",
+        status: "todo",
+        priority: "medium",
+        ownerAgentId: "agent-1",
+        reviewerValue: "",
+        approverValue: "",
+        projectId: "",
+        attentionMask: {
+          carry_context: true,
+          read_issue_comments: false,
+        },
+      }),
+    );
+
+    const { root } = renderDialog(container);
+    await flush();
+    expect(
+      container.querySelector(
+        '[aria-label="Current issue Content: unchanged"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[aria-label="Current issue Comments: narrowed"]',
+      ),
+    ).not.toBeNull();
+
+    const submitButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Create Task"));
+    await waitForAssertion(() => {
+      expect(submitButton?.hasAttribute("disabled")).toBe(false);
+    });
+    await act(async () => {
+      submitButton!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await flush();
+
+    expect(mockIssuesApi.create).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({
+        attentionMask: {
+          read_issue_comments: false,
+        },
+      }),
+    );
+    expect(
+      mockIssuesApi.create.mock.calls[0]?.[1]?.attentionMask,
+    ).not.toHaveProperty("carry_context");
 
     act(() => root.unmount());
   });
@@ -488,7 +539,7 @@ describe("NewIssueDialog", () => {
   it("scopes user-secret warnings to selected runnable agent and project env bindings", async () => {
     dialogState.newIssueDefaults = {
       title: "Run with scoped secrets",
-      assigneeAgentId: "agent-1",
+      ownerAgentId: "agent-1",
       projectId: "project-1",
     };
     mockAgentsApi.list.mockResolvedValue([
@@ -496,7 +547,7 @@ describe("NewIssueDialog", () => {
         id: "agent-1",
         name: "CodexCoder",
         status: "active",
-        adapterType: "codex_local",
+        adapterType: "codex",
         adapterConfig: {
           env: {
             AGENT_TOKEN: { type: "user_secret_ref", key: "agent_token", required: true },
@@ -504,7 +555,7 @@ describe("NewIssueDialog", () => {
           },
         },
         runtimeConfig: {},
-        permissions: {},
+        governance: {},
       },
     ]);
     mockProjectsApi.list.mockResolvedValue([
@@ -537,7 +588,9 @@ describe("NewIssueDialog", () => {
   it("restores the planning mode from dialog defaults", async () => {
     dialogState.newIssueDefaults = {
       title: "Planned from defaults",
+      request: "Plan this work from defaults",
       workMode: "planning",
+      ownerAgentId: "agent-1",
     };
 
     const { root } = renderDialog(container);
@@ -561,8 +614,9 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Plan this work from defaults",
+        ownerAgentId: "agent-1",
         title: "Planned from defaults",
-        workMode: "planning",
       }),
     );
 
@@ -572,7 +626,9 @@ describe("NewIssueDialog", () => {
   it("restores ask mode from dialog defaults", async () => {
     dialogState.newIssueDefaults = {
       title: "Question from defaults",
+      request: "Answer this question from defaults",
       workMode: "ask",
+      ownerAgentId: "agent-1",
     };
 
     const { root } = renderDialog(container);
@@ -596,10 +652,44 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Answer this question from defaults",
+        ownerAgentId: "agent-1",
         title: "Question from defaults",
-        workMode: "ask",
       }),
     );
+
+    act(() => root.unmount());
+  });
+
+  it("submits request-only defaults without inventing a title", async () => {
+    dialogState.newIssueDefaults = {
+      request: "Implement the immutable request",
+      ownerAgentId: "agent-1",
+    };
+
+    const { root } = renderDialog(container);
+    await flush();
+
+    const submitButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Create Task"));
+    expect(submitButton).not.toBeUndefined();
+    await waitForAssertion(() => {
+      expect(submitButton?.hasAttribute("disabled")).toBe(false);
+    });
+
+    await act(async () => {
+      submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(mockIssuesApi.create).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({
+        request: "Implement the immutable request",
+        ownerAgentId: "agent-1",
+      }),
+    );
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("title");
 
     act(() => root.unmount());
   });
@@ -648,6 +738,8 @@ describe("NewIssueDialog", () => {
       projectId: "project-1",
       projectWorkspaceId: "project-workspace-2",
       executionWorkspaceId: "workspace-1",
+      ownerAgentId: "agent-1",
+      request: "Investigate the follow-up",
     };
 
     const { root } = renderDialog(container);
@@ -671,16 +763,18 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Investigate the follow-up",
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title: "Follow-up issue",
         projectId: "project-1",
         projectWorkspaceId: "project-workspace-2",
-        executionWorkspaceId: "workspace-1",
-        executionWorkspacePreference: "reuse_existing",
-        executionWorkspaceSettings: {
-          mode: "isolated_workspace",
-        },
       }),
     );
+    const createPayload = mockIssuesApi.create.mock.calls[0]?.[1];
+    expect(createPayload).not.toHaveProperty("executionWorkspaceId");
+    expect(createPayload).not.toHaveProperty("executionWorkspacePreference");
+    expect(createPayload).not.toHaveProperty("executionWorkspaceSettings");
 
     act(() => root.unmount());
   });
@@ -736,7 +830,10 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
-  it("submits the latest locally typed title and description", async () => {
+  it("submits the latest locally typed optional title and immutable request", async () => {
+    dialogState.newIssueDefaults = {
+      ownerAgentId: "agent-1",
+    };
     let resolveProjects: (projects: Array<{
       id: string;
       name: string;
@@ -751,13 +848,13 @@ describe("NewIssueDialog", () => {
     const { root } = renderDialog(container);
     await flush();
 
-    const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
-    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]') as HTMLTextAreaElement | null;
+    const titleInput = container.querySelector('textarea[placeholder="Optional task title"]') as HTMLTextAreaElement | null;
+    const requestInput = container.querySelector('textarea[aria-label="Describe the request..."]') as HTMLTextAreaElement | null;
     expect(titleInput).not.toBeNull();
-    expect(descriptionInput).not.toBeNull();
+    expect(requestInput).not.toBeNull();
 
     await typeTextareaValue(titleInput!, "Typed issue");
-    await typeTextareaValue(descriptionInput!, "Typed description");
+    await typeTextareaValue(requestInput!, "Typed request");
 
     await act(async () => {
       resolveProjects([
@@ -788,33 +885,40 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Typed request",
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title: "Typed issue",
-        description: "Typed description",
-        workMode: "standard",
       }),
     );
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("description");
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("workMode");
 
     act(() => root.unmount());
   });
 
-  it("submits Chinese, Japanese, and Hindi issue text without normalization", async () => {
+  it("submits immutable request bytes without normalization", async () => {
     const title = "验证中文任务";
-    const description = [
-      "请用中文回复。",
+    const request = [
+      " \t请用中文回复。",
       "日本語: 次の手順を書いてください。",
       "हिन्दी: कृपया स्थिति बताएं।",
+      "literal\\n and literal\\r remain text\t ",
     ].join("\n");
+    dialogState.newIssueDefaults = {
+      ownerAgentId: "agent-1",
+    };
 
     const { root } = renderDialog(container);
     await flush();
 
-    const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
-    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]') as HTMLTextAreaElement | null;
+    const titleInput = container.querySelector('textarea[placeholder="Optional task title"]') as HTMLTextAreaElement | null;
+    const requestInput = container.querySelector('textarea[aria-label="Describe the request..."]') as HTMLTextAreaElement | null;
     expect(titleInput).not.toBeNull();
-    expect(descriptionInput).not.toBeNull();
+    expect(requestInput).not.toBeNull();
 
     await typeTextareaValue(titleInput!, title);
-    await typeTextareaValue(descriptionInput!, description);
+    await typeTextareaValue(requestInput!, request);
 
     const submitButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Create Task"));
@@ -831,22 +935,31 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request,
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title,
-        description,
-        workMode: "standard",
       }),
     );
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("description");
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("workMode");
 
     act(() => root.unmount());
   });
 
   it("submits planning work mode when planning is selected", async () => {
+    dialogState.newIssueDefaults = {
+      ownerAgentId: "agent-1",
+    };
     const { root } = renderDialog(container);
     await flush();
 
-    const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
+    const titleInput = container.querySelector('textarea[placeholder="Optional task title"]') as HTMLTextAreaElement | null;
+    const requestInput = container.querySelector('textarea[aria-label="Describe the request..."]') as HTMLTextAreaElement | null;
     expect(titleInput).not.toBeNull();
+    expect(requestInput).not.toBeNull();
     await typeTextareaValue(titleInput!, "Plan this first");
+    await typeTextareaValue(requestInput!, "Plan this first");
 
     const planningButton = container.querySelector('[data-issue-work-mode="planning"]');
     expect(planningButton).not.toBeNull();
@@ -870,21 +983,30 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Plan this first",
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title: "Plan this first",
-        workMode: "planning",
       }),
     );
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("workMode");
 
     act(() => root.unmount());
   });
 
   it("submits ask work mode when ask is selected", async () => {
+    dialogState.newIssueDefaults = {
+      ownerAgentId: "agent-1",
+    };
     const { root } = renderDialog(container);
     await flush();
 
-    const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
+    const titleInput = container.querySelector('textarea[placeholder="Optional task title"]') as HTMLTextAreaElement | null;
+    const requestInput = container.querySelector('textarea[aria-label="Describe the request..."]') as HTMLTextAreaElement | null;
     expect(titleInput).not.toBeNull();
+    expect(requestInput).not.toBeNull();
     await typeTextareaValue(titleInput!, "Answer this first");
+    await typeTextareaValue(requestInput!, "Answer this first");
 
     const askButton = container.querySelector('[data-issue-work-mode="ask"]');
     expect(askButton).not.toBeNull();
@@ -908,10 +1030,13 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Answer this first",
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title: "Answer this first",
-        workMode: "ask",
       }),
     );
+    expect(mockIssuesApi.create.mock.calls[0]?.[1]).not.toHaveProperty("workMode");
 
     act(() => root.unmount());
   });
@@ -1026,7 +1151,7 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
-  it("submits the parent assignee when a sub-issue opens with inherited defaults", async () => {
+  it("submits the parent owner when a sub-issue opens with inherited defaults", async () => {
     dialogState.newIssueDefaults = {
       parentId: "issue-1",
       parentIdentifier: "PAP-1",
@@ -1034,7 +1159,8 @@ describe("NewIssueDialog", () => {
       title: "Child issue",
       projectId: "project-1",
       goalId: "goal-1",
-      assigneeAgentId: "agent-1",
+      ownerAgentId: "agent-1",
+      request: "Implement the child issue",
     };
 
     const { root } = renderDialog(container);
@@ -1052,13 +1178,51 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
+        request: "Implement the child issue",
+        ownerAgentId: "agent-1",
+        idempotencyKey: expect.any(String),
         title: "Child issue",
         parentId: "issue-1",
         goalId: "goal-1",
         projectId: "project-1",
-        assigneeAgentId: "agent-1",
       }),
     );
+
+    act(() => root.unmount());
+  });
+
+  it("clears a persisted draft owner that is absent from the current invokable catalog", async () => {
+    localStorage.setItem(
+      "paperclip:issue-request-draft:v2",
+      JSON.stringify({
+        title: "Stale owner draft",
+        request: "Do not dispatch this to the old owner",
+        status: "todo",
+        priority: "medium",
+        ownerAgentId: "agent-stale",
+        reviewerValue: "",
+        approverValue: "",
+        projectId: "",
+      }),
+    );
+    mockAgentsApi.listInvokableIssueOwners.mockResolvedValue([
+      { id: "agent-current", name: "Current owner", title: null, icon: null },
+    ]);
+
+    const { root } = renderDialog(container);
+    await flush();
+
+    const submitButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Create Task"));
+    expect(submitButton).not.toBeUndefined();
+    await waitForAssertion(() => {
+      expect(submitButton?.hasAttribute("disabled")).toBe(true);
+    });
+
+    await act(async () => {
+      submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
 
     act(() => root.unmount());
   });
@@ -1075,15 +1239,15 @@ describe("NewIssueDialog", () => {
     expect(dialogContent?.getAttribute("style")).toContain("env(safe-area-inset-top)");
     expect(dialogContent?.getAttribute("style")).toContain("env(safe-area-inset-bottom)");
 
-    const titleInput = container.querySelector('textarea[placeholder="Task title"]');
-    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]');
+    const titleInput = container.querySelector('textarea[placeholder="Optional task title"]');
+    const requestInput = container.querySelector('textarea[aria-label="Describe the request..."]');
     const bodyScrollRegion = Array.from(container.querySelectorAll("div")).find((element) =>
       typeof element.className === "string" && element.className.includes("overscroll-contain"),
     );
     expect(bodyScrollRegion?.className).toContain("flex-1");
     expect(bodyScrollRegion?.className).toContain("overflow-y-auto");
     expect(bodyScrollRegion?.contains(titleInput ?? null)).toBe(true);
-    expect(bodyScrollRegion?.contains(descriptionInput ?? null)).toBe(true);
+    expect(bodyScrollRegion?.contains(requestInput ?? null)).toBe(true);
 
     act(() => root.unmount());
   });
@@ -1201,86 +1365,6 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
-  it("reveals the watchdog editor from the overflow menu", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIsolatedWorkspaces: false,
-      enableTaskWatchdogs: true,
-    });
-
-    const { root } = renderDialog(container);
-    await flush();
-
-    // The watchdog row is hidden until the menu item is toggled on.
-    expect(container.querySelector('textarea[placeholder^="What should the watchdog"]')).toBeNull();
-
-    const watchdogMenuItem = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Watchdog");
-    expect(watchdogMenuItem).not.toBeUndefined();
-
-    await act(async () => {
-      watchdogMenuItem!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
-    expect(container.textContent).toContain("Set watchdog");
-    expect(container.querySelector('textarea[placeholder^="What should the watchdog"]')).not.toBeNull();
-
-    act(() => root.unmount());
-  });
-
-  it("submits the configured watchdog from a restored draft", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIsolatedWorkspaces: false,
-      enableTaskWatchdogs: true,
-    });
-    localStorage.setItem(
-      "paperclip:issue-draft",
-      JSON.stringify({
-        title: "Watched task",
-        description: "",
-        status: "todo",
-        priority: "medium",
-        assigneeValue: "",
-        reviewerValue: "",
-        approverValue: "",
-        watchdogAgentId: "agent-9",
-        watchdogInstructions: "Keep it moving",
-        projectId: "",
-        assigneeModelOverride: "",
-        assigneeThinkingEffort: "",
-        assigneeChrome: false,
-        workMode: "standard",
-      }),
-    );
-
-    const { root } = renderDialog(container);
-    await flush();
-
-    expect(container.textContent).toContain("Keep it moving");
-
-    const submitButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Create Task"));
-    expect(submitButton).not.toBeUndefined();
-    await vi.waitFor(() => {
-      expect(submitButton?.hasAttribute("disabled")).toBe(false);
-    });
-
-    await act(async () => {
-      submitButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
-    expect(mockIssuesApi.create).toHaveBeenCalledWith(
-      "company-1",
-      expect.objectContaining({
-        title: "Watched task",
-        watchdog: { agentId: "agent-9", instructions: "Keep it moving" },
-      }),
-    );
-
-    act(() => root.unmount());
-  });
-
   describe("graduated work-mode labels and status hues", () => {
     function workModeOption(value: string) {
       return container.querySelector(`[data-issue-work-mode="${value}"]`);
@@ -1308,7 +1392,7 @@ describe("NewIssueDialog", () => {
       expect(workModeOption("ask")?.textContent).toContain("Ask mode");
       expect(workModeOption("planning")?.textContent).toContain("Plan mode");
 
-      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-amber-600");
+      expect(statusOptionIconClass("Todo", "Executable - owner will be woken")).toContain("text-amber-600");
       expect(statusOptionIconClass("In Progress")).toContain("text-blue-600");
 
       act(() => root.unmount());

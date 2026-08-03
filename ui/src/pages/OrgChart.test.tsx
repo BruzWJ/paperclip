@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { canonicalizeMoneyAmount } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OrgChart } from "./OrgChart";
 
@@ -40,14 +41,14 @@ vi.mock("../components/AgentIconPicker", () => ({
 const orgTree = [
   {
     id: "agent-1",
-    name: "CEO",
-    role: "ceo",
+    name: "Lead",
+    subtitle: "Lead",
     status: "active",
     reports: [
       {
         id: "agent-2",
         name: "Engineer",
-        role: "engineer",
+        subtitle: "Engineer",
         status: "active",
         reports: [],
       },
@@ -59,42 +60,40 @@ const agents = [
   {
     id: "agent-1",
     companyId: "company-1",
-    name: "CEO",
-    role: "ceo",
+    name: "Lead",
+    subtitle: "Lead",
     title: null,
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
     contextMode: "thin",
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    lastHeartbeatAt: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     icon: "briefcase",
     metadata: null,
     createdAt: new Date("2026-04-01T00:00:00.000Z"),
     updatedAt: new Date("2026-04-01T00:00:00.000Z"),
-    urlKey: "ceo",
+    urlKey: "lead",
     pauseReason: null,
     pausedAt: null,
-    permissions: null,
+    governance: {},
   },
   {
     id: "agent-2",
     companyId: "company-1",
     name: "Engineer",
-    role: "engineer",
+    subtitle: "Engineer",
     title: null,
     status: "active",
     reportsTo: "agent-1",
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
     contextMode: "thin",
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    lastHeartbeatAt: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     icon: "code",
     metadata: null,
     createdAt: new Date("2026-04-01T00:00:00.000Z"),
@@ -102,7 +101,7 @@ const agents = [
     urlKey: "engineer",
     pauseReason: null,
     pausedAt: null,
-    permissions: null,
+    governance: {},
   },
 ];
 
@@ -243,7 +242,7 @@ describe("OrgChart mobile gestures", () => {
       card.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    expect(navigateMock).toHaveBeenCalledWith("/agents/ceo");
+    expect(navigateMock).toHaveBeenCalledWith("/agents/lead");
   });
   it("pinch-zooms toward the touch center", async () => {
     const { viewport, layer } = await renderOrgChart();

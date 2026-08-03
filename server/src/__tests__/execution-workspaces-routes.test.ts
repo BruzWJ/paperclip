@@ -2,7 +2,9 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { errorHandler } from "../middleware/index.js";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { executionWorkspaceRoutes } from "../routes/execution-workspaces.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockExecutionWorkspaceService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -10,6 +12,7 @@ const mockExecutionWorkspaceService = vi.hoisted(() => ({
   listSummaries: vi.fn(),
   getById: vi.fn(),
   getCloseReadiness: vi.fn(),
+  listCurrentBindings: vi.fn(),
   reconcileExecutionWorkspaceBranch: vi.fn(),
   update: vi.fn(),
 }));
@@ -17,10 +20,6 @@ const mockExecutionWorkspaceService = vi.hoisted(() => ({
 const mockWorkspaceOperationService = vi.hoisted(() => ({
   listForExecutionWorkspace: vi.fn(),
   createRecorder: vi.fn(),
-}));
-
-const mockHeartbeatService = vi.hoisted(() => ({
-  wakeup: vi.fn(),
 }));
 
 const mockAccessService = vi.hoisted(() => ({
@@ -31,24 +30,22 @@ const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
   executionWorkspaceService: () => mockExecutionWorkspaceService,
-  heartbeatService: () => mockHeartbeatService,
   logActivity: mockLogActivity,
   workspaceOperationService: () => mockWorkspaceOperationService,
 }));
 
-function createApp(actor: Record<string, unknown> = {
-  type: "board",
-  userId: "local-board",
+function createApp(actor: Record<string, unknown> = testBoardSessionActor({
+  userId: "board-user",
   companyIds: ["company-1"],
-  source: "session",
   isInstanceAdmin: false,
-}) {
+})) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     (req as any).actor = actor;
     next();
   });
+  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", executionWorkspaceRoutes({} as any));
   app.use(errorHandler);
   return app;
@@ -81,8 +78,8 @@ describe.sequential("execution workspace routes", () => {
       },
     ]);
     mockExecutionWorkspaceService.getById.mockResolvedValue(null);
+    mockExecutionWorkspaceService.listCurrentBindings.mockResolvedValue([]);
     mockExecutionWorkspaceService.reconcileExecutionWorkspaceBranch.mockResolvedValue(null);
-    mockHeartbeatService.wakeup.mockResolvedValue(null);
   });
 
   it("uses summary mode for lightweight workspace lookups", async () => {
@@ -151,7 +148,7 @@ describe.sequential("execution workspace routes", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_jwt",
+      source: "internal",
       runId: "run-1",
     }))
       .post("/api/execution-workspaces/workspace-1/reconcile-branch")
@@ -169,6 +166,8 @@ describe.sequential("execution workspace routes", () => {
       sourceIssueId: "issue-1",
     });
     mockExecutionWorkspaceService.reconcileExecutionWorkspaceBranch.mockResolvedValue({
+      boundIssueId: "issue-1",
+      boundOwnershipEpoch: 3,
       workspace: {
         id: "workspace-1",
         companyId: "company-1",
@@ -188,9 +187,6 @@ describe.sequential("execution workspace routes", () => {
         statusEntryCount: 0,
         plainLanguageReason: "forward",
       },
-      recoveryAction: {
-        id: "recovery-1",
-      },
       auditCommentId: "comment-1",
     });
 
@@ -201,12 +197,11 @@ describe.sequential("execution workspace routes", () => {
     expect(res.status).toBe(200);
     expect(mockExecutionWorkspaceService.reconcileExecutionWorkspaceBranch).toHaveBeenCalledWith("workspace-1", {
       mode: "forward",
+      issueId: null,
       reason: null,
       actor: {
         actorType: "user",
-        actorId: "local-board",
-        agentId: null,
-        runId: null,
+        actorId: "board-user",
       },
     });
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -221,20 +216,22 @@ describe.sequential("execution workspace routes", () => {
         toSha: "2222222",
         ancestryVerdict: "ancestor",
         fingerprint: "workspace_incoherence:v1:sha256:test",
-        sourceIssueId: "issue-1",
+        issueId: "issue-1",
+        ownershipEpoch: 3,
         auditCommentId: "comment-1",
-        recoveryActionId: "recovery-1",
       }),
     }));
   });
 
-  it("accepts quarantine_restore, logs the rescue ref, and wakes the restored source issue", async () => {
+  it("accepts quarantine_restore and logs the rescue ref", async () => {
     mockExecutionWorkspaceService.getById.mockResolvedValue({
       id: "workspace-1",
       companyId: "company-1",
       sourceIssueId: "issue-1",
     });
     mockExecutionWorkspaceService.reconcileExecutionWorkspaceBranch.mockResolvedValue({
+      boundIssueId: "issue-1",
+      boundOwnershipEpoch: 3,
       workspace: {
         id: "workspace-1",
         companyId: "company-1",
@@ -253,9 +250,6 @@ describe.sequential("execution workspace routes", () => {
         cleanliness: "dirty",
         statusEntryCount: 2,
         plainLanguageReason: "dirty live branch",
-      },
-      recoveryAction: {
-        id: "recovery-1",
       },
       auditCommentId: "comment-1",
       rescueRef: {
@@ -268,10 +262,10 @@ describe.sequential("execution workspace routes", () => {
       restoredSourceIssue: {
         id: "issue-1",
         companyId: "company-1",
-        status: "todo",
-        assigneeAgentId: "agent-1",
+        boardPresentationStatus: "todo",
+        ownerAgentId: "agent-1",
       },
-      sourceIssueStatusChanged: true,
+      sourceIssueBoardPresentationStatusChanged: true,
     });
 
     const res = await request(createApp())
@@ -281,12 +275,11 @@ describe.sequential("execution workspace routes", () => {
     expect(res.status).toBe(200);
     expect(mockExecutionWorkspaceService.reconcileExecutionWorkspaceBranch).toHaveBeenCalledWith("workspace-1", {
       mode: "quarantine_restore",
+      issueId: null,
       reason: null,
       actor: {
         actorType: "user",
-        actorId: "local-board",
-        agentId: null,
-        runId: null,
+        actorId: "board-user",
       },
     });
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -296,43 +289,24 @@ describe.sequential("execution workspace routes", () => {
       details: expect.objectContaining({
         mode: "quarantine_restore",
         fingerprint: "workspace_incoherence:v1:sha256:dirty",
-        recoveryActionId: "recovery-1",
         rescueRef: expect.objectContaining({
           branchName: "paperclip/rescue/PAP-123/20260709T120000Z",
           commitSha: "3333333",
         }),
-        sourceIssueStatus: "todo",
-      }),
-    }));
-    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith("agent-1", expect.objectContaining({
-      source: "automation",
-      reason: "issue_recovery_action_restored",
-      payload: expect.objectContaining({
-        issueId: "issue-1",
-        recoveryActionId: "recovery-1",
-        executionWorkspaceId: "workspace-1",
-        rescueRef: "paperclip/rescue/PAP-123/20260709T120000Z",
-        mutation: "execution_workspace_quarantine_restore",
-      }),
-      contextSnapshot: expect.objectContaining({
-        issueId: "issue-1",
-        taskId: "issue-1",
-        wakeReason: "issue_recovery_action_restored",
-        source: "execution_workspace.quarantine_restore",
-        recoveryActionId: "recovery-1",
-        executionWorkspaceId: "workspace-1",
-        rescueRef: "paperclip/rescue/PAP-123/20260709T120000Z",
+        sourceIssueBoardPresentationStatus: "todo",
       }),
     }));
   });
 
-  it("wakes a restored in_review agent participant after quarantine_restore", async () => {
+  it("keeps a restored in_review participant available for explicit issue dispatch", async () => {
     mockExecutionWorkspaceService.getById.mockResolvedValue({
       id: "workspace-1",
       companyId: "company-1",
       sourceIssueId: "issue-1",
     });
     mockExecutionWorkspaceService.reconcileExecutionWorkspaceBranch.mockResolvedValue({
+      boundIssueId: "issue-1",
+      boundOwnershipEpoch: 3,
       workspace: {
         id: "workspace-1",
         companyId: "company-1",
@@ -352,18 +326,15 @@ describe.sequential("execution workspace routes", () => {
         statusEntryCount: 2,
         plainLanguageReason: "dirty live branch",
       },
-      recoveryAction: {
-        id: "recovery-1",
-      },
       auditCommentId: "comment-1",
       rescueRef: null,
       restoredSourceIssue: {
         id: "issue-1",
         companyId: "company-1",
-        status: "in_review",
-        assigneeAgentId: "reviewer-agent-1",
+        boardPresentationStatus: "in_review",
+        ownerAgentId: "reviewer-agent-1",
       },
-      sourceIssueStatusChanged: true,
+      sourceIssueBoardPresentationStatusChanged: true,
     });
 
     const res = await request(createApp())
@@ -373,19 +344,7 @@ describe.sequential("execution workspace routes", () => {
     expect(res.status).toBe(200);
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       details: expect.objectContaining({
-        sourceIssueStatus: "in_review",
-      }),
-    }));
-    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith("reviewer-agent-1", expect.objectContaining({
-      reason: "issue_recovery_action_restored",
-      payload: expect.objectContaining({
-        issueId: "issue-1",
-        mutation: "execution_workspace_quarantine_restore",
-      }),
-      contextSnapshot: expect.objectContaining({
-        issueId: "issue-1",
-        wakeReason: "issue_recovery_action_restored",
-        source: "execution_workspace.quarantine_restore",
+        sourceIssueBoardPresentationStatus: "in_review",
       }),
     }));
   });

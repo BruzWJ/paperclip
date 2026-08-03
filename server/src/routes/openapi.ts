@@ -2,28 +2,32 @@ import { Router } from "express";
 import { z } from "zod";
 import {
   // Agent
-  createAgentSchema,
-  createAgentHireSchema,
-  updateAgentSchema,
-  updateAgentPermissionsSchema,
-  updateAgentInstructionsPathSchema,
-  updateAgentInstructionsBundleSchema,
-  upsertAgentInstructionsFileSchema,
-  createAgentKeySchema,
-  builtInAgentEmptyMutationSchema,
-  builtInAgentProvisionSchema,
-  generateSummarySlotSchema,
-  writeSummarySlotSchema,
-  wakeAgentSchema,
-  resetAgentSessionSchema,
-  agentSkillSyncSchema,
-  testAdapterEnvironmentSchema,
+  agentCompanySkillPinsResponseSchema,
+  agentCompanySkillPinsUpdateSchema,
+  agentAdapterAcpConfigurationSchema,
+  agentAdapterRevisionConfigurationSchema,
+  agentOperationalConfigurationUpdateSchema,
+  environmentDriverSchema,
+  runtimeAgentCompanyToolOptionsSchema,
+  runtimeAgentCreateConfigurationSchema,
+  runtimeAgentUpdateConfigurationSchema,
+  refreshSummarySlotSchema,
   // Issue
   createIssueSchema,
-  updateIssueSchema,
+  issueCreationAttentionMaskSchema,
+  updateIssueTitleSchema,
+  updateIssueExecutionPolicySchema,
+  decideIssueExecutionStageSchema,
+  reassignIssueSchema,
+  commitIssueCreatorFormSchema,
+  commitIssueOwnerFormSchema,
+  selfAssignIssueWithdrawalSchema,
+  reopenIssueSchema,
   createIssueLabelSchema,
-  addIssueCommentSchema,
-  checkoutIssueSchema,
+  createIssueUserCommentSchema,
+  boardIssueCommentSchema,
+  boardIssueCommentGroupPageSchema,
+  boardIssueCommentThreadPageSchema,
   linkIssueApprovalSchema,
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
@@ -31,6 +35,7 @@ import {
   restoreIssueDocumentRevisionSchema,
   upsertIssueFeedbackVoteSchema,
   upsertIssueWatchdogSchema,
+  updateSessionCompactionSettingsSchema,
   // Project
   createProjectSchema,
   updateProjectSchema,
@@ -75,11 +80,17 @@ import {
   resubmitApprovalSchema,
   addApprovalCommentSchema,
   // Cost / budget
-  createCostEventSchema,
   createFinanceEventSchema,
-  updateBudgetSchema,
+  updateCompanyBudgetSchema,
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
+  issueExecutionWatchdogDecisionInputSchema,
+  moneyAmountSchema,
+  budgetCurrencySchema,
+  ACP_COST_UNAVAILABLE_REASONS,
+  ACP_COST_CURSOR_STATES,
+  ISSUE_EXECUTION_RUN_KINDS,
+  adapterRuntimeReadinessSchema,
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
   // Execution workspaces
@@ -118,14 +129,8 @@ import {
   createIssueTreeHoldSchema,
   previewIssueTreeControlSchema,
   releaseIssueTreeHoldSchema,
-  // Issue interactions
-  createIssueThreadInteractionSchema,
   createChildIssueSchema,
-  acceptIssueThreadInteractionSchema,
-  rejectIssueThreadInteractionSchema,
-  respondIssueThreadInteractionSchema,
-  submitIssueThreadInteractionVerdictsSchema,
-  // Auth / profile
+  // Better Auth user profile input
   updateCurrentUserProfileSchema,
   // Company portability (legacy routes)
   companyPortabilityExportSchema,
@@ -133,9 +138,8 @@ import {
   companyPortabilityImportSchema,
   // Access / membership
   acceptInviteSchema,
+  approveJoinRequestSchema,
   createCompanyInviteSchema,
-  createOpenClawInvitePromptSchema,
-  claimJoinRequestApiKeySchema,
   createCliAuthChallengeSchema,
   resolveCliAuthChallengeSchema,
   createBoardApiKeySchema,
@@ -148,17 +152,12 @@ import {
   patchInstanceGeneralSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   patchInstanceSettingsSchema,
-  issueGraphLivenessAutoRecoveryRequestSchema,
   // Resource memberships
   updateResourceMembershipSchema,
   // Document annotations
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
   updateDocumentAnnotationThreadSchema,
-  // Issue recovery and decomposition
-  createAcceptedPlanDecompositionSchema,
-  resolveIssueRecoveryActionSchema,
-  cancelIssueThreadInteractionSchema,
   // Secret provider configs and remote import
   createSecretProviderConfigSchema,
   updateSecretProviderConfigSchema,
@@ -172,7 +171,6 @@ import {
   createToolApplicationSchema,
   updateToolApplicationSchema,
   createToolConnectionSchema,
-  connectionTokenRequestSchema,
   startConnectionAuthorizationSchema,
   createToolStdioCommandTemplateSchema,
   disableToolStdioCommandTemplateSchema,
@@ -356,6 +354,9 @@ function zodToOpenApiSchema(schema: z.ZodTypeAny): JsonSchema {
     }
     const jsonSchema: JsonSchema = { type: "object", properties };
     if (required.length > 0) jsonSchema.required = required;
+    if (unwrapped._def.unknownKeys === "strict") {
+      jsonSchema.additionalProperties = false;
+    }
     return jsonSchema;
   }
 
@@ -516,6 +517,167 @@ const jsonBody = (schema: z.ZodTypeAny) => ({
 
 const r = responses;
 
+const publicAdapterCapabilitiesSchema = z.object({
+  supportsModelProfiles: z.boolean(),
+  contractVersion: z.literal("acp-subprocess/v1"),
+  protocolVersion: z.literal(1),
+  resume: z.literal(true),
+  cancel: z.literal(true),
+  sessionConfig: z.literal(true),
+  sessionScopedMcpReplacement: z.literal(true),
+}).strict();
+
+const acpAdapterModelSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  value: z.string().min(1),
+  limits: z.object({
+    contextTokenLimit: z.number().int().positive(),
+    inputTokenLimit: z.number().int().positive().optional(),
+    outputTokenLimit: z.number().int().positive(),
+  }).strict(),
+}).strict();
+
+const publicAdapterInfoSchema = z.object({
+  type: z.string(),
+  label: z.string(),
+  source: z.enum(["builtin", "external"]),
+  modelsCount: z.number().int().nonnegative(),
+  loaded: z.boolean(),
+  disabled: z.boolean(),
+  capabilities: publicAdapterCapabilitiesSchema,
+  registryName: z.string().min(1),
+  frontendPackage: z.string().min(1),
+  frontendVersion: z.string().min(1),
+  frontendDigest: z.string().regex(/^[0-9a-f]{64}$/),
+  overriddenBuiltin: z.boolean().optional(),
+  overridePaused: z.boolean().optional(),
+  version: z.string().optional(),
+  packageName: z.string().optional(),
+  isLocalPath: z.boolean().optional(),
+}).strict();
+
+const adapterImplementationIdentitySchema = z.object({
+  adapterType: z.string().min(1),
+  definitionVersion: z.literal("acp-subprocess/v1"),
+  protocolVersion: z.literal(1),
+  origin: z.enum(["builtin", "external"]),
+  packageName: z.string().min(1),
+  packageVersion: z.string().min(1),
+  buildIdentity: z.string().min(1),
+  artifactDigest: z.string().regex(/^[0-9a-f]{64}$/),
+}).strict();
+
+const publicAgentAdapterRevisionSchema = z.object({
+  id: z.string().uuid(),
+  companyId: z.string().uuid(),
+  agentId: z.string().uuid(),
+  revisionNumber: z.number().int().positive(),
+  adapterType: z.string().min(1),
+  implementationIdentity: adapterImplementationIdentitySchema,
+  adapterConfigSchemaVersion: z.literal(
+    "paperclip.acp-adapter-config/v1",
+  ),
+  defaultEnvironmentId: z.string().uuid(),
+  executionTargetDriver: environmentDriverSchema,
+  executionTargetDigest: z.string().regex(/^[0-9a-f]{64}$/),
+  normalizedConfig: z.record(z.unknown()),
+  runtimeConfig: z.record(z.unknown()),
+  acpConfiguration: agentAdapterAcpConfigurationSchema,
+  digest: z.string().regex(/^[0-9a-f]{64}$/),
+  parentRevisionId: z.string().uuid().nullable(),
+  createdByAgentId: z.string().uuid().nullable(),
+  createdByUserId: z.string().nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+const publicAgentAdapterRevisionCreateResponseSchema = z.object({
+  revision: publicAgentAdapterRevisionSchema,
+  current: z.object({
+    agentId: z.string().uuid(),
+    adapterType: z.string(),
+    adapterConfig: z.record(z.unknown()),
+    runtimeConfig: z.record(z.unknown()),
+    currentAdapterConfigRevisionId: z.string().uuid(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+  appended: z.boolean(),
+}).strict();
+
+const issueExecutionRunKindSchema = z.enum([
+  "productive",
+  "consult",
+  "compaction",
+]);
+
+const issueExecutionWatchdogDecisionRecordSchema = z
+  .object({
+    id: z.string().uuid(),
+    companyId: z.string().uuid(),
+    runId: z.string().uuid(),
+    evaluationIssueId: z.string().uuid().nullable(),
+    decision: z.enum([
+      "snooze",
+      "continue",
+      "dismissed_false_positive",
+    ]),
+    snoozedUntil: z.string().datetime().nullable(),
+    reason: z.string().min(1).max(4000).nullable(),
+    createdByAgentId: z.string().uuid().nullable(),
+    createdByUserId: z.string().nullable(),
+    createdByRunId: z.string().uuid().nullable(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+const issueExecutionRunEnvelopeRecordSchema = z
+  .object({
+    id: z.string().uuid(),
+    companyId: z.string().uuid(),
+    issueId: z.string().uuid(),
+    sessionId: z.string().uuid(),
+    executionScopeId: z.string().uuid(),
+    kind: issueExecutionRunKindSchema,
+    status: z.enum([
+      "queued",
+      "scheduled_retry",
+      "running",
+      "succeeded",
+      "interrupted",
+      "failed",
+      "cancelled",
+      "timed_out",
+    ]),
+    ownershipEpoch: z.number().int().positive(),
+    targetAgentId: z.string().uuid().nullable(),
+    adapterConfigRevisionId: z.string().uuid(),
+    executionWorkspaceBindingId: z.string().uuid(),
+    executionMode: z.enum(["owner", "consult"]).nullable(),
+    issueExecutionAuthorityId: z.string().uuid().nullable(),
+    consultExecutionId: z.string().uuid().nullable(),
+    compactionScopeKind: z
+      .enum(["turns-recovery", "comments-recovery"])
+      .nullable(),
+    parentRunId: z.string().uuid().nullable(),
+    retryOfRunId: z.string().uuid().nullable(),
+    triggeredByRunId: z.string().uuid().nullable(),
+    currentAttemptId: z.string().uuid().nullable(),
+    currentLeaseId: z.string().uuid().nullable(),
+    cancellationIntentId: z.string().uuid().nullable(),
+    terminalFinalizationId: z.string().uuid().nullable(),
+    startedAt: z.string().datetime().nullable(),
+    finishedAt: z.string().datetime().nullable(),
+    terminalClassification: z
+      .enum(["succeeded", "interrupted", "failed", "cancelled", "timed_out"])
+      .nullable(),
+    terminalReasonCode: z.string().nullable(),
+    processExitCode: z.number().int().nullable(),
+    processSignal: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+
 const externalObjectSummariesBodySchema = z.object({
   issueIds: z.array(z.string().uuid()).max(1000),
 }).strict();
@@ -574,16 +736,24 @@ const workTimelineResponseSchema = z.object({
   }).strict()),
   spans: z.array(z.object({
     actorId: z.string(),
-    laneHint: z.string().nullable(),
     runId: z.string(),
+    kind: issueExecutionRunKindSchema,
     issueId: z.string(),
     issueIdentifier: z.string().nullable(),
+    issueTitle: z.string().nullable(),
     start: z.string(),
     end: z.string().nullable(),
-    status: z.string(),
-    retryOfRunId: z.string().nullable().optional(),
-    continuationAttempt: z.number().optional(),
-    invocationSource: z.string().nullable().optional(),
+    status: z.enum([
+      "queued",
+      "scheduled_retry",
+      "running",
+      "succeeded",
+      "interrupted",
+      "failed",
+      "cancelled",
+      "timed_out",
+    ]),
+    retryOfRunId: z.string().nullable(),
   }).strict()),
   events: z.array(z.object({
     actorId: z.string(),
@@ -652,11 +822,12 @@ type OpenApiAuthLevel =
   | "public"
   | "authenticated"
   | "board"
-  | "instance_admin";
+  | "instance_admin"
+  | "run_interface";
 
 const BOARD_SESSION_AUTH_SCHEME = "BoardSessionAuth";
 const BOARD_API_KEY_AUTH_SCHEME = "BoardApiKeyAuth";
-const AGENT_BEARER_AUTH_SCHEME = "AgentBearerAuth";
+const RUN_INTERFACE_AUTH_SCHEME = "RunInterfaceBearerAuth";
 
 function securityRequirement(name: string): Record<string, string[]> {
   return { [name]: [] };
@@ -669,13 +840,19 @@ const BOARD_SECURITY: Array<Record<string, string[]>> = [
 
 const AUTHENTICATED_SECURITY: Array<Record<string, string[]>> = [
   ...BOARD_SECURITY,
-  securityRequirement(AGENT_BEARER_AUTH_SCHEME),
 ];
+
+const RUN_INTERFACE_SECURITY: Array<Record<string, string[]>> = [
+  securityRequirement(RUN_INTERFACE_AUTH_SCHEME),
+];
+
+const RUN_INTERFACE_OPERATIONS = new Set([
+  "POST /api/run-tools",
+]);
 
 const PUBLIC_OPERATIONS = new Set([
   "GET /api/health",
   "GET /api/openapi.json",
-  "GET /api/board-claim/{token}",
   "POST /api/cli-auth/challenges",
   "GET /api/cli-auth/challenges/{id}",
   "POST /api/cli-auth/challenges/{id}/cancel",
@@ -683,11 +860,7 @@ const PUBLIC_OPERATIONS = new Set([
   "GET /api/invites/{token}/logo",
   "GET /api/invites/{token}/onboarding",
   "GET /api/invites/{token}/onboarding.txt",
-  "GET /api/invites/{token}/skills/index",
-  "GET /api/invites/{token}/skills/{skillName}",
-  "GET /api/invites/{token}/test-resolution",
   "POST /api/invites/{token}/accept",
-  "POST /api/join-requests/{requestId}/claim-api-key",
   "GET /mcp/gateways/{gatewayPublicId}",
   "POST /mcp/gateways/{gatewayPublicId}",
   "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
@@ -707,20 +880,31 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies",
   "GET /api/companies/stats",
   "GET /api/companies/issues",
-  "POST /api/board-claim/{token}/claim",
   "GET /api/cli-auth/me",
   "POST /api/companies/{companyId}/invites",
   "GET /api/companies/{companyId}/invites",
-  "POST /api/companies/{companyId}/openclaw/invite-prompt",
   "GET /api/companies/{companyId}/join-requests",
   "POST /api/companies/{companyId}/join-requests/{requestId}/approve",
   "POST /api/companies/{companyId}/join-requests/{requestId}/reject",
   "GET /api/companies/{companyId}/members",
+  "POST /api/companies/{companyId}/runtime-agents",
+  "GET /api/companies/{companyId}/runtime-agent-tool-options",
+  "GET /api/agents/{id}/runtime-configuration",
+  "GET /api/agents/{id}/runtime-configuration/tool-options",
+  "PATCH /api/agents/{id}/runtime-configuration",
+  "GET /api/agents/{id}/adapter-config-revisions",
+  "GET /api/agents/{id}/adapter-config-revisions/current",
+  "POST /api/agents/{id}/adapter-config-revisions",
+  "GET /api/agents/{id}/company-skill-pins",
+  "PUT /api/agents/{id}/company-skill-pins",
+  "PATCH /api/agents/{id}/operational-configuration",
+  "POST /api/agents/{id}/plugin-management/adopt",
   "PATCH /api/companies/{companyId}/members/{memberId}",
   "PATCH /api/companies/{companyId}/members/{memberId}/role-and-grants",
   "POST /api/companies/{companyId}/members/{memberId}/archive",
   "PATCH /api/companies/{companyId}/members/{memberId}/permissions",
   "GET /api/companies/{companyId}/user-directory",
+  "POST /api/runs/{runId}/runtime-readiness",
   "POST /api/execution-workspaces/{id}/reconcile-branch",
   "GET /api/board-api-keys",
   "POST /api/board-api-keys",
@@ -756,9 +940,6 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/issues/{issueId}/file-resources/content",
   "GET /api/issues/{issueId}/file-resources/list",
   "GET /api/issues/{issueId}/file-resources/resolve",
-  "POST /api/issues/{id}/interactions/{interactionId}/accept",
-  "POST /api/issues/{id}/interactions/{interactionId}/reject",
-  "POST /api/issues/{id}/interactions/{interactionId}/respond",
   "GET /api/companies/{companyId}/tools/gallery",
   "POST /api/companies/{companyId}/tools/apps/connect",
   "POST /api/companies/{companyId}/tools/apps/{connectionId}/finish",
@@ -789,8 +970,6 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/tool-connections/{connectionId}/test-agents",
   "POST /api/tool-connections/{connectionId}/test-calls",
   "GET /api/tool-connections/{connectionId}/test-calls/{actionRequestId}",
-  "POST /api/agents/me/connections/{connectionId}/start-authorization",
-  "POST /api/agents/me/connections/{connectionId}/token",
   "POST /api/tools/oauth/{connectionId}/start",
   "GET /api/tools/oauth/callback",
   "GET /api/companies/{companyId}/tools/profiles",
@@ -830,8 +1009,8 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/tool-gateway/gateways/{gatewayId}",
   "POST /api/tool-gateway/gateways/{gatewayId}/tokens",
   "POST /api/tool-gateway/gateway-tokens/{tokenId}/revoke",
-  "POST /api/tool-gateway/action-requests/{id}/approve",
-  "POST /api/tool-gateway/action-requests/{id}/decline",
+  "POST /api/companies/{companyId}/tools/action-requests/{id}/approve",
+  "POST /api/companies/{companyId}/tools/action-requests/{id}/decline",
 ]);
 
 const INSTANCE_ADMIN_OPERATIONS = new Set([
@@ -845,9 +1024,8 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
 
 const CREATED_OPERATIONS = new Set([
   "POST /api/adapters/install",
-  "POST /api/companies/{companyId}/agent-hires",
-  "POST /api/companies/{companyId}/agents",
-  "POST /api/agents/{id}/keys",
+  "POST /api/companies/{companyId}/runtime-agents",
+  "POST /api/agents/{id}/adapter-config-revisions",
   "POST /api/companies/{companyId}/approvals",
   "POST /api/approvals/{id}/comments",
   "POST /api/companies/{companyId}/assets/images",
@@ -856,8 +1034,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/board-api-keys",
   "POST /api/companies",
   "POST /api/companies/{companyId}/invites",
-  "POST /api/companies/{companyId}/openclaw/invite-prompt",
-  "POST /api/companies/{companyId}/cost-events",
   "POST /api/companies/{companyId}/finance-events",
   "POST /api/companies/{companyId}/secret-provider-configs",
   "POST /api/companies/{companyId}/environments",
@@ -873,7 +1049,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/issues/{id}/approvals",
   "POST /api/companies/{companyId}/issues",
   "POST /api/issues/{id}/children",
-  "POST /api/issues/{id}/interactions",
   "POST /api/issues/{id}/comments",
   "POST /api/companies/{companyId}/issues/{issueId}/attachments",
   "POST /api/companies/{companyId}/projects",
@@ -887,7 +1062,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/me/user-secrets",
   "POST /api/companies/{companyId}/skills",
   "POST /api/companies/{companyId}/skills/import",
-  "POST /api/join-requests/{requestId}/claim-api-key",
   "POST /api/admin/users/{userId}/promote-instance-admin",
   "POST /api/plugins/install",
   "POST /api/instance/database-backups",
@@ -896,7 +1070,6 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/tools/action-requests/{actionRequestId}/trust-rule",
   "POST /api/companies/{companyId}/tools/gateways",
   "POST /api/tool-gateway/gateways/{gatewayId}/tokens",
-  "POST /api/tool-gateway/sessions",
 ]);
 
 const ACCEPTED_OPERATIONS = new Set([
@@ -927,6 +1100,7 @@ function isBoardOnlyOperation(method: string, path: string) {
 function resolveOperationAuthLevel(method: string, path: string): OpenApiAuthLevel {
   const key = operationKey(method, path);
   if (PUBLIC_OPERATIONS.has(key)) return "public";
+  if (RUN_INTERFACE_OPERATIONS.has(key)) return "run_interface";
   if (INSTANCE_ADMIN_OPERATIONS.has(key)) return "instance_admin";
   if (isBoardOnlyOperation(method, path)) return "board";
   return "authenticated";
@@ -959,12 +1133,12 @@ function applyDocumentFixups(document: any): any {
       bearerFormat: "Board API Key",
       description: "Board API key presented in the Authorization bearer header.",
     },
-    [AGENT_BEARER_AUTH_SCHEME]: {
+    [RUN_INTERFACE_AUTH_SCHEME]: {
       type: "http",
       scheme: "bearer",
-      bearerFormat: "Agent API Key or Agent JWT",
+      bearerFormat: "Run Interface Bearer",
       description:
-        "Agent API key or Paperclip-issued local agent JWT presented in the Authorization bearer header.",
+        "Single-run bearer accepted only by the compiled paperclip.run-tools/v1 endpoint.",
     },
   };
   document.security = AUTHENTICATED_SECURITY;
@@ -974,6 +1148,8 @@ function applyDocumentFixups(document: any): any {
       const authLevel = resolveOperationAuthLevel(method, path);
       if (authLevel === "public") {
         operation.security = [];
+      } else if (authLevel === "run_interface") {
+        operation.security = RUN_INTERFACE_SECURITY;
       } else if (authLevel === "authenticated") {
         operation.security = AUTHENTICATED_SECURITY;
       } else {
@@ -983,10 +1159,12 @@ function applyDocumentFixups(document: any): any {
       operation["x-paperclip-authorization"] =
         authLevel === "instance_admin"
           ? { actor: "board", instanceAdmin: true }
+          : authLevel === "run_interface"
+            ? { actor: "run_interface" }
           : authLevel === "board"
             ? { actor: "board" }
             : authLevel === "authenticated"
-              ? { actor: "board_or_agent" }
+              ? { actor: "board" }
               : { actor: "public" };
 
       const key = operationKey(method, path);
@@ -1019,7 +1197,6 @@ registry.registerPath({
     200: r.ok(z.object({
       status: z.enum(["ok", "unhealthy"]),
       version: z.string().optional(),
-      deploymentMode: z.string().optional(),
       bootstrapStatus: z.enum(["ready", "bootstrap_pending"]).optional(),
       bootstrapInviteActive: z.boolean().optional(),
       databaseBackup: z.object({
@@ -1156,6 +1333,20 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/runtime-agent-tool-options",
+  tags: ["agents"],
+  summary: "List active company-installed tools eligible for agent creation",
+  request: { params: z.object({ companyId: z.string().uuid() }) },
+  responses: {
+    200: r.ok(runtimeAgentCompanyToolOptionsSchema),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/timeline",
   tags: ["companies"],
   summary: "Get company work timeline",
@@ -1278,105 +1469,6 @@ for (const route of [
 
 // ─── Agents ──────────────────────────────────────────────────────────────────
 
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/built-in-agents",
-  tags: ["agents"],
-  summary: "List built-in agent provisioning state",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/built-in-agents/{key}/status",
-  tags: ["agents"],
-  summary: "Get built-in agent bundle status",
-  request: { params: z.object({ companyId: z.string(), key: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/built-in-agents/{key}/reconcile",
-  tags: ["agents"],
-  summary: "Reconcile built-in agent managed resources",
-  request: {
-    params: z.object({ companyId: z.string(), key: z.string() }),
-    body: jsonBody(builtInAgentEmptyMutationSchema),
-  },
-  responses: {
-    200: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-    422: r.unprocessable,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/built-in-agents/{key}/provision",
-  tags: ["agents"],
-  summary: "Provision a built-in agent",
-  request: {
-    params: z.object({ companyId: z.string(), key: z.string() }),
-    body: jsonBody(builtInAgentProvisionSchema),
-  },
-  responses: {
-    200: r.ok(),
-    202: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/built-in-agents/{key}/reset",
-  tags: ["agents"],
-  summary: "Reset a built-in agent",
-  request: { params: z.object({ companyId: z.string(), key: z.string() }) },
-  responses: {
-    200: r.ok(),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-  },
-});
-
-for (const route of [
-  ["enable", "Enable a built-in routine schedule", 200],
-  ["disable", "Disable a built-in routine schedule", 200],
-  ["run", "Run a built-in routine once", 202],
-] as const) {
-  registry.registerPath({
-    method: "post",
-    path: `/api/companies/{companyId}/built-in-agents/{key}/routines/{routineKey}/${route[0]}`,
-    tags: ["agents"],
-    summary: route[1],
-    request: {
-      params: z.object({ companyId: z.string(), key: z.string(), routineKey: z.string() }),
-      body: jsonBody(builtInAgentEmptyMutationSchema),
-    },
-    responses: {
-      [route[2]]: r.ok(),
-      400: r.badRequest,
-      401: r.unauthorized,
-      403: r.forbidden,
-      404: r.notFound,
-      409: r.conflict,
-      422: r.unprocessable,
-    },
-  });
-}
-
 const summarySlotParams = z.object({
   companyId: z.string(),
   scopeKind: z.string(),
@@ -1403,30 +1495,13 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/summary-slots/{scopeKind}/{slotKey}/generate",
+  path: "/api/companies/{companyId}/summary-slots/{scopeKind}/{slotKey}/refresh",
   tags: ["summaries"],
-  summary: "Manually generate (or refresh) a summary slot",
-  request: { params: summarySlotParams, body: jsonBody(generateSummarySlotSchema) },
+  summary: "Dispatch a manual summary-slot refresh through its configured routine",
+  request: { params: summarySlotParams, body: jsonBody(refreshSummarySlotSchema) },
   responses: {
     200: r.ok(),
     202: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-    422: r.unprocessable,
-  },
-});
-
-registry.registerPath({
-  method: "put",
-  path: "/api/companies/{companyId}/summary-slots/{scopeKind}/{slotKey}",
-  tags: ["summaries"],
-  summary: "Write a summary revision (Summarizer built-in agent only)",
-  request: { params: summarySlotParams, body: jsonBody(writeSummarySlotSchema) },
-  responses: {
-    200: r.ok(),
     400: r.badRequest,
     401: r.unauthorized,
     403: r.forbidden,
@@ -1446,27 +1521,47 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/agents",
+  method: "get",
+  path: "/api/companies/{companyId}/issue-owner-catalog",
   tags: ["agents"],
-  summary: "Create an agent",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(createAgentSchema),
+  summary: "List agents eligible to own or be mentioned in an issue",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: {
+    200: r.ok(z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      title: z.string().nullable(),
+      icon: z.string().nullable(),
+    }).strict())),
+    401: r.unauthorized,
+    403: r.forbidden,
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/agent-hires",
+  path: "/api/companies/{companyId}/runtime-agents",
   tags: ["agents"],
-  summary: "Hire an agent",
+  summary: "Create a fully explicit runtime-agent configuration",
   request: {
     params: z.object({ companyId: z.string() }),
-    body: jsonBody(createAgentHireSchema),
+    body: jsonBody(runtimeAgentCreateConfigurationSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: {
+    200: r.ok(z.object({
+      comment: boardIssueCommentSchema,
+      retried: z.boolean(),
+    }).strict()),
+    201: r.ok(z.object({
+      comment: boardIssueCommentSchema,
+      retried: z.boolean(),
+    }).strict()),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
@@ -1489,83 +1584,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/agents/me",
-  tags: ["agents"],
-  summary: "Get the current agent",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/me/inbox-lite",
-  tags: ["agents"],
-  summary: "Get current agent inbox (lite)",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-const AgentSecretListResponseSchema = z.object({
-  secrets: z.array(z.object({
-    key: z.string(),
-    name: z.string(),
-    description: z.string().nullable(),
-    delivery: z.enum(["env", "api", "both"]),
-    projectionClass: z.string(),
-    latestVersion: z.number().int().nonnegative(),
-    versionSelector: z.union([z.literal("latest"), z.number().int().positive()]),
-    resolvedVersion: z.number().int().positive(),
-  })),
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/me/secrets",
-  tags: ["secrets"],
-  summary: "List secrets accessible to the current agent run",
-  responses: {
-    200: { description: "Accessible secret metadata", content: { "application/json": { schema: AgentSecretListResponseSchema } } },
-    401: r.unauthorized,
-    403: r.forbidden,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/me/secrets/{key}/value",
-  tags: ["secrets"],
-  summary: "Fetch one secret value for the current agent run",
-  request: { params: z.object({ key: z.string() }) },
-  responses: {
-    200: {
-      description: "Decrypted secret value",
-      content: { "application/json": { schema: z.object({ key: z.string(), value: z.string(), version: z.number().int().positive() }) } },
-    },
-    401: r.unauthorized,
-    403: r.forbidden,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/me/connections/{connectionId}/token",
-  tags: ["tools"],
-  summary: "Mint a short-lived token for an agent connection",
-  request: {
-    params: z.object({ connectionId: z.string() }),
-    body: jsonBody(connectionTokenRequestSchema),
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 429: r.tooManyRequests },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/me/inbox/mine",
-  tags: ["agents"],
-  summary: "Get current agent assigned inbox items",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
   path: "/api/agents/{id}",
   tags: ["agents"],
   summary: "Get an agent",
@@ -1574,99 +1592,181 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: "patch",
-  path: "/api/agents/{id}",
+  method: "get",
+  path: "/api/agents/{id}/runtime-state",
   tags: ["agents"],
-  summary: "Update an agent",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(updateAgentSchema.omit({ permissions: true })),
+  summary: "Get canonical operational runtime state for an agent",
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/agents/{id}",
-  tags: ["agents"],
-  summary: "Delete an agent",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/agents/{id}/permissions",
-  tags: ["agents"],
-  summary: "Update agent permissions",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(updateAgentPermissionsSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/agents/{id}/instructions-path",
-  tags: ["agents"],
-  summary: "Update agent instructions path",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(updateAgentInstructionsPathSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/agents/{id}/instructions-bundle",
+  path: "/api/agents/{id}/runtime-configuration",
   tags: ["agents"],
-  summary: "Get agent instructions bundle",
+  summary: "Read explicit agent context, action, mention, and company-tool selections",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/agents/{id}/instructions-bundle",
-  tags: ["agents"],
-  summary: "Update agent instructions bundle",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(updateAgentInstructionsBundleSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/agents/{id}/instructions-bundle/file",
+  path: "/api/agents/{id}/runtime-configuration/tool-options",
   tags: ["agents"],
-  summary: "Get agent instructions file",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+  summary: "List active tools installed for this exact agent",
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: r.ok(runtimeAgentCompanyToolOptionsSchema),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/agents/{id}/runtime-configuration",
+  tags: ["agents"],
+  summary: "Update explicit agent context, action, mention, and company-tool selections",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(runtimeAgentUpdateConfigurationSchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/company-skill-pins",
+  tags: ["agents"],
+  summary: "Read the exact company skill pins from the current agent configuration",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({ companyId: z.string().optional() }),
+  },
+  responses: {
+    200: r.ok(agentCompanySkillPinsResponseSchema),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
   method: "put",
-  path: "/api/agents/{id}/instructions-bundle/file",
+  path: "/api/agents/{id}/company-skill-pins",
   tags: ["agents"],
-  summary: "Upsert agent instructions file",
+  summary: "Replace the exact company skill pins and append the derived adapter snapshot",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(upsertAgentInstructionsFileSchema),
+    query: z.object({ companyId: z.string().optional() }),
+    body: jsonBody(agentCompanySkillPinsUpdateSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: {
+    200: r.ok(agentCompanySkillPinsResponseSchema),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
-  method: "delete",
-  path: "/api/agents/{id}/instructions-bundle/file",
+  method: "get",
+  path: "/api/agents/{id}/adapter-config-revisions",
   tags: ["agents"],
-  summary: "Delete agent instructions file",
+  summary: "List immutable adapter configuration revisions, newest first",
   request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: {
+    200: r.ok(z.array(publicAgentAdapterRevisionSchema)),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/adapter-config-revisions/current",
+  tags: ["agents"],
+  summary: "Get the current immutable adapter configuration revision",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: r.ok(publicAgentAdapterRevisionSchema),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/adapter-config-revisions",
+  tags: ["agents"],
+  summary: "Append and select an adapter configuration revision",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(agentAdapterRevisionConfigurationSchema),
+  },
+  responses: {
+    200: r.ok(publicAgentAdapterRevisionCreateResponseSchema),
+    201: r.ok(publicAgentAdapterRevisionCreateResponseSchema),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/agents/{id}/operational-configuration",
+  tags: ["agents"],
+  summary: "Update board-owned display and operational configuration",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(agentOperationalConfigurationUpdateSchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/plugin-management/adopt",
+  tags: ["agents"],
+  summary: "Adopt a paused plugin-managed agent into board management",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
 });
 
 registry.registerPath({
@@ -1694,108 +1794,6 @@ registry.registerPath({
   summary: "Get an agent config revision",
   request: { params: z.object({ id: z.string(), revisionId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/config-revisions/{revisionId}/rollback",
-  tags: ["agents"],
-  summary: "Roll back to a config revision",
-  request: { params: z.object({ id: z.string(), revisionId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/{id}/runtime-state",
-  tags: ["agents"],
-  summary: "Get agent runtime state",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/runtime-state/reset-session",
-  tags: ["agents"],
-  summary: "Reset agent session",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(resetAgentSessionSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/{id}/task-sessions",
-  tags: ["agents"],
-  summary: "List agent task sessions",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/{id}/skills",
-  tags: ["agents"],
-  summary: "List agent skills",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/skills/sync",
-  tags: ["agents"],
-  summary: "Sync desired skills onto an agent configuration",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(agentSkillSyncSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/agents/{id}/keys",
-  tags: ["agents"],
-  summary: "List agent API keys",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/keys",
-  tags: ["agents"],
-  summary: "Create an agent API key",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(createAgentKeySchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/agents/{id}/keys/{keyId}",
-  tags: ["agents"],
-  summary: "Delete an agent API key",
-  request: { params: z.object({ id: z.string(), keyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/wakeup",
-  tags: ["agents"],
-  summary: "Wake up an agent",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(wakeAgentSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
@@ -1834,14 +1832,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/instance/scheduler-heartbeats",
-  tags: ["agents"],
-  summary: "List scheduler heartbeats",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
 // ─── Adapters ────────────────────────────────────────────────────────────────
 
 registry.registerPath({
@@ -1853,27 +1843,6 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/adapters/{type}/detect-model",
-  tags: ["adapters"],
-  summary: "Detect active model for an adapter",
-  request: { params: z.object({ companyId: z.string(), type: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/adapters/{type}/test-environment",
-  tags: ["adapters"],
-  summary: "Validate adapter environment access for a company",
-  request: {
-    params: z.object({ companyId: z.string(), type: z.string() }),
-    body: jsonBody(testAdapterEnvironmentSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
 // ─── Issues ──────────────────────────────────────────────────────────────────
 
 registry.registerPath({
@@ -1881,7 +1850,7 @@ registry.registerPath({
   path: "/api/companies/{companyId}/issues",
   tags: ["issues"],
   summary: "List issues in a company",
-  description: "Use `view=compact` for the board issue-list row contract. The default response remains the broad compatibility contract.",
+  description: "Use `view=compact` for the compact board issue-list row contract. The default response is the canonical full issue-list contract.",
   request: {
     params: z.object({ companyId: z.string() }),
     query: z.object({ view: z.enum(["compact"]).optional() }).passthrough(),
@@ -1898,7 +1867,15 @@ registry.registerPath({
     params: z.object({ companyId: z.string() }),
     body: jsonBody(createIssueSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
@@ -1914,37 +1891,186 @@ registry.registerPath({
   method: "patch",
   path: "/api/issues/{id}",
   tags: ["issues"],
-  summary: "Update an issue",
+  summary: "Update board-editable issue title metadata",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(updateIssueSchema.partial()),
+    body: jsonBody(updateIssueTitleSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
-  method: "delete",
-  path: "/api/issues/{id}",
+  method: "put",
+  path: "/api/issues/{id}/execution-policy",
   tags: ["issues"],
-  summary: "Delete an issue",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+  summary: "Configure the board-owned execution policy for an issue",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(updateIssueExecutionPolicySchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
-  method: "get",
-  path: "/api/issues/{id}/heartbeat-context",
+  method: "post",
+  path: "/api/issues/{id}/execution-policy/decisions",
   tags: ["issues"],
-  summary: "Get issue heartbeat context",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  summary: "Append a decision for the active board execution-policy stage",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(decideIssueExecutionStageSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/reassign",
+  tags: ["issues"],
+  summary: "Reassign an issue through the separately audited board entrance",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(reassignIssueSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/creator-reassign",
+  tags: ["issues"],
+  summary: "Reassign an issue as its immutable named-user creator",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(reassignIssueSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/withdrawal-self-assignment",
+  tags: ["issues"],
+  summary:
+    "Let the immutable named-user creator self-assign for cancellation only",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(selfAssignIssueWithdrawalSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issue-creator-form-updates",
+  tags: ["issues"],
+  summary: "Commit an exact authenticated named-creator form update",
+  request: {
+    body: jsonBody(commitIssueCreatorFormSchema),
+  },
+  responses: {
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issue-owner-form-updates",
+  tags: ["issues"],
+  summary:
+    "Commit a documented human escalation or withdrawal owner form update",
+  request: {
+    body: jsonBody(commitIssueOwnerFormSchema),
+  },
+  responses: {
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/reopen",
+  tags: ["issues"],
+  summary: "Reopen a terminal issue through the audited board command",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(reopenIssueSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
 });
 
 registry.registerPath({
   method: "get",
   path: "/api/issues/{id}/watchdog",
   tags: ["issues"],
-  summary: "Get active issue watchdog",
+  summary: "Get active issue system safeguard",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
@@ -1953,7 +2079,7 @@ registry.registerPath({
   method: "put",
   path: "/api/issues/{id}/watchdog",
   tags: ["issues"],
-  summary: "Create or update an issue watchdog",
+  summary: "Enable an issue system safeguard",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(upsertIssueWatchdogSchema),
@@ -1965,7 +2091,7 @@ registry.registerPath({
   method: "delete",
   path: "/api/issues/{id}/watchdog",
   tags: ["issues"],
-  summary: "Disable an issue watchdog",
+  summary: "Disable an issue system safeguard",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
@@ -2076,30 +2202,36 @@ registry.registerPath({
   method: "get",
   path: "/api/issues/{id}/comments",
   tags: ["issues"],
-  summary: "List issue comments",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  summary: "Page root-grouped issue comments",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      cursor: z.string().min(1).optional(),
+      limit: z.coerce.number().int().min(1).max(500).optional(),
+      entryLimit: z.coerce.number().int().min(1).max(500).optional(),
+    }).strict(),
+  },
+  responses: { 200: r.ok(boardIssueCommentGroupPageSchema), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/issues/{id}/comments",
   tags: ["issues"],
-  summary: "Add a comment to an issue",
+  summary: "Add a typed user comment with an optional explicit current-owner mention",
   request: {
     params: z.object({ id: z.string() }),
-    body: jsonBody(addIssueCommentSchema),
+    body: jsonBody(createIssueUserCommentSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "delete",
-  path: "/api/issues/{id}/comments/{commentId}",
-  tags: ["issues"],
-  summary: "Delete an issue comment",
-  request: { params: z.object({ id: z.string(), commentId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
 });
 
 registry.registerPath({
@@ -2129,27 +2261,6 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Unlink an approval from an issue",
   request: { params: z.object({ id: z.string(), approvalId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/checkout",
-  tags: ["issues"],
-  summary: "Check out an issue",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(checkoutIssueSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/release",
-  tags: ["issues"],
-  summary: "Release an issue",
-  request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -2885,33 +2996,232 @@ registry.registerPath({
 
 // ─── Costs ───────────────────────────────────────────────────────────────────
 
-const costSummaryPaths = [
-  "summary", "by-agent", "by-agent-model", "by-provider",
-  "by-biller", "by-project", "finance-summary", "finance-by-biller",
-  "finance-by-kind", "finance-events", "window-spend", "quota-windows",
-] as const;
+const costRangeQuerySchema = z.object({
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+}).strict();
 
-for (const segment of costSummaryPaths) {
-  registry.registerPath({
-    method: "get",
-    path: `/api/companies/{companyId}/costs/${segment}`,
-    tags: ["costs"],
-    summary: `Cost report: ${segment}`,
-    request: { params: z.object({ companyId: z.string() }) },
-    responses: { 200: r.ok(), 401: r.unauthorized },
-  });
-}
+const costListQuerySchema = costRangeQuerySchema.extend({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+}).strict();
+
+const costSummaryResponseSchema = z.object({
+  companyId: z.string().uuid(),
+  budgetCurrency: budgetCurrencySchema,
+  knownSpendAmount: moneyAmountSchema,
+  budgetMonthlyAmount: moneyAmountSchema,
+  remainingAmount: moneyAmountSchema,
+  utilizationPercent: z.number().nonnegative(),
+  pricedPromptCount: z.number().int().nonnegative(),
+  unpricedPromptCount: z.number().int().nonnegative(),
+}).strict();
+
+const costByAgentResponseSchema = z.array(z.object({
+  agentId: z.string().uuid(),
+  agentName: z.string().nullable(),
+  agentStatus: z.string().nullable(),
+  budgetCurrency: budgetCurrencySchema,
+  knownCostAmount: moneyAmountSchema,
+  pricedPromptCount: z.number().int().nonnegative(),
+  unpricedPromptCount: z.number().int().nonnegative(),
+}).strict());
+
+const costByProjectResponseSchema = z.array(z.object({
+  projectId: z.string().uuid().nullable(),
+  projectName: z.string().nullable(),
+  budgetCurrency: budgetCurrencySchema,
+  knownCostAmount: moneyAmountSchema,
+  pricedPromptCount: z.number().int().nonnegative(),
+  unpricedPromptCount: z.number().int().nonnegative(),
+}).strict());
+
+const issueCostSummaryResponseSchema = z.object({
+  issueId: z.string().uuid(),
+  issueCount: z.number().int().nonnegative(),
+  includeDescendants: z.boolean(),
+  budgetCurrency: budgetCurrencySchema,
+  knownCostAmount: moneyAmountSchema,
+  pricedPromptCount: z.number().int().nonnegative(),
+  unpricedPromptCount: z.number().int().nonnegative(),
+  runCount: z.number().int().nonnegative(),
+  runtimeMs: z.number().nonnegative(),
+}).strict();
+
+const canonicalCostEventResponseSchema = z.object({
+  id: z.string().uuid(),
+  accountingId: z.string().uuid(),
+  companyId: z.string().uuid(),
+  issueId: z.string().uuid(),
+  agentId: z.string().uuid(),
+  runId: z.string().uuid(),
+  runKind: z.enum(ISSUE_EXECUTION_RUN_KINDS),
+  promptKind: z.enum(["base", "steering", "compaction"]),
+  refId: z.string().uuid().nullable(),
+  runOrdinal: z.number().int().nonnegative().nullable(),
+  segmentOrdinal: z.number().int().nonnegative().nullable(),
+  compactionControlId: z.string().uuid().nullable(),
+  budgetCurrency: budgetCurrencySchema,
+  kind: z.enum(["known", "unavailable"]),
+  unavailableReason: z.enum(ACP_COST_UNAVAILABLE_REASONS).nullable(),
+  observedCumulativeAmount: moneyAmountSchema.nullable(),
+  observedCurrency: z.string().nullable(),
+  knownDeltaAmount: moneyAmountSchema.nullable(),
+  cursorBeforeState: z.enum(ACP_COST_CURSOR_STATES),
+  cursorBeforeAmount: moneyAmountSchema.nullable(),
+  cursorBeforeCurrency: budgetCurrencySchema.nullable(),
+  cursorAfterState: z.enum(["known", "unavailable"]),
+  cursorAfterAmount: moneyAmountSchema.nullable(),
+  cursorAfterCurrency: budgetCurrencySchema.nullable(),
+  occurredAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+const financeSummaryRowResponseSchema = z.object({
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  debitAmount: moneyAmountSchema,
+  creditAmount: moneyAmountSchema,
+  netDirection: z.enum(["debit", "credit"]),
+  netAmount: moneyAmountSchema,
+  estimatedDebitAmount: moneyAmountSchema,
+  eventCount: z.number().int().nonnegative(),
+}).strict();
+
+const financeEventResponseSchema = z.object({
+  amount: moneyAmountSchema,
+  currency: z.string().regex(/^[A-Z]{3}$/),
+}).passthrough();
+
+const budgetPolicySummaryResponseSchema = z.object({
+  budgetCurrency: budgetCurrencySchema,
+  limitAmount: moneyAmountSchema,
+  observedAmount: moneyAmountSchema,
+  remainingAmount: moneyAmountSchema,
+}).passthrough();
+
+const budgetIncidentResponseSchema = z.object({
+  budgetCurrency: budgetCurrencySchema,
+  limitAmount: moneyAmountSchema,
+  observedAmount: moneyAmountSchema,
+}).passthrough();
 
 registry.registerPath({
-  method: "post",
-  path: "/api/companies/{companyId}/cost-events",
+  method: "get",
+  path: "/api/companies/{companyId}/costs/summary",
   tags: ["costs"],
-  summary: "Record a cost event",
+  summary: "Get canonical AI cost summary",
   request: {
     params: z.object({ companyId: z.string() }),
-    body: jsonBody(createCostEventSchema),
+    query: costRangeQuerySchema,
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: { 200: r.ok(costSummaryResponseSchema), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/by-agent",
+  tags: ["costs"],
+  summary: "Get canonical AI costs by agent",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costRangeQuerySchema,
+  },
+  responses: { 200: r.ok(costByAgentResponseSchema), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/by-project",
+  tags: ["costs"],
+  summary: "Get canonical AI costs by project",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costRangeQuerySchema,
+  },
+  responses: { 200: r.ok(costByProjectResponseSchema), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/cost-events",
+  tags: ["costs"],
+  summary: "List canonical settled-prompt cost facts",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costListQuerySchema,
+  },
+  responses: {
+    200: r.ok(z.array(canonicalCostEventResponseSchema)),
+    401: r.unauthorized,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/finance-summary",
+  tags: ["costs"],
+  summary: "Get finance totals grouped by currency",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costRangeQuerySchema,
+  },
+  responses: {
+    200: r.ok(z.object({
+      companyId: z.string().uuid(),
+      currencies: z.array(financeSummaryRowResponseSchema),
+    }).strict()),
+    401: r.unauthorized,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/finance-by-biller",
+  tags: ["costs"],
+  summary: "Get finance totals by biller and currency",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costRangeQuerySchema,
+  },
+  responses: {
+    200: r.ok(z.array(financeSummaryRowResponseSchema.extend({
+      biller: z.string(),
+      kindCount: z.number().int().nonnegative(),
+    }).strict())),
+    401: r.unauthorized,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/finance-by-kind",
+  tags: ["costs"],
+  summary: "Get finance totals by kind and currency",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costRangeQuerySchema,
+  },
+  responses: {
+    200: r.ok(z.array(financeSummaryRowResponseSchema.extend({
+      eventKind: z.string(),
+      billerCount: z.number().int().nonnegative(),
+    }).strict())),
+    401: r.unauthorized,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/costs/finance-events",
+  tags: ["costs"],
+  summary: "List finance events",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: costListQuerySchema,
+  },
+  responses: {
+    200: r.ok(z.array(financeEventResponseSchema)),
+    401: r.unauthorized,
+  },
 });
 
 registry.registerPath({
@@ -2923,7 +3233,7 @@ registry.registerPath({
     params: z.object({ companyId: z.string() }),
     body: jsonBody(createFinanceEventSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: { 201: r.ok(financeEventResponseSchema), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
@@ -2935,7 +3245,7 @@ registry.registerPath({
     params: z.object({ companyId: z.string() }),
     body: jsonBody(upsertBudgetPolicySchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+  responses: { 200: r.ok(budgetPolicySummaryResponseSchema), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -2947,7 +3257,7 @@ registry.registerPath({
     params: z.object({ companyId: z.string(), incidentId: z.string() }),
     body: jsonBody(resolveBudgetIncidentSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+  responses: { 200: r.ok(budgetIncidentResponseSchema), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -2956,7 +3266,18 @@ registry.registerPath({
   tags: ["costs"],
   summary: "Get budget overview",
   request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: {
+    200: r.ok(z.object({
+      companyId: z.string().uuid(),
+      budgetCurrency: budgetCurrencySchema,
+      policies: z.array(budgetPolicySummaryResponseSchema),
+      activeIncidents: z.array(budgetIncidentResponseSchema),
+      pausedAgentCount: z.number().int().nonnegative(),
+      pausedProjectCount: z.number().int().nonnegative(),
+      pendingApprovalCount: z.number().int().nonnegative(),
+    }).strict()),
+    401: r.unauthorized,
+  },
 });
 
 registry.registerPath({
@@ -2966,21 +3287,9 @@ registry.registerPath({
   summary: "Update company budget",
   request: {
     params: z.object({ companyId: z.string() }),
-    body: jsonBody(updateBudgetSchema),
+    body: jsonBody(updateCompanyBudgetSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/agents/{agentId}/budgets",
-  tags: ["costs"],
-  summary: "Update agent budget",
-  request: {
-    params: z.object({ agentId: z.string() }),
-    body: jsonBody(updateBudgetSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: { 200: r.ok(budgetPolicySummaryResponseSchema), 400: r.badRequest, 401: r.unauthorized },
 });
 
 // ─── Activity ────────────────────────────────────────────────────────────────
@@ -3026,19 +3335,32 @@ registry.registerPath({
 registry.registerPath({
   method: "get",
   path: "/api/issues/{id}/runs",
-  tags: ["activity"],
-  summary: "List runs for an issue",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/heartbeat-runs/{runId}/issues",
-  tags: ["activity"],
-  summary: "List issues for a heartbeat run",
-  request: { params: z.object({ runId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  tags: ["runs"],
+  summary: "List canonical issue execution run envelopes for an issue",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z
+      .object({
+        status: z.string().min(1).optional(),
+        cursor: z.string().max(1000).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      })
+      .strict(),
+  },
+  responses: {
+    200: r.ok(
+      z
+        .object({
+          items: z.array(issueExecutionRunEnvelopeRecordSchema),
+          nextCursor: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -3049,21 +3371,6 @@ registry.registerPath({
   tags: ["dashboard"],
   summary: "Get dashboard data",
   request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/recovery-observability",
-  tags: ["dashboard"],
-  summary: "Get recovery observability report",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    query: z.object({
-      weeks: z.string().optional(),
-      threshold: z.string().optional(),
-    }),
-  },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
@@ -3293,19 +3600,85 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/board/chat/stream",
+  path: "/api/board/chat/messages",
   tags: ["instance"],
-  summary: "Stream a board-level chat response (requires enableConferenceRoomChat)",
+  summary: "Create an ordinary issue-backed Board Chat",
   request: {
     body: jsonBody(
       z.object({
         companyId: z.string(),
         message: z.string(),
-        taskId: z.string().optional(),
-      }),
+        agentId: z.string(),
+        idempotencyKey: z.string().optional(),
+        attentionMask: issueCreationAttentionMaskSchema.optional(),
+      }).strict(),
     ),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
+// ─── Run interface and narrow control-plane gates ────────────────────────────
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/run-tools",
+  tags: ["runs"],
+  summary: "Call the run-scoped paperclip.run-tools/v1 interface",
+  body: z.object({
+    jsonrpc: z.literal("2.0"),
+    id: z.union([z.string(), z.number(), z.null()]).optional(),
+    method: z.enum(["initialize", "tools/list", "tools/call"]),
+    params: z.unknown().optional(),
+  }).strict(),
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+  },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/change-consents",
+  tags: ["agents"],
+  summary: "List target-bound agent configuration change consents",
+  query: z.object({
+    status: z.enum(["pending", "accepted", "rejected", "expired"]).optional(),
+  }).strict(),
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/change-consents/{consentId}/decision",
+  tags: ["agents"],
+  summary: "Record the named board user's change-consent decision",
+  body: z.object({
+    decision: z.enum(["accepted", "rejected"]),
+    reason: z.string().trim().max(4_000).nullable().optional(),
+  }).strict(),
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/session-compaction-settings",
+  tags: ["instance"],
+  summary: "Get company issue-session compaction settings",
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/session-compaction-settings",
+  tags: ["instance"],
+  summary: "Update company issue-session compaction settings",
+  body: updateSessionCompactionSettingsSchema,
 });
 
 // ─── Access / invites / members ───────────────────────────────────────────────
@@ -3345,8 +3718,18 @@ registry.registerPath({
   path: "/api/companies/{companyId}/join-requests/{requestId}/approve",
   tags: ["access"],
   summary: "Approve a company join request",
-  request: { params: z.object({ companyId: z.string(), requestId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+  request: {
+    params: z.object({ companyId: z.string(), requestId: z.string() }),
+    body: jsonBody(approveJoinRequestSchema),
+  },
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
@@ -3464,18 +3847,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/companies/{companyId}/openclaw/invite-prompt",
-  tags: ["access"],
-  summary: "Create an OpenClaw invite prompt bundle",
-  request: {
-    params: z.object({ companyId: z.string() }),
-    body: jsonBody(createOpenClawInvitePromptSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
   path: "/api/cli-auth/challenges",
   tags: ["access"],
   summary: "Create a CLI auth challenge",
@@ -3517,43 +3888,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/skills/available",
-  tags: ["access"],
-  summary: "List available skills",
-  responses: { 200: r.ok() },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/skills/index",
-  tags: ["access"],
-  summary: "Get skills index",
-  responses: { 200: r.ok() },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/skills/{skillName}",
-  tags: ["access"],
-  summary: "Get a skill by name",
-  request: { params: z.object({ skillName: z.string() }) },
-  responses: { 200: r.ok(), 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/join-requests/{requestId}/claim-api-key",
-  tags: ["access"],
-  summary: "Claim the initial API key for an approved agent join request",
-  request: {
-    params: z.object({ requestId: z.string() }),
-    body: jsonBody(claimJoinRequestApiKeySchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 403: r.forbidden, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
   path: "/api/admin/users",
   tags: ["admin"],
   summary: "List all users (admin)",
@@ -3571,18 +3905,10 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: "get",
-  path: "/api/auth/profile",
+  method: "post",
+  path: "/api/auth/update-user",
   tags: ["auth"],
-  summary: "Get current user profile",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "patch",
-  path: "/api/auth/profile",
-  tags: ["auth"],
-  summary: "Update current user profile",
+  summary: "Update the current Better Auth user",
   request: { body: jsonBody(updateCurrentUserProfileSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
@@ -3596,104 +3922,105 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
 });
 
-// ─── Heartbeat runs ──────────────────────────────────────────────────────────
+// ─── Issue execution runs ────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "get",
-  path: "/api/companies/{companyId}/heartbeat-runs",
+  path: "/api/companies/{companyId}/runs",
   tags: ["runs"],
-  summary: "List heartbeat runs for a company",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/companies/{companyId}/live-runs",
-  tags: ["runs"],
-  summary: "List live runs for a company",
-  request: { params: z.object({ companyId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{issueId}/live-runs",
-  tags: ["runs"],
-  summary: "List live runs for an issue",
-  request: { params: z.object({ issueId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{issueId}/active-run",
-  tags: ["runs"],
-  summary: "Get active run for an issue",
-  request: { params: z.object({ issueId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/heartbeat-runs/{runId}",
-  tags: ["runs"],
-  summary: "Get a heartbeat run",
-  request: { params: z.object({ runId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/heartbeat-runs/{runId}/cancel",
-  tags: ["runs"],
-  summary: "Cancel a heartbeat run",
-  request: { params: z.object({ runId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/heartbeat-runs/{runId}/watchdog-decisions",
-  tags: ["runs"],
-  summary: "Submit watchdog decisions for a run",
+  summary: "List canonical issue execution run envelopes",
   request: {
-    params: z.object({ runId: z.string() }),
-    body: jsonBody(z.object({
-      decision: z.enum(["snooze", "continue", "dismissed_false_positive"]),
-      evaluationIssueId: z.string().optional().nullable(),
-      reason: z.string().optional().nullable(),
-      snoozedUntil: z.string().datetime().optional().nullable(),
-    })),
+    params: z.object({ companyId: z.string().uuid() }),
+    query: z
+      .object({
+        agentId: z.string().uuid().optional(),
+        status: z.string().min(1).optional(),
+        cursor: z.string().max(1000).optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      })
+      .strict(),
   },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: {
+    200: r.ok(
+      z
+        .object({
+          items: z.array(issueExecutionRunEnvelopeRecordSchema),
+          nextCursor: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/heartbeat-runs/{runId}/events",
+  path: "/api/runs/{runId}",
   tags: ["runs"],
-  summary: "Get events for a heartbeat run",
-  request: { params: z.object({ runId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  summary: "Get the bounded joined detail for an issue execution run",
+  request: {
+    params: z.object({ runId: z.string().uuid() }),
+    query: z
+      .object({
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+      })
+      .strict(),
+  },
+  responses: {
+    200: r.ok(
+      z
+        .object({ run: issueExecutionRunEnvelopeRecordSchema })
+        .passthrough(),
+    ),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
-  method: "get",
-  path: "/api/heartbeat-runs/{runId}/log",
+  method: "post",
+  path: "/api/runs/{runId}/runtime-readiness",
   tags: ["runs"],
-  summary: "Get log for a heartbeat run",
-  request: { params: z.object({ runId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  summary:
+    "Inspect the exact persisted run revision, target, native authentication, and ACP initialize capability",
+  request: {
+    params: z.object({ runId: z.string().uuid() }),
+  },
+  responses: {
+    200: r.ok(adapterRuntimeReadinessSchema),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
-  method: "get",
-  path: "/api/heartbeat-runs/{runId}/workspace-operations",
+  method: "post",
+  path: "/api/runs/{runId}/watchdog-decisions",
   tags: ["runs"],
-  summary: "List workspace operations for a run",
-  request: { params: z.object({ runId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  summary: "Record an audited watchdog decision for an issue execution run",
+  request: {
+    params: z.object({ runId: z.string().uuid() }),
+    body: jsonBody(issueExecutionWatchdogDecisionInputSchema),
+  },
+  responses: {
+    201: {
+      description: "Created",
+      content: {
+        "application/json": {
+          schema: issueExecutionWatchdogDecisionRecordSchema,
+        },
+      },
+    },
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
@@ -3705,105 +4032,7 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
-// ─── Agent runs & heartbeat ───────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/approve",
-  tags: ["agents"],
-  summary: "Approve a pending agent action",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/heartbeat/invoke",
-  tags: ["agents"],
-  summary: "Invoke agent heartbeat",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/agents/{id}/claude-login",
-  tags: ["agents"],
-  summary: "Trigger Claude login for agent",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-// ─── Issue interactions & tree ───────────────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/issues/{id}/interactions",
-  tags: ["issues"],
-  summary: "List issue thread interactions",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/interactions",
-  tags: ["issues"],
-  summary: "Create an issue thread interaction",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: jsonBody(createIssueThreadInteractionSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/interactions/{interactionId}/accept",
-  tags: ["issues"],
-  summary: "Accept an issue thread interaction",
-  request: {
-    params: z.object({ id: z.string(), interactionId: z.string() }),
-    body: jsonBody(acceptIssueThreadInteractionSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/interactions/{interactionId}/reject",
-  tags: ["issues"],
-  summary: "Reject an issue thread interaction",
-  request: {
-    params: z.object({ id: z.string(), interactionId: z.string() }),
-    body: jsonBody(rejectIssueThreadInteractionSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/interactions/{interactionId}/respond",
-  tags: ["issues"],
-  summary: "Answer questions on an issue thread interaction",
-  request: {
-    params: z.object({ id: z.string(), interactionId: z.string() }),
-    body: jsonBody(respondIssueThreadInteractionSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/interactions/{interactionId}/verdicts",
-  tags: ["issues"],
-  summary: "Submit item verdicts on an issue thread interaction",
-  request: {
-    params: z.object({ id: z.string(), interactionId: z.string() }),
-    body: jsonBody(submitIssueThreadInteractionVerdictsSchema),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
-});
+// ─── Issue tree ──────────────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "post",
@@ -3811,16 +4040,16 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Create child issues",
   request: { params: z.object({ id: z.string() }), body: jsonBody(createChildIssueSchema) },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/issues/{id}/admin/force-release",
-  tags: ["issues"],
-  summary: "Force-release an issue (admin)",
-  request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
 });
 
 registry.registerPath({
@@ -4630,7 +4859,10 @@ registry.registerPath({
   path: "/api/adapters",
   tags: ["adapters"],
   summary: "List all adapters",
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: {
+    200: r.ok(z.array(publicAdapterInfoSchema)),
+    401: r.unauthorized,
+  },
 });
 
 registry.registerPath({
@@ -4740,26 +4972,6 @@ registry.registerPath({
   tags: ["plugins"],
   summary: "List plugin tools",
   responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/plugins/tools/execute",
-  tags: ["plugins"],
-  summary: "Execute a plugin tool",
-  request: {
-    body: jsonBody(z.object({
-      tool: z.string(),
-      parameters: z.record(z.unknown()).optional(),
-      runContext: z.object({
-        agentId: z.string(),
-        runId: z.string(),
-        companyId: z.string(),
-        projectId: z.string(),
-      }),
-    })),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
 registry.registerPath({
@@ -5038,7 +5250,26 @@ registry.registerPath({
   tags: ["issues"],
   summary: "Get a single issue comment",
   request: { params: z.object({ id: z.string(), commentId: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+  responses: { 200: r.ok(boardIssueCommentSchema), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/issues/{id}/comments/{rootCommentId}/thread",
+  tags: ["issues"],
+  summary: "Page one root comment group",
+  request: {
+    params: z.object({ id: z.string(), rootCommentId: z.string().uuid() }),
+    query: z.object({
+      cursor: z.string().min(1).optional(),
+      limit: z.coerce.number().int().min(1).max(500).optional(),
+    }).strict(),
+  },
+  responses: {
+    200: r.ok(boardIssueCommentThreadPageSchema),
+    401: r.unauthorized,
+    404: r.notFound,
+  },
 });
 
 registry.registerPath({
@@ -5152,25 +5383,7 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 
-// ─── Board claim & CLI auth ───────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/board-claim/{token}",
-  tags: ["access"],
-  summary: "Get board claim details by token",
-  request: { params: z.object({ token: z.string() }) },
-  responses: { 200: r.ok(), 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/board-claim/{token}/claim",
-  tags: ["access"],
-  summary: "Claim a board token",
-  request: { params: z.object({ token: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
+// ─── CLI auth ─────────────────────────────────────────────────────────────────
 
 registry.registerPath({
   method: "get",
@@ -5208,33 +5421,6 @@ registry.registerPath({
   summary: "Get onboarding instructions as plain text",
   request: { params: z.object({ token: z.string() }) },
   responses: { 200: { description: "Plain text onboarding instructions" }, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/invites/{token}/skills/index",
-  tags: ["access"],
-  summary: "Get skills index for an invite",
-  request: { params: z.object({ token: z.string() }) },
-  responses: { 200: r.ok(), 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/invites/{token}/skills/{skillName}",
-  tags: ["access"],
-  summary: "Get a skill by name for an invite",
-  request: { params: z.object({ token: z.string(), skillName: z.string() }) },
-  responses: { 200: r.ok(), 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/invites/{token}/test-resolution",
-  tags: ["access"],
-  summary: "Test invite token resolution",
-  request: { params: z.object({ token: z.string() }) },
-  responses: { 200: r.ok(), 404: r.notFound },
 });
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
@@ -5329,17 +5515,6 @@ registry.registerPath({
   responses: { 200: { description: "Static file content" }, 404: r.notFound },
 });
 
-// ─── Adapter UI parser ────────────────────────────────────────────────────────
-
-registry.registerPath({
-  method: "get",
-  path: "/api/adapters/{type}/ui-parser.js",
-  tags: ["adapters"],
-  summary: "Get adapter UI parser script",
-  request: { params: z.object({ type: z.string() }) },
-  responses: { 200: { description: "JavaScript file" }, 404: r.notFound },
-});
-
 // ─── Current route coverage ─────────────────────────────────────────────────
 
 registerCurrentRoute({
@@ -5347,6 +5522,11 @@ registerCurrentRoute({
   path: "/api/adapters/{type}",
   tags: ["adapters"],
   summary: "Get adapter registration details",
+  responses: {
+    200: r.ok(publicAdapterInfoSchema),
+    401: r.unauthorized,
+    404: r.notFound,
+  },
 });
 
 registerCurrentRoute({
@@ -5397,7 +5577,6 @@ registerCurrentRoute({
 });
 
 for (const route of [
-  ["get", "/api/companies/import/jobs/{jobId}", "Get company import job status"],
   ["get", "/api/companies/{companyId}/search", "Search company data"],
   ["get", "/api/companies/{companyId}/search/extract", "Extract company search matches"],
   ["get", "/api/companies/{companyId}/issues/count", "Count issues in a company"],
@@ -5470,6 +5649,15 @@ registerCurrentRoute({
   path: "/api/issues/{id}/cost-summary",
   tags: ["costs"],
   summary: "Get issue cost summary",
+  query: z.object({
+    excludeRoot: z.enum(["true", "false", "1", "0"]).optional(),
+  }).strict(),
+  responses: {
+    200: r.ok(issueCostSummaryResponseSchema),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+  },
 });
 
 for (const route of [
@@ -5662,37 +5850,6 @@ for (const route of [
   });
 }
 
-registerCurrentRoute({
-  method: "post",
-  path: "/api/instance/settings/experimental/issue-graph-liveness-auto-recovery/preview",
-  tags: ["instance-settings"],
-  summary: "Preview issue graph liveness auto-recovery",
-  body: issueGraphLivenessAutoRecoveryRequestSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/instance/settings/experimental/issue-graph-liveness-auto-recovery/run",
-  tags: ["instance-settings"],
-  summary: "Run issue graph liveness auto-recovery",
-  body: issueGraphLivenessAutoRecoveryRequestSchema,
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/issues/{id}/accepted-plan-decompositions",
-  tags: ["issues"],
-  summary: "List accepted plan decompositions",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/issues/{id}/accepted-plan-decompositions",
-  tags: ["issues"],
-  summary: "Create accepted plan decomposition child issues",
-  body: createAcceptedPlanDecompositionSchema,
-});
-
 for (const route of [
   ["get", "/api/issues/{id}/documents/{key}/annotations", "List document annotation threads"],
   ["get", "/api/issues/{id}/documents/{key}/annotations/{threadId}", "Get a document annotation thread"],
@@ -5794,53 +5951,9 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
-  path: "/api/issues/{id}/diagnostics/wakes",
-  tags: ["issues"],
-  summary: "Get wake diagnostics for an issue",
-});
-
-registerCurrentRoute({
-  method: "get",
   path: "/api/issues/{id}/diagnostics/subtree",
   tags: ["issues"],
-  summary: "Get bounded subtree wake and blocker diagnostics for an issue",
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/issues/{id}/recovery-actions",
-  tags: ["issues"],
-  summary: "List issue recovery actions",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/issues/{id}/recovery-actions/resolve",
-  tags: ["issues"],
-  summary: "Resolve an issue recovery action",
-  body: resolveIssueRecoveryActionSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/issues/{id}/scheduled-retry/retry-now",
-  tags: ["issues"],
-  summary: "Retry a scheduled issue run now",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/issues/{id}/monitor/check-now",
-  tags: ["issues"],
-  summary: "Run an issue monitor check now",
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/issues/{id}/interactions/{interactionId}/cancel",
-  tags: ["issues"],
-  summary: "Cancel an issue question interaction",
-  body: cancelIssueThreadInteractionSchema,
+  summary: "Get bounded subtree blocker diagnostics for an issue",
 });
 
 for (const route of [
@@ -6028,14 +6141,6 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/tools/connections/{connectionId}/start-authorization",
   tags: ["tool-access"],
   summary: "Start user authorization for a tool connection",
-  body: startConnectionAuthorizationSchema,
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/agents/me/connections/{connectionId}/start-authorization",
-  tags: ["tool-access"],
-  summary: "Start user authorization for an agent tool connection",
   body: startConnectionAuthorizationSchema,
 });
 
@@ -6429,23 +6534,6 @@ registerCurrentRoute({
 
 // --- Tool gateway ------------------------------------------------------------
 
-const toolGatewaySessionSchema = z.object({
-  companyId: z.string().optional(),
-  agentId: z.string().optional(),
-  runId: z.string().optional(),
-  issueId: z.string().nullable().optional(),
-  projectId: z.string().nullable().optional(),
-  ttlMs: z.number().int().positive().optional(),
-});
-
-const toolGatewayCallSchema = z.object({
-  tool: z.string(),
-  parameters: z.record(z.unknown()).optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  approvedActionRequestId: z.string().optional(),
-  idempotencyKey: z.string().optional(),
-});
-
 const toolGatewayCompanyQuerySchema = z.object({
   companyId: z.string().optional(),
 });
@@ -6532,55 +6620,18 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
-  path: "/api/tool-gateway/sessions",
-  tags: ["tool-gateway"],
-  summary: "Create a tool gateway session",
-  body: toolGatewaySessionSchema,
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/sessions/{sessionId}/revoke",
-  tags: ["tool-gateway"],
-  summary: "Revoke a tool gateway session",
-  body: toolGatewayCompanyQuerySchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
-});
-
-registerCurrentRoute({
-  method: "get",
-  path: "/api/tool-gateway/tools",
-  tags: ["tool-gateway"],
-  summary: "List tools available to a gateway session",
-  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/tools/call",
-  tags: ["tool-gateway"],
-  summary: "Execute a tool through the gateway",
-  body: toolGatewayCallSchema,
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
-});
-
-registerCurrentRoute({
-  method: "post",
-  path: "/api/tool-gateway/action-requests/{id}/approve",
+  path: "/api/companies/{companyId}/tools/action-requests/{id}/approve",
   tags: ["tool-gateway"],
   summary: "Approve a deferred tool gateway action request",
-  query: toolGatewayCompanyQuerySchema,
-  body: z.object({ companyId: z.string().optional() }),
+  body: z.object({}).strict(),
 });
 
 registerCurrentRoute({
   method: "post",
-  path: "/api/tool-gateway/action-requests/{id}/decline",
+  path: "/api/companies/{companyId}/tools/action-requests/{id}/decline",
   tags: ["tool-gateway"],
   summary: "Decline a deferred tool gateway action request",
-  query: toolGatewayCompanyQuerySchema,
-  body: z.object({ companyId: z.string().optional() }),
+  body: z.object({}).strict(),
 });
 
 registerCurrentRoute({

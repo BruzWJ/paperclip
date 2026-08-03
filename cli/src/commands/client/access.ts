@@ -58,8 +58,6 @@ export function registerAccessCommands(program: Command): void {
 
   const profile = program.command("profile").description("Current user profile operations");
   addSimpleGet(profile, "session", "Get auth session", "/api/auth/get-session");
-  addSimpleGet(profile, "get", "Get current auth profile", "/api/auth/profile");
-  addJsonPatch(profile, "update", "Update current auth profile", "/api/auth/profile");
   addCommonClientOptions(
     profile
       .command("company-user")
@@ -99,7 +97,6 @@ export function registerAccessCommands(program: Command): void {
     ["logo", "logo"],
     ["onboarding", "onboarding"],
     ["onboarding:text", "onboarding.txt"],
-    ["skills:index", "skills/index"],
   ] as const) {
     addCommonClientOptions(
       invite
@@ -117,37 +114,6 @@ export function registerAccessCommands(program: Command): void {
       }),
     );
   }
-  addCommonClientOptions(
-    invite
-      .command("test-resolution")
-      .description("Test invite URL resolution")
-      .argument("<token>", "Invite token")
-      .requiredOption("--url <url>", "URL to test")
-      .action(async (token: string, opts: QueryOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const query = new URLSearchParams({ url: opts.url ?? "" });
-          printOutput(await ctx.api.get(`${apiPath`/api/invites/${token}/test-resolution`}?${query.toString()}`), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-  addCommonClientOptions(
-    invite
-      .command("skill")
-      .description("Get invite skill markdown")
-      .argument("<token>", "Invite token")
-      .argument("<skillName>", "Skill name")
-      .action(async (token: string, skillName: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get(apiPath`/api/invites/${token}/skills/${skillName}`), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
   addCommonClientOptions(
     invite
       .command("accept")
@@ -189,21 +155,6 @@ export function registerAccessCommands(program: Command): void {
   );
   addJoinAction(join, "approve");
   addJoinAction(join, "reject");
-  addCommonClientOptions(
-    join
-      .command("claim-key")
-      .description("Claim an agent API key for an approved join request")
-      .argument("<requestId>", "Join request ID")
-      .requiredOption("--claim-secret <secret>", "Claim secret")
-      .action(async (requestId: string, opts: BaseClientOptions & { claimSecret: string }) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(apiPath`/api/join-requests/${requestId}/claim-api-key`, { claimSecret: opts.claimSecret }), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
 
   const member = program.command("member").description("Company member operations");
   addCompanyList(member, "list", "List company members", "members");
@@ -263,7 +214,6 @@ export function registerAccessCommands(program: Command): void {
   );
 
   const instance = program.command("instance").description("Instance operations");
-  addSimpleGet(instance, "scheduler-heartbeats", "List scheduler heartbeat agents", "/api/instance/scheduler-heartbeats");
   addSimpleGet(instance, "settings:general", "Get general instance settings", "/api/instance/settings/general");
   addJsonPatch(instance, "settings:general:update", "Update general instance settings", "/api/instance/settings/general");
   addSimpleGet(instance, "settings:experimental", "Get experimental instance settings", "/api/instance/settings/experimental");
@@ -292,58 +242,6 @@ export function registerAccessCommands(program: Command): void {
   const inbox = program.command("inbox").description("Board inbox operations");
   addCompanyList(inbox, "dismissals", "List dismissed inbox items", "inbox-dismissals");
   addCompanyPost(inbox, "dismiss", "Dismiss an inbox item", "inbox-dismissals");
-
-  const boardClaim = program.command("board-claim").description("Board claim token operations");
-  addCommonClientOptions(
-    boardClaim
-      .command("show")
-      .description("Inspect a board claim token")
-      .argument("<token>", "Claim token")
-      .action(async (token: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get(apiPath`/api/board-claim/${token}`), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-  addCommonClientOptions(
-    boardClaim
-      .command("claim")
-      .description("Claim a board claim token")
-      .argument("<token>", "Claim token")
-      .option("--payload-json <json>", "Claim JSON payload", "{}")
-      .action(async (token: string, opts: JsonPayloadOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(apiPath`/api/board-claim/${token}/claim`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
-  const openclaw = program.command("openclaw").description("OpenClaw integration helpers");
-  addCompanyPost(openclaw, "invite-prompt", "Create an OpenClaw invite prompt", "openclaw/invite-prompt");
-
-  const publicSkills = program.command("available-skill").description("Public skill catalog operations");
-  addSimpleGet(publicSkills, "list", "List available skills", "/api/skills/available");
-  addSimpleGet(publicSkills, "index", "Get available skill index", "/api/skills/index");
-  addCommonClientOptions(
-    publicSkills
-      .command("get")
-      .description("Get available skill markdown")
-      .argument("<skillName>", "Skill name")
-      .action(async (skillName: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.get(apiPath`/api/skills/${skillName}`), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
 
   const llm = program.command("llm").description("LLM prompt documentation");
   addSimpleGet(llm, "agent-configuration", "Get agent configuration prompt docs", "/api/llms/agent-configuration.txt");
@@ -461,11 +359,29 @@ function addCompanyPost(parent: Command, name: string, description: string, path
 }
 
 function addJoinAction(parent: Command, action: "approve" | "reject"): void {
+  const command = parent
+    .command(action)
+    .description(`${action} a join request`)
+    .argument("<requestId>", "Join request ID")
+    .option("-C, --company-id <id>", "Company ID");
+  if (action === "approve") {
+    command.option(
+      "--environment-id <id>",
+      "Explicit initial execution environment for an agent join request",
+    );
+  }
   addCommonClientOptions(
-    parent.command(action).description(`${action} a join request`).argument("<requestId>", "Join request ID").option("-C, --company-id <id>", "Company ID").action(async (requestId: string, opts: CompanyOptions) => {
+    command.action(async (
+      requestId: string,
+      opts: CompanyOptions & { environmentId?: string },
+    ) => {
       try {
         const ctx = resolveCommandContext(opts, { requireCompany: true });
-        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}/join-requests/${requestId}`}/${action}`, {}), { json: ctx.json });
+        const payload =
+          action === "approve" && opts.environmentId
+            ? { defaultEnvironmentId: opts.environmentId }
+            : {};
+        printOutput(await ctx.api.post(`${apiPath`/api/companies/${ctx.companyId}/join-requests/${requestId}`}/${action}`, payload), { json: ctx.json });
       } catch (err) {
         handleCommandError(err);
       }

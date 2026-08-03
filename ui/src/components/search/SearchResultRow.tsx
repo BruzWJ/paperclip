@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { StatusIcon } from "../StatusIcon";
 import { Identity } from "../Identity";
 import { HighlightedText, type HighlightedTextProps } from "./HighlightedText";
+import { issueDisplayTitle } from "@/lib/issue-display";
 
 type SnippetStyle = {
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -16,7 +17,7 @@ const SNIPPET_STYLES: Record<string, SnippetStyle> = {
   comment: { Icon: MessageSquare, label: "Comment" },
   document: { Icon: FileText, label: "Doc" },
   artifact: { Icon: Paperclip, label: "Artifact" },
-  description: { Icon: Quote, label: "Description" },
+  request: { Icon: Quote, label: "Request" },
 };
 
 function snippetStyle(field: string, fallbackLabel: string): SnippetStyle {
@@ -161,14 +162,14 @@ function SearchResultRowImpl({
 
   const issue = result.issue;
   if (!issue) return null;
-  const assigneeName = issue.assigneeAgentId
-    ? agentsById?.get(issue.assigneeAgentId)?.name ?? null
+  const ownerName = issue.ownerAgentId
+    ? agentsById?.get(issue.ownerAgentId)?.name ?? null
     : null;
   const updated = formatRelativeTime(result.updatedAt ?? issue.updatedAt);
   const titleHighlights = result.snippets.find((snippet) => snippet.field === "title")?.highlights;
   const bodySnippets = result.snippets.filter((snippet) => snippet.field !== "title").slice(0, 2);
   const previewImageUrl = result.previewImageUrl;
-  const hasRightRail = previewImageUrl || assigneeName || updated;
+  const hasRightRail = previewImageUrl || ownerName || updated;
 
   return (
     <Link
@@ -178,7 +179,7 @@ function SearchResultRowImpl({
       data-result-type="issue"
     >
       <div className="mt-1 shrink-0">
-        <StatusIcon status={issue.status} />
+        <StatusIcon status={issue.boardPresentationStatus} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -188,7 +189,7 @@ function SearchResultRowImpl({
             </span>
           ) : null}
           <HighlightedText
-            text={issue.title}
+            text={issueDisplayTitle(issue)}
             highlights={titleHighlights}
             className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground"
           />
@@ -205,16 +206,16 @@ function SearchResultRowImpl({
         ))}
         {hasRightRail ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground sm:hidden">
-            {assigneeName ? <span className="truncate">{assigneeName}</span> : null}
+            {ownerName ? <span className="truncate">{ownerName}</span> : null}
             {updated ? <span className="ml-auto tabular-nums">{updated}</span> : null}
           </div>
         ) : null}
       </div>
       {hasRightRail ? (
         <div className="ml-2 hidden shrink-0 flex-col items-end gap-2 sm:flex">
-          {assigneeName || updated ? (
+          {ownerName || updated ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {assigneeName ? <Identity name={assigneeName} size="sm" /> : null}
+              {ownerName ? <Identity name={ownerName} size="sm" /> : null}
               {updated ? <span className="tabular-nums">{updated}</span> : null}
             </div>
           ) : null}

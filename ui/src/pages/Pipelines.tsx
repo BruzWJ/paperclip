@@ -3,12 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { groupWarningsByStage, LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
 import type {
   Agent,
-  AskUserQuestionsAnswer,
-  AskUserQuestionsInteraction,
+  BoardIssueCommentGroupPage,
   FeedbackVote,
   Issue,
-  IssueThreadInteraction,
-  IssueWorkMode,
+  IssueAttentionMask,
+  IssueExecutionRunListPageRecord,
   PipelineAutomationRetryCleanupOptions,
   PipelineAutomationRetryPlan,
   PipelineAutomationRetryScope,
@@ -16,10 +15,8 @@ import type {
   PipelineCaseDocumentOutputItem,
   PipelineCaseOutputItem,
   PipelineCaseWorkProductOutputItem,
-  RequestCheckboxConfirmationInteraction,
-  RequestConfirmationInteraction,
-  SuggestTasksInteraction,
 } from "@paperclipai/shared";
+import { issueDisplayTitle } from "@/lib/issue-display";
 import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, Paperclip, Plus, Search, Settings, Trash2, X } from "lucide-react";
 import {
   DndContext,
@@ -57,8 +54,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { ApiError } from "../api/client";
-import { activityApi, type RunForIssue } from "../api/activity";
-import { heartbeatsApi, type ActiveRunForIssue, type LiveRunForIssue } from "../api/heartbeats";
+import { activityApi } from "../api/activity";
+import {
+  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  runsApi,
+} from "../api/runs";
 import {
   pipelinesApi,
   type PipelineAttentionFeed,
@@ -67,6 +67,7 @@ import {
   type PipelineCaseActiveWork,
   type PipelineCaseDetail,
   type PipelineCaseEvent,
+  type PipelineCaseIssueLinkWithIssue,
   type PipelineCaseParentSummary,
   type PipelineConnectionRef,
   type PipelineConnections,
@@ -86,6 +87,7 @@ import { projectsApi } from "../api/projects";
 import { EmptyState } from "../components/EmptyState";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { IssueChatThread } from "../components/IssueChatThread";
+import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PipelineHealthBar } from "../components/PipelineHealthWarnings";
@@ -95,8 +97,7 @@ import { PipelineWorkReferences } from "../components/PipelineWorkReferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
-import { assigneeValueFromSelection, parseAssigneeValue, suggestedCommentAssigneeValue } from "../lib/assignees";
-import { buildCompanyUserInlineOptions, buildCompanyUserLabelMap, buildCompanyUserProfileMap, isAgentTaskTarget } from "../lib/company-members";
+import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
 import { useStandardMarkdownMentionOptions } from "../hooks/useStandardMarkdownMentionOptions";
 import {
   displayPipelineItemFields,
@@ -106,7 +107,6 @@ import {
   changedNoticeFromEvents,
   itemHasChangedNotice,
   normalizePipelineChildRows,
-  pipelineConversationStarterAssigneeValue,
   splitPipelineItemFields,
 } from "../lib/pipeline-item-detail";
 import { extractWorkReferences, referenceFieldKeys } from "../lib/pipeline-references";
@@ -122,21 +122,27 @@ import { cn, formatNumber, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
 import { formatBytes } from "../lib/issue-output";
 import { createIssueDetailPath, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
-import { resolveIssueActiveRun, shouldTrackIssueActiveRun } from "../lib/issueActiveRun";
 import { extractIssueTimelineEvents } from "../lib/issue-timeline-events";
-import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/optimistic-issue-comments";
+import {
+  applyLocalQueuedIssueCommentState,
+  flattenBoardIssueCommentGroupPages,
+} from "../lib/optimistic-issue-comments";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 
-type PipelineConversationActionableInteraction =
-  | SuggestTasksInteraction
-  | RequestConfirmationInteraction
-  | RequestCheckboxConfirmationInteraction;
-
 type PipelineBoardAutomationAgent = Pick<Agent, "id" | "name" | "icon" | "urlKey">;
 
-export function normalizePipelineConversationComments(value: unknown): IssueChatComment[] {
-  return Array.isArray(value) ? value : [];
+export function normalizePipelineConversationComments(
+  page: BoardIssueCommentGroupPage | undefined,
+  scope: { companyId: string; issueId: string },
+): IssueChatComment[] {
+  return flattenBoardIssueCommentGroupPages(page ? [page] : undefined, scope);
+}
+
+export function selectPipelineConversationLink(
+  links: readonly PipelineCaseIssueLinkWithIssue[],
+): PipelineCaseIssueLinkWithIssue | null {
+  return links.find((link) => link.link.role === "conversation") ?? null;
 }
 
 interface DraftRow {
@@ -148,15 +154,6 @@ interface DraftRow {
 
 function issueDetailPath(issue: Pick<Issue, "id" | "identifier">) {
   return createIssueDetailPath(issue.identifier ?? issue.id);
-}
-
-function resolveRunningPipelineConversationRun(
-  activeRun: ActiveRunForIssue | null | undefined,
-  liveRuns: readonly LiveRunForIssue[] | undefined,
-) {
-  return activeRun?.status === "running"
-    ? activeRun
-    : (liveRuns ?? []).find((run) => run.status === "running") ?? null;
 }
 
 type FieldErrors = Record<string, string>;
@@ -344,8 +341,8 @@ function retryPrimaryActionLabel(plan: PipelineAutomationRetryPlan) {
 
 export function Pipelines() {
   const params = useParams<{ pipelineId?: string }>();
-  const location = useLocation();
   const pipelineId = params.pipelineId ?? null;
+  const location = useLocation();
   const addMode = Boolean(pipelineId && location.pathname.endsWith("/add"));
 
   if (pipelineId && addMode) return <PipelineAddItems pipelineId={pipelineId} />;
@@ -1952,7 +1949,6 @@ export function PipelineItemDetail() {
 
 export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: string; caseId: string }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -1966,6 +1962,11 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   const [retryTargetStageId, setRetryTargetStageId] = useState<string | null>(null);
   const [selectedRetryCleanupIds, setSelectedRetryCleanupIds] = useState<Set<string>>(() => new Set());
   const [retryDialogError, setRetryDialogError] = useState<string | null>(null);
+  const [conversationCreateOpen, setConversationCreateOpen] = useState(false);
+  const [conversationOwnerAgentId, setConversationOwnerAgentId] = useState("");
+  const [conversationRequest, setConversationRequest] = useState("");
+  const [conversationAttentionMask, setConversationAttentionMask] =
+    useState<IssueAttentionMask | null>(null);
 
   const pipeline = useQuery({
     queryKey: queryKeys.pipelines.detail(pipelineId),
@@ -2006,17 +2007,9 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     return lookup;
   }, [stages]);
   const conversationLink = useMemo(() => {
-    const links = issueLinks.data ?? [];
-    return links.find((link) => link.link.role === "conversation")
-      ?? links.find((link) => link.link.role === "work")
-      ?? null;
+    return selectPipelineConversationLink(issueLinks.data ?? []);
   }, [issueLinks.data]);
-  const activeConversationSource = detail?.conversationSource?.isActive === false
-    ? null
-    : detail?.conversationSource ?? null;
-  const conversationIssue = activeConversationSource?.issue
-    ?? (detail?.conversationSource ? null : conversationLink?.issue)
-    ?? null;
+  const conversationIssue = conversationLink?.issue ?? null;
   const outputs = useQuery({
     queryKey: queryKeys.pipelines.caseOutputs(caseId),
     queryFn: () => pipelinesApi.getCaseOutputs(caseId),
@@ -2032,12 +2025,18 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   const [locallyQueuedConversationCommentRunIds, setLocallyQueuedConversationCommentRunIds] = useState<Map<string, string>>(() => new Map());
   const comments = useQuery({
     queryKey: conversationIssueId ? queryKeys.issues.commentsList(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation"],
-    queryFn: () => issuesApi.listComments(conversationIssueId!, { order: "asc", limit: 50 }),
+    queryFn: () => issuesApi.listComments(conversationIssueId!, {
+      limit: 50,
+      entryLimit: 50,
+    }),
     enabled: Boolean(conversationIssueId),
   });
   const conversationComments = useMemo<IssueChatComment[]>(
-    () => normalizePipelineConversationComments(comments.data),
-    [comments.data],
+    () => normalizePipelineConversationComments(comments.data, {
+      companyId: conversationCompanyId ?? "",
+      issueId: conversationIssueId ?? "",
+    }),
+    [comments.data, conversationCompanyId, conversationIssueId],
   );
   const { data: conversationActivity } = useQuery({
     queryKey: conversationIssueId ? queryKeys.issues.activity(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-activity"],
@@ -2047,48 +2046,32 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
       ? keepPreviousDataForSameQueryTail(conversationIssueId)
       : undefined,
   });
-  const { data: conversationLiveRuns } = useQuery({
-    queryKey: conversationIssueId ? queryKeys.issues.liveRuns(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-live-runs"],
-    queryFn: () => heartbeatsApi.liveRunsForIssue(conversationIssueId!),
+  const { data: conversationRunPage } = useQuery({
+    queryKey: conversationIssueId ? queryKeys.issues.runs(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-runs"],
+    queryFn: () => runsApi.listForIssue(conversationIssueId!, { limit: 200 }),
     enabled: Boolean(conversationIssueId),
     refetchInterval: 3000,
     placeholderData: conversationIssueId
-      ? keepPreviousDataForSameQueryTail<LiveRunForIssue[]>(conversationIssueId)
+      ? keepPreviousDataForSameQueryTail<IssueExecutionRunListPageRecord>(conversationIssueId)
       : undefined,
   });
-  const resolvedConversationLiveRuns = conversationLiveRuns ?? [];
-  const conversationLiveRunCount = resolvedConversationLiveRuns.length;
-  const { data: rawConversationActiveRun = null } = useQuery({
-    queryKey: conversationIssueId ? queryKeys.issues.activeRun(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-active-run"],
-    queryFn: () => heartbeatsApi.activeRunForIssue(conversationIssueId!),
-    enabled: Boolean(conversationIssueId && activeConversationIssue && shouldTrackIssueActiveRun(activeConversationIssue)),
-    refetchInterval: conversationLiveRunCount > 0 ? false : 3000,
-    placeholderData: conversationIssueId
-      ? keepPreviousDataForSameQueryTail<ActiveRunForIssue | null>(conversationIssueId)
-      : undefined,
-  });
-  const resolvedConversationActiveRun = useMemo(
-    () => resolveIssueActiveRun(activeConversationIssue, rawConversationActiveRun),
-    [activeConversationIssue, rawConversationActiveRun],
+  const conversationRuns = conversationRunPage?.items ?? [];
+  const activeConversationRuns = conversationRuns.filter((run) =>
+    ACTIVE_ISSUE_EXECUTION_RUN_STATUSES.includes(
+      run.status as (typeof ACTIVE_ISSUE_EXECUTION_RUN_STATUSES)[number],
+    ),
   );
-  const conversationHasLiveRuns = conversationLiveRunCount > 0 || Boolean(resolvedConversationActiveRun);
-  const { data: conversationLinkedRuns } = useQuery({
-    queryKey: conversationIssueId ? queryKeys.issues.runs(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-runs"],
-    queryFn: () => activityApi.runsForIssue(conversationIssueId!),
-    enabled: Boolean(conversationIssueId),
-    refetchInterval: conversationHasLiveRuns ? 5000 : false,
-    placeholderData: conversationIssueId
-      ? keepPreviousDataForSameQueryTail<RunForIssue[]>(conversationIssueId)
-      : undefined,
-  });
-  const interactions = useQuery({
-    queryKey: conversationIssueId ? queryKeys.issues.interactions(conversationIssueId) : ["pipeline-item", caseId, "missing-conversation-interactions"],
-    queryFn: () => issuesApi.listInteractions(conversationIssueId!),
-    enabled: Boolean(conversationIssueId),
-  });
+  const conversationHasLiveRuns = activeConversationRuns.length > 0;
   const { data: agents } = useQuery({
     queryKey: conversationCompanyId ? queryKeys.agents.list(conversationCompanyId) : ["agents", "pipeline-item", "none"],
     queryFn: () => agentsApi.list(conversationCompanyId!),
+    enabled: Boolean(conversationCompanyId),
+  });
+  const issueOwnerCatalogQuery = useQuery({
+    queryKey: conversationCompanyId
+      ? queryKeys.agents.issueOwnerCatalog(conversationCompanyId)
+      : ["agents", "pipeline-item", "issue-owner-catalog", "none"],
+    queryFn: () => agentsApi.listInvokableIssueOwners(conversationCompanyId!),
     enabled: Boolean(conversationCompanyId),
   });
   const { data: companyMembers } = useQuery({
@@ -2117,6 +2100,27 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     retry: false,
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  useEffect(() => {
+    if (
+      !conversationCreateOpen ||
+      !conversationOwnerAgentId ||
+      !issueOwnerCatalogQuery.isSuccess
+    ) {
+      return;
+    }
+    if (
+      !(issueOwnerCatalogQuery.data ?? []).some(
+        (owner) => owner.id === conversationOwnerAgentId,
+      )
+    ) {
+      setConversationOwnerAgentId("");
+    }
+  }, [
+    conversationCreateOpen,
+    conversationOwnerAgentId,
+    issueOwnerCatalogQuery.data,
+    issueOwnerCatalogQuery.isSuccess,
+  ]);
   const feedbackDataSharingPreference = instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
   const { orderedProjects } = useProjectOrder({
     projects: projects ?? [],
@@ -2142,135 +2146,51 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     projects: orderedProjects,
     members: companyMembers?.users,
   });
-  const commentReassignOptions = useMemo(() => {
+  const canChangeConversationOwner = Boolean(
+    currentUserId
+      && activeConversationIssue?.creatorKind === "user/board"
+      && activeConversationIssue.creatorUserId === currentUserId,
+  );
+  const commentOwnerOptions = useMemo(() => {
+    if (!canChangeConversationOwner) return [];
     const options: Array<{ id: string; label: string; searchText?: string }> = [];
-    options.push(...buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId] }));
-    const activeAgents = [...(agents ?? [])]
-      .filter(isAgentTaskTarget)
+    const activeAgents = [...(issueOwnerCatalogQuery.data ?? [])]
       .sort((a, b) => a.name.localeCompare(b.name));
     for (const agent of activeAgents) {
       options.push({ id: `agent:${agent.id}`, label: agent.name });
     }
-    if (currentUserId) {
-      options.push({ id: `user:${currentUserId}`, label: "Me" });
-    }
     return options;
-  }, [agents, companyMembers?.users, currentUserId]);
-  const actualAssigneeValue = useMemo(
-    () => assigneeValueFromSelection(activeConversationIssue ?? {}),
+  }, [canChangeConversationOwner, issueOwnerCatalogQuery.data]);
+  const currentOwnerValue = useMemo(
+    () => activeConversationIssue?.ownerAgentId
+      ? `agent:${activeConversationIssue.ownerAgentId}`
+      : "",
     [activeConversationIssue],
   );
-  const starterAssigneeValue = useMemo(
-    () =>
-      pipelineConversationStarterAssigneeValue({
-        conversationIssue: activeConversationIssue ?? null,
-        conversationSource: activeConversationSource,
-        issueLinks: issueLinks.data ?? [],
-      }),
-    [activeConversationIssue, activeConversationSource, issueLinks.data],
-  );
-  const suggestedAssigneeValue = useMemo(
-    () =>
-      suggestedCommentAssigneeValue(
-        starterAssigneeValue ? parseAssigneeValue(starterAssigneeValue) : activeConversationIssue ?? {},
-        conversationComments,
-        currentUserId,
-      ),
-    [activeConversationIssue, conversationComments, currentUserId, starterAssigneeValue],
-  );
   const conversationRunningRun = useMemo(
-    () => resolveRunningPipelineConversationRun(resolvedConversationActiveRun, resolvedConversationLiveRuns),
-    [resolvedConversationActiveRun, resolvedConversationLiveRuns],
+    () => activeConversationRuns.find((run) => run.status === "running") ?? null,
+    [activeConversationRuns],
   );
   const conversationLiveRunIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const run of resolvedConversationLiveRuns) ids.add(run.id);
-    if (resolvedConversationActiveRun) ids.add(resolvedConversationActiveRun.id);
+    for (const run of activeConversationRuns) ids.add(run.id);
     return ids;
-  }, [resolvedConversationActiveRun, resolvedConversationLiveRuns]);
-  const conversationTimelineRuns = useMemo(() => {
-    const historicalRuns = conversationLiveRunIds.size === 0
-      ? conversationLinkedRuns ?? []
-      : (conversationLinkedRuns ?? []).filter((run) => !conversationLiveRunIds.has(run.runId));
-    return historicalRuns.map((run) => ({
-      ...run,
-      adapterType: run.adapterType,
-      hasStoredOutput: (run.logBytes ?? 0) > 0,
-    }));
-  }, [conversationLinkedRuns, conversationLiveRunIds]);
+  }, [activeConversationRuns]);
   const conversationTimelineEvents = useMemo(
     () => extractIssueTimelineEvents(conversationActivity ?? []),
     [conversationActivity],
   );
   const conversationThreadComments = useMemo<IssueChatComment[]>(() => {
-    const activeRunStartedAt = conversationRunningRun?.startedAt ?? conversationRunningRun?.createdAt ?? null;
-    const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null; interruptedRunId: string | null }>();
-    const followUpCommentIds = new Set<string>();
-    const agentIdByRunId = new Map<string, string>();
-
-    for (const run of conversationLinkedRuns ?? []) {
-      agentIdByRunId.set(run.runId, run.agentId);
-    }
-    for (const evt of conversationActivity ?? []) {
-      if (evt.action !== "issue.comment_added" || !evt.runId) continue;
-      const details = evt.details ?? {};
-      const commentId = typeof details["commentId"] === "string" ? details["commentId"] : null;
-      if (!commentId || runMetaByCommentId.has(commentId)) continue;
-      runMetaByCommentId.set(commentId, {
-        runId: evt.runId,
-        runAgentId: evt.agentId ?? agentIdByRunId.get(evt.runId) ?? null,
-        interruptedRunId: typeof details["interruptedRunId"] === "string" ? details["interruptedRunId"] : null,
-      });
-    }
-    for (const evt of conversationActivity ?? []) {
-      if (evt.action !== "issue.comment_added") continue;
-      const details = evt.details ?? {};
-      const commentId = typeof details["commentId"] === "string" ? details["commentId"] : null;
-      if (!commentId) continue;
-      if (details["followUpRequested"] === true || details["resumeIntent"] === true) {
-        followUpCommentIds.add(commentId);
-      }
-    }
-
     return conversationComments.map((comment) => {
-      const meta = runMetaByCommentId.get(comment.id);
-      const nextComment: IssueChatComment = meta ? { ...comment, ...meta } : { ...comment };
-      if (followUpCommentIds.has(comment.id)) {
-        nextComment.followUpRequested = true;
-      }
       const queuedTargetRunId = locallyQueuedConversationCommentRunIds.get(comment.id) ?? null;
-      const locallyQueuedComment = applyLocalQueuedIssueCommentState(nextComment, {
+      return applyLocalQueuedIssueCommentState(comment, {
         queuedTargetRunId,
         targetRunIsLive: queuedTargetRunId ? conversationLiveRunIds.has(queuedTargetRunId) : false,
         runningRunId: conversationRunningRun?.id ?? null,
       });
-      if (locallyQueuedComment !== nextComment) {
-        return locallyQueuedComment;
-      }
-      if (
-        isQueuedIssueComment({
-          comment: nextComment,
-          activeRunStartedAt,
-          activeRunAgentId: conversationRunningRun?.agentId ?? null,
-          activeRunCommentId: conversationRunningRun?.contextCommentId ?? null,
-          activeRunWakeCommentId: conversationRunningRun?.contextWakeCommentId ?? null,
-          runId: meta?.runId ?? nextComment.runId ?? null,
-          interruptedRunId: meta?.interruptedRunId ?? nextComment.interruptedRunId ?? null,
-        })
-      ) {
-        return {
-          ...nextComment,
-          queueState: "queued",
-          queueTargetRunId: conversationRunningRun?.id ?? nextComment.queueTargetRunId ?? null,
-          queueReason: "active_run",
-        };
-      }
-      return nextComment;
     });
   }, [
     conversationComments,
-    conversationActivity,
-    conversationLinkedRuns,
     conversationLiveRunIds,
     conversationRunningRun,
     locallyQueuedConversationCommentRunIds,
@@ -2301,28 +2221,29 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   }, [caseId, pipelineId, queryClient]);
 
   const startConversation = useMutation({
-    mutationFn: async () => {
-      await pipelinesApi.createIssueLink(caseId, { role: "conversation" });
+    mutationFn: async (input: {
+      ownerAgentId: string;
+      request: string;
+      attentionMask: IssueAttentionMask | null;
+    }) => {
+      return pipelinesApi.openConversation(caseId, {
+        ownerAgentId: input.ownerAgentId,
+        request: input.request,
+        ...(input.attentionMask
+          ? { attentionMask: input.attentionMask }
+          : {}),
+        idempotencyKey: crypto.randomUUID(),
+      });
     },
     onSuccess: async () => {
       await invalidateItem();
+      setConversationCreateOpen(false);
+      setConversationRequest("");
+      setConversationAttentionMask(null);
       pushToast({ title: "Conversation started", tone: "success" });
     },
     onError: () => pushToast({ title: "Could not start the conversation", tone: "error" }),
   });
-
-  // Body-document selection → "Start conversation & comment": returns the created issue so the
-  // body block can mirror the document onto it and re-open the composer with the held anchor.
-  const startConversationForBody = useCallback(async () => {
-    try {
-      const result = await pipelinesApi.createIssueLink(caseId, { role: "conversation" });
-      await invalidateItem();
-      return ("issue" in result ? result.issue : null) ?? null;
-    } catch {
-      pushToast({ title: "Could not start the conversation", tone: "error" });
-      return null;
-    }
-  }, [caseId, invalidateItem, pushToast]);
 
   const invalidateConversation = useCallback(async () => {
     if (!conversationIssueId) return;
@@ -2330,47 +2251,58 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(conversationIssueId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.interactions(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.feedbackVotes(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(conversationIssueId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(conversationIssueId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(conversationIssueId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseIssueLinks(caseId) }),
     ]);
   }, [caseId, conversationIssueId, queryClient]);
 
   const addConversationComment = useCallback(async (
     body: string,
-    reopen?: boolean,
-    reassignment?: { assigneeAgentId: string | null; assigneeUserId: string | null },
+    ownerChange?: { ownerAgentId: string },
+    mentionAgentId?: string,
   ) => {
-    if (!conversationIssueId) return;
-    if (reassignment) {
-      await issuesApi.update(conversationIssueId, {
-        comment: body,
-        assigneeAgentId: reassignment.assigneeAgentId,
-        assigneeUserId: reassignment.assigneeUserId,
-        ...(reopen ? { status: "todo" } : {}),
-      });
-    } else {
-      const queuedRunId = conversationRunningRun?.id ?? null;
-      const comment = await issuesApi.addComment(conversationIssueId, body, reopen);
-      if (queuedRunId) {
-        setLocallyQueuedConversationCommentRunIds((current) => {
-          const next = new Map(current);
-          next.set(comment.id, queuedRunId);
-          return next;
-        });
+    if (!conversationIssueId || !activeConversationIssue) return;
+    let commentTarget = activeConversationIssue;
+    if (ownerChange) {
+      if (!canChangeConversationOwner) {
+        throw new Error("Only the named issue creator can change an ordinary issue owner.");
       }
+      const reassigned = await issuesApi.reassign(conversationIssueId, {
+        ownerAgentId: ownerChange.ownerAgentId,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      commentTarget = reassigned.issue;
+    }
+    const ownershipEpoch = commentTarget.ownershipEpoch;
+    const mention = mentionAgentId
+      && mentionAgentId === commentTarget.ownerAgentId
+      && typeof ownershipEpoch === "number"
+      && Number.isInteger(ownershipEpoch)
+      && ownershipEpoch > 0
+      ? { targetAgentId: mentionAgentId, ownershipEpoch }
+      : null;
+    const queuedRunId = conversationRunningRun?.id ?? null;
+    const result = await issuesApi.addComment(conversationIssueId, {
+      message: body,
+      idempotencyKey: crypto.randomUUID(),
+      mention,
+    });
+    if (mention && queuedRunId) {
+      setLocallyQueuedConversationCommentRunIds((current) => {
+        const next = new Map(current);
+        next.set(result.comment.id, queuedRunId);
+        return next;
+      });
     }
     await invalidateConversation();
-  }, [conversationIssueId, conversationRunningRun?.id, invalidateConversation]);
-
-  const updateConversationWorkMode = useCallback(async (workMode: IssueWorkMode) => {
-    if (!conversationIssueId) return;
-    await issuesApi.update(conversationIssueId, { workMode });
-    await invalidateConversation();
-  }, [conversationIssueId, invalidateConversation]);
+  }, [
+    activeConversationIssue,
+    canChangeConversationOwner,
+    conversationIssueId,
+    conversationRunningRun?.id,
+    invalidateConversation,
+  ]);
 
   const handleConversationVote = useCallback(async (
     commentId: string,
@@ -2402,63 +2334,6 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     }
     return issuesApi.uploadAttachment(conversationCompanyId, conversationIssueId, file);
   }, [conversationCompanyId, conversationIssueId]);
-
-  const handleDeleteConversationComment = useCallback(async (commentId: string) => {
-    if (!conversationIssueId) return;
-    await issuesApi.deleteComment(conversationIssueId, commentId);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(conversationIssueId) });
-  }, [conversationIssueId, queryClient]);
-
-  const handleInterruptConversationQueuedRun = useCallback(async (runId: string) => {
-    await heartbeatsApi.cancel(runId);
-    await invalidateConversation();
-  }, [invalidateConversation]);
-
-  const handleCancelConversationQueuedComment = useCallback(async (commentId: string) => {
-    if (!conversationIssueId) return;
-    await issuesApi.cancelComment(conversationIssueId, commentId);
-    setLocallyQueuedConversationCommentRunIds((current) => {
-      if (!current.has(commentId)) return current;
-      const next = new Map(current);
-      next.delete(commentId);
-      return next;
-    });
-    await invalidateConversation();
-  }, [conversationIssueId, invalidateConversation]);
-
-  const handleAcceptConversationInteraction = useCallback(async (
-    interaction: PipelineConversationActionableInteraction,
-    selectedClientKeys?: string[],
-    selectedOptionIds?: string[],
-  ) => {
-    if (!conversationIssueId) return;
-    await issuesApi.acceptInteraction(conversationIssueId, interaction.id, { selectedClientKeys, selectedOptionIds });
-    await invalidateConversation();
-  }, [conversationIssueId, invalidateConversation]);
-
-  const handleRejectConversationInteraction = useCallback(async (
-    interaction: PipelineConversationActionableInteraction,
-    reason?: string,
-  ) => {
-    if (!conversationIssueId) return;
-    await issuesApi.rejectInteraction(conversationIssueId, interaction.id, reason);
-    await invalidateConversation();
-  }, [conversationIssueId, invalidateConversation]);
-
-  const handleSubmitConversationInteractionAnswers = useCallback(async (
-    interaction: IssueThreadInteraction,
-    answers: AskUserQuestionsAnswer[],
-  ) => {
-    if (!conversationIssueId) return;
-    await issuesApi.respondToInteraction(conversationIssueId, interaction.id, { answers });
-    await invalidateConversation();
-  }, [conversationIssueId, invalidateConversation]);
-
-  const handleCancelConversationInteraction = useCallback(async (interaction: AskUserQuestionsInteraction) => {
-    if (!conversationIssueId) return;
-    await issuesApi.cancelInteraction(conversationIssueId, interaction.id);
-    await invalidateConversation();
-  }, [conversationIssueId, invalidateConversation]);
 
   const resolveSuggestion = useMutation({
     mutationFn: ({ resolution, suggestionId }: { resolution: "accept" | "dismiss"; suggestionId: string }) =>
@@ -2766,9 +2641,9 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         </Button>
       )
     : (
-        <Button onClick={() => startConversation.mutate()} disabled={startConversation.isPending}>
+        <Button onClick={() => setConversationCreateOpen(true)}>
           <MessageSquare className="mr-2 h-4 w-4" />
-          {startConversation.isPending ? "Starting..." : "Start a conversation"}
+          Start a conversation
         </Button>
       );
   const reviewPanel = detail.stage.kind === "review" && reviewConfig ? (
@@ -2903,12 +2778,99 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         </div>
       </div>
 
+      <Dialog
+        open={conversationCreateOpen}
+        onOpenChange={(open) => {
+          setConversationCreateOpen(open);
+          if (!open && !startConversation.isPending) {
+            setConversationRequest("");
+            setConversationAttentionMask(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start a conversation</DialogTitle>
+            <DialogDescription>
+              This creates an ordinary issue linked to this pipeline item.
+              Choose its owner and write the exact request they should receive.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-foreground">Owner</span>
+              <Select
+                value={conversationOwnerAgentId}
+                onValueChange={setConversationOwnerAgentId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose an active agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(issueOwnerCatalogQuery.data ?? [])
+                    .map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                        {agent.title ? ` — ${agent.title}` : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <IssueAttentionMaskMatrix
+              value={conversationAttentionMask}
+              onChange={setConversationAttentionMask}
+            />
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-foreground">Request</span>
+              <Textarea
+                value={conversationRequest}
+                onChange={(event) => setConversationRequest(event.target.value)}
+                placeholder="What should the owner do or discuss?"
+                rows={6}
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setConversationCreateOpen(false);
+                setConversationRequest("");
+                setConversationAttentionMask(null);
+              }}
+              disabled={startConversation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() =>
+                startConversation.mutate({
+                  ownerAgentId: conversationOwnerAgentId,
+                  request: conversationRequest,
+                  attentionMask: conversationAttentionMask,
+                })
+              }
+              disabled={
+                !conversationOwnerAgentId ||
+                !conversationRequest.trim() ||
+                startConversation.isPending
+              }
+            >
+              {startConversation.isPending ? "Creating…" : "Create issue"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Move to stage</DialogTitle>
             <DialogDescription>
-              Manual moves can bypass the normal agent handoff for this item. Let automation move work when possible;
+              Manual moves can bypass the normal agent assignment flow for this item. Let automation move work when possible;
               use this override only when the board needs to correct the item state.
             </DialogDescription>
           </DialogHeader>
@@ -3237,15 +3199,9 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           <PipelineItemBodyDocument
             caseId={caseId}
             legacySummary={detail.case.summary ?? null}
-            hasLegacyLongFields={mainPaneFields.length > 0}
-            conversationIssueId={conversationIssueId}
-            conversationIssue={activeConversationIssue ?? null}
             agentMap={agentMap}
             userProfileMap={userProfileMap}
             mentions={mentionOptions}
-            imageUploadHandler={conversationIssueId ? handleConversationImageUpload : undefined}
-            locationHash={location.hash}
-            onStartConversation={startConversationForBody}
             onAfterChange={invalidateItem}
           />
 
@@ -3282,63 +3238,48 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
           <DetailSection title="Conversation">
             {activeConversationIssue ? (
-              <div className="py-3">
+              <div className="space-y-4 py-3">
+                <IssueAttentionMaskMatrix
+                  value={activeConversationIssue.attentionMask ?? null}
+                  readOnly
+                />
                 <IssueChatThread
                   comments={conversationThreadComments}
-                  interactions={interactions.data ?? []}
                   feedbackVotes={feedbackVotes ?? []}
                   feedbackDataSharingPreference={feedbackDataSharingPreference}
                   feedbackTermsUrl={null}
-                  linkedRuns={conversationTimelineRuns}
                   timelineEvents={conversationTimelineEvents}
-                  liveRuns={resolvedConversationLiveRuns}
-                  activeRun={resolvedConversationActiveRun}
+                  hasActiveRun={conversationHasLiveRuns}
                   issueId={activeConversationIssue.id}
                   blockedBy={activeConversationIssue.blockedBy ?? []}
                   blockerAttention={activeConversationIssue.blockerAttention ?? null}
-                  successfulRunHandoff={activeConversationIssue.successfulRunHandoff ?? null}
-                  scheduledRetry={activeConversationIssue.scheduledRetry ?? null}
-                  recoveryAction={activeConversationIssue.activeRecoveryAction ?? null}
                   companyId={activeConversationIssue.companyId}
                   projectId={activeConversationIssue.projectId}
-                  issueStatus={activeConversationIssue.status}
+                  issueStatus={activeConversationIssue.boardPresentationStatus}
                   agentMap={agentMap}
                   currentUserId={currentUserId}
                   userLabelMap={userLabelMap}
                   userProfileMap={userProfileMap}
                   draftKey={`paperclip:pipeline-item-conversation-draft:${activeConversationIssue.id}`}
                   autoScrollToLatestOnInitialLoad={false}
-                  enableReassign
-                  reassignOptions={commentReassignOptions}
-                  currentAssigneeValue={actualAssigneeValue}
-                  suggestedAssigneeValue={suggestedAssigneeValue}
+                  enableOwnerChange={canChangeConversationOwner}
+                  ownerOptions={commentOwnerOptions}
+                  currentOwnerValue={currentOwnerValue}
                   mentions={mentionOptions}
                   onAdd={addConversationComment}
                   onVote={handleConversationVote}
                   imageUploadHandler={handleConversationImageUpload}
                   onAttachImage={handleConversationAttachImage}
-                  onDeleteComment={handleDeleteConversationComment}
-                  onInterruptQueued={handleInterruptConversationQueuedRun}
-                  onCancelQueued={handleCancelConversationQueuedComment}
                   issueWorkMode={activeConversationIssue.workMode ?? "standard"}
-                  onWorkModeChange={(nextMode) => {
-                    const currentMode: IssueWorkMode = activeConversationIssue.workMode ?? "standard";
-                    if (currentMode === nextMode) return;
-                    return updateConversationWorkMode(nextMode);
-                  }}
-                  onAcceptInteraction={handleAcceptConversationInteraction}
-                  onRejectInteraction={handleRejectConversationInteraction}
-                  onSubmitInteractionAnswers={handleSubmitConversationInteractionAnswers}
-                  onCancelInteraction={handleCancelConversationInteraction}
-                  assigneeUserId={activeConversationIssue.assigneeUserId ?? null}
+                  ownerUserId={activeConversationIssue.ownerUserId ?? null}
                 />
               </div>
             ) : (
               <div className="flex flex-col items-start gap-3 py-3 text-sm text-muted-foreground">
                 <p>No active conversation yet.</p>
-                <Button size="sm" variant="outline" onClick={() => startConversation.mutate()} disabled={startConversation.isPending}>
+                <Button size="sm" variant="outline" onClick={() => setConversationCreateOpen(true)}>
                   <MessageSquare className="mr-2 h-4 w-4" />
-                  {startConversation.isPending ? "Starting..." : "Start a conversation"}
+                  Start a conversation
                 </Button>
               </div>
             )}
@@ -3887,7 +3828,10 @@ function ItemOutputMeta({ item, children }: { item: PipelineCaseOutputItem; chil
       <Link
         to={issueDetailPath({ id: item.sourceIssueId, identifier: item.sourceIssueIdentifier })}
         className="font-mono text-(length:--text-micro) text-muted-foreground hover:text-foreground hover:underline"
-        title={item.sourceIssueTitle}
+        title={item.sourceIssueTitle ?? issueDisplayTitle({
+          id: item.sourceIssueId,
+          identifier: item.sourceIssueIdentifier,
+        })}
       >
         {item.sourceIssueIdentifier ?? "Source task"}
       </Link>

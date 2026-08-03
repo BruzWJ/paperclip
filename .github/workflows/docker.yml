@@ -41,8 +41,8 @@ jobs:
         id: schema
         run: |
           set -euo pipefail
-          last=$(ls packages/db/src/migrations/*.sql | sed 's|.*/||' | LC_ALL=C sort | tail -1)
-          count=$(ls packages/db/src/migrations/*.sql | wc -l | tr -d ' ')
+          last=$(ls packages/db/migrations/*.sql | sed 's|.*/||' | LC_ALL=C sort | tail -1)
+          count=$(ls packages/db/migrations/*.sql | wc -l | tr -d ' ')
           echo "last=${last}" >> "$GITHUB_OUTPUT"
           echo "count=${count}" >> "$GITHUB_OUTPUT"
 

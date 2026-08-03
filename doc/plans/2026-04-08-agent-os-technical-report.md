@@ -5,9 +5,9 @@ Analyzed upstream: `rivet-dev/agent-os` at commit `0063cdccd1dcb1c8e211670cd0548
 
 ## Executive summary
 
-`agent-os` is not a competitor to Paperclip's core product. It is an execution substrate: an embedded, VM-like runtime for agents, tools, filesystems, and session orchestration. Paperclip is a control plane: company scoping, task hierarchy, approvals, budgets, activity logs, workspaces, and governance.
+`agent-os` is not a competitor to Paperclip's core product. It is an execution substrate: an embedded, VM-like runtime for agents, tools, filesystems, and session orchestration. Paperclip is a control plane: company scoping, issue hierarchy, approvals, budgets, activity logs, workspaces, and governance.
 
-The strongest takeaway is not "copy agent-os wholesale." The strongest takeaway is that Paperclip could selectively use its runtime ideas to improve local agent execution safety, reproducibility, and portability while keeping all company/task/governance logic in Paperclip.
+The strongest takeaway is not "copy agent-os wholesale." The strongest takeaway is that Paperclip could selectively use its runtime ideas to improve local agent execution safety, reproducibility, and portability while keeping all company/issue/governance logic in Paperclip.
 
 My recommendation is:
 
@@ -109,8 +109,8 @@ The most relevant current Paperclip surfaces for any future `agent-os` integrati
 
 - `packages/adapter-utils/src/types.ts`
   - shared adapter contract, session metadata, runtime service reporting, environment tests, and optional `detectModel()`
-- `server/src/services/heartbeat.ts`
-  - heartbeat execution, adapter invocation, cost capture, workspace realization, and issue-comment summaries
+- `server/src/services/issue-execution-attempt-executor.ts`
+  - persisted-ref execution, ACP invocation, cost capture, workspace realization, and canonical issue projections
 - `server/src/services/execution-workspaces.ts`
   - execution workspace lifecycle and git readiness/cleanup logic
 - `server/src/services/plugin-loader.ts`
@@ -145,16 +145,16 @@ Paperclip already has strong execution-workspace concepts, but they are repo/wor
 That could improve:
 
 - reproducible issue starts
-- disposable task sandboxes
+- disposable work sandboxes
 - faster reset/cleanup
 - "resume from snapshot" behavior for recurring routines
 - safe preview environments for risky agent operations
 
-This is especially interesting for tasks that do not need a full git worktree.
+This is especially interesting for work that does not need a full git worktree.
 
 ### 3. A capability vocabulary for runtime governance
 
-Paperclip has governance at the company/task level:
+Paperclip has governance at the company/issue level:
 
 - approvals
 - budgets
@@ -212,7 +212,7 @@ Paperclip can adopt that philosophy directly:
 - escalate to full worktree / container / remote sandbox only when needed
 - keep the escalation explicit in the issue/run model
 
-That is better than forcing all tasks into the heaviest environment up front.
+That is better than forcing all work into the heaviest environment up front.
 
 ## What does not fit Paperclip well
 
@@ -263,7 +263,7 @@ The permission model is good, but it is low-level. Paperclip would still need to
 - who can authorize a capability
 - how approval decisions are logged
 - how policies are scoped by company/project/issue/agent
-- how runtime permissions interact with budgets and task status
+- how runtime permissions interact with budgets and issue status
 
 In other words, `agent-os` can supply enforcement primitives, not the control policy system itself.
 
@@ -286,7 +286,7 @@ This is the highest-value experiment.
 Goal:
 
 - run one supported agent type inside `agent-os`
-- keep Paperclip heartbeat/task/workspace/budget logic unchanged
+- keep Paperclip heartbeat/issue/workspace/budget logic unchanged
 - evaluate startup time, isolation, transcript quality, and operational complexity
 
 Good first target:
@@ -303,7 +303,7 @@ Success criteria:
 - heartbeat can invoke the adapter reliably
 - session resume works across heartbeats
 - Paperclip still records logs, summaries, cost metadata, and issue comments normally
-- runtime permissions can be configured without breaking common tasks
+- runtime permissions can be configured without breaking common work
 
 ### Recommendation B: adopt capability vocabulary into adapter configs
 
@@ -331,7 +331,7 @@ Paperclip should evaluate whether some execution workspaces can be backed by:
 
 This is most valuable for:
 
-- non-repo tasks
+- non-repo work
 - repeatable routines
 - preview/test environments
 - isolation-heavy local execution
@@ -381,7 +381,7 @@ Without that mapping, they would create a second orchestration system inside the
 ### Poor fits right now
 
 - moving Paperclip orchestration into agent-os workflows
-- replacing company/task/governance models with runtime constructs
+- replacing company/issue/governance models with runtime constructs
 - making Rust sidecars a mandatory dependency for all local execution
 
 ## Bottom line
@@ -392,6 +392,6 @@ Paperclip should treat it the same way it treats sandboxes or agent CLIs:
 
 - execution substrate underneath the control plane
 - optional where the tradeoff is worth it
-- never the source of truth for company/task/governance state
+- never the source of truth for company/issue/governance state
 
 If we do one thing from this report, it should be a narrowly scoped `agentos_local` experiment plus a design pass on capability-based runtime permissions. Those two ideas have the best upside and the lowest architectural risk.

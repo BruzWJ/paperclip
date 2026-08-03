@@ -10,16 +10,11 @@ import {
 } from "../services/company-member-roles.js";
 
 describe("agentJoinGrantsFromDefaults", () => {
-  it("adds tasks:assign when invite defaults do not specify agent grants", () => {
-    expect(agentJoinGrantsFromDefaults(null)).toEqual([
-      {
-        permissionKey: "tasks:assign",
-        scope: null,
-      },
-    ]);
+  it("does not create ambient grants when invite defaults omit agent grants", () => {
+    expect(agentJoinGrantsFromDefaults(null)).toEqual([]);
   });
 
-  it("preserves invite agent grants and appends tasks:assign", () => {
+  it("preserves explicit invite agent grants", () => {
     expect(
       agentJoinGrantsFromDefaults({
         agent: {
@@ -36,31 +31,22 @@ describe("agentJoinGrantsFromDefaults", () => {
         permissionKey: "agents:create",
         scope: null,
       },
-      {
-        permissionKey: "tasks:assign",
-        scope: null,
-      },
     ]);
   });
 
-  it("does not duplicate tasks:assign when invite defaults already include it", () => {
+  it("drops removed or otherwise invalid permission keys", () => {
     expect(
       agentJoinGrantsFromDefaults({
         agent: {
           grants: [
             {
-              permissionKey: "tasks:assign",
+              permissionKey: "legacy:removed",
               scope: { projectId: "project-1" },
             },
           ],
         },
       }),
-    ).toEqual([
-      {
-        permissionKey: "tasks:assign",
-        scope: { projectId: "project-1" },
-      },
-    ]);
+    ).toEqual([]);
   });
 });
 
@@ -73,7 +59,6 @@ describe("human invite roles", () => {
       { permissionKey: "environments:manage", scope: null },
       { permissionKey: "users:invite", scope: null },
       { permissionKey: "users:manage_permissions", scope: null },
-      { permissionKey: "tasks:assign", scope: null },
       { permissionKey: "joins:approve", scope: null },
     ]);
   });
@@ -85,7 +70,6 @@ describe("human invite roles", () => {
       { permissionKey: "skills:create", scope: null },
       { permissionKey: "environments:manage", scope: null },
       { permissionKey: "users:invite", scope: null },
-      { permissionKey: "tasks:assign", scope: null },
       { permissionKey: "joins:approve", scope: null },
     ]);
   });
@@ -106,9 +90,7 @@ describe("human invite roles", () => {
   });
 
   it("falls back to role grants when human invite defaults omit explicit grants", () => {
-    expect(humanJoinGrantsFromDefaults(null, "operator")).toEqual([
-      { permissionKey: "tasks:assign", scope: null },
-    ]);
+    expect(humanJoinGrantsFromDefaults(null, "operator")).toEqual([]);
   });
 
   it("preserves explicit human invite grants", () => {

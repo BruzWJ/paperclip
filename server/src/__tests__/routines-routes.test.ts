@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const companyId = "22222222-2222-4222-8222-222222222222";
 const agentId = "11111111-1111-4111-8111-111111111111";
@@ -126,7 +128,7 @@ const mockAnnotationService = vi.hoisted(() => ({
 }));
 
 const mockAccessService = vi.hoisted(() => ({
-  canUser: vi.fn(),
+  decide: vi.fn(),
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
@@ -176,7 +178,10 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", routineRoutes({} as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use("/api", routineRoutes({} as any, {
+    ordinaryIssues: {} as never,
+  }));
   app.use(errorHandler);
   return app;
 }
@@ -214,7 +219,10 @@ describe("routine routes", () => {
       source: "manual",
       status: "issue_created",
     });
-    mockAccessService.canUser.mockResolvedValue(false);
+    mockAccessService.decide.mockResolvedValue({
+      allowed: false,
+      explanation: "Board membership is viewer-only",
+    });
     mockLogActivity.mockResolvedValue(undefined);
     mockRoutineService.getDescriptionDocument.mockResolvedValue({
       id: "99999999-9999-4999-8999-999999999999",
@@ -309,13 +317,13 @@ describe("routine routes", () => {
   });
 
   it("passes project filters to the routine list service", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: true,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+    }));
 
     const res = await request(app)
       .get(`/api/companies/${companyId}/routines`)
@@ -326,13 +334,13 @@ describe("routine routes", () => {
   });
 
   it("lists routine revisions for a board member in newest-first service order", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: true,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+    }));
 
     const res = await request(app).get(`/api/routines/${routineId}/revisions`);
 
@@ -342,13 +350,13 @@ describe("routine routes", () => {
   });
 
   it("creates, replies to, and resolves routine description annotation threads", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: true,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "admin" }],
+    }));
 
     const selector = {
       quote: { exact: "selected text", prefix: "Alpha ", suffix: " omega" },
@@ -422,13 +430,17 @@ describe("routine routes", () => {
   });
 
   it("blocks routine revision reads across company scope", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: ["99999999-9999-4999-8999-999999999999"],
-    });
+      memberships: [{
+        companyId: "99999999-9999-4999-8999-999999999999",
+        status: "active",
+        membershipRole: "member",
+      }],
+    }));
 
     const res = await request(app).get(`/api/routines/${routineId}/revisions`);
 
@@ -437,13 +449,17 @@ describe("routine routes", () => {
   });
 
   it("returns an identical 404 body for missing and cross-tenant routine triggers", async () => {
-    const crossTenantApp = await createApp({
-      type: "board",
+    const crossTenantApp = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: ["99999999-9999-4999-8999-999999999999"],
-    });
+      memberships: [{
+        companyId: "99999999-9999-4999-8999-999999999999",
+        status: "active",
+        membershipRole: "member",
+      }],
+    }));
     const crossTenant = await request(crossTenantApp)
       .patch(`/api/routine-triggers/${trigger.id}`)
       .send({ kind: "cron", config: { expression: "0 9 * * *" } });
@@ -462,19 +478,23 @@ describe("routine routes", () => {
   it("requires an assigned agent for routine revision history access", async () => {
     const app = await createApp({
       type: "agent",
+      source: "internal",
       agentId: otherAgentId,
       companyId,
+      runId: "88888888-8888-4888-8888-888888888889",
     });
 
     const res = await request(app).get(`/api/routines/${routineId}/revisions`);
 
     expect(res.status).toBe(403);
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockRoutineService.listRevisions).not.toHaveBeenCalled();
   });
 
-  it("restores routine revisions with existing routine-management permissions", async () => {
+  it("rejects agent revision restore through generic REST", async () => {
     const app = await createApp({
       type: "agent",
+      source: "internal",
       agentId,
       companyId,
       runId: "88888888-8888-4888-8888-888888888888",
@@ -482,27 +502,23 @@ describe("routine routes", () => {
 
     const res = await request(app).post(`/api/routines/${routineId}/revisions/${revisionId}/restore`).send({});
 
-    expect(res.status).toBe(200);
-    expect(mockRoutineService.restoreRevision).toHaveBeenCalledWith(routineId, revisionId, {
-      agentId,
-      userId: null,
-      runId: "88888888-8888-4888-8888-888888888888",
-    });
-    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "routine.revision_restored",
-      entityId: routineId,
-      runId: "88888888-8888-4888-8888-888888888888",
-    }));
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("compiled_run_interface_required");
+    expect(mockRoutineService.restoreRevision).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "routine.revision_restored" }),
+    );
   });
 
-  it("requires tasks:assign permission for non-admin board routine creation", async () => {
-    const app = await createApp({
-      type: "board",
+  it("rejects viewer routine creation", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
+    }));
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/routines`)
@@ -513,18 +529,19 @@ describe("routine routes", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("tasks:assign");
+    expect(res.body.error).toContain("Viewer access is read-only");
+    expect(mockAccessService.decide).not.toHaveBeenCalled();
     expect(mockRoutineService.create).not.toHaveBeenCalled();
   });
 
-  it("requires tasks:assign permission to retarget a routine assignee", async () => {
-    const app = await createApp({
-      type: "board",
+  it("rejects a viewer retargeting a routine owner", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
+    }));
 
     const res = await request(app)
       .patch(`/api/routines/${routineId}`)
@@ -533,19 +550,20 @@ describe("routine routes", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("tasks:assign");
+    expect(res.body.error).toContain("Viewer access is read-only");
+    expect(mockAccessService.decide).not.toHaveBeenCalled();
     expect(mockRoutineService.update).not.toHaveBeenCalled();
   });
 
-  it("requires tasks:assign permission to reactivate a routine", async () => {
+  it("rejects a viewer reactivating a routine", async () => {
     mockRoutineService.get.mockResolvedValue(pausedRoutine);
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
+    }));
 
     const res = await request(app)
       .patch(`/api/routines/${routineId}`)
@@ -554,18 +572,19 @@ describe("routine routes", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("tasks:assign");
+    expect(res.body.error).toContain("Viewer access is read-only");
+    expect(mockAccessService.decide).not.toHaveBeenCalled();
     expect(mockRoutineService.update).not.toHaveBeenCalled();
   });
 
-  it("requires tasks:assign permission to create a trigger", async () => {
-    const app = await createApp({
-      type: "board",
+  it("rejects a viewer creating a trigger", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
+    }));
 
     const res = await request(app)
       .post(`/api/routines/${routineId}/triggers`)
@@ -576,18 +595,19 @@ describe("routine routes", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("tasks:assign");
+    expect(res.body.error).toContain("Viewer access is read-only");
+    expect(mockAccessService.decide).not.toHaveBeenCalled();
     expect(mockRoutineService.createTrigger).not.toHaveBeenCalled();
   });
 
-  it("requires tasks:assign permission to update a trigger", async () => {
-    const app = await createApp({
-      type: "board",
+  it("rejects a viewer updating a trigger", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
+    }));
 
     const res = await request(app)
       .patch(`/api/routine-triggers/${trigger.id}`)
@@ -596,37 +616,42 @@ describe("routine routes", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("tasks:assign");
+    expect(res.body.error).toContain("Viewer access is read-only");
+    expect(mockAccessService.decide).not.toHaveBeenCalled();
     expect(mockRoutineService.updateTrigger).not.toHaveBeenCalled();
   });
 
-  it("requires tasks:assign permission to manually run a routine", async () => {
-    const app = await createApp({
-      type: "board",
+  it("rejects a viewer manually running a routine", async () => {
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "viewer" }],
+    }));
 
     const res = await request(app)
       .post(`/api/routines/${routineId}/run`)
       .send({});
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("tasks:assign");
+    expect(res.body.error).toContain("Viewer access is read-only");
+    expect(mockAccessService.decide).not.toHaveBeenCalled();
     expect(mockRoutineService.runRoutine).not.toHaveBeenCalled();
   });
 
   it("passes the board actor through when manually running a routine", async () => {
-    mockAccessService.canUser.mockResolvedValue(true);
-    const app = await createApp({
-      type: "board",
+    mockAccessService.decide.mockResolvedValue({
+      allowed: true,
+      explanation: "Active board membership",
+    });
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "member" }],
+    }));
 
     const res = await request(app)
       .post(`/api/routines/${routineId}/run`)
@@ -636,20 +661,23 @@ describe("routine routes", () => {
     expect(mockRoutineService.runRoutine).toHaveBeenCalledWith(routineId, {
       source: "manual",
     }, {
-      agentId: null,
+      type: "user",
       userId: "board-user",
     });
   });
 
-  it("allows routine creation when the board user has tasks:assign", async () => {
-    mockAccessService.canUser.mockResolvedValue(true);
-    const app = await createApp({
-      type: "board",
+  it("allows routine creation with board issue-mutation authority", async () => {
+    mockAccessService.decide.mockResolvedValue({
+      allowed: true,
+      explanation: "Active board membership",
+    });
+    const app = await createApp(testBoardSessionActor({
       userId: "board-user",
-      source: "session",
+      sessionId: "session-board-user",
       isInstanceAdmin: false,
       companyIds: [companyId],
-    });
+      memberships: [{ companyId, status: "active", membershipRole: "member" }],
+    }));
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/routines`)
@@ -665,9 +693,8 @@ describe("routine routes", () => {
       title: "Daily routine",
       assigneeAgentId: agentId,
     }), {
-      agentId: null,
+      type: "user",
       userId: "board-user",
-      runId: null,
     });
     expect(mockTrackRoutineCreated).toHaveBeenCalledWith(expect.anything());
   });

@@ -36,8 +36,8 @@ describe("admin, asset, and skill parity commands", () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     tempDir = await mkdtemp(path.join(tmpdir(), "paperclip-cli-parity-"));
@@ -81,36 +81,28 @@ describe("admin, asset, and skill parity commands", () => {
 
     await run(["adapter", "list"]);
     await run(["adapter", "install", "--payload-json", "{\"packageName\":\"adapter\"}"]);
-    await run(["adapter", "get", "codex_local"]);
-    await run(["adapter", "get", "codex/local"]);
-    await run(["adapter", "update", "codex_local", "--payload-json", "{\"disabled\":true}"]);
-    await run(["adapter", "override", "codex_local", "--payload-json", "{\"paused\":true}"]);
-    await run(["adapter", "reload", "codex_local"]);
-    await run(["adapter", "reinstall", "codex_local"]);
-    await run(["adapter", "config-schema", "codex_local"]);
-    await run(["adapter", "ui-parser", "codex_local"]);
-    await run(["adapter", "models", "codex_local", "--company-id", COMPANY_ID, "--refresh", "--environment-id", "env-1"]);
-    await run(["adapter", "model-profiles", "codex_local", "--company-id", COMPANY_ID]);
-    await run(["adapter", "detect-model", "codex_local", "--company-id", COMPANY_ID]);
-    await run(["adapter", "test-environment", "codex_local", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
-    await run(["adapter", "delete", "codex_local"]);
+    await run(["adapter", "get", "codex"]);
+    await run(["adapter", "update", "codex", "--payload-json", "{\"disabled\":true}"]);
+    await run(["adapter", "override", "codex", "--payload-json", "{\"paused\":true}"]);
+    await run(["adapter", "reload", "codex"]);
+    await run(["adapter", "reinstall", "codex"]);
+    await run(["adapter", "config-schema", "codex"]);
+    await run(["adapter", "models", "codex", "--company-id", COMPANY_ID]);
+    await run(["adapter", "model-profiles", "codex", "--company-id", COMPANY_ID]);
+    await run(["adapter", "delete", "codex"]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", "http://localhost:3100/api/adapters"],
       ["POST", "http://localhost:3100/api/adapters/install"],
-      ["GET", "http://localhost:3100/api/adapters/codex_local"],
-      ["GET", "http://localhost:3100/api/adapters/codex%2Flocal"],
-      ["PATCH", "http://localhost:3100/api/adapters/codex_local"],
-      ["PATCH", "http://localhost:3100/api/adapters/codex_local/override"],
-      ["POST", "http://localhost:3100/api/adapters/codex_local/reload"],
-      ["POST", "http://localhost:3100/api/adapters/codex_local/reinstall"],
-      ["GET", "http://localhost:3100/api/adapters/codex_local/config-schema"],
-      ["GET", "http://localhost:3100/api/adapters/codex_local/ui-parser.js"],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex_local/models?refresh=true&environmentId=env-1`],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex_local/model-profiles`],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex_local/detect-model`],
-      ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex_local/test-environment`],
-      ["DELETE", "http://localhost:3100/api/adapters/codex_local"],
+      ["GET", "http://localhost:3100/api/adapters/codex"],
+      ["PATCH", "http://localhost:3100/api/adapters/codex"],
+      ["PATCH", "http://localhost:3100/api/adapters/codex/override"],
+      ["POST", "http://localhost:3100/api/adapters/codex/reload"],
+      ["POST", "http://localhost:3100/api/adapters/codex/reinstall"],
+      ["GET", "http://localhost:3100/api/adapters/codex/config-schema"],
+      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex/models`],
+      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex/model-profiles`],
+      ["DELETE", "http://localhost:3100/api/adapters/codex"],
     ]);
   });
 

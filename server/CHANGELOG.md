@@ -12,7 +12,6 @@
   - @paperclipai/adapter-cursor-local@0.3.1
   - @paperclipai/adapter-gemini-local@0.3.1
   - @paperclipai/adapter-openclaw-gateway@0.3.1
-  - @paperclipai/adapter-opencode-local@0.3.1
   - @paperclipai/adapter-pi-local@0.3.1
   - @paperclipai/db@0.3.1
   - @paperclipai/shared@0.3.1
@@ -33,7 +32,6 @@
   - @paperclipai/adapter-codex-local@0.3.0
   - @paperclipai/adapter-cursor-local@0.3.0
   - @paperclipai/adapter-openclaw-gateway@0.3.0
-  - @paperclipai/adapter-opencode-local@0.3.0
   - @paperclipai/adapter-pi-local@0.3.0
   - @paperclipai/db@0.3.0
 

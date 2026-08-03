@@ -66,7 +66,12 @@ describe("CaseActivityFeed", () => {
         actorAgentId: "agent-1",
         actorAgentName: "Cases Agent",
         runId: "run-1",
-        issue: { id: "i1", identifier: "PAP-42", title: "Source task", status: "in_progress" },
+        issue: {
+          id: "i1",
+          identifier: "PAP-42",
+          title: "Source task",
+          boardPresentationStatus: "in_progress",
+        },
       }),
     ]);
     const text = container.textContent ?? "";
@@ -85,7 +90,12 @@ describe("CaseActivityFeed", () => {
       event({
         kind: "issue_linked",
         actorType: "system",
-        issue: { id: "i2", identifier: "PAP-9", title: "Auto", status: "todo" },
+        issue: {
+          id: "i2",
+          identifier: "PAP-9",
+          title: "Auto",
+          boardPresentationStatus: "todo",
+        },
       }),
     ]);
     const text = container.textContent ?? "";

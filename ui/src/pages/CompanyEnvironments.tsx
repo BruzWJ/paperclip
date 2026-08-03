@@ -1711,7 +1711,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
             </div>
             <h1 className="text-lg font-semibold">{editingEnvironmentId ? "Edit environment" : "Add environment"}</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Configure a reusable execution target for your agents. Saved changes affect future runs; Paperclip may start fresh sessions or sandbox leases after environment config changes.
+              Configure a reusable execution target for your agents. Saved changes affect future runs and sandbox leases.
             </p>
           </div>
 
@@ -1895,16 +1895,6 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                       This provider does not declare additional configuration fields.
                     </div>
                   )}
-                  <ToggleField
-                    label="Stream run logs"
-                    hint="Stream the agent CLI's output live while sandbox runs execute (recommended). Turn off to deliver output only when the run finishes."
-                    checked={environmentForm.sandboxConfig.streamRunLogs !== false}
-                    onChange={(checked) =>
-                      setEnvironmentForm((current) => ({
-                        ...current,
-                        sandboxConfig: { ...current.sandboxConfig, streamRunLogs: checked },
-                      }))}
-                  />
                 </div>
               ) : null}
 

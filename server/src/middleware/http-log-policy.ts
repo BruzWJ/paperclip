@@ -4,11 +4,10 @@ const SILENCED_SUCCESS_API_PATHS = [
   /^\/api\/health(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/activity(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/dashboard(?:\/|$)/,
-  /^\/api\/companies\/[^/]+\/heartbeat-runs(?:\/|$)/,
+  /^\/api\/companies\/[^/]+\/runs(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/issues(?:\/|$)/,
-  /^\/api\/companies\/[^/]+\/live-runs(?:\/|$)/,
   /^\/api\/companies\/[^/]+\/sidebar-badges(?:\/|$)/,
-  /^\/api\/heartbeat-runs\/[^/]+\/log(?:\/|$)/,
+  /^\/api\/runs\/[^/]+(?:\/|$)/,
 ];
 
 const SILENCED_SUCCESS_STATIC_PREFIXES = [

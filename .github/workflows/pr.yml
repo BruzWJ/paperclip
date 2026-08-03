@@ -44,7 +44,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
 
       - name: Validate Dockerfile deps stage
         run: node ./scripts/check-docker-deps-stage.mjs
@@ -63,6 +63,9 @@ jobs:
 
       - name: Test release verify workflow wiring
         run: node --test ./scripts/__tests__/release-verify-workflow.test.mjs
+
+      - name: Test production-boundary workflow contract
+        run: node --test ./scripts/__tests__/production-boundaries-workflow.test.mjs
 
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
@@ -103,7 +106,7 @@ jobs:
 
   typecheck_release_registry:
     name: Typecheck + Release Registry
-    needs: [policy]
+    needs: [policy, production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -126,7 +129,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -138,9 +141,52 @@ jobs:
       - name: Verify release registry test coverage
         run: pnpm run test:release-registry
 
+  production_boundaries:
+    name: Production boundaries
+    needs: [policy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Checkout pinned Session design reference
+        uses: actions/checkout@v7
+        with:
+          repository: anomalyco/opencode
+          ref: 2b2aacc93975330f9fd045d4306f698b0c6a8f8f
+          path: reference/opencode
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Restore regenerated PR lockfile (if policy uploaded one)
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: pr-lockfile
+          path: .
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run canonical production gates and gate self-tests
+        env:
+          OPENCODE_SESSION_DONOR: ${{ github.workspace }}/reference/opencode
+        run: pnpm run check:production-boundaries
+
   general_tests:
     name: General tests (${{ matrix.group_label }})
-    needs: [policy]
+    needs: [policy, production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -186,7 +232,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -205,7 +251,7 @@ jobs:
     # Preserve the legacy required-check name while the underlying work runs in parallel.
     name: verify
     if: ${{ always() }}
-    needs: [typecheck_release_registry, general_tests, build]
+    needs: [typecheck_release_registry, production_boundaries, general_tests, build, verify_serialized_server, token_gates]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -213,16 +259,22 @@ jobs:
       - name: Fail if any split verify lane failed
         env:
           TYPECHECK_RELEASE_REGISTRY_RESULT: ${{ needs.typecheck_release_registry.result }}
+          PRODUCTION_BOUNDARIES_RESULT: ${{ needs.production_boundaries.result }}
           GENERAL_TESTS_RESULT: ${{ needs.general_tests.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          SERIALIZED_TESTS_RESULT: ${{ needs.verify_serialized_server.result }}
+          TOKEN_GATES_RESULT: ${{ needs.token_gates.result }}
         run: |
           test "$TYPECHECK_RELEASE_REGISTRY_RESULT" = "success"
+          test "$PRODUCTION_BOUNDARIES_RESULT" = "success"
           test "$GENERAL_TESTS_RESULT" = "success"
           test "$BUILD_RESULT" = "success"
+          test "$SERIALIZED_TESTS_RESULT" = "success"
+          test "$TOKEN_GATES_RESULT" = "success"
 
   build:
     name: Build
-    needs: [policy]
+    needs: [policy, production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -245,7 +297,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -256,7 +308,7 @@ jobs:
 
   verify_serialized_server:
     name: Verify serialized server suites (${{ matrix.shard_label }})
-    needs: [policy]
+    needs: [policy, production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -295,7 +347,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -304,9 +356,32 @@ jobs:
       - name: Run serialized server test shard
         run: pnpm test:run:serialized -- --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}
 
+  token_gates:
+    name: UI token gates
+    needs: [production_boundaries, typecheck_release_registry, general_tests, verify_serialized_server, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
+
+      - name: Enforce UI design tokens
+        run: pnpm run check:token-gates
+
   canary_dry_run:
     name: Canary Dry Run
-    needs: [policy]
+    needs: [policy, production_boundaries]
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -329,7 +404,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -361,7 +436,7 @@ jobs:
 
   e2e_shards:
     name: e2e shard (${{ matrix.shard_label }})
-    needs: [policy]
+    needs: [policy, production_boundaries, verify_serialized_server, build, token_gates]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -398,7 +473,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -409,21 +484,6 @@ jobs:
         # directly for the headless e2e lane instead of downloading Playwright
         # browser bundles inside the 30 minute job budget.
         run: google-chrome --version
-
-      - name: Generate Paperclip config
-        run: |
-          mkdir -p ~/.paperclip/instances/default
-          cat > ~/.paperclip/instances/default/config.json << 'CONF'
-          {
-            "$meta": { "version": 1, "updatedAt": "2026-01-01T00:00:00.000Z", "source": "onboard" },
-            "database": { "mode": "embedded-postgres" },
-            "logging": { "mode": "file" },
-            "server": { "deploymentMode": "local_trusted", "host": "127.0.0.1", "port": 3100 },
-            "auth": { "baseUrlMode": "auto" },
-            "storage": { "provider": "local_disk" },
-            "secrets": { "provider": "local_encrypted", "strictMode": false }
-          }
-          CONF
 
       - name: Run e2e tests
         env:
@@ -448,12 +508,60 @@ jobs:
             tests/e2e/test-results/
           retention-days: 14
 
+  e2e_multiuser_authenticated:
+    name: e2e multiuser authenticated
+    needs: [policy, production_boundaries, verify_serialized_server, build, token_gates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Restore regenerated PR lockfile (if policy uploaded one)
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: pr-lockfile
+          path: .
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify runner Chrome
+        run: google-chrome --version
+
+      - name: Run authenticated multiuser E2E
+        env:
+          PAPERCLIP_PLAYWRIGHT_CHANNEL: "chrome"
+        run: pnpm run test:e2e:multiuser-authenticated
+
+      - name: Upload authenticated multiuser diagnostics
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-multiuser-authenticated
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+          retention-days: 14
+
   e2e:
     # Preserve the legacy required-check name while the specs run sharded
     # across the matrix above (same pattern as the `verify` aggregate).
     name: e2e
     if: ${{ always() }}
-    needs: [e2e_shards]
+    needs: [e2e_shards, e2e_multiuser_authenticated]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -461,4 +569,7 @@ jobs:
       - name: Fail if any e2e shard failed
         env:
           E2E_SHARDS_RESULT: ${{ needs.e2e_shards.result }}
-        run: test "$E2E_SHARDS_RESULT" = "success"
+          E2E_MULTIUSER_RESULT: ${{ needs.e2e_multiuser_authenticated.result }}
+        run: |
+          test "$E2E_SHARDS_RESULT" = "success"
+          test "$E2E_MULTIUSER_RESULT" = "success"

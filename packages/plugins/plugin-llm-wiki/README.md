@@ -12,9 +12,9 @@ The alpha surface includes:
 
 - manifest-declared Wiki page, sidebar entry, and settings page
 - trusted local folder declaration for `raw/`, `wiki/`, `AGENTS.md`, `IDEA.md`, `wiki/index.md`, and `wiki/log.md`
-- plugin database namespace migration for wiki instances, sources, pages, operations, query sessions, and resource bindings
+- plugin database namespace migration for wiki instances, sources, pages, ordinary issue operations, and resource bindings
 - managed `Wiki Maintainer` agent, managed `LLM Wiki` project, and paused managed routines for wiki update processing, lint, and index refresh
-- plugin-operation issue creation using `surfaceVisibility: "plugin_operation"`
+- ordinary callback-bound issue creation with an immutable request and required invokable agent owner
 - local source capture into `raw/` with metadata rows in the plugin DB namespace
 - opt-in company-scoped Paperclip event ingestion controls for issues, comments, and documents; event ingestion is disabled by default and routes captured raw provenance into the default space only
 - manual Paperclip project/root issue distillation and bounded backfill actions with explicit work items, operation issues, source caps, and estimated cost recording
@@ -23,9 +23,12 @@ The alpha surface includes:
 - wiki page writes with plugin path validation, atomic local-folder writes, metadata/revision rows, backlink extraction, and optional stale-hash protection
 - wiki tools for search/read/write/propose patch/source/log/index/backlinks workflows
 
-## Phase 5 Security Gate
+## Paperclip Context Boundary
 
-Paperclip-derived text ingestion stays limited to issue titles/descriptions, issue comments, and issue documents.
+The plugin control plane may copy only canonical issue list/get projections into
+bounded distillation inputs. It does not expose or copy issue comment or document
+bodies. A Wiki Maintainer working an ordinary issue may retrieve only the
+run-scoped issue context permitted by that agent execution.
 
 - Issue attachments/assets are **metadata-only** in Phase 5.
 - Issue work products are **metadata-only** in Phase 5.
@@ -66,12 +69,12 @@ The focused Vitest suite covers:
 - standalone package boundaries and package-local harness dependencies
 - required local folder bootstrap writes
 - raw source capture plus ingest metadata persistence
-- hidden plugin-operation issue creation for ingest/query/file-as-page workflows
+- ordinary callback-bound issue creation for ingest/query/file-as-page workflows
 - disabled and enabled Paperclip event ingestion paths
 - managed routine declarations, manual distill/backfill work items, source cap handling, and backfill project/date scoping
 - atomic page writes, metadata/revision rows, backlinks, and stale-hash refusal
-- query session creation, run-id recording, stream event forwarding, and completion updates
-- filing a streamed query answer back into the wiki through a hidden operation
+- callback-bound query issue creation and chronological durable comment/lifecycle projection
+- filing a reviewed durable query answer back into the wiki through an ordinary operation issue
 
 Remaining alpha gaps:
 
@@ -95,8 +98,8 @@ curl -X POST http://127.0.0.1:3100/api/plugins/install \
 - `pnpm build` uses esbuild presets from `@paperclipai/plugin-sdk/bundlers`.
 - `pnpm build:rollup` uses rollup presets from the same SDK.
 
-After changing manifest-loaded assets such as skills, agent instructions, or
-templates, recompile the local plugin before re-enabling it:
+After changing manifest-loaded assets such as skills or templates, recompile the
+local plugin before re-enabling it:
 
 ```bash
 pnpm --filter @paperclipai/plugin-llm-wiki build
@@ -145,16 +148,12 @@ default first-install skeleton is copied from the vanilla LLM Wiki layout, with
 `CLAUDE.md` renamed to `AGENTS.md` and Paperclip project overviews, standups,
 decisions, and history kept together under `wiki/projects/<slug>/`.
 
-## Managed Agent Instructions
+## Agent Configuration Boundary
 
-Plugin-managed agent instruction bundles live under:
-
-```text
-agents/<agent-key>/AGENTS.md
-```
-
-For this plugin the Wiki Maintainer source bundle is `agents/wiki-maintainer/AGENTS.md`.
-Any additional files in that folder are installed as sibling instruction files
-for the managed agent. The settings health check reports drift from these
-defaults, and resetting the managed agent asks for confirmation before replacing
-customized instructions.
+The plugin does not install an agent instruction bundle or issue-level model
+override. `AGENTS.md` under the configured wiki root is wiki schema content, not
+Paperclip-authored provider input. Operators configure the ordinary Wiki
+Maintainer agent through Paperclip's server-admitted ACP adapter selection and
+explicitly selected company skills and tools. CLI authentication remains owned
+by the selected ACP agent process; the plugin does not transport provider
+credentials.

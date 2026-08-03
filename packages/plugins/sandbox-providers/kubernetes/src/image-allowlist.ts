@@ -19,7 +19,7 @@ export interface ResolveImageInput {
   imageOverride?: string | null;
 }
 
-export interface ResolveImageDefaults {
+export interface ResolveImageRuntime {
   runtimeImage: string;
 }
 
@@ -30,7 +30,7 @@ export interface ResolveImageConfig {
 
 export function resolveImage(
   target: ResolveImageInput,
-  defaults: ResolveImageDefaults,
+  runtime: ResolveImageRuntime,
   config: ResolveImageConfig,
 ): string {
   if (target.imageOverride) {
@@ -40,13 +40,13 @@ export function resolveImage(
     return target.imageOverride;
   }
   if (config.imageRegistry) {
-    return rewriteRegistry(defaults.runtimeImage, config.imageRegistry);
+    return rewriteRegistry(runtime.runtimeImage, config.imageRegistry);
   }
-  return defaults.runtimeImage;
+  return runtime.runtimeImage;
 }
 
 function rewriteRegistry(image: string, registry: string): string {
-  // image is like "ghcr.io/paperclipai/agent-runtime-claude:v1"
+  // image is like "registry.example/team/provider-runtime:v1"
   // we want to replace the first two path segments (host + org) with `registry`
   const cleanRegistry = registry.replace(/\/+$/, "");
   const colonIdx = image.lastIndexOf(":");

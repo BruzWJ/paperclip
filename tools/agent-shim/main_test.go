@@ -9,12 +9,12 @@ import (
 func TestLoadRuntimeCommandSpec_OK(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "spec.json")
-	_ = os.WriteFile(p, []byte(`{"command":"claude-code","args":["--print"]}`), 0o600)
+	_ = os.WriteFile(p, []byte(`{"command":"external-agent","args":["--print"]}`), 0o600)
 	spec, err := loadRuntimeCommandSpec(p)
 	if err != nil {
 		t.Fatalf("expected ok, got %v", err)
 	}
-	if spec.Command != "claude-code" || len(spec.Args) != 1 {
+	if spec.Command != "external-agent" || len(spec.Args) != 1 {
 		t.Fatalf("unexpected spec: %+v", spec)
 	}
 }

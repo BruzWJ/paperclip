@@ -24,10 +24,6 @@ The normative package format draft lives in:
 
 This plan is about implementation and rollout inside Paperclip.
 
-Adapter-wide skill rollout details live in:
-
-- `doc/plans/2026-03-14-adapter-skill-sync-rollout.md`
-
 ## 2. Executive Summary
 
 Paperclip already has portability primitives in the repo:
@@ -62,7 +58,7 @@ The new direction is:
   - company definition
   - org subtree / team definition
   - agent definitions
-  - optional starter projects and tasks
+  - optional starter projects and issues
   - reusable skills
 - V1 skill support is compatible with the existing `skills.sh` / Agent Skills ecosystem.
 - A user can import into:
@@ -104,7 +100,7 @@ Current product limitations:
 
 1. Import/export UX still needs deeper tree-selection and skill/package management polish.
 2. Adapter-specific skill sync remains uneven across adapters and must degrade cleanly when unsupported.
-3. Projects and starter tasks should stay opt-in on export rather than default package content.
+3. Projects and starter issues should stay opt-in on export rather than default package content.
 4. Import/export still needs stronger coverage around attribution, pin verification, and executable-package warnings.
 5. The current markdown frontmatter parser is intentionally lightweight and should stay constrained to the documented shape.
 
@@ -118,7 +114,7 @@ The canonical authoring format becomes a markdown-first package rooted in one of
 - `TEAM.md`
 - `AGENTS.md`
 - `PROJECT.md`
-- `TASK.md`
+- `ISSUE.md`
 - `SKILL.md`
 
 The normative draft is:
@@ -185,7 +181,7 @@ Paperclip import/export should support these entity kinds:
 - team
 - agent
 - project
-- task
+- issue
 - skill
 
 ### 6.2 Team Semantics
@@ -216,7 +212,7 @@ Examples:
 - selecting an agent auto-selects its required docs and skill refs
 - selecting a team auto-selects its subtree
 - selecting a company auto-selects all included entities by default
-- selecting a project auto-selects its starter tasks
+- selecting a project auto-selects its starter issues
 
 The preview output should reflect graph resolution explicitly.
 
@@ -407,7 +403,7 @@ Initial export units:
 Later optional units:
 
 - skill pack export
-- seed projects/tasks bundle
+- seed projects/issues bundle
 
 ## 10. Storage Model Inside Paperclip
 
@@ -594,7 +590,7 @@ If importing skills:
 
 - goals
 - projects
-- starter issues/tasks
+- starter issues
 
 This phase is intentionally after the structural model is stable.
 

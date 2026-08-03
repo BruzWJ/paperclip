@@ -5,13 +5,8 @@ import { ADAPTER_AGNOSTIC_KEYS } from "./constants.js";
 
 const EXPECTED_ADAPTER_AGNOSTIC_KEYS = [
   "env",
-  "promptTemplate",
-  "instructionsFilePath",
-  "cwd",
   "timeoutSec",
   "graceSec",
-  "bootstrapPromptTemplate",
-  "paperclipSkillSync",
 ] as const;
 
 function readRepoFile(pathFromRoot: string) {
@@ -26,13 +21,8 @@ describe("adapter-agnostic config keys", () => {
     expect(ADAPTER_AGNOSTIC_KEYS).toEqual(EXPECTED_ADAPTER_AGNOSTIC_KEYS);
   });
 
-  it("is imported by the server and UI instead of being re-declared", () => {
-    const serverSource = readRepoFile("server/src/routes/agents.ts");
+  it("is imported by the adapter-revision editor instead of being re-declared", () => {
     const uiSource = readRepoFile("ui/src/lib/agent-config-patch.ts");
-
-    expect(serverSource).toContain("ADAPTER_AGNOSTIC_KEYS");
-    expect(serverSource).toContain("from \"@paperclipai/shared\"");
-    expect(serverSource).not.toMatch(/const\s+ADAPTER_AGNOSTIC_KEYS\s*=/);
 
     expect(uiSource).toContain("ADAPTER_AGNOSTIC_KEYS");
     expect(uiSource).toContain("from \"@paperclipai/shared\"");

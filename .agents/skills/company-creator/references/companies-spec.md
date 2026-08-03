@@ -5,7 +5,7 @@ The normative specification lives at:
 - Web: https://agentcompanies.io/specification
 - Local: docs/companies/companies-spec.md
 
-Read the local spec file before generating any package files. The spec defines the canonical format and all frontmatter fields. Below is a quick-reference summary for common authoring tasks.
+Read the local spec file before generating any package files. The spec defines the canonical format and all frontmatter fields. Below is a quick-reference summary for common authoring work.
 
 ## Package Kinds
 
@@ -15,7 +15,7 @@ Read the local spec file before generating any package files. The spec defines t
 | TEAM.md    | team    | Reusable org subtree                              |
 | AGENTS.md  | agent   | One role, instructions, and attached skills       |
 | PROJECT.md | project | Planned work grouping                             |
-| TASK.md    | task    | Portable starter task                             |
+| ISSUE.md   | issue   | Portable starter issue                            |
 | SKILL.md   | skill   | Agent Skills capability package (do not redefine) |
 
 ## Directory Layout
@@ -30,10 +30,10 @@ company-package/
 ├── projects/
 │   └── <slug>/
 │       ├── PROJECT.md
-│       └── tasks/
-│           └── <slug>/TASK.md
-├── tasks/
-│   └── <slug>/TASK.md
+│       └── issues/
+│           └── <slug>/ISSUE.md
+├── issues/
+│   └── <slug>/ISSUE.md
 ├── skills/
 │   └── <slug>/SKILL.md
 ├── assets/
@@ -46,7 +46,7 @@ company-package/
 
 ```yaml
 schema: agentcompanies/v1
-kind: company | team | agent | project | task
+kind: company | team | agent | project | issue
 slug: url-safe-stable-identity
 name: Human Readable Name
 description: Short description for discovery
@@ -109,20 +109,13 @@ description: What this project delivers
 owner: agent-slug
 ```
 
-## TASK.md Key Fields
+## ISSUE.md Key Fields
 
 ```yaml
-name: Task Name
-assignee: agent-slug
+name: Issue Name
+owner: agent-slug
 project: project-slug
-schedule:
-  timezone: America/Chicago
-  startsAt: 2026-03-16T09:00:00-05:00
-  recurrence:
-    frequency: weekly
-    interval: 1
-    weekdays: [monday]
-    time: { hour: 9, minute: 0 }
+recurring: true
 ```
 
 ## Source References (for external skills/content)

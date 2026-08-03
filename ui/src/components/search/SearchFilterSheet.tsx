@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
-  applyAssigneeToken,
-  assigneeToken,
+  applyOwnerToken,
+  ownerToken,
   countActiveFilters,
   SORT_LABELS,
   type SearchFilters,
@@ -116,9 +116,9 @@ export function SearchFilterSheet({
     update({ ...draft, [dimension]: next });
   }
 
-  function toggleAssignee(token: string) {
-    const current = assigneeToken(draft, data.currentUserId);
-    update(applyAssigneeToken(draft, current === token ? undefined : token, data.currentUserId));
+  function toggleOwner(token: string) {
+    const current = ownerToken(draft, data.currentUserId);
+    update(applyOwnerToken(draft, current === token ? undefined : token, data.currentUserId));
   }
 
   function toggleSingle(dimension: "projectId" | "labelId" | "updatedWithin", value: string) {
@@ -127,7 +127,7 @@ export function SearchFilterSheet({
   }
 
   const activeCount = countActiveFilters(draft);
-  const selectedAssignee = assigneeToken(draft, data.currentUserId);
+  const selectedOwner = ownerToken(draft, data.currentUserId);
   const applyLabel =
     previewTotal === null
       ? "Show results"
@@ -161,10 +161,10 @@ export function SearchFilterSheet({
             onToggle={(value) => toggleMulti("priority", value)}
           />
           <ChipToggleGroup
-            title="Assignee"
-            options={options.assignee}
-            selected={selectedAssignee ? [selectedAssignee] : []}
-            onToggle={toggleAssignee}
+            title="Owner"
+            options={options.owner}
+            selected={selectedOwner ? [selectedOwner] : []}
+            onToggle={toggleOwner}
           />
           <ChipToggleGroup
             title="Project"

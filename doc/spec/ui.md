@@ -1,5 +1,11 @@
 # Paperclip UI Spec
 
+> Historical draft. Its role/CEO, assignee, task, heartbeat, interaction-card,
+> and privileged-strategy examples predate the canonical issue owner/session
+> model and are not current product contracts. Current UI behavior uses ordinary
+> agents, explicit grants, immutable issue requests/creators, canonical owners,
+> and issue-execution refs.
+
 Status: Draft
 Date: 2026-02-17
 
@@ -584,12 +590,12 @@ Interactive visualization of the agent reporting hierarchy.
 
 ```
                     ┌─────────┐
-                    │ CEO     │
+                    │ Lead    │
                     │ running │
                     └────┬────┘
             ┌────────────┼────────────┐
        ┌────┴────┐  ┌────┴────┐  ┌───┴─────┐
-       │ CTO     │  │ CMO     │  │ CFO     │
+       │ Eng     │  │ Growth  │  │ Finance │
        │ active  │  │ idle    │  │ paused  │
        └────┬────┘  └────┬────┘  └─────────┘
        ┌────┴────┐  ┌────┴────┐
@@ -600,7 +606,7 @@ Interactive visualization of the agent reporting hierarchy.
 
 Each node shows:
 - Agent name
-- Role/title (smaller text)
+- Optional title (smaller text)
 - Status dot (colored by agent status)
 - Agent avatar (bot icon with unique color per agent)
 
@@ -609,9 +615,9 @@ Nodes are clickable to navigate to agent detail.
 ### 9.2 Interactions
 
 - Zoom/pan with mouse wheel and drag.
-- Click a node to select it — shows a brief tooltip with key info (last heartbeat, current task, spend).
+- Click a node to select it — shows a brief tooltip with key info (last run, current issue, spend).
 - Double-click a node to navigate to agent detail page.
-- Right-click node for context menu: View, Pause, Resume, Invoke heartbeat, Edit.
+- Right-click node for context menu: View, Pause, Resume, Edit.
 
 ---
 
@@ -623,39 +629,39 @@ Nodes are clickable to navigate to agent detail.
 ┌─────────────────────────────────────────────────────────────────┐
 │ Agents                                          [+ New agent]   │
 ├─────────────────────────────────────────────────────────────────┤
-│ [🤖] CEO           ceo        ● Running   $45.20/$100   2m ago │
-│ [🤖] CTO           cto        ● Active    $23.10/$100   5m ago │
-│ [🤖] Dev-1         engineer   ○ Idle      $12.40/$50   15m ago │
-│ [🤖] CMO           marketing  ○ Idle      $8.30/$50    30m ago │
-│ [🤖] DevOps        devops     ⚠ Paused    $31.00/$50    1h ago │
+│ [🤖] Company Lead  Company Lead ● Running $45.20/$100   2m ago │
+│ [🤖] Eng Lead      Engineering  ● Active  $23.10/$100   5m ago │
+│ [🤖] Dev-1         Engineer     ○ Idle    $12.40/$50   15m ago │
+│ [🤖] Growth        Growth Lead  ○ Idle     $8.30/$50   30m ago │
+│ [🤖] DevOps        DevOps       ⚠ Paused  $31.00/$50    1h ago │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Columns: Avatar/icon, Name, Role, Status (with colored dot), Cost (spent/budget this month), Last Heartbeat (relative time).
+Columns: Avatar/icon, Name, Title, Status (with colored dot), Cost (spent/budget this month), Last Run (relative time).
 
 Clicking a row navigates to agent detail.
 
 ### 10.2 Agent Detail View (Three-Pane)
 
-**Breadcrumb tabs:** Overview | Heartbeats | Issues | Costs
+**Breadcrumb tabs:** Overview | Runs | Issues | Costs
 
 **Overview (middle pane):**
-- Agent name + role
+- Agent name + optional title
 - Capabilities description
 - Adapter type + config summary
-- Current task (if any)
+- Current issue execution (if any)
 - Reports to: [clickable agent name]
 - Direct reports: list of agents
 
-**Heartbeats tab:** table of heartbeat runs — time, source (manual/scheduler), status, duration, error (if any). Invoke button at top.
+**Runs tab:** table of issue-execution and compaction runs — time, typed source, status, duration, and error (if any). Provider invocation is initiated only by a persisted issue-execution source; this view has no arbitrary invoke action.
 
-**Issues tab:** issues assigned to this agent.
+**Issues tab:** issues owned by this agent.
 
 **Costs tab:** cost breakdown for this agent — by model, by time period, with budget progress bar.
 
-**Right pane properties:** Status, Role, Title, Reports To, Adapter Type, Context Mode, Budget (monthly), Spent (monthly), Last Heartbeat.
+**Right pane properties:** Status, Title, Reports To, Adapter Type, context/action/mention dials, Budget (monthly), Spent (monthly), Last Run.
 
-**Quick actions** in breadcrumb bar: [Pause] [Resume] [Invoke Heartbeat] [···]
+**Quick actions** in breadcrumb bar: [Pause] [Resume] [···]
 
 ---
 

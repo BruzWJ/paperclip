@@ -1,10 +1,8 @@
 import path from "node:path";
-const PATH_SEGMENT_RE = /^[a-zA-Z0-9_-]+$/;
 const FRIENDLY_PATH_SEGMENT_RE = /[^a-zA-Z0-9._-]+/g;
 import {
   expandHomePrefix,
   resolveDefaultBackupDir as resolveSharedDefaultBackupDir,
-  resolveDefaultEmbeddedPostgresDir as resolveSharedDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir as resolveSharedDefaultLogsDir,
   resolveDefaultSecretsKeyFilePath as resolveSharedDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir as resolveSharedDefaultStorageDir,
@@ -27,10 +25,6 @@ export function resolveDefaultConfigPath(): string {
   return resolvePaperclipConfigPathForInstance();
 }
 
-export function resolveDefaultEmbeddedPostgresDir(): string {
-  return resolveSharedDefaultEmbeddedPostgresDir();
-}
-
 export function resolveDefaultLogsDir(): string {
   return resolveSharedDefaultLogsDir();
 }
@@ -45,14 +39,6 @@ export function resolveDefaultStorageDir(): string {
 
 export function resolveDefaultBackupDir(): string {
   return resolveSharedDefaultBackupDir();
-}
-
-export function resolveDefaultAgentWorkspaceDir(agentId: string): string {
-  const trimmed = agentId.trim();
-  if (!PATH_SEGMENT_RE.test(trimmed)) {
-    throw new Error(`Invalid agent id for workspace path '${agentId}'.`);
-  }
-  return path.resolve(resolvePaperclipInstanceRoot(), "workspaces", trimmed);
 }
 
 function sanitizeFriendlyPathSegment(value: string | null | undefined, fallback = "_default"): string {

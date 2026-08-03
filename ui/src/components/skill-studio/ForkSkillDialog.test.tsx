@@ -92,7 +92,7 @@ function makeAgent(over: Partial<CompanySkillUsageAgent> = {}): CompanySkillUsag
     id: "agent-1",
     name: "Reviewer",
     urlKey: "reviewer",
-    adapterType: "claude_local",
+    adapterType: "codex",
     desired: true,
     actualState: null,
     versionId: null,

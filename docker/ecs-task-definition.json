@@ -25,11 +25,9 @@
         { "name": "PAPERCLIP_HOME", "value": "/paperclip" },
         { "name": "PAPERCLIP_INSTANCE_ID", "value": "default" },
         { "name": "PAPERCLIP_CONFIG", "value": "/paperclip/instances/default/config.json" },
-        { "name": "PAPERCLIP_DEPLOYMENT_MODE", "value": "authenticated" },
         { "name": "PAPERCLIP_DEPLOYMENT_EXPOSURE", "value": "public" },
         { "name": "PAPERCLIP_PUBLIC_URL", "value": "https://<DOMAIN>" },
-        { "name": "PAPERCLIP_MIGRATION_AUTO_APPLY", "value": "true" },
-        { "name": "HEARTBEAT_SCHEDULER_ENABLED", "value": "true" }
+        { "name": "ISSUE_EXECUTION_SCHEDULER_ENABLED", "value": "true" }
       ],
       "secrets": [
         {
@@ -39,14 +37,6 @@
         {
           "name": "BETTER_AUTH_SECRET",
           "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:paperclip/better-auth-secret"
-        },
-        {
-          "name": "ANTHROPIC_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:paperclip/anthropic-api-key"
-        },
-        {
-          "name": "OPENAI_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:paperclip/openai-api-key"
         },
         {
           "name": "GITHUB_TOKEN",

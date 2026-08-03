@@ -7,18 +7,11 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueChatThread } from "./IssueChatThread";
 import type { IssueChatComment } from "../lib/issue-chat-messages";
-import type { Agent, SuccessfulRunHandoffState } from "@paperclipai/shared";
+import type { Agent } from "@paperclipai/shared";
 
 vi.mock("@assistant-ui/react", () => ({
   AssistantRuntimeProvider: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   useAui: () => ({ thread: () => ({ append: async () => undefined }) }),
-}));
-
-vi.mock("./transcript/useLiveRunTranscripts", () => ({
-  useLiveRunTranscripts: () => ({
-    transcriptByRun: new Map(),
-    hasOutputForRun: () => false,
-  }),
 }));
 
 vi.mock("./MarkdownBody", () => ({
@@ -75,7 +68,6 @@ function renderThread(
   options: {
     agentMap?: Map<string, Agent>;
     issueStatus?: string;
-    successfulRunHandoff?: SuccessfulRunHandoffState | null;
   } = {},
 ) {
   act(() => {
@@ -83,15 +75,11 @@ function renderThread(
       <MemoryRouter>
         <IssueChatThread
           comments={comments}
-          linkedRuns={[]}
           timelineEvents={[]}
-          liveRuns={[]}
           onAdd={async () => {}}
           showComposer={false}
-          enableLiveTranscriptPolling={false}
           agentMap={options.agentMap}
           issueStatus={options.issueStatus}
-          successfulRunHandoff={options.successfulRunHandoff}
         />
       </MemoryRouter>,
     );
@@ -168,7 +156,7 @@ describe("IssueChatThread system notice routing", () => {
         sections: [
           {
             rows: [
-              { type: "agent_link", label: "Owner", agentId: "agent-cto", name: "CTO" },
+              { type: "agent_link", label: "Owner", agentId: "agent-architect", name: "Architect" },
             ],
           },
         ],
@@ -180,31 +168,9 @@ describe("IssueChatThread system notice routing", () => {
 
     const status = container.querySelector('[role="status"]');
     expect(status?.getAttribute("aria-label")).toBe("System alert");
-    expect(container.textContent).toContain("CTO");
+    expect(container.textContent).toContain("Architect");
     const toggle = container.querySelector("button[aria-expanded]");
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-  });
-
-  it("falls back to legacy user bubble + handoff callout for old text-only comments", () => {
-    const comment: IssueChatComment = {
-      id: "comment-legacy",
-      companyId: "company-1",
-      issueId: "issue-1",
-      authorType: "user",
-      authorAgentId: null,
-      authorUserId: "user-1",
-      body: "## Successful run missing issue disposition\n\nFix this.",
-      presentation: null,
-      metadata: null,
-      ...baseTimestamps,
-    };
-
-    renderThread([comment]);
-
-    expect(container.querySelector('[role="status"]')).toBeNull();
-    const userRow = container.querySelector('[data-message-role="user"]');
-    expect(userRow).not.toBeNull();
-    expect(container.textContent).toContain("Successful run missing issue disposition");
   });
 
   it("keeps regular user comments rendering as user bubbles", () => {
@@ -416,80 +382,4 @@ describe("IssueChatThread system notice routing", () => {
     expect(container.querySelector('[data-message-role="assistant"]')).not.toBeNull();
   });
 
-  it("folds stale successful-run disposition warnings into the activity log disclosure style", () => {
-    const comment: IssueChatComment = {
-      id: "comment-stale-disposition-warning",
-      companyId: "company-1",
-      issueId: "issue-1",
-      authorType: "system",
-      authorAgentId: null,
-      authorUserId: null,
-      runId: "run-stale",
-      runAgentId: "agent-codex",
-      body: "Paperclip needs a disposition before this issue can continue.",
-      presentation: {
-        kind: "system_notice",
-        tone: "warning",
-        title: "Missing issue disposition",
-        detailsDefaultOpen: false,
-      },
-      metadata: {
-        version: 1,
-        sourceRunId: "run-stale",
-        sections: [
-          {
-            title: "Run evidence",
-            rows: [
-              { type: "run_link", label: "Completed run", runId: "run-stale", title: "succeeded" },
-              { type: "key_value", label: "Normalized cause", value: "successful_run_missing_state" },
-            ],
-          },
-        ],
-      },
-      ...baseTimestamps,
-    };
-
-    renderThread([comment], {
-      issueStatus: "done",
-      successfulRunHandoff: {
-        state: "resolved",
-        required: false,
-        hasLiveContinuation: false,
-        sourceRunId: "run-stale",
-        correctiveRunId: "run-corrective",
-        assigneeAgentId: "agent-codex",
-        detectedProgressSummary: null,
-        createdAt: new Date("2026-05-04T17:00:00.000Z"),
-      },
-    });
-
-    const row = container.querySelector('[data-testid="stale-disposition-warning"]');
-    expect(row).not.toBeNull();
-    expect(row?.querySelector('span[aria-hidden="true"]')?.className).toContain("size-6");
-    const toggle = row?.querySelector("button[aria-expanded]") as HTMLButtonElement;
-    expect(toggle.className).toContain("w-full");
-    expect(toggle.className).toContain("py-0.5");
-    expect(row?.querySelector('[role="status"]')).toBeNull();
-    expect(row?.querySelector(".lucide-triangle-alert")).toBeNull();
-    expect(row?.querySelector(".lucide-chevron-down")).not.toBeNull();
-    expect(row?.querySelector('[data-testid="stale-disposition-warning-time"]')?.parentElement?.className).toContain("ml-auto");
-    expect(row?.textContent).toContain("Stale disposition warning");
-    expect(row?.textContent).not.toContain("This disposition warning is stale because the issue now has a newer disposition.");
-    expect(row?.textContent).not.toContain("Paperclip needs a disposition before this issue can continue.");
-
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    const detailsId = toggle.getAttribute("aria-controls");
-    expect(detailsId).toBeTruthy();
-    const details = detailsId ? container.ownerDocument.getElementById(detailsId) : null;
-    expect(details).not.toBeNull();
-    expect(details?.textContent).toContain("run-stale");
-    expect(details).toHaveProperty("hidden", true);
-    act(() => {
-      toggle.click();
-    });
-
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(details).toHaveProperty("hidden", false);
-    expect(container.textContent).toContain("run-stale");
-  });
 });

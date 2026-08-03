@@ -33,7 +33,7 @@ type PipelineRow = typeof pipelines.$inferSelect;
 export type ActiveWork = {
   issueId: string;
   issueIdentifier: string | null;
-  issueTitle: string;
+  issueTitle: string | null;
   issueRole: "work" | "automation";
   agentId: string;
   agentName: string;
@@ -337,9 +337,14 @@ export async function listCompanyCaseEvents(
           .from(routines)
           .where(and(eq(routines.companyId, input.companyId), inArray(routines.id, routineIds)))
       : Promise.resolve([]),
-    issueIds.length > 0
-      ? db
-          .select({ id: issues.id, identifier: issues.identifier, title: issues.title, status: issues.status })
+      issueIds.length > 0
+        ? db
+          .select({
+            id: issues.id,
+            identifier: issues.identifier,
+            title: issues.title,
+            boardPresentationStatus: issues.boardPresentationStatus,
+          })
           .from(issues)
           .where(and(eq(issues.companyId, input.companyId), inArray(issues.id, issueIds)))
       : Promise.resolve([]),
@@ -380,7 +385,14 @@ export async function listCompanyCaseEvents(
       automation: row.event.type === "automation_executed" || row.event.type === "automation_failed"
         ? {
             routine: routine ? { id: routine.id, title: routine.title } : null,
-            issue: issue ? { id: issue.id, identifier: issue.identifier, title: issue.title, status: issue.status } : null,
+            issue: issue
+              ? {
+                  id: issue.id,
+                  identifier: issue.identifier,
+                  title: issue.title,
+                  boardPresentationStatus: issue.boardPresentationStatus,
+                }
+              : null,
             routineRunId: payloadString(row.event.payload, "routineRunId"),
             stage: automationStage
               ? { id: automationStage.id, key: automationStage.key, name: automationStage.name, kind: automationStage.kind }
@@ -556,20 +568,20 @@ export async function loadActiveWorkForCases(
       issueIdentifier: issues.identifier,
       issueTitle: issues.title,
       issueRole: pipelineCaseIssueLinks.role,
-      agentId: issues.assigneeAgentId,
+      agentId: issues.ownerAgentId,
       agentName: agents.name,
       startedAt: issues.startedAt,
       issueUpdatedAt: issues.updatedAt,
     })
     .from(pipelineCaseIssueLinks)
     .innerJoin(issues, eq(pipelineCaseIssueLinks.issueId, issues.id))
-    .innerJoin(agents, eq(issues.assigneeAgentId, agents.id))
+    .innerJoin(agents, eq(issues.ownerAgentId, agents.id))
     .where(and(
       eq(pipelineCaseIssueLinks.companyId, companyId),
       inArray(pipelineCaseIssueLinks.caseId, caseIds),
       inArray(pipelineCaseIssueLinks.role, ["work", "automation"]),
       eq(issues.companyId, companyId),
-      eq(issues.status, "in_progress"),
+      eq(issues.boardPresentationStatus, "in_progress"),
       visibleIssueCondition(),
     ))
     .orderBy(desc(issues.updatedAt));
@@ -630,9 +642,9 @@ export async function loadDescendantActiveWorkCountsForCases(
     join issues issue
       on issue.id = link.issue_id
      and issue.company_id = ${companyId}
-     and issue.status = 'in_progress'
+     and issue.board_presentation_status = 'in_progress'
      and issue.hidden_at is null
-    join agents agent on agent.id = issue.assignee_agent_id
+    join agents agent on agent.id = issue.owner_agent_id
     where subtree.depth > 0
     group by subtree.root_id
   `)) as DescendantActiveWorkCountRow[];
@@ -689,9 +701,9 @@ export async function loadPipelineDescendantActiveWorkCounts(
     join issues issue
       on issue.id = link.issue_id
      and issue.company_id = ${companyId}
-     and issue.status = 'in_progress'
+     and issue.board_presentation_status = 'in_progress'
      and issue.hidden_at is null
-    join agents agent on agent.id = issue.assignee_agent_id
+    join agents agent on agent.id = issue.owner_agent_id
     where subtree.depth > 0
     group by subtree.root_pipeline_id
   `)) as PipelineDescendantActiveWorkCountRow[];
@@ -703,7 +715,15 @@ export async function loadPipelineDescendantActiveWorkCounts(
 }
 
 async function loadOpenWorkIssuesForCases(db: Db, companyId: string, caseIds: string[]) {
-  const map = new Map<string, { issueId: string; issueIdentifier: string | null; title: string; status: string }>();
+  const map = new Map<
+    string,
+    {
+      issueId: string;
+      issueIdentifier: string | null;
+      title: string | null;
+      boardPresentationStatus: string;
+    }
+  >();
   if (caseIds.length === 0) return map;
   const rows = await db
     .select({
@@ -711,7 +731,7 @@ async function loadOpenWorkIssuesForCases(db: Db, companyId: string, caseIds: st
       issueId: issues.id,
       issueIdentifier: issues.identifier,
       title: issues.title,
-      status: issues.status,
+      boardPresentationStatus: issues.boardPresentationStatus,
     })
     .from(pipelineCaseIssueLinks)
     .innerJoin(issues, eq(pipelineCaseIssueLinks.issueId, issues.id))
@@ -720,8 +740,8 @@ async function loadOpenWorkIssuesForCases(db: Db, companyId: string, caseIds: st
       inArray(pipelineCaseIssueLinks.caseId, caseIds),
       eq(pipelineCaseIssueLinks.role, "work"),
       eq(issues.companyId, companyId),
-      ne(issues.status, "done"),
-      ne(issues.status, "cancelled"),
+      ne(issues.boardPresentationStatus, "done"),
+      ne(issues.boardPresentationStatus, "cancelled"),
       visibleIssueCondition(),
     ))
     .orderBy(desc(issues.updatedAt));
@@ -731,7 +751,7 @@ async function loadOpenWorkIssuesForCases(db: Db, companyId: string, caseIds: st
       issueId: row.issueId,
       issueIdentifier: row.issueIdentifier,
       title: row.title,
-      status: row.status,
+      boardPresentationStatus: row.boardPresentationStatus,
     });
   }
   return map;

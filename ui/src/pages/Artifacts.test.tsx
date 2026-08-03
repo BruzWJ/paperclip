@@ -103,15 +103,15 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
 
 function sampleGroup(overrides: Partial<CompanyArtifactGroup> = {}): CompanyArtifactGroup {
   return {
-    id: "task:issue-1",
-    groupBy: "task",
+    id: "issue:issue-1",
+    groupBy: "issue",
     issue: { id: "issue-1", identifier: "PAP-42", title: "Ship launch" },
     title: "Ship launch",
     count: 3,
     mediaKinds: ["document"],
     previewArtifacts: [sampleArtifact()],
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/artifacts?groupBy=task&groupIssueId=issue-1",
+    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-1",
     ...overrides,
   };
 }
@@ -180,7 +180,7 @@ describe("Artifacts page", () => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "all",
         q: undefined,
-        groupBy: "task",
+        groupBy: "issue",
         groupIssueId: undefined,
         limit: 30,
         cursor: undefined,
@@ -192,7 +192,7 @@ describe("Artifacts page", () => {
       expect(groupControl.textContent).toBe("");
       expect(groupControl.getAttribute("data-variant")).toBe("outline");
       expect(groupControl.getAttribute("data-size")).toBe("icon");
-      expect(groupControl.getAttribute("data-group-by")).toBe("task");
+      expect(groupControl.getAttribute("data-group-by")).toBe("issue");
       expect(Boolean(groupControl.compareDocumentPosition(allFilter) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     });
 
@@ -226,7 +226,7 @@ describe("Artifacts page", () => {
       expect(artifactsApiMock.list).toHaveBeenLastCalledWith("company-1", {
         kind: "all",
         q: "launch",
-        groupBy: "task",
+        groupBy: "issue",
         groupIssueId: undefined,
         limit: 30,
         cursor: undefined,
@@ -345,13 +345,13 @@ describe("Artifacts page", () => {
       nextCursor: null,
     });
 
-    const { root } = renderArtifacts(container, ["/artifacts?groupBy=task"]);
+    const { root } = renderArtifacts(container, ["/artifacts?groupBy=issue"]);
 
     await waitForAssertion(() => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "all",
         q: undefined,
-        groupBy: "task",
+        groupBy: "issue",
         groupIssueId: undefined,
         limit: 30,
         cursor: undefined,
@@ -377,14 +377,14 @@ describe("Artifacts page", () => {
     });
 
     const { root } = renderArtifacts(container, [
-      "/artifacts?groupBy=task&groupIssueId=issue-1",
+      "/artifacts?groupBy=issue&groupIssueId=issue-1",
     ]);
 
     await waitForAssertion(() => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "all",
         q: undefined,
-        groupBy: "task",
+        groupBy: "issue",
         groupIssueId: "issue-1",
         limit: 30,
         cursor: undefined,
@@ -409,13 +409,13 @@ describe("Artifacts page", () => {
       nextCursor: null,
     });
 
-    const { root } = renderArtifacts(container, ["/artifacts?kind=image&groupBy=task"]);
+    const { root } = renderArtifacts(container, ["/artifacts?kind=image&groupBy=issue"]);
 
     await waitForAssertion(() => {
       expect(artifactsApiMock.list).toHaveBeenCalledWith("company-1", {
         kind: "image",
         q: undefined,
-        groupBy: "task",
+        groupBy: "issue",
         groupIssueId: undefined,
         limit: 30,
         cursor: undefined,

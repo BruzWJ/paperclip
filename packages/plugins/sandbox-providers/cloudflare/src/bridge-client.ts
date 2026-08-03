@@ -1,5 +1,7 @@
 import type {
   CloudflareBridgeAcquireLeaseRequest,
+  CloudflareBridgeCancelExecutionRequest,
+  CloudflareBridgeCancelExecutionResponse,
   CloudflareBridgeExecuteRequest,
   CloudflareBridgeExecuteResponse,
   CloudflareBridgeHealthResponse,
@@ -350,6 +352,18 @@ export function createCloudflareBridgeClient(options: BridgeClientOptions) {
         config,
         `${apiPrefix}/exec`,
         { method: "POST", body: encodedBody },
+        extraHeaders,
+      );
+    },
+
+    cancelExecution(
+      body: CloudflareBridgeCancelExecutionRequest,
+      extraHeaders?: BridgeClientHeaders,
+    ): Promise<CloudflareBridgeCancelExecutionResponse> {
+      return requestJson<CloudflareBridgeCancelExecutionResponse>(
+        config,
+        `${apiPrefix}/exec/cancel`,
+        { method: "POST", body: JSON.stringify(body) },
         extraHeaders,
       );
     },

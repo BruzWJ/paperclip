@@ -3,19 +3,19 @@ name: Release Smoke
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: Source commit containing the matching smoke contract
+        required: true
+        default: master
+        type: string
       paperclip_version:
-        description: Published Paperclip dist-tag to test
+        description: Published Paperclip version or dist-tag to inspect
         required: true
         default: canary
         type: choice
         options:
           - canary
           - latest
-      host_port:
-        description: Host port for the Docker smoke container
-        required: false
-        default: "3232"
-        type: string
       artifact_name:
         description: Artifact name for uploaded diagnostics
         required: false
@@ -23,12 +23,11 @@ on:
         type: string
   workflow_call:
     inputs:
-      paperclip_version:
+      ref:
         required: true
         type: string
-      host_port:
-        required: false
-        default: "3232"
+      paperclip_version:
+        required: true
         type: string
       artifact_name:
         required: false
@@ -36,13 +35,25 @@ on:
         type: string
 
 jobs:
-  smoke:
+  production_boundaries:
+    name: Production boundaries
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout pinned Session design reference
+        uses: actions/checkout@v7
+        with:
+          repository: anomalyco/opencode
+          ref: 2b2aacc93975330f9fd045d4306f698b0c6a8f8f
+          path: reference/opencode
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -52,54 +63,85 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Verify runner Chrome
-        # Release smoke also runs headless on GitHub's Ubuntu image, so use the
-        # runner's preinstalled Chrome instead of a Playwright browser download.
-        run: google-chrome --version
-
-      - name: Launch Docker smoke harness
-        run: |
-          metadata_file="$RUNNER_TEMP/release-smoke.env"
-          HOST_PORT="${{ inputs.host_port }}" \
-          DATA_DIR="$RUNNER_TEMP/release-smoke-data" \
-          PAPERCLIPAI_VERSION="${{ inputs.paperclip_version }}" \
-          SMOKE_DETACH=true \
-          SMOKE_METADATA_FILE="$metadata_file" \
-          ./scripts/docker-onboard-smoke.sh
-          set -a
-          source "$metadata_file"
-          set +a
-          {
-            echo "SMOKE_BASE_URL=$SMOKE_BASE_URL"
-            echo "SMOKE_ADMIN_EMAIL=$SMOKE_ADMIN_EMAIL"
-            echo "SMOKE_ADMIN_PASSWORD=$SMOKE_ADMIN_PASSWORD"
-            echo "SMOKE_CONTAINER_NAME=$SMOKE_CONTAINER_NAME"
-            echo "SMOKE_DATA_DIR=$SMOKE_DATA_DIR"
-            echo "SMOKE_IMAGE_NAME=$SMOKE_IMAGE_NAME"
-            echo "SMOKE_PAPERCLIPAI_VERSION=$SMOKE_PAPERCLIPAI_VERSION"
-            echo "SMOKE_METADATA_FILE=$metadata_file"
-          } >> "$GITHUB_ENV"
-
-      - name: Run release smoke Playwright suite
+      - name: Run canonical production gates and gate self-tests
         env:
-          PAPERCLIP_RELEASE_SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
-          PAPERCLIP_RELEASE_SMOKE_EMAIL: ${{ env.SMOKE_ADMIN_EMAIL }}
-          PAPERCLIP_RELEASE_SMOKE_PASSWORD: ${{ env.SMOKE_ADMIN_PASSWORD }}
-          PAPERCLIP_PLAYWRIGHT_CHANNEL: "chrome"
-        run: pnpm run test:release-smoke
+          OPENCODE_SESSION_DONOR: ${{ github.workspace }}/reference/opencode
+        run: pnpm run check:production-boundaries
 
-      - name: Capture Docker logs
-        if: always()
+  smoke:
+    needs: [production_boundaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify source package and release contracts
         run: |
-          if [[ -n "${SMOKE_CONTAINER_NAME:-}" ]]; then
-            docker logs "$SMOKE_CONTAINER_NAME" >"$RUNNER_TEMP/docker-onboard-smoke.log" 2>&1 || true
+          pnpm build
+          pnpm run test:release-registry
+          pnpm run test:release-smoke
+
+      - name: Inspect the published package without starting Paperclip
+        env:
+          PAPERCLIPAI_VERSION: ${{ inputs.paperclip_version }}
+        run: |
+          set -euo pipefail
+          package_dir="$RUNNER_TEMP/paperclip-published-package"
+          mkdir -p "$package_dir"
+          npm pack "paperclipai@$PAPERCLIPAI_VERSION" \
+            --pack-destination "$package_dir" \
+            --json >"$RUNNER_TEMP/paperclip-pack.json"
+          archive="$(node -e '
+            const fs = require("node:fs");
+            const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (!Array.isArray(result) || result.length !== 1 || !result[0].filename) process.exit(1);
+            process.stdout.write(result[0].filename);
+          ' "$RUNNER_TEMP/paperclip-pack.json")"
+          tar -tf "$package_dir/$archive" | sort >"$RUNNER_TEMP/paperclip-package-files.txt"
+          grep -qx 'package/package.json' "$RUNNER_TEMP/paperclip-package-files.txt"
+          grep -Eq '^package/dist/.+\.js$' "$RUNNER_TEMP/paperclip-package-files.txt"
+          retired_runtime='embed''ded-postgres'
+          optional_driver='pg''lite'
+          retired_test_harness='test-''postgres'
+          forbidden_artifacts="${retired_runtime}|${optional_driver}|${retired_test_harness}"
+          if grep -Eiq "$forbidden_artifacts" "$RUNNER_TEMP/paperclip-package-files.txt"; then
+            echo "Published package contains a forbidden database test/runtime artifact." >&2
+            exit 1
           fi
+
+      - name: Build and inspect the canonical container artifact
+        run: |
+          docker build \
+            --build-arg USER_UID="$(id -u)" \
+            --build-arg USER_GID="$(id -g)" \
+            -f Dockerfile \
+            -t paperclip-release-artifact-smoke .
+          docker image inspect paperclip-release-artifact-smoke \
+            >"$RUNNER_TEMP/paperclip-image-inspect.json"
 
       - name: Upload diagnostics
         if: always()
@@ -107,15 +149,7 @@ jobs:
         with:
           name: ${{ inputs.artifact_name }}
           path: |
-            ${{ runner.temp }}/docker-onboard-smoke.log
-            ${{ env.SMOKE_METADATA_FILE }}
-            tests/release-smoke/playwright-report/
-            tests/release-smoke/test-results/
+            ${{ runner.temp }}/paperclip-pack.json
+            ${{ runner.temp }}/paperclip-package-files.txt
+            ${{ runner.temp }}/paperclip-image-inspect.json
           retention-days: 14
-
-      - name: Stop Docker smoke container
-        if: always()
-        run: |
-          if [[ -n "${SMOKE_CONTAINER_NAME:-}" ]]; then
-            docker rm -f "$SMOKE_CONTAINER_NAME" >/dev/null 2>&1 || true
-          fi

@@ -35,6 +35,7 @@ export class ApiConnectionError extends Error {
 
 interface RequestOptions {
   ignoreNotFound?: boolean;
+  headers?: HeadersInit;
 }
 
 interface RecoverAuthInput {
@@ -46,20 +47,17 @@ interface RecoverAuthInput {
 interface ApiClientOptions {
   apiBase: string;
   apiKey?: string;
-  runId?: string;
   recoverAuth?: (input: RecoverAuthInput) => Promise<string | null>;
 }
 
 export class PaperclipApiClient {
   readonly apiBase: string;
   apiKey?: string;
-  readonly runId?: string;
   readonly recoverAuth?: (input: RecoverAuthInput) => Promise<string | null>;
 
   constructor(opts: ApiClientOptions) {
     this.apiBase = opts.apiBase.replace(/\/+$/, "");
     this.apiKey = opts.apiKey?.trim() || undefined;
-    this.runId = opts.runId?.trim() || undefined;
     this.recoverAuth = opts.recoverAuth;
   }
 
@@ -107,6 +105,7 @@ export class PaperclipApiClient {
 
     const headers: Record<string, string> = {
       accept: "application/json",
+      ...toStringRecord(opts?.headers),
       ...toStringRecord(init.headers),
     };
 
@@ -116,10 +115,6 @@ export class PaperclipApiClient {
 
     if (this.apiKey) {
       headers.authorization = `Bearer ${this.apiKey}`;
-    }
-
-    if (this.runId) {
-      headers["x-paperclip-run-id"] = this.runId;
     }
 
     let response: Response;
@@ -226,7 +221,7 @@ function buildConnectionErrorMessage(input: {
     "Try:",
     "- Start Paperclip with `pnpm dev` or `pnpm paperclipai run`.",
     `- Verify the server is reachable with \`curl ${healthUrl}\`.`,
-    `- If Paperclip is running elsewhere, pass \`--api-base ${input.apiBase.replace(/\/+$/, "")}\` or set \`PAPERCLIP_API_URL\`.`,
+    `- If Paperclip is running elsewhere, pass \`--api-base ${input.apiBase.replace(/\/+$/, "")}\` or set \`PAPERCLIP_BOARD_API_URL\`.`,
   );
   return lines.join("\n");
 }

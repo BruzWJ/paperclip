@@ -2,6 +2,12 @@
 
 > Supersession note: this marketplace plan predates the markdown-first company package direction. For the current package-format and import/export rollout plan, see `doc/plans/2026-03-13-company-import-export-v2.md` and `docs/companies/companies-spec.md`.
 
+> It also predates the agent simplification cutover. Role/CEO defaults,
+> Paperclip-authored prompt/instruction fields, implicit
+> skills, and legacy issue/assignee examples below were explicitly dropped.
+> They have no runtime reader/writer and must not be implemented as
+> compatibility behavior.
+
 > The "app store" for whole-company AI teams — pre-built Paperclip configurations, agent blueprints, skills, and governance templates that ship real work from day one.
 
 ## 1. Vision & Positioning
@@ -111,8 +117,8 @@ interface Listing {
   includedFiles: string[];         // List of files in the bundle
 
   // Compatibility
-  compatibleAdapters: string[];    // ['claude_local', 'codex_local', ...]
-  requiredModels: string[];        // ['claude-opus-4-6', 'claude-sonnet-4-6']
+  compatibleAdapters: string[];    // exact approved backend names, e.g. ['codex']
+  requiredModels: string[];        // exact provider model references
   paperclipVersionMin: string;     // Minimum Paperclip version
 
   // Social proof
@@ -163,16 +169,12 @@ interface AgentBlueprint {
   title: string;
   icon: string;
   capabilities: string;
-  promptTemplate: string;
   adapterType: string;
   adapterConfig: Record<string, any>;
-  instructionsPath: string | null;  // Path to AGENTS.md or similar
+  instructionsPath: string | null;  // Retired historical field; must stay absent.
   skills: SkillBundle[];
-  budgetMonthlyCents: number;
-  permissions: {
-    canCreateAgents: boolean;
-    canApproveHires: boolean;
-  };
+  budgetMonthlyAmount: string;
+  governance: Record<string, unknown>;
 }
 
 interface ProjectTemplate {
@@ -423,7 +425,7 @@ The install handler:
 1. Validates buyer owns the purchase
 2. Validates target company access
 3. For each agent in blueprint:
-   - `POST /api/companies/:id/agents` (if `paperclip-create-agent` supports it, or via approval flow)
+   - `POST /api/companies/:id/agents` through the current operator-authored creation or required approval flow
    - Sets adapter config, prompt template, instructions path
 4. Sets reporting chains
 5. Creates projects and workspaces

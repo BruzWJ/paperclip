@@ -50,8 +50,8 @@ describe("company routes", () => {
   });
 
   it("normalizes prefixed company export file URLs for parsing", () => {
-    expect(toCompanyRelativePath("/NEU/company/export/files/agents/ceo/AGENTS.md")).toBe(
-      "/company/export/files/agents/ceo/AGENTS.md",
+    expect(toCompanyRelativePath("/NEU/company/export/files/agents/lead/AGENTS.md")).toBe(
+      "/company/export/files/agents/lead/AGENTS.md",
     );
   });
 

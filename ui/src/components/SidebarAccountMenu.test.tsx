@@ -33,8 +33,17 @@ vi.mock("../api/instanceSettings", () => ({
 }));
 
 vi.mock("@/lib/router", () => ({
-  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string }) => (
-    <a href={to} {...props}>{children}</a>
+  Link: ({
+    children,
+    to,
+    ...props
+  }: {
+    children: React.ReactNode;
+    to: string;
+  }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
   ),
 }));
 
@@ -102,16 +111,12 @@ describe("SidebarAccountMenu", () => {
     });
     queryClient.setQueryData(queryKeys.health, {
       status: "ok",
-      deploymentMode: "authenticated",
     });
 
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <SidebarAccountMenu
-            deploymentMode="authenticated"
-            version="1.2.3"
-          />
+          <SidebarAccountMenu version="1.2.3" />
         </QueryClientProvider>,
       );
     });
@@ -121,7 +126,9 @@ describe("SidebarAccountMenu", () => {
     expect(container.textContent).toContain("Jane Example");
     expect(container.textContent).not.toContain("jane@example.com");
 
-    const trigger = container.querySelector('button[aria-label="Open account menu"]');
+    const trigger = container.querySelector(
+      'button[aria-label="Open account menu"]',
+    );
     expect(trigger).not.toBeNull();
 
     await act(async () => {
@@ -135,12 +142,16 @@ describe("SidebarAccountMenu", () => {
     expect(document.body.textContent).toContain("Feedback");
 
     // Feedback link opens in a new tab pointing at the feedback URL
-    const feedbackAnchor = document.body.querySelector('a[href="https://paperclip.ing/feedback"]') as HTMLAnchorElement | null;
+    const feedbackAnchor = document.body.querySelector(
+      'a[href="https://paperclip.ing/feedback"]',
+    ) as HTMLAnchorElement | null;
     expect(feedbackAnchor).not.toBeNull();
     expect(feedbackAnchor?.getAttribute("target")).toBe("_blank");
 
     // Feedback appears after Documentation and before the theme toggle
-    const menuText = document.body.querySelector('[data-slot="popover-content"]')?.textContent ?? "";
+    const menuText =
+      document.body.querySelector('[data-slot="popover-content"]')
+        ?.textContent ?? "";
     const docsPos = menuText.indexOf("Documentation");
     const feedbackPos = menuText.indexOf("Feedback");
     const themePos = menuText.indexOf("Switch to");
@@ -149,20 +160,27 @@ describe("SidebarAccountMenu", () => {
 
     expect(document.body.textContent).toContain("Paperclip v1.2.3");
     expect(document.body.textContent).toContain("jane@example.com");
-    expect(document.body.querySelector('[data-slot="popover-content"]')?.className)
-      .toContain("w-(--sz-277px)");
-    expect(document.body.querySelector('a[href="/company/settings/instance/profile"]')).not.toBeNull();
+    expect(
+      document.body.querySelector('[data-slot="popover-content"]')?.className,
+    ).toContain("w-(--sz-277px)");
+    expect(
+      document.body.querySelector(
+        'a[href="/company/settings/instance/profile"]',
+      ),
+    ).not.toBeNull();
 
-    const signOutButton = Array.from(document.body.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Sign out"),
-    );
+    const signOutButton = Array.from(
+      document.body.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("Sign out"));
     await act(async () => {
       signOutButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushReact();
 
     expect(mockAuthApi.signOut).toHaveBeenCalledOnce();
-    expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(
+      true,
+    );
 
     await act(async () => {
       root.unmount();
@@ -179,7 +197,6 @@ describe("SidebarAccountMenu", () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <SidebarAccountMenu
-            deploymentMode="authenticated"
             version="2026.626.0+58.git.518fc71ce"
             serverGit={{
               available: true,
@@ -203,14 +220,22 @@ describe("SidebarAccountMenu", () => {
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain("feature/source-build-labelPaperclip 518fc71");
-    expect(document.body.textContent).not.toContain("2026.626.0+58.git.518fc71ce");
-    expect(document.body.querySelector('a[href="https://github.com/paperclipai/paperclip/tree/feature%2Fsource-build-label"]')?.textContent).toBe(
-      "feature/source-build-label",
+    expect(document.body.textContent).toContain(
+      "feature/source-build-labelPaperclip 518fc71",
     );
-    expect(document.body.querySelector('a[href="https://github.com/paperclipai/paperclip/commit/518fc71ce1234567890abcdef1234567890abcde"]')?.textContent).toBe(
-      "518fc71",
+    expect(document.body.textContent).not.toContain(
+      "2026.626.0+58.git.518fc71ce",
     );
+    expect(
+      document.body.querySelector(
+        'a[href="https://github.com/paperclipai/paperclip/tree/feature%2Fsource-build-label"]',
+      )?.textContent,
+    ).toBe("feature/source-build-label");
+    expect(
+      document.body.querySelector(
+        'a[href="https://github.com/paperclipai/paperclip/commit/518fc71ce1234567890abcdef1234567890abcde"]',
+      )?.textContent,
+    ).toBe("518fc71");
 
     await act(async () => {
       root.unmount();

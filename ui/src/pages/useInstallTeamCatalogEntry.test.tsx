@@ -88,6 +88,7 @@ describe("useInstallTeamCatalogEntry", () => {
     const cleanup = await renderHook(false);
     expect(captured!.steps).toContain("target_manager");
     expect(captured!.steps).toContain("source_policy");
+    expect(captured!.steps).toContain("agent_adapters");
     cleanup();
   });
 
@@ -116,26 +117,101 @@ describe("useInstallTeamCatalogEntry", () => {
     const form: TeamInstallFormState = {
       ...EMPTY_INSTALL_FORM,
       targetManagerAgentId: "agent-7",
-      adapterOverrides: { ceo: "codex_local" },
+      adapterOverrides: {
+        "company-lead": {
+          adapterType: "codex",
+          adapterConfig: { model: "gpt-5.6" },
+          defaultEnvironmentId:
+            "11111111-1111-4111-8111-111111111111",
+          skillChannel: "operator_native",
+        },
+      },
     };
     const preview = captured!.buildPreviewOptions(form);
     expect(preview.targetManagerAgentId).toBe("agent-7");
     const install = captured!.buildInstallOptions(form);
-    expect(install.adapterOverrides).toEqual({ ceo: { adapterType: "codex_local" } });
+    expect(preview.adapterOverrides).toEqual({
+      "company-lead": {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId:
+          "11111111-1111-4111-8111-111111111111",
+        skillChannel: "operator_native",
+      },
+    });
+    expect(install.adapterOverrides).toEqual({
+      "company-lead": {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId:
+          "11111111-1111-4111-8111-111111111111",
+        skillChannel: "operator_native",
+      },
+    });
     cleanup();
   });
 
   it("runInstall calls the install API and resolves to the done phase", async () => {
     const cleanup = await renderHook(true);
     await act(async () => {
-      captured!.runInstall(EMPTY_INSTALL_FORM);
+      captured!.runInstall({
+        ...EMPTY_INSTALL_FORM,
+        adapterOverrides: {
+          "company-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId:
+              "11111111-1111-4111-8111-111111111111",
+            skillChannel: "operator_native",
+          },
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId:
+              "11111111-1111-4111-8111-111111111111",
+            skillChannel: "operator_native",
+          },
+          qa: {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId:
+              "11111111-1111-4111-8111-111111111111",
+            skillChannel: "operator_native",
+          },
+        },
+      });
     });
     await flushReact();
     expect(mockTeamCatalogApi.install).toHaveBeenCalledTimes(1);
     expect(mockTeamCatalogApi.install).toHaveBeenCalledWith(
       "company-1",
       sampleTeam.id,
-      expect.objectContaining({ targetManagerAgentId: null }),
+      expect.objectContaining({
+        targetManagerAgentId: null,
+        adapterOverrides: {
+          "company-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId:
+              "11111111-1111-4111-8111-111111111111",
+            skillChannel: "operator_native",
+          },
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId:
+              "11111111-1111-4111-8111-111111111111",
+            skillChannel: "operator_native",
+          },
+          qa: {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            defaultEnvironmentId:
+              "11111111-1111-4111-8111-111111111111",
+            skillChannel: "operator_native",
+          },
+        },
+      }),
     );
     expect(captured!.phase).toBe("done");
     cleanup();

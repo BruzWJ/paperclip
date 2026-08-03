@@ -2,47 +2,10 @@
 // Minimal adapter-facing interfaces (no drizzle dependency)
 // ---------------------------------------------------------------------------
 
-import type { SshRemoteExecutionSpec } from "./ssh.js";
-import type { AdapterExecutionTarget } from "./execution-target.js";
-import type { RuntimeStatusSink } from "./runtime-progress.js";
-
-export interface AdapterAgent {
-  id: string;
-  companyId: string;
-  name: string;
-  adapterType: string | null;
-  adapterConfig: unknown;
-}
-
-export interface AdapterRuntime {
-  /**
-   * Legacy single session id view. Prefer `sessionParams` + `sessionDisplayId`.
-   */
-  sessionId: string | null;
-  sessionParams: Record<string, unknown> | null;
-  sessionDisplayId: string | null;
-  taskKey: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Execution types (moved from server/src/adapters/types.ts)
-// ---------------------------------------------------------------------------
-
-export interface UsageSummary {
-  inputTokens: number;
-  outputTokens: number;
-  cachedInputTokens?: number;
-}
-
-export type AdapterBillingType =
-  | "api"
-  | "subscription"
-  | "metered_api"
-  | "subscription_included"
-  | "subscription_overage"
-  | "credits"
-  | "fixed"
-  | "unknown";
+import type {
+  AcpSessionConfigSelection,
+  AcpSessionConfigValue,
+} from "./acp-subprocess/contract.js";
 
 export interface AdapterRuntimeServiceReport {
   id?: string | null;
@@ -65,121 +28,27 @@ export interface AdapterRuntimeServiceReport {
   healthStatus?: "unknown" | "healthy" | "unhealthy";
 }
 
-export type AdapterExecutionErrorFamily =
-  | "transient_upstream"
-  | "provider_quota"
-  | "model_refusal"
-  | "refresh_token_reused"
-  | "refresh_token_expired"
-  | "refresh_token_invalidated";
-
-export interface AdapterExecutionResult {
-  exitCode: number | null;
-  signal: string | null;
-  timedOut: boolean;
-  errorMessage?: string | null;
-  errorCode?: string | null;
-  errorFamily?: AdapterExecutionErrorFamily | null;
-  retryNotBefore?: string | null;
-  errorMeta?: Record<string, unknown>;
-  usage?: UsageSummary;
+/** Immutable token limits for one advertised ACP model selection. */
+export interface AdapterModelLimits {
+  contextTokenLimit: number;
   /**
-   * How `usage` totals are scoped. "per_run" means the tokens cover only this
-   * execution; "session_cumulative" means they are running totals for the
-   * persisted session, and the server must delta consecutive runs. Absent
-   * means unknown — the server applies its legacy session-delta heuristic.
+   * Present only when the ACP target advertises an independent input cap.
+   * Absence is retained and never reconstructed from another limit.
    */
-  usageBasis?: "per_run" | "session_cumulative" | null;
-  /**
-   * Legacy single session id output. Prefer `sessionParams` + `sessionDisplayId`.
-   */
-  sessionId?: string | null;
-  sessionParams?: Record<string, unknown> | null;
-  sessionDisplayId?: string | null;
-  provider?: string | null;
-  biller?: string | null;
-  model?: string | null;
-  billingType?: AdapterBillingType | null;
-  costUsd?: number | null;
-  resultJson?: Record<string, unknown> | null;
-  runtimeServices?: AdapterRuntimeServiceReport[];
-  summary?: string | null;
-  clearSession?: boolean;
-  question?: {
-    prompt: string;
-    choices: Array<{
-      key: string;
-      label: string;
-      description?: string;
-    }>;
-  } | null;
+  inputTokenLimit?: number;
+  outputTokenLimit: number;
 }
 
-export interface AdapterSessionCodec {
-  deserialize(raw: unknown): Record<string, unknown> | null;
-  serialize(params: Record<string, unknown> | null): Record<string, unknown> | null;
-  getDisplayId?: (params: Record<string, unknown> | null) => string | null;
-}
-
-export interface AdapterInvocationMeta {
-  adapterType: string;
-  command: string;
-  cwd?: string;
-  commandArgs?: string[];
-  commandNotes?: string[];
-  env?: Record<string, string>;
-  prompt?: string;
-  promptMetrics?: Record<string, number>;
-  context?: Record<string, unknown>;
-}
-
-export interface AdapterRuntimeMcpServer {
-  name: string;
-  url: string;
-  token: string;
-  connectionId: string;
-}
-
-export interface AdapterRuntimeMcpAccess {
-  getServers(): AdapterRuntimeMcpServer[];
-}
-
-export interface AdapterRuntimeEvent {
-  eventType: string;
-  stream?: "system" | "stdout" | "stderr";
-  level?: "info" | "warn" | "error";
-  color?: string;
-  message?: string;
-  payload?: Record<string, unknown>;
-}
-
-export interface AdapterExecutionContext {
-  runId: string;
-  agent: AdapterAgent;
-  runtime: AdapterRuntime;
-  config: Record<string, unknown>;
-  context: Record<string, unknown>;
-  runtimeCommandSpec?: AdapterRuntimeCommandSpec | null;
-  executionTarget?: AdapterExecutionTarget | null;
-  /**
-   * Legacy remote transport view. Prefer `executionTarget`, which is the
-   * provider-neutral contract produced by core runtime code.
-   */
-  executionTransport?: {
-    remoteExecution?: Record<string, unknown> | null;
-  };
-  runtimeMcp?: AdapterRuntimeMcpAccess;
-  onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
-  onMeta?: (meta: AdapterInvocationMeta) => Promise<void>;
-  onEvent?: (event: AdapterRuntimeEvent) => Promise<void>;
-  onRuntimeProgress?: RuntimeStatusSink;
-  onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
-  authToken?: string;
-}
-
+/**
+ * One model/profile selection accepted by the ACP target's required model
+ * configuration option. `value` is passed unchanged to
+ * `session/set_config_option`; Paperclip never parses it as a provider id.
+ */
 export interface AdapterModel {
   id: string;
   label: string;
+  value: string;
+  limits: AdapterModelLimits;
 }
 
 export type AdapterModelProfileKey = "cheap";
@@ -188,160 +57,11 @@ export interface AdapterModelProfileDefinition {
   key: AdapterModelProfileKey;
   label: string;
   description?: string;
-  adapterConfig: Record<string, unknown>;
-  source?: "adapter_default" | "discovered";
-}
-
-export type AdapterEnvironmentCheckLevel = "info" | "warn" | "error";
-
-export interface AdapterEnvironmentCheck {
-  code: string;
-  level: AdapterEnvironmentCheckLevel;
-  message: string;
-  detail?: string | null;
-  hint?: string | null;
-}
-
-export type AdapterEnvironmentTestStatus = "pass" | "warn" | "fail";
-
-export interface AdapterEnvironmentTestResult {
-  adapterType: string;
-  status: AdapterEnvironmentTestStatus;
-  checks: AdapterEnvironmentCheck[];
-  testedAt: string;
-}
-
-export type AdapterSkillSyncMode = "unsupported" | "persistent" | "ephemeral";
-
-export type AdapterSkillState =
-  | "available"
-  | "configured"
-  | "installed"
-  | "missing"
-  | "stale"
-  | "external";
-
-export type AdapterSkillOrigin =
-  | "company_managed"
-  | "user_installed"
-  | "external_unknown";
-
-export interface AdapterSkillEntry {
-  key: string;
-  runtimeName: string | null;
-  versionId?: string | null;
-  currentVersionId?: string | null;
-  desired: boolean;
-  managed: boolean;
-  state: AdapterSkillState;
-  origin?: AdapterSkillOrigin;
-  originLabel?: string | null;
-  locationLabel?: string | null;
-  readOnly?: boolean;
-  sourcePath?: string | null;
-  targetPath?: string | null;
-  detail?: string | null;
-}
-
-export interface AdapterSkillSnapshot {
-  adapterType: string;
-  supported: boolean;
-  mode: AdapterSkillSyncMode;
-  desiredSkills: string[];
-  desiredSkillEntries?: Array<{ key: string; versionId: string | null }>;
-  entries: AdapterSkillEntry[];
-  warnings: string[];
-}
-
-export interface AdapterSkillContext {
-  agentId: string;
-  companyId: string;
-  adapterType: string;
-  config: Record<string, unknown>;
-}
-
-export interface AdapterEnvironmentTestContext {
-  companyId: string;
-  adapterType: string;
-  config: Record<string, unknown>;
-  /**
-   * Optional execution target the adapter should run probes against.
-   *
-   * If omitted (or `kind === "local"`), the adapter tests on the Paperclip
-   * host. For SSH/sandbox targets the adapter should run command/auth probes
-   * inside the remote environment so the result reflects what an agent run
-   * would actually see at execution time.
-   */
-  executionTarget?: AdapterExecutionTarget | null;
-  /**
-   * Friendly name of the environment being tested (when `executionTarget` is set).
-   * Surfaced in check messages so users see which environment the probe ran in.
-   */
-  environmentName?: string | null;
-  deployment?: {
-    mode?: "local_trusted" | "authenticated";
-    exposure?: "private" | "public";
-    bindHost?: string | null;
-    allowedHostnames?: string[];
-  };
-}
-
-/** Payload for the onHireApproved adapter lifecycle hook (e.g. join-request or hire_agent approval). */
-export interface HireApprovedPayload {
-  companyId: string;
-  agentId: string;
-  agentName: string;
-  adapterType: string;
-  /** "join_request" | "approval" */
-  source: "join_request" | "approval";
-  sourceId: string;
-  approvedAt: string;
-  /** Canonical operator-facing message for cloud adapters to show the user. */
-  message: string;
-}
-
-/** Result of onHireApproved hook; failures are non-fatal to the approval flow. */
-export interface HireApprovedHookResult {
-  ok: boolean;
-  error?: string;
-  detail?: Record<string, unknown>;
+  modelId: string;
 }
 
 // ---------------------------------------------------------------------------
-// Quota window types — used by adapters that can report provider quota/rate-limit state
-// ---------------------------------------------------------------------------
-
-/** a single rate-limit or usage window returned by a provider quota API */
-export interface QuotaWindow {
-  /** human label, e.g. "5h", "7d", "Sonnet 7d", "Credits" */
-  label: string;
-  /** percent of the window already consumed (0-100), null when not reported */
-  usedPercent: number | null;
-  /** iso timestamp when this window resets, null when not reported */
-  resetsAt: string | null;
-  /** free-form value label for credit-style windows, e.g. "$4.20 remaining" */
-  valueLabel: string | null;
-  /** optional supporting text, e.g. reset details or provider-specific notes */
-  detail?: string | null;
-}
-
-/** result for one provider from getQuotaWindows() */
-export interface ProviderQuotaResult {
-  /** provider slug, e.g. "anthropic", "openai" */
-  provider: string;
-  /** source label when the provider reports where the quota data came from */
-  source?: string | null;
-  /** true when the fetch succeeded and windows is populated */
-  ok: boolean;
-  /** machine-readable error family when ok is false */
-  errorFamily?: AdapterExecutionErrorFamily | null;
-  /** error message when ok is false */
-  error?: string;
-  windows: QuotaWindow[];
-}
-
-// ---------------------------------------------------------------------------
-// Adapter config schema — declarative UI config for external adapters
+// Adapter config schema — declarative UI config for server-admitted ACP adapters
 // ---------------------------------------------------------------------------
 
 export interface ConfigFieldOption {
@@ -355,7 +75,7 @@ export interface ConfigFieldSchema {
   key: string;
   label: string;
   type: "text" | "select" | "toggle" | "number" | "textarea" | "combobox";
-  options?: ConfigFieldOption[];
+  options?: readonly ConfigFieldOption[];
   default?: unknown;
   hint?: string;
   required?: boolean;
@@ -365,147 +85,88 @@ export interface ConfigFieldSchema {
 }
 
 export interface AdapterConfigSchema {
-  fields: ConfigFieldSchema[];
+  fields: readonly ConfigFieldSchema[];
 }
 
-export interface AdapterRuntimeCommandSpec {
-  /**
-   * The command Paperclip should execute for this adapter in the current config.
-   */
-  command: string;
-  /**
-   * Optional command name/path to probe for availability before launch.
-   * Defaults to `command` when omitted by the consumer.
-   */
-  detectCommand?: string | null;
-  /**
-   * Optional shell snippet that can install or expose the adapter command in a
-   * fresh remote runtime. It should be idempotent.
-   */
-  installCommand?: string | null;
+export interface AcpAdapterConfigValue {
+  readonly value: AcpSessionConfigValue;
+  readonly label: string;
 }
 
-export interface AcpTargetDescriptor {
-  agentId: "claude" | "codex" | "gemini" | "custom" | (string & {});
-  skillsMode: "ephemeral" | "unsupported";
-  prerequisites: {
-    nodeRange?: string;
-    packages?: string[];
-  };
+/** One closed mapping from an operator-visible field to a stable ACP option. */
+export interface AcpAdapterConfigOption {
+  readonly id: string;
+  readonly configKey: string;
+  readonly label: string;
+  readonly required: true;
+  readonly values: readonly AcpAdapterConfigValue[];
 }
 
+/** Immutable command facts admitted by the ACPX registry wrapper. */
+export interface AcpAdapterLaunchProfile {
+  readonly registryName: string;
+  /** Exact executable name resolved natively on the selected target. */
+  readonly targetNativeCli: string;
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly frontendPackage: string;
+  readonly frontendVersion: string;
+  readonly frontendDigest: string;
+}
+
+export interface AcpAdapterEnvironmentRequirements {
+  readonly cwd: "execution-workspace";
+  readonly additionalDirectories: "authorized-workspace-only";
+  readonly drivers: readonly ("local" | "ssh" | "sandbox" | "plugin")[];
+  /** Exact non-secret variables required by the frontend; empty is valid. */
+  readonly environmentKeys: readonly string[];
+}
+
+export interface AcpAdapterReadinessFacts {
+  readonly protocolVersion: 1;
+  readonly resume: true;
+  readonly cancel: true;
+  readonly sessionConfig: true;
+  readonly sessionScopedMcpReplacement: true;
+  readonly cliNativeAuthentication: true;
+}
+
+export interface AcpAdapterUiMetadata {
+  readonly label: string;
+  readonly description: string;
+  readonly recommended?: boolean;
+}
+
+/**
+ * Complete declarative AI-adapter definition. It owns no invocation callback,
+ * prompt builder, parser, session codec, credential hook, or provider SDK.
+ */
+export interface AcpSubprocessAdapterDefinition {
+  readonly version: "acp-subprocess/v1";
+  readonly launchProfile: AcpAdapterLaunchProfile;
+  readonly environment: AcpAdapterEnvironmentRequirements;
+  readonly readiness: AcpAdapterReadinessFacts;
+  readonly ui: AcpAdapterUiMetadata;
+  readonly configSchema: AdapterConfigSchema;
+  readonly configOptions: readonly AcpAdapterConfigOption[];
+  readonly modelConfigOptionId: string;
+  readonly models: readonly AdapterModel[];
+  readonly modelProfiles: readonly AdapterModelProfileDefinition[];
+  readonly configurationDoc: string;
+}
+
+/** Canonical immutable adapter/config portion of one execution revision. */
+export interface AcpAdapterRevisionConfiguration {
+  readonly contractVersion: "acp-subprocess/v1";
+  readonly launchProfile: AcpAdapterLaunchProfile;
+  readonly sessionConfigSelections: readonly AcpSessionConfigSelection[];
+  readonly model: AdapterModel;
+}
+
+/** The adapter ABI contains one closed declarative ACP definition and nothing else. */
 export interface ServerAdapterModule {
-  type: string;
-  execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
-  testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<AdapterEnvironmentTestResult>;
-  acp?: AcpTargetDescriptor;
-  listSkills?: (ctx: AdapterSkillContext) => Promise<AdapterSkillSnapshot>;
-  syncSkills?: (ctx: AdapterSkillContext, desiredSkills: string[]) => Promise<AdapterSkillSnapshot>;
-  sessionCodec?: AdapterSessionCodec;
-  sessionManagement?: import("./session-compaction.js").AdapterSessionManagement;
-  supportsLocalAgentJwt?: boolean;
-  models?: AdapterModel[];
-  listModels?: () => Promise<AdapterModel[]>;
-  modelProfiles?: AdapterModelProfileDefinition[];
-  listModelProfiles?: () => Promise<AdapterModelProfileDefinition[]>;
-  /**
-   * Optional explicit refresh hook for model discovery.
-   * Use this when the adapter caches discovered models and needs a bypass path
-   * so the UI can fetch newly released models without waiting for cache expiry
-   * or a Paperclip code update.
-   */
-  refreshModels?: () => Promise<AdapterModel[]>;
-  agentConfigurationDoc?: string;
-  /**
-   * Optional lifecycle hook when an agent is approved/hired (join-request or hire_agent approval).
-   * adapterConfig is the agent's adapter config so the adapter can e.g. send a callback to a configured URL.
-   */
-  onHireApproved?: (
-    payload: HireApprovedPayload,
-    adapterConfig: Record<string, unknown>,
-  ) => Promise<HireApprovedHookResult>;
-  /**
-   * Optional: fetch live provider quota/rate-limit windows for this adapter.
-   * Returns a ProviderQuotaResult so the server can aggregate across adapters
-   * without knowing provider-specific credential paths or API shapes.
-   */
-  getQuotaWindows?: () => Promise<ProviderQuotaResult>;
-  /**
-   * Optional: detect the currently configured model from local config files.
-   * Returns the detected model/provider and the config source, or null if
-   * the adapter does not support detection or no config is found.
-   */
-  detectModel?: () => Promise<{ model: string; provider: string; source: string; candidates?: string[] } | null>;
-  /**
-   * Optional: return a declarative config schema so the UI can render
-   * adapter-specific form fields without shipping React components.
-   * Dynamic options (e.g. scanning a profiles directory) should be
-   * resolved inside this method — the caller receives a fully hydrated schema.
-   */
-  getConfigSchema?: () => Promise<AdapterConfigSchema> | AdapterConfigSchema;
-
-  // ---------------------------------------------------------------------------
-  // Adapter capability flags
-  //
-  // These allow adapter plugins to declare what "local" capabilities they
-  // support, replacing hardcoded type lists in the server and UI.
-  // All flags are optional — when undefined, the server falls back to
-  // legacy hardcoded lists for built-in adapters.
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Adapter supports managed instructions bundle (AGENTS.md files).
-   * When true, the server uses instructionsPathKey (default "instructionsFilePath")
-   * to resolve the instructions config key, and the UI shows the bundle editor.
-   * Built-in local adapters default to true; external plugins must opt in.
-   */
-  supportsInstructionsBundle?: boolean;
-
-  /**
-   * The adapterConfig key that holds the instructions file path.
-   * Defaults to "instructionsFilePath" when supportsInstructionsBundle is true.
-   */
-  instructionsPathKey?: string;
-
-  /**
-   * Adapter needs runtime skill entries materialized (written to disk)
-   * before being passed via config. Used by adapters that scan a directory
-   * rather than reading config.paperclipRuntimeSkills.
-   */
-  requiresMaterializedRuntimeSkills?: boolean;
-  /**
-   * Optional: describe how this adapter's runtime command should be launched
-   * and provisioned in fresh remote environments such as sandboxes.
-   */
-  getRuntimeCommandSpec?: (config: Record<string, unknown>) => AdapterRuntimeCommandSpec | null;
-}
-
-// ---------------------------------------------------------------------------
-// UI types (moved from ui/src/adapters/types.ts)
-// ---------------------------------------------------------------------------
-
-export type TranscriptEntry =
-  | { kind: "assistant"; ts: string; text: string; delta?: boolean }
-  | { kind: "thinking"; ts: string; text: string; delta?: boolean }
-  | { kind: "user"; ts: string; text: string }
-  | { kind: "tool_call"; ts: string; name: string; input: unknown; toolUseId?: string; invocationId?: string; actionRequestId?: string }
-  | { kind: "tool_result"; ts: string; toolUseId: string; toolName?: string; content: string; isError: boolean }
-  | { kind: "init"; ts: string; model: string; sessionId: string }
-  | { kind: "result"; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; subtype: string; isError: boolean; errors: string[] }
-  | { kind: "stderr"; ts: string; text: string }
-  | { kind: "system"; ts: string; text: string }
-  | { kind: "stdout"; ts: string; text: string }
-  | { kind: "diff"; ts: string; changeType: "add" | "remove" | "context" | "hunk" | "file_header" | "truncation"; text: string };
-
-export type StdoutLineParser = (line: string, ts: string) => TranscriptEntry[];
-
-// ---------------------------------------------------------------------------
-// CLI types (moved from cli/src/adapters/types.ts)
-// ---------------------------------------------------------------------------
-
-export interface CLIAdapterModule {
-  type: string;
-  formatStdoutEvent: (line: string, debug: boolean) => void;
+  readonly type: string;
+  readonly definition: AcpSubprocessAdapterDefinition;
 }
 
 // ---------------------------------------------------------------------------
@@ -514,74 +175,21 @@ export interface CLIAdapterModule {
 
 export interface CreateConfigValues {
   adapterType: string;
-  cwd: string;
-  instructionsFilePath?: string;
-  promptTemplate: string;
-  model: string;
-  thinkingEffort: string;
   /**
    * Optional cheap model profile config for new agents on adapters that
    * support model profiles. Persisted under
    * `runtimeConfig.modelProfiles.cheap.adapterConfig`, never on the primary
    * `adapterConfig`.
-   */
+  */
   cheapModel?: string;
   cheapModelEnabled?: boolean;
-  chrome: boolean;
-  dangerouslySkipPermissions: boolean;
-  claudeEngine?: "auto" | "cli" | "acp";
-  claudeAcpAgentCommand?: string;
-  claudeAcpMode?: "persistent" | "oneshot";
-  claudeAcpNonInteractivePermissions?: "deny" | "fail";
-  claudeAcpStateDir?: string;
-  claudeAcpWarmHandleIdleMs?: number;
-  codexEngine?: "auto" | "cli" | "acp";
-  codexAcpAgentCommand?: string;
-  codexAcpMode?: "persistent" | "oneshot";
-  codexAcpNonInteractivePermissions?: "deny" | "fail";
-  codexAcpStateDir?: string;
-  codexAcpWarmHandleIdleMs?: number;
-  geminiEngine?: "auto" | "cli" | "acp";
-  geminiAcpAgentCommand?: string;
-  geminiAcpMode?: "persistent" | "oneshot";
-  geminiAcpNonInteractivePermissions?: "deny" | "fail";
-  geminiAcpStateDir?: string;
-  geminiAcpWarmHandleIdleMs?: number;
-  search: boolean;
-  fastMode: boolean;
-  dangerouslyBypassSandbox: boolean;
-  command: string;
-  args: string;
-  extraArgs: string;
-  envVars: string;
-  envBindings: Record<string, unknown>;
-  url: string;
-  bootstrapPrompt: string;
-  payloadTemplateJson?: string;
   workspaceStrategyType?: string;
   workspaceBaseRef?: string;
   workspaceBranchTemplate?: string;
   worktreeParentDir?: string;
   runtimeServicesJson?: string;
   defaultEnvironmentId?: string;
-  maxTurnsPerRun: number;
-  heartbeatEnabled: boolean;
-  intervalSec: number;
   /** Arbitrary key-value pairs populated by schema-driven config fields. */
   adapterSchemaValues?: Record<string, unknown>;
-  // openclaw_gateway adapter fields
-  authToken?: string;
-  agentId?: string;
-  sessionKeyStrategy?: string;
-  sessionKey?: string;
   timeoutSec?: number;
-  waitTimeoutMs?: number;
-  disableDeviceAuth?: boolean;
-  autoPairOnFirstConnect?: boolean;
-  devicePrivateKeyPem?: string;
-  role?: string;
-  scopes?: string;
-  paperclipApiUrl?: string;
-  headersJson?: string;
-  password?: string;
 }

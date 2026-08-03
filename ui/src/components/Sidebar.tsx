@@ -35,7 +35,10 @@ import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { attentionApi } from "../api/attention";
-import { heartbeatsApi } from "../api/heartbeats";
+import {
+  ACTIVE_ISSUE_EXECUTION_RUN_STATUSES,
+  runsApi,
+} from "../api/runs";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
 import { attentionBadgeCount } from "../lib/attention";
@@ -62,26 +65,32 @@ export function Sidebar() {
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(selectedCompanyId!);
+  const activeRunStatuses = ACTIVE_ISSUE_EXECUTION_RUN_STATUSES;
+  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, {
+    status: activeRunStatuses,
+  });
   const sharedLiveRuns = useSharedPollingQuery({
     companyId: selectedCompanyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (#9627) + reconnect reconcile — no
+    // Event-sourced via LiveUpdatesProvider plus reconnect reconciliation — no
     // interval poll needed. Polling here also re-armed React Query's timer on
     // every live-event cache write, a major source of steady-state churn.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(selectedCompanyId!, {
+      status: activeRunStatuses,
+      limit: 200,
+    }),
     enabled: sharedLiveRuns.enabled,
     refetchInterval: sharedLiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const liveRunCount = liveRuns?.length ?? 0;
+  usePublishSharedQueryData(sharedLiveRuns, activeRunPage, activeRunsUpdatedAt);
+  const liveRunCount = activeRunPage?.items.length ?? 0;
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;

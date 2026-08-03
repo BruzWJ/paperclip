@@ -23,7 +23,6 @@ const catalogSkill = {
   trustLevel: "markdown_only",
   compatibility: "compatible",
   defaultInstall: false,
-  recommendedForRoles: ["engineer"],
   requires: [],
   tags: ["review"],
   files: [{ path: "SKILL.md", kind: "skill", sizeBytes: 8, sha256: "abc" }],

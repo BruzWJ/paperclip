@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockRegistry = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -53,13 +54,11 @@ function readyPlugin(packageRoot: string) {
 }
 
 function boardActor(companyIds: string[]) {
-  return {
-    type: "board",
+  return testBoardSessionActor({
     userId: "board-user",
-    source: "session",
     isInstanceAdmin: false,
     companyIds,
-  };
+  });
 }
 
 async function createApp(actor: Record<string, unknown>) {

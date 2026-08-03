@@ -5,23 +5,24 @@ import type {
   ProjectExecutionWorkspaceDefaultMode,
   ProjectExecutionWorkspacePolicy,
 } from "@paperclipai/shared";
-import { asString, parseObject } from "../adapters/utils.js";
+import {
+  asString,
+  parseObject,
+} from "@paperclipai/adapter-utils/server-utils";
 
 export type ParsedExecutionWorkspaceMode = Exclude<ExecutionWorkspaceMode, "inherit" | "reuse_existing">;
 
 export const WORKSPACE_WORKTREE_REQUIRES_PROJECT_CODE = "workspace_worktree_requires_project";
 export const WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION =
-  "Attach a project to the task, or bind a reusable execution workspace, then retry.";
+  "Attach a project to the issue, or bind a reusable execution workspace, then retry.";
 export const WORKSPACE_WORKTREE_REQUIRES_PROJECT_MESSAGE =
-  `This task is set to run in an isolated git worktree, but it has no project and no reusable execution workspace to create the worktree from. ${WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION}`;
+  `This issue is set to run in an isolated git worktree, but it has no project and no reusable execution workspace to create the worktree from. ${WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION}`;
 
 type WorkspaceStrategyType = ExecutionWorkspaceStrategy["type"];
 
 export type UnrunnableWorktreeIssueRef = {
   projectId?: string | null;
   projectWorkspaceId?: string | null;
-  executionWorkspaceId?: string | null;
-  executionWorkspacePreference?: string | null;
 };
 
 function cloneRecord(value: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
@@ -77,24 +78,16 @@ export function resolvePinnedIssueWorkspaceStrategyType(input: {
   return input.mode === "agent_default" ? "adapter_managed" : "project_primary";
 }
 
-export function hasReusableExecutionWorkspaceBinding(issue: UnrunnableWorktreeIssueRef): boolean {
-  return Boolean(issue.executionWorkspaceId && issue.executionWorkspacePreference === "reuse_existing");
-}
-
 export function isUnrunnableWorktreeCombo(input: {
   issue: UnrunnableWorktreeIssueRef;
   resolvedMode: ParsedExecutionWorkspaceMode;
   resolvedStrategy: string | null | undefined;
   reusableExecutionWorkspaceAvailable?: boolean | null;
-  hasResolvablePriorSessionWorkspace?: boolean | null;
 }): boolean {
   if (input.resolvedMode !== "isolated_workspace" && input.resolvedMode !== "operator_branch") return false;
   if (input.resolvedStrategy !== "git_worktree") return false;
   if (input.issue.projectId || input.issue.projectWorkspaceId) return false;
-  const hasReusableWorkspace =
-    input.reusableExecutionWorkspaceAvailable ?? hasReusableExecutionWorkspaceBinding(input.issue);
-  if (hasReusableWorkspace) return false;
-  return input.hasResolvablePriorSessionWorkspace !== true;
+  return input.reusableExecutionWorkspaceAvailable !== true;
 }
 
 export function parseProjectExecutionWorkspacePolicy(raw: unknown): ProjectExecutionWorkspacePolicy | null {
@@ -263,20 +256,24 @@ export function issueExecutionWorkspaceModeForPersistedWorkspace(
 export function resolveExecutionWorkspaceMode(input: {
   projectPolicy: ProjectExecutionWorkspacePolicy | null;
   issueSettings: IssueExecutionWorkspaceSettings | null;
-  legacyUseProjectWorkspace: boolean | null;
+  issuePreference?: ExecutionWorkspaceMode | null;
 }): ParsedExecutionWorkspaceMode {
   const issueMode = input.issueSettings?.mode;
   if (issueMode && issueMode !== "inherit" && issueMode !== "reuse_existing") {
     return issueMode;
+  }
+  if (
+    input.issuePreference &&
+    input.issuePreference !== "inherit" &&
+    input.issuePreference !== "reuse_existing"
+  ) {
+    return input.issuePreference;
   }
   if (input.projectPolicy?.enabled) {
     if (input.projectPolicy.defaultMode === "isolated_workspace") return "isolated_workspace";
     if (input.projectPolicy.defaultMode === "operator_branch") return "operator_branch";
     if (input.projectPolicy.defaultMode === "adapter_default") return "agent_default";
     return "shared_workspace";
-  }
-  if (input.legacyUseProjectWorkspace === false) {
-    return "agent_default";
   }
   return "shared_workspace";
 }
@@ -286,7 +283,6 @@ export function buildExecutionWorkspaceAdapterConfig(input: {
   projectPolicy: ProjectExecutionWorkspacePolicy | null;
   issueSettings: IssueExecutionWorkspaceSettings | null;
   mode: ParsedExecutionWorkspaceMode;
-  legacyUseProjectWorkspace: boolean | null;
 }): Record<string, unknown> {
   const nextConfig = { ...input.agentConfig };
   const projectHasPolicy = Boolean(input.projectPolicy?.enabled);
@@ -295,7 +291,7 @@ export function buildExecutionWorkspaceAdapterConfig(input: {
     input.issueSettings?.workspaceStrategy ||
     input.issueSettings?.workspaceRuntime,
   );
-  const hasWorkspaceControl = projectHasPolicy || issueHasWorkspaceOverrides || input.legacyUseProjectWorkspace === false;
+  const hasWorkspaceControl = projectHasPolicy || issueHasWorkspaceOverrides;
 
   if (hasWorkspaceControl) {
     if (input.mode === "isolated_workspace") {

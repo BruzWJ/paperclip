@@ -140,6 +140,10 @@ describe("awsSecretsManagerProvider", () => {
     };
 
     const health = await provider.healthCheck({ providerConfig });
+    const explicitlyNonStrictHealth = await provider.healthCheck({
+      providerConfig,
+      strictMode: false,
+    });
     const prepared = await provider.createSecret({
       value: "super-secret-value",
       providerConfig,
@@ -157,6 +161,10 @@ describe("awsSecretsManagerProvider", () => {
       prefix: "clip",
       deploymentId: "prod-us-west",
       kmsKeyConfigured: false,
+    });
+    expect(explicitlyNonStrictHealth).toMatchObject({
+      status: "warn",
+      warnings: ["Strict secret mode is disabled"],
     });
     expect(calls).toEqual([
       expect.objectContaining({

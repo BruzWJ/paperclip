@@ -38,7 +38,10 @@ function RecentActivity({
   appName,
   userLabelById,
 }: ActivityPanelProps) {
-  const nameById = useMemo(() => new Map(agents.map((a) => [a.id, a.name])), [agents]);
+  const nameById = useMemo(
+    () => new Map(agents.map((a) => [a.id, a.name])),
+    [agents],
+  );
 
   const rows = useMemo<TimelineRow[]>(() => {
     const callRows: TimelineRow[] = events
@@ -47,15 +50,19 @@ function RecentActivity({
         const row = humanizeEvent(
           event,
           nameById.get(event.agentId ?? "") ?? null,
-          event.actionRequestId ? actionRequests[event.actionRequestId] : undefined,
-          isTestEvent(event) ? resolveActorLabel(event.actorId, userLabelById) : null,
+          event.actionRequestId
+            ? actionRequests[event.actionRequestId]
+            : undefined,
+          isTestEvent(event)
+            ? resolveActorLabel(event.actorId, userLabelById)
+            : null,
         );
         return {
           key: `call:${event.id}`,
           createdAt: event.createdAt,
           primary: row.primary,
           dotClass: dotColor(event),
-          issue: event.issueId ? issues[event.issueId] ?? null : null,
+          issue: event.issueId ? (issues[event.issueId] ?? null) : null,
         };
       });
 
@@ -63,15 +70,29 @@ function RecentActivity({
     const lifecycleRows: TimelineRow[] = lifecycleEvents.map((event) => ({
       key: `lifecycle:${event.id}`,
       createdAt: event.createdAt,
-      primary: humanizeLifecycleEvent(event, appName, nameById.get(event.agentId ?? "") ?? null),
+      primary: humanizeLifecycleEvent(
+        event,
+        appName,
+        nameById.get(event.agentId ?? "") ?? null,
+      ),
       dotClass: lifecycleDotColor(event),
       link: { to: setupHref, label: lifecycleLinkLabel(event) },
     }));
 
     return [...callRows, ...lifecycleRows].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [events, lifecycleEvents, issues, actionRequests, nameById, connectionId, appName, userLabelById]);
+  }, [
+    events,
+    lifecycleEvents,
+    issues,
+    actionRequests,
+    nameById,
+    connectionId,
+    appName,
+    userLabelById,
+  ]);
 
   return (
     <section className="space-y-2">
@@ -89,7 +110,13 @@ function RecentActivity({
         <ul className="divide-y divide-border">
           {rows.map((row) => (
             <li key={row.key} className="flex items-start gap-3 py-3 text-sm">
-              <span className={cn("mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full", row.dotClass)} aria-hidden />
+              <span
+                className={cn(
+                  "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                  row.dotClass,
+                )}
+                aria-hidden
+              />
               <span className="min-w-0 flex-1">
                 <span className="block text-foreground">{row.primary}</span>
                 <span className="block truncate text-xs text-muted-foreground">
@@ -136,7 +163,7 @@ const HUMANIZED_EVENTS = new Set<ToolCallEvent["eventType"]>([
 ]);
 
 /**
- * A row is a prosumer Test-tab call (vs. a real heartbeat-driven agent run) when
+ * A row is a prosumer Test-tab call (vs. a real issue-execution run) when
  * the gateway tagged the audit event `metadata.source === "test"` (PAP-11349).
  */
 export function isTestEvent(event: ToolCallEvent): boolean {
@@ -151,7 +178,6 @@ export function resolveActorLabel(
   if (actorId) {
     const label = userLabelById?.get(actorId);
     if (label) return label;
-    if (actorId === "local-board") return "Board";
   }
   return "Someone";
 }
@@ -164,19 +190,22 @@ export function humanizeEvent(
   testRunnerLabel?: string | null,
 ): { primary: string } {
   // For Test-tab calls, surface "<User> tested as <Agent>" so prosumer test runs are
-  // distinguishable from real heartbeat agent activity in the audit trail (PAP-11415).
+  // distinguishable from real issue-execution activity in the audit trail (PAP-11415).
   const who = testRunnerLabel
     ? `${testRunnerLabel} tested as ${agentName ?? "an agent"}`
-    : agentName ?? "An agent";
+    : (agentName ?? "An agent");
   // The raw gateway tool name is prefixed (e.g. `mcp.app-gallery-link-…:kv-set`);
   // humanize it to "Kv Set" to match the cross-app Activity view (PAP-11105).
-  const action = event.toolName ? humanizeConnectionDisplayName(event.toolName) : "an action";
+  const action = event.toolName
+    ? humanizeConnectionDisplayName(event.toolName)
+    : "an action";
   switch (event.eventType) {
     case "call_completed":
       return {
-        primary: event.outcome === "success"
-          ? `${who} used ${action}`
-          : `${who} ran ${action}, but it didn't finish`,
+        primary:
+          event.outcome === "success"
+            ? `${who} used ${action}`
+            : `${who} ran ${action}, but it didn't finish`,
       };
     case "call_failed":
       return { primary: `${action} didn't work for ${lower(who)}` };
@@ -200,8 +229,10 @@ function humanizeApprovalResolved(
   actionRequest?: ActivityPanelProps["actionRequests"][string],
 ): string {
   const resolver = actionRequest?.resolverDisplayName ?? "Someone";
-  if (actionRequest?.status === "approved") return `${resolver} approved ${action}`;
-  if (actionRequest?.status === "rejected") return `${resolver} said no to ${action}`;
+  if (actionRequest?.status === "approved")
+    return `${resolver} approved ${action}`;
+  if (actionRequest?.status === "rejected")
+    return `${resolver} said no to ${action}`;
   return `${resolver} reviewed ${action}`;
 }
 
@@ -234,7 +265,10 @@ function humanizeLifecycleEvent(
   }
 }
 
-function humanizeAllowlistChange(who: string, details: Record<string, unknown> | null): string {
+function humanizeAllowlistChange(
+  who: string,
+  details: Record<string, unknown> | null,
+): string {
   const added = numberFrom(details?.added);
   const removed = numberFrom(details?.removed);
   if (added > 0 && removed === 0) {
@@ -250,7 +284,9 @@ function humanizeAllowlistChange(who: string, details: Record<string, unknown> |
 }
 
 function lifecycleLinkLabel(event: ToolConnectionLifecycleEvent): string {
-  return event.type === "actions_quarantined" ? "Review in Setup" : "View in Setup";
+  return event.type === "actions_quarantined"
+    ? "Review in Setup"
+    : "View in Setup";
 }
 
 function numberFrom(value: unknown): number {
@@ -263,16 +299,22 @@ function lower(who: string): string {
 }
 
 function dotColor(event: ToolCallEvent): string {
-  if (event.eventType === "call_failed" || event.outcome === "failure" || event.outcome === "timeout") {
+  if (
+    event.eventType === "call_failed" ||
+    event.outcome === "failure" ||
+    event.outcome === "timeout"
+  ) {
     return "bg-red-400";
   }
-  if (event.eventType === "call_denied" || event.outcome === "denied") return "bg-amber-400";
+  if (event.eventType === "call_denied" || event.outcome === "denied")
+    return "bg-amber-400";
   if (event.eventType === "approval_requested") return "bg-amber-400";
   return "bg-emerald-400";
 }
 
 function lifecycleDotColor(event: ToolConnectionLifecycleEvent): string {
   if (event.type === "disconnected") return "bg-red-400";
-  if (event.type === "app_paused" || event.type === "actions_quarantined") return "bg-amber-400";
+  if (event.type === "app_paused" || event.type === "actions_quarantined")
+    return "bg-amber-400";
   return "bg-emerald-400";
 }

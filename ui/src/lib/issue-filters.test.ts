@@ -9,47 +9,17 @@ import {
   resolveIssueFilterWorkspaceId,
   shouldIncludeIssueFilterWorkspaceOption,
 } from "./issue-filters";
+import { createTestExecutionWorkspace, createTestIssue } from "../test-utils/issue";
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: overrides.id ?? "issue-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
+  return createTestIssue({
     title: "Issue",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
-    identifier: "PAP-1",
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     labels: [],
     labelIds: [],
     createdAt: new Date("2026-04-15T00:00:00.000Z"),
     updatedAt: new Date("2026-04-15T00:00:00.000Z"),
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 function makeExternalObjectSummary(overrides: Partial<ExternalObjectSummary> = {}): ExternalObjectSummary {
@@ -69,9 +39,19 @@ function makeExternalObjectSummary(overrides: Partial<ExternalObjectSummary> = {
 describe("issue filters", () => {
   it("filters issues by creator across agents and users", () => {
     const issues = [
-      makeIssue({ id: "agent-match", createdByAgentId: "agent-1" }),
-      makeIssue({ id: "user-match", createdByUserId: "user-1" }),
-      makeIssue({ id: "excluded", createdByAgentId: "agent-2", createdByUserId: "user-2" }),
+      makeIssue({
+        id: "agent-match",
+        creatorKind: "agent-execution",
+        creatorAuthorityId: "agent-1",
+        creatorAdapterConfigRevisionId: "revision-1",
+      }),
+      makeIssue({ id: "user-match", creatorUserId: "user-1" }),
+      makeIssue({
+        id: "excluded",
+        creatorKind: "agent-execution",
+        creatorAuthorityId: "agent-2",
+        creatorAdapterConfigRevisionId: "revision-2",
+      }),
     ];
 
     const filtered = applyIssueFilters(issues, {
@@ -139,7 +119,11 @@ describe("issue filters", () => {
       id: "shared-default-issue",
       projectId: "project-1",
       projectWorkspaceId: "workspace-default",
-      executionWorkspaceId: "execution-shared-default",
+      currentExecutionWorkspace: createTestExecutionWorkspace({
+        id: "execution-shared-default",
+        mode: "shared_workspace",
+        projectWorkspaceId: "workspace-default",
+      }),
     });
     const workspaceContext = {
       executionWorkspaceById: new Map([[
@@ -166,7 +150,11 @@ describe("issue filters", () => {
       id: "execution-issue",
       projectId: "project-1",
       projectWorkspaceId: "workspace-default",
-      executionWorkspaceId: "execution-isolated",
+      currentExecutionWorkspace: createTestExecutionWorkspace({
+        id: "execution-isolated",
+        mode: "isolated_workspace",
+        projectWorkspaceId: "workspace-default",
+      }),
     });
     const workspaceContext = {
       executionWorkspaceById: new Map([[

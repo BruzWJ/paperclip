@@ -18,9 +18,7 @@ function writeBaseConfig(configPath: string) {
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
-      embeddedPostgresDataDir: "/tmp/paperclip-db",
-      embeddedPostgresPort: 54329,
+      connectionString: "postgresql://operator:secret@database.example.com/paperclip",
       backup: {
         enabled: true,
         intervalMinutes: 60,
@@ -33,7 +31,6 @@ function writeBaseConfig(configPath: string) {
       logDir: "/tmp/paperclip-logs",
     },
     server: {
-      deploymentMode: "authenticated",
       exposure: "private",
       host: "0.0.0.0",
       port: 3100,
@@ -41,7 +38,6 @@ function writeBaseConfig(configPath: string) {
       serveUi: true,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
     telemetry: {

@@ -1,440 +1,311 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildSandboxNpmInstallCommand } from "@paperclipai/adapter-utils";
-import type { ServerAdapterModule } from "../adapters/index.js";
-
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type {
+  AdapterModel,
+  ServerAdapterModule,
+} from "@paperclipai/adapter-utils";
+import { resolveApprovedAcpLaunch } from "@paperclipai/adapter-utils/acp-subprocess";
 import {
-  detectAdapterModel,
   findActiveServerAdapter,
+  findSelectableServerAdapterImplementation,
   findServerAdapter,
-  listAdapterModels,
+  findServerAdapterImplementation,
   listAdapterModelProfiles,
+  listAdapterModels,
+  listServerAdapters,
   registerServerAdapter,
   requireServerAdapter,
+  requireServerAdapterImplementation,
+  resolveAvailableAdapterModel,
   unregisterServerAdapter,
 } from "../adapters/index.js";
-import {
-  resolveExternalAdapterRegistration,
-  setOverridePaused,
-} from "../adapters/registry.js";
+import { setOverridePaused } from "../adapters/registry.js";
 
-const externalAdapter: ServerAdapterModule = {
-  type: "external_test",
-  execute: async () => ({
-    exitCode: 0,
-    signal: null,
-    timedOut: false,
-  }),
-  testEnvironment: async () => ({
-    adapterType: "external_test",
-    status: "pass",
-    checks: [],
-    testedAt: new Date(0).toISOString(),
-  }),
-  models: [{ id: "external-model", label: "External Model" }],
-  supportsLocalAgentJwt: false,
-};
+const launchProfile = resolveApprovedAcpLaunch("codex");
+
+function model(input: {
+  id: string;
+  label?: string;
+  value?: string;
+  contextTokenLimit?: number;
+}): AdapterModel {
+  return {
+    id: input.id,
+    label: input.label ?? input.id,
+    value: input.value ?? input.id,
+    limits: {
+      contextTokenLimit: input.contextTokenLimit ?? 200_000,
+      outputTokenLimit: 16_000,
+    },
+  };
+}
+
+function declarativeAdapter(
+  type: string,
+  models: readonly AdapterModel[] = [model({ id: `${type}-model` })],
+): ServerAdapterModule {
+  const modelOptions = models.map((entry) => ({
+    label: entry.label,
+    value: entry.value,
+  }));
+  return {
+    type,
+    definition: {
+      version: "acp-subprocess/v1",
+      launchProfile,
+      environment: {
+        cwd: "execution-workspace",
+        additionalDirectories: "authorized-workspace-only",
+        drivers: ["local", "ssh", "sandbox", "plugin"],
+        environmentKeys: [],
+      },
+      readiness: {
+        protocolVersion: 1,
+        resume: true,
+        cancel: true,
+        sessionConfig: true,
+        sessionScopedMcpReplacement: true,
+        cliNativeAuthentication: true,
+      },
+      ui: {
+        label: type,
+        description: `${type} declarative ACP test adapter`,
+      },
+      configSchema: {
+        fields: [{
+          key: "model",
+          label: "Model",
+          type: "select",
+          required: true,
+          options: modelOptions,
+        }],
+      },
+      configOptions: [{
+        id: "model",
+        configKey: "model",
+        label: "Model",
+        required: true,
+        values: modelOptions,
+      }],
+      modelConfigOptionId: "model",
+      models,
+      modelProfiles: [],
+      configurationDoc: "Authenticate through the target CLI.",
+    },
+  };
+}
+
+function externalIdentity(
+  adapterType: string,
+  artifactDigest = "d".repeat(64),
+) {
+  return {
+    adapterType,
+    definitionVersion: "acp-subprocess/v1" as const,
+    protocolVersion: 1 as const,
+    origin: "external" as const,
+    packageName: "@paperclip-test/external",
+    packageVersion: "1.0.0",
+    buildIdentity: "@paperclip-test/external@1.0.0",
+    artifactDigest,
+  };
+}
 
 describe("server adapter registry", () => {
   beforeEach(() => {
     unregisterServerAdapter("external_test");
-    unregisterServerAdapter("hermes_local");
-    unregisterServerAdapter("hermes_gateway");
-    unregisterServerAdapter("claude_local");
-    setOverridePaused("claude_local", false);
+    unregisterServerAdapter("external_ambiguous");
+    unregisterServerAdapter("codex");
+    setOverridePaused("codex", false);
   });
 
   afterEach(() => {
     unregisterServerAdapter("external_test");
-    unregisterServerAdapter("hermes_local");
-    unregisterServerAdapter("hermes_gateway");
-    unregisterServerAdapter("claude_local");
-    setOverridePaused("claude_local", false);
+    unregisterServerAdapter("external_ambiguous");
+    unregisterServerAdapter("codex");
+    setOverridePaused("codex", false);
   });
 
-  it("registers external adapters and exposes them through lookup helpers", async () => {
-    expect(findServerAdapter("external_test")).toBeNull();
-
-    registerServerAdapter(externalAdapter);
-
-    expect(requireServerAdapter("external_test")).toBe(externalAdapter);
-    expect(await listAdapterModels("external_test")).toEqual([
-      { id: "external-model", label: "External Model" },
+  it("registers only the canonical built-in Codex definition", () => {
+    expect(listServerAdapters().map((adapter) => adapter.type)).toEqual([
+      "codex",
     ]);
-  });
-
-  it("exposes adapter model profiles when adapters declare them", async () => {
-    const adapterWithProfiles: ServerAdapterModule = {
-      ...externalAdapter,
-      modelProfiles: [
-        {
-          key: "cheap",
-          label: "Cheap",
-          adapterConfig: { model: "external-mini" },
-          source: "adapter_default",
-        },
-      ],
-    };
-
-    registerServerAdapter(adapterWithProfiles);
-
-    expect(await listAdapterModelProfiles("external_test")).toEqual([
-      {
-        key: "cheap",
-        label: "Cheap",
-        adapterConfig: { model: "external-mini" },
-        source: "adapter_default",
+    expect(requireServerAdapter("codex").definition).toMatchObject({
+      version: "acp-subprocess/v1",
+      launchProfile: {
+        registryName: "codex",
+        frontendPackage: "@agentclientprotocol/codex-acp",
+        frontendVersion: "1.1.7",
+        frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
       },
-    ]);
+    });
+    expect(
+      findSelectableServerAdapterImplementation("codex")?.identity,
+    ).toMatchObject({
+      adapterType: "codex",
+      definitionVersion: "acp-subprocess/v1",
+      protocolVersion: 1,
+      origin: "builtin",
+      packageName: "@paperclipai/server",
+      packageVersion: "0.3.1",
+      buildIdentity: "@paperclipai/server@0.3.1:codex",
+      artifactDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 
-  it("removes external adapters when unregistered", () => {
-    registerServerAdapter(externalAdapter);
+  it("registers and removes a declarative external definition", async () => {
+    const external = declarativeAdapter("external_test");
+    const registered = registerServerAdapter(external);
+
+    expect(requireServerAdapter("external_test")).toBe(external);
+    expect(await listAdapterModels("external_test")).toEqual(
+      external.definition.models,
+    );
+    expect(await listAdapterModelProfiles("external_test")).toEqual([]);
 
     unregisterServerAdapter("external_test");
-
     expect(findServerAdapter("external_test")).toBeNull();
-    expect(() => requireServerAdapter("external_test")).toThrow(
-      "Unknown adapter type: external_test",
+    expect(
+      findServerAdapterImplementation(
+        "external_test",
+        registered.identity,
+      )?.adapter,
+    ).toBe(external);
+  });
+
+  it("resolves one exact model id and rejects a conflicting catalog", async () => {
+    const selected = model({ id: "external-model", label: "External" });
+    registerServerAdapter(declarativeAdapter("external_test", [selected]));
+
+    await expect(resolveAvailableAdapterModel("external-model")).resolves.toEqual(
+      selected,
+    );
+    await expect(resolveAvailableAdapterModel(" external-model")).rejects.toThrow(
+      /exact non-empty catalog key/,
+    );
+
+    registerServerAdapter(
+      declarativeAdapter("external_ambiguous", [
+        model({
+          id: "external-model",
+          label: "Different",
+          value: "different-value",
+        }),
+      ]),
+    );
+    await expect(resolveAvailableAdapterModel("external-model")).rejects.toThrow(
+      /ambiguous/,
     );
   });
 
-  it("allows external plugin to override a built-in adapter type", () => {
-    // claude_local is always built-in
-    const builtIn = findServerAdapter("claude_local");
-    expect(builtIn).not.toBeNull();
-
-    const plugin: ServerAdapterModule = {
-      type: "claude_local",
-      execute: async () => ({
-        exitCode: 0,
-        signal: null,
-        timedOut: false,
-      }),
-      testEnvironment: async () => ({
-        adapterType: "claude_local",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      models: [{ id: "plugin-model", label: "Plugin Override" }],
-      supportsLocalAgentJwt: false,
-    };
-
-    registerServerAdapter(plugin);
-
-    // Plugin wins
-    const resolved = requireServerAdapter("claude_local");
-    expect(resolved).toBe(plugin);
-    expect(resolved.models).toEqual([
-      { id: "plugin-model", label: "Plugin Override" },
+  it("restores built-in Codex after pausing or removing an override", () => {
+    const builtIn = requireServerAdapter("codex");
+    const builtInIdentity =
+      findSelectableServerAdapterImplementation("codex")!.identity;
+    const override = declarativeAdapter("codex", [
+      model({ id: "override-model" }),
     ]);
-  });
-
-  it("ships Hermes adapters as built-ins and still accepts external overrides", () => {
-    const builtInLocal = findServerAdapter("hermes_local");
-    const builtInGateway = findServerAdapter("hermes_gateway");
-
-    expect(builtInLocal).not.toBeNull();
-    expect(builtInLocal?.supportsLocalAgentJwt).toBe(true);
-    expect(builtInLocal?.supportsInstructionsBundle).toBe(true);
-    expect(builtInLocal?.requiresMaterializedRuntimeSkills).toBe(false);
-    expect(builtInLocal?.detectModel).toBeTypeOf("function");
-    expect(builtInLocal?.getConfigSchema).toBeTypeOf("function");
-
-    expect(builtInGateway).not.toBeNull();
-    expect(builtInGateway?.supportsLocalAgentJwt).toBe(false);
-    expect(builtInGateway?.supportsInstructionsBundle).toBe(false);
-    expect(builtInGateway?.requiresMaterializedRuntimeSkills).toBe(false);
-    expect(builtInGateway?.getConfigSchema).toBeTypeOf("function");
-
-    const hermesLocalExternalAdapter: ServerAdapterModule = {
-      type: "hermes_local",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "hermes_local",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      supportsLocalAgentJwt: true,
-      supportsInstructionsBundle: true,
-      instructionsPathKey: "instructionsFilePath",
-      requiresMaterializedRuntimeSkills: false,
-      listSkills: async () => ({
-        adapterType: "hermes_local",
-        supported: true,
-        mode: "ephemeral",
-        desiredSkills: [],
-        entries: [],
-        warnings: [],
-      }),
-      getConfigSchema: () => ({ fields: [{ key: "provider", label: "Provider", type: "text" }] }),
-      detectModel: async () => ({
-        model: "hermes-model",
-        provider: "openrouter",
-        source: "test",
-      }),
-    };
-
-    const hermesGatewayExternalAdapter: ServerAdapterModule = {
-      type: "hermes_gateway",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "hermes_gateway",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      supportsLocalAgentJwt: false,
-      supportsInstructionsBundle: false,
-      requiresMaterializedRuntimeSkills: false,
-      getConfigSchema: () => ({
-        fields: [{ key: "apiBaseUrl", label: "API URL", type: "text" }],
-      }),
-    };
-
-    registerServerAdapter(hermesLocalExternalAdapter);
-
-    expect(requireServerAdapter("hermes_local")).toBe(hermesLocalExternalAdapter);
-    expect(findActiveServerAdapter("hermes_local")?.supportsLocalAgentJwt).toBe(true);
-
-    unregisterServerAdapter("hermes_local");
-
-    expect(requireServerAdapter("hermes_local")).toBe(builtInLocal);
-
-    registerServerAdapter(hermesGatewayExternalAdapter);
-
-    expect(requireServerAdapter("hermes_gateway")).toBe(hermesGatewayExternalAdapter);
-    expect(findActiveServerAdapter("hermes_gateway")?.supportsLocalAgentJwt).toBe(false);
-
-    unregisterServerAdapter("hermes_gateway");
-
-    expect(requireServerAdapter("hermes_gateway")).toBe(builtInGateway);
-  });
-
-  it("exposes capability flags from registered adapters", () => {
-    const adapterWithCaps: ServerAdapterModule = {
-      type: "external_test",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "external_test",
-        status: "pass" as const,
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      supportsLocalAgentJwt: true,
-      supportsInstructionsBundle: true,
-      instructionsPathKey: "customPathKey",
-      requiresMaterializedRuntimeSkills: true,
-    };
-
-    registerServerAdapter(adapterWithCaps);
-
-    const resolved = findActiveServerAdapter("external_test");
-    expect(resolved).not.toBeNull();
-    expect(resolved!.supportsInstructionsBundle).toBe(true);
-    expect(resolved!.instructionsPathKey).toBe("customPathKey");
-    expect(resolved!.requiresMaterializedRuntimeSkills).toBe(true);
-    expect(resolved!.supportsLocalAgentJwt).toBe(true);
-  });
-
-  it("returns undefined for capability flags on adapters that do not set them", () => {
-    registerServerAdapter(externalAdapter);
-
-    const resolved = findActiveServerAdapter("external_test");
-    expect(resolved).not.toBeNull();
-    expect(resolved!.supportsInstructionsBundle).toBeUndefined();
-    expect(resolved!.instructionsPathKey).toBeUndefined();
-    expect(resolved!.requiresMaterializedRuntimeSkills).toBeUndefined();
-  });
-
-  it("built-in claude_local adapter declares capability flags", () => {
-    const adapter = findActiveServerAdapter("claude_local");
-    expect(adapter).not.toBeNull();
-    expect(adapter!.supportsInstructionsBundle).toBe(true);
-    expect(adapter!.instructionsPathKey).toBe("instructionsFilePath");
-    expect(adapter!.requiresMaterializedRuntimeSkills).toBe(false);
-    expect(adapter!.supportsLocalAgentJwt).toBe(true);
-  });
-
-  it("built-in local adapters declare cheap model profile defaults where supported", async () => {
-    await expect(listAdapterModelProfiles("claude_local")).resolves.toEqual([
-      expect.objectContaining({
-        key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "claude-sonnet-4-6" }),
-        source: "adapter_default",
-      }),
-    ]);
-    await expect(listAdapterModelProfiles("codex_local")).resolves.toEqual([
-      expect.objectContaining({
-        key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "gpt-5.3-codex-spark" }),
-        source: "adapter_default",
-      }),
-    ]);
-    await expect(listAdapterModelProfiles("gemini_local")).resolves.toEqual([
-      expect.objectContaining({
-        key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "gemini-2.5-flash-lite" }),
-        source: "adapter_default",
-      }),
-    ]);
-    await expect(listAdapterModelProfiles("opencode_local")).resolves.toEqual([
-      expect.objectContaining({
-        key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "openai/gpt-5.1-codex-mini" }),
-        source: "adapter_default",
-      }),
-    ]);
-    await expect(listAdapterModelProfiles("cursor")).resolves.toEqual([
-      expect.objectContaining({
-        key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "gpt-5.1-codex-mini" }),
-        source: "adapter_default",
-      }),
-    ]);
-    await expect(listAdapterModelProfiles("pi_local")).resolves.toEqual([]);
-  });
-
-  it("wraps built-in npm runtime installs with the sandbox-aware install helper", () => {
-    const expectedClaudeInstall = `if ! command -v 'claude' >/dev/null 2>&1; then ${buildSandboxNpmInstallCommand("@anthropic-ai/claude-code")}; fi`;
-    const expectedCodexInstall = `if ! command -v 'codex' >/dev/null 2>&1; then ${buildSandboxNpmInstallCommand("@openai/codex")}; fi`;
-    const expectedGeminiInstall = `if ! command -v 'gemini' >/dev/null 2>&1; then ${buildSandboxNpmInstallCommand("@google/gemini-cli")}; fi`;
-    const expectedOpenCodeInstall = `if ! command -v 'opencode' >/dev/null 2>&1; then ${buildSandboxNpmInstallCommand("opencode-ai")}; fi`;
-
-    expect(findActiveServerAdapter("claude_local")?.getRuntimeCommandSpec?.({})).toEqual({
-      command: "claude",
-      detectCommand: "claude",
-      installCommand: expectedClaudeInstall,
-    });
-    expect(findActiveServerAdapter("codex_local")?.getRuntimeCommandSpec?.({})).toEqual({
-      command: "codex",
-      detectCommand: "codex",
-      installCommand: expectedCodexInstall,
-    });
-    expect(findActiveServerAdapter("gemini_local")?.getRuntimeCommandSpec?.({})).toEqual({
-      command: "gemini",
-      detectCommand: "gemini",
-      installCommand: expectedGeminiInstall,
-    });
-    expect(findActiveServerAdapter("opencode_local")?.getRuntimeCommandSpec?.({})).toEqual({
-      command: "opencode",
-      detectCommand: "opencode",
-      installCommand: expectedOpenCodeInstall,
-    });
-  });
-
-  it("switches active adapter behavior back to the builtin when an override is paused", async () => {
-    const builtIn = findServerAdapter("claude_local");
-    expect(builtIn).not.toBeNull();
-
-    const detectModel = vi.fn(async () => ({
-      model: "plugin-model",
-      provider: "plugin-provider",
-      source: "plugin-source",
-    }));
-    const plugin: ServerAdapterModule = {
-      type: "claude_local",
-      execute: async () => ({
-        exitCode: 0,
-        signal: null,
-        timedOut: false,
-      }),
-      testEnvironment: async () => ({
-        adapterType: "claude_local",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      models: [{ id: "plugin-model", label: "Plugin Override" }],
-      detectModel,
-      supportsLocalAgentJwt: false,
-    };
-
-    registerServerAdapter(plugin);
-
-    expect(findActiveServerAdapter("claude_local")).toBe(plugin);
-    expect(await listAdapterModels("claude_local")).toEqual([
-      { id: "plugin-model", label: "Plugin Override" },
-    ]);
-    expect(await detectAdapterModel("claude_local")).toMatchObject({
-      model: "plugin-model",
-      provider: "plugin-provider",
+    const registeredOverride = registerServerAdapter(override, {
+      identity: externalIdentity("codex"),
     });
 
-    expect(setOverridePaused("claude_local", true)).toBe(true);
+    expect(findActiveServerAdapter("codex")).toBe(override);
+    expect(setOverridePaused("codex", true)).toBe(true);
+    expect(findActiveServerAdapter("codex")).toBe(builtIn);
+    expect(
+      requireServerAdapterImplementation(
+        "codex",
+        registeredOverride.identity,
+      ),
+    ).toBe(override);
+    expect(requireServerAdapterImplementation("codex", builtInIdentity)).toBe(
+      builtIn,
+    );
+    expect(setOverridePaused("codex", false)).toBe(true);
+    expect(findActiveServerAdapter("codex")).toBe(override);
+    unregisterServerAdapter("codex");
+    expect(findActiveServerAdapter("codex")).toBe(builtIn);
+  });
 
-    expect(findActiveServerAdapter("claude_local")).not.toBe(plugin);
-    expect(await listAdapterModels("claude_local")).toEqual(builtIn?.models ?? []);
-    expect(await detectAdapterModel("claude_local")).toBeNull();
-    expect(detectModel).toHaveBeenCalledTimes(1);
+  it("keeps retained implementations pinned across same-version replacement", () => {
+    const first = declarativeAdapter("external_test", [
+      model({ id: "first-model" }),
+    ]);
+    const second = declarativeAdapter("external_test", [
+      model({ id: "second-model" }),
+    ]);
+    const firstRegistration = registerServerAdapter(first, {
+      identity: externalIdentity("external_test", "1".repeat(64)),
+    });
+    const secondRegistration = registerServerAdapter(second, {
+      identity: externalIdentity("external_test", "2".repeat(64)),
+    });
+
+    expect(requireServerAdapter("external_test")).toBe(second);
+    expect(
+      requireServerAdapterImplementation(
+        "external_test",
+        firstRegistration.identity,
+      ),
+    ).toBe(first);
+    expect(
+      requireServerAdapterImplementation(
+        "external_test",
+        secondRegistration.identity,
+      ),
+    ).toBe(second);
+  });
+
+  it("fails closed for an unavailable pinned implementation", () => {
+    expect(() =>
+      requireServerAdapterImplementation(
+        "external_test",
+        externalIdentity("external_test", "f".repeat(64)),
+      ),
+    ).toThrow(/Unavailable pinned adapter implementation/);
   });
 });
 
-describe("resolveExternalAdapterRegistration", () => {
-  it("preserves module-provided sessionManagement", () => {
-    const sessionManagement = {
-      supportsSessionResume: true,
-      nativeContextManagement: "unknown" as const,
-      defaultSessionCompaction: {
-        enabled: true,
-        maxSessionRuns: 200,
-        maxRawInputTokens: 2_000_000,
-        maxSessionAgeHours: 72,
-      },
-    };
-    const adapter: ServerAdapterModule = {
-      type: "external_session_test",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "external_session_test",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-      sessionManagement,
-    };
-
-    const resolved = resolveExternalAdapterRegistration(adapter);
-
-    expect(resolved.sessionManagement).toBe(sessionManagement);
+describe("server adapter registration validation", () => {
+  it("rejects executable legacy fields", () => {
+    expect(() =>
+      registerServerAdapter({
+        ...declarativeAdapter("invalid-external"),
+        execute: async () => undefined,
+      } as unknown as ServerAdapterModule),
+    ).toThrow(/unknown field execute/);
   });
 
-  it("falls back to the hardcoded registry when the module omits sessionManagement", () => {
-    // An external that overrides a built-in type should inherit the built-in's
-    // sessionManagement when it does not provide its own.
-    const adapter: ServerAdapterModule = {
-      type: "claude_local",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "claude_local",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
-      }),
-    };
-
-    const resolved = resolveExternalAdapterRegistration(adapter);
-
-    expect(resolved.sessionManagement).toBeDefined();
-    expect(resolved.sessionManagement?.supportsSessionResume).toBe(true);
-    expect(resolved.sessionManagement?.nativeContextManagement).toBe("confirmed");
+  it("rejects a missing declarative definition", () => {
+    expect(() =>
+      registerServerAdapter({ type: "invalid-external" } as ServerAdapterModule),
+    ).toThrow(/missing required field definition/);
   });
 
-  it("leaves sessionManagement undefined when neither module nor registry provides one", () => {
-    const adapter: ServerAdapterModule = {
-      type: "external_unknown_test",
-      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-      testEnvironment: async () => ({
-        adapterType: "external_unknown_test",
-        status: "pass",
-        checks: [],
-        testedAt: new Date(0).toISOString(),
+  it("rejects launch bytes that differ from the approved registry entry", () => {
+    const candidate = declarativeAdapter("invalid-external");
+    expect(() =>
+      registerServerAdapter({
+        ...candidate,
+        definition: {
+          ...candidate.definition,
+          launchProfile: {
+            ...candidate.definition.launchProfile,
+            args: ["unapproved"],
+          },
+        },
       }),
-    };
-
-    const resolved = resolveExternalAdapterRegistration(adapter);
-
-    expect(resolved.sessionManagement).toBeUndefined();
+    ).toThrow(/launch does not match its approved ACP registry entry/);
+    expect(() =>
+      registerServerAdapter({
+        ...candidate,
+        definition: {
+          ...candidate.definition,
+          launchProfile: {
+            ...candidate.definition.launchProfile,
+            frontendDigest: "f".repeat(64),
+          },
+        },
+      }),
+    ).toThrow(/launch does not match its approved ACP registry entry/);
   });
 });

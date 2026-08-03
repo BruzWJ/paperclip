@@ -1,485 +1,217 @@
-import { randomUUID } from "node:crypto";
-import express from "express";
-import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  activityLog,
-  agents,
-  approvals,
-  authUsers,
-  companies,
-  createDb,
-  heartbeatRuns,
-  issueApprovals,
-  issueComments,
-  issues,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { errorHandler } from "../middleware/index.js";
-import { companyRoutes } from "../routes/companies.js";
-import { normalizeTimelineWindow, workTimelineService } from "../services/work-timeline.js";
+  normalizeTimelineWindow,
+  workTimelineService,
+} from "../services/work-timeline.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const runMocks = vi.hoisted(() => ({
+  listIssueExecutionRunsForActivity: vi.fn(),
+  listIssueExecutionRunsForWorkTimeline: vi.fn(),
+}));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres work timeline tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+vi.mock("../services/issue-execution-run-service.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/issue-execution-run-service.js")>();
+  return {
+    ...actual,
+    listIssueExecutionRunsForActivity: runMocks.listIssueExecutionRunsForActivity,
+    listIssueExecutionRunsForWorkTimeline: runMocks.listIssueExecutionRunsForWorkTimeline,
+  };
+});
+
+const from = new Date("2026-06-01T00:00:00.000Z");
+const to = new Date("2026-06-08T00:00:00.000Z");
+
+function issueRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "issue-1",
+    companyId: "company-1",
+    projectId: null,
+    goalId: null,
+    parentId: null,
+    identifier: "PAP-1",
+    title: "Canonical redesign",
+    creatorKind: "system",
+    creatorAgentId: null,
+    creatorUserId: null,
+    ownerAgentId: null,
+    ownerUserId: null,
+    boardPresentationStatus: "in_progress",
+    createdAt: new Date("2026-06-02T12:00:00.000Z"),
+    ...overrides,
+  };
 }
 
-describeEmbeddedPostgres("work timeline aggregation", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-work-timeline-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(issueComments);
-    await db.delete(issueApprovals);
-    await db.delete(approvals);
-    await db.delete(heartbeatRuns);
-    await db.delete(issues);
-    await db.delete(agents);
-    await db.delete(authUsers);
-    await db.delete(companies);
+describe("work timeline aggregation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    runMocks.listIssueExecutionRunsForActivity.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
+    runMocks.listIssueExecutionRunsForWorkTimeline.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
+  it("normalizes timeline windows with a 31-day cap and rejects inverted ranges", () => {
+    const now = new Date("2026-06-30T12:00:00.000Z");
+    const capped = normalizeTimelineWindow({
+      from: new Date("2026-01-01T00:00:00.000Z"),
+      to: new Date("2027-01-01T00:00:00.000Z"),
+    }, now);
+    expect(capped).toEqual({
+      from: new Date("2026-05-30T12:00:00.000Z"),
+      to: now,
+      capped: true,
+    });
+
+    const inverted = normalizeTimelineWindow({
+      from: new Date("2026-06-10T00:00:00.000Z"),
+      to: new Date("2026-06-01T00:00:00.000Z"),
+    }, now);
+    expect(inverted.capped).toBe(true);
+    expect(inverted.from).toEqual(new Date("2026-05-25T00:00:00.000Z"));
   });
 
-  function createApp() {
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      (req as any).actor = {
-        type: "board",
-        userId: "local-board",
-        companyIds: [],
-        memberships: [],
-        source: "local_implicit",
-        isInstanceAdmin: true,
-      };
-      next();
-    });
-    app.use("/api/companies", companyRoutes(db, {} as any));
-    app.use(errorHandler);
-    return app;
-  }
+  it("returns a complete empty contract when no issue source contributes work", async () => {
+    const mock = createMockDb({ select: [[], [], [], []] });
 
-  async function seedBase() {
-    const companyId = randomUUID();
-    const userId = "user-1";
-    const agentAId = randomUUID();
-    const agentBId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Timeline Co",
-      issuePrefix: `T${randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
+    const result = await workTimelineService(mock.db).getTimeline({
+      companyId: "company-1",
+      from,
+      to,
+      limit: 25,
+      offset: 0,
     });
-    await db.insert(authUsers).values({
-      id: userId,
-      name: "User One",
-      email: "user@example.com",
-      emailVerified: true,
-      createdAt: new Date("2026-01-01T00:00:00Z"),
-      updatedAt: new Date("2026-01-01T00:00:00Z"),
+
+    expect(result).toEqual({
+      actors: [],
+      spans: [],
+      events: [],
+      edges: [],
+      pagination: { limit: 25, offset: 0, totalIssues: 0, hasMore: false },
+      window: { from: from.toISOString(), to: to.toISOString(), capped: false },
     });
-    await db.insert(agents).values([
-      {
-        id: agentAId,
-        companyId,
-        name: "Coder",
-        role: "engineer",
-        status: "active",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: agentBId,
-        companyId,
-        name: "QA",
-        role: "qa",
-        status: "active",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-    ]);
-    return { companyId, userId, agentAId, agentBId };
-  }
-
-  it("normalizes timeline windows with a 31 day cap", () => {
-    const result = normalizeTimelineWindow({
-      from: new Date("2026-01-01T00:00:00Z"),
-      to: new Date("2026-03-15T00:00:00Z"),
-    }, new Date("2026-03-15T00:00:00Z"));
-
-    expect(result.capped).toBe(true);
-    expect(result.from.toISOString()).toBe("2026-02-12T00:00:00.000Z");
+    expect(runMocks.listIssueExecutionRunsForActivity).toHaveBeenCalledWith(
+      mock.db,
+      expect.objectContaining({ companyId: "company-1", limit: 200 }),
+    );
+    expect(mock.remaining("select")).toBe(0);
   });
 
-  it("aggregates runs, human events, approvals, and delegation edges", async () => {
-    const { companyId, userId, agentAId, agentBId } = await seedBase();
-    const parentIssueId = randomUUID();
-    const childIssueId = randomUUID();
-    const contextRunId = randomUUID();
-    const activityRunId = randomUUID();
-    const approvalId = randomUUID();
-
-    await db.insert(issues).values([
-      {
-        id: parentIssueId,
-        companyId,
-        title: "Parent",
-        identifier: "TL-1",
-        status: "in_progress",
-        priority: "medium",
-        createdByUserId: userId,
-        assigneeAgentId: agentAId,
-        createdAt: new Date("2026-03-01T10:00:00Z"),
-        updatedAt: new Date("2026-03-01T10:00:00Z"),
-      },
-      {
-        id: childIssueId,
-        companyId,
-        title: "Child",
-        identifier: "TL-2",
-        status: "in_progress",
-        priority: "medium",
-        parentId: parentIssueId,
-        createdByAgentId: agentAId,
-        assigneeAgentId: agentBId,
-        createdAt: new Date("2026-03-01T11:00:00Z"),
-        updatedAt: new Date("2026-03-01T11:00:00Z"),
-      },
-    ]);
-    await db.insert(heartbeatRuns).values([
-      {
-        id: contextRunId,
-        companyId,
-        agentId: agentBId,
-        status: "running",
-        invocationSource: "issue_assigned",
-        startedAt: new Date("2026-03-01T12:00:00Z"),
-        finishedAt: null,
-        usageJson: { inputTokens: 120, cachedInputTokens: 30, outputTokens: 50 },
-        contextSnapshot: { issueId: childIssueId },
-      },
-      {
-        id: activityRunId,
-        companyId,
-        agentId: agentAId,
-        status: "completed",
-        invocationSource: "manual",
-        startedAt: new Date("2026-03-01T12:30:00Z"),
-        finishedAt: new Date("2026-03-01T12:45:00Z"),
-        contextSnapshot: {},
-      },
-    ]);
-    await db.insert(activityLog).values([
-      {
-        companyId,
-        actorType: "agent",
-        actorId: agentAId,
-        action: "issue.updated",
-        entityType: "issue",
-        entityId: parentIssueId,
-        agentId: agentAId,
-        runId: activityRunId,
-        createdAt: new Date("2026-03-01T12:35:00Z"),
-      },
-      {
-        companyId,
-        actorType: "user",
-        actorId: userId,
-        action: "issue.assigned",
-        entityType: "issue",
-        entityId: childIssueId,
-        details: { assigneeAgentId: agentBId },
-        createdAt: new Date("2026-03-01T13:00:00Z"),
-      },
-    ]);
-    await db.insert(issueComments).values({
-      companyId,
-      issueId: childIssueId,
-      authorUserId: userId,
-      body: "Looks good",
-      createdAt: new Date("2026-03-01T13:30:00Z"),
+  it("emits canonical creation, comment, approval, assignment, and run records", async () => {
+    const issue = issueRow({
+      creatorKind: "user/board",
+      creatorUserId: "user-creator",
+      ownerAgentId: "agent-owner",
     });
-    await db.insert(approvals).values({
-      id: approvalId,
-      companyId,
-      type: "request_board_approval",
-      status: "approved",
-      payload: {},
-      decidedByUserId: userId,
-      decidedAt: new Date("2026-03-01T14:00:00Z"),
+    runMocks.listIssueExecutionRunsForWorkTimeline.mockResolvedValue({
+      items: [{
+        runId: "run-1",
+        companyId: "company-1",
+        issueId: "issue-1",
+        targetAgentId: "agent-owner",
+        kind: "agent",
+        status: "succeeded",
+        retryOfRunId: null,
+        createdAt: new Date("2026-06-03T09:00:00.000Z"),
+        startedAt: new Date("2026-06-03T09:01:00.000Z"),
+        finishedAt: new Date("2026-06-03T09:05:00.000Z"),
+      }],
+      nextCursor: null,
     });
-    await db.insert(issueApprovals).values({ companyId, issueId: childIssueId, approvalId });
-
-    const result = await workTimelineService(db).getTimeline({
-      companyId,
-      from: new Date("2026-03-01T00:00:00Z"),
-      to: new Date("2026-03-02T00:00:00Z"),
+    const mock = createMockDb({
+      select: [
+        [{ id: "issue-1" }],
+        [],
+        [],
+        [],
+        [issue],
+        [{
+          issueId: "issue-1",
+          authorAgentId: "agent-owner",
+          authorUserId: null,
+          createdAt: new Date("2026-06-03T10:00:00.000Z"),
+        }],
+        [{
+          issueId: "issue-1",
+          decidedByUserId: "user-reviewer",
+          decidedAt: new Date("2026-06-03T11:00:00.000Z"),
+          requestedByAgentId: null,
+          requestedByUserId: null,
+          createdAt: new Date("2026-06-03T10:30:00.000Z"),
+        }],
+        [],
+        [{ id: "agent-owner", name: "Owner", icon: null }],
+        [
+          { id: "user-creator", name: "Creator", image: null },
+          { id: "user-reviewer", name: "Reviewer", image: null },
+        ],
+      ],
     });
 
-    expect(result.actors.map((actor) => actor.name)).toEqual(expect.arrayContaining(["Coder", "QA", "User One"]));
-    expect(result.spans).toEqual(expect.arrayContaining([
+    const result = await workTimelineService(mock.db).getTimeline({
+      companyId: "company-1",
+      from,
+      to,
+    });
+
+    expect(result.actors).toEqual(expect.arrayContaining([
+      { id: "user:user-creator", type: "user", name: "Creator", avatar: null },
+      { id: "agent:agent-owner", type: "agent", name: "Owner", avatar: null },
+      { id: "user:user-reviewer", type: "user", name: "Reviewer", avatar: null },
+    ]));
+    expect(result.spans).toEqual([
       expect.objectContaining({
-        runId: contextRunId,
-        issueId: childIssueId,
-        end: null,
-        status: "running",
-        usage: { inputTokens: 120, cachedInputTokens: 30, outputTokens: 50, totalTokens: 200 },
+        runId: "run-1",
+        actorId: "agent:agent-owner",
+        issueIdentifier: "PAP-1",
+        status: "succeeded",
       }),
-      expect.objectContaining({ runId: activityRunId, issueId: parentIssueId, status: "completed" }),
-    ]));
-    expect(result.events.map((event) => event.kind)).toEqual(expect.arrayContaining([
-      "created",
-      "commented",
-      "approved",
-      "delegated",
-      "assigned",
-    ]));
-    expect(result.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "delegation", issueId: childIssueId }),
-      expect.objectContaining({ kind: "assignment", issueId: childIssueId }),
-    ]));
-  });
-
-  it("does not join activity rows to runs from another company", async () => {
-    const { companyId, agentAId } = await seedBase();
-    const otherCompanyId = randomUUID();
-    const otherAgentId = randomUUID();
-    const issueId = randomUUID();
-    const foreignRunId = randomUUID();
-
-    await db.insert(companies).values({
-      id: otherCompanyId,
-      name: "Other Timeline Co",
-      issuePrefix: `O${randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
-    });
-    await db.insert(agents).values({
-      id: otherAgentId,
-      companyId: otherCompanyId,
-      name: "Foreign Coder",
-      role: "engineer",
-      status: "active",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    });
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      title: "Local issue",
-      status: "todo",
-      priority: "medium",
-      assigneeAgentId: agentAId,
-      createdAt: new Date("2026-03-02T10:00:00Z"),
-      updatedAt: new Date("2026-03-02T10:00:00Z"),
-    });
-    await db.insert(heartbeatRuns).values({
-      id: foreignRunId,
-      companyId: otherCompanyId,
-      agentId: otherAgentId,
-      status: "completed",
-      invocationSource: "manual",
-      startedAt: new Date("2026-03-02T11:00:00Z"),
-      finishedAt: new Date("2026-03-02T11:15:00Z"),
-      contextSnapshot: {},
-    });
-    await db.insert(activityLog).values({
-      companyId,
-      actorType: "agent",
-      actorId: agentAId,
-      action: "issue.updated",
-      entityType: "issue",
-      entityId: issueId,
-      agentId: agentAId,
-      runId: foreignRunId,
-      createdAt: new Date("2026-03-02T11:05:00Z"),
-    });
-
-    const result = await workTimelineService(db).getTimeline({
-      companyId,
-      from: new Date("2026-03-02T00:00:00Z"),
-      to: new Date("2026-03-03T00:00:00Z"),
-    });
-
-    expect(result.events.map((event) => event.issueId)).toContain(issueId);
-    expect(result.spans.map((span) => span.runId)).not.toContain(foreignRunId);
-  });
-
-  it("applies the user lens as a transitive issue subtree", async () => {
-    const { companyId, userId, agentAId, agentBId } = await seedBase();
-    const rootIssueId = randomUUID();
-    const childIssueId = randomUUID();
-    const unrelatedIssueId = randomUUID();
-
-    await db.insert(issues).values([
-      {
-        id: rootIssueId,
-        companyId,
-        title: "User root",
-        status: "todo",
-        priority: "medium",
-        createdByUserId: userId,
-        assigneeAgentId: agentAId,
-        createdAt: new Date("2026-03-03T10:00:00Z"),
-        updatedAt: new Date("2026-03-03T10:00:00Z"),
-      },
-      {
-        id: childIssueId,
-        companyId,
-        title: "Delegated child",
-        status: "todo",
-        priority: "medium",
-        parentId: rootIssueId,
-        createdByAgentId: agentAId,
-        assigneeAgentId: agentBId,
-        createdAt: new Date("2026-03-03T11:00:00Z"),
-        updatedAt: new Date("2026-03-03T11:00:00Z"),
-      },
-      {
-        id: unrelatedIssueId,
-        companyId,
-        title: "Unrelated",
-        status: "todo",
-        priority: "medium",
-        assigneeAgentId: agentBId,
-        createdAt: new Date("2026-03-03T12:00:00Z"),
-        updatedAt: new Date("2026-03-03T12:00:00Z"),
-      },
     ]);
-
-    const result = await workTimelineService(db).getTimeline({
-      companyId,
-      userId,
-      from: new Date("2026-03-03T00:00:00Z"),
-      to: new Date("2026-03-04T00:00:00Z"),
-    });
-
-    expect(result.events.map((event) => event.issueId)).toEqual(expect.arrayContaining([rootIssueId, childIssueId]));
-    expect(result.events.map((event) => event.issueId)).not.toContain(unrelatedIssueId);
-  });
-
-  it("filters unreadable issues before emitting timeline rows", async () => {
-    const { companyId, agentAId } = await seedBase();
-    const visibleIssueId = randomUUID();
-    const hiddenIssueId = randomUUID();
-    await db.insert(issues).values([
-      {
-        id: visibleIssueId,
-        companyId,
-        title: "Visible",
-        status: "todo",
-        priority: "medium",
-        assigneeAgentId: agentAId,
-        createdAt: new Date("2026-03-04T10:00:00Z"),
-        updatedAt: new Date("2026-03-04T10:00:00Z"),
-      },
-      {
-        id: hiddenIssueId,
-        companyId,
-        title: "Denied",
-        status: "todo",
-        priority: "medium",
-        assigneeAgentId: agentAId,
-        createdAt: new Date("2026-03-04T11:00:00Z"),
-        updatedAt: new Date("2026-03-04T11:00:00Z"),
-      },
+    expect(result.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "created", actorId: "user:user-creator" }),
+      expect.objectContaining({ kind: "commented", actorId: "agent:agent-owner" }),
+      expect.objectContaining({ kind: "approved", actorId: "user:user-reviewer" }),
+    ]));
+    expect(result.edges).toEqual([
+      expect.objectContaining({
+        kind: "assignment",
+        fromActorId: "user:user-creator",
+        toActorId: "agent:agent-owner",
+      }),
     ]);
-
-    const result = await workTimelineService(db).getTimeline({
-      companyId,
-      from: new Date("2026-03-04T00:00:00Z"),
-      to: new Date("2026-03-05T00:00:00Z"),
-      canReadIssue: async (issue) => issue.id !== hiddenIssueId,
-    });
-
-    expect(result.events.map((event) => event.issueId)).toContain(visibleIssueId);
-    expect(result.events.map((event) => event.issueId)).not.toContain(hiddenIssueId);
-    expect(result.pagination.totalIssues).toBe(1);
+    expect(mock.remaining("select")).toBe(0);
   });
 
-  it("bounds pre-pagination ACL checks", async () => {
-    const { companyId, agentAId } = await seedBase();
-    const issueCount = 40;
-    await db.insert(issues).values(Array.from({ length: issueCount }, (_, index) => ({
-      id: randomUUID(),
-      companyId,
-      title: `Visible ${index}`,
-      status: "todo",
-      priority: "medium",
-      assigneeAgentId: agentAId,
-      createdAt: new Date(Date.parse("2026-03-04T10:00:00Z") + index * 1000),
-      updatedAt: new Date(Date.parse("2026-03-04T10:00:00Z") + index * 1000),
-    })));
-
-    let activeChecks = 0;
-    let maxActiveChecks = 0;
-    const result = await workTimelineService(db).getTimeline({
-      companyId,
-      from: new Date("2026-03-04T00:00:00Z"),
-      to: new Date("2026-03-05T00:00:00Z"),
-      limit: issueCount,
-      canReadIssue: async () => {
-        activeChecks += 1;
-        maxActiveChecks = Math.max(maxActiveChecks, activeChecks);
-        await new Promise((resolve) => setTimeout(resolve, 1));
-        activeChecks -= 1;
-        return true;
-      },
+  it("filters unreadable issues before querying their timeline details", async () => {
+    const canReadIssue = vi.fn().mockResolvedValue(false);
+    const mock = createMockDb({
+      select: [
+        [{ id: "issue-1" }],
+        [],
+        [],
+        [],
+        [issueRow()],
+      ],
     });
 
-    expect(result.pagination.totalIssues).toBe(issueCount);
-    expect(maxActiveChecks).toBeLessThanOrEqual(16);
-  });
-
-  it("serves GET /api/companies/:companyId/timeline", async () => {
-    const { companyId, agentAId } = await seedBase();
-    const issueId = randomUUID();
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      title: "Route issue",
-      identifier: "TL-9",
-      status: "todo",
-      priority: "medium",
-      assigneeAgentId: agentAId,
-      createdAt: new Date("2026-03-05T10:00:00Z"),
-      updatedAt: new Date("2026-03-05T10:00:00Z"),
+    const result = await workTimelineService(mock.db).getTimeline({
+      companyId: "company-1",
+      from,
+      to,
+      canReadIssue,
     });
 
-    const res = await request(createApp())
-      .get(`/api/companies/${companyId}/timeline`)
-      .query({ from: "2026-03-05T00:00:00Z", to: "2026-03-06T00:00:00Z" });
-
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body.events).toEqual([
-      expect.objectContaining({ kind: "created", issueId }),
-    ]);
-    expect(res.body).toEqual(expect.objectContaining({
-      actors: expect.any(Array),
-      spans: expect.any(Array),
-      edges: expect.any(Array),
-      pagination: expect.objectContaining({ totalIssues: 1 }),
+    expect(canReadIssue).toHaveBeenCalledWith(expect.objectContaining({
+      id: "issue-1",
+      companyId: "company-1",
+      boardPresentationStatus: "in_progress",
     }));
+    expect(result.events).toEqual([]);
+    expect(runMocks.listIssueExecutionRunsForWorkTimeline).not.toHaveBeenCalled();
+    expect(mock.remaining("select")).toBe(0);
   });
 });

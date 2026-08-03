@@ -52,13 +52,6 @@ export function resolvePaperclipEnvPathForConfig(configPath: string): string {
   return path.resolve(path.dirname(configPath), PAPERCLIP_ENV_FILENAME);
 }
 
-export function resolveDefaultEmbeddedPostgresDir(input: {
-  homeDir?: string;
-  instanceId?: string;
-} = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "db");
-}
-
 export function resolveDefaultLogsDir(input: {
   homeDir?: string;
   instanceId?: string;

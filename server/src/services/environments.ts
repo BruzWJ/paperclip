@@ -52,15 +52,26 @@ const ACTIVE_CUSTOM_IMAGE_SETUP_STATUSES = ["starting", "waiting_for_user", "cap
  * lease time); `provider` is always forced to "kubernetes".
  */
 export interface KubernetesEnvironmentConfigInput {
-  backend?: "sandbox-cr" | "job";
   inCluster?: boolean;
+  kubeconfig?: string;
+  companySlug?: string;
   runtimeClassName?: string;
   egressMode?: "cilium" | "standard";
   egressAllowFqdns?: string[];
   egressAllowCidrs?: string[];
   namespacePrefix?: string;
   imageRegistry?: string;
+  imageAllowList?: string[];
+  imagePullSecrets?: string[];
+  defaultResources?: {
+    requests?: { cpu?: string; memory?: string };
+    limits?: { cpu?: string; memory?: string };
+  };
+  serviceAccountAnnotations?: Record<string, string>;
+  podActivityDeadlineSec?: number;
   adapterType?: string;
+  reuseLease?: boolean;
+  archiveOnRelease?: boolean;
   /**
    * Sandbox lease RPC timeout in milliseconds. Read at lease time by
    * `resolvePluginSandboxRpcTimeoutMs` to extend the worker-manager call
@@ -70,7 +81,6 @@ export interface KubernetesEnvironmentConfigInput {
    */
   timeoutMs?: number;
   adapters?: import("@paperclipai/shared").AdapterRegistryEntry[];
-  [key: string]: unknown;
 }
 
 function cloneRecord(value: unknown, fallback: Record<string, unknown> | null = null): Record<string, unknown> | null {
@@ -155,7 +165,7 @@ function toEnvironmentLease(row: EnvironmentLeaseRow): EnvironmentLease {
     environmentId: row.environmentId,
     executionWorkspaceId: row.executionWorkspaceId ?? null,
     issueId: row.issueId ?? null,
-    heartbeatRunId: row.heartbeatRunId ?? null,
+    runId: row.runId ?? null,
     status: readEnum(row.status, ENVIRONMENT_LEASE_STATUSES, "environment lease status") ?? "active",
     leasePolicy: readEnum(row.leasePolicy, ENVIRONMENT_LEASE_POLICIES, "environment lease policy") ?? "ephemeral",
     provider: row.provider ?? null,
@@ -600,7 +610,7 @@ export function environmentService(db: Db) {
       environmentId: string;
       executionWorkspaceId?: string | null;
       issueId?: string | null;
-      heartbeatRunId?: string | null;
+      runId?: string | null;
       leasePolicy?: EnvironmentLeasePolicy;
       provider?: string | null;
       providerLeaseId?: string | null;
@@ -615,7 +625,7 @@ export function environmentService(db: Db) {
           environmentId: input.environmentId,
           executionWorkspaceId: input.executionWorkspaceId ?? null,
           issueId: input.issueId ?? null,
-          heartbeatRunId: input.heartbeatRunId ?? null,
+          runId: input.runId ?? null,
           status: "active",
           leasePolicy: input.leasePolicy ?? "ephemeral",
           provider: input.provider ?? null,
@@ -681,7 +691,7 @@ export function environmentService(db: Db) {
     },
 
     releaseLeasesForRun: async (
-      heartbeatRunId: string,
+      runId: string,
       status: Extract<EnvironmentLeaseStatus, "released" | "expired" | "failed"> = "released",
     ): Promise<EnvironmentLease[]> => {
       const now = new Date();
@@ -695,7 +705,7 @@ export function environmentService(db: Db) {
         })
         .where(
           and(
-            eq(environmentLeases.heartbeatRunId, heartbeatRunId),
+            eq(environmentLeases.runId, runId),
             eq(environmentLeases.status, "active"),
           ),
         )

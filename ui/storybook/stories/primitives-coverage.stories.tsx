@@ -237,7 +237,7 @@ export const ScrollAreaList: Story = {
         <div className="p-3">
           {Array.from({ length: 12 }, (_, i) => (
             <div key={i} className="py-1.5 text-sm">
-              Heartbeat run #{1200 + i}
+              Execution run #{1200 + i}
             </div>
           ))}
         </div>

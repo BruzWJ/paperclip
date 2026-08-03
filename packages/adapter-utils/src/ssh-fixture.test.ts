@@ -192,6 +192,37 @@ describe("ssh env-lab fixture", () => {
     ).rejects.toThrow("Invalid SSH environment variable key: BAD KEY");
   });
 
+  it("keeps the explicit target invocation cwd separate from the SSH host process cwd", async () => {
+    const target = await buildSshSpawnTarget({
+      spec: {
+        host: "ssh.example.test",
+        port: 22,
+        username: "ssh-user",
+        remoteCwd: "/srv/paperclip/environment-root",
+        remoteWorkspacePath: "/srv/paperclip/environment-root",
+        privateKey: null,
+        knownHosts: null,
+        strictHostKeyChecking: false,
+      },
+      command: "/opt/paperclip/bin/codex-acp",
+      args: ["--stdio"],
+      env: { SAFE_VALUE: "visible" },
+      cwd: "/srv/paperclip/issues/ISSUE-42",
+    });
+
+    try {
+      const remoteCommand = target.args.at(-1) ?? "";
+      expect(remoteCommand).toContain("/srv/paperclip/issues/ISSUE-42");
+      expect(remoteCommand).not.toContain(
+        "/srv/paperclip/environment-root",
+      );
+      expect(remoteCommand).toContain("/opt/paperclip/bin/codex-acp");
+      expect(remoteCommand).toContain("SAFE_VALUE");
+    } finally {
+      await target.cleanup();
+    }
+  });
+
   it("syncs a local directory into the remote fixture workspace", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-ssh-fixture-"));
     cleanupDirs.push(rootDir);
@@ -553,21 +584,21 @@ describe("ssh env-lab fixture", () => {
 
     await runSshCommand(
       config,
-      `mkdir -p ${JSON.stringify(path.posix.join(preparedA.workspaceRemoteDir, "manual-qa/environment-matrix/ssh"))} && printf "from run a\\n" > ${JSON.stringify(path.posix.join(preparedA.workspaceRemoteDir, "manual-qa/environment-matrix/ssh/claude_local.md"))}`,
+      `mkdir -p ${JSON.stringify(path.posix.join(preparedA.workspaceRemoteDir, "manual-qa/environment-matrix/ssh"))} && printf "from run a\\n" > ${JSON.stringify(path.posix.join(preparedA.workspaceRemoteDir, "manual-qa/environment-matrix/ssh/process.md"))}`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
     await runSshCommand(
       config,
-      `mkdir -p ${JSON.stringify(path.posix.join(preparedB.workspaceRemoteDir, "manual-qa/environment-matrix/ssh"))} && printf "from run b\\n" > ${JSON.stringify(path.posix.join(preparedB.workspaceRemoteDir, "manual-qa/environment-matrix/ssh/codex_local.md"))}`,
+      `mkdir -p ${JSON.stringify(path.posix.join(preparedB.workspaceRemoteDir, "manual-qa/environment-matrix/ssh"))} && printf "from run b\\n" > ${JSON.stringify(path.posix.join(preparedB.workspaceRemoteDir, "manual-qa/environment-matrix/ssh/process.md"))}`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
 
     await preparedA.restoreWorkspace();
     await preparedB.restoreWorkspace();
 
-    await expect(readFile(path.join(localRepo, "manual-qa/environment-matrix/ssh/claude_local.md"), "utf8")).resolves
+    await expect(readFile(path.join(localRepo, "manual-qa/environment-matrix/ssh/process.md"), "utf8")).resolves
       .toBe("from run a\n");
-    await expect(readFile(path.join(localRepo, "manual-qa/environment-matrix/ssh/codex_local.md"), "utf8")).resolves
+    await expect(readFile(path.join(localRepo, "manual-qa/environment-matrix/ssh/process.md"), "utf8")).resolves
       .toBe("from run b\n");
   }, SSH_FIXTURE_TEST_TIMEOUT_MS);
 

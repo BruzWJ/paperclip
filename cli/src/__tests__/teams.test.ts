@@ -1,8 +1,10 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerTeamCommands } from "../commands/client/teams.js";
+import { parseExplicitAdapterOverrides } from "../commands/client/adapter-overrides.js";
 
 const ORIGINAL_ENV = { ...process.env };
+const ENVIRONMENT_ID = "11111111-1111-4111-8111-111111111111";
 
 function makeProgram(): Command {
   const program = new Command();
@@ -34,16 +36,16 @@ function catalogTeam(overrides: Record<string, unknown> = {}) {
     category: "software-development",
     slug: "product-engineering",
     name: "Product Engineering",
-    description: "A software development team with CTO, coder, and QA roles.",
+    description: "A software development team with architecture, coding, and quality specialties.",
     path: "catalog/bundled/software-development/product-engineering",
     entrypoint: "TEAM.md",
     schema: "agentcompanies/v1",
     defaultInstall: true,
     recommendedForCompanyTypes: ["software"],
     tags: ["engineering"],
-    counts: { agents: 3, projects: 1, tasks: 1, routines: 0, localSkills: 0, catalogSkills: 1, externalSkillSources: 0 },
-    rootAgentSlugs: ["cto"],
-    agentSlugs: ["cto", "senior-coder", "qa"],
+    counts: { agents: 3, projects: 1, issues: 1, routines: 0, localSkills: 0, catalogSkills: 1, externalSkillSources: 0 },
+    rootAgentSlugs: ["architect"],
+    agentSlugs: ["architect", "senior-coder", "qa"],
     projectSlugs: ["product-engineering"],
     requiredSkills: [],
     envInputs: [],
@@ -69,6 +71,69 @@ function installedCatalogTeam(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("explicit adapter override parsing", () => {
+  it("merges exact type and JSON configuration", () => {
+    expect(
+      parseExplicitAdapterOverrides(
+        ["lead=codex"],
+        ['lead={"model":"gpt-5.6"}'],
+        [`lead=${ENVIRONMENT_ID}`],
+        ["lead=operator_native"],
+      ),
+    ).toEqual({
+      lead: {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId: ENVIRONMENT_ID,
+        skillChannel: "operator_native",
+      },
+    });
+  });
+
+  it("rejects malformed, non-object, unmatched, and duplicate config", () => {
+    expect(() =>
+      parseExplicitAdapterOverrides(["lead=codex"], ["lead=[]"])
+    ).toThrow("must be a JSON object");
+    expect(() =>
+      parseExplicitAdapterOverrides(undefined, ['lead={"model":"gpt-5.6"}'])
+    ).toThrow("requires a matching --adapter-override");
+    expect(() =>
+      parseExplicitAdapterOverrides(
+        ["lead=codex"],
+        ['lead={"model":"gpt-5.6"}', 'lead={"model":"gpt-5.6-sol"}'],
+      )
+    ).toThrow("Duplicate --adapter-config");
+    expect(() =>
+      parseExplicitAdapterOverrides(
+        ["lead=codex"],
+        ['lead={"model":"gpt-5.6"}'],
+      )
+    ).toThrow("requires a matching --default-environment-id");
+    expect(() =>
+      parseExplicitAdapterOverrides(
+        ["lead=codex"],
+        ['lead={"model":"gpt-5.6"}'],
+        ["lead=not-a-uuid"],
+      )
+    ).toThrow("Use slug=<environment UUID>");
+    expect(() =>
+      parseExplicitAdapterOverrides(
+        ["lead=codex"],
+        ['lead={"model":"gpt-5.6"}'],
+        [`lead=${ENVIRONMENT_ID}`],
+      )
+    ).toThrow("requires a matching --skill-channel");
+    expect(() =>
+      parseExplicitAdapterOverrides(
+        ["lead=codex"],
+        ['lead={"model":"gpt-5.6"}'],
+        [`lead=${ENVIRONMENT_ID}`],
+        ["lead=workspace"],
+      )
+    ).toThrow("Invalid --skill-channel");
+  });
+});
+
 describe("teams CLI commands", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let logSpy: ReturnType<typeof vi.spyOn>;
@@ -76,9 +141,9 @@ describe("teams CLI commands", () => {
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.PAPERCLIP_API_URL;
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_COMPANY_ID;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_COMPANY_ID;
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -282,6 +347,14 @@ describe("teams CLI commands", () => {
       "product-engineering",
       "--target-manager-slug",
       "engineering-lead",
+      "--adapter-override",
+      "architect=codex",
+      "--adapter-config",
+      'architect={"model":"gpt-5.6"}',
+      "--default-environment-id",
+      `architect=${ENVIRONMENT_ID}`,
+      "--skill-channel",
+      "architect=operator_native",
       "--allow-external-sources",
       "--company-id",
       "company-1",
@@ -298,11 +371,74 @@ describe("teams CLI commands", () => {
         method: "POST",
         body: JSON.stringify({
           targetManagerSlug: "engineering-lead",
+          adapterOverrides: {
+            architect: {
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              defaultEnvironmentId: ENVIRONMENT_ID,
+              skillChannel: "operator_native",
+            },
+          },
           sourcePolicy: { allowExternalSources: true },
         }),
       }),
     );
     expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toEqual(result);
+  });
+
+  it("sends the explicit standalone target instead of omitting target choice", async () => {
+    const result = {
+      team: catalogTeam(),
+      portabilityPreview: {
+        plan: { companyAction: "none", agentPlans: [], projectPlans: [], issuePlans: [] },
+        warnings: [],
+        errors: [],
+      },
+      skillPreparations: [],
+      warnings: [],
+      errors: [],
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(result));
+
+    await runCommand([
+      "teams",
+      "preview",
+      "product-engineering",
+      "--standalone",
+      "--adapter-override",
+      "architect=codex",
+      "--adapter-config",
+      'architect={"model":"gpt-5.6"}',
+      "--default-environment-id",
+      `architect=${ENVIRONMENT_ID}`,
+      "--skill-channel",
+      "architect=operator_native",
+      "--company-id",
+      "company-1",
+      "--api-base",
+      "http://paperclip.test",
+      "--api-key",
+      "token",
+      "--json",
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://paperclip.test/api/companies/company-1/teams/catalog/ref/preview?ref=product-engineering",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          targetManagerAgentId: null,
+          adapterOverrides: {
+            architect: {
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              defaultEnvironmentId: ENVIRONMENT_ID,
+              skillChannel: "operator_native",
+            },
+          },
+        }),
+      }),
+    );
   });
 
   it("installs catalog teams and passes selection options", async () => {
@@ -325,15 +461,21 @@ describe("teams CLI commands", () => {
       "install",
       "product-engineering",
       "--agent",
-      "cto",
+      "architect",
       "--selected-file",
-      "agents/cto/AGENTS.md",
+      "agents/architect/AGENTS.md",
       "--collision-strategy",
       "skip",
       "--secret-value",
-      "agent:cto:OPENAI_API_KEY=sk-test",
+      "project:product-engineering:OPENAI_API_KEY=sk-test",
       "--adapter-override",
-      "cto=opencode_local",
+      "architect=codex",
+      "--adapter-config",
+      'architect={"model":"gpt-5.6"}',
+      "--default-environment-id",
+      `architect=${ENVIRONMENT_ID}`,
+      "--skill-channel",
+      "architect=operator_native",
       "--company-id",
       "company/1",
       "--api-base",
@@ -348,11 +490,20 @@ describe("teams CLI commands", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          agents: ["cto"],
+          agents: ["architect"],
           collisionStrategy: "skip",
-          selectedFiles: ["agents/cto/AGENTS.md"],
-          adapterOverrides: { cto: { adapterType: "opencode_local" } },
-          secretValues: { "agent:cto:OPENAI_API_KEY": "sk-test" },
+          selectedFiles: ["agents/architect/AGENTS.md"],
+          adapterOverrides: {
+            architect: {
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              defaultEnvironmentId: ENVIRONMENT_ID,
+              skillChannel: "operator_native",
+            },
+          },
+          secretValues: {
+            "project:product-engineering:OPENAI_API_KEY": "sk-test",
+          },
         }),
       }),
     );
@@ -375,7 +526,7 @@ describe("teams CLI commands", () => {
       updatedAt: "2026-06-04T00:00:00.000Z",
     };
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Missing permission: can create agents" }, 403))
+      .mockResolvedValueOnce(jsonResponse({ error: "Missing permission: agents:create" }, 403))
       .mockResolvedValueOnce(jsonResponse(approval, 201));
 
     await runCommand([
@@ -387,7 +538,15 @@ describe("teams CLI commands", () => {
       "--collision-strategy",
       "rename",
       "--secret-value",
-      "agent:cto:OPENAI_API_KEY=sk-live-secret",
+      "project:product-engineering:OPENAI_API_KEY=sk-live-secret",
+      "--adapter-override",
+      "architect=codex",
+      "--adapter-config",
+      'architect={"model":"gpt-5.6"}',
+      "--default-environment-id",
+      `architect=${ENVIRONMENT_ID}`,
+      "--skill-channel",
+      "architect=operator_native",
       "--company-id",
       "company-1",
       "--request-approval-on-forbidden",
@@ -408,7 +567,17 @@ describe("teams CLI commands", () => {
         body: JSON.stringify({
           targetManagerAgentId: "manager-1",
           collisionStrategy: "rename",
-          secretValues: { "agent:cto:OPENAI_API_KEY": "sk-live-secret" },
+          adapterOverrides: {
+            architect: {
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              defaultEnvironmentId: ENVIRONMENT_ID,
+              skillChannel: "operator_native",
+            },
+          },
+          secretValues: {
+            "project:product-engineering:OPENAI_API_KEY": "sk-live-secret",
+          },
         }),
       }),
     );
@@ -430,10 +599,18 @@ describe("teams CLI commands", () => {
         installAttempt: {
           companyId: "company-1",
           catalogRef: "product-engineering",
-          deniedReason: "Missing permission: can create agents",
+          deniedReason: "Missing permission: agents:create",
           options: {
             targetManagerAgentId: "manager-1",
             collisionStrategy: "rename",
+            adapterOverrides: {
+              architect: {
+                adapterType: "codex",
+                adapterConfig: { model: "gpt-5.6" },
+                defaultEnvironmentId: ENVIRONMENT_ID,
+                skillChannel: "operator_native",
+              },
+            },
           },
         },
       },
@@ -445,76 +622,26 @@ describe("teams CLI commands", () => {
       installAttempt: {
         companyId: "company-1",
         catalogRef: "product-engineering",
-        deniedReason: "Missing permission: can create agents",
+        deniedReason: "Missing permission: agents:create",
         options: {
           targetManagerAgentId: "manager-1",
           collisionStrategy: "rename",
-          secretValues: { "agent:cto:OPENAI_API_KEY": "[redacted]" },
+          adapterOverrides: {
+            architect: {
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              defaultEnvironmentId: ENVIRONMENT_ID,
+              skillChannel: "operator_native",
+            },
+          },
+          secretValues: {
+            "project:product-engineering:OPENAI_API_KEY": "[redacted]",
+          },
         },
       },
     });
     expect(JSON.stringify(approvalPayload)).not.toContain("sk-live-secret");
     expect(String(logSpy.mock.calls[0]?.[0])).not.toContain("sk-live-secret");
-    expect(errorSpy).not.toHaveBeenCalled();
-  });
-
-  it("auto-requests board approval for forbidden installs inside a Paperclip task run", async () => {
-    process.env.PAPERCLIP_TASK_ID = "11111111-1111-4111-8111-111111111111";
-    const approval = {
-      id: "approval-2",
-      companyId: "company-1",
-      type: "request_board_approval",
-      requestedByAgentId: "agent-1",
-      requestedByUserId: null,
-      status: "pending",
-      payload: {},
-      decisionNote: null,
-      decidedByUserId: null,
-      decidedAt: null,
-      createdAt: "2026-06-04T00:00:00.000Z",
-      updatedAt: "2026-06-04T00:00:00.000Z",
-    };
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Missing permission: can create agents" }, 403))
-      .mockResolvedValueOnce(jsonResponse(approval, 201));
-
-    await runCommand([
-      "teams",
-      "install",
-      "product-engineering",
-      "--company-id",
-      "company-1",
-      "--api-base",
-      "http://paperclip.test",
-      "--api-key",
-      "token",
-      "--json",
-    ]);
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "http://paperclip.test/api/companies/company-1/approvals",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.any(String),
-      }),
-    );
-    const approvalPayload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(approvalPayload).toMatchObject({
-      type: "request_board_approval",
-      issueIds: ["11111111-1111-4111-8111-111111111111"],
-      payload: {
-        installAttempt: {
-          companyId: "company-1",
-          catalogRef: "product-engineering",
-          deniedReason: "Missing permission: can create agents",
-        },
-      },
-    });
-    expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toMatchObject({
-      status: "approval_requested",
-      approval,
-    });
     expect(errorSpy).not.toHaveBeenCalled();
   });
 

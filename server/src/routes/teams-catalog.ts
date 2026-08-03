@@ -6,7 +6,7 @@ import {
   catalogTeamPreviewSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { accessService, agentService } from "../services/index.js";
+import { accessService } from "../services/index.js";
 import {
   getCatalogTeamOrThrow,
   listCatalogTeams,
@@ -14,18 +14,20 @@ import {
   teamsCatalogService,
 } from "../services/teams-catalog.js";
 import { forbidden } from "../errors.js";
-import { assertAuthenticated, assertCompanyAccess, getActorInfo } from "./authz.js";
+import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import {
+  assertAuthenticated,
+  assertBoard,
+  assertCompanyAccess,
+} from "./authz.js";
 
-export function teamsCatalogRoutes(db: Db) {
+export function teamsCatalogRoutes(
+  db: Db,
+  ordinaryIssues: OrdinaryIssueRuntime,
+) {
   const router = Router();
-  const agents = agentService(db);
   const access = accessService(db);
-  const svc = teamsCatalogService(db);
-
-  function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
-    if (!agent.permissions || typeof agent.permissions !== "object") return false;
-    return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
-  }
+  const svc = teamsCatalogService(db, ordinaryIssues);
 
   function firstQueryString(value: unknown): string | undefined {
     if (typeof value === "string") return value;
@@ -33,33 +35,12 @@ export function teamsCatalogRoutes(db: Db) {
     return undefined;
   }
 
-  async function assertCanInstallCatalogTeam(req: Request, companyId: string) {
+  async function assertCanConfigureCatalogTeam(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
-
-    if (req.actor.type === "board") {
-      if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
-      const allowed = await access.canUser(companyId, req.actor.userId, "agents:create");
-      if (!allowed) {
-        throw forbidden("Missing permission: agents:create");
-      }
-      return;
-    }
-
-    if (!req.actor.agentId) {
-      throw forbidden("Agent authentication required");
-    }
-
-    const actorAgent = await agents.getById(req.actor.agentId);
-    if (!actorAgent || actorAgent.companyId !== companyId) {
-      throw forbidden("Agent key cannot access another company");
-    }
-
-    const allowedByGrant = await access.hasPermission(companyId, "agent", actorAgent.id, "agents:create");
-    if (allowedByGrant || canCreateAgents(actorAgent)) {
-      return;
-    }
-
-    throw forbidden("Missing permission: can create agents");
+    assertBoard(req);
+    if (req.actor.isInstanceAdmin) return;
+    const allowed = await access.canUser(companyId, req.actor.userId, "agents:create");
+    if (!allowed) throw forbidden("Missing permission: agents:create");
   }
 
   router.get("/teams/catalog", async (req, res) => {
@@ -97,10 +78,14 @@ export function teamsCatalogRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
-      assertCompanyAccess(req, companyId);
+      await assertCanConfigureCatalogTeam(req, companyId);
       const result = await svc.previewCatalogTeamImport(companyId, catalogRef, {
         ...req.body,
-        actor: getActorInfo(req),
+        actor: {
+          actorType: "user",
+          actorId: req.actor.userId,
+          userId: req.actor.userId,
+        },
       });
       res.json(result);
     },
@@ -112,10 +97,15 @@ export function teamsCatalogRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       const catalogRef = firstQueryString(req.query.ref) ?? (req.params.catalogId as string);
-      await assertCanInstallCatalogTeam(req, companyId);
+      await assertCanConfigureCatalogTeam(req, companyId);
       const result = await svc.installCatalogTeam(companyId, catalogRef, {
         ...req.body,
-        actor: getActorInfo(req),
+        actor: {
+          actorType: "user",
+          actorId: req.actor.userId,
+          userId: req.actor.userId,
+        },
+        authorizationActor: req.actor,
       });
       res.status(201).json(result);
     },

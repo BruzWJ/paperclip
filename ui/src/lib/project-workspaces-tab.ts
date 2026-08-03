@@ -3,9 +3,9 @@ import type { ExecutionWorkspace, Issue, Project } from "@paperclipai/shared";
 type ProjectWorkspaceLike = Pick<Project, "workspaces" | "primaryWorkspace">;
 
 export type ProjectWorkspaceLinkedIssue = Pick<Issue, "id" | "identifier" | "title" | "updatedAt"> & {
-  status: string;
+  boardPresentationStatus: string;
   priority: string;
-  description?: string | null;
+  request?: string;
   blockerAttention?: Issue["blockerAttention"];
   projectId?: string | null;
   project?: Issue["project"];
@@ -98,8 +98,10 @@ export function buildProjectWorkspaceSummaries(input: {
   const summaries = new Map<string, ProjectWorkspaceSummary>();
 
   for (const issue of input.issues) {
-    if (issue.executionWorkspaceId) {
-      const executionWorkspace = executionWorkspacesById.get(issue.executionWorkspaceId);
+    const executionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
+    if (executionWorkspaceId) {
+      const executionWorkspace = executionWorkspacesById.get(executionWorkspaceId)
+        ?? issue.currentExecutionWorkspace;
       if (!executionWorkspace) continue;
       if (executionWorkspace.status === "archived") continue;
       if (isDefaultSharedExecutionWorkspace({

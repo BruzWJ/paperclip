@@ -3,7 +3,8 @@ import { issueExecutionPolicySchema } from "@paperclipai/shared";
 import { buildExecutionPolicy } from "./issue-execution-policy";
 
 const AGENT_ID = "00000000-0000-4000-8000-000000000001";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe("buildExecutionPolicy", () => {
   afterEach(() => {
@@ -23,7 +24,7 @@ describe("buildExecutionPolicy", () => {
     const policy = buildExecutionPolicy({
       existingPolicy: null,
       reviewerValues: [`agent:${AGENT_ID}`],
-      approverValues: ["user:local-board"],
+      approverValues: ["user:00000000-0000-4000-8000-000000000002"],
     });
 
     expect(policy).not.toBeNull();

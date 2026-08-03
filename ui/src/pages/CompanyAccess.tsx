@@ -2,13 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HUMAN_COMPANY_MEMBERSHIP_ROLE_LABELS,
-  type Agent,
 } from "@paperclipai/shared";
 import { Shield, ShieldCheck, Trash2, Users } from "lucide-react";
 import { accessApi, type CompanyMember } from "@/api/access";
-import { agentsApi } from "@/api/agents";
 import { ApiError } from "@/api/client";
-import { issuesApi } from "@/api/issues";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +23,6 @@ import { Link, Navigate } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { usePluginSlots } from "@/plugins/slots";
 
-const reassignmentIssueStatuses = "backlog,todo,in_progress,in_review,blocked,failed,timed_out";
 type EditableMemberStatus = "pending" | "active" | "suspended";
 
 export function CompanyAccess() {
@@ -36,7 +32,6 @@ export function CompanyAccess() {
   const queryClient = useQueryClient();
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
-  const [reassignmentTarget, setReassignmentTarget] = useState<string>("__unassigned");
   const [draftRole, setDraftRole] = useState<CompanyMember["membershipRole"]>(null);
   const [draftStatus, setDraftStatus] = useState<EditableMemberStatus>("active");
 
@@ -51,12 +46,6 @@ export function CompanyAccess() {
   const membersQuery = useQuery({
     queryKey: queryKeys.access.companyMembers(selectedCompanyId ?? ""),
     queryFn: () => accessApi.listMembers(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
-
-  const agentsQuery = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId ?? ""),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -142,29 +131,11 @@ export function CompanyAccess() {
     [removingMemberId, membersQuery.data?.members],
   );
 
-  const assignedIssuesQuery = useQuery({
-    queryKey: ["access", "member-assigned-issues", selectedCompanyId ?? "", removingMember?.principalId ?? ""],
-    queryFn: () =>
-      issuesApi.list(selectedCompanyId!, {
-        assigneeUserId: removingMember!.principalId,
-        status: reassignmentIssueStatuses,
-      }),
-    enabled: !!selectedCompanyId && !!removingMember,
-  });
-
   const archiveMemberMutation = useMutation({
-    mutationFn: async (input: { memberId: string; target: string }) => {
-      const reassignment =
-        input.target.startsWith("agent:")
-          ? { assigneeAgentId: input.target.slice("agent:".length), assigneeUserId: null }
-          : input.target.startsWith("user:")
-            ? { assigneeAgentId: null, assigneeUserId: input.target.slice("user:".length) }
-            : null;
-      return accessApi.archiveMember(selectedCompanyId!, input.memberId, { reassignment });
-    },
-    onSuccess: async (result) => {
+    mutationFn: async (memberId: string) =>
+      accessApi.archiveMember(selectedCompanyId!, memberId),
+    onSuccess: async () => {
       setRemovingMemberId(null);
-      setReassignmentTarget("__unassigned");
       await refreshAccessData();
       if (selectedCompanyId) {
         await queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
@@ -173,10 +144,6 @@ export function CompanyAccess() {
       }
       pushToast({
         title: "Member removed",
-        body:
-          result.reassignedIssueCount > 0
-            ? `${result.reassignedIssueCount} assigned task${result.reassignedIssueCount === 1 ? "" : "s"} cleaned up.`
-            : undefined,
         tone: "success",
       });
     },
@@ -194,11 +161,6 @@ export function CompanyAccess() {
     setDraftRole(editingMember.membershipRole);
     setDraftStatus(isEditableMemberStatus(editingMember.status) ? editingMember.status : "suspended");
   }, [editingMember]);
-
-  useEffect(() => {
-    if (!removingMember) return;
-    setReassignmentTarget("__unassigned");
-  }, [removingMember]);
 
   if (!selectedCompanyId) {
     return <div className="text-sm text-muted-foreground">Select a company to manage access.</div>;
@@ -224,15 +186,6 @@ export function CompanyAccess() {
     joinRequestsQuery.data?.filter((request) => request.requestType === "human") ?? [];
   const joinRequestActionPending =
     approveJoinRequestMutation.isPending || rejectJoinRequestMutation.isPending;
-  const activeReassignmentUsers = members.filter(
-    (member) =>
-      member.status === "active" &&
-      member.principalType === "user" &&
-      member.id !== removingMemberId,
-  );
-  const activeReassignmentAgents = (agentsQuery.data ?? []).filter(isAssignableAgent);
-  const assignedIssues = assignedIssuesQuery.data ?? [];
-
   return (
     <div className="max-w-6xl space-y-8">
       <div className="space-y-3">
@@ -439,7 +392,7 @@ export function CompanyAccess() {
           <DialogHeader>
             <DialogTitle>Remove member</DialogTitle>
             <DialogDescription>
-              Archive {memberDisplayName(removingMember)} and move active assignments before hiding this user from assignment fields.
+              Archive {memberDisplayName(removingMember)} and revoke their company access.
             </DialogDescription>
           </DialogHeader>
           {removingMember && (
@@ -447,56 +400,7 @@ export function CompanyAccess() {
               <div className="rounded-lg border border-border px-3 py-3">
                 <div className="text-sm font-medium">{memberDisplayName(removingMember)}</div>
                 <div className="text-sm text-muted-foreground">{removingMember.user?.email || removingMember.principalId}</div>
-                <div className="mt-2 text-sm text-muted-foreground">
-                  {assignedIssuesQuery.isLoading
-                    ? "Checking assigned tasks..."
-                    : `${assignedIssues.length} open assigned task${assignedIssues.length === 1 ? "" : "s"}`}
-                </div>
               </div>
-
-              {assignedIssues.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Task reassignment</div>
-                  <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                    value={reassignmentTarget}
-                    onChange={(event) => setReassignmentTarget(event.target.value)}
-                  >
-                    <option value="__unassigned">Leave unassigned</option>
-                    {activeReassignmentUsers.length > 0 ? (
-                      <optgroup label="Humans">
-                        {activeReassignmentUsers.map((member) => (
-                          <option key={member.id} value={`user:${member.principalId}`}>
-                            {memberDisplayName(member)}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                    {activeReassignmentAgents.length > 0 ? (
-                      <optgroup label="Agents">
-                        {activeReassignmentAgents.map((agent) => (
-                          <option key={agent.id} value={`agent:${agent.id}`}>
-                            {agent.name} ({agent.role})
-                          </option>
-                        ))}
-                      </optgroup>
-                    ) : null}
-                  </select>
-                  <div className="max-h-36 overflow-auto rounded-lg border border-border">
-                    {assignedIssues.slice(0, 6).map((issue) => (
-                      <div key={issue.id} className="border-b border-border px-3 py-2 text-sm last:border-b-0">
-                        <div className="font-medium">{issue.identifier ?? issue.id.slice(0, 8)}</div>
-                        <div className="truncate text-muted-foreground">{issue.title}</div>
-                      </div>
-                    ))}
-                    {assignedIssues.length > 6 ? (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">
-                        {assignedIssues.length - 6} more task{assignedIssues.length - 6 === 1 ? "" : "s"}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
             </div>
           )}
           <DialogFooter>
@@ -507,12 +411,9 @@ export function CompanyAccess() {
               variant="destructive"
               onClick={() => {
                 if (!removingMember) return;
-                archiveMemberMutation.mutate({
-                  memberId: removingMember.id,
-                  target: reassignmentTarget,
-                });
+                archiveMemberMutation.mutate(removingMember.id);
               }}
-              disabled={archiveMemberMutation.isPending || assignedIssuesQuery.isLoading}
+              disabled={archiveMemberMutation.isPending}
             >
               {archiveMemberMutation.isPending ? "Removing..." : "Remove member"}
             </Button>
@@ -586,10 +487,6 @@ export function CompanyAccessLegacyRoute() {
 function memberDisplayName(member: CompanyMember | null) {
   if (!member) return "this member";
   return member.user?.name?.trim() || member.user?.email || member.principalId;
-}
-
-function isAssignableAgent(agent: Agent) {
-  return agent.status !== "terminated" && agent.status !== "pending_approval";
 }
 
 function isEditableMemberStatus(status: CompanyMember["status"]): status is EditableMemberStatus {

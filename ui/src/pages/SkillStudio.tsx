@@ -35,9 +35,6 @@ import type {
   CompanySkillTestRunTemplateUpdateRequest,
   CompanySkillVersion,
   IssueDocument,
-  IssueThreadInteraction,
-  AskUserQuestionsInteraction,
-  AskUserQuestionsAnswer,
 } from "@paperclipai/shared";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import {
@@ -51,7 +48,6 @@ import { useOptionalToastActions } from "../context/ToastContext";
 import { classifySkillDenial } from "@/lib/skill-policy-denial";
 import { agentsApi } from "@/api/agents";
 import { companySkillsApi } from "@/api/companySkills";
-import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { skillStudioNewRoute, skillStudioRoute } from "@/lib/company-skill-routes";
@@ -74,7 +70,7 @@ import {
   SkillLineageChip,
 } from "@/components/skill-studio/SkillProvenance";
 import { isProjectScanSkill } from "@/lib/skill-fork";
-import { cn, formatCents, relativeTime } from "@/lib/utils";
+import { cn, formatMoneyAmount, relativeTime } from "@/lib/utils";
 import { SkillCardIcon, type DiscoveryCard } from "./CompanySkills";
 import {
   ResizableHandle,
@@ -133,7 +129,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { EntityRow } from "@/components/EntityRow";
 import { FilterBar } from "@/components/FilterBar";
 import { Identity } from "@/components/Identity";
-import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { IssueAttachmentsSection } from "@/components/IssueAttachmentsSection";
 import { ImageGalleryModal, type GalleryMediaItem } from "@/components/ImageGalleryModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -142,21 +137,18 @@ import { buildLineDiff } from "@/lib/line-diff";
 import {
   buildCreateRunRequest,
   buildReRunRequest,
-  DEFAULT_TEST_RUN_TEMPLATE_ID,
   EMPTY_SAVED_INPUT_DRAFT_STATE,
   evaluateRunGate,
   getRunAdditionalDocuments,
   getRunMediaGalleryItems,
   getRunRawAttachments,
   isAgentSelectable,
-  isInteractionAnswerable,
   isTerminalRunStatus,
   orderRecentlyUpdatedSkills,
   orderRecentlyVisitedSkills,
   skillEditorAvatar,
   NO_TEST_RUN_TEMPLATE_STORAGE_VALUE,
   parseRunTemplateSelection,
-  routeInteraction,
   runBadgeStatus,
   runHarnessUnavailableCopy,
   runOutputMode,
@@ -168,7 +160,7 @@ import {
   shouldPollRun,
   showRunErrorCard,
   syncSavedInputDraftState,
-  testTaskLinkState,
+  testIssueLinkState,
   type RunTemplateSelection,
   type SavedInputDraftState,
 } from "@/lib/skill-studio";
@@ -239,7 +231,7 @@ function loadRunTemplateSelection(companyId: string): RunTemplateSelection {
   try {
     return parseRunTemplateSelection(localStorage.getItem(runTemplateStorageKey(companyId)));
   } catch {
-    return DEFAULT_TEST_RUN_TEMPLATE_ID;
+    return null;
   }
 }
 
@@ -2354,8 +2346,8 @@ function RunsPane({
     updateTemplateSelection(resolution.selection);
     toast?.pushToast({
       tone: "warn",
-      title: "Run template reset",
-      body: "The saved run template is no longer available. Default test template is selected.",
+      title: "Request template reset",
+      body: "The saved request template is no longer available. No template is selected.",
       dedupeKey: `skill-studio-template-reset:${companyId}`,
     });
   }, [
@@ -2388,9 +2380,9 @@ function RunsPane({
     hasUnsavedSkillEdits: skillDirty,
   });
   const templateGateReason = templatesQuery.isLoading
-    ? "Loading run templates"
+    ? "Loading request templates"
     : templatesQuery.isError
-      ? "Run templates couldn't load"
+      ? "Request templates couldn't load"
       : null;
 
   const createTemplateMutation = useMutation({
@@ -2405,7 +2397,7 @@ function RunsPane({
       toast?.pushToast({
         tone: "success",
         title: "Template saved",
-        body: `${template.name} is ready for Skills Studio runs.`,
+        body: `${template.name} is ready for Skills Studio test requests.`,
       });
     },
     onError: onError("Couldn't save template"),
@@ -2425,7 +2417,7 @@ function RunsPane({
       toast?.pushToast({
         tone: "success",
         title: "Template updated",
-        body: `${template.name} is ready for Skills Studio runs.`,
+        body: `${template.name} is ready for Skills Studio test requests.`,
       });
     },
     onError: onError("Couldn't update template"),
@@ -2444,7 +2436,7 @@ function RunsPane({
       toast?.pushToast({
         tone: "success",
         title: "Template deleted",
-        body: `${template.name} was removed from Skills Studio runs.`,
+        body: `${template.name} was removed from Skills Studio test requests.`,
       });
     },
     onError: onError("Couldn't delete template"),
@@ -2455,13 +2447,13 @@ function RunsPane({
     : templates.find((template) => template.id === selectedTemplateId) ?? null;
   const selectedTemplateName = selectedTemplateId === null
     ? "No template"
-    : selectedTemplate?.name ?? "Default test template";
+    : selectedTemplate?.name ?? "No template";
   const runDisabledReason = gate.reason ?? templateGateReason;
 
   const createRunMutation = useMutation({
     mutationFn: () => {
       if (!templatesQuery.isSuccess) {
-        throw new Error(templateGateReason ?? "Run templates are not ready.");
+        throw new Error(templateGateReason ?? "Request templates are not ready.");
       }
       const resolution = resolveRunTemplateSelection(selectedTemplateId, templates);
       if (resolution.recovered) {
@@ -2603,7 +2595,6 @@ function RunsPane({
 
 type RunTemplateOption = SearchableSelectOption<string> & {
   description: string | null;
-  builtIn: boolean;
 };
 
 function runTemplateOptionValue(selection: RunTemplateSelection) {
@@ -2654,7 +2645,6 @@ function RunTemplateAdvancedPanel({
       label: "No template",
       title: "No template",
       description: "Run only the input text.",
-      builtIn: true,
       searchText: "no template plain input",
     };
     const toOption = (template: CompanySkillTestRunTemplate): RunTemplateOption => ({
@@ -2663,22 +2653,18 @@ function RunTemplateAdvancedPanel({
       label: template.name,
       title: template.name,
       description: template.description,
-      builtIn: template.builtIn,
-      searchText: [template.name, template.description ?? "", template.builtIn ? "built in" : "custom"].join(" "),
+      searchText: [template.name, template.description ?? "", "saved template"].join(" "),
     });
-    const builtIn = templates.filter((template) => template.builtIn).map(toOption);
-    const custom = templates.filter((template) => !template.builtIn).map(toOption);
     return [
-      { id: "built-in", label: "Built in", options: [noTemplateOption, ...builtIn] },
-      ...(custom.length > 0 ? [{ id: "custom", label: "Custom", options: custom }] : []),
+      { id: "templates", label: "Templates", options: [noTemplateOption, ...templates.map(toOption)] },
     ];
   }, [templates]);
 
   const selectedValue = runTemplateOptionValue(selectedTemplateId);
   const selectedMissing = selectedTemplateId !== null && !selectedTemplate && !templatesLoading;
-  const canEdit = Boolean(selectedTemplate && !selectedTemplate.builtIn);
+  const canEdit = Boolean(selectedTemplate);
   const canDuplicate = Boolean(selectedTemplate);
-  const canDelete = Boolean(selectedTemplate && !selectedTemplate.builtIn);
+  const canDelete = Boolean(selectedTemplate);
 
   return (
     <div className="border-b border-border">
@@ -2699,16 +2685,16 @@ function RunTemplateAdvancedPanel({
         <div className="space-y-3 px-3 pb-3 pt-1">
           <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1 space-y-1">
-              <Label>Run template</Label>
+              <Label>Request template</Label>
               <SearchableSelect<string, RunTemplateOption>
                 value={selectedValue}
                 groups={templateGroups}
                 loading={templatesLoading}
                 disabled={templatesLoading || templatesError}
-                loadingMessage="Loading templates..."
-                placeholder="Select template"
-                searchPlaceholder="Search templates..."
-                emptyMessage="No templates."
+                loadingMessage="Loading request templates..."
+                placeholder="Select request template"
+                searchPlaceholder="Search request templates..."
+                emptyMessage="No saved request templates."
                 contentClassName="w-(--sz-320px)"
                 onValueChange={(value) => onSelectTemplate(runTemplateSelectionFromOption(value))}
                 renderValue={(option) => option?.label ?? selectedTemplateName}
@@ -2716,7 +2702,7 @@ function RunTemplateAdvancedPanel({
                   <span className="flex min-w-0 flex-col">
                     <span className={cn("truncate", selected && "font-medium")}>{option.label}</span>
                     <span className="truncate text-(length:--text-micro) text-muted-foreground">
-                      {option.description ?? (option.builtIn ? "Built in" : "Custom")}
+                      {option.description ?? "Saved template"}
                     </span>
                   </span>
                 )}
@@ -2728,14 +2714,14 @@ function RunTemplateAdvancedPanel({
                   type="button"
                   variant="outline"
                   size="icon-sm"
-                  aria-label="Create run template"
+                  aria-label="Create request template"
                   disabled={actionPending}
                   onClick={onCreateTemplate}
                 >
                   <Plus />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Create run template</TooltipContent>
+              <TooltipContent>Create request template</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2744,7 +2730,7 @@ function RunTemplateAdvancedPanel({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Edit run template"
+                    aria-label="Edit request template"
                     disabled={!canEdit || actionPending}
                     onClick={() => selectedTemplate && onEditTemplate(selectedTemplate)}
                   >
@@ -2752,7 +2738,7 @@ function RunTemplateAdvancedPanel({
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>Edit custom template</TooltipContent>
+              <TooltipContent>Edit request template</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2761,7 +2747,7 @@ function RunTemplateAdvancedPanel({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Duplicate run template"
+                    aria-label="Duplicate request template"
                     disabled={!canDuplicate || actionPending}
                     onClick={() => selectedTemplate && onDuplicateTemplate(selectedTemplate)}
                   >
@@ -2769,9 +2755,7 @@ function RunTemplateAdvancedPanel({
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>
-                {selectedTemplate?.builtIn ? "Duplicate built-in template" : "Duplicate template"}
-              </TooltipContent>
+              <TooltipContent>Duplicate request template</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2780,7 +2764,7 @@ function RunTemplateAdvancedPanel({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Delete run template"
+                    aria-label="Delete request template"
                     className="text-destructive hover:text-destructive"
                     disabled={!canDelete || actionPending || deletingTemplateId === selectedTemplate?.id}
                     onClick={() => selectedTemplate && onDeleteTemplate(selectedTemplate)}
@@ -2789,12 +2773,12 @@ function RunTemplateAdvancedPanel({
                   </Button>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>Delete custom template</TooltipContent>
+              <TooltipContent>Delete request template</TooltipContent>
             </Tooltip>
           </div>
 
           {templatesError ? (
-            <p className="text-xs text-destructive">Run templates could not load.</p>
+            <p className="text-xs text-destructive">Request templates could not load.</p>
           ) : selectedTemplateId === null ? (
             <p className="text-xs text-muted-foreground">Runs will use only the input text.</p>
           ) : selectedMissing ? (
@@ -2841,13 +2825,11 @@ function RunTemplateDialog({
   }, [source, state]);
 
   const title = state?.mode === "edit"
-    ? "Edit run template"
-    : source?.builtIn
-      ? "Duplicate built-in template"
-      : "Create run template";
+    ? "Edit request template"
+    : "Create request template";
   const descriptionText = state?.mode === "edit"
-    ? "Update the custom run instructions used by Skills Studio."
-    : "Save reusable run instructions for Skills Studio.";
+    ? "Update the reusable request text appended to Skills Studio test input."
+    : "Save reusable request text for board-authored Skills Studio tests.";
 
   return (
     <Dialog open={Boolean(state)} onOpenChange={onOpenChange}>
@@ -2872,7 +2854,7 @@ function RunTemplateDialog({
               id="run-template-description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="Short instructions for common skill checks"
+              placeholder="Reusable request text for common skill checks"
             />
           </div>
           <div className="space-y-1">
@@ -2932,7 +2914,7 @@ function RunHistoryRow({
       subtitle={relativeTime(run.createdAt)}
       trailing={
         <span className="font-mono text-xs text-muted-foreground">
-          {formatCents(run.cost.costCents)}
+          {formatMoneyAmount(run.cost.knownCostAmount, run.cost.budgetCurrency)}
         </span>
       }
       onClick={onSelect}
@@ -3108,7 +3090,7 @@ function RunDetailView({
   const removed = !agent;
   const outputMode = runOutputMode(detail);
   const nonTerminal = !isTerminalRunStatus(detail.status);
-  const taskLink = testTaskLinkState(detail);
+  const taskLink = testIssueLinkState(detail);
 
   return (
     <PaneScaffold title="Run" action={<BackButton onBack={onBack} />}>
@@ -3121,7 +3103,7 @@ function RunDetailView({
             v{detail.skillVersion.revisionNumber}
           </span>
           <span className="ml-auto font-mono text-xs text-muted-foreground">
-            {formatCents(detail.cost.costCents)}
+            {formatMoneyAmount(detail.cost.knownCostAmount, detail.cost.budgetCurrency)}
           </span>
         </div>
 
@@ -3196,18 +3178,6 @@ function RunDetailView({
             }}
           />
         ) : null}
-
-        {/* Interactions */}
-        <InteractionSection
-          companyId={companyId}
-          detail={detail}
-          agents={agents}
-          onAnswered={() =>
-            queryClient.invalidateQueries({
-              queryKey: queryKeys.companySkills.testRunDetail(companyId, skillId, runId),
-            })
-          }
-        />
 
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
@@ -3304,102 +3274,6 @@ function RunDocumentsSection({ documents }: { documents: IssueDocument[] }) {
             </MarkdownBody>
           </article>
         ))}
-      </div>
-    </section>
-  );
-}
-
-function InteractionSection({
-  companyId,
-  detail,
-  agents,
-  onAnswered,
-}: {
-  companyId: string;
-  detail: CompanySkillTestRunDetail;
-  agents: Agent[];
-  onAnswered: () => void;
-}) {
-  const harnessIssueId = detail.harnessIssue?.id ?? null;
-  const hasInlineAnswerable = detail.interactions.some((i) => isInteractionAnswerable(i));
-
-  // Only fetch the full interaction objects (needed to render answerable cards)
-  // when there is at least one pending inline interaction on a live harness issue.
-  const fullQuery = useQuery({
-    queryKey: ["skill-studio", "interactions", harnessIssueId],
-    queryFn: () => issuesApi.listInteractions(harnessIssueId!),
-    enabled: Boolean(harnessIssueId && hasInlineAnswerable),
-    refetchInterval: hasInlineAnswerable ? POLL_MS : false,
-  });
-  const fullById = useMemo(
-    () => new Map((fullQuery.data ?? []).map((i) => [i.id, i])),
-    [fullQuery.data],
-  );
-  const agentMap = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
-
-  const accept = useMutation({
-    mutationFn: (vars: { interaction: IssueThreadInteraction; optionIds?: string[] }) =>
-      issuesApi.acceptInteraction(harnessIssueId!, vars.interaction.id, {
-        selectedOptionIds: vars.optionIds,
-      }),
-    onSuccess: onAnswered,
-  });
-  const respond = useMutation({
-    mutationFn: (vars: { interaction: AskUserQuestionsInteraction; answers: AskUserQuestionsAnswer[] }) =>
-      issuesApi.respondToInteraction(harnessIssueId!, vars.interaction.id, { answers: vars.answers }),
-    onSuccess: onAnswered,
-  });
-  const reject = useMutation({
-    mutationFn: (vars: { interaction: IssueThreadInteraction; reason?: string }) =>
-      issuesApi.rejectInteraction(harnessIssueId!, vars.interaction.id, vars.reason),
-    onSuccess: onAnswered,
-  });
-
-  if (detail.interactions.length === 0) return null;
-
-  return (
-    <section>
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Interactions
-      </h3>
-      <div className="space-y-2">
-        {detail.interactions.map((summary) => {
-          const inline = routeInteraction(summary.kind) === "inline";
-          const full = fullById.get(summary.id);
-          if (inline && full) {
-            return (
-              <IssueThreadInteractionCard
-                key={summary.id}
-                interaction={full}
-                agentMap={agentMap}
-                onAcceptInteraction={async (interaction, _keys, optionIds) => {
-                  await accept.mutateAsync({ interaction, optionIds });
-                }}
-                onRejectInteraction={async (interaction, reason) => {
-                  await reject.mutateAsync({ interaction, reason });
-                }}
-                onSubmitInteractionAnswers={async (interaction, answers) => {
-                  await respond.mutateAsync({ interaction, answers });
-                }}
-              />
-            );
-          }
-          // Fallback: summary row + open-test-task link (never dropped).
-          return (
-            <EntityRow
-              key={summary.id}
-              title={summary.title}
-              subtitle={`${summary.kind} · ${summary.status}`}
-              trailing={
-                harnessIssueId ? (
-                  <Button variant="link" size="xs" asChild>
-                    <Link to={`/issues/${harnessIssueId}`}>Open test task ↗</Link>
-                  </Button>
-                ) : null
-              }
-            />
-          );
-        })}
       </div>
     </section>
   );

@@ -60,11 +60,11 @@ test("resolveTargetPackage includes the workspace diff plugin bootstrap package"
 });
 
 test("buildPublishArgs publishes from the repo root through pnpm", () => {
-  const pkg = { dir: "packages/adapters/hermes", name: "@paperclipai/hermes-paperclip-adapter" };
+  const pkg = { dir: "packages/plugins/plugin-workspace-diff", name: "@paperclipai/plugin-workspace-diff" };
 
   assert.deepEqual(buildPublishArgs(pkg), [
     "publish",
-    "packages/adapters/hermes",
+    "packages/plugins/plugin-workspace-diff",
     "--no-git-checks",
     "--access",
     "public",
@@ -72,11 +72,11 @@ test("buildPublishArgs publishes from the repo root through pnpm", () => {
 });
 
 test("buildPublishArgs includes dry-run and otp flags when requested", () => {
-  const pkg = { dir: "packages/adapters/hermes", name: "@paperclipai/hermes-paperclip-adapter" };
+  const pkg = { dir: "packages/plugins/plugin-workspace-diff", name: "@paperclipai/plugin-workspace-diff" };
 
   assert.deepEqual(buildPublishArgs(pkg, { dryRun: true, otp: "123456" }), [
     "publish",
-    "packages/adapters/hermes",
+    "packages/plugins/plugin-workspace-diff",
     "--no-git-checks",
     "--access",
     "public",

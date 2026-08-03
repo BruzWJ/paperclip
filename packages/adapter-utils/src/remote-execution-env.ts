@@ -35,6 +35,9 @@ export function sanitizeRemoteExecutionEnv(
   const sanitized: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     const normalizedKey = key.toUpperCase();
+    if (isProviderChildReservedEnvironmentKey(normalizedKey)) {
+      continue;
+    }
     if (!REMOTE_EXECUTION_ENV_IDENTITY_KEYS.has(normalizedKey)) {
       sanitized[key] = value;
       continue;
@@ -47,3 +50,4 @@ export function sanitizeRemoteExecutionEnv(
   }
   return sanitized;
 }
+import { isProviderChildReservedEnvironmentKey } from "@paperclipai/shared/provider-child-boundary";

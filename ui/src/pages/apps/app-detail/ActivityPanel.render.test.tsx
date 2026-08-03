@@ -92,7 +92,7 @@ describe("ActivityPanel render", () => {
     expect(text).toContain("Dotta tested as BenchmarkForensics used Read Values");
   });
 
-  it("renders a real heartbeat call without the prefix", () => {
+  it("renders an execution call without the prefix", () => {
     const text = renderPanel({ ...base, events: [event({})] });
     expect(text).toContain("BenchmarkForensics used Read Values");
     expect(text).not.toContain("tested as");

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { queryKeys } from "../lib/queryKeys";
 import {
   getPipelineStageColumnTone,
@@ -10,8 +11,13 @@ import {
   pipelineBoardGroupByStorageKey,
   readStoredPipelineBoardGroupBy,
   readPipelineStageAutomationAssigneeAgentId,
+  selectPipelineConversationLink,
   writeStoredPipelineBoardGroupBy,
 } from "./Pipelines";
+import {
+  pipelinesApi,
+  type PipelineCaseIssueLinkWithIssue,
+} from "../api/pipelines";
 
 describe("groupCasesByBuiltFor", () => {
   it("groups items by the parent case shown as Built for", () => {
@@ -25,7 +31,7 @@ describe("groupCasesByBuiltFor", () => {
           case: {
             id: "parent-1",
             caseKey: "feature-checkboxes",
-            title: "Checkbox confirmation interactions",
+            title: "Checkbox confirmation flows",
             pipelineId: "features-pipeline",
           },
           pipeline: { id: "features-pipeline", key: "features", name: "Example Features" },
@@ -40,7 +46,7 @@ describe("groupCasesByBuiltFor", () => {
           case: {
             id: "parent-1",
             caseKey: "feature-checkboxes",
-            title: "Checkbox confirmation interactions",
+            title: "Checkbox confirmation flows",
             pipelineId: "features-pipeline",
           },
           pipeline: { id: "features-pipeline", key: "features", name: "Example Features" },
@@ -58,7 +64,7 @@ describe("groupCasesByBuiltFor", () => {
     expect(groups).toEqual([
       {
         key: "parent-1",
-        label: "Example Features: Checkbox confirmation interactions",
+        label: "Example Features: Checkbox confirmation flows",
         href: "/pipelines/features-pipeline/items/parent-1",
         cases: [expect.objectContaining({ id: "child-1" }), expect.objectContaining({ id: "child-2" })],
       },
@@ -139,17 +145,51 @@ describe("pipeline stage board presentation", () => {
 });
 
 describe("pipeline conversation comments", () => {
+  it("passes canonical conversation request bytes without trimming", () => {
+    const source = readFileSync(new URL("./Pipelines.tsx", import.meta.url), "utf8");
+    expect(source).toContain("request: conversationRequest,");
+    expect(source).toContain("!conversationRequest.trim()");
+    expect(source).not.toContain("request: conversationRequest.trim()");
+  });
+
+  it("keeps conversation creation out of the generic client input type", () => {
+    type GenericLinkInput = Parameters<
+      typeof pipelinesApi.createIssueLink
+    >[1];
+
+    expectTypeOf<Extract<GenericLinkInput["role"], "conversation">>()
+      .toEqualTypeOf<never>();
+    expectTypeOf<Parameters<typeof pipelinesApi.openConversation>[1]>()
+      .toMatchTypeOf<{ ownerAgentId: string; request: string }>();
+  });
+
+  it("uses only an explicit same-case conversation link and never falls back to work", () => {
+    const workLink = {
+      link: { role: "work" },
+      issue: { id: "work-issue" },
+    } as unknown as PipelineCaseIssueLinkWithIssue;
+    const conversationLink = {
+      link: { role: "conversation" },
+      issue: { id: "conversation-issue" },
+    } as unknown as PipelineCaseIssueLinkWithIssue;
+
+    expect(selectPipelineConversationLink([workLink])).toBeNull();
+    expect(
+      selectPipelineConversationLink([workLink, conversationLink])?.issue.id,
+    ).toBe("conversation-issue");
+  });
+
   it("uses a finite comments key that does not collide with issue detail's infinite comments key", () => {
     expect(queryKeys.issues.commentsList("issue-1")).toEqual(["issues", "comments", "issue-1", "list"]);
     expect(queryKeys.issues.commentsList("issue-1")).not.toEqual(queryKeys.issues.comments("issue-1"));
     expect(queryKeys.issues.commentsList("issue-1").slice(0, 3)).toEqual(queryKeys.issues.comments("issue-1"));
   });
 
-  it("ignores infinite-query comment cache data instead of mapping it as an array", () => {
+  it("projects only the canonical grouped comment contract", () => {
     expect(
-      normalizePipelineConversationComments({
-        pages: [[{ id: "comment-1", body: "hello" }]],
-        pageParams: [null],
+      normalizePipelineConversationComments(undefined, {
+        companyId: "company-1",
+        issueId: "issue-1",
       }),
     ).toEqual([]);
   });

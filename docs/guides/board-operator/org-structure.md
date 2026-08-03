@@ -1,38 +1,41 @@
 ---
 title: Org Structure
-summary: Reporting hierarchy and chain of command
+summary: Direct reporting edges, delegation, and management authority
 ---
 
-Paperclip enforces a strict organizational hierarchy. Every agent reports to exactly one manager, forming a tree with the CEO at the root.
+Paperclip stores an acyclic reporting graph. An agent may have no parent or one
+`reportsTo` parent. Names, display titles, creation order, and root position
+carry no authority.
 
-## How It Works
+## Direct-edge authority
 
-- The **CEO** has no manager (reports to the board/human operator)
-- Every other agent has a `reportsTo` field pointing to their manager
-- You can change an agent’s manager after creation from **Agent → Configuration → Reports to** (or via `PATCH /api/agents/{id}` with `reportsTo`)
-- Managers can create subtasks and delegate to their reports
-- Agents escalate blockers up the chain of command
+The graph is intentionally local:
 
-## Viewing the Org Chart
+- an agent may hire a direct child when `agent_hire` is granted;
+- an agent may configure only a target authorized by the direct-edge
+  management resolver;
+- an issue owner may delegate or reassign only to a direct child;
+- mention reach expands only through explicit ancestor/descendant grants.
 
-The org chart is available in the web UI under the Agents section. It shows the full reporting tree with agent status indicators.
+Authority never walks an arbitrary management subtree. An uninvolved manager
+does not receive issue content, lifecycle control, or creator deliveries.
 
-Via the API:
+## Viewing and editing the graph
 
-```
-GET /api/companies/{companyId}/org
-```
+The board org chart displays reporting edges and lifecycle state. Board users
+may change a reporting edge through the ordinary agent configuration flow,
+subject to cycle and invokability validation.
 
-## Chain of Command
+## Escalation is issue-tree based
 
-Every agent has access to their `chainOfCommand` — the list of managers from their direct report up to the CEO. This is used for:
+System escalation does not select a manager, root agent, CEO, or any available
+agent. After the affected issue's creator edge becomes terminal, the single
+escalation resolver checks, in order:
 
-- **Escalation** — when an agent is blocked, they can reassign to their manager
-- **Delegation** — managers create subtasks for their reports
-- **Visibility** — managers can see what their reports are working on
+1. the live originating agent execution;
+2. the nearest ancestor issue with a live agent owner;
+3. the root issue's immutable creating user;
+4. collective board triage.
 
-## Rules
-
-- **No cycles** — the org tree is strictly acyclic
-- **Single parent** — each agent has exactly one manager
-- **Cross-team work** — agents can receive tasks from outside their reporting line, but cannot cancel them (must reassign to their manager)
+The escalation is a separate root-level issue. It never blocks or mutates the
+affected issue.

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
+import { authApi } from "../api/auth";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -11,6 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { formatDate } from "../lib/utils";
 import { ListTodo } from "lucide-react";
+import { issueDisplayTitle } from "../lib/issue-display";
 
 export function MyIssues() {
   const { selectedCompanyId } = useCompany();
@@ -25,6 +27,11 @@ export function MyIssues() {
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
   if (!selectedCompanyId) {
     return <EmptyState icon={ListTodo} message="Select a company to view your tasks." />;
@@ -34,9 +41,14 @@ export function MyIssues() {
     return <PageSkeleton variant="list" />;
   }
 
-  // Show issues that are not assigned (user-created or unassigned)
+  // User ownership is exceptional and only appears for the named creator's
+  // withdrawal/escalation path.
   const myIssues = (issues ?? []).filter(
-    (i) => !i.assigneeAgentId && !["done", "cancelled"].includes(i.status)
+    (issue) =>
+      Boolean(currentUserId)
+      && issue.ownerKind === "user"
+      && issue.ownerUserId === currentUserId
+      && !["done", "cancelled"].includes(issue.lifecycleStatus),
   );
 
   return (
@@ -44,7 +56,7 @@ export function MyIssues() {
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {myIssues.length === 0 && (
-        <EmptyState icon={ListTodo} message="No tasks assigned to you." />
+        <EmptyState icon={ListTodo} message="No tasks owned by you." />
       )}
 
       {myIssues.length > 0 && (
@@ -53,10 +65,10 @@ export function MyIssues() {
             <EntityRow
               key={issue.id}
               identifier={issue.identifier ?? issue.id.slice(0, 8)}
-              title={issue.title}
+              title={issueDisplayTitle(issue)}
               to={`/issues/${issue.identifier ?? issue.id}`}
               leading={
-                <StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} />
+                <StatusIcon status={issue.boardPresentationStatus} blockerAttention={issue.blockerAttention} />
               }
               trailing={
                 <span className="text-xs text-muted-foreground">

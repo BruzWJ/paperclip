@@ -49,10 +49,7 @@ async function createApp(db: Record<string, unknown>) {
   app.use(
     "/api",
     accessRoutes(db as any, {
-      deploymentMode: "local_trusted",
       deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
       inviteRateLimiter: createInviteRateLimiter({
         maxRequests: 1,
         windowMs: 60_000,

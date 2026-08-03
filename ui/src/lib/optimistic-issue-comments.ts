@@ -1,18 +1,65 @@
-import type { Issue, IssueComment } from "@paperclipai/shared";
+import type {
+  BoardIssueComment,
+  BoardIssueCommentGroupPage,
+  BoardIssueCommentParentReference,
+  BoardIssueRunSegmentEntry,
+  BoardIssueThreadEntry,
+  Issue,
+  IssueCommentAuthorType,
+  IssueCommentMetadata,
+  IssueCommentPresentation,
+  SourceTrustMetadata,
+} from "@paperclipai/shared";
 
-export interface IssueCommentReassignment {
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+/** UI-only comment shape built exclusively from the board-safe read DTO. */
+export interface ClientIssueComment {
+  id: string;
+  companyId: string;
+  issueId: string;
+  authorType: IssueCommentAuthorType;
+  authorAgentId: string | null;
+  authorUserId: string | null;
+  authorPluginKey?: string | null;
+  body: string;
+  presentation: IssueCommentPresentation | null;
+  metadata: IssueCommentMetadata | null;
+  sourceTrust?: SourceTrustMetadata | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  runId?: string | null;
+  canonicalSourceKind?: string;
+  interruptedRunId?: string | null;
+  followUpRequested?: boolean;
+  canonicalSequence?: number;
+  immediateParentDisplayReference?: BoardIssueCommentParentReference | null;
+  boardEntryKind?: "comment" | "run_segment";
+  boardGroupRootId?: string;
+  boardIsRoot?: boolean;
+  boardOrder?: number;
+  runState?: "queued" | "working" | "terminal" | null;
+  boardGroupHasMore?: boolean;
+  boardGroupContinuationLoading?: boolean;
+  boardGroupContinuationError?: string | null;
 }
 
-export interface OptimisticIssueComment extends IssueComment {
+export interface BoardIssueCommentGroupContinuation {
+  entries: readonly BoardIssueThreadEntry[];
+  nextCursor: string | null;
+  expanded?: boolean;
+  loading?: boolean;
+  error?: string | null;
+}
+
+export interface OptimisticIssueComment extends ClientIssueComment {
   clientId: string;
   clientStatus: "pending" | "queued";
   queueTargetRunId?: string | null;
 }
 
-export type IssueTimelineComment = IssueComment | OptimisticIssueComment;
-export type LocallyQueuedIssueComment<T extends IssueComment> = T & {
+export type IssueTimelineComment =
+  | ClientIssueComment
+  | OptimisticIssueComment;
+export type LocallyQueuedIssueComment<T extends ClientIssueComment> = T & {
   clientStatus: "queued";
   queueState: "queued";
   queueTargetRunId: string;
@@ -36,10 +83,6 @@ export function sortIssueComments<T extends { createdAt: Date | string; id: stri
     if (createdAtDiff !== 0) return createdAtDiff;
     return a.id.localeCompare(b.id);
   });
-}
-
-function sortIssueCommentsDesc<T extends { createdAt: Date | string; id: string }>(comments: T[]) {
-  return sortIssueComments(comments).reverse();
 }
 
 export function createOptimisticIssueComment(params: {
@@ -99,7 +142,7 @@ export function isQueuedIssueComment(params: {
   return toTimestamp(params.comment.createdAt) >= toTimestamp(params.activeRunStartedAt);
 }
 
-export function applyLocalQueuedIssueCommentState<T extends IssueComment>(
+export function applyLocalQueuedIssueCommentState<T extends ClientIssueComment>(
   comment: T,
   params: {
     queuedTargetRunId?: string | null;
@@ -120,10 +163,18 @@ export function applyLocalQueuedIssueCommentState<T extends IssueComment>(
 }
 
 export function mergeIssueComments(
-  comments: IssueComment[] | undefined,
+  comments: ClientIssueComment[] | undefined,
   optimisticComments: OptimisticIssueComment[],
 ): IssueTimelineComment[] {
-  const merged = [...(comments ?? [])];
+  if ((comments ?? []).some((comment) => comment.boardOrder !== undefined)) {
+    const persisted = [...(comments ?? [])].sort(
+      (left, right) => (left.boardOrder ?? 0) - (right.boardOrder ?? 0),
+    );
+    return [...persisted, ...sortIssueComments(optimisticComments)];
+  }
+  const merged: IssueTimelineComment[] = [
+    ...(comments ?? []),
+  ];
   const existingIds = new Set(merged.map((comment) => comment.id));
   for (const comment of optimisticComments) {
     if (!existingIds.has(comment.id)) {
@@ -131,6 +182,140 @@ export function mergeIssueComments(
     }
   }
   return sortIssueComments(merged);
+}
+
+function boardCommentToClient(
+  comment: BoardIssueComment,
+  scope: { companyId: string; issueId: string },
+  placement: {
+    rootId: string;
+    isRoot: boolean;
+    order: number;
+  },
+): ClientIssueComment {
+  return {
+    id: comment.id,
+    companyId: scope.companyId,
+    issueId: scope.issueId,
+    authorType: comment.author.type,
+    authorAgentId: comment.author.agentId,
+    authorUserId: comment.author.userId,
+    authorPluginKey: comment.author.pluginKey,
+    body: comment.body,
+    presentation: comment.presentation,
+    metadata: comment.metadata,
+    sourceTrust: comment.sourceTrust,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt,
+    canonicalSequence: comment.canonicalSequence,
+    immediateParentDisplayReference: comment.immediateParentDisplayReference,
+    boardEntryKind: "comment",
+    boardGroupRootId: placement.rootId,
+    boardIsRoot: placement.isRoot,
+    boardOrder: placement.order,
+    runState: comment.runState,
+  };
+}
+
+function boardRunSegmentToClient(
+  segment: BoardIssueRunSegmentEntry,
+  scope: { companyId: string; issueId: string },
+  placement: { rootId: string; order: number },
+): ClientIssueComment {
+  const body = segment.parts
+    .map((part) => {
+      if (part.type === "tool") return `${part.name} — ${part.status}`;
+      return part.text;
+    })
+    .filter((part) => part.trim().length > 0)
+    .join("\n\n");
+  return {
+    id: segment.id,
+    companyId: scope.companyId,
+    issueId: scope.issueId,
+    authorType: "agent",
+    authorAgentId: segment.author.agentId,
+    authorUserId: null,
+    authorPluginKey: null,
+    body,
+    presentation: null,
+    metadata: null,
+    createdAt: segment.createdAt,
+    updatedAt: segment.updatedAt,
+    canonicalSequence: segment.canonicalSequence,
+    immediateParentDisplayReference: segment.immediateParentDisplayReference,
+    boardEntryKind: "run_segment",
+    boardGroupRootId: placement.rootId,
+    boardIsRoot: false,
+    boardOrder: placement.order,
+    runState: segment.status === "working" ? "working" : "terminal",
+  };
+}
+
+/**
+ * Root pages arrive newest-first; each group is expanded atomically before the
+ * next root so a late reply never scatters into a later unrelated root.
+ */
+export function flattenBoardIssueCommentGroupPages(
+  pages: readonly BoardIssueCommentGroupPage[] | undefined,
+  scope: { companyId: string; issueId: string },
+  continuations?: ReadonlyMap<string, BoardIssueCommentGroupContinuation>,
+): ClientIssueComment[] {
+  const orderedGroups = (pages ?? [])
+    .slice()
+    .reverse()
+    .flatMap((page) => [...page.groups].reverse());
+  const comments: ClientIssueComment[] = [];
+  let order = 0;
+  for (const group of orderedGroups) {
+    const groupComments: ClientIssueComment[] = [];
+    groupComments.push(boardCommentToClient(group.root, scope, {
+      rootId: group.root.id,
+      isRoot: true,
+      order: order++,
+    }));
+    const continuation = continuations?.get(group.root.id);
+    const entriesByIdentity = new Map<string, BoardIssueThreadEntry>();
+    for (const entry of [...group.entries, ...(continuation?.entries ?? [])]) {
+      entriesByIdentity.set(`${entry.kind}:${entry.id}`, entry);
+    }
+    const expectedEntryCount = group.replyCount + group.runSegmentCount;
+    const collapsed =
+      group.entriesNextCursor !== null &&
+      (continuation?.expanded !== true ||
+        entriesByIdentity.size < expectedEntryCount);
+    const entries = (collapsed ? [] : [...entriesByIdentity.values()]).sort((left, right) =>
+        left.canonicalSequence - right.canonicalSequence ||
+        left.id.localeCompare(right.id),
+      );
+    for (const entry of entries) {
+      groupComments.push(entry.kind === "comment"
+        ? boardCommentToClient(entry, scope, {
+            rootId: group.root.id,
+            isRoot: false,
+            order: order++,
+          })
+        : boardRunSegmentToClient(entry, scope, {
+            rootId: group.root.id,
+            order: order++,
+          }));
+    }
+    const nextCursor = continuation?.nextCursor ??
+      (collapsed ? group.entriesNextCursor : null);
+    const continuationTarget = groupComments.at(-1);
+    if (
+      continuationTarget &&
+      (nextCursor || continuation?.loading || continuation?.error)
+    ) {
+      continuationTarget.boardGroupHasMore = Boolean(nextCursor);
+      continuationTarget.boardGroupContinuationLoading =
+        continuation?.loading === true;
+      continuationTarget.boardGroupContinuationError =
+        continuation?.error ?? null;
+    }
+    comments.push(...groupComments);
+  }
+  return comments;
 }
 
 export function takeOptimisticIssueComment(
@@ -148,61 +333,6 @@ export function takeOptimisticIssueComment(
   };
 }
 
-export function flattenIssueCommentPages(
-  pages: ReadonlyArray<ReadonlyArray<IssueComment>> | undefined,
-): IssueComment[] {
-  return sortIssueComments((pages ?? []).flatMap((page) => page));
-}
-
-export function getNextIssueCommentPageParam(
-  lastPage: ReadonlyArray<IssueComment> | undefined,
-  pageSize: number,
-): string | undefined {
-  if (!lastPage || lastPage.length < pageSize) return undefined;
-  return lastPage[lastPage.length - 1]?.id;
-}
-
-function getNextPageCursor<T extends { id: string }>(
-  lastPage: ReadonlyArray<T> | undefined,
-  pageSize: number,
-): string | undefined {
-  if (!lastPage || lastPage.length < pageSize) return undefined;
-  return lastPage[lastPage.length - 1]?.id;
-}
-
-export async function loadRemainingIssueCommentPages<T extends { id: string }>(params: {
-  pages: ReadonlyArray<ReadonlyArray<T>> | undefined;
-  pageParams: ReadonlyArray<string | null> | undefined;
-  pageSize: number;
-  maxPages?: number;
-  fetchPage: (afterCommentId: string) => Promise<ReadonlyArray<T>>;
-}): Promise<{ pages: T[][]; pageParams: Array<string | null> }> {
-  const pages = (params.pages ?? []).map((page) => [...page]);
-  const pageParams = params.pageParams
-    ? [...params.pageParams].slice(0, pages.length)
-    : pages.map(() => null);
-
-  while (pageParams.length < pages.length) {
-    pageParams.push(null);
-  }
-
-  if (params.pageSize <= 0) return { pages, pageParams };
-
-  let cursor = getNextPageCursor(pages[pages.length - 1], params.pageSize);
-  const maxPages = Math.max(0, params.maxPages ?? Number.POSITIVE_INFINITY);
-  const seenCursors = new Set<string>();
-  while (cursor && !seenCursors.has(cursor) && seenCursors.size < maxPages) {
-    seenCursors.add(cursor);
-    const nextPage = [...await params.fetchPage(cursor)];
-    pages.push(nextPage);
-    pageParams.push(cursor);
-
-    cursor = getNextPageCursor(nextPage, params.pageSize);
-  }
-
-  return { pages, pageParams };
-}
-
 export function shouldAutoloadOlderIssueComments(params: {
   activeDetailTab: string;
   hasOlderComments: boolean;
@@ -218,10 +348,10 @@ export function shouldAutoloadOlderIssueComments(params: {
   return params.loadedCommentCount < params.autoLoadLimit;
 }
 
-export function upsertIssueComment(
-  comments: IssueComment[] | undefined,
-  nextComment: IssueComment,
-): IssueComment[] {
+export function upsertIssueComment<T extends ClientIssueComment>(
+  comments: T[] | undefined,
+  nextComment: T,
+): T[] {
   const current = comments ?? [];
   const existingIndex = current.findIndex((comment) => comment.id === nextComment.id);
   if (existingIndex === -1) {
@@ -231,28 +361,6 @@ export function upsertIssueComment(
   const updated = [...current];
   updated[existingIndex] = nextComment;
   return sortIssueComments(updated);
-}
-
-export function applyOptimisticIssueCommentUpdate(
-  issue: Issue | undefined,
-  params: {
-    reopen?: boolean;
-    reassignment?: IssueCommentReassignment;
-  },
-) {
-  if (!issue) return issue;
-  const nextIssue: Issue = { ...issue };
-
-  if (params.reopen === true && (issue.status === "done" || issue.status === "cancelled" || issue.status === "blocked")) {
-    nextIssue.status = "todo";
-  }
-
-  if (params.reassignment) {
-    nextIssue.assigneeAgentId = params.reassignment.assigneeAgentId;
-    nextIssue.assigneeUserId = params.reassignment.assigneeUserId;
-  }
-
-  return nextIssue;
 }
 
 export function applyOptimisticIssueFieldUpdate(
@@ -272,14 +380,16 @@ export function applyOptimisticIssueFieldUpdate(
     }
   };
 
-  assign("status");
+  assign("boardPresentationStatus");
   assign("priority");
-  assign("assigneeAgentId");
-  assign("assigneeUserId");
+  assign("ownerAgentId");
+  assign("ownerUserId");
+  assign("ownerKind");
+  assign("ownerAssignmentSource");
+  assign("ownershipEpoch");
   assign("projectId");
   assign("parentId");
   assign("projectWorkspaceId");
-  assign("executionWorkspaceId");
   assign("executionWorkspacePreference");
   assign("executionWorkspaceSettings");
   assign("hiddenAt");
@@ -305,13 +415,6 @@ export function applyOptimisticIssueFieldUpdate(
 
   if (hasOwn("parentId")) {
     nextIssue.ancestors = undefined;
-  }
-
-  if (hasOwn("executionWorkspaceId")) {
-    nextIssue.currentExecutionWorkspace =
-      issue.currentExecutionWorkspace?.id === nextIssue.executionWorkspaceId
-        ? issue.currentExecutionWorkspace
-        : null;
   }
 
   return nextIssue;
@@ -340,38 +443,4 @@ export function applyOptimisticIssueFieldUpdateToCollection(
   });
 
   return changed ? nextIssues : issues;
-}
-
-export function upsertIssueCommentInPages(
-  pages: ReadonlyArray<ReadonlyArray<IssueComment>> | undefined,
-  nextComment: IssueComment,
-): IssueComment[][] {
-  if (!pages || pages.length === 0) {
-    return [[nextComment]];
-  }
-
-  const nextPages = pages.map((page) => [...page]);
-  for (let pageIndex = 0; pageIndex < nextPages.length; pageIndex += 1) {
-    const existingIndex = nextPages[pageIndex]!.findIndex((comment) => comment.id === nextComment.id);
-    if (existingIndex === -1) continue;
-    nextPages[pageIndex]![existingIndex] = nextComment;
-    nextPages[pageIndex] = sortIssueCommentsDesc(nextPages[pageIndex]!);
-    return nextPages;
-  }
-
-  nextPages[0] = sortIssueCommentsDesc([...nextPages[0]!, nextComment]);
-  return nextPages;
-}
-
-export function removeIssueCommentFromPages(
-  pages: ReadonlyArray<ReadonlyArray<IssueComment>> | undefined,
-  commentId: string,
-): IssueComment[][] {
-  if (!pages || pages.length === 0) {
-    return [];
-  }
-
-  return pages
-    .map((page) => page.filter((comment) => comment.id !== commentId))
-    .filter((page) => page.length > 0);
 }

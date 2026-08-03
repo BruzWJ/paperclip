@@ -30,10 +30,7 @@ describe("client context store", () => {
       {
         apiBase: "http://localhost:3100",
         companyId: "company-123",
-        persona: "agent",
-        agentId: "agent-123",
-        agentName: "Agent One",
-        apiKeyEnvVarName: "PAPERCLIP_AGENT_TOKEN",
+        apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
       },
       contextPath,
     );
@@ -45,10 +42,7 @@ describe("client context store", () => {
     expect(context.profiles.work).toEqual({
       apiBase: "http://localhost:3100",
       companyId: "company-123",
-      persona: "agent",
-      agentId: "agent-123",
-      agentName: "Agent One",
-      apiKeyEnvVarName: "PAPERCLIP_AGENT_TOKEN",
+      apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
     });
   });
 
@@ -68,7 +62,6 @@ describe("client context store", () => {
       {
         apiBase: undefined,
         companyId: "company-123",
-        persona: undefined,
       },
       contextPath,
     );
@@ -80,7 +73,7 @@ describe("client context store", () => {
     });
   });
 
-  it("migrates version 1 context files to version 2 with persona metadata", () => {
+  it("migrates version 1 context files to board-only version 2 profiles", () => {
     const contextPath = createTempContextPath();
     fs.writeFileSync(
       contextPath,
@@ -104,7 +97,6 @@ describe("client context store", () => {
     expect(context.profiles.legacy).toEqual({
       apiBase: "http://localhost:3101",
       companyId: "company-legacy",
-      persona: "board",
       apiKeyEnvVarName: "PAPERCLIP_BOARD_TOKEN",
     });
   });

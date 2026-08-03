@@ -1,23 +1,17 @@
 import { z } from "zod";
 import {
-  AUTH_BASE_URL_MODES,
   BIND_MODES,
   DEPLOYMENT_EXPOSURES,
-  DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
 } from "./constants.js";
 import { validateConfiguredBindMode } from "./network-bind.js";
+import { normalizePublicOrigin } from "./public-origin.js";
 
 export const configMetaSchema = z.object({
   version: z.literal(1),
   updatedAt: z.string(),
   source: z.enum(["onboard", "configure", "doctor"]),
-});
-
-export const llmConfigSchema = z.object({
-  provider: z.enum(["claude", "openai"]),
-  apiKey: z.string().optional(),
 });
 
 export const databaseBackupConfigSchema = z.object({
@@ -27,40 +21,51 @@ export const databaseBackupConfigSchema = z.object({
   dir: z.string().default("~/.paperclip/instances/default/data/backups"),
 });
 
-export const databaseConfigSchema = z.object({
-  mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
-  connectionString: z.string().optional(),
-  embeddedPostgresDataDir: z.string().default("~/.paperclip/instances/default/db"),
-  embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
-  backup: databaseBackupConfigSchema.default({
-    enabled: true,
-    intervalMinutes: 60,
-    retentionDays: 7,
-    dir: "~/.paperclip/instances/default/data/backups",
-  }),
-});
+export const databaseConfigSchema = z
+  .object({
+    connectionString: z.string().optional(),
+    backup: databaseBackupConfigSchema.default({
+      enabled: true,
+      intervalMinutes: 60,
+      retentionDays: 7,
+      dir: "~/.paperclip/instances/default/data/backups",
+    }),
+  })
+  .strict();
 
 export const loggingConfigSchema = z.object({
   mode: z.enum(["file", "cloud"]),
   logDir: z.string().default("~/.paperclip/instances/default/logs"),
 });
 
-export const serverConfigSchema = z.object({
-  deploymentMode: z.enum(DEPLOYMENT_MODES).default("local_trusted"),
-  exposure: z.enum(DEPLOYMENT_EXPOSURES).default("private"),
-  bind: z.enum(BIND_MODES).optional(),
-  customBindHost: z.string().optional(),
-  host: z.string().default("127.0.0.1"),
-  port: z.number().int().min(1).max(65535).default(3100),
-  allowedHostnames: z.array(z.string().min(1)).default([]),
-  serveUi: z.boolean().default(true),
-});
+export const serverConfigSchema = z
+  .object({
+    exposure: z.enum(DEPLOYMENT_EXPOSURES).default("private"),
+    bind: z.enum(BIND_MODES).optional(),
+    customBindHost: z.string().optional(),
+    host: z.string().default("127.0.0.1"),
+    port: z.number().int().min(1).max(65535).default(3100),
+    allowedHostnames: z.array(z.string().min(1)).default([]),
+    serveUi: z.boolean().default(true),
+  })
+  .strict();
 
-export const authConfigSchema = z.object({
-  baseUrlMode: z.enum(AUTH_BASE_URL_MODES).default("auto"),
-  publicBaseUrl: z.string().url().optional(),
-  disableSignUp: z.boolean().default(false),
-});
+export const authConfigSchema = z
+  .object({
+    publicBaseUrl: z.string().transform((value, ctx) => {
+      try {
+        return normalizePublicOrigin(value);
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error instanceof Error ? error.message : "Invalid public origin",
+        });
+        return z.NEVER;
+      }
+    }).optional(),
+    disableSignUp: z.boolean().default(false),
+  })
+  .strict();
 
 export const storageLocalDiskConfigSchema = z.object({
   baseDir: z.string().default("~/.paperclip/instances/default/data/storage"),
@@ -106,13 +111,11 @@ export const telemetryConfigSchema = z.object({
 export const paperclipConfigSchema = z
   .object({
     $meta: configMetaSchema,
-    llm: llmConfigSchema.optional(),
     database: databaseConfigSchema,
     logging: loggingConfigSchema,
     server: serverConfigSchema,
     telemetry: telemetryConfigSchema,
     auth: authConfigSchema.default({
-      baseUrlMode: "auto",
       disableSignUp: false,
     }),
     storage: storageConfigSchema.default({
@@ -136,17 +139,8 @@ export const paperclipConfigSchema = z
     }),
   })
   .superRefine((value, ctx) => {
-    if (value.server.deploymentMode === "local_trusted" && value.server.exposure !== "private") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "server.exposure must be private when deploymentMode is local_trusted",
-        path: ["server", "exposure"],
-      });
-    }
-
     for (const message of validateConfiguredBindMode({
-      deploymentMode: value.server.deploymentMode,
-      deploymentExposure: value.server.exposure,
+      exposure: value.server.exposure,
       bind: value.server.bind,
       host: value.server.host,
       customBindHost: value.server.customBindHost,
@@ -158,33 +152,24 @@ export const paperclipConfigSchema = z
       });
     }
 
-    if (value.auth.baseUrlMode === "explicit" && !value.auth.publicBaseUrl) {
+    if (value.server.exposure === "public" && !value.auth.publicBaseUrl) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "auth.publicBaseUrl is required when auth.baseUrlMode is explicit",
+        message: "auth.publicBaseUrl is required when server.exposure=public",
         path: ["auth", "publicBaseUrl"],
       });
     }
 
-    if (value.server.exposure === "public" && value.auth.baseUrlMode !== "explicit") {
+    if (value.server.exposure === "private" && value.auth.publicBaseUrl) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "auth.baseUrlMode must be explicit when deploymentMode=authenticated and exposure=public",
-        path: ["auth", "baseUrlMode"],
-      });
-    }
-
-    if (value.server.exposure === "public" && !value.auth.publicBaseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "auth.publicBaseUrl is required when deploymentMode=authenticated and exposure=public",
+        message: "auth.publicBaseUrl is only valid when server.exposure=public",
         path: ["auth", "publicBaseUrl"],
       });
     }
   });
 
 export type PaperclipConfig = z.infer<typeof paperclipConfigSchema>;
-export type LlmConfig = z.infer<typeof llmConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 export type ServerConfig = z.infer<typeof serverConfigSchema>;

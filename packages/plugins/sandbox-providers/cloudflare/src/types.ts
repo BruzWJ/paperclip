@@ -78,6 +78,7 @@ export interface CloudflareBridgeLeaseResponse {
 
 export interface CloudflareBridgeExecuteRequest {
   providerLeaseId: string;
+  executionId: string;
   command: string;
   args?: string[];
   cwd?: string;
@@ -87,6 +88,17 @@ export interface CloudflareBridgeExecuteRequest {
   streamOutput?: boolean;
   sessionStrategy: CloudflareDriverConfig["sessionStrategy"];
   sessionId: string;
+}
+
+export interface CloudflareBridgeCancelExecutionRequest {
+  providerLeaseId: string;
+  executionId: string;
+  reason: string;
+}
+
+export interface CloudflareBridgeCancelExecutionResponse {
+  executionId: string;
+  cancelled: boolean;
 }
 
 export interface CloudflareBridgeExecuteResponse {

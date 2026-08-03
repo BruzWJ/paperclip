@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "./fixtures";
 import { createServer, type Server } from "node:http";
 import { listenOnFetchAllowedPort } from "./fetch-allowed-port";
 
@@ -8,10 +8,10 @@ import { listenOnFetchAllowedPort } from "./fetch-allowed-port";
 // the Needs-attention surface, and a regression check that /apps/advanced
 // still mounts.
 //
-// The spec boots the shared local_trusted Playwright webServer (see
-// playwright.config), spawns a small in-process mock HTTP MCP server that
-// responds to tools/list with read-only and write-side-effect tools, then
-// drives the wizard via the Apps UI for evidence + screenshots.
+// The spec uses the Vite-only Playwright web server and the test-owned API
+// fixture from fixtures.ts. It also spawns a small in-process mock HTTP MCP
+// server that responds to tools/list with read-only and write-side-effect
+// tools, then drives the wizard via the Apps UI for evidence + screenshots.
 
 const SCREENSHOT_DIR = "test-results";
 

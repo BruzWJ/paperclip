@@ -16,8 +16,12 @@ import {
   hasNonAsciiContent,
   isUuidLike,
   normalizeProjectUrlKey,
+  canonicalizeMoneyAmount,
+  compareMoneyAmounts,
+  parseMoneyAmount,
   type BudgetWindowKind,
   type ProjectBudgetSummary,
+  type MoneyAmount,
   type ProjectCodebase,
   type ProjectExecutionWorkspacePolicy,
   type ProjectGoalRef,
@@ -65,7 +69,7 @@ interface ProjectWithGoals extends Omit<ProjectRow, "executionWorkspacePolicy"> 
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
   managedByPlugin: ProjectManagedByPlugin | null;
-  taskCount?: number;
+  issueCount?: number;
   budget?: ProjectBudgetSummary | null;
 }
 
@@ -320,35 +324,40 @@ async function attachWorkspaces(db: Db, rows: ProjectWithGoals[]): Promise<Proje
   });
 }
 
-type TaskCountRow = { projectId: string | null; count: number };
-type ProjectBudgetRow = { scopeId: string; amount: number; windowKind: string };
+type IssueCountRow = { projectId: string | null; count: number };
+type ProjectBudgetRow = {
+  scopeId: string;
+  limitAmount: string;
+  windowKind: string;
+};
 
 /**
- * Build the per-project task-count and budget lookups from the aggregate query
+ * Build the per-project issue-count and budget lookups from the aggregate query
  * rows. Pure (no DB) so the merge logic can be unit-tested in isolation.
- * Only active policies with a positive amount surface as a budget.
+ * Only active policies with a positive canonical limit surface as a budget.
  */
-export function buildProjectListMetricMaps(taskCountRows: TaskCountRow[], budgetRows: ProjectBudgetRow[]) {
-  const taskCountByProjectId = new Map<string, number>();
-  for (const row of taskCountRows) {
-    if (row.projectId) taskCountByProjectId.set(row.projectId, Number(row.count) || 0);
+export function buildProjectListMetricMaps(issueCountRows: IssueCountRow[], budgetRows: ProjectBudgetRow[]) {
+  const issueCountByProjectId = new Map<string, number>();
+  for (const row of issueCountRows) {
+    if (row.projectId) issueCountByProjectId.set(row.projectId, Number(row.count) || 0);
   }
 
   const budgetByProjectId = new Map<string, ProjectBudgetSummary>();
   for (const row of budgetRows) {
-    if (row.amount > 0) {
+    const limitAmount = canonicalizeMoneyAmount(row.limitAmount);
+    if (compareMoneyAmounts(limitAmount, parseMoneyAmount("0")) > 0) {
       budgetByProjectId.set(row.scopeId, {
-        amountCents: row.amount,
+        limitAmount: limitAmount as MoneyAmount,
         windowKind: row.windowKind as BudgetWindowKind,
       });
     }
   }
 
-  return { taskCountByProjectId, budgetByProjectId };
+  return { issueCountByProjectId, budgetByProjectId };
 }
 
 /**
- * Attach lightweight list-only metrics (task count + budget) to a set of
+ * Attach lightweight list-only metrics (issue count + budget) to a set of
  * projects using two aggregate queries (no N+1). Used by the projects list
  * view (IA Phase 4 — PAP-60).
  */
@@ -361,7 +370,7 @@ async function attachListMetrics(
 
   const projectIds = rows.map((r) => r.id);
 
-  const [taskCountRows, budgetRows] = await Promise.all([
+  const [issueCountRows, budgetRows] = await Promise.all([
     db
       .select({
         projectId: issues.projectId,
@@ -373,7 +382,7 @@ async function attachListMetrics(
     db
       .select({
         scopeId: budgetPolicies.scopeId,
-        amount: budgetPolicies.amount,
+        limitAmount: budgetPolicies.limitAmount,
         windowKind: budgetPolicies.windowKind,
       })
       .from(budgetPolicies)
@@ -381,21 +390,20 @@ async function attachListMetrics(
         and(
           eq(budgetPolicies.companyId, companyId),
           eq(budgetPolicies.scopeType, "project"),
-          eq(budgetPolicies.metric, "billed_cents"),
           eq(budgetPolicies.isActive, true),
           inArray(budgetPolicies.scopeId, projectIds),
         ),
       ),
   ]);
 
-  const { taskCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
-    taskCountRows,
+  const { issueCountByProjectId, budgetByProjectId } = buildProjectListMetricMaps(
+    issueCountRows,
     budgetRows,
   );
 
   return rows.map((row) => ({
     ...row,
-    taskCount: taskCountByProjectId.get(row.id) ?? 0,
+    issueCount: issueCountByProjectId.get(row.id) ?? 0,
     budget: budgetByProjectId.get(row.id) ?? null,
   }));
 }
@@ -620,11 +628,20 @@ export function projectService(db: Db) {
       createIfMissing?: boolean;
     }): Promise<PluginManagedProjectResolution> => {
       const plugin = await db
-        .select({ id: plugins.id, pluginKey: plugins.pluginKey, manifestJson: plugins.manifestJson })
+        .select({
+          id: plugins.id,
+          pluginKey: plugins.pluginKey,
+          manifestJson: plugins.manifestJson,
+          status: plugins.status,
+        })
         .from(plugins)
         .where(eq(plugins.id, input.pluginId))
         .then((rows) => rows[0] ?? null);
-      if (!plugin || plugin.pluginKey !== input.pluginKey) {
+      if (
+        !plugin ||
+        plugin.pluginKey !== input.pluginKey ||
+        plugin.status !== "ready"
+      ) {
         return {
           pluginKey: input.pluginKey,
           resourceKind: "project",

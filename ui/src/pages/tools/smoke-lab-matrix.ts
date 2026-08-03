@@ -24,7 +24,7 @@ export const SMOKE_PATH_LABELS: Record<SmokeRunStepPath, { title: string; detail
   P3: { title: "Local stdio (template)", detail: "stdio fixture via the runtime supervisor" },
   P4: { title: "Plugin integration", detail: "plugin-provided catalog entry + install flow" },
   P5: { title: "Paste-a-config import", detail: "prosumer import via Advanced setup" },
-  P6: { title: "Token broker / gateway", detail: "run-scoped connection token, TTL + scope checks" },
+  P6: { title: "Run-tools gateway", detail: "compiler-issued run-scoped bearer with lease checks" },
   P7: { title: "Governance surfaces", detail: "profiles, ask-first rules, quarantine" },
 };
 

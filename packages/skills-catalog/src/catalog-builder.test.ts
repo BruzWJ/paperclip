@@ -23,8 +23,6 @@ describe("skills catalog manifest", () => {
         "name: GitHub PR Workflow",
         "description: Prepare pull requests and verification notes.",
         "key: paperclipai/bundled/software-development/github-pr-workflow",
-        "recommendedForRoles:",
-        "  - engineer",
         "tags:",
         "  - github",
         "  - pull-requests",
@@ -50,7 +48,6 @@ describe("skills catalog manifest", () => {
       name: "GitHub PR Workflow",
       trustLevel: "markdown_only",
       compatibility: "compatible",
-      recommendedForRoles: ["engineer"],
       tags: ["github", "pull-requests"],
     });
     expect(result.manifest.skills[0]!.files.map((file) => file.path)).toEqual([
@@ -83,7 +80,6 @@ describe("skills catalog manifest", () => {
         path: "skills/remote-research",
       },
       files: ["SKILL.md", "scripts/**"],
-      recommendedForRoles: ["researcher"],
       tags: ["research"],
     });
     const fetchMock = vi.fn(async (url: string) => {
@@ -117,7 +113,6 @@ describe("skills catalog manifest", () => {
       key: "paperclipai/optional/research/remote-research",
       path: "catalog/optional/research/remote-research",
       trustLevel: "scripts_executables",
-      recommendedForRoles: ["researcher"],
       tags: ["research"],
       source: {
         type: "github",
@@ -148,7 +143,6 @@ describe("skills catalog manifest", () => {
         path: "skills/remote-research",
       },
       files: ["SKILL.md", "scripts/**"],
-      recommendedForRoles: ["researcher"],
       tags: ["research"],
     });
     await fs.mkdir(path.join(packageDir, "generated"), { recursive: true });
@@ -172,7 +166,6 @@ describe("skills catalog manifest", () => {
           trustLevel: "scripts_executables",
           compatibility: "compatible",
           defaultInstall: false,
-          recommendedForRoles: ["researcher"],
           requires: [],
           tags: ["research"],
           files: [
@@ -235,7 +228,6 @@ describe("skills catalog manifest", () => {
         path: "skills/remote-research",
       },
       files: ["SKILL.md", "scripts/**"],
-      recommendedForRoles: ["researcher"],
       tags: ["research"],
     });
     await fs.mkdir(path.join(packageDir, "generated"), { recursive: true });
@@ -259,7 +251,6 @@ describe("skills catalog manifest", () => {
           trustLevel: "scripts_executables",
           compatibility: "compatible",
           defaultInstall: false,
-          recommendedForRoles: ["researcher"],
           requires: [],
           tags: ["research"],
           files: [
@@ -308,7 +299,7 @@ describe("skills catalog manifest", () => {
       frontmatter: [
         "name: Duplicate",
         "key: paperclipai/bundled/software-development/other",
-        "recommendedForRoles: engineer",
+        "tags: engineer",
       ],
     });
     await writeSkill(packageDir, "optional", "software-development", "duplicate", {
@@ -335,7 +326,7 @@ describe("skills catalog manifest", () => {
         expect.stringContaining("has invalid category"),
         expect.stringContaining("frontmatter must include description"),
         expect.stringContaining("key must be paperclipai/bundled/Bad_Category/duplicate"),
-        expect.stringContaining("field recommendedForRoles must be an array of strings"),
+        expect.stringContaining("field tags must be an array of strings"),
         expect.stringContaining("Duplicate catalog slug \"duplicate\""),
       ]),
     );

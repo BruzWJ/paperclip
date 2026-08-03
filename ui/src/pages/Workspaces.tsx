@@ -15,9 +15,9 @@ import { queryKeys } from "../lib/queryKeys";
 import { projectRouteRef } from "../lib/utils";
 
 type ProjectWorkspaceGroup = {
-  projectId: string;
+  projectId: string | null;
   projectName: string;
-  projectRef: string;
+  projectRef: string | null;
   summaries: ProjectWorkspaceSummary[];
   lastUpdatedAt: Date;
   runningServiceCount: number;
@@ -48,7 +48,8 @@ function overviewItemToSummary(item: WorkspaceOverviewItem): ProjectWorkspaceSum
 function buildProjectWorkspaceGroups(items: WorkspaceOverviewItem[]): ProjectWorkspaceGroup[] {
   const groups = new Map<string, ProjectWorkspaceGroup>();
   for (const item of items) {
-    const existing = groups.get(item.projectId);
+    const groupKey = item.projectId ?? "projectless";
+    const existing = groups.get(groupKey);
     const summary = overviewItemToSummary(item);
     if (existing) {
       existing.summaries.push(summary);
@@ -58,10 +59,13 @@ function buildProjectWorkspaceGroups(items: WorkspaceOverviewItem[]): ProjectWor
       existing.runningServiceCount += summary.runningServiceCount;
       continue;
     }
-    groups.set(item.projectId, {
+    groups.set(groupKey, {
       projectId: item.projectId,
-      projectName: item.projectName,
-      projectRef: projectRouteRef({ id: item.projectId, name: item.projectName, urlKey: item.projectUrlKey }),
+      projectName: item.projectName ?? "Projectless execution",
+      projectRef:
+        item.projectId && item.projectName && item.projectUrlKey
+          ? projectRouteRef({ id: item.projectId, name: item.projectName, urlKey: item.projectUrlKey })
+          : null,
       summaries: [summary],
       lastUpdatedAt: summary.lastUpdatedAt,
       runningServiceCount: summary.runningServiceCount,
@@ -125,7 +129,7 @@ export function Workspaces() {
         companyId={selectedCompanyId}
         scopeKind="workspaces_overview"
         title="Workspace summary"
-        description="Summarizer tracks workspace activity, live services, and follow-up needs across projects."
+        description="A configured routine tracks workspace activity and follow-up needs across projects."
       />
 
       {groups.length === 0 ? (
@@ -133,15 +137,19 @@ export function Workspaces() {
       ) : (
         <div className="space-y-8">
           {groups.map((group) => (
-            <section key={group.projectId} className="space-y-3">
+            <section key={group.projectId ?? "projectless"} className="space-y-3">
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <div className="min-w-0">
-                  <Link
-                    to={`/projects/${group.projectRef}/workspaces`}
-                    className="text-base font-semibold hover:underline"
-                  >
-                    {group.projectName}
-                  </Link>
+                  {group.projectRef ? (
+                    <Link
+                      to={`/projects/${group.projectRef}/workspaces`}
+                      className="text-base font-semibold hover:underline"
+                    >
+                      {group.projectName}
+                    </Link>
+                  ) : (
+                    <span className="text-base font-semibold">{group.projectName}</span>
+                  )}
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {group.summaries.length} workspace{group.summaries.length === 1 ? "" : "s"}

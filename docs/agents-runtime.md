@@ -1,187 +1,254 @@
 # Agent Runtime Guide
 
 Status: User-facing guide
-Last updated: 2026-03-26
+Last updated: 2026-08-01
 Audience: Operators setting up and running agents in Paperclip
 
 ## 1. What this system does
 
-Agents in Paperclip do not run continuously.  
-They run in **heartbeats**: short execution windows triggered by a wakeup.
+Agents in Paperclip do not run continuously. They execute accepted work through
+durable, issue-scoped runs in Paperclip's existing server + worker topology.
 
-Each heartbeat:
+For each productive prompt, the worker:
 
-1. Starts the configured agent adapter (for example, Claude CLI or Codex CLI)
-2. Gives it the current prompt/context
-3. Lets it work until it exits, times out, or is cancelled
-4. Stores results (status, token usage, errors, logs)
-5. Updates the UI live
+1. selects one current persisted issue-execution ref or steering segment;
+2. resolves its ownership epoch, immutable adapter revision, execution
+   workspace, context dial, and action grants;
+3. launches one conformance-approved ACP agent subprocess;
+4. connects with stable ACP wire version 1 through the official TypeScript SDK;
+5. creates or resumes the eligible native ACP session with a complete
+   request-scoped Paperclip MCP capability binding;
+6. sends exactly one prompt and consumes structured ACP updates plus its stop
+   result; and
+7. revokes the request capability and reaps the subprocess before another
+   prompt can start.
 
-## 2. When an agent wakes up
+The issue Session log is the canonical durable conversation and audit record.
+The run row is only the control envelope around that work; it is not a second
+transcript store.
 
-An agent can be woken up in four ways:
+## 2. How work is admitted
 
-- `timer`: scheduled interval (for example every 5 minutes)
-- `assignment`: when work is assigned/checked out to that agent
-- `on_demand`: manual wakeup (button/API)
-- `automation`: system-triggered wakeup for future automations
+Provider work starts only after a canonical issue operation commits its source
+and execution ref:
 
-If an agent is already running, new wakeups are merged (coalesced) instead of launching duplicate runs.
+- issue creation with an explicit owner;
+- creator-authorized reassignment;
+- an explicit mention or creator/owner update;
+- the `agent_execution` branch of audited board reopen for an invokable agent
+  owner;
+- an allowed routine or plugin-created issue;
+- a human owner mention, typed system nudge, or the one finalization-bound
+  same-agent liveness follow-up.
+
+There is no generic manual invoke, provider-visible wake API, or model-producing
+readiness probe. A retry may redeliver the same ref only when Paperclip can prove
+that no prompt bytes were sent.
+
+The other accepted reopen branch is `board_only`: it applies only to a
+named-user or collective-board-owned system escalation and creates no ref,
+run, adapter check, or provider dispatch. Every other preserved owner is
+rejected without mutation.
 
 ## 3. What to configure per agent
 
-## 3.1 Adapter choice
+### 3.1 ACP adapter choice
 
-Built-in adapters:
+Every AI adapter is a data-only `acp-subprocess/v1` definition. A definition
+selects an exact conformance-approved ACP launch, declares supported execution
+targets, and maps operator choices to stable ACP session configuration. It does
+not execute a provider request or parse provider output.
 
-- `claude_local`: runs your local `claude` CLI
-- `codex_local`: runs your local `codex` CLI
-- `opencode_local`: runs your local `opencode` CLI
-- `cursor`: runs Cursor in background mode
-- `pi_local`: runs an embedded Pi agent locally
-- `hermes_local`: starts your local `hermes` CLI through `@paperclipai/hermes-paperclip-adapter`
-- `hermes_gateway`: calls an already-running Hermes API server through `@paperclipai/hermes-paperclip-adapter/gateway`
-- `openclaw_gateway`: connects to an OpenClaw gateway endpoint
-- `process`: generic shell command adapter
-- `http`: calls an external HTTP endpoint
+Paperclip uses ACPX only for its public agent-name-to-launch registry. Paperclip
+checks the requested name against its own immutable approved catalog before
+registry resolution, then its common official-SDK client launches the resolved
+ACP endpoint. ACPX owns no Paperclip process, session, queue, prompt, tool, or
+event state.
 
-External plugin adapters (install via the adapter manager or API):
+The initial built-in adapter is exact `codex`, backed by the pinned upstream
+Codex ACP frontend. Other ACPX names are not selectable until their exact
+frontend revision passes the same real-frontend conformance suite and enters the
+approved catalog. Paperclip never infers an adapter, accepts a per-CLI alias, or
+falls through to an arbitrary command.
 
-- `droid_local`: runs your local Factory Droid CLI (`@henkey/droid-paperclip-adapter`)
+### 3.2 Authentication and model configuration
 
-For local CLI adapters (`claude_local`, `codex_local`, `opencode_local`, `hermes_local`, `droid_local`), Paperclip assumes the CLI is already installed and authenticated on the host machine. For `hermes_gateway`, Paperclip assumes the Hermes API server is already running, reachable from the Paperclip server, and configured with an API key. The older `@paperclipai/adapter-hermes-gateway` npm package is only a deprecated compatibility shim; the adapter type remains `hermes_gateway`.
+Authenticate the selected AI CLI with that CLI's native login flow on the
+execution target. Paperclip does not accept, store, copy, refresh, or probe AI
+provider credentials.
 
-## 3.2 Runtime behavior
+Choose a model/profile and other supported values through the adapter's closed
+configuration form. After every `session/new` or `session/resume`, the common
+ACP client applies each required value through stable
+`session/set_config_option`. There are no model flags, provider payload fields,
+prompt overrides, environment-secret fallbacks, or default-adapter inference.
 
-In agent runtime settings, configure heartbeat policy:
+### 3.3 Runtime policy
 
-- `enabled`: allow scheduled heartbeats
-- `intervalSec`: timer interval (0 = disabled)
-- `wakeOnAssignment`: wake when assigned work
-- `wakeOnOnDemand`: allow ping-style on-demand wakeups
-- `wakeOnAutomation`: allow system automation wakeups
+Configure eligibility and limits as control-plane policy:
 
-## 3.3 Working directory and execution limits
+- lifecycle status and budgets;
+- all nine context-dial cells, including `carry_context`;
+- the six issue-action grants and explicit mention reach;
+- explicitly selected company tools; and
+- explicitly selected company skills through their one supported channel.
 
-For local adapters, set:
+All context grants default to false. Tool presence is the model-visible
+attention boundary; the server still reauthorizes every call.
 
-- `cwd` (working directory)
-- `timeoutSec` (max runtime per heartbeat; `0` uses the target default — no adapter timeout on local/SSH, a 4-hour backstop on sandbox targets — and a negative value disables the adapter timeout everywhere, including sandboxes)
-- `graceSec` (time before force-kill after timeout/cancel)
-- optional env vars and extra CLI args
-- use **Test environment** in agent configuration to run adapter-specific diagnostics before saving
+### 3.4 Working directory and execution limits
 
-## 3.4 Prompt templates
+- The issue-execution workspace binding supplies the validated ACP `cwd` and
+  any explicitly authorized additional directories.
+- The configured execution target owns local, SSH, sandbox, or plugin process
+  mechanics.
+- Runtime timeout and cancellation policy remain control-plane limits.
+- Provider-native CLI configuration stays operator-owned and opaque.
 
-You can set:
+Paperclip does not fall back to an agent home, an adapter-configured cwd, the
+server process cwd, or a prior issue's workspace.
 
-- `promptTemplate`: used for every run (first run and resumed sessions)
+### 3.5 Provider instructions
 
-Templates support variables like `{{agent.id}}`, `{{agent.name}}`, and run context values.
+Paperclip has no prompt template, bootstrap prompt, managed instruction bundle,
+or caller-identity prompt. Configure any system/developer instructions directly
+through operator-owned provider-native configuration. Empty instruction state
+is valid.
 
-> **Note:** `bootstrapPromptTemplate` is deprecated and should not be used for new agents. Existing configs that use it will continue to work but should be migrated to the managed instructions bundle system.
+## 4. Issue-session continuity
 
-## 4. Session resume behavior
+Paperclip records one canonical Session log per issue. `carry_context` controls
+native continuity and missing-target recovery:
 
-Paperclip stores session IDs for resumable adapters.
+- **False:** every ordinary request uses `session/new`; its exact source text is
+  the entire prompt and Paperclip performs no history composition or
+  compaction.
+- **True with an eligible target:** the worker uses stable `session/resume` and
+  still sends only the exact new source text.
+- **True with no resumable target:** Paperclip selects only dial-authorized
+  current-issue history. If that selection exceeds the configured input budget,
+  the recovery-only compaction run summarizes it first. A replacement
+  `session/new` receives the deterministic recovery block once, followed by the
+  exact new source text.
 
-- Next heartbeat reuses the saved session automatically.
-- This gives continuity across heartbeats.
-- You can reset a session if context gets stale or confused.
+The selected CLI owns its native history and native compaction while that ACP
+session remains resumable. Paperclip's recovery-history compactor over the
+PostgreSQL Session log never runs during a successful native continuation and
+never runs when `carry_context` is false. Operators cannot manually reset or
+rotate native continuity; epoch, target, workspace, and authorization
+eligibility decide it automatically.
 
-Use session reset when:
+Provider-native session state stays opaque and provider-owned. Paperclip keeps
+only an encrypted issue/epoch/agent/target-scoped ACP correlation and never
+exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 
-- you significantly changed prompt strategy
-- the agent is stuck in a bad loop
-- you want a clean restart
+## 5. Tools and steering
 
-## 5. Logs, status, and run history
+Every productive prompt gets a distinct request-scoped Paperclip MCP
+connection. Its `tools/list` result is compiled from that run's effective
+context dial, action grants, explicit company-tool selections, lifecycle
+authority, and current target catalogs. A later resume receives a complete
+replacement connection; it never accumulates a prior request's authority.
 
-For each heartbeat run you get:
+The AI CLI keeps its own built-in shell, file, browser, and other native tools.
+Paperclip owns and audits only the dynamically supplied Paperclip/company-tool
+catalog. A tool-free productive prompt still receives an isolated Paperclip MCP
+server whose list is empty. A recovery-compaction prompt receives no Paperclip
+MCP server.
 
-- run status (`queued`, `running`, `succeeded`, `failed`, `timed_out`, `cancelled`)
-- error text and stderr/stdout excerpts
-- token usage/cost when available from the adapter
-- full logs (stored outside core run rows, optimized for large output)
+An authorized reply to an active run-progress comment steers that exact run.
+Paperclip revokes the old capability, sends ACP `session/cancel`, settles and
+reaps the current prompt, then starts a fresh subprocess and resumes the same
+native session with the new exact message. If that target is no longer
+resumable, the selected run follows the ordinary true/false-carry missing-target
+branch without creating another Paperclip run. The UI uses the comment's
+producing run; users never select or see a raw ACP session id.
 
-In local/dev setups, full logs are stored on disk under the configured run-log path.
+## 6. Logs, status, and run history
 
-## 6. Live updates in the UI
+For each issue-execution run, Paperclip exposes a joined read over:
 
-Paperclip pushes runtime/activity updates to the browser in real time.
+- the typed `issue_execution_runs` control envelope;
+- canonical issue Session messages and events stamped with that run/ref/segment;
+- typed attempt, lease, cancellation, accounting, cost, tool-decision,
+  workspace-operation, and audit records; and
+- the run's one stable progress comment projection.
 
-You should see live changes for:
+Structured ACP text, redacted display-approved thought/reasoning, tool calls,
+tool results, and terminal state live in the Session record. Stable ACP plan
+updates are live-only replacement state and may disappear on reconnect or
+restart. ACP stdout is protocol framing; bounded redacted stderr is diagnostic
+only. Neither stream becomes an assistant transcript or durable run-log store.
 
-- agent status
-- heartbeat run status
-- task/activity updates caused by agent work
-- dashboard/cost/activity panels as relevant
+A prompt owns accounting only when its terminal response has both a stop result
+and the immediately preceding valid ACP context occupancy (`used` / `size`).
+Cost remains optional. Missing or malformed accounting does not become zero.
 
-If the connection drops, the UI reconnects automatically.
+## 7. Issue output and lifecycle
 
-## 7. Common operating patterns
+The chronological issue comment stream is the durable human-facing output.
+Each active run has one stable progress-comment root, which may become its final
+output comment or settle as a folded progress card. Replies are grouped under
+that root in canonical sequence.
 
-## 7.1 Simple autonomous loop
+No tool-free final closes an issue or invokes another agent. The current owner
+must call `issue_update` with `done` or `cancelled` and a final message to close
+an issue. A nonterminal issue that becomes idle is handled only by the bounded
+post-finalization same-agent reply/liveness rule.
 
-1. Enable timer wakeups (for example every 300s)
-2. Keep assignment wakeups on
-3. Use a focused prompt template that tells agents to act in the same heartbeat, leave durable progress, and mark blocked work with an owner/action
-4. Watch run logs and adjust prompt/config over time
+## 8. Common operating patterns
 
-## 7.2 Event-driven loop (less constant polling)
+### 8.1 Issue-driven execution
 
-1. Disable timer or set a long interval
-2. Keep wake-on-assignment enabled
-3. Use child issues, comments, and on-demand wakeups for handoffs instead of loops that poll agents, sessions, or processes
+1. Create an issue with an immutable request and explicit eligible owner.
+2. Grant only the actions and context depth needed for that work.
+3. Let the owner report progress or disposition through `issue_update`.
+4. Inspect the durable issue thread and bounded structured run history.
 
-## 7.3 Safety-first loop
+### 8.2 Scheduled work
 
-1. Short timeout
-2. Conservative prompt
-3. Monitor errors + cancel quickly when needed
-4. Reset sessions when drift appears
+Use a routine whose occurrence creates an ordinary execution issue with an
+explicit owner and immutable request. The routine does not invoke an agent
+directly.
 
-## 8. Troubleshooting
+### 8.3 Safety-first loop
+
+1. Start with narrow context and action grants.
+2. Configure conservative runtime and budget limits.
+3. Monitor the stable run-progress comment and cancel quickly when needed.
+4. Change adapter/session configuration only through a new immutable revision;
+   later work will re-evaluate native-session eligibility automatically.
+
+## 9. Troubleshooting
 
 If runs fail repeatedly:
 
-1. Check adapter command availability (e.g. `claude`/`codex`/`opencode`/`hermes` installed and logged in).
-2. Verify `cwd` exists and is accessible.
-3. Inspect run error + stderr excerpt, then full log.
-4. Confirm timeout is not too low.
-5. Reset session and retry.
-6. Pause agent if it is causing repeated bad updates.
+1. Confirm the exact adapter is registered and conformance-approved.
+2. Confirm its pinned ACP frontend and target Node executable are available.
+3. Run the selected CLI's native login on that execution target.
+4. Verify every required stable ACP configuration value and model limit.
+5. Verify the issue-execution workspace and execution target are ready.
+6. Inspect the typed setup, protocol, process, and terminal-settlement error.
+7. Pause the agent if repeated failures would consume budget or mutate work.
 
-Typical failure causes:
+Typical failures include an unavailable executable, unauthenticated native CLI,
+unsupported stable resume or MCP replacement, invalid session configuration,
+stale workspace binding, protocol framing failure, or a stop result without the
+required terminal occupancy.
 
-- CLI not installed/authenticated
-- bad working directory
-- malformed adapter args/env
-- prompt too broad or missing constraints
-- process timeout
-
-Claude-specific note:
-
-- If `ANTHROPIC_API_KEY` is set in adapter env or host environment, Claude uses API-key auth instead of subscription login. Paperclip surfaces this as a warning in environment tests, not a hard error.
-
-## 9. Security and risk notes
-
-Local CLI adapters run unsandboxed on the host machine.
-
-That means:
-
-- prompt instructions matter
-- configured credentials/env vars are sensitive
-- working directory permissions matter
-
-Start with least privilege where possible, and avoid exposing secrets in broad reusable prompts unless intentionally required.
+Paperclip never retries a resume error by silently starting another session.
+Only a missing local target or ACP `Resource not found` enters the documented
+missing-target branch; other errors fail the current attempt.
 
 ## 10. Minimal setup checklist
 
-1. Choose adapter (e.g. `claude_local`, `codex_local`, `opencode_local`, `hermes_local`, `hermes_gateway`, `cursor`, or `openclaw_gateway`). External plugins like `droid_local` are also available via the adapter manager.
-2. Set `cwd` to the target workspace (for local adapters).
-3. Optionally add a prompt template (`promptTemplate`) or use the managed instructions bundle.
-4. Configure heartbeat policy (timer and/or assignment wakeups).
-5. Trigger a manual wakeup.
-6. Confirm run succeeds and session/token usage is recorded.
-7. Watch live updates and iterate prompt/config.
+1. Install the conformance-approved CLI/frontend on the execution target.
+2. Authenticate the AI CLI through its native login flow.
+3. Select an exact registered adapter and complete its required stable ACP
+   configuration.
+4. Configure an execution-workspace policy.
+5. Set explicit context dials, issue-action grants, and selected company
+   tools/skills.
+6. Create an issue with an immutable request and eligible owner.
+7. Confirm the Session projection, progress comment, terminal state, and any
+   valid accounting were recorded.

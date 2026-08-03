@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
+import { normalizePublicOrigin } from "@paperclipai/shared";
 import { buildCliCommandLabel } from "./command-label.js";
 import { resolveDefaultCliAuthPath } from "../config/home.js";
 
@@ -223,7 +224,20 @@ export async function loginBoardCli(params: {
     }),
   });
 
-  const publicBase = params.publicBaseUrl?.trim() || process.env.PAPERCLIP_PUBLIC_URL?.trim();
+  const explicitPublicBase = params.publicBaseUrl?.trim()
+    ? normalizePublicOrigin(params.publicBaseUrl)
+    : undefined;
+  const environmentPublicBase = process.env.PAPERCLIP_PUBLIC_URL?.trim()
+    ? normalizePublicOrigin(process.env.PAPERCLIP_PUBLIC_URL)
+    : undefined;
+  if (
+    explicitPublicBase &&
+    environmentPublicBase &&
+    explicitPublicBase !== environmentPublicBase
+  ) {
+    throw new Error("CLI public base URL must match PAPERCLIP_PUBLIC_URL");
+  }
+  const publicBase = explicitPublicBase ?? environmentPublicBase;
   const approvalUrl = publicBase
     ? `${normalizeApiBase(publicBase)}${challenge.approvalPath}`
     : challenge.approvalUrl ?? `${apiBase}${challenge.approvalPath}`;

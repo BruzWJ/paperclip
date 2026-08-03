@@ -169,11 +169,6 @@ function gateway(overrides: Partial<ToolMcpGatewayWithTokens> = {}): ToolMcpGate
       forwardRunId: false,
       forwardCorrelationId: true,
     },
-    onDemandToolsConfig: {
-      enabled: false,
-      searchToolName: "search_tools",
-      runToolName: "run_tool",
-    },
     metadata: null,
     createdByAgentId: null,
     createdByUserId: "user-1",

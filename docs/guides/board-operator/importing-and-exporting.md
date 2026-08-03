@@ -13,21 +13,26 @@ Exported packages follow the [Agent Companies specification](/companies/companie
 my-company/
 ├── COMPANY.md          # Company metadata
 ├── agents/
-│   ├── ceo/AGENT.md    # Agent instructions + frontmatter
-│   └── cto/AGENT.md
+│   ├── engineering/AGENTS.md
+│   └── research/AGENTS.md
 ├── projects/
 │   └── main/PROJECT.md
 ├── skills/
 │   └── review/SKILL.md
-├── tasks/
-│   └── onboarding/TASK.md
+├── issues/
+│   └── onboarding/ISSUE.md
 └── .paperclip.yaml     # Adapter config, env inputs, routines
 ```
 
 - **COMPANY.md** defines company name, description, and metadata.
-- **AGENT.md** files contain agent identity, role, and instructions.
+- **AGENTS.md** files contain portable identity (`name`, optional display
+  `title`, `reportsTo`) and explicit company-skill selections. They contain no
+  Paperclip instruction bundle or role field.
+- **ISSUE.md** is the external package filename for starter issues. Its Markdown
+  body is the canonical immutable request and its `owner` names an agent slug.
 - **SKILL.md** files are compatible with the Agent Skills ecosystem.
-- **.paperclip.yaml** holds Paperclip-specific config (adapter types, env inputs, budgets) as an optional sidecar.
+- **.paperclip.yaml** holds Paperclip-specific adapter/runtime settings,
+  budgets, and exact permission grants as an optional sidecar.
 
 ## Exporting a Company
 
@@ -42,7 +47,7 @@ paperclipai company export <company-id> --out ./my-export
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--out <path>` | Output directory (required) | — |
-| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `tasks`, `skills` | `company,agents` |
+| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `skills` | `company,agents` |
 | `--skills <values>` | Export only specific skill slugs | all |
 | `--projects <values>` | Export only specific project shortnames or IDs | all |
 | `--issues <values>` | Export specific issue identifiers or IDs | none |
@@ -55,8 +60,8 @@ paperclipai company export <company-id> --out ./my-export
 # Export company with agents and projects
 paperclipai company export abc123 --out ./backup --include company,agents,projects
 
-# Export everything including tasks and skills
-paperclipai company export abc123 --out ./full-export --include company,agents,projects,tasks,skills
+# Export everything including starter issues and skills
+paperclipai company export abc123 --out ./full-export --include company,agents,projects,issues,skills
 
 # Export only specific skills
 paperclipai company export abc123 --out ./skills-only --include skills --skills review,deploy
@@ -65,9 +70,9 @@ paperclipai company export abc123 --out ./skills-only --include skills --skills 
 ### What Gets Exported
 
 - Company name, description, and metadata
-- Agent names, roles, reporting structure, and instructions
+- Agent identity, reporting structure, explicit permission grants, and selected skills
 - Project definitions and workspace config
-- Task/issue descriptions (when included)
+- Issue immutable requests and explicit agent owners (when included as `ISSUE.md`)
 - Skill packages (as references or vendored content)
 - Adapter type and env input declarations in `.paperclip.yaml`
 
@@ -99,7 +104,7 @@ paperclipai company import org/repo/companies/acme
 | `--target <mode>` | `new` (create a new company) or `existing` (merge into existing) | inferred from context |
 | `--company-id <id>` | Target company ID for `--target existing` | current context |
 | `--new-company-name <name>` | Override company name for `--target new` | from package |
-| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `tasks`, `skills` | auto-detected |
+| `--include <values>` | Comma-separated set: `company`, `agents`, `projects`, `issues`, `skills` | auto-detected |
 | `--agents <list>` | Comma-separated agent slugs to import, or `all` | `all` |
 | `--collision <mode>` | How to handle name conflicts: `rename`, `skip`, or `replace` | `rename` |
 | `--ref <value>` | Git ref for GitHub imports (branch, tag, or commit) | default branch |
@@ -118,13 +123,15 @@ If `--target` is not specified, Paperclip infers it: if a `--company-id` is prov
 
 When importing into an existing company, agent or project names may conflict with existing ones:
 
-- **`rename`** (default) — Appends a suffix to avoid conflicts (e.g., `ceo` becomes `ceo-2`).
+- **`rename`** (default) — Appends a suffix to avoid conflicts (e.g.,
+  `research` becomes `research-2`).
 - **`skip`** — Skips entities that already exist.
-- **`replace`** — Overwrites existing entities. Only available for non-safe imports (not available through the CEO API).
+- **`replace`** — Overwrites existing entities. Only available through the
+  board's non-safe import flow.
 
 ### Interactive Selection
 
-When running interactively (no `--yes` or `--json` flags), the import command shows a selection picker before applying. You can choose exactly which agents, projects, skills, and tasks to import using a checkbox interface.
+When running interactively (no `--yes` or `--json` flags), the import command shows a selection picker before applying. You can choose exactly which agents, projects, skills, and issues to import using a checkbox interface.
 
 ### Preview Before Applying
 
@@ -135,12 +142,12 @@ paperclipai company import org/repo --target existing --company-id abc123 --dry-
 ```
 
 The preview shows:
-- **Package contents** — How many agents, projects, tasks, and skills are in the source
+- **Package contents** — How many agents, projects, issues, and skills are in the source
 - **Import plan** — What will be created, renamed, skipped, or replaced
 - **Env inputs** — Environment variables that may need values after import
 - **Warnings** — Potential issues like missing skills or unresolved references
 
-Imported agents always land with timer heartbeats disabled. Assignment/on-demand wake behavior from the package is preserved, but scheduled runs stay off until a board operator re-enables them.
+Imported agents retain only supported issue-execution runtime policy fields. Execution begins from canonical issue refs; imports do not restore queued or running work.
 
 ### Common Workflows
 
@@ -189,7 +196,11 @@ The CLI commands use these API endpoints under the hood:
 | Preview import (new company) | `POST /api/companies/import/preview` |
 | Apply import (new company) | `POST /api/companies/import` |
 
-CEO agents can also use the safe import routes (`/imports/preview` and `/imports/apply`) which enforce non-destructive rules: `replace` is rejected, collisions resolve with `rename` or `skip`, and issues are always created as new.
+The company-scoped safe import routes are board-only. They reject `replace`,
+resolve collisions with `rename` or `skip`, and create imported issues as new
+board-created issues with explicit agent owners. Imports never restore agent
+roles, prompt/instruction bundles, Paperclip memory, provider sessions, queued
+runs, or ambient permissions.
 
 ## GitHub Sources
 

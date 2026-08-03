@@ -27,7 +27,7 @@ import type {
   PaperclipPluginManifestV1,
   PluginRecord,
 } from "@paperclipai/shared";
-import type { ToolRunContext, ToolResult } from "@paperclipai/plugin-sdk";
+import type { PluginRunContextHandle, ToolResult } from "@paperclipai/plugin-sdk";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 import type { PluginLifecycleManager } from "./plugin-lifecycle.js";
 import {
@@ -36,6 +36,7 @@ import {
   type RegisteredTool,
   type ToolListFilter,
   type ToolExecutionResult,
+  type PluginToolExecutionScope,
 } from "./plugin-tool-registry.js";
 import { pluginRegistryService } from "./plugin-registry.js";
 import { logger } from "../middleware/logger.js";
@@ -141,7 +142,7 @@ export interface PluginToolDispatcher {
   executeTool(
     namespacedName: string,
     parameters: unknown,
-    runContext: ToolRunContext,
+    scope: PluginToolExecutionScope,
   ): Promise<ToolExecutionResult>;
 
   /**
@@ -237,7 +238,7 @@ export function createPluginToolDispatcher(
   // Track lifecycle event listeners so we can remove them on teardown
   let enabledListener: ((payload: { pluginId: string; pluginKey: string }) => void) | null = null;
   let disabledListener: ((payload: { pluginId: string; pluginKey: string; reason?: string }) => void) | null = null;
-  let unloadedListener: ((payload: { pluginId: string; pluginKey: string; removeData: boolean }) => void) | null = null;
+  let unloadedListener: ((payload: { pluginId: string; pluginKey: string; purge: boolean }) => void) | null = null;
 
   let initialized = false;
 
@@ -309,7 +310,7 @@ export function createPluginToolDispatcher(
     registry.unregisterPlugin(payload.pluginKey);
   }
 
-  function handlePluginUnloaded(payload: { pluginId: string; pluginKey: string; removeData: boolean }): void {
+  function handlePluginUnloaded(payload: { pluginId: string; pluginKey: string; purge: boolean }): void {
     log.debug({ pluginId: payload.pluginId, pluginKey: payload.pluginKey }, "plugin unloaded — unregistering tools");
     registry.unregisterPlugin(payload.pluginKey);
   }
@@ -402,13 +403,11 @@ export function createPluginToolDispatcher(
     async executeTool(
       namespacedName: string,
       parameters: unknown,
-      runContext: ToolRunContext,
+      scope: PluginToolExecutionScope,
     ): Promise<ToolExecutionResult> {
       log.debug(
         {
           tool: namespacedName,
-          agentId: runContext.agentId,
-          runId: runContext.runId,
         },
         "dispatching tool execution",
       );
@@ -416,7 +415,7 @@ export function createPluginToolDispatcher(
       const result = await registry.executeTool(
         namespacedName,
         parameters,
-        runContext,
+        scope,
       );
 
       log.debug(

@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "./Sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-const mockHeartbeatsApi = vi.hoisted(() => ({
-  liveRunsForCompany: vi.fn(),
+const mockRunsApi = vi.hoisted(() => ({
+  listForCompany: vi.fn(),
 }));
 
 const mockAttentionApi = vi.hoisted(() => ({
@@ -66,9 +66,10 @@ vi.mock("../context/SidebarContext", () => ({
   useSidebar: () => mockSidebar,
 }));
 
-vi.mock("../api/heartbeats", () => ({
-  heartbeatsApi: mockHeartbeatsApi,
-}));
+vi.mock("../api/runs", async () => {
+  const actual = await vi.importActual<typeof import("../api/runs")>("../api/runs");
+  return { ...actual, runsApi: mockRunsApi };
+});
 
 vi.mock("../api/attention", () => ({
   attentionApi: mockAttentionApi,
@@ -146,7 +147,7 @@ describe("Sidebar", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
+    mockRunsApi.listForCompany.mockResolvedValue({ items: [], nextCursor: null });
     mockAttentionApi.list.mockResolvedValue({ items: [] });
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;

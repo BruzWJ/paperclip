@@ -1,16 +1,10 @@
-# Agent Runtime Image Family
+# Generic Agent Runtime Base
 
-Container images for running coding-agent harnesses in sandboxed environments (for example the kubernetes sandbox provider, stage 1 of the k8s contribution). Images are named `agent-runtime-{harness}:{version}` and published to `ghcr.io/paperclipai/` by the `agent-runtime-images` workflow. The registry is overridable: every reference flows through the `REGISTRY` bake variable.
-
-## Image Lineup
-
-- **`agent-runtime-base`**: Foundation. Ubuntu 22.04 + Node 22 + git + tini + non-root user (uid 1000) + the agent shim.
-- **`agent-runtime-opencode`**: Extends base with `opencode-ai` globally installed.
-- **`agent-runtime-pi`**: Extends base with `@mariozechner/pi-coding-agent`.
-- **`agent-runtime-codex`**: Extends base with `@openai/codex`.
-- **`agent-runtime-gemini`**: Extends base with `@google/gemini-cli` plus headless auth-mode settings.
-- **`agent-runtime-claude`**: Extends base with `@anthropic-ai/claude-code` (symlinked as `claude-code`).
-- **`agent-runtime-hermes`**: Dockerfile included in the bake group, not in the default publish scope (stub until a CLI package exists).
+`agent-runtime-base` is the provider-neutral foundation for running external
+agent adapters in sandboxed environments. Paperclip publishes only this base
+image. Adapter authors own the image layer that installs their executable and
+must configure that image explicitly; Paperclip does not ship provider-specific
+runtime images or presets.
 
 ## Base Image Contents
 
@@ -32,7 +26,7 @@ Container images for running coding-agent harnesses in sandboxed environments (f
 
 ## Building Locally
 
-All targets build `linux/amd64` by default (see `buildx-bake.hcl`). Derived images chain off the `base` target through bake `contexts`, so the literal registry in each `FROM` line is overridden at build time and the whole family builds in one pass without pushing intermediates.
+The base target builds `linux/amd64` by default (see `buildx-bake.hcl`).
 
 ```bash
 docker buildx bake -f docker/agent-runtime/buildx-bake.hcl --load
@@ -43,15 +37,6 @@ docker buildx bake -f docker/agent-runtime/buildx-bake.hcl --load
 ```bash
 REGISTRY=myregistry VERSION=mytag \
   docker buildx bake -f docker/agent-runtime/buildx-bake.hcl --load
-```
-
-## Quickstart Smoke Test
-
-Build and verify the `agent-runtime-claude` image runs locally:
-
-```bash
-docker buildx bake -f docker/agent-runtime/buildx-bake.hcl base claude --load
-docker run --rm ghcr.io/paperclipai/agent-runtime-claude:dev claude-code --version
 ```
 
 ## Agent Container (paperclip-agent-shim)
@@ -66,8 +51,8 @@ The main agent process runs as the shim (PID 1 under tini). The shim:
 **runtime-command.json Contract:**
 ```json
 {
-  "command": "claude-code",
-  "args": ["--token", "xyz", "--workspace", "/workspace"]
+  "command": "external-agent",
+  "args": ["--workspace", "/workspace"]
 }
 ```
 
@@ -82,4 +67,5 @@ The shim makes no assumptions about command structure; it is harness-agnostic. N
 
 ## Publishing
 
-`.github/workflows/agent-runtime-images.yml` builds and pushes the default scope (base, opencode, pi, codex, gemini, claude) on `workflow_dispatch` (with an explicit version tag) or on pushes to `master` touching these paths, then signs each digest with cosign keyless OIDC.
+`.github/workflows/agent-runtime-images.yml` builds, pushes, and signs the base
+image on `workflow_dispatch` or on pushes to `master` touching these paths.

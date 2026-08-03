@@ -1,12 +1,12 @@
 import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
-import { generateSummarySlotSchema, writeSummarySlotSchema } from "@paperclipai/shared";
+import { refreshSummarySlotSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { forbidden, notFound } from "../errors.js";
-import { accessService, heartbeatService, instanceSettingsService, logActivity } from "../services/index.js";
-import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
+import { accessService, instanceSettingsService, logActivity } from "../services/index.js";
+import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
 import { summarySlotService } from "../services/summary-slots.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess } from "./authz.js";
 
 function readScopeId(req: Request): string | null {
   const raw = req.query.scopeId;
@@ -14,21 +14,16 @@ function readScopeId(req: Request): string | null {
   return null;
 }
 
-export function summarySlotSessionTaskKey(input: {
-  companyId: string;
-  scopeKind: string;
-  slotKey: string;
-  scopeId: string | null;
-}) {
-  return `summary-slot:${input.companyId}:${input.scopeKind}:${input.scopeId ?? "company"}:${input.slotKey}`;
-}
-
-export function summarySlotRoutes(db: Db) {
+export function summarySlotRoutes(
+  db: Db,
+  opts: { ordinaryIssues: OrdinaryIssueRuntime },
+) {
   const router = Router();
   const access = accessService(db);
   const settings = instanceSettingsService(db);
-  const svc = summarySlotService(db);
-  const heartbeat = heartbeatService(db);
+  const svc = summarySlotService(db, {
+    ordinaryIssues: opts.ordinaryIssues,
+  });
 
   async function assertSummariesEnabled() {
     const experimental = await settings.getExperimental();
@@ -37,38 +32,37 @@ export function summarySlotRoutes(db: Db) {
     }
   }
 
-  /** Manual generate is a board/user action; agents cannot trigger it. */
-  async function assertCanGenerateSummary(req: Request, companyId: string) {
+  /** Manual refresh is a board/user action; agents cannot trigger it. */
+  async function assertCanRefreshSummary(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
     if (req.actor.type !== "board") {
-      throw forbidden("Only board operators can generate summaries.");
+      throw forbidden("Only board operators can refresh summaries.");
     }
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
-    const allowed = await access.canUser(companyId, req.actor.userId, "tasks:assign");
-    if (!allowed) {
-      throw forbidden("Missing permission: tasks:assign");
-    }
+    const decision = await access.decide({
+      actor: req.actor,
+      action: "issue:mutate",
+      resource: { type: "company", companyId },
+    });
+    if (!decision.allowed) throw forbidden(decision.explanation);
   }
 
   async function logSummaryMutation(
     req: Request,
     input: {
       companyId: string;
-      action: "summary_slot.generate_requested" | "summary_slot.write";
+      action: "summary_slot.refresh_requested";
       slotId: string;
       details: Record<string, unknown>;
     },
   ) {
-    const actor = getActorInfo(req);
+    assertBoard(req);
     await logActivity(db, {
       companyId: input.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: input.action,
       entityType: "summary_slot",
       entityId: input.slotId,
-      ...(actor.agentId ? { agentId: actor.agentId } : {}),
-      ...(actor.runId ? { runId: actor.runId } : {}),
       details: input.details,
     });
   }
@@ -100,29 +94,29 @@ export function summarySlotRoutes(db: Db) {
   });
 
   router.post(
-    "/companies/:companyId/summary-slots/:scopeKind/:slotKey/generate",
-    validate(generateSummarySlotSchema),
+    "/companies/:companyId/summary-slots/:scopeKind/:slotKey/refresh",
+    validate(refreshSummarySlotSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
       await assertSummariesEnabled();
-      await assertCanGenerateSummary(req, companyId);
-      const actor = getActorInfo(req);
-      const result = await svc.generate(
+      await assertCanRefreshSummary(req, companyId);
+      assertBoard(req);
+      const result = await svc.dispatchRefresh(
         {
           companyId,
           scopeKind: req.params.scopeKind as string,
           slotKey: req.params.slotKey as string,
           scopeId: (req.body?.scopeId as string | null | undefined) ?? readScopeId(req),
+          ownerAgentId: (req.body.ownerAgentId as string | undefined) ?? null,
         },
         {
-          agentId: actor.actorType === "agent" ? actor.actorId : null,
-          userId: actor.actorType === "user" ? actor.actorId : null,
-          runId: actor.runId ?? null,
+          type: "user",
+          userId: req.actor.userId,
         },
       );
       await logSummaryMutation(req, {
         companyId,
-        action: "summary_slot.generate_requested",
+        action: "summary_slot.refresh_requested",
         slotId: result.slot.id,
         details: {
           scopeKind: result.slot.scopeKind,
@@ -132,75 +126,7 @@ export function summarySlotRoutes(db: Db) {
           alreadyGenerating: result.alreadyGenerating,
         },
       });
-      if (!result.alreadyGenerating) {
-        await queueIssueAssignmentWakeup({
-          heartbeat,
-          issue: {
-            id: result.generatingIssue.id,
-            assigneeAgentId: result.generatingIssue.assigneeAgentId ?? null,
-            status: result.generatingIssue.status,
-          },
-          reason: "summary_slot_generation_requested",
-          mutation: "summary_slot.generate",
-          contextSource: "summary-slot.generate",
-          requestedByActorType: actor.actorType === "agent" ? "agent" : "user",
-          requestedByActorId: actor.actorId,
-          taskKey: summarySlotSessionTaskKey({
-            companyId,
-            scopeKind: result.slot.scopeKind,
-            slotKey: result.slot.slotKey,
-            scopeId: result.slot.scopeId,
-          }),
-          rethrowOnError: true,
-        });
-      }
       res.status(result.alreadyGenerating ? 200 : 202).json(result);
-    },
-  );
-
-  router.put(
-    "/companies/:companyId/summary-slots/:scopeKind/:slotKey",
-    validate(writeSummarySlotSchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
-      await assertSummariesEnabled();
-      if (req.actor.type !== "agent") {
-        throw forbidden("Only the Summarizer built-in agent may write summaries");
-      }
-      const actor = getActorInfo(req);
-      const result = await svc.write(
-        {
-          companyId,
-          scopeKind: req.params.scopeKind as string,
-          slotKey: req.params.slotKey as string,
-          scopeId: (req.body?.scopeId as string | null | undefined) ?? readScopeId(req),
-          markdown: req.body.markdown,
-          title: req.body.title ?? null,
-          changeSummary: req.body.changeSummary ?? null,
-          baseRevisionId: req.body.baseRevisionId ?? null,
-          generationIssueId: req.body.generationIssueId ?? null,
-          model: req.body.model ?? null,
-        },
-        {
-          agentId: actor.agentId,
-          runId: actor.runId ?? null,
-        },
-      );
-      await logSummaryMutation(req, {
-        companyId,
-        action: "summary_slot.write",
-        slotId: result.slot.id,
-        details: {
-          scopeKind: result.slot.scopeKind,
-          scopeId: result.slot.scopeId,
-          slotKey: result.slot.slotKey,
-          documentId: result.document.id,
-          revisionId: result.revision.id,
-          revisionNumber: result.revision.revisionNumber,
-        },
-      });
-      res.json(result);
     },
   );
 

@@ -1,3 +1,4 @@
+// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: PAPERCLIP_API_KEY
 import { describe, expect, it } from "vitest";
 import { REDACTED_EVENT_VALUE, redactEventPayload, redactSensitiveText, sanitizeRecord } from "../redaction.js";
 
@@ -19,7 +20,7 @@ describe("redaction", () => {
           type: "plain",
           value: "sk-plain",
         },
-        PAPERCLIP_API_URL: "http://localhost:3100",
+        SERVICE_BASE_URL: "http://localhost:3100",
       },
     };
 
@@ -40,7 +41,7 @@ describe("redaction", () => {
         type: "plain",
         value: REDACTED_EVENT_VALUE,
       },
-      PAPERCLIP_API_URL: "http://localhost:3100",
+      SERVICE_BASE_URL: "http://localhost:3100",
     });
   });
 

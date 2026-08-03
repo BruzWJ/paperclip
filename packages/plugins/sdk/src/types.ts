@@ -22,13 +22,6 @@ import type {
   IssueDocument,
   IssueDocumentSummary,
   IssueRelationIssueSummary,
-  IssueAssigneeAdapterOverrides,
-  IssueThreadInteraction,
-  SuggestTasksInteraction,
-  AskUserQuestionsInteraction,
-  RequestConfirmationInteraction,
-  RequestCheckboxConfirmationInteraction,
-  CreateIssueThreadInteraction,
   PluginIssueOriginKind,
   IssueSurfaceVisibility,
   PluginManagedAgentResolution,
@@ -42,11 +35,14 @@ import type {
   Goal,
   HumanCompanyMembershipRole,
   InviteJoinType,
+  InviteSource,
   MembershipStatus,
   PermissionKey,
   PrincipalPermissionGrant,
   PrincipalType,
   EnvSecretRefBinding,
+  ProviderSafeIssueProjection,
+  ProviderSafeRunTrace,
 } from "@paperclipai/shared";
 import type { PluginPerformActionContext } from "./protocol.js";
 
@@ -96,6 +92,7 @@ export type {
   PluginStatus,
   PluginCategory,
   PluginCapability,
+  ProviderSafeRunTrace,
   PluginUiSlotType,
   PluginUiSlotEntityType,
   PluginLauncherPlacementZone,
@@ -112,7 +109,6 @@ export type {
   PluginDatabaseNamespaceMode,
   PluginDatabaseNamespaceStatus,
   PluginApiRouteAuthMode,
-  PluginApiRouteCheckoutPolicy,
   PluginApiRouteMethod,
   PluginEventType,
   PluginBridgeErrorCode,
@@ -123,18 +119,13 @@ export type {
   IssueDocument,
   IssueDocumentSummary,
   IssueRelationIssueSummary,
-  IssueThreadInteraction,
-  SuggestTasksInteraction,
-  AskUserQuestionsInteraction,
-  RequestConfirmationInteraction,
-  RequestCheckboxConfirmationInteraction,
-  CreateIssueThreadInteraction,
   PluginIssueOriginKind,
   IssueSurfaceVisibility,
   Agent,
   Goal,
   HumanCompanyMembershipRole,
   InviteJoinType,
+  InviteSource,
   MembershipStatus,
   PermissionKey,
   PrincipalPermissionGrant,
@@ -239,23 +230,77 @@ export interface PluginJobContext {
 }
 
 // ---------------------------------------------------------------------------
-// Tool run context
+// Plugin run-context handle
 // ---------------------------------------------------------------------------
 
 /**
- * Run context passed to a plugin tool handler when an agent invokes the tool.
+ * Opaque run-context handle passed to a plugin tool handler when a selected
+ * company tool is invoked from a compiled run interface.
  *
- * @see PLUGIN_SPEC.md §13.10 — `executeTool`
+ * The value has no client-derivable fields. Plugins may only echo it through
+ * the active worker invocation; the host resolves and revalidates its live
+ * company, issue, execution-ref, ownership-epoch, mode, lease, and tool scope.
  */
-export interface ToolRunContext {
-  /** UUID of the agent invoking the tool. */
-  agentId: string;
-  /** UUID of the current agent run. */
-  runId: string;
-  /** UUID of the company the run belongs to. */
-  companyId: string;
-  /** UUID of the project the run belongs to. */
-  projectId: string;
+export type PluginRunContextHandle = string;
+
+/**
+ * Run-serving issue projection available only while handling a selected
+ * company-tool invocation. It is intentionally separate from `ctx.issues`,
+ * which remains the installation control plane.
+ */
+export type PluginRunIssueProjection =
+  ProviderSafeIssueProjection;
+
+export interface PluginRunIssueCommentProjection {
+  id: string;
+  issueId: string;
+  body: string;
+  author:
+    | { kind: "agent"; agentId: string }
+    | { kind: "user"; userId: string }
+    | { kind: "plugin"; pluginKey: string }
+    | { kind: "board" }
+    | { kind: "system" };
+  runId: string | null;
+  sequence: number;
+  createdAt: string;
+}
+
+export interface PluginRunPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export interface PluginRunIssuesClient {
+  listCompanyIssues(input?: {
+    status?: "open" | "blocked" | "done" | "cancelled";
+    priority?: "critical" | "high" | "medium" | "low";
+    cursor?: string;
+    limit?: number;
+  }): Promise<PluginRunPage<PluginRunIssueProjection>>;
+  listSubIssues(input?: {
+    issueId?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<PluginRunPage<PluginRunIssueProjection>>;
+  readIssueComments(input?: {
+    issueId?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<PluginRunPage<PluginRunIssueCommentProjection>>;
+  readIssueAgentRun(
+    runId: string,
+    input?: { cursor?: string },
+  ): Promise<ProviderSafeRunTrace>;
+}
+
+/**
+ * Worker-local facade for an opaque run-context handle. No Paperclip identity
+ * or scope coordinate is exposed to the plugin.
+ */
+export interface PluginToolRunContext {
+  readonly handle: PluginRunContextHandle;
+  readonly issues: PluginRunIssuesClient;
 }
 
 /**
@@ -358,8 +403,8 @@ export interface PluginEntityQuery {
 export interface PluginWorkspace {
   /** UUID primary key. */
   id: string;
-  /** UUID of the parent project. */
-  projectId: string;
+  /** UUID of the parent project, absent for a checked projectless workspace. */
+  projectId: string | null;
   /** Display name for this workspace. */
   name: string;
   /** Absolute filesystem path to the workspace directory. */
@@ -392,8 +437,8 @@ export interface PluginExecutionWorkspaceMetadata {
   id: string;
   /** UUID of the owning company. */
   companyId: string;
-  /** UUID of the parent project. */
-  projectId: string;
+  /** UUID of the parent project, absent for projectless workspaces. */
+  projectId: string | null;
   /** UUID of the backing project workspace, when present. */
   projectWorkspaceId: string | null;
   /** Absolute filesystem path to the workspace when locally realized. */
@@ -996,7 +1041,10 @@ export interface PluginToolsClient {
   register(
     name: string,
     declaration: Pick<PluginToolDeclaration, "displayName" | "description" | "parametersSchema">,
-    fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>,
+    fn: (
+      params: unknown,
+      runContext: PluginToolRunContext,
+    ) => Promise<ToolResult>,
   ): void;
 }
 
@@ -1080,409 +1128,121 @@ export interface PluginCompaniesClient {
   get(companyId: string): Promise<Company | null>;
 }
 
-/**
- * `ctx.issues.documents` — read and write issue documents.
- *
- * Requires:
- * - `issue.documents.read` for `list` and `get`
- * - `issue.documents.write` for `upsert` and `delete`
- *
- * @see PLUGIN_SPEC.md §14 — SDK Surface
- */
-export interface PluginIssueDocumentsClient {
-  /**
-   * List all documents attached to an issue.
-   *
-   * Returns summary metadata (id, key, title, format, timestamps) without
-   * the full document body. Use `get()` to fetch a specific document's body.
-   *
-   * Requires the `issue.documents.read` capability.
-   */
-  list(issueId: string, companyId: string): Promise<IssueDocumentSummary[]>;
+export type PluginIssueAttentionMask = Partial<
+  Record<
+    | "carry_context"
+    | "read_issue_comments"
+    | "read_issue_agent_run"
+    | "list_sub_issues"
+    | "read_sub_issue_comments"
+    | "read_sub_issue_agent_run"
+    | "list_company_issues"
+    | "read_company_issue_comments"
+    | "read_company_issue_agent_run",
+    boolean
+  >
+>;
 
-  /**
-   * Get a single document by key, including its full body content.
-   *
-   * Returns `null` if no document exists with the given key.
-   *
-   * Requires the `issue.documents.read` capability.
-   *
-   * @param issueId - UUID of the issue
-   * @param key - Document key (e.g. `"plan"`, `"design-spec"`)
-   * @param companyId - UUID of the company
-   */
-  get(issueId: string, key: string, companyId: string): Promise<IssueDocument | null>;
-
-  /**
-   * Create or update a document on an issue.
-   *
-   * If a document with the given key already exists, it is updated and a new
-   * revision is created. If it does not exist, it is created.
-   *
-   * Requires the `issue.documents.write` capability.
-   *
-   * @param input - Document data including issueId, key, body, and optional title/format/changeSummary
-   */
-  upsert(input: {
-    issueId: string;
-    key: string;
-    body: string;
-    companyId: string;
-    title?: string;
-    format?: string;
-    changeSummary?: string;
-  }): Promise<IssueDocument>;
-
-  /**
-   * Delete a document and all its revisions.
-   *
-   * No-ops silently if the document does not exist (idempotent).
-   *
-   * Requires the `issue.documents.write` capability.
-   *
-   * @param issueId - UUID of the issue
-   * @param key - Document key to delete
-   * @param companyId - UUID of the company
-   */
-  delete(issueId: string, key: string, companyId: string): Promise<void>;
+export interface PluginIssueCreateInput {
+  companyId: string;
+  request: string;
+  ownerAgentId: string;
+  callbackKey: string;
+  callbackVersion: string;
+  title?: string;
+  projectId?: string;
+  goalId?: string;
+  parentId?: string;
+  priority?: Issue["priority"];
+  attentionMask?: PluginIssueAttentionMask | null;
 }
 
-export interface PluginIssueMutationActor {
-  /** Agent that initiated the plugin operation, when the plugin is acting from an agent run. */
-  actorAgentId?: string | null;
-  /** Board/user that initiated the plugin operation, when known. */
-  actorUserId?: string | null;
-  /** Heartbeat run that initiated the operation. Required for checkout-aware agent actions. */
-  actorRunId?: string | null;
+export type PluginIssueUpdateInput =
+  | {
+      kind: "message";
+      message: string;
+    }
+  | {
+      kind: "reassign";
+      ownerAgentId: string;
+    };
+
+export interface PluginIssueWithdrawalResult {
+  operationId: string;
+  issue: Issue;
+  retried: boolean;
 }
 
-export interface PluginIssueRelationSummary {
-  blockedBy: IssueRelationIssueSummary[];
-  blocks: IssueRelationIssueSummary[];
+export interface PluginCreatorCallbackRegistration {
+  key: string;
+  version: string;
 }
 
-export interface PluginIssueRelationsClient {
-  /** Read blocker relationships for an issue. Requires `issue.relations.read`. */
-  get(issueId: string, companyId: string): Promise<PluginIssueRelationSummary>;
-  /** Replace the issue's blocked-by relation set. Requires `issue.relations.write`. */
-  setBlockedBy(
-    issueId: string,
-    blockedByIssueIds: string[],
-    companyId: string,
-    actor?: PluginIssueMutationActor,
-  ): Promise<PluginIssueRelationSummary>;
-  /** Add one or more blockers while preserving existing blockers. Requires `issue.relations.write`. */
-  addBlockers(
-    issueId: string,
-    blockerIssueIds: string[],
-    companyId: string,
-    actor?: PluginIssueMutationActor,
-  ): Promise<PluginIssueRelationSummary>;
-  /** Remove one or more blockers while preserving all other blockers. Requires `issue.relations.write`. */
-  removeBlockers(
-    issueId: string,
-    blockerIssueIds: string[],
-    companyId: string,
-    actor?: PluginIssueMutationActor,
-  ): Promise<PluginIssueRelationSummary>;
-}
-
-export interface PluginIssueCheckoutOwnership {
-  issueId: string;
-  status: Issue["status"];
-  assigneeAgentId: string | null;
-  checkoutRunId: string | null;
-  adoptedFromRunId: string | null;
-}
-
-export interface PluginIssueWakeupResult {
-  queued: boolean;
-  runId: string | null;
-}
-
-export interface PluginIssueWakeupBatchResult {
-  issueId: string;
-  queued: boolean;
-  runId: string | null;
-}
-
-export interface PluginIssueRunSummary {
-  id: string;
-  issueId: string | null;
-  agentId: string;
-  status: string;
-  invocationSource: string;
-  triggerDetail: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  error: string | null;
-  createdAt: string;
-}
-
-export interface PluginIssueApprovalSummary {
-  issueId: string;
-  id: string;
-  type: string;
-  status: string;
-  requestedByAgentId: string | null;
-  requestedByUserId: string | null;
-  decidedByUserId: string | null;
-  decidedAt: string | null;
-  createdAt: string;
-}
-
-export interface PluginIssueCostSummary {
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  billingCode: string | null;
-}
-
-export interface PluginBudgetIncidentSummary {
-  id: string;
-  scopeType: string;
-  scopeId: string;
-  metric: string;
-  windowKind: string;
-  thresholdType: string;
-  amountLimit: number;
-  amountObserved: number;
-  status: string;
-  approvalId: string | null;
-  createdAt: string;
-}
-
-export interface PluginIssueInvocationBlockSummary {
-  issueId: string;
-  agentId: string;
-  scopeType: "company" | "agent" | "project";
-  scopeId: string;
-  scopeName: string;
-  reason: string;
-}
-
-export interface PluginIssueOrchestrationSummary {
+export interface PluginCreatorCallbackDelivery {
+  deliveryId: string;
   issueId: string;
   companyId: string;
-  subtreeIssueIds: string[];
-  relations: Record<string, PluginIssueRelationSummary>;
-  approvals: PluginIssueApprovalSummary[];
-  runs: PluginIssueRunSummary[];
-  costs: PluginIssueCostSummary;
-  openBudgetIncidents: PluginBudgetIncidentSummary[];
-  invocationBlocks: PluginIssueInvocationBlockSummary[];
+  ownershipEpoch: number;
+  updateId: string;
+  commentId: string;
+  message: string;
+  /** Null for an owner message that intentionally preserves lifecycle state. */
+  status: "open" | "blocked" | "done" | "cancelled" | null;
+  disposition: {
+    message: string;
+    structuredResult?: unknown;
+  } | null;
+  committedSequence: number;
 }
 
-export interface PluginIssueSubtreeOptions {
-  /** Include the root issue in the result. Defaults to true. */
-  includeRoot?: boolean;
-  /** Include blocker relationship summaries keyed by issue ID. */
-  includeRelations?: boolean;
-  /** Include issue document summaries keyed by issue ID. */
-  includeDocuments?: boolean;
-  /** Include queued/running heartbeat runs keyed by issue ID. */
-  includeActiveRuns?: boolean;
-  /** Include assignee summaries keyed by agent ID. */
-  includeAssignees?: boolean;
+export interface PluginCreatorCallbackAcknowledgement {
+  deliveryId: string;
+  accepted: true;
 }
 
-export interface PluginIssueAssigneeSummary {
-  id: string;
-  name: string;
-  role: string;
-  title: string | null;
-  status: Agent["status"];
-}
-
-export interface PluginIssueSubtree {
-  rootIssueId: string;
-  companyId: string;
-  issueIds: string[];
-  issues: Issue[];
-  relations?: Record<string, PluginIssueRelationSummary>;
-  documents?: Record<string, IssueDocumentSummary[]>;
-  activeRuns?: Record<string, PluginIssueRunSummary[]>;
-  assignees?: Record<string, PluginIssueAssigneeSummary>;
-}
-
-export interface PluginIssueSummariesClient {
-  /**
-   * Read the compact orchestration inputs a workflow plugin needs for an
-   * issue or issue subtree. Requires `issues.orchestration.read`.
-   */
-  getOrchestration(input: {
-    issueId: string;
-    companyId: string;
-    includeSubtree?: boolean;
-    billingCode?: string | null;
-  }): Promise<PluginIssueOrchestrationSummary>;
-}
+export type PluginCreatorCallbackHandler = (
+  delivery: PluginCreatorCallbackDelivery,
+) =>
+  | Promise<PluginCreatorCallbackAcknowledgement>
+  | PluginCreatorCallbackAcknowledgement;
 
 /**
- * `ctx.issues` — read and mutate issues plus comments.
- *
- * Requires:
- * - `issues.read` for read operations
- * - `issues.create` for create
- * - `issues.update` for update
- * - `issues.checkout` for checkout ownership assertions
- * - `issues.wakeup` for assignment wakeup requests
- * - `issues.orchestration.read` for orchestration summaries
- * - `issue.comments.read` for `listComments`
- * - `issue.comments.create` for `createComment`
- * - `issue.interactions.create` for `createInteraction`, `suggestTasks`, `askUserQuestions`, `requestConfirmation`, and `requestCheckboxConfirmation`
- * - `issue.documents.read` for `documents.list` and `documents.get`
- * - `issue.documents.write` for `documents.upsert` and `documents.delete`
+ * `ctx.issues` is a capability-gated control-plane surface. It is not an
+ * agent runtime/context API and it cannot wake an agent except by creating or
+ * reassigning an ordinary issue through the canonical issue runtime.
  */
 export interface PluginIssuesClient {
   list(input: {
     companyId: string;
     projectId?: string;
-    assigneeAgentId?: string;
-    originKind?: PluginIssueOriginKind;
-    originKindPrefix?: string;
-    originId?: string;
-    status?: Issue["status"];
-    includePluginOperations?: boolean;
+    ownerAgentId?: string;
+    status?: "open" | "blocked" | "done" | "cancelled";
     limit?: number;
     offset?: number;
   }): Promise<Issue[]>;
   get(issueId: string, companyId: string): Promise<Issue | null>;
-  create(input: {
-    companyId: string;
-    projectId?: string;
-    goalId?: string;
-    parentId?: string;
-    inheritExecutionWorkspaceFromIssueId?: string;
-    title: string;
-    description?: string;
-    status?: Issue["status"];
-    priority?: Issue["priority"];
-    assigneeAgentId?: string;
-    assigneeUserId?: string | null;
-    requestDepth?: number;
-    billingCode?: string | null;
-    assigneeAdapterOverrides?: IssueAssigneeAdapterOverrides | null;
-    surfaceVisibility?: IssueSurfaceVisibility;
-    originKind?: PluginIssueOriginKind;
-    originId?: string | null;
-    originRunId?: string | null;
-    blockedByIssueIds?: string[];
-    labelIds?: string[];
-    executionWorkspaceId?: string | null;
-    executionWorkspacePreference?: string | null;
-    executionWorkspaceSettings?: Record<string, unknown> | null;
-    actor?: PluginIssueMutationActor;
-  }): Promise<Issue>;
+  registerCreatorCallback(
+    registration: PluginCreatorCallbackRegistration,
+    handler: PluginCreatorCallbackHandler,
+  ): Promise<void>;
+  create(input: PluginIssueCreateInput): Promise<Issue>;
   update(
     issueId: string,
-    patch: Partial<Pick<
-      Issue,
-      | "title"
-      | "description"
-      | "status"
-      | "priority"
-      | "assigneeAgentId"
-      | "assigneeUserId"
-      | "billingCode"
-      | "originKind"
-      | "originId"
-      | "originRunId"
-      | "requestDepth"
-      | "executionWorkspaceId"
-      | "executionWorkspacePreference"
-    >> & {
-      blockedByIssueIds?: string[];
-      labelIds?: string[];
-      executionWorkspaceSettings?: Record<string, unknown> | null;
-    },
+    input: PluginIssueUpdateInput,
     companyId: string,
-    actor?: PluginIssueMutationActor,
   ): Promise<Issue>;
-  assertCheckoutOwner(input: {
-    issueId: string;
-    companyId: string;
-    actorAgentId: string;
-    actorRunId: string;
-  }): Promise<PluginIssueCheckoutOwnership>;
-  /**
-   * Read a root issue's descendants with optional relation/document/run/assignee
-   * summaries. Requires `issue.subtree.read`.
-   */
-  getSubtree(
+  withdraw(
     issueId: string,
+    message: string,
     companyId: string,
-    options?: PluginIssueSubtreeOptions,
-  ): Promise<PluginIssueSubtree>;
-  requestWakeup(
-    issueId: string,
-    companyId: string,
-    options?: {
-      reason?: string;
-      contextSource?: string;
-      idempotencyKey?: string | null;
-    } & PluginIssueMutationActor,
-  ): Promise<PluginIssueWakeupResult>;
-  requestWakeups(
-    issueIds: string[],
-    companyId: string,
-    options?: {
-      reason?: string;
-      contextSource?: string;
-      idempotencyKeyPrefix?: string | null;
-    } & PluginIssueMutationActor,
-  ): Promise<PluginIssueWakeupBatchResult[]>;
-  listComments(issueId: string, companyId: string): Promise<IssueComment[]>;
-  createComment(
-    issueId: string,
-    body: string,
-    companyId: string,
-    options?: { authorAgentId?: string },
-  ): Promise<IssueComment>;
-  createInteraction(
-    issueId: string,
-    interaction: CreateIssueThreadInteraction,
-    companyId: string,
-    options?: { authorAgentId?: string },
-  ): Promise<IssueThreadInteraction>;
-  suggestTasks(
-    issueId: string,
-    interaction: Omit<Extract<CreateIssueThreadInteraction, { kind: "suggest_tasks" }>, "kind">,
-    companyId: string,
-    options?: { authorAgentId?: string },
-  ): Promise<SuggestTasksInteraction>;
-  askUserQuestions(
-    issueId: string,
-    interaction: Omit<Extract<CreateIssueThreadInteraction, { kind: "ask_user_questions" }>, "kind">,
-    companyId: string,
-    options?: { authorAgentId?: string },
-  ): Promise<AskUserQuestionsInteraction>;
-  requestConfirmation(
-    issueId: string,
-    interaction: Omit<Extract<CreateIssueThreadInteraction, { kind: "request_confirmation" }>, "kind">,
-    companyId: string,
-    options?: { authorAgentId?: string },
-  ): Promise<RequestConfirmationInteraction>;
-  requestCheckboxConfirmation(
-    issueId: string,
-    interaction: Omit<Extract<CreateIssueThreadInteraction, { kind: "request_checkbox_confirmation" }>, "kind">,
-    companyId: string,
-    options?: { authorAgentId?: string },
-  ): Promise<RequestCheckboxConfirmationInteraction>;
-  /** Read and write issue documents. Requires `issue.documents.read` / `issue.documents.write`. */
-  documents: PluginIssueDocumentsClient;
-  /** Read and write blocker relationships. */
-  relations: PluginIssueRelationsClient;
-  /** Read compact orchestration summaries. */
-  summaries: PluginIssueSummariesClient;
+  ): Promise<PluginIssueWithdrawalResult>;
 }
 
 /**
  * `ctx.agents` — read and manage agents.
  *
- * Requires `agents.read` for reads; `agents.pause` / `agents.resume` /
- * `agents.invoke` for write operations.
+ * Requires `agents.read` for reads and `agents.pause` / `agents.resume` for
+ * lifecycle operations. Provider invocation is issue-only.
  */
 export interface PluginAgentsClient {
   list(input: { companyId: string; status?: Agent["status"]; limit?: number; offset?: number }): Promise<Agent[]>;
@@ -1491,85 +1251,12 @@ export interface PluginAgentsClient {
   pause(agentId: string, companyId: string): Promise<Agent>;
   /** Resume a paused agent (sets status to idle). Throws if terminated, pending_approval, or not found. Requires `agents.resume`. */
   resume(agentId: string, companyId: string): Promise<Agent>;
-  /** Invoke (wake up) an agent with a prompt payload. Throws if paused, terminated, pending_approval, or not found. Requires `agents.invoke`. */
-  invoke(agentId: string, companyId: string, opts: { prompt: string; reason?: string }): Promise<{ runId: string }>;
   /** Resolve and reconcile manifest-declared plugin-managed agents by stable key. Requires `agents.managed`. */
   managed: {
     get(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
     reconcile(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
     reset(agentKey: string, companyId: string): Promise<PluginManagedAgentResolution>;
   };
-  /** Create, message, and close agent chat sessions. Requires `agent.sessions.*` capabilities. */
-  sessions: PluginAgentSessionsClient;
-}
-
-// ---------------------------------------------------------------------------
-// Agent Sessions — two-way chat with agents
-// ---------------------------------------------------------------------------
-
-/**
- * Represents an active conversational session with an agent.
- * Maps to an `AgentTaskSession` row on the host.
- */
-export interface AgentSession {
-  sessionId: string;
-  agentId: string;
-  companyId: string;
-  status: "active" | "closed";
-  createdAt: string;
-}
-
-/**
- * A streaming event received during a session's `sendMessage` call.
- * Delivered via JSON-RPC notifications from host to worker.
- */
-export interface AgentSessionEvent {
-  sessionId: string;
-  runId: string;
-  seq: number;
-  /** The kind of event: "chunk" for output data, "status" for run state changes, "done" for end-of-stream, "error" for failures. */
-  eventType: "chunk" | "status" | "done" | "error";
-  stream: "stdout" | "stderr" | "system" | null;
-  message: string | null;
-  payload: Record<string, unknown> | null;
-}
-
-/**
- * Result of sending a message to a session.
- */
-export interface AgentSessionSendResult {
-  runId: string;
-}
-
-/**
- * `ctx.agents.sessions` — create, message, and close agent chat sessions.
- *
- * Requires `agent.sessions.create` for create, `agent.sessions.list` for list,
- * `agent.sessions.send` for sendMessage, `agent.sessions.close` for close.
- */
-export interface PluginAgentSessionsClient {
-  /** Create a new conversational session with an agent. Requires `agent.sessions.create`. */
-  create(agentId: string, companyId: string, opts?: {
-    taskKey?: string;
-    reason?: string;
-  }): Promise<AgentSession>;
-
-  /** List active sessions for an agent owned by this plugin. Requires `agent.sessions.list`. */
-  list(agentId: string, companyId: string): Promise<AgentSession[]>;
-
-  /**
-   * Send a message to a session and receive streaming events via the `onEvent` callback.
-   * Returns immediately with `{ runId }`. Events are delivered asynchronously.
-   * Requires `agent.sessions.send`.
-   */
-  sendMessage(sessionId: string, companyId: string, opts: {
-    prompt: string;
-    reason?: string;
-    onEvent?: (event: AgentSessionEvent) => void;
-  }): Promise<AgentSessionSendResult>;
-
-  /** Close a session, releasing resources. Requires `agent.sessions.close`. */
-  close(sessionId: string, companyId: string): Promise<void>;
 }
 
 /**
@@ -1631,6 +1318,7 @@ export interface PluginAccessInvite {
   allowedJoinTypes: InviteJoinType;
   defaultsPayload: Record<string, unknown> | null;
   expiresAt: Date | string;
+  source: InviteSource;
   invitedByUserId: string | null;
   revokedAt: Date | string | null;
   acceptedAt: Date | string | null;
@@ -1695,17 +1383,10 @@ export interface PluginAuthorizationPolicyRecord {
 
 export interface PluginAssignmentPreviewInput {
   companyId: string;
-  actor:
-    | { type: "board"; userId?: string | null; companyIds?: string[]; isInstanceAdmin?: boolean }
-    | { type: "agent"; agentId: string; companyId: string };
-  target: {
-    issueId?: string | null;
-    projectId?: string | null;
-    parentIssueId?: string | null;
-    assigneeAgentId?: string | null;
-    assigneeUserId?: string | null;
-    status?: string | null;
-  };
+  subject:
+    | { type: "user"; userId: string }
+    | { type: "agent"; agentId: string };
+  targetAgentId: string;
 }
 
 export interface PluginAuthorizationDecisionResult {
@@ -1902,10 +1583,10 @@ export interface PluginContext {
   /** Read company metadata. Requires `companies.read`. */
   companies: PluginCompaniesClient;
 
-  /** Read and write issues, comments, and documents. Requires issue capabilities. */
+  /** Use the installation-bound issue control plane. */
   issues: PluginIssuesClient;
 
-  /** Read and manage agents. Requires `agents.read` for reads; `agents.pause` / `agents.resume` / `agents.invoke` for write ops. */
+  /** Read and manage agents. Provider invocation is issue-only. */
   agents: PluginAgentsClient;
 
   /** Read and mutate goals. Requires `goals.read` for reads; `goals.create` / `goals.update` for write ops. */

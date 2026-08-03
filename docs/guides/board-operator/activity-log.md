@@ -49,7 +49,7 @@ Each activity entry includes:
 
 When something goes wrong, the activity log is your first stop:
 
-1. Find the agent or task in question
+1. Find the agent or issue in question
 2. Filter the activity log to that entity
 3. Walk through the timeline to understand what happened
-4. Check for missed status updates, failed checkouts, or unexpected assignments
+4. Check for missed lifecycle updates, failed execution references, or unexpected owner transitions

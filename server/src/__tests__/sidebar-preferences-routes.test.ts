@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockSidebarPreferenceService = vi.hoisted(() => ({
   getCompanyOrder: vi.fn(),
@@ -66,13 +67,11 @@ describe("sidebar preference routes", () => {
   });
 
   it("returns company rail order for board users", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app).get("/api/sidebar-preferences/me");
 
@@ -85,13 +84,11 @@ describe("sidebar preference routes", () => {
   });
 
   it("updates company rail order for board users", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
       isInstanceAdmin: true,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app)
       .put("/api/sidebar-preferences/me")
@@ -102,13 +99,11 @@ describe("sidebar preference routes", () => {
   });
 
   it("returns project order for companies the board user can access", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app).get("/api/companies/company-1/sidebar-preferences/me");
 
@@ -117,14 +112,11 @@ describe("sidebar preference routes", () => {
   });
 
   it("logs project order updates for company-scoped writes", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-      runId: "run-1",
-    });
+    }));
 
     const res = await request(app)
       .put("/api/companies/company-1/sidebar-preferences/me")
@@ -146,13 +138,11 @@ describe("sidebar preference routes", () => {
   });
 
   it("rejects company-scoped reads when the board user lacks company access", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-2"],
-    });
+    }));
 
     const res = await request(app).get("/api/companies/company-1/sidebar-preferences/me");
 
@@ -165,7 +155,7 @@ describe("sidebar preference routes", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
     });
 
     const res = await request(app).get("/api/sidebar-preferences/me");

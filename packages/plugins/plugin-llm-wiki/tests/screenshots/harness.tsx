@@ -225,11 +225,11 @@ The host treats managed resources as fully editable. The operator can rename, ch
 
 const OPERATIONS = {
   operations: [
-    { id: "2944aaaaaaaa", operationType: "ingest", status: "running", hiddenIssueId: "ii-2944", hiddenIssueIdentifier: "PAP-OP-2944", hiddenIssueTitle: "Ingest URL: karpathy/llm-wiki gist", hiddenIssueStatus: "in_progress", projectId: "prj-llmw-7e1a", costCents: 1, warnings: [], affectedPages: [], createdAt: "2026-05-01T20:29:48Z", updatedAt: "2026-05-01T20:29:48Z" },
-    { id: "2943bbbbbbbb", operationType: "query", status: "done", hiddenIssueId: "ii-2943", hiddenIssueIdentifier: "PAP-OP-2943", hiddenIssueTitle: "How do plugin-managed routines resolve their default agent…", hiddenIssueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 1, warnings: [], affectedPages: [], createdAt: "2026-05-01T20:25:00Z", updatedAt: "2026-05-01T20:26:30Z" },
-    { id: "2942cccccccc", operationType: "file-as-page", status: "done", hiddenIssueId: "ii-2942", hiddenIssueIdentifier: "PAP-OP-2942", hiddenIssueTitle: "File answer as concepts/routine-agent-resolution.md", hiddenIssueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 0, warnings: [], affectedPages: [{ path: "wiki/concepts/routine-agent-resolution.md" }], createdAt: "2026-05-01T20:25:30Z", updatedAt: "2026-05-01T20:25:35Z" },
-    { id: "2941dddddddd", operationType: "query", status: "done", hiddenIssueId: "ii-2941", hiddenIssueIdentifier: "PAP-OP-2941", hiddenIssueTitle: "Compare managed agent reset vs detach…", hiddenIssueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 1, warnings: [], affectedPages: [], createdAt: "2026-05-01T20:18:00Z", updatedAt: "2026-05-01T20:18:30Z" },
-    { id: "2940eeeeeeee", operationType: "lint", status: "done", hiddenIssueId: "ii-2940", hiddenIssueIdentifier: "PAP-OP-2940", hiddenIssueTitle: "Nightly wiki lint · 17 findings (2 critical)", hiddenIssueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 4, warnings: [
+    { id: "2944aaaaaaaa", operationType: "ingest", status: "running", issueId: "ii-2944", issueIdentifier: "PAP-OP-2944", issueTitle: "Ingest URL: karpathy/llm-wiki gist", issueStatus: "open", projectId: "prj-llmw-7e1a", costCents: 1, warnings: [], affectedPages: [], createdAt: "2026-05-01T20:29:48Z", updatedAt: "2026-05-01T20:29:48Z" },
+    { id: "2943bbbbbbbb", operationType: "query", status: "done", issueId: "ii-2943", issueIdentifier: "PAP-OP-2943", issueTitle: "How do plugin-managed routines resolve their default agent…", issueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 1, warnings: [], affectedPages: [], createdAt: "2026-05-01T20:25:00Z", updatedAt: "2026-05-01T20:26:30Z" },
+    { id: "2942cccccccc", operationType: "file-as-page", status: "done", issueId: "ii-2942", issueIdentifier: "PAP-OP-2942", issueTitle: "File answer as concepts/routine-agent-resolution.md", issueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 0, warnings: [], affectedPages: [{ path: "wiki/concepts/routine-agent-resolution.md" }], createdAt: "2026-05-01T20:25:30Z", updatedAt: "2026-05-01T20:25:35Z" },
+    { id: "2941dddddddd", operationType: "query", status: "done", issueId: "ii-2941", issueIdentifier: "PAP-OP-2941", issueTitle: "Compare managed agent reset vs detach…", issueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 1, warnings: [], affectedPages: [], createdAt: "2026-05-01T20:18:00Z", updatedAt: "2026-05-01T20:18:30Z" },
+    { id: "2940eeeeeeee", operationType: "lint", status: "done", issueId: "ii-2940", issueIdentifier: "PAP-OP-2940", issueTitle: "Nightly wiki lint · 17 findings (2 critical)", issueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 4, warnings: [
       { severity: "critical", message: "Contradiction: managed-resources.md vs raw/karpathy-llm-wiki.md (run-time vs install-time resolution)", path: "wiki/concepts/managed-resources.md" },
       { severity: "critical", message: "Conflicting claim about plugin manifest version", path: "wiki/concepts/origin-kind.md" },
       { severity: "orphan", message: "people/aaron-norvig.md has no inbound backlinks", path: "wiki/people/aaron-norvig.md" },
@@ -238,8 +238,8 @@ const OPERATIONS = {
       { severity: "backlink", message: "Missing reverse links: managed-resources.md -> wiki/projects/llm-wiki/index.md" },
       { severity: "index", message: "index.md does not list 5 pages created in last 24h" },
     ], affectedPages: [], createdAt: "2026-05-01T18:00:00Z", updatedAt: "2026-05-01T18:02:30Z" },
-    { id: "2939ffffffff", operationType: "ingest", status: "done", hiddenIssueId: "ii-2939", hiddenIssueIdentifier: "PAP-OP-2939", hiddenIssueTitle: "paperclip-v1-spec.md · 3 pages created", hiddenIssueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 2, warnings: [], affectedPages: [{ path: "wiki/areas/control-plane.md" }, { path: "wiki/concepts/managed-resources.md" }, { path: "wiki/concepts/origin-kind.md" }], createdAt: "2026-05-01T18:30:00Z", updatedAt: "2026-05-01T18:32:00Z" },
-    { id: "2934gggggggg", operationType: "ingest", status: "failed", hiddenIssueId: "ii-2934", hiddenIssueIdentifier: "PAP-OP-2934", hiddenIssueTitle: "Internal wiki dump (PDF) · outbound URL not on allowlist", hiddenIssueStatus: "blocked", projectId: "prj-llmw-7e1a", costCents: 0, warnings: [{ message: "outbound URL not on allowlist" }], affectedPages: [], createdAt: "2026-05-01T16:00:00Z", updatedAt: "2026-05-01T16:00:30Z" },
+    { id: "2939ffffffff", operationType: "ingest", status: "done", issueId: "ii-2939", issueIdentifier: "PAP-OP-2939", issueTitle: "paperclip-v1-spec.md · 3 pages created", issueStatus: "done", projectId: "prj-llmw-7e1a", costCents: 2, warnings: [], affectedPages: [{ path: "wiki/areas/control-plane.md" }, { path: "wiki/concepts/managed-resources.md" }, { path: "wiki/concepts/origin-kind.md" }], createdAt: "2026-05-01T18:30:00Z", updatedAt: "2026-05-01T18:32:00Z" },
+    { id: "2934gggggggg", operationType: "ingest", status: "failed", issueId: "ii-2934", issueIdentifier: "PAP-OP-2934", issueTitle: "Internal wiki dump (PDF) · outbound URL not on allowlist", issueStatus: "blocked", projectId: "prj-llmw-7e1a", costCents: 0, warnings: [{ message: "outbound URL not on allowlist" }], affectedPages: [], createdAt: "2026-05-01T16:00:00Z", updatedAt: "2026-05-01T16:00:30Z" },
   ],
 };
 
@@ -680,10 +680,10 @@ function MockFileTree(props: FileTreeProps) {
 function MockIssuesList(props: IssuesListProps) {
   const isNarrow = typeof window !== "undefined" && window.innerWidth < 700;
   const rows = OPERATIONS.operations.map((op) => ({
-    id: op.hiddenIssueId ?? op.id,
-    identifier: op.hiddenIssueIdentifier ?? `op-${op.id.slice(0, 6)}`,
-    title: op.hiddenIssueTitle ?? `LLM Wiki ${op.operationType}`,
-    status: op.hiddenIssueStatus ?? op.status,
+    id: op.issueId ?? op.id,
+    identifier: op.issueIdentifier ?? `op-${op.id.slice(0, 6)}`,
+    title: op.issueTitle ?? `LLM Wiki ${op.operationType}`,
+    status: op.issueStatus ?? op.status,
     priority: op.operationType === "query" ? "medium" : "low",
     updatedAt: op.updatedAt,
     operationType: op.operationType,
@@ -693,7 +693,7 @@ function MockIssuesList(props: IssuesListProps) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <strong style={{ fontSize: 14 }}>Issues</strong>
         <span style={{ fontSize: 11, color: "var(--muted-foreground, oklch(0.708 0 0))" }}>
-          {rows.length} loaded · {props.filters?.originKindPrefix ?? props.projectId ?? "all"}
+          {rows.length} loaded · {props.projectId ?? "all"}
         </span>
       </div>
       <div style={{ border: "1px solid var(--border, oklch(0.269 0 0))", borderRadius: 8, overflow: "hidden", background: "var(--card, oklch(0.205 0 0))" }}>
@@ -770,19 +770,19 @@ function MockMarkdownEditor({
   );
 }
 
-function MockAssigneePicker({
+function MockOwnerPicker({
   value,
   placeholder,
   onChange,
 }: {
   value: string;
   placeholder?: string;
-  onChange: (value: string, selection: { assigneeAgentId: string | null; assigneeUserId: string | null }) => void;
+  onChange: (value: string, selection: { ownerAgentId: string | null }) => void;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onChange("agent:agt-c14a-7b2f-4e90", { assigneeAgentId: "agt-c14a-7b2f-4e90", assigneeUserId: null })}
+      onClick={() => onChange("agt-c14a-7b2f-4e90", { ownerAgentId: "agt-c14a-7b2f-4e90" })}
       style={{
         width: "100%",
         minHeight: 44,
@@ -1005,7 +1005,7 @@ const sdkUi: Record<string, unknown> = {
   MarkdownEditor: MockMarkdownEditor,
   FileTree: MockFileTree,
   IssuesList: MockIssuesList,
-  AssigneePicker: MockAssigneePicker,
+  OwnerPicker: MockOwnerPicker,
   ProjectPicker: MockProjectPicker,
   ManagedRoutinesList: MockManagedRoutinesList,
 };

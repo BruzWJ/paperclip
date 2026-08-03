@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { companyRoutes } from "../routes/companies.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 vi.mock("../services/index.js", () => ({
   companyService: () => ({
@@ -45,15 +46,16 @@ describe("company routes malformed issue path guard", () => {
   it("returns a clear error when companyId is missing for issues list path", async () => {
     const app = express();
     app.use((req, _res, next) => {
-      (req as any).actor = {
-        type: "agent",
-        agentId: "agent-1",
-        companyId: "company-1",
-        source: "agent_key",
-      };
+      (req as any).actor = testBoardSessionActor({
+        userId: "user-1",
+        companyIds: ["company-1"],
+      });
       next();
     });
-    app.use("/api/companies", companyRoutes({} as any));
+    app.use(
+      "/api/companies",
+      companyRoutes({} as any, undefined, {} as never),
+    );
 
     const res = await request(app).get("/api/companies/issues");
 

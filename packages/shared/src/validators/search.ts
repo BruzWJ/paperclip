@@ -101,12 +101,12 @@ function parseOptionalUuid(value: unknown, ctx: z.RefinementCtx, field: string):
   return normalized;
 }
 
-function parseAssigneeAgentId(value: unknown, ctx: z.RefinementCtx): string | null | undefined {
-  const normalized = parseOptionalString(value, ctx, "assigneeAgentId");
+function parseOwnerAgentId(value: unknown, ctx: z.RefinementCtx): string | null | undefined {
+  const normalized = parseOptionalString(value, ctx, "ownerAgentId");
   if (normalized === undefined) return undefined;
   if (normalized.toLowerCase() === "null") return null;
   if (!isUuidLike(normalized)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "assigneeAgentId must be a UUID or 'null'" });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "ownerAgentId must be a UUID or 'null'" });
     return undefined;
   }
   return normalized;
@@ -159,12 +159,12 @@ export const companySearchQuerySchema = z.object({
   priority: z.unknown()
     .optional()
     .transform((value, ctx) => parseEnumList(value, ctx, "priority", ISSUE_PRIORITIES)),
-  assigneeAgentId: z.unknown()
+  ownerAgentId: z.unknown()
     .optional()
-    .transform((value, ctx) => parseAssigneeAgentId(value, ctx)),
-  assigneeUserId: z.unknown()
+    .transform((value, ctx) => parseOwnerAgentId(value, ctx)),
+  ownerUserId: z.unknown()
     .optional()
-    .transform((value, ctx) => parseOptionalString(value, ctx, "assigneeUserId")),
+    .transform((value, ctx) => parseOptionalString(value, ctx, "ownerUserId")),
   projectId: z.unknown()
     .optional()
     .transform((value, ctx) => parseOptionalUuid(value, ctx, "projectId")),

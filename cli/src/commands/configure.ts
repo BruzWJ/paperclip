@@ -4,23 +4,20 @@ import { readConfig, writeConfig, configExists, resolveConfigPath } from "../con
 import type { PaperclipConfig } from "../config/schema.js";
 import { ensureLocalSecretsKeyFile } from "../config/secrets-key.js";
 import { promptDatabase } from "../prompts/database.js";
-import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig, promptSecrets } from "../prompts/secrets.js";
 import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
 import {
   resolveDefaultBackupDir,
-  resolveDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir,
   resolvePaperclipInstanceId,
 } from "../config/home.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
-type Section = "llm" | "database" | "logging" | "server" | "storage" | "secrets";
+type Section = "database" | "logging" | "server" | "storage" | "secrets";
 
 const SECTION_LABELS: Record<Section, string> = {
-  llm: "LLM Provider",
   database: "Database",
   logging: "Logging",
   server: "Server",
@@ -37,9 +34,6 @@ function defaultConfig(): PaperclipConfig {
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
-      embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(instanceId),
-      embeddedPostgresPort: 54329,
       backup: {
         enabled: true,
         intervalMinutes: 60,
@@ -52,7 +46,6 @@ function defaultConfig(): PaperclipConfig {
       logDir: resolveDefaultLogsDir(instanceId),
     },
     server: {
-      deploymentMode: "local_trusted",
       exposure: "private",
       bind: "loopback",
       host: "127.0.0.1",
@@ -61,7 +54,6 @@ function defaultConfig(): PaperclipConfig {
       serveUi: true,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
     telemetry: {
@@ -91,12 +83,13 @@ export async function configure(opts: {
   try {
     config = readConfig(opts.config) ?? defaultConfig();
   } catch (err) {
-    p.log.message(
-      pc.yellow(
-        `Existing config is invalid. Loading defaults so you can repair it now.\n${err instanceof Error ? err.message : String(err)}`,
-      ),
+    p.log.error(
+      `Existing config is invalid and cannot be upgraded in place.\n${err instanceof Error ? err.message : String(err)}`,
     );
-    config = defaultConfig();
+    p.log.message("Remove or replace the retired configuration, then run `paperclipai onboard`.");
+    p.outro("");
+    process.exitCode = 1;
+    return;
   }
 
   let section: Section | undefined = opts.section as Section | undefined;
@@ -134,15 +127,6 @@ export async function configure(opts: {
       case "database":
         config.database = await promptDatabase(config.database);
         break;
-      case "llm": {
-        const llm = await promptLlm();
-        if (llm) {
-          config.llm = llm;
-        } else {
-          delete config.llm;
-        }
-        break;
-      }
       case "logging":
         config.logging = await promptLogging();
         break;

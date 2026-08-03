@@ -27,12 +27,12 @@ If Codex, Claude, Cursor, or a skill launched through them starts Chrome or Chro
 - timeout handling sends `SIGTERM` and then `SIGKILL` to the direct child
 - there is no process-group creation or process-group kill path there today
 
-`packages/db/src/schema/heartbeat_runs.ts`
+`packages/db/schema/issue_execution_runs.ts`
 
-- `heartbeat_runs` stores `process_pid`
+- `issue_execution_runs` stores `process_pid`
 - there is no persisted `process_group_id`
 
-`server/src/services/heartbeat.ts`
+The retired run-centric execution service previously owned this behavior.
 
 - cancellation logic uses the in-memory child handle and calls `child.kill()`
 - orphaned-run recovery checks whether the recorded direct PID is alive
@@ -131,9 +131,9 @@ Work:
 Likely touched surfaces:
 
 - `packages/adapter-utils/src/server-utils.ts`
-- `packages/db/src/schema/heartbeat_runs.ts`
-- `packages/shared/src/types/heartbeat.ts`
-- `server/src/services/heartbeat.ts`
+- `packages/db/schema/issue_execution_runs.ts`
+- `packages/shared/src/types/issue-execution-run.ts`
+- the canonical issue-execution attempt executor and ACP subprocess boundary
 
 Important design choice:
 
@@ -160,7 +160,7 @@ Recommendation:
 Reason:
 
 - runtime services are long-lived and adoptable
-- heartbeat runs are task executions with stricter audit and cancellation semantics
+- heartbeat runs are issue executions with stricter audit and cancellation semantics
 
 ### Phase 3: add operator-visible cleanup tools
 
@@ -196,7 +196,7 @@ Tests to add:
 The first shipping slice should be narrow:
 
 1. introduce process-group ownership for local heartbeat-run adapters on POSIX
-2. persist group metadata on `heartbeat_runs`
+2. persist group metadata on `issue_execution_runs`
 3. switch timeout/cancel paths from direct-child kill to group kill
 4. add one regression test that proves descendants die with the parent run
 

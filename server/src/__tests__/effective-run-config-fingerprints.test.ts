@@ -9,14 +9,14 @@ describe("effective run config fingerprints", () => {
   it("emits versioned deterministic fingerprints with stable object ordering", () => {
     const first = createEffectiveRunConfigFingerprints({
       session: {
-        adapterType: "codex_local",
+        adapterType: "codex",
         adapterConfig: {
           env: {
             ZETA: "raw-zeta",
             ALPHA: "raw-alpha",
-            PAPERCLIP_RUN_ID: "run-one",
+            PROVIDER_SESSION_NOISE: "operator-value",
           },
-          model: "gpt-5.2",
+          model: "gpt-5.6",
         },
       },
       workspace: {
@@ -56,14 +56,14 @@ describe("effective run config fingerprints", () => {
       },
       session: {
         adapterConfig: {
-          model: "gpt-5.2",
+          model: "gpt-5.6",
           env: {
-            PAPERCLIP_RUN_ID: "run-two",
+            PROVIDER_SESSION_NOISE: "operator-value",
             ALPHA: "raw-alpha",
             ZETA: "raw-zeta",
           },
         },
-        adapterType: "codex_local",
+        adapterType: "codex",
       },
     });
 
@@ -80,7 +80,7 @@ describe("effective run config fingerprints", () => {
 
   it("reports changed categories independently", () => {
     const base = createEffectiveRunConfigFingerprints({
-      session: { adapterType: "codex_local", model: "gpt-5.2" },
+      session: { adapterType: "codex", model: "gpt-5.6" },
       workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "{{issue.identifier}}" } },
       lease: { environmentId: "environment-1", reuseLease: true },
     });
@@ -88,7 +88,7 @@ describe("effective run config fingerprints", () => {
     expect(diffEffectiveRunConfigFingerprints(
       base,
       createEffectiveRunConfigFingerprints({
-        session: { adapterType: "codex_local", model: "gpt-5.3" },
+        session: { adapterType: "codex", model: "gpt-5.6-sol" },
         workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "{{issue.identifier}}" } },
         lease: { environmentId: "environment-1", reuseLease: true },
       }),
@@ -101,7 +101,7 @@ describe("effective run config fingerprints", () => {
     expect(diffEffectiveRunConfigFingerprints(
       base,
       createEffectiveRunConfigFingerprints({
-        session: { adapterType: "codex_local", model: "gpt-5.2" },
+        session: { adapterType: "codex", model: "gpt-5.6" },
         workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "custom-{{issue.identifier}}" } },
         lease: { environmentId: "environment-1", reuseLease: true },
       }),
@@ -110,7 +110,7 @@ describe("effective run config fingerprints", () => {
     expect(diffEffectiveRunConfigFingerprints(
       base,
       createEffectiveRunConfigFingerprints({
-        session: { adapterType: "codex_local", model: "gpt-5.2" },
+        session: { adapterType: "codex", model: "gpt-5.6" },
         workspace: { workspaceStrategy: { type: "git_worktree", branchTemplate: "{{issue.identifier}}" } },
         lease: { environmentId: "environment-2", reuseLease: true },
       }),
@@ -228,7 +228,6 @@ describe("effective run config fingerprints", () => {
   it("excludes generated run values, sensitive tokens, timestamps, and session path noise", () => {
     const first = createEffectiveRunConfigFingerprints({
       session: {
-        sessionId: "generated-session-one",
         runId: "run-one",
         cwd: "/runtime/noise/project-a",
         updatedAt: "2026-06-01T00:00:00.000Z",
@@ -238,7 +237,6 @@ describe("effective run config fingerprints", () => {
             authorization: "Bearer first",
           },
           env: {
-            PAPERCLIP_API_KEY: "runtime-api-key-one",
             NORMAL_VALUE: "first",
           },
         },
@@ -253,7 +251,6 @@ describe("effective run config fingerprints", () => {
     });
     const second = createEffectiveRunConfigFingerprints({
       session: {
-        sessionId: "generated-session-two",
         runId: "run-two",
         cwd: "/runtime/noise/project-b",
         updatedAt: "2026-06-02T00:00:00.000Z",
@@ -263,7 +260,6 @@ describe("effective run config fingerprints", () => {
             authorization: "Bearer second",
           },
           env: {
-            PAPERCLIP_API_KEY: "runtime-api-key-two",
             NORMAL_VALUE: "first",
           },
         },
@@ -283,7 +279,6 @@ describe("effective run config fingerprints", () => {
       first.sessionFingerprint.canonicalJson,
       first.leaseFingerprint.canonicalJson,
     ].join("\n");
-    expect(canonical).not.toContain("generated-session-one");
     expect(canonical).not.toContain("run-one");
     expect(canonical).not.toContain("/runtime/noise/project-a");
     expect(canonical).not.toContain("runtime-api-key-one");

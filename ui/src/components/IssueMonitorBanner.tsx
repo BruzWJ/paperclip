@@ -68,7 +68,6 @@ export function buildMonitorSurfaceCopy(
 
   const eta = formatMonitorEta(derived.nextCheckAt, now); // "in 2h 12m" | "due now" | "overdue by 18m"
   const absolute = formatMonitorAbsolute(derived.nextCheckAt, {}, now); // local time, e.g. "Today, 4:08 PM"
-  const isScheduledRetryOnly = derived.source === "scheduled-retry";
 
   let bannerTitle: string;
   let stripTitle: string;
@@ -76,17 +75,17 @@ export function buildMonitorSurfaceCopy(
   switch (derived.state) {
     case "scheduled":
     case "retrying":
-      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Waiting on monitor — resumes ${eta}`;
+      bannerTitle = `Waiting on monitor — resumes ${eta}`;
       stripTitle = `Resumes ${eta}`;
       break;
     case "due-now":
-      bannerTitle = isScheduledRetryOnly ? "Agent retry due now" : "Waiting on monitor — due now";
+      bannerTitle = "Waiting on monitor — due now";
       stripTitle = "Due now";
       statusHint = "Checking momentarily…";
       break;
     case "overdue":
     default:
-      bannerTitle = isScheduledRetryOnly ? `Agent retry ${eta}` : `Waiting on monitor — ${eta}`;
+      bannerTitle = `Waiting on monitor — ${eta}`;
       stripTitle = capitalize(eta);
       statusHint = "Fires on next tick";
       break;
@@ -175,8 +174,9 @@ export function IssueMonitorBanner({
 
 /**
  * Slim, inline (not sticky) strip anchored directly above the reply composer.
- * Mirrors the banner's monitor state and reminds the reader that replying wakes
- * the agent early (PAP-14557 decisions 2 + wireframe 02).
+ * Mirrors the banner's monitor state and reminds the reader that only an
+ * explicit agent mention queues early execution (PAP-14557 decisions 2 +
+ * wireframe 02).
  */
 export function IssueMonitorComposerStrip({
   issue,
@@ -204,7 +204,7 @@ export function IssueMonitorComposerStrip({
         {onCheckNow ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
-        Sending a reply wakes the agent now — before the scheduled check.
+        Use an explicit @mention to queue the agent before the scheduled check.
       </p>
     </div>
   );

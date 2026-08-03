@@ -40,15 +40,15 @@ export const ARTIFACT_KIND_FILTERS: { value: ArtifactKindFilter; label: string }
 
 export const ARTIFACT_GROUP_OPTIONS: { value: ArtifactGroupBy; label: string }[] = [
   { value: "none", label: "None" },
-  { value: "task", label: "Task" },
-  { value: "parent_task", label: "Parent task" },
+  { value: "issue", label: "Task" },
+  { value: "parent_issue", label: "Parent task" },
 ];
 
 const KIND_VALUES = new Set(ARTIFACT_KIND_FILTERS.map((filter) => filter.value));
 
 function parseGroupBy(value: string | null): ArtifactGroupBy {
-  if (value === "none" || value === "task" || value === "parent_task") return value;
-  return "task";
+  if (value === "none" || value === "issue" || value === "parent_issue") return value;
+  return "issue";
 }
 
 function parseKind(value: string | null): ArtifactKindFilter {
@@ -129,7 +129,7 @@ export function Artifacts() {
       updateParams((next) => {
         // Switching the grouping mode always returns to the stack list.
         next.delete("groupIssueId");
-        if (value === "task") next.delete("groupBy");
+        if (value === "issue") next.delete("groupBy");
         else next.set("groupBy", value);
       });
     },
@@ -152,7 +152,7 @@ export function Artifacts() {
   const stackTo = useCallback(
     (issueId: string): To =>
       buildTo((next) => {
-        if (groupBy === "task") next.delete("groupBy");
+        if (groupBy === "issue") next.delete("groupBy");
         else if (groupBy !== "none") next.set("groupBy", groupBy);
         next.set("groupIssueId", issueId);
       }),
@@ -162,7 +162,7 @@ export function Artifacts() {
   const backToStacksTo = useMemo<To>(
     () =>
       buildTo((next) => {
-        if (groupBy === "task") next.delete("groupBy");
+        if (groupBy === "issue") next.delete("groupBy");
         next.delete("groupIssueId");
       }),
     [buildTo, groupBy],

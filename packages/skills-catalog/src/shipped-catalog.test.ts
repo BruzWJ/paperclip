@@ -6,10 +6,6 @@ import { catalogManifest, catalogSkills, resolveCatalogSkillRef } from "./index.
 
 const EXPECTED_BUNDLED_KEYS = [
   "paperclipai/bundled/docs/doc-maintenance",
-  "paperclipai/bundled/paperclip-operations/issue-triage",
-  "paperclipai/bundled/paperclip-operations/reflection-coach",
-  "paperclipai/bundled/paperclip-operations/summarize-status",
-  "paperclipai/bundled/paperclip-operations/task-planning",
   "paperclipai/bundled/product/paperclip-capsules",
   "paperclipai/bundled/product/wireframe",
   "paperclipai/bundled/quality/qa-acceptance",
@@ -28,7 +24,6 @@ const MAX_FRONTMATTER_DESCRIPTION_LENGTH = 300;
 const REPO_ROOT = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const SKILL_FRONTMATTER_ROOTS = [
   path.join(REPO_ROOT, ".agents"),
-  path.join(REPO_ROOT, "skills"),
   path.join(REPO_ROOT, "packages/adapters"),
   path.join(REPO_ROOT, "packages/plugins"),
   path.join(REPO_ROOT, "packages/skills-catalog/catalog"),
@@ -38,6 +33,7 @@ const SKILL_FRONTMATTER_ROOTS = [
 function listSkillFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory() && entry.name === "node_modules") return [];
     if (entry.isDirectory()) return listSkillFiles(entryPath);
     if (entry.isFile() && entry.name === "SKILL.md") return [entryPath];
     return [];
@@ -67,29 +63,7 @@ function readFrontmatterDescription(markdown: string): string | null {
 }
 
 describe("shipped skills catalog", () => {
-  it("ships the summarize-status streaming protocol", () => {
-    const skill = readFileSync(
-      path.join(
-        REPO_ROOT,
-        "packages/skills-catalog/catalog/bundled/paperclip-operations/summarize-status/SKILL.md",
-      ),
-      "utf8",
-    );
-
-    expect(skill).toContain("Post the first status update immediately, before doing anything else.");
-    expect(skill).toContain('STATUS: considering "Fix login redirect loop"…');
-    expect(skill).toContain("STATUS: reading the current slot revision…");
-    expect(skill).toContain("<<<SUMMARY-DRAFT>>>");
-    expect(skill).toContain("<<<END-SUMMARY-DRAFT>>>");
-    expect(skill).toContain("Assistant prose streams token-by-token to the UI; tool-call arguments do not");
-    expect(skill).toContain("UI gracefully falls back to its spinner");
-    expect(skill).toContain("**Review:**");
-    expect(skill).toContain("approve on a skim");
-    expect(skill).toContain("**Recent work:**");
-    expect(skill).toContain("Not a changelog");
-  });
-
-  it("keeps repo and catalog skill descriptions within the prompt budget cap", () => {
+  it("keeps maintainer and catalog skill descriptions within the prompt budget cap", () => {
     const violations: string[] = [];
     for (const skillFile of SKILL_FRONTMATTER_ROOTS.flatMap(listSkillFiles)) {
       const description = readFrontmatterDescription(readFileSync(skillFile, "utf8"));
@@ -140,9 +114,6 @@ describe("shipped skills catalog", () => {
       }
       if (!skill.description || skill.description.length < 40) {
         issues.push(`${skill.key} description must be at least 40 characters for catalog browse/search`);
-      }
-      if (skill.recommendedForRoles.length === 0) {
-        issues.push(`${skill.key} must list recommendedForRoles`);
       }
       if (skill.tags.length === 0) {
         issues.push(`${skill.key} must list tags`);

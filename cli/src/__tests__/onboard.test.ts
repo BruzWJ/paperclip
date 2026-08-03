@@ -1,13 +1,39 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+const databaseMocks = vi.hoisted(() => ({
+  createDb: vi.fn(),
+  execute: vi.fn(),
+  end: vi.fn(),
+  redactExternalPostgresConnectionString: vi.fn(() => "postgresql://***"),
+  validateExternalPostgresConnectionString: vi.fn((value: string) => value.trim()),
+}));
+
+vi.mock("@paperclipai/db", () => ({
+  createDb: databaseMocks.createDb,
+  redactExternalPostgresConnectionString:
+    databaseMocks.redactExternalPostgresConnectionString,
+  validateExternalPostgresConnectionString:
+    databaseMocks.validateExternalPostgresConnectionString,
+}));
+
 import { onboard } from "../commands/onboard.js";
 import type { PaperclipConfig } from "../config/schema.js";
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_CWD = process.cwd();
 const ORIGINAL_PATH = process.env.PATH;
+const TEST_DATABASE_URL = "postgresql://paperclip.invalid/paperclip_onboard_test";
+let isolatedHome = "";
 
 function createExistingConfigFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-"));
@@ -20,9 +46,7 @@ function createExistingConfigFixture() {
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
-      embeddedPostgresDataDir: path.join(runtimeRoot, "db"),
-      embeddedPostgresPort: 54329,
+      connectionString: TEST_DATABASE_URL,
       backup: {
         enabled: true,
         intervalMinutes: 60,
@@ -35,7 +59,6 @@ function createExistingConfigFixture() {
       logDir: path.join(runtimeRoot, "logs"),
     },
     server: {
-      deploymentMode: "local_trusted",
       exposure: "private",
       host: "127.0.0.1",
       port: 3100,
@@ -43,7 +66,6 @@ function createExistingConfigFixture() {
       serveUi: true,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
     telemetry: {
@@ -83,8 +105,14 @@ function createFreshConfigPath() {
 
 describe("onboard", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    databaseMocks.execute.mockResolvedValue([]);
+    databaseMocks.end.mockResolvedValue(undefined);
+    databaseMocks.createDb.mockReturnValue({
+      execute: databaseMocks.execute,
+      $client: { end: databaseMocks.end },
+    });
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
     delete process.env.PAPERCLIP_DB_BACKUP_DIR;
@@ -101,12 +129,19 @@ describe("onboard", () => {
     delete process.env.PAPERCLIP_BIND;
     delete process.env.PAPERCLIP_BIND_HOST;
     delete process.env.PAPERCLIP_TAILNET_BIND_HOST;
+    delete process.env.PAPERCLIP_DEPLOYMENT_MODE; // paperclip:canonical-human-auth-removal-proof
+    delete process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
+    delete process.env.BETTER_AUTH_SECRET;
     delete process.env.HOST;
+    isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-test-home-"));
+    process.env.PAPERCLIP_HOME = isolatedHome;
+    process.env.DATABASE_URL = TEST_DATABASE_URL;
   });
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
     process.chdir(ORIGINAL_CWD);
+    fs.rmSync(isolatedHome, { recursive: true, force: true });
   });
 
   it("preserves an existing config when rerun without flags", async () => {
@@ -116,7 +151,7 @@ describe("onboard", () => {
 
     expect(fs.readFileSync(fixture.configPath, "utf8")).toBe(fixture.configText);
     expect(fs.existsSync(`${fixture.configPath}.backup`)).toBe(false);
-    expect(fs.existsSync(path.join(path.dirname(fixture.configPath), ".env"))).toBe(true);
+    expect(fs.existsSync(path.join(path.dirname(fixture.configPath), ".env"))).toBe(false);
   });
 
   it("preserves an existing config when rerun with --yes", async () => {
@@ -126,10 +161,20 @@ describe("onboard", () => {
 
     expect(fs.readFileSync(fixture.configPath, "utf8")).toBe(fixture.configText);
     expect(fs.existsSync(`${fixture.configPath}.backup`)).toBe(false);
-    expect(fs.existsSync(path.join(path.dirname(fixture.configPath), ".env"))).toBe(true);
+    expect(fs.existsSync(path.join(path.dirname(fixture.configPath), ".env"))).toBe(false);
   });
 
-  it("keeps --yes onboarding on local trusted loopback defaults", async () => {
+  it("fails before writing config when no external database URL is supplied", async () => {
+    const configPath = createFreshConfigPath();
+    delete process.env.DATABASE_URL;
+
+    await expect(
+      onboard({ config: configPath, yes: true, invokedByRun: true }),
+    ).rejects.toThrow(/external PostgreSQL URL is required/i);
+    expect(fs.existsSync(configPath)).toBe(false);
+  });
+
+  it("keeps --yes onboarding on private loopback defaults", async () => {
     const configPath = createFreshConfigPath();
     process.env.HOST = "0.0.0.0";
     process.env.PAPERCLIP_BIND = "lan";
@@ -137,10 +182,13 @@ describe("onboard", () => {
     await onboard({ config: configPath, yes: true, invokedByRun: true });
 
     const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as PaperclipConfig;
-    expect(raw.server.deploymentMode).toBe("local_trusted");
+    expect(raw.server).not.toHaveProperty("deploymentMode"); // paperclip:canonical-human-auth-removal-proof
     expect(raw.server.exposure).toBe("private");
     expect(raw.server.bind).toBe("loopback");
     expect(raw.server.host).toBe("127.0.0.1");
+    expect(databaseMocks.createDb).toHaveBeenCalledWith(TEST_DATABASE_URL);
+    expect(databaseMocks.execute).toHaveBeenCalledWith("SELECT 1");
+    expect(databaseMocks.end).toHaveBeenCalledWith({ timeout: 5 });
   });
 
   it("creates instance-root config and data paths for a fresh PAPERCLIP_HOME", async () => {
@@ -155,23 +203,25 @@ describe("onboard", () => {
     const configPath = path.join(instanceRoot, "config.json");
     const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as PaperclipConfig;
 
-    expect(raw.database.embeddedPostgresDataDir).toBe(path.join(instanceRoot, "db"));
+    expect(raw.database.connectionString).toBeUndefined();
     expect(raw.database.backup.dir).toBe(path.join(instanceRoot, "data", "backups"));
     expect(raw.logging.logDir).toBe(path.join(instanceRoot, "logs"));
     expect(raw.storage.localDisk.baseDir).toBe(path.join(instanceRoot, "data", "storage"));
     expect(raw.secrets.localEncrypted.keyFilePath).toBe(path.join(instanceRoot, "secrets", "master.key"));
-    expect(fs.existsSync(path.join(instanceRoot, ".env"))).toBe(true);
+    const envPath = path.join(instanceRoot, ".env");
+    expect(fs.existsSync(envPath)).toBe(true);
+    expect(fs.readFileSync(envPath, "utf8")).toMatch(/^BETTER_AUTH_SECRET=[A-Za-z0-9_-]{43}$/m);
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
     expect(fs.existsSync(path.join(instanceRoot, "secrets", "master.key"))).toBe(true);
   });
 
-  it("supports authenticated/private quickstart bind presets", async () => {
+  it("supports private quickstart bind presets", async () => {
     const configPath = createFreshConfigPath();
     process.env.PAPERCLIP_TAILNET_BIND_HOST = "100.64.0.8";
 
     await onboard({ config: configPath, yes: true, invokedByRun: true, bind: "tailnet" });
 
     const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as PaperclipConfig;
-    expect(raw.server.deploymentMode).toBe("authenticated");
     expect(raw.server.exposure).toBe("private");
     expect(raw.server.bind).toBe("tailnet");
     expect(raw.server.host).toBe("100.64.0.8");
@@ -189,22 +239,18 @@ describe("onboard", () => {
     }
 
     const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as PaperclipConfig;
-    expect(raw.server.deploymentMode).toBe("authenticated");
     expect(raw.server.exposure).toBe("private");
     expect(raw.server.bind).toBe("tailnet");
     expect(raw.server.host).toBe("127.0.0.1");
   });
 
-  it("ignores deployment env overrides during --yes quickstart", async () => {
+  it("rejects the retired deployment-mode environment input", async () => {
     const configPath = createFreshConfigPath();
-    process.env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
+    process.env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated"; // paperclip:canonical-human-auth-removal-proof
 
-    await onboard({ config: configPath, yes: true, invokedByRun: true });
-
-    const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as PaperclipConfig;
-    expect(raw.server.deploymentMode).toBe("local_trusted");
-    expect(raw.server.exposure).toBe("private");
-    expect(raw.server.bind).toBe("loopback");
-    expect(raw.server.host).toBe("127.0.0.1");
+    await expect(
+      onboard({ config: configPath, yes: true, invokedByRun: true }),
+    ).rejects.toThrow(/PAPERCLIP_DEPLOYMENT_MODE is unsupported/); // paperclip:canonical-human-auth-removal-proof
+    expect(fs.existsSync(configPath)).toBe(false);
   });
 });

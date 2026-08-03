@@ -1,52 +1,56 @@
 import { useEffect, useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AdapterEnvironmentTestResult } from "@paperclipai/shared";
 import { useLocation, useNavigate, useParams } from "@/lib/router";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { companiesApi } from "../api/companies";
 import { goalsApi } from "../api/goals";
 import { agentsApi } from "../api/agents";
-import { approvalsApi } from "../api/approvals";
+import { companySkillsApi } from "../api/companySkills";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogPortal } from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger
-} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "../lib/utils";
-import {
-  extractModelName,
-  extractProviderIdWithFallback
-} from "../lib/model-utils";
 import { getUIAdapter } from "../adapters";
 import { listUIAdapters } from "../adapters";
 import { isVisualAdapterChoice } from "../adapters/metadata";
-import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
-import { useAdapterCapabilities } from "../adapters/use-adapter-capabilities";
+import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "./agent-config-defaults";
+import { AgentConfigForm } from "./AgentConfigForm";
+import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { parseOnboardingGoalInput } from "../lib/onboarding-goal";
-import { composeCeoInstructions } from "../lib/ceo-instructions";
 import {
   buildOnboardingIssuePayload,
   buildOnboardingProjectPayload,
   selectDefaultCompanyGoalId,
   selectReusableOnboardingProject,
 } from "../lib/onboarding-launch";
-import { buildNewAgentRuntimeConfig } from "../lib/new-agent-runtime-config";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@paperclipai/adapter-opencode-local";
+import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plane-payload";
+import {
+  companySkillChannelSchema,
+  companySkillPinSchema,
+  normalizeIssueAttentionMask,
+  parseCompanySkillPins,
+  type CompanySkillChannel,
+  type CompanySkillPin,
+  type IssueAttentionMask,
+} from "@paperclipai/shared";
+import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
+import {
+  RuntimeAgentConfigurationFields,
+  createEmptyRuntimeAgentConfigurationValues,
+  type RuntimeAgentConfigurationValues,
+} from "./RuntimeAgentConfigurationFields";
 import { resolveRouteOnboardingOptions } from "../lib/onboarding-route";
+import { resolveSkillSummaryText } from "../lib/company-skill-summary";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
 import { AgentCapsule } from "./AgentCapsule";
+import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
 import { Badge } from "@/components/ui/badge";
 import {
   Building2,
@@ -62,9 +66,6 @@ import {
 } from "lucide-react";
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
-// Plugin/external adapters use arbitrary type ids, so this mirrors the master
-// wizard's registry-driven approach rather than a fixed union.
-type AdapterType = string;
 
 const MISSION_PROMPT_CHIPS = [
   "Build a SaaS product",
@@ -82,14 +83,114 @@ function buildMissionFromQuestionnaire(q1: string, q2: string, q3: string, q4: s
 }
 
 const ONBOARDING_STORAGE_KEY = "paperclip-onboarding-state";
-const DEFAULT_TASK_TITLE = "Hire your first engineer and create a hiring plan";
-const DEFAULT_TASK_DESCRIPTION = `You are the CEO. You set the direction for the company.
-
-- hire a founding engineer
-- write a hiring plan
-- break the roadmap into concrete tasks and start delegating work`;
 const INCOMPLETE_ONBOARDING_STATE_MESSAGE =
   "Onboarding state is incomplete. Please restart onboarding and try again.";
+
+function loadSavedAdapterConfiguration(
+  saved: Record<string, unknown> | null,
+): CreateConfigValues {
+  const stored =
+    saved?.adapterConfigValues
+    && typeof saved.adapterConfigValues === "object"
+    && !Array.isArray(saved.adapterConfigValues)
+      ? saved.adapterConfigValues as Partial<CreateConfigValues>
+      : {};
+  const values: CreateConfigValues = { ...defaultCreateValues };
+  if (typeof stored.adapterType === "string") values.adapterType = stored.adapterType;
+  if (typeof stored.cheapModel === "string") values.cheapModel = stored.cheapModel;
+  if (typeof stored.cheapModelEnabled === "boolean") {
+    values.cheapModelEnabled = stored.cheapModelEnabled;
+  }
+  if (typeof stored.workspaceStrategyType === "string") {
+    values.workspaceStrategyType = stored.workspaceStrategyType;
+  }
+  if (typeof stored.workspaceBaseRef === "string") {
+    values.workspaceBaseRef = stored.workspaceBaseRef;
+  }
+  if (typeof stored.workspaceBranchTemplate === "string") {
+    values.workspaceBranchTemplate = stored.workspaceBranchTemplate;
+  }
+  if (typeof stored.worktreeParentDir === "string") {
+    values.worktreeParentDir = stored.worktreeParentDir;
+  }
+  if (typeof stored.runtimeServicesJson === "string") {
+    values.runtimeServicesJson = stored.runtimeServicesJson;
+  }
+  if (typeof stored.defaultEnvironmentId === "string") {
+    values.defaultEnvironmentId = stored.defaultEnvironmentId;
+  }
+  if (
+    stored.adapterSchemaValues
+    && typeof stored.adapterSchemaValues === "object"
+    && !Array.isArray(stored.adapterSchemaValues)
+  ) {
+    values.adapterSchemaValues = { ...stored.adapterSchemaValues };
+  }
+  if (typeof stored.timeoutSec === "number" && Number.isFinite(stored.timeoutSec)) {
+    values.timeoutSec = stored.timeoutSec;
+  }
+  return values;
+}
+
+function loadSavedRuntimeAccess(
+  saved: Record<string, unknown> | null,
+): RuntimeAgentConfigurationValues {
+  const defaults = createEmptyRuntimeAgentConfigurationValues();
+  const stored =
+    saved?.runtimeAccess &&
+    typeof saved.runtimeAccess === "object" &&
+    !Array.isArray(saved.runtimeAccess)
+      ? (saved.runtimeAccess as Record<string, unknown>)
+      : {};
+  function loadBooleanMap<Key extends string>(
+    fallback: Record<Key, boolean>,
+    value: unknown,
+  ): Record<Key, boolean> {
+    const record =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    return Object.fromEntries(
+      Object.keys(fallback).map((key) => [key, record[key] === true]),
+    ) as Record<Key, boolean>;
+  }
+  return {
+    contextGrants: loadBooleanMap(
+      defaults.contextGrants,
+      stored.contextGrants,
+    ),
+    actionGrants: loadBooleanMap(
+      defaults.actionGrants,
+      stored.actionGrants,
+    ),
+    mentionReachGrants: loadBooleanMap(
+      defaults.mentionReachGrants,
+      stored.mentionReachGrants,
+    ),
+    companyToolIds: Array.isArray(stored.companyToolIds)
+      ? stored.companyToolIds.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [],
+  };
+}
+
+function loadSavedCompanySkillPins(
+  saved: Record<string, unknown> | null,
+): CompanySkillPin[] {
+  try {
+    return parseCompanySkillPins(saved?.companySkillPins ?? []);
+  } catch {
+    return [];
+  }
+}
+
+function loadSavedCompanySkillChannel(
+  saved: Record<string, unknown> | null,
+): CompanySkillChannel {
+  if (saved === null) return "isolated_skills_home";
+  return companySkillChannelSchema.parse(saved.skillChannel);
+}
 
 function loadSavedState(): Record<string, unknown> | null {
   try {
@@ -130,10 +231,10 @@ export function OnboardingWizard() {
     ? onboardingOptions
     : routeOnboardingOptions ?? {};
 
-  // Sync disabled adapter types only when the wizard is visible. The wizard is
+  // Fetch the admitted catalog only when the wizard is visible. The wizard is
   // mounted globally, including on /auth, where protected adapter routes are
   // expected to reject signed-out browsers.
-  const disabledTypes = useDisabledAdaptersSync({ enabled: effectiveOnboardingOpen });
+  const admittedAdapters = useAdapterCatalogSync({ enabled: effectiveOnboardingOpen });
 
   const initialStep = effectiveOnboardingOptions.initialStep ?? 0;
   const existingCompanyId = effectiveOnboardingOptions.companyId;
@@ -150,8 +251,6 @@ export function OnboardingWizard() {
   const [growAutomate, setGrowAutomate] = useState((saved?.growAutomate as string) ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [modelOpen, setModelOpen] = useState(false);
-  const [modelSearch, setModelSearch] = useState("");
 
   // Step 1
   const [companyName, setCompanyName] = useState((saved?.companyName as string) ?? "");
@@ -165,20 +264,49 @@ export function OnboardingWizard() {
   const [q4, setQ4] = useState((saved?.q4 as string) ?? ""); // What would success look like?
 
   // Step 2
-  const [agentName, setAgentName] = useState((saved?.agentName as string) ?? "Chief of staff");
-  const [adapterType, setAdapterType] = useState<AdapterType>((saved?.adapterType as AdapterType) ?? "claude_local");
-  const [cwd, setCwd] = useState((saved?.cwd as string) ?? "");
-  const [model, setModel] = useState((saved?.model as string) ?? "");
-  const [command, setCommand] = useState((saved?.command as string) ?? "");
-  const [args, setArgs] = useState((saved?.args as string) ?? "");
-  const [url, setUrl] = useState((saved?.url as string) ?? "");
-  const [adapterEnvResult, setAdapterEnvResult] =
-    useState<AdapterEnvironmentTestResult | null>(null);
-  const [adapterEnvError, setAdapterEnvError] = useState<string | null>(null);
-  const [adapterEnvLoading, setAdapterEnvLoading] = useState(false);
-  const [forceUnsetAnthropicApiKey, setForceUnsetAnthropicApiKey] =
-    useState(false);
-  const [unsetAnthropicLoading, setUnsetAnthropicLoading] = useState(false);
+  const [agentName, setAgentName] = useState((saved?.agentName as string) ?? "");
+  const [agentTitle, setAgentTitle] = useState(
+    (saved?.agentTitle as string) ?? "",
+  );
+  const [agentCapabilities, setAgentCapabilities] = useState(
+    (saved?.agentCapabilities as string) ?? "",
+  );
+  const [runtimeAccess, setRuntimeAccess] =
+    useState<RuntimeAgentConfigurationValues>(
+      () => loadSavedRuntimeAccess(saved),
+    );
+  const [companySkillPins, setCompanySkillPins] = useState<CompanySkillPin[]>(
+    () => loadSavedCompanySkillPins(saved),
+  );
+  const [skillChannel, setSkillChannel] = useState<CompanySkillChannel>(
+    () => loadSavedCompanySkillChannel(saved),
+  );
+  const [initialTaskTitle, setInitialTaskTitle] = useState(
+    (saved?.initialTaskTitle as string) ?? "",
+  );
+  const [initialTaskRequest, setInitialTaskRequest] = useState(
+    (saved?.initialTaskRequest as string) ?? "",
+  );
+  const [initialIssueAttentionMask, setInitialIssueAttentionMask] =
+    useState<IssueAttentionMask | null>(() => {
+      try {
+        return normalizeIssueAttentionMask(
+          saved?.initialIssueAttentionMask ?? null,
+        );
+      } catch {
+        return null;
+      }
+    });
+  const [agentCreateIdempotencyKey, setAgentCreateIdempotencyKey] = useState(
+    () =>
+      (typeof saved?.agentCreateIdempotencyKey === "string"
+        ? saved.agentCreateIdempotencyKey
+        : crypto.randomUUID()),
+  );
+  const [configValues, setConfigValues] = useState<CreateConfigValues>(
+    () => loadSavedAdapterConfiguration(saved),
+  );
+  const adapterType = configValues.adapterType;
   const [showMoreAdapters, setShowMoreAdapters] = useState(false);
 
   // Created entity IDs — pre-populate from existing company when skipping step 1
@@ -198,6 +326,12 @@ export function OnboardingWizard() {
   const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(
     (saved?.createdIssueRef as string) ?? null
   );
+
+  const { data: companySkills } = useQuery({
+    queryKey: queryKeys.companySkills.list(createdCompanyId ?? ""),
+    queryFn: () => companySkillsApi.list(createdCompanyId!),
+    enabled: Boolean(createdCompanyId),
+  });
 
   // Reset the route-dismissed flag when navigating to a different path.
   useEffect(() => {
@@ -234,7 +368,11 @@ export function OnboardingWizard() {
     if (!effectiveOnboardingOpen) return;
     const state = {
       step, companyName, companyGoal, missionPath, missionConfirmed,
-      q1, q2, q3, q4, agentName, adapterType, cwd, model, command, args, url,
+      q1, q2, q3, q4, agentName, agentTitle, agentCapabilities,
+      runtimeAccess, companySkillPins, skillChannel, initialTaskTitle, initialTaskRequest,
+      initialIssueAttentionMask,
+      agentCreateIdempotencyKey, adapterType,
+      adapterConfigValues: configValues,
       createdCompanyId, createdCompanyPrefix, createdAgentId,
       createdCompanyGoalId, createdProjectId, createdIssueRef,
       onboardingPath, growWorkflows, growPainPoints, growAutomate,
@@ -242,123 +380,59 @@ export function OnboardingWizard() {
     localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(state));
   }, [
     effectiveOnboardingOpen, step, companyName, companyGoal, missionPath, missionConfirmed,
-    q1, q2, q3, q4, agentName, adapterType, cwd, model, command, args, url,
+    q1, q2, q3, q4, agentName, agentTitle, agentCapabilities,
+    runtimeAccess, companySkillPins, skillChannel, initialTaskTitle, initialTaskRequest,
+    initialIssueAttentionMask,
+    agentCreateIdempotencyKey, adapterType, configValues,
     createdCompanyId, createdCompanyPrefix, createdAgentId,
     createdCompanyGoalId, createdProjectId, createdIssueRef,
     onboardingPath, growWorkflows, growPainPoints, growAutomate,
   ]);
 
-  const {
-    data: adapterModels,
-    error: adapterModelsError,
-    isLoading: adapterModelsLoading,
-    isFetching: adapterModelsFetching
-  } = useQuery({
-    // The wizard doesn't expose an environment selector, so models always
-    // resolve against the local Paperclip host (environmentId = null).
-    queryKey: createdCompanyId
-      ? queryKeys.agents.adapterModels(createdCompanyId, adapterType, null)
-      : ["agents", "none", "adapter-models", adapterType, null],
-    queryFn: () => agentsApi.adapterModels(createdCompanyId!, adapterType, { environmentId: null }),
-    // Models are picked on step 4 (Connect a model).
-    enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4
+  const adapterConfigResolution = useMemo(() => {
+    try {
+      return {
+        config: getUIAdapter(adapterType).buildAdapterConfig(configValues),
+        error: null,
+      };
+    } catch (adapterConfigError) {
+      return {
+        config: {},
+        error:
+          adapterConfigError instanceof Error
+            ? adapterConfigError.message
+            : "Adapter configuration could not be built.",
+      };
+    }
+  }, [adapterType, configValues]);
+  const adapterConfiguration = useStructuralAdapterConfiguration({
+    adapterType,
+    adapterConfig: adapterConfigResolution.config,
+    enabled:
+      effectiveOnboardingOpen
+      && step === 4
+      && adapterConfigResolution.error === null,
   });
-  const getCapabilities = useAdapterCapabilities();
-  const adapterCaps = getCapabilities(adapterType);
-  const isLocalAdapterCaps =
-    adapterCaps.supportsInstructionsBundle ||
-    adapterCaps.supportsSkills ||
-    adapterCaps.supportsLocalAgentJwt;
-  const isLocalAdapter =
-    isLocalAdapterCaps ||
-    adapterType === "claude_local" ||
-    adapterType === "codex_local" ||
-    adapterType === "gemini_local" ||
-    adapterType === "opencode_local" ||
-    adapterType === "pi_local" ||
-    adapterType === "cursor";
-  // Build adapter grids dynamically from the UI registry + display metadata.
-  // External/plugin adapters automatically appear with generic defaults, and
-  // server-disabled types are filtered out.
+
+  // Build adapter grids from the exact server-admitted ACP catalog.
   const { recommendedAdapters, moreAdapters } = useMemo(() => {
-    const SYSTEM_ADAPTER_TYPES = new Set(["process", "http"]);
     const all = listUIAdapters()
-      .filter((a) =>
-        !SYSTEM_ADAPTER_TYPES.has(a.type) &&
-        !disabledTypes.has(a.type) &&
-        isVisualAdapterChoice(a.type)
-      )
-      .map((a) => ({ ...getAdapterDisplay(a.type), type: a.type }));
+      .filter((a) => isVisualAdapterChoice(a.type))
+      .map((a) => ({ ...getAdapterDisplay(a.type), label: a.label, type: a.type }));
 
     return {
       recommendedAdapters: all.filter((a) => a.recommended),
       moreAdapters: all.filter((a) => !a.recommended),
     };
-  }, [disabledTypes]);
+  }, [admittedAdapters]);
 
-  const COMMAND_PLACEHOLDERS: Record<string, string> = {
-    claude_local: "claude",
-    codex_local: "codex",
-    gemini_local: "gemini",
-    pi_local: "pi",
-    cursor: "agent",
-    opencode_local: "opencode",
-  };
-  const effectiveAdapterCommand =
-    command.trim() ||
-    (COMMAND_PLACEHOLDERS[adapterType] ?? adapterType.replace(/_local$/, ""));
-
-  useEffect(() => {
-    if (step !== 4) return;
-    setAdapterEnvResult(null);
-    setAdapterEnvError(null);
-  }, [step, adapterType, model, command, args, url]);
-
-  const selectedModel = (adapterModels ?? []).find((m) => m.id === model);
-  const hasAnthropicApiKeyOverrideCheck =
-    adapterEnvResult?.checks.some(
-      (check) =>
-        check.code === "claude_anthropic_api_key_overrides_subscription"
-    ) ?? false;
-  const shouldSuggestUnsetAnthropicApiKey =
-    adapterType === "claude_local" &&
-    adapterEnvResult?.status === "fail" &&
-    hasAnthropicApiKeyOverrideCheck;
-  const filteredModels = useMemo(() => {
-    const query = modelSearch.trim().toLowerCase();
-    return (adapterModels ?? []).filter((entry) => {
-      if (!query) return true;
-      const provider = extractProviderIdWithFallback(entry.id, "");
-      return (
-        entry.id.toLowerCase().includes(query) ||
-        entry.label.toLowerCase().includes(query) ||
-        provider.toLowerCase().includes(query)
-      );
+  function selectAdapterType(nextType: string) {
+    const { adapterType: _discard, ...defaults } = defaultCreateValues;
+    setConfigValues({
+      ...defaults,
+      adapterType: nextType,
     });
-  }, [adapterModels, modelSearch]);
-  const groupedModels = useMemo(() => {
-    if (adapterType !== "opencode_local") {
-      return [
-        {
-          provider: "models",
-          entries: [...filteredModels].sort((a, b) => a.id.localeCompare(b.id))
-        }
-      ];
-    }
-    const groups = new Map<string, Array<{ id: string; label: string }>>();
-    for (const entry of filteredModels) {
-      const provider = extractProviderIdWithFallback(entry.id);
-      const bucket = groups.get(provider) ?? [];
-      bucket.push(entry);
-      groups.set(provider, bucket);
-    }
-    return Array.from(groups.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([provider, entries]) => ({
-        provider,
-        entries: [...entries].sort((a, b) => a.id.localeCompare(b.id))
-      }));
-  }, [filteredModels, adapterType]);
+  }
 
   function reset() {
     localStorage.removeItem(ONBOARDING_STORAGE_KEY);
@@ -377,17 +451,17 @@ export function OnboardingWizard() {
     setQ2("");
     setQ3("");
     setQ4("");
-    setAgentName("Chief of staff");
-    setAdapterType("claude_local");
-    setModel("");
-    setCommand("");
-    setArgs("");
-    setUrl("");
-    setAdapterEnvResult(null);
-    setAdapterEnvError(null);
-    setAdapterEnvLoading(false);
-    setForceUnsetAnthropicApiKey(false);
-    setUnsetAnthropicLoading(false);
+    setAgentName("");
+    setAgentTitle("");
+    setAgentCapabilities("");
+    setRuntimeAccess(createEmptyRuntimeAgentConfigurationValues());
+    setCompanySkillPins([]);
+    setSkillChannel("isolated_skills_home");
+    setInitialTaskTitle("");
+    setInitialTaskRequest("");
+    setInitialIssueAttentionMask(null);
+    setAgentCreateIdempotencyKey(crypto.randomUUID());
+    setConfigValues({ ...defaultCreateValues });
     setCreatedCompanyId(null);
     setCreatedCompanyPrefix(null);
     setCreatedAgentId(null);
@@ -409,6 +483,10 @@ export function OnboardingWizard() {
   async function handleLaunchToDashboard() {
     if (!createdCompanyId || !createdAgentId) {
       setError(INCOMPLETE_ONBOARDING_STATE_MESSAGE);
+      return;
+    }
+    if (!initialTaskRequest.trim()) {
+      setError("Write the first issue request before launching.");
       return;
     }
     setLoading(true);
@@ -444,11 +522,12 @@ export function OnboardingWizard() {
         const issue = await issuesApi.create(
           createdCompanyId,
           buildOnboardingIssuePayload({
-            title: DEFAULT_TASK_TITLE,
-            description: DEFAULT_TASK_DESCRIPTION,
-            assigneeAgentId: createdAgentId,
+            title: initialTaskTitle,
+            request: initialTaskRequest,
+            ownerAgentId: createdAgentId,
             projectId,
-            goalId
+            goalId,
+            attentionMask: initialIssueAttentionMask,
           })
         );
         setCreatedIssueRef(issue.identifier ?? issue.id);
@@ -469,75 +548,8 @@ export function OnboardingWizard() {
     }
   }
 
-  function buildAdapterConfig(): Record<string, unknown> {
-    const adapter = getUIAdapter(adapterType);
-    const config = adapter.buildAdapterConfig({
-      ...defaultCreateValues,
-      adapterType,
-      model:
-        adapterType === "gemini_local"
-          ? model || DEFAULT_GEMINI_LOCAL_MODEL
-          : adapterType === "cursor"
-            ? model || DEFAULT_CURSOR_LOCAL_MODEL
-            : adapterType === "opencode_local"
-              ? model || DEFAULT_OPENCODE_LOCAL_MODEL
-              : model,
-      command,
-      args,
-      url,
-      dangerouslySkipPermissions:
-        adapterType === "claude_local" || adapterType === "opencode_local",
-      dangerouslyBypassSandbox:
-        adapterType === "codex_local"
-          ? DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX
-          : defaultCreateValues.dangerouslyBypassSandbox
-    });
-    if (adapterType === "claude_local" && forceUnsetAnthropicApiKey) {
-      const env =
-        typeof config.env === "object" &&
-        config.env !== null &&
-        !Array.isArray(config.env)
-          ? { ...(config.env as Record<string, unknown>) }
-          : {};
-      env.ANTHROPIC_API_KEY = { type: "plain", value: "" };
-      config.env = env;
-    }
-    return config;
-  }
-
-  async function runAdapterEnvironmentTest(
-    adapterConfigOverride?: Record<string, unknown>
-  ): Promise<AdapterEnvironmentTestResult | null> {
-    if (!createdCompanyId) {
-      setAdapterEnvError(
-        "Create or select a company before testing adapter environment."
-      );
-      return null;
-    }
-    setAdapterEnvLoading(true);
-    setAdapterEnvError(null);
-    try {
-      const result = await agentsApi.testEnvironment(
-        createdCompanyId,
-        adapterType,
-        {
-          adapterConfig: adapterConfigOverride ?? buildAdapterConfig()
-        }
-      );
-      setAdapterEnvResult(result);
-      return result;
-    } catch (err) {
-      setAdapterEnvError(
-        err instanceof Error ? err.message : "Adapter environment test failed"
-      );
-      return null;
-    } finally {
-      setAdapterEnvLoading(false);
-    }
-  }
-
   // Step 2 → 3 ("Confirm mission"): create the company + its company-level
-  // goal, then advance to naming the team lead. Guarded so revisiting the
+  // goal, then advance to naming the first agent. Guarded so revisiting the
   // mission step (e.g. via Back) doesn't create a duplicate company.
   async function handleConfirmMission() {
     if (createdCompanyId) {
@@ -567,7 +579,7 @@ export function OnboardingWizard() {
         queryKey: queryKeys.goals.list(company.id)
       });
 
-      setStep(3); // → Create your team lead
+      setStep(3); // → Create your first agent
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create company");
     } finally {
@@ -575,159 +587,64 @@ export function OnboardingWizard() {
     }
   }
 
-  // Step 4 → 5 ("Give it a heartbeat"): hire the lead agent + seed its
-  // instructions, then advance to Review. Guarded so revisiting step 4
-  // doesn't hire a second agent.
-  async function handleGiveHeartbeat() {
+  // Step 4 → 5: create the ordinary root agent through the three disjoint
+  // board control-plane contracts. No provider work begins until step 5
+  // creates the first ordinary issue.
+  async function handleCreateAgent() {
     if (!createdCompanyId) return;
     if (createdAgentId) {
       setStep(5);
       return;
     }
+    if (!adapterConfiguration.valid) {
+      const schemaIssue = adapterConfiguration.fieldErrors
+        .map((entry) => entry.message)
+        .join(" ");
+      setError(
+        adapterConfiguration.error
+          ?? (schemaIssue
+            || "Complete the explicit adapter configuration before creating the agent."),
+      );
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      if (adapterType === "opencode_local") {
-        const selectedModelId = model.trim();
-        if (!isValidOpenCodeModelId(selectedModelId)) {
-          setError(
-            "OpenCode requires an explicit model in provider/model format."
-          );
-          return;
-        }
-        if (adapterModelsError) {
-          setError(
-            adapterModelsError instanceof Error
-              ? adapterModelsError.message
-              : "Failed to load OpenCode models."
-          );
-          return;
-        }
-        if (adapterModelsLoading || adapterModelsFetching) {
-          setError(
-            "OpenCode models are still loading. Please wait and try again."
-          );
-          return;
-        }
-        const discoveredModels = adapterModels ?? [];
-        if (!discoveredModels.some((entry) => entry.id === selectedModelId)) {
-          setError(
-            discoveredModels.length === 0
-              ? "No OpenCode models discovered. Run `opencode models` and authenticate providers."
-              : `Configured OpenCode model is unavailable: ${selectedModelId}`
-          );
-          return;
-        }
-      }
-
-      if (isLocalAdapter) {
-        const result = adapterEnvResult ?? (await runAdapterEnvironmentTest());
-        if (!result) return;
-      }
-
-      const hire = await agentsApi.hire(createdCompanyId, {
+      const payloads = buildNewAgentControlPlanePayloads({
         name: agentName.trim(),
-        role: "ceo",
-        adapterType,
-        adapterConfig: buildAdapterConfig(),
-        runtimeConfig: buildNewAgentRuntimeConfig()
+        title: agentTitle,
+        capabilities: agentCapabilities,
+        reportsTo: null,
+        runtimeAccess,
+        configValues,
+        adapterConfig: adapterConfigResolution.config,
+        companySkillPins,
+        skillChannel,
       });
-      if (hire.approval) {
-        await approvalsApi.approve(
-          hire.approval.id,
-          "Approved during onboarding first-agent setup."
-        );
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.approvals.list(createdCompanyId)
-        });
-      }
-      const agent = hire.agent;
-      setCreatedAgentId(agent.id);
+      const created = await agentsApi.createRuntimeAgent(
+        createdCompanyId,
+        payloads.runtimeAgent,
+        agentCreateIdempotencyKey,
+      );
+      await agentsApi.createAdapterConfigRevision(
+        created.agent.id,
+        payloads.adapterRevision,
+        createdCompanyId,
+      );
+      await agentsApi.updateOperationalConfiguration(
+        created.agent.id,
+        payloads.operational,
+        createdCompanyId,
+      );
+      setCreatedAgentId(created.agent.id);
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.list(createdCompanyId)
       });
-
-      // Seed the CEO's agent instructions file so the agent always has
-      // company context + a hiring-plan output format rule. Non-fatal on
-      // failure — the agent can still function with adapter defaults.
-      try {
-        const bundle = await agentsApi.instructionsBundle(agent.id, createdCompanyId);
-        await agentsApi.saveInstructionsFile(
-          agent.id,
-          {
-            path: bundle.entryFile,
-            content: composeCeoInstructions({
-              companyName,
-              companyGoal,
-              growPath: onboardingPath === "grow",
-              growWorkflows,
-              growPainPoints,
-              growAutomate,
-              q1, q2, q3, q4,
-            }),
-          },
-          createdCompanyId,
-        );
-      } catch (err) {
-        console.warn("Failed to seed CEO instructions:", err);
-      }
-
-      // Advance to the Review step — the lead is now online. The user drives
-      // strategy + hiring from the planning chat after "Get started".
       setStep(5);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleUnsetAnthropicApiKey() {
-    if (!createdCompanyId || unsetAnthropicLoading) return;
-    setUnsetAnthropicLoading(true);
-    setError(null);
-    setAdapterEnvError(null);
-    setForceUnsetAnthropicApiKey(true);
-
-    const configWithUnset = (() => {
-      const config = buildAdapterConfig();
-      const env =
-        typeof config.env === "object" &&
-        config.env !== null &&
-        !Array.isArray(config.env)
-          ? { ...(config.env as Record<string, unknown>) }
-          : {};
-      env.ANTHROPIC_API_KEY = { type: "plain", value: "" };
-      config.env = env;
-      return config;
-    })();
-
-    try {
-      if (createdAgentId) {
-        await agentsApi.update(
-          createdAgentId,
-          { adapterConfig: configWithUnset },
-          createdCompanyId
-        );
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.agents.list(createdCompanyId)
-        });
-      }
-
-      const result = await runAdapterEnvironmentTest(configWithUnset);
-      if (result?.status === "fail") {
-        setError(
-          "Retried with ANTHROPIC_API_KEY unset in adapter config, but the environment test is still failing."
-        );
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to unset ANTHROPIC_API_KEY and retry."
-      );
-    } finally {
-      setUnsetAnthropicLoading(false);
     }
   }
 
@@ -738,9 +655,25 @@ export function OnboardingWizard() {
       if (step === 1 && companyName.trim()) setStep(2);
       else if (step === 2 && companyName.trim() && companyGoal.trim()) handleConfirmMission();
       else if (step === 3 && agentName.trim()) setStep(4);
-      else if (step === 4 && agentName.trim()) handleGiveHeartbeat();
+      else if (step === 4 && agentName.trim()) handleCreateAgent();
       else if (step === 5) handleLaunchToDashboard();
     }
+  }
+
+  const availableCompanySkills = (companySkills ?? []).filter(
+    (skill) => !skill.key.startsWith("paperclipai/paperclip/"),
+  );
+
+  function toggleCompanySkill(
+    pin: CompanySkillPin,
+    checked: boolean,
+  ) {
+    setCompanySkillPins((current) => {
+      const withoutKey = current.filter((entry) => entry.key !== pin.key);
+      return parseCompanySkillPins(
+        checked ? [...withoutKey, pin] : withoutKey,
+      );
+    });
   }
 
   if (!effectiveOnboardingOpen) return null;
@@ -832,7 +765,7 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">
                         {step === 3
-                          ? "Create your team lead"
+                          ? "Create your first agent"
                           : step === 4
                             ? "Connect a model"
                             : "Review"}
@@ -840,16 +773,13 @@ export function OnboardingWizard() {
                       <p className="text-xs text-muted-foreground">
                         {step === 3 ? (
                           <>
-                            Name your lead. They'll help drive{" "}
-                            <span className="font-medium text-foreground">{companyName}</span>{" "}
-                            toward its mission. We default to{" "}
-                            <span className="font-medium text-foreground">Chief of staff</span> —
-                            rename it to anything you like.
+                            Give this ordinary agent a name. You can configure
+                            additional agents and reporting lines later.
                           </>
                         ) : step === 4 ? (
-                          <>Pick the adapter and model your lead will run on, then check the environment.</>
+                          <>Choose this agent&apos;s explicit adapter, provider configuration, and environment.</>
                         ) : (
-                          <>Everything's set up — your team lead is online and ready to work.</>
+                          <>Everything&apos;s set up — your first agent is ready to work.</>
                         )}
                       </p>
                     </div>
@@ -866,7 +796,7 @@ export function OnboardingWizard() {
                       {step === 3 ? (
                         "an empty slot for an agent"
                       ) : step === 4 ? (
-                        "your team lead, taking shape"
+                        "your first agent, taking shape"
                       ) : (
                         <>
                           <span className="font-medium text-foreground">{agentName}</span>{" "}
@@ -888,7 +818,7 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Tell us about your team</h3>
                       <p className="text-xs text-muted-foreground">
-                        We'll use this to set up your lead agent and plan which agents to add.
+                        We&apos;ll use this to set up your first agent and plan which agents to add.
                       </p>
                     </div>
                   </div>
@@ -1024,7 +954,7 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Define your mission</h3>
                       <p className="text-xs text-muted-foreground">
-                        Your mission guides everything — your lead agent, who you bring on, and the work <strong>{companyName}</strong> takes on.
+                        Your mission guides the agents you configure and the work <strong>{companyName}</strong> takes on.
                       </p>
                     </div>
                   </div>
@@ -1212,7 +1142,7 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 3: Create your team lead — name only (capsule above) */}
+              {/* Step 3: Configure the first ordinary root agent. */}
               {step === 3 && (
                 <div className="space-y-5">
                   <div>
@@ -1221,17 +1151,141 @@ export function OnboardingWizard() {
                     </label>
                     <input
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                      placeholder="Chief of staff"
+                      placeholder="Agent name"
                       value={agentName}
                       onChange={(e) => setAgentName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && agentName.trim()) {
-                          e.preventDefault();
-                          setStep(4);
-                        }
-                      }}
                       autoFocus
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Title (display only)
+                    </label>
+                    <input
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                      placeholder="Optional title"
+                      value={agentTitle}
+                      onChange={(event) => setAgentTitle(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Capabilities
+                    </label>
+                    <textarea
+                      className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                      placeholder="What work can another agent select this agent to handle?"
+                      value={agentCapabilities}
+                      onChange={(event) =>
+                        setAgentCapabilities(event.target.value)
+                      }
+                    />
+                  </div>
+                  <RuntimeAgentConfigurationFields
+                    companyId={createdCompanyId ?? ""}
+                    value={runtimeAccess}
+                    onChange={setRuntimeAccess}
+                    disabled={loading}
+                  />
+                  <div className="space-y-3 rounded-md border border-border p-3">
+                    <div>
+                      <h4 className="text-sm font-medium">Company skills</h4>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Select exact immutable skill versions for this agent.
+                        Skills provide content only and grant no authority.
+                      </p>
+                    </div>
+                    <label className="grid gap-1.5 text-sm">
+                      <span className="font-medium">Skill channel</span>
+                      <select
+                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
+                        value={skillChannel}
+                        onChange={(event) =>
+                          setSkillChannel(
+                            companySkillChannelSchema.parse(event.target.value),
+                          )
+                        }
+                        disabled={loading}
+                      >
+                        <option value="isolated_skills_home">
+                          Paperclip-managed isolated skills home
+                        </option>
+                        <option value="operator_native">
+                          Operator-managed native skills
+                        </option>
+                      </select>
+                      <span className="text-xs text-muted-foreground">
+                        Isolated mode materializes pinned versions read-only.
+                        Operator-managed mode performs no Paperclip skill-file access.
+                      </span>
+                    </label>
+                    {availableCompanySkills.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No optional company skills installed yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {availableCompanySkills.map((skill) => {
+                          const inputId = `onboarding-skill-${skill.id}`;
+                          const selectedPin = companySkillPins.find(
+                            (pin) => pin.key === skill.key,
+                          );
+                          const summaryText = resolveSkillSummaryText(skill, {
+                            fallbackKey: true,
+                          });
+                          const parsedPin = companySkillPinSchema.safeParse({
+                            key: skill.key,
+                            versionId: skill.currentVersionId,
+                          });
+                          const pin = parsedPin.success
+                            ? parsedPin.data
+                            : null;
+                          return (
+                            <div
+                              key={skill.id}
+                              className="flex items-start gap-3"
+                            >
+                              <Checkbox
+                                id={inputId}
+                                checked={Boolean(selectedPin)}
+                                disabled={
+                                  loading || (pin === null && !selectedPin)
+                                }
+                                onCheckedChange={(next) => {
+                                  if (next === true && pin) {
+                                    toggleCompanySkill(pin, true);
+                                  } else if (next !== true && selectedPin) {
+                                    toggleCompanySkill(selectedPin, false);
+                                  }
+                                }}
+                              />
+                              <label
+                                htmlFor={inputId}
+                                className="grid gap-1 leading-none"
+                              >
+                                <span className="text-sm font-medium">
+                                  {skill.name}
+                                </span>
+                                {summaryText ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    {summaryText}
+                                  </span>
+                                ) : null}
+                                {selectedPin ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    Pinned to {selectedPin.versionId}
+                                  </span>
+                                ) : pin === null ? (
+                                  <span className="text-xs text-destructive">
+                                    No immutable version is available.
+                                  </span>
+                                ) : null}
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1255,16 +1309,7 @@ export function OnboardingWizard() {
                               : "border-border hover:bg-accent/50"
                           )}
                           onClick={() => {
-                            const nextType = opt.type;
-                            setAdapterType(nextType);
-                            if (nextType === "codex_local") {
-                              return;
-                            }
-                            if (nextType === "opencode_local") {
-                              setModel(DEFAULT_OPENCODE_LOCAL_MODEL);
-                              return;
-                            }
-                            setModel("");
+                            selectAdapterType(opt.type);
                           }}
                         >
                           {opt.recommended && (
@@ -1309,22 +1354,8 @@ export function OnboardingWizard() {
                                  : "border-border hover:bg-accent/50"
                              )}
                              onClick={() => {
-                               if (opt.comingSoon) return;
-                               const nextType = opt.type;
-                              setAdapterType(nextType);
-                              if (nextType === "gemini_local" && !model) {
-                                setModel(DEFAULT_GEMINI_LOCAL_MODEL);
-                                return;
-                              }
-                              if (nextType === "cursor" && !model) {
-                                setModel(DEFAULT_CURSOR_LOCAL_MODEL);
-                                return;
-                              }
-                              if (nextType === "opencode_local") {
-                                setModel(DEFAULT_OPENCODE_LOCAL_MODEL);
-                                return;
-                              }
-                              setModel("");
+                              if (opt.comingSoon) return;
+                              selectAdapterType(opt.type);
                             }}
                           >
                             <opt.icon className="h-4 w-4" />
@@ -1340,251 +1371,59 @@ export function OnboardingWizard() {
                     )}
                   </div>
 
-                  {/* Conditional adapter fields */}
-                  {isLocalAdapter && (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">
-                          Model
-                        </label>
-                        <Popover
-                          open={modelOpen}
-                          onOpenChange={(next) => {
-                            setModelOpen(next);
-                            if (!next) setModelSearch("");
-                          }}
-                        >
-                          <PopoverTrigger asChild>
-                            <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
-                              <span
-                                className={cn(
-                                  !model && "text-muted-foreground"
-                                )}
-                              >
-                                {selectedModel
-                                  ? selectedModel.label
-                                  : model ||
-                                    (adapterType === "opencode_local"
-                                      ? "Select model (required)"
-                                      : "Default")}
-                              </span>
-                              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            className="w-(--radix-popover-trigger-width) p-1"
-                            align="start"
-                          >
-                            <input
-                              className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                              placeholder="Search models..."
-                              value={modelSearch}
-                              onChange={(e) => setModelSearch(e.target.value)}
-                              autoFocus
-                            />
-                            {adapterType !== "opencode_local" && (
-                              <button
-                                className={cn(
-                                  "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
-                                  !model && "bg-accent"
-                                )}
-                                onClick={() => {
-                                  setModel("");
-                                  setModelOpen(false);
-                                }}
-                              >
-                                Default
-                              </button>
-                            )}
-                            <div className="max-h-(--sz-240px) overflow-y-auto">
-                              {groupedModels.map((group) => (
-                                <div
-                                  key={group.provider}
-                                  className="mb-1 last:mb-0"
-                                >
-                                  {adapterType === "opencode_local" && (
-                                    <div className="px-2 py-1 text-(length:--text-nano) uppercase tracking-wide text-muted-foreground">
-                                      {group.provider} ({group.entries.length})
-                                    </div>
-                                  )}
-                                  {group.entries.map((m) => (
-                                    <button
-                                      key={m.id}
-                                      className={cn(
-                                        "flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
-                                        m.id === model && "bg-accent"
-                                      )}
-                                      onClick={() => {
-                                        setModel(m.id);
-                                        setModelOpen(false);
-                                      }}
-                                    >
-                                      <span
-                                        className="block w-full text-left truncate"
-                                        title={m.id}
-                                      >
-                                        {adapterType === "opencode_local"
-                                          ? extractModelName(m.id)
-                                          : m.label}
-                                      </span>
-                                    </button>
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
-                            {filteredModels.length === 0 && (
-                              <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                                No models discovered.
-                              </p>
-                            )}
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                    </div>
-                  )}
+                  <AgentConfigForm
+                    mode="create"
+                    values={configValues}
+                    onChange={(patch) =>
+                      setConfigValues((current) => ({
+                        ...current,
+                        ...patch,
+                      }))
+                    }
+                    showAdapterTypeField={false}
+                    applyAdapterSchemaDefaults={false}
+                    requireExplicitExecutionEnvironment
+                  />
 
-                  {isLocalAdapter && (
-                    <div className="space-y-2 rounded-md border border-border p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-medium">
-                            Adapter environment check
-                          </p>
-                          <p className="text-(length:--text-micro) text-muted-foreground">
-                            Runs a live probe that asks the adapter CLI to
-                            respond with hello.
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2.5 text-xs"
-                          disabled={adapterEnvLoading}
-                          onClick={() => void runAdapterEnvironmentTest()}
-                        >
-                          {adapterEnvLoading ? "Testing..." : "Test now"}
-                        </Button>
-                      </div>
+                  <div className="space-y-3 rounded-md border border-border p-3">
+                    {!adapterType ? (
+                      <p className="text-xs text-muted-foreground">
+                        Select an adapter to begin its explicit configuration.
+                      </p>
+                    ) : adapterConfigResolution.error ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        {adapterConfigResolution.error}
+                      </p>
+                    ) : adapterConfiguration.isLoading ? (
+                      <p className="text-xs text-muted-foreground">
+                        Loading adapter configuration schema…
+                      </p>
+                    ) : adapterConfiguration.error || !adapterConfiguration.schema ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        Adapter configuration schema unavailable.{" "}
+                        {adapterConfiguration.error
+                          ?? "The adapter did not return a schema."}
+                      </p>
+                    ) : adapterConfiguration.fieldErrors.length > 0 ? (
+                      <p role="alert" className="text-xs text-destructive">
+                        Adapter configuration is incomplete:{" "}
+                        {adapterConfiguration.fieldErrors
+                          .map((entry) => entry.message)
+                          .join(" ")}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Draft configuration is structurally valid. Runtime
+                        readiness is checked only after the exact execution
+                        context is persisted.
+                      </p>
+                    )}
 
-                      {adapterEnvError && (
-                        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-(length:--text-micro) text-destructive">
-                          {adapterEnvError}
-                        </div>
-                      )}
-
-                      {adapterEnvResult &&
-                      adapterEnvResult.status === "pass" ? (
-                        <div className="flex items-center gap-2 rounded-md border border-green-300 dark:border-green-500/40 bg-green-50 dark:bg-green-500/10 px-3 py-2 text-xs text-green-700 dark:text-green-300 animate-in fade-in slide-in-from-bottom-1 duration-300">
-                          <Check className="h-3.5 w-3.5 shrink-0" />
-                          <span className="font-medium">Passed</span>
-                        </div>
-                      ) : adapterEnvResult ? (
-                        <AdapterEnvironmentResult result={adapterEnvResult} />
-                      ) : null}
-
-                      {shouldSuggestUnsetAnthropicApiKey && (
-                        <div className="rounded-md border border-amber-300/60 bg-amber-50/40 px-2.5 py-2 space-y-2">
-                          <p className="text-(length:--text-micro) text-amber-900/90 leading-relaxed">
-                            Claude failed while{" "}
-                            <span className="font-mono">ANTHROPIC_API_KEY</span>{" "}
-                            is set. You can clear it in this adapter config
-                            and retry the probe.
-                          </p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2.5 text-xs"
-                            disabled={
-                              adapterEnvLoading || unsetAnthropicLoading
-                            }
-                            onClick={() => void handleUnsetAnthropicApiKey()}
-                          >
-                            {unsetAnthropicLoading
-                              ? "Retrying..."
-                              : "Unset ANTHROPIC_API_KEY"}
-                          </Button>
-                        </div>
-                      )}
-
-                      {adapterEnvResult && adapterEnvResult.status === "fail" && (
-                        <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-(length:--text-micro) space-y-1.5">
-                          <p className="font-medium">Manual debug</p>
-                          <p className="text-muted-foreground font-mono break-all">
-                            {adapterType === "cursor"
-                              ? `${effectiveAdapterCommand} -p --mode ask --output-format json \"Respond with hello.\"`
-                              : adapterType === "codex_local"
-                              ? `${effectiveAdapterCommand} exec --json -`
-                              : adapterType === "gemini_local"
-                                ? `${effectiveAdapterCommand} --output-format json "Respond with hello."`
-                              : adapterType === "opencode_local"
-                                ? `${effectiveAdapterCommand} run --format json "Respond with hello."`
-                              : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
-                          </p>
-                          <p className="text-muted-foreground">
-                            Prompt:{" "}
-                            <span className="font-mono">Respond with hello.</span>
-                          </p>
-                          {adapterType === "cursor" ||
-                          adapterType === "codex_local" ||
-                          adapterType === "gemini_local" ||
-                          adapterType === "opencode_local" ? (
-                            <p className="text-muted-foreground">
-                              If auth fails, set{" "}
-                              <span className="font-mono">
-                                {adapterType === "cursor"
-                                  ? "CURSOR_API_KEY"
-                                  : adapterType === "gemini_local"
-                                    ? "GEMINI_API_KEY"
-                                    : "OPENAI_API_KEY"}
-                              </span>{" "}
-                              in env or run{" "}
-                              <span className="font-mono">
-                                {adapterType === "cursor"
-                                  ? "agent login"
-                                  : adapterType === "codex_local"
-                                    ? "codex login"
-                                    : adapterType === "gemini_local"
-                                      ? "gemini auth"
-                                      : "opencode auth login"}
-                              </span>
-                              .
-                            </p>
-                          ) : (
-                            <p className="text-muted-foreground">
-                              If login is required, run{" "}
-                              <span className="font-mono">claude login</span>{" "}
-                              and retry.
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {(adapterType === "http" ||
-                    adapterType === "openclaw_gateway") && (
-                    <div>
-                      <label className="text-xs text-muted-foreground mb-1 block">
-                        {adapterType === "openclaw_gateway"
-                          ? "Gateway URL"
-                          : "Webhook URL"}
-                      </label>
-                      <input
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                        placeholder={
-                          adapterType === "openclaw_gateway"
-                            ? "ws://127.0.0.1:18789"
-                            : "https://..."
-                        }
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                      />
-                    </div>
-                  )}
+                  </div>
                 </div>
               )}
 
-              {/* Step 5: Review — lead is online (shared capsule above) */}
+              {/* Step 5: Review — the ordinary agent is configured */}
               {step === 5 && (
                 <div className="space-y-5 py-1">
                   {/* Review checklist — everything that's now set up */}
@@ -1593,7 +1432,8 @@ export function OnboardingWizard() {
                       { label: "Company name", done: Boolean(companyName.trim()) },
                       { label: "Mission", done: Boolean(companyGoal.trim()) },
                       { label: "Agent created", done: Boolean(createdAgentId) },
-                      { label: "Model connected", done: Boolean(createdAgentId) },
+                      { label: "Runtime access configured", done: Boolean(createdAgentId) },
+                      { label: "Adapter revision selected", done: Boolean(createdAgentId) },
                     ].map(({ label, done }) => (
                       <div key={label} className="flex items-center gap-2 text-sm">
                         <span
@@ -1618,9 +1458,51 @@ export function OnboardingWizard() {
                       "{companyGoal}"
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground text-center">
-                    We'll create the first task for {agentName} and take you to the dashboard.
-                  </p>
+                  <div className="space-y-3 rounded-md border border-border p-3">
+                    <div>
+                      <h3 className="text-sm font-medium">First issue</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        This board-authored request is the only action that
+                        starts the agent's first provider run.
+                      </p>
+                    </div>
+                    <input
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+                      placeholder="Issue title (optional)"
+                      value={initialTaskTitle}
+                      onChange={(event) =>
+                        setInitialTaskTitle(event.target.value)
+                      }
+                    />
+                    <textarea
+                      className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+                      placeholder={`Describe ${agentName || "the agent"}'s first concrete assignment`}
+                      value={initialTaskRequest}
+                      onChange={(event) =>
+                        setInitialTaskRequest(event.target.value)
+                      }
+                    />
+                    <div className="space-y-2 border-t border-border pt-3">
+                      <div>
+                        <h4 className="text-xs font-medium">
+                          Narrow this issue&apos;s attention
+                        </h4>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Optional. This can only remove context granted on the
+                          agent; it cannot grant additional access.
+                        </p>
+                      </div>
+                      <IssueAttentionMaskMatrix
+                        value={initialIssueAttentionMask}
+                        onChange={
+                          createdIssueRef
+                            ? undefined
+                            : setInitialIssueAttentionMask
+                        }
+                        readOnly={Boolean(createdIssueRef)}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1687,22 +1569,30 @@ export function OnboardingWizard() {
                   {step === 4 && (
                     <Button
                       size="sm"
-                      disabled={!agentName.trim() || loading || adapterEnvLoading}
-                      onClick={handleGiveHeartbeat}
+                      disabled={
+                        !agentName.trim() ||
+                        loading ||
+                        !adapterConfiguration.valid
+                      }
+                      onClick={handleCreateAgent}
                     >
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                       ) : (
                         <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "Bringing to life..." : "Give it a heartbeat"}
+                      {loading ? "Creating agent..." : "Create agent"}
                     </Button>
                   )}
                   {step === 5 && (
                     <Button
                       size="sm"
                       onClick={handleLaunchToDashboard}
-                      disabled={loading || launchStateIncomplete}
+                      disabled={
+                        loading ||
+                        launchStateIncomplete ||
+                        !initialTaskRequest.trim()
+                      }
                     >
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
@@ -1731,59 +1621,5 @@ export function OnboardingWizard() {
         </div>
       </DialogPortal>
     </Dialog>
-  );
-}
-
-function AdapterEnvironmentResult({
-  result
-}: {
-  result: AdapterEnvironmentTestResult;
-}) {
-  const statusLabel =
-    result.status === "pass"
-      ? "Passed"
-      : result.status === "warn"
-      ? "Warnings"
-      : "Failed";
-  const statusClass =
-    result.status === "pass"
-      ? "text-green-700 dark:text-green-300 border-green-300 dark:border-green-500/40 bg-green-50 dark:bg-green-500/10"
-      : result.status === "warn"
-      ? "text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10"
-      : "text-red-700 dark:text-red-300 border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10";
-
-  return (
-    <div className={`rounded-md border px-2.5 py-2 text-(length:--text-micro) ${statusClass}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium">{statusLabel}</span>
-        <span className="opacity-80">
-          {new Date(result.testedAt).toLocaleTimeString()}
-        </span>
-      </div>
-      <div className="mt-1.5 space-y-1">
-        {result.checks.map((check, idx) => (
-          <div
-            key={`${check.code}-${idx}`}
-            className="leading-relaxed break-words"
-          >
-            <span className="font-medium uppercase tracking-wide opacity-80">
-              {check.level}
-            </span>
-            <span className="mx-1 opacity-60">·</span>
-            <span>{check.message}</span>
-            {check.detail && (
-              <span className="block opacity-75 break-all">
-                ({check.detail})
-              </span>
-            )}
-            {check.hint && (
-              <span className="block opacity-90 break-words">
-                Hint: {check.hint}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }

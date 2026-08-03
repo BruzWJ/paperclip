@@ -21,7 +21,7 @@ export const catalogTeamFileKindSchema = z.enum([
   "team",
   "agent",
   "project",
-  "task",
+  "issue",
   "skill",
   "extension",
   "readme",
@@ -56,11 +56,10 @@ export const catalogTeamSkillRequirementSchema = z.object({
 
 export const catalogTeamEnvInputSummarySchema = z.object({
   key: z.string().min(1),
-  agentSlug: z.string().min(1).nullable(),
   projectSlug: z.string().min(1).nullable(),
   kind: z.enum(["secret", "plain"]),
   requirement: z.enum(["required", "optional"]),
-});
+}).strict();
 
 export const catalogTeamSourceRefSchema = z.object({
   type: z.enum(["skills_sh", "github", "url", "local_path", "agent_package", "include"]),
@@ -92,7 +91,7 @@ export const catalogTeamSchema = z.object({
   counts: z.object({
     agents: z.number().int().nonnegative(),
     projects: z.number().int().nonnegative(),
-    tasks: z.number().int().nonnegative(),
+    issues: z.number().int().nonnegative(),
     routines: z.number().int().nonnegative(),
     localSkills: z.number().int().nonnegative(),
     catalogSkills: z.number().int().nonnegative(),
@@ -141,11 +140,11 @@ export const catalogTeamPreviewSchema = z.object({
   collisionStrategy: portabilityCollisionStrategySchema.optional(),
   nameOverrides: z.record(z.string().min(1), z.string().min(1)).optional(),
   selectedFiles: z.array(z.string().min(1)).optional(),
+  adapterOverrides: z.record(z.string().min(1), portabilityAdapterOverrideSchema).optional(),
   sourcePolicy: catalogTeamSourcePolicySchema.optional(),
 }).strict();
 
 export const catalogTeamInstallSchema = catalogTeamPreviewSchema.extend({
-  adapterOverrides: z.record(z.string().min(1), portabilityAdapterOverrideSchema).optional(),
   secretValues: z.record(z.string().min(1), z.string()).optional(),
 }).strict();
 

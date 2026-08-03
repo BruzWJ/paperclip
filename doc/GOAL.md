@@ -6,13 +6,13 @@
 
 Autonomous companies — AI workforces organized with real structure, governance, and accountability — will become a major force in the global economy. Not one company. Thousands. Millions. An entire economic layer that runs on AI labor, coordinated through Paperclip.
 
-Paperclip is not the company. Paperclip is what makes the companies possible. We are the control plane, the nervous system, the operating layer. Every autonomous company needs structure, task management, cost control, goal alignment, and human governance. That's us. We are to autonomous companies what the corporate operating system is to human ones — except this time, the operating system is real software, not metaphor.
+Paperclip is not the company. Paperclip is what makes the companies possible. We are the control plane, the nervous system, the operating layer. Every autonomous company needs structure, issue management, cost control, goal alignment, and human governance. That's us. We are to autonomous companies what the corporate operating system is to human ones — except this time, the operating system is real software, not metaphor.
 
 The measure of our success is not whether one company works. It's whether Paperclip becomes the default foundation that autonomous companies are built on — and whether those companies, collectively, become a serious economic force that rivals the output of nations.
 
 ## The Problem
 
-Task management software doesn't go far enough. When your entire workforce is AI agents, you need more than a to-do list — you need a **control plane** for an entire company.
+Issue management software doesn't go far enough. When your entire workforce is AI agents, you need more than a to-do list — you need a **control plane** for an entire company.
 
 ## What This Is
 
@@ -22,8 +22,8 @@ Paperclip is the command, communication, and control plane for a company of AI a
 - **Define org structure** — org charts that agents themselves operate within
 - **Track work in real time** — see at any moment what every agent is working on
 - **Control costs** — token salary budgets per agent, spend tracking, burn rate
-- **Align to goals** — agents see how their work serves the bigger mission
-- **Preserve work context** — comments, documents, work products, attachments, and company state stay attached to the work
+- **Align to goals** — issue and project hierarchy keeps work tied to company intent
+- **Preserve auditable issue context** — comments, documents, work products, attachments, and the issue Session stay attached to that issue without becoming per-agent cross-issue memory
 
 ## Architecture
 
@@ -34,24 +34,32 @@ Two layers:
 The central nervous system. Manages:
 
 - Agent registry and org chart
-- Task assignment and status
+- Canonical issue ownership, lifecycle, and typed creator authority
 - Budget and token spend tracking
 - Issue comments, documents, work products, attachments, and company state
-- Goal hierarchy (company → team → agent → task)
-- Heartbeat monitoring — know when agents are alive, idle, or stuck
+- Goal, project, and issue/sub-issue hierarchy
+- Issue-execution monitoring — know which authorized runs are queued, active, terminal, or stuck
 
-It also enforces execution-control semantics such as single-assignee issues, atomic checkout and execution locks, blockers, recovery issues, and workspace/runtime controls.
+It also enforces execution-control semantics such as one canonical owner,
+monotonic ownership epochs, persisted issue-execution refs, immutable
+execution views, ordinary blockers, typed recovery/system escalation, and
+issue/epoch workspace bindings.
 
-### 2. Execution Services (adapters)
+### 2. Execution Worker and ACP Agents
 
-Agents run externally and report into the control plane. Adapters connect different execution environments and define how a heartbeat is invoked, observed, and cancelled:
+Paperclip's existing worker realizes the issue workspace and supervises one
+conformance-approved ACP agent subprocess for each prompt. Every adapter is a
+data-only `acp-subprocess/v1` definition selecting an exact approved launch and
+stable session configuration. The common official-SDK ACP client—not the
+adapter—owns initialize, new/resume, prompt, structured updates, cancellation,
+and cleanup.
 
-- **Local CLI/session adapters** — built-in adapters for tools such as Claude Code, Codex, Gemini, OpenCode, Pi, and Cursor
-- **HTTP/process-style adapters** — command or webhook/API integrations for custom runtimes
-- **OpenClaw gateway** — integration for OpenClaw-style remote agents
-- **External adapter plugins** — dynamically loaded adapters installed outside the core app
-
-The control plane doesn't run agents. It orchestrates them. Agents run wherever they run and phone home.
+The selected coding CLI owns provider authentication, provider requests,
+native prompts and post-processing, its model/tool loop, native tools, native
+history, and native compaction. Paperclip owns issue execution, request-scoped
+capabilities, canonical Session projection, and missing-target recovery. It has
+no process/HTTP provider transport, provider SDK client, arbitrary-command
+fallback, or separate remote-machine runtime.
 
 ## Core Principle
 

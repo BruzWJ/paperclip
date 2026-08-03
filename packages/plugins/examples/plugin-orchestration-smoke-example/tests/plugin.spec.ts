@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { pluginManifestV1Schema, type Issue } from "@paperclipai/shared";
+import {
+  canonicalizeMoneyAmount,
+  pluginManifestV1Schema,
+  type Agent,
+  type Issue,
+} from "@paperclipai/shared";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import manifest from "../src/manifest.js";
 import plugin from "../src/worker.js";
@@ -16,26 +21,34 @@ function issue(input: Partial<Issue> & Pick<Issue, "id" | "companyId" | "title">
     goalId: null,
     parentId: null,
     title,
-    description: null,
+    request: "Run the plugin issue control-plane smoke flow.",
     status: "todo",
+    lifecycleStatus: "open",
+    workMode: "standard",
     priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
+    ownerKind: "agent",
+    ownerAgentId: rest.ownerAgentId ?? "00000000-0000-4000-8000-000000000001",
+    ownerUserId: null,
+    ownerAssignmentSource: null,
+    ownershipEpoch: 1,
+    attentionMask: null,
+    creatorKind: "user/board",
+    creatorAuthorityId: null,
+    creatorAdapterConfigRevisionId: null,
+    creatorUserId: null,
+    creatorPluginInstallationId: null,
+    creatorPluginKey: null,
+    creatorCallbackKey: null,
+    creatorCallbackVersion: null,
+    creatorRoutineId: null,
+    creatorRoutineDispatchId: null,
+    creatorSystemSourceKind: null,
+    creatorSystemSourceId: null,
+    responsibleUserId: null,
     issueNumber: null,
     identifier: null,
-    originKind: "manual",
-    originId: null,
-    originRunId: null,
     requestDepth: 0,
     billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
     executionWorkspacePreference: null,
     executionWorkspaceSettings: null,
     startedAt: null,
@@ -45,11 +58,38 @@ function issue(input: Partial<Issue> & Pick<Issue, "id" | "companyId" | "title">
     createdAt: now,
     updatedAt: now,
     ...rest,
+  } as Issue;
+}
+
+function agent(id: string, companyId: string): Agent {
+  const now = new Date();
+  return {
+    id,
+    companyId,
+    name: "Smoke owner",
+    urlKey: "smoke-owner",
+    title: null,
+    icon: null,
+    status: "idle",
+    reportsTo: null,
+    capabilities: "Owns ordinary plugin smoke issues.",
+    adapterType: "codex",
+    adapterConfig: { model: "gpt-5.6" },
+    runtimeConfig: {},
+    currentAdapterConfigRevisionId: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
+    pauseReason: null,
+    pausedAt: null,
+    governance: {},
+    metadata: {},
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
-describe("orchestration smoke plugin", () => {
-  it("declares the Phase 1 orchestration surfaces", () => {
+describe("issue runtime smoke plugin", () => {
+  it("declares the canonical issue control-plane surfaces", () => {
     expect(pluginManifestV1Schema.parse(manifest)).toMatchObject({
       id: "paperclipai.plugin-orchestration-smoke-example",
       database: {
@@ -61,20 +101,32 @@ describe("orchestration smoke plugin", () => {
         expect.objectContaining({ routeKey: "summary" }),
       ],
     });
+    expect(manifest.capabilities).toEqual(expect.arrayContaining([
+      "issues.read",
+      "issues.create",
+      "issues.update",
+      "issues.withdraw",
+    ]));
+    expect(manifest.capabilities).not.toEqual(expect.arrayContaining([
+      "issue.relations.read",
+      "issue.documents.read",
+      "issues.orchestration.read",
+    ]));
   });
 
-  it("creates plugin-owned orchestration rows, issue tree, document, wakeup, and summary reads", async () => {
+  it("creates a plugin-owned ordinary issue and records its durable binding", async () => {
     const companyId = randomUUID();
     const rootIssueId = randomUUID();
     const agentId = randomUUID();
     const harness = createTestHarness({ manifest });
     harness.seed({
+      agents: [agent(agentId, companyId)],
       issues: [
         issue({
           id: rootIssueId,
           companyId,
           title: "Root orchestration issue",
-          assigneeAgentId: agentId,
+          ownerAgentId: agentId,
         }),
       ],
     });
@@ -83,39 +135,31 @@ describe("orchestration smoke plugin", () => {
     const result = await harness.performAction<{
       rootIssueId: string;
       childIssueId: string;
-      blockerIssueId: string;
-      billingCode: string;
-      subtreeIssueIds: string[];
-      wakeupQueued: boolean;
+      ownerAgentId: string;
+      request: string;
+      childStatus: string;
     }>("initialize-smoke", {
       companyId,
       issueId: rootIssueId,
-      assigneeAgentId: agentId,
+      ownerAgentId: agentId,
+    }, {
+      actor: { type: "system", companyId },
     });
 
     expect(result.rootIssueId).toBe(rootIssueId);
     expect(result.childIssueId).toEqual(expect.any(String));
-    expect(result.blockerIssueId).toEqual(expect.any(String));
-    expect(result.billingCode).toBe(`plugin-smoke:${rootIssueId}`);
-    expect(result.wakeupQueued).toBe(true);
-    expect(result.subtreeIssueIds).toEqual(expect.arrayContaining([rootIssueId, result.childIssueId]));
+    expect(result.ownerAgentId).toBe(agentId);
+    expect(result.childStatus).toBe("open");
+    expect(result.request).toContain("canonical plugin issue creation");
     expect(harness.dbExecutes[0]?.sql).toContain(".smoke_runs");
     expect(harness.dbQueries.some((entry) => entry.sql.includes("JOIN public.issues"))).toBe(true);
-
-    const relations = await harness.ctx.issues.relations.get(result.childIssueId, companyId);
-    expect(relations.blockedBy).toEqual([
-      expect.objectContaining({
-        id: result.blockerIssueId,
-        status: "done",
-      }),
-    ]);
-    const docs = await harness.ctx.issues.documents.list(result.childIssueId, companyId);
-    expect(docs).toEqual([
-      expect.objectContaining({
-        key: "orchestration-smoke",
-        title: "Orchestration Smoke",
-      }),
-    ]);
+    await expect(harness.ctx.issues.get(result.childIssueId, companyId)).resolves.toMatchObject({
+      id: result.childIssueId,
+      parentId: rootIssueId,
+      ownerAgentId: agentId,
+      creatorKind: "plugin",
+      creatorPluginKey: manifest.id,
+    });
   });
 
   it("dispatches the scoped API route through the same smoke path", async () => {
@@ -124,12 +168,13 @@ describe("orchestration smoke plugin", () => {
     const agentId = randomUUID();
     const harness = createTestHarness({ manifest });
     harness.seed({
+      agents: [agent(agentId, companyId)],
       issues: [
         issue({
           id: rootIssueId,
           companyId,
           title: "Scoped API root",
-          assigneeAgentId: agentId,
+          ownerAgentId: agentId,
         }),
       ],
     });
@@ -141,13 +186,11 @@ describe("orchestration smoke plugin", () => {
       path: `/issues/${rootIssueId}/smoke`,
       params: { issueId: rootIssueId },
       query: {},
-      body: { assigneeAgentId: agentId },
+      body: { ownerAgentId: agentId },
       actor: {
         actorType: "user",
         actorId: "board",
         userId: "board",
-        agentId: null,
-        runId: null,
       },
       companyId,
       headers: {},
@@ -155,7 +198,8 @@ describe("orchestration smoke plugin", () => {
       status: 201,
       body: expect.objectContaining({
         rootIssueId,
-        wakeupQueued: true,
+        ownerAgentId: agentId,
+        childStatus: "open",
       }),
     });
   });

@@ -66,7 +66,7 @@ describe("executionWorkspacesApi.listSummaries", () => {
               id: "issue-1",
               identifier: "PAP-1",
               title: "Linked task",
-              status: "todo",
+              boardPresentationStatus: "todo",
               priority: "medium",
               updatedAt: "2026-06-25T01:02:00.000Z",
             },

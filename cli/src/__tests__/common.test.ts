@@ -16,9 +16,9 @@ function createTempPath(name: string): string {
 describe("resolveCommandContext", () => {
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.PAPERCLIP_API_URL;
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_COMPANY_ID;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_COMPANY_ID;
     delete process.env.PAPERCLIP_AUTH_STORE;
     delete process.env.PAPERCLIP_SERVER_PORT;
   });
@@ -103,18 +103,18 @@ describe("resolveCommandContext", () => {
     const configPath = createTempPath("config.json");
     fs.writeFileSync(configPath, JSON.stringify({
       $meta: { version: 1, updatedAt: "2026-05-23T00:00:00.000Z", source: "onboard" },
-      database: { mode: "embedded-postgres" },
+      database: { connectionString: "postgresql://operator:secret@database.example.com/paperclip" },
       logging: { mode: "file" },
-      server: { deploymentMode: "local_trusted", exposure: "private", host: "127.0.0.1", port: 4111 },
+      server: { exposure: "private", host: "127.0.0.1", port: 4111 },
     }));
 
     expect(resolveApiBase({ apiBase: "http://explicit:1", config: configPath }, { apiBase: "http://profile:2" }))
       .toBe("http://explicit:1");
 
-    process.env.PAPERCLIP_API_URL = "http://env:3/";
+    process.env.PAPERCLIP_BOARD_API_URL = "http://env:3/";
     expect(resolveApiBase({ config: configPath }, { apiBase: "http://profile:2" })).toBe("http://env:3");
 
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     expect(resolveApiBase({ config: configPath }, { apiBase: "http://profile:2/" })).toBe("http://profile:2");
     expect(resolveApiBase({ config: configPath }, {})).toBe("http://localhost:4111");
   });
@@ -148,7 +148,7 @@ describe("resolveCommandContext", () => {
     expect(profileResolved.api.apiKey).toBe("profile-token");
     expect(profileResolved.authSource).toBe("profile_env");
 
-    process.env.PAPERCLIP_API_KEY = "env-token";
+    process.env.PAPERCLIP_BOARD_API_KEY = "env-token";
     const envResolved = resolveCommandContext({ context: contextPath });
     expect(envResolved.api.apiKey).toBe("env-token");
     expect(envResolved.authSource).toBe("env");

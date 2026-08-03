@@ -1,74 +1,26 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, CompanySecret } from "@paperclipai/shared";
+
+const databaseMocks = vi.hoisted(() => ({
+  createDb: vi.fn(() => {
+    throw new Error("Unexpected database access from secrets test");
+  }),
+  resolveDatabaseTarget: vi.fn(() => {
+    throw new Error("Unexpected database target resolution from secrets test");
+  }),
+}));
+
+vi.mock("@paperclipai/db", () => ({
+  createDb: databaseMocks.createDb,
+  resolveDatabaseTarget: databaseMocks.resolveDatabaseTarget,
+}));
+
 import type { PaperclipConfig } from "../config/schema.js";
 import { secretsCheck } from "../checks/secrets-check.js";
 import {
-  buildInlineMigrationSecretName,
-  buildMigratedAgentEnv,
-  collectInlineSecretMigrationCandidates,
   parseSecretsInclude,
   registerSecretCommands,
-  toPlainEnvValue,
 } from "../commands/client/secrets.js";
-
-function agent(partial: Partial<Agent>): Agent {
-  return {
-    id: "agent-12345678",
-    companyId: "company-1",
-    name: "Coder",
-    urlKey: "coder",
-    role: "engineer",
-    title: null,
-    icon: null,
-    status: "idle",
-    reportsTo: null,
-    capabilities: null,
-    adapterType: "codex_local",
-    adapterConfig: {},
-    runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    pauseReason: null,
-    pausedAt: null,
-    permissions: {
-      canCreateAgents: false,
-    },
-    lastHeartbeatAt: null,
-    metadata: null,
-    createdAt: new Date("2026-04-26T00:00:00.000Z"),
-    updatedAt: new Date("2026-04-26T00:00:00.000Z"),
-    ...partial,
-  };
-}
-
-function secret(partial: Partial<CompanySecret>): CompanySecret {
-  return {
-    id: "secret-1",
-    companyId: "company-1",
-    scope: "company",
-    ownerUserId: null,
-    userSecretDefinitionId: null,
-    key: "agent_agent-12_anthropic_api_key",
-    name: "agent_agent-12_anthropic_api_key",
-    provider: "local_encrypted",
-    status: "active",
-    managedMode: "paperclip_managed",
-    externalRef: null,
-    providerConfigId: null,
-    providerMetadata: null,
-    latestVersion: 1,
-    description: null,
-    lastResolvedAt: null,
-    lastRotatedAt: null,
-    deletedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    createdAt: new Date("2026-04-26T00:00:00.000Z"),
-    updatedAt: new Date("2026-04-26T00:00:00.000Z"),
-    ...partial,
-  };
-}
 
 function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provider"]): PaperclipConfig {
   return {
@@ -78,9 +30,7 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
-      embeddedPostgresDataDir: "/tmp/paperclip/db",
-      embeddedPostgresPort: 55432,
+      connectionString: "postgresql://operator:secret@database.example.com/paperclip",
       backup: {
         enabled: true,
         intervalMinutes: 60,
@@ -93,7 +43,6 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
       logDir: "/tmp/paperclip/logs",
     },
     server: {
-      deploymentMode: "local_trusted",
       exposure: "private",
       host: "127.0.0.1",
       port: 3100,
@@ -101,7 +50,6 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
       serveUi: true,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
     telemetry: {
@@ -146,95 +94,16 @@ describe("secrets CLI helpers", () => {
   });
 
   it("parses declaration include filters", () => {
-    expect(parseSecretsInclude("agents,projects,tasks")).toEqual({
-      company: false,
-      agents: true,
+    expect(parseSecretsInclude("company,projects")).toEqual({
+      company: true,
+      agents: false,
       projects: true,
-      issues: true,
+      issues: false,
       skills: false,
     });
-  });
-
-  it("detects inline sensitive env values that need migration", () => {
-    const rows = collectInlineSecretMigrationCandidates(
-      [
-        agent({
-          id: "agent-12345678",
-          adapterConfig: {
-            env: {
-              ANTHROPIC_API_KEY: "sk-ant-test",
-              GH_TOKEN: {
-                type: "plain",
-                value: "ghp-test",
-              },
-              PATH: {
-                type: "plain",
-                value: "/usr/bin",
-              },
-              OPENAI_API_KEY: {
-                type: "secret_ref",
-                secretId: "secret-existing",
-              },
-            },
-          },
-        }),
-      ],
-      [
-        secret({
-          id: "secret-gh-token",
-          name: buildInlineMigrationSecretName("agent-12345678", "GH_TOKEN"),
-        }),
-      ],
+    expect(() => parseSecretsInclude("agents")).toThrow(
+      "Use one or more of: company,projects",
     );
-
-    expect(rows).toEqual([
-      {
-        agentId: "agent-12345678",
-        agentName: "Coder",
-        envKey: "ANTHROPIC_API_KEY",
-        secretName: "agent_agent-12_anthropic_api_key",
-        existingSecretId: null,
-      },
-      {
-        agentId: "agent-12345678",
-        agentName: "Coder",
-        envKey: "GH_TOKEN",
-        secretName: "agent_agent-12_gh_token",
-        existingSecretId: "secret-gh-token",
-      },
-    ]);
-  });
-
-  it("builds migrated env bindings without preserving secret values", () => {
-    const next = buildMigratedAgentEnv(
-      {
-        ANTHROPIC_API_KEY: "sk-ant-test",
-        NODE_ENV: {
-          type: "plain",
-          value: "development",
-        },
-      },
-      new Map([["ANTHROPIC_API_KEY", "secret-1"]]),
-    );
-
-    expect(next).toEqual({
-      ANTHROPIC_API_KEY: {
-        type: "secret_ref",
-        secretId: "secret-1",
-        version: "latest",
-      },
-      NODE_ENV: {
-        type: "plain",
-        value: "development",
-      },
-    });
-    expect(JSON.stringify(next)).not.toContain("sk-ant-test");
-  });
-
-  it("reads only explicit plain env values", () => {
-    expect(toPlainEnvValue("plain-value")).toBe("plain-value");
-    expect(toPlainEnvValue({ type: "plain", value: "wrapped" })).toBe("wrapped");
-    expect(toPlainEnvValue({ type: "secret_ref", secretId: "secret-1" })).toBeNull();
   });
 
   it("reports the AWS bootstrap config required by doctor", () => {
@@ -242,8 +111,8 @@ describe("secrets CLI helpers", () => {
 
     expect(result.status).toBe("fail");
     expect(result.message).toContain("PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID");
-    expect(result.repairHint).toContain("AWS SDK default credential chain");
-    expect(result.repairHint).toContain("Do not store AWS root credentials");
+    expect(result.guidance).toContain("AWS SDK default credential chain");
+    expect(result.guidance).toContain("Do not store AWS root credentials");
   });
 
   it("passes AWS doctor checks when non-secret provider config is present", () => {
@@ -264,8 +133,8 @@ describe("secrets CLI helpers", () => {
 describe("secrets API parity commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 

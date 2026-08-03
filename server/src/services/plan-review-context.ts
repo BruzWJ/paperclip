@@ -5,16 +5,11 @@ import {
   documentAnnotationThreads,
   documents,
   issueDocuments,
-  issueThreadInteractions,
 } from "@paperclipai/db";
 import type {
   PlanReviewContext,
   PlanReviewContextAuthor,
-  PlanReviewInteractionContext,
-  PlanReviewInteractionResultContext,
-  PlanReviewInteractionTargetContext,
 } from "@paperclipai/shared";
-import { parseObject } from "../adapters/utils.js";
 
 export const PLAN_REVIEW_CONTEXT_LIMITS = {
   maxThreads: 20,
@@ -31,12 +26,7 @@ type BuildPlanReviewContextInput = {
   issueWorkMode?: string | null;
   includeForIssueComment?: boolean;
   includeForAnnotationDelta?: boolean;
-  interactionId?: string | null;
 };
-
-function nonEmptyString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
 
 function truncateText(value: string, maxChars: number) {
   if (value.length <= maxChars) return { text: value, truncated: false };
@@ -58,90 +48,11 @@ function authorFrom(row: {
   };
 }
 
-function readPlanTarget(value: unknown, issueId: string): PlanReviewInteractionTargetContext | null {
-  const target = parseObject(value);
-  if (target.type !== "issue_document") return null;
-  if (target.key !== "plan") return null;
-  if (nonEmptyString(target.issueId) !== issueId) return null;
-  return {
-    issueId,
-    documentId: nonEmptyString(target.documentId),
-    key: "plan",
-    revisionId: nonEmptyString(target.revisionId),
-    revisionNumber: typeof target.revisionNumber === "number" ? target.revisionNumber : null,
-  };
-}
-
-function readResult(value: unknown): PlanReviewInteractionResultContext | null {
-  const result = parseObject(value);
-  if (Object.keys(result).length === 0) return null;
-  return {
-    outcome: nonEmptyString(result.outcome),
-    reason: nonEmptyString(result.reason) ?? nonEmptyString(result.rejectionReason),
-    commentId: nonEmptyString(result.commentId),
-  };
-}
-
-async function getPlanInteractionContext(input: {
-  db: Db;
-  companyId: string;
-  issueId: string;
-  interactionId: string | null;
-}): Promise<PlanReviewInteractionContext | null> {
-  if (!input.interactionId) return null;
-
-  const row = await input.db
-    .select({
-      id: issueThreadInteractions.id,
-      kind: issueThreadInteractions.kind,
-      status: issueThreadInteractions.status,
-      continuationPolicy: issueThreadInteractions.continuationPolicy,
-      sourceCommentId: issueThreadInteractions.sourceCommentId,
-      sourceRunId: issueThreadInteractions.sourceRunId,
-      payload: issueThreadInteractions.payload,
-      result: issueThreadInteractions.result,
-      resolvedAt: issueThreadInteractions.resolvedAt,
-    })
-    .from(issueThreadInteractions)
-    .where(and(
-      eq(issueThreadInteractions.id, input.interactionId),
-      eq(issueThreadInteractions.companyId, input.companyId),
-      eq(issueThreadInteractions.issueId, input.issueId),
-    ))
-    .then((rows) => rows[0] ?? null);
-
-  if (!row) return null;
-  const payload = parseObject(row.payload);
-  const target = readPlanTarget(payload.target, input.issueId);
-  if (!target) return null;
-  const result = readResult(row.result);
-
-  return {
-    id: row.id,
-    kind: row.kind,
-    status: row.status,
-    continuationPolicy: row.continuationPolicy,
-    sourceCommentId: row.sourceCommentId ?? null,
-    sourceRunId: row.sourceRunId ?? null,
-    target,
-    acceptedTargetRevision: row.status === "accepted" ? target : null,
-    result,
-    resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
-  };
-}
-
 export async function buildPlanReviewContext(input: BuildPlanReviewContextInput): Promise<PlanReviewContext | null> {
-  const interaction = await getPlanInteractionContext({
-    db: input.db,
-    companyId: input.companyId,
-    issueId: input.issueId,
-    interactionId: nonEmptyString(input.interactionId),
-  });
   const shouldInclude =
     input.issueWorkMode === "planning" ||
     input.includeForIssueComment === true ||
-    input.includeForAnnotationDelta === true ||
-    interaction !== null;
+    input.includeForAnnotationDelta === true;
   if (!shouldInclude) return null;
 
   const planDocument = await input.db
@@ -315,7 +226,6 @@ export async function buildPlanReviewContext(input: BuildPlanReviewContextInput)
     latestRevisionId: planDocument.latestRevisionId,
     latestRevisionNumber: planDocument.latestRevisionNumber,
     threads,
-    interaction,
     totals: {
       openThreadCount,
       includedThreadCount: threads.length,

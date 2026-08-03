@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { History as HistoryIcon, RotateCcw, Search } from "lucide-react";
-import type {
+import {
+  normalizeIssueAttentionMask,
+  type
   CompanySecret,
+  type
   EnvBinding,
+  type
   EnvSecretRefBinding,
+  type
+  IssueAttentionMask,
+  type
   Routine,
+  type
   RoutineEnvConfig,
+  type
   RoutineRevision,
+  type
   RoutineRevisionSnapshotTriggerV1,
+  type
   RoutineVariable,
+  type
   SecretVersionSelector,
 } from "@paperclipai/shared";
 import {
@@ -36,6 +48,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "./EmptyState";
 import { MarkdownBody } from "./MarkdownBody";
 import { Badge } from "@/components/ui/badge";
+import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
 
 type AgentLookup = Map<string, { id: string; name: string }>;
 type ProjectLookup = Map<string, { id: string; name: string }>;
@@ -520,6 +533,12 @@ function RevisionPreview({
   const envDiffers = !!currentSnapshot
     && JSON.stringify(normalizeEnv(currentSnapshot.env ?? null))
       !== JSON.stringify(normalizeEnv(snapshot.env ?? null));
+  const attentionMaskDiffers = !!currentSnapshot
+    && JSON.stringify(
+      normalizeIssueAttentionMask(currentSnapshot.attentionMask),
+    ) !== JSON.stringify(
+      normalizeIssueAttentionMask(snapshot.attentionMask),
+    );
   const fieldRows: Array<{ key: string; label: string; value: string; differs: boolean }> = [
     {
       key: "title",
@@ -568,6 +587,12 @@ function RevisionPreview({
       label: "Env",
       value: envSummary,
       differs: envDiffers,
+    },
+    {
+      key: "attentionMask",
+      label: "Created issue attention",
+      value: summarizeAttentionMask(snapshot.attentionMask),
+      differs: attentionMaskDiffers,
     },
   ];
 
@@ -620,6 +645,16 @@ function RevisionPreview({
             </div>
           ))}
         </div>
+      </div>
+
+      <div className={`${cardWrapper} p-3 space-y-2`}>
+        <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
+          Created issue attention
+        </p>
+        <IssueAttentionMaskMatrix
+          value={snapshot.attentionMask ?? null}
+          readOnly
+        />
       </div>
 
       <div className={`${cardWrapper} p-3 space-y-2`}>
@@ -1073,6 +1108,13 @@ function computeFieldChanges(
   );
   compareScalar("concurrencyPolicy", "Concurrency", oldRoutine.concurrencyPolicy, newRoutine.concurrencyPolicy);
   compareScalar("catchUpPolicy", "Catch-up", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
+  compareScalar(
+    "attentionMask",
+    "Created issue attention",
+    normalizeIssueAttentionMask(oldRoutine.attentionMask),
+    normalizeIssueAttentionMask(newRoutine.attentionMask),
+    (value) => summarizeAttentionMask(value as IssueAttentionMask | null),
+  );
   compareScalar("status", "Status", oldRoutine.status, newRoutine.status);
   if (JSON.stringify(oldRoutine.variables) !== JSON.stringify(newRoutine.variables)) {
     changes.push({
@@ -1089,6 +1131,17 @@ function computeFieldChanges(
 function normalizeEnv(env: RoutineEnvConfig | null): Record<string, EnvBinding> {
   if (!env) return {};
   return env;
+}
+
+function summarizeAttentionMask(mask: IssueAttentionMask | null): string {
+  const narrowed = Object.entries(
+    normalizeIssueAttentionMask(mask) ?? {},
+  )
+    .filter(([, value]) => value === false)
+    .map(([key]) => key);
+  return narrowed.length > 0
+    ? `Narrowed: ${narrowed.join(", ")}`
+    : "No assignment narrowing";
 }
 
 function envBindingKind(binding: EnvBinding): "plain" | "secret_ref" {

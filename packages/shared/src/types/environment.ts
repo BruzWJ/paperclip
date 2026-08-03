@@ -28,8 +28,6 @@ export interface FakeSandboxEnvironmentConfig {
   provider: "fake";
   image: string;
   reuseLease: boolean;
-  /** Stream agent CLI stdout/stderr during sandbox runs (bridge log-tail loop). */
-  streamRunLogs?: boolean;
   /**
    * Archive the sandbox on lease release instead of deleting it, so operators
    * can inspect it from the provider dashboard. Injected by test/probe paths;
@@ -42,8 +40,6 @@ export interface PluginSandboxEnvironmentConfig {
   provider: SandboxEnvironmentProvider;
   reuseLease: boolean;
   timeoutMs?: number;
-  /** Stream agent CLI stdout/stderr during sandbox runs (bridge log-tail loop). */
-  streamRunLogs?: boolean;
   /**
    * Archive the sandbox on lease release instead of deleting it, so operators
    * can inspect it from the provider dashboard. Injected by test/probe paths;
@@ -111,7 +107,7 @@ export interface EnvironmentLease {
   environmentId: string;
   executionWorkspaceId: string | null;
   issueId: string | null;
-  heartbeatRunId: string | null;
+  runId: string | null;
   status: EnvironmentLeaseStatus;
   leasePolicy: EnvironmentLeasePolicy;
   provider: string | null;

@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const issueId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -9,7 +11,6 @@ const peerAgentId = "44444444-4444-4444-8444-444444444444";
 const ownerRunId = "55555555-5555-4555-8555-555555555555";
 
 const mockIssueService = vi.hoisted(() => ({
-  assertCheckoutOwner: vi.fn(),
   getById: vi.fn(),
 }));
 
@@ -31,6 +32,8 @@ const mockExternalObjectsService = vi.hoisted(() => ({
 const mockInstanceSettingsService = vi.hoisted(() => ({
   getExperimental: vi.fn(),
 }));
+let errorHandler!: typeof import("../middleware/index.js").errorHandler;
+let issueRoutes!: typeof import("../routes/issues.js").issueRoutes;
 
 function registerRouteMocks() {
   vi.doMock("../services/external-objects.js", () => ({
@@ -39,12 +42,6 @@ function registerRouteMocks() {
 
   vi.doMock("../services/instance-settings.js", () => ({
     instanceSettingsService: () => mockInstanceSettingsService,
-  }));
-
-  vi.doMock("../services/task-watchdog-scope.js", () => ({
-    TASK_WATCHDOG_ORIGIN_KIND: "task_watchdog",
-    resolveTaskWatchdogMutationScope: vi.fn(async () => ({ kind: "none" })),
-    taskWatchdogScopeAllowsIssueMutation: vi.fn(async () => ({ kind: "none" })),
   }));
 
   vi.doMock("../services/index.js", () => ({
@@ -60,20 +57,11 @@ function registerRouteMocks() {
     executionWorkspaceService: () => ({}),
     feedbackService: () => ({}),
     goalService: () => ({}),
-    heartbeatService: () => ({
-      wakeup: vi.fn(async () => undefined),
-      reportRunActivity: vi.fn(async () => undefined),
-      getRun: vi.fn(async () => null),
-      getActiveRunForAgent: vi.fn(async () => null),
-      cancelRun: vi.fn(async () => null),
-    }),
     issueApprovalService: () => ({}),
-    issueRecoveryActionService: () => ({}),
     issueReferenceService: () => ({
       listIssueReferenceSummary: async () => ({ outbound: [], inbound: [] }),
     }),
     issueService: () => mockIssueService,
-    issueThreadInteractionService: () => ({}),
     logActivity: vi.fn(async () => undefined),
     projectService: () => ({}),
     routineService: () => ({}),
@@ -90,8 +78,8 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
     projectId: null,
     goalId: null,
     parentId: null,
-    assigneeAgentId: ownerAgentId,
-    assigneeUserId: null,
+    ownerAgentId,
+    ownerUserId: null,
     identifier: "PAP-2265",
     title: "External object routes",
     executionWorkspaceId: null,
@@ -100,10 +88,6 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
 }
 
 async function createApp(actor: Express.Request["actor"]) {
-  const [{ errorHandler }, { issueRoutes }] = await Promise.all([
-    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
-    vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
-  ]);
   const routeDb = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
@@ -117,22 +101,28 @@ async function createApp(actor: Express.Request["actor"]) {
     req.actor = actor;
     next();
   });
-  app.use("/api", issueRoutes(routeDb as any, { provider: "local_disk" } as any));
+  app.use("/api", denyGenericAgentRest("REST"));
+  app.use(
+    "/api",
+    issueRoutes(
+      routeDb as any,
+      { provider: "local_disk" } as any,
+      { ordinaryIssues: {} as any },
+    ),
+  );
   app.use(errorHandler);
   return app;
 }
 
 function boardActor(): Express.Request["actor"] {
-  return {
-    type: "board",
+  return testBoardSessionActor({
     userId: "board-user",
     userName: null,
     userEmail: null,
     companyIds: [companyId],
-    memberships: [],
+    memberships: [{ companyId, status: "active", membershipRole: "member" }],
     isInstanceAdmin: false,
-    source: "local_implicit",
-  };
+  });
 }
 
 function ownerActor(): Express.Request["actor"] {
@@ -142,7 +132,7 @@ function ownerActor(): Express.Request["actor"] {
     companyId,
     keyId: "key-1",
     runId: ownerRunId,
-    source: "agent_key",
+    source: "internal",
   };
 }
 
@@ -153,28 +143,36 @@ function peerActor(): Express.Request["actor"] {
     companyId,
     keyId: "key-2",
     runId: "66666666-6666-4666-8666-666666666666",
-    source: "agent_key",
+    source: "internal",
   };
 }
 
 describe("external object routes", () => {
-  beforeEach(() => {
+  beforeAll(async () => {
     vi.resetModules();
     vi.doUnmock("../routes/issues.js");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../services/external-objects.js");
     registerRouteMocks();
+    const [middlewareModule, issueRouteModule] = await Promise.all([
+      vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+      vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
+    ]);
+    errorHandler = middlewareModule.errorHandler;
+    issueRoutes = issueRouteModule.issueRoutes;
+  }, 30_000);
+
+  beforeEach(() => {
     vi.resetAllMocks();
     mockIssueService.getById.mockResolvedValue(makeIssue());
-    mockIssueService.assertCheckoutOwner.mockResolvedValue({ adoptedFromRunId: null });
     mockAccessService.hasPermission.mockResolvedValue(false);
     mockAccessService.decide.mockImplementation(async ({ action }: { action: string }) => ({
       allowed: action === "issue:read" || action === "issue:mutate",
       explanation: "Denied by test mock",
     }));
     mockAgentService.list.mockResolvedValue([
-      { id: ownerAgentId, companyId, reportsTo: null, permissions: { canCreateAgents: false } },
-      { id: peerAgentId, companyId, reportsTo: null, permissions: { canCreateAgents: false } },
+      { id: ownerAgentId, companyId, reportsTo: null, governance: {} },
+      { id: peerAgentId, companyId, reportsTo: null, governance: {} },
     ]);
     mockExternalObjectsService.getIssueSummary.mockResolvedValue({ total: 1, objects: [] });
     mockExternalObjectsService.getIssueSummaries.mockImplementation(async (_companyId: string, issueIds: string[]) =>
@@ -190,7 +188,7 @@ describe("external object routes", () => {
   });
 
   it("enforces company access on read routes", async () => {
-    const app = await createApp({ ...ownerActor(), companyId: "other-company" });
+    const app = await createApp({ ...boardActor(), companyIds: ["other-company"] });
 
     const res = await request(app).get(`/api/issues/${issueId}/external-object-summary`);
 
@@ -210,19 +208,17 @@ describe("external object routes", () => {
     expect(mockExternalObjectsService.getIssueSummary).toHaveBeenCalledWith(issueId);
   });
 
-  it("requires issue read access before reading issue external objects", async () => {
-    mockAccessService.decide.mockResolvedValue({
-      allowed: false,
-      explanation: "Denied by test mock",
-    });
+  it("denies agent credentials before reading issue external objects", async () => {
     const app = await createApp(ownerActor());
 
     const summary = await request(app).get(`/api/issues/${issueId}/external-object-summary`);
     expect(summary.status).toBe(403);
+    expect(summary.body.code).toBe("compiled_run_interface_required");
     expect(mockExternalObjectsService.getIssueSummary).not.toHaveBeenCalled();
 
     const list = await request(app).get(`/api/issues/${issueId}/external-objects`);
     expect(list.status).toBe(403);
+    expect(list.body.code).toBe("compiled_run_interface_required");
     expect(mockExternalObjectsService.listForIssue).not.toHaveBeenCalled();
   });
 
@@ -238,24 +234,20 @@ describe("external object routes", () => {
     expect(mockExternalObjectsService.getIssueSummaries).toHaveBeenCalledWith(companyId, [issueId]);
   });
 
-  it("filters bulk external object summaries through issue read access", async () => {
-    mockAccessService.decide.mockResolvedValue({
-      allowed: false,
-      explanation: "Denied by test mock",
-    });
+  it("denies agent credentials before reading bulk external object summaries", async () => {
     const app = await createApp(ownerActor());
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/issues/external-object-summaries`)
       .send({ issueIds: [issueId] });
 
-    expect(res.status).toBe(200);
-    expect(res.body.summaries).toEqual({});
-    expect(mockExternalObjectsService.getIssueSummaries).toHaveBeenCalledWith(companyId, []);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("compiled_run_interface_required");
+    expect(mockExternalObjectsService.getIssueSummaries).not.toHaveBeenCalled();
   });
 
   it("enforces company access on bulk external object summaries", async () => {
-    const app = await createApp({ ...ownerActor(), companyId: "other-company" });
+    const app = await createApp({ ...boardActor(), companyIds: ["other-company"] });
 
     const res = await request(app)
       .post(`/api/companies/${companyId}/issues/external-object-summaries`)
@@ -265,30 +257,27 @@ describe("external object routes", () => {
     expect(mockExternalObjectsService.getIssueSummaries).not.toHaveBeenCalled();
   });
 
-  it("requires active checkout ownership for agent manual refresh", async () => {
+  it("rejects a non-owner agent manual refresh through generic REST", async () => {
     const app = await createApp(peerActor());
 
     const res = await request(app)
       .post(`/api/issues/${issueId}/external-objects/refresh`)
       .send({});
 
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("Issue is checked out by another agent");
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockExternalObjectsService.refreshIssueObjects).not.toHaveBeenCalled();
   });
 
-  it("allows the checked-out agent to request manual refresh", async () => {
+  it("rejects an owner agent manual refresh through generic REST", async () => {
     const app = await createApp(ownerActor());
 
     const res = await request(app)
       .post(`/api/issues/${issueId}/external-objects/refresh`)
       .send({});
 
-    expect(res.status).toBe(200);
-    expect(mockIssueService.assertCheckoutOwner).toHaveBeenCalledWith(issueId, ownerAgentId, ownerRunId);
-    expect(mockExternalObjectsService.refreshIssueObjects).toHaveBeenCalledWith(issueId, expect.objectContaining({
-      companyId,
-      actor: expect.objectContaining({ actorType: "agent", actorId: ownerAgentId }),
-    }));
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("compiled_run_interface_required");
+    expect(mockExternalObjectsService.refreshIssueObjects).not.toHaveBeenCalled();
   });
 });

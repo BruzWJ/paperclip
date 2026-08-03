@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
-  AgentDesiredSkillEntry,
   Agent,
+  CompanySkillPin,
   CatalogSkill,
   CatalogSkillFileDetail,
   CatalogSkillSource,
@@ -36,7 +36,6 @@ import { CopyText } from "../components/CopyText";
 import { Identity } from "../components/Identity";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { AgentMultiSelect } from "../components/AgentMultiSelect";
-import { useAdapterCapabilities } from "../adapters/use-adapter-capabilities";
 import {
   SkillPolicyDenialNotice,
   useSkillPolicyDenial,
@@ -1720,7 +1719,7 @@ function CatalogList({
     if (kindFilter !== "all" && skill.kind !== kindFilter) return false;
     if (categoryFilter && skill.category !== categoryFilter) return false;
     if (!lowered) return true;
-    const haystack = `${skill.name} ${skill.slug} ${skill.key} ${skill.description} ${skill.category} ${skill.tags.join(" ")} ${skill.recommendedForRoles.join(" ")}`.toLowerCase();
+    const haystack = `${skill.name} ${skill.slug} ${skill.key} ${skill.description} ${skill.category} ${skill.tags.join(" ")}`.toLowerCase();
     return haystack.includes(lowered);
   });
 
@@ -1942,11 +1941,6 @@ function CatalogDetailPane({
               Requires: {skill.requires.join(", ")}
             </Badge>
           ) : null}
-          {skill.recommendedForRoles.length > 0 ? (
-            <Badge variant="outline" className="border-border bg-muted/40 text-(length:--text-micro) text-muted-foreground">
-              Roles: {skill.recommendedForRoles.join(" · ")}
-            </Badge>
-          ) : null}
           {skill.tags.length > 0 ? (
             <Badge variant="outline" className="border-border bg-muted/40 text-(length:--text-micro) text-muted-foreground">
               Tags: {skill.tags.join(" · ")}
@@ -2085,8 +2079,6 @@ function InstallPreviewDialog({
               </div>
               <div className="text-muted-foreground">Requires</div>
               <div className="text-foreground">{skill.requires.length === 0 ? "none" : skill.requires.join(", ")}</div>
-              <div className="text-muted-foreground">Roles</div>
-              <div className="text-foreground">{skill.recommendedForRoles.length === 0 ? "any" : skill.recommendedForRoles.join(" · ")}</div>
               <div className="text-muted-foreground">Provenance</div>
               <div className="min-w-0">
                 <div className="truncate">{packageName ?? "—"}{packageVersion ? ` v${packageVersion}` : ""}</div>
@@ -2165,8 +2157,7 @@ function InstallPreviewDialog({
 type AttachAgentOption = {
   id: string;
   name: string;
-  adapterType: string;
-  supportsSkills: boolean;
+  adapterType: string | null;
   required: boolean;
   icon: string | null;
   paused: boolean;
@@ -2191,7 +2182,6 @@ function AttachAgentsPopover({
 }) {
   const [draftVersionId, setDraftVersionId] = useState<string | null>(selectedVersionId);
   const attachedIds = useMemo(() => new Set(attachedAgentIds), [attachedAgentIds]);
-  const eligible = agents.filter((agent) => agent.supportsSkills);
   const sortedVersions = [...versions].sort((a, b) => b.revisionNumber - a.revisionNumber);
 
   return (
@@ -2228,14 +2218,14 @@ function AttachAgentsPopover({
           </select>
         </div>
       ) : null}
-      emptyMessage={eligible.length === 0 ? "No agents in this company support skills yet." : "No agents yet."}
+      emptyMessage="No agents yet."
       isAgentDisabled={(agent) => {
         const option = agent as AttachAgentOption;
-        return option.required || !option.supportsSkills;
+        return option.required;
       }}
       getDescription={(agent) => {
         const option = agent as AttachAgentOption;
-        return `${option.adapterType}${option.required ? " · required" : ""}${!option.supportsSkills ? " · skills not supported" : ""}`;
+        return `${option.adapterType ?? "Not configured"}${option.required ? " · required" : ""}`;
       }}
       renderNameSuffix={(agent) => (agent as AttachAgentOption).paused ? (
         <Badge variant="outline" className="[&>svg]:size-2.5 border-amber-500/30 bg-amber-500/10 px-1.5 text-(length:--text-nano) uppercase tracking-wide text-amber-500">
@@ -3165,7 +3155,9 @@ export function SkillDetailPage({
                         </Badge>
                       ) : null}
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{agent.adapterType}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {agent.adapterType ?? "Not configured"}
+                    </div>
                   </div>
                   <Link
                     to={`/agents/${agent.urlKey}/skills`}
@@ -3915,7 +3907,6 @@ export function CompanySkills() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
-  const adapterCaps = useAdapterCapabilities();
   const policyDenial = useSkillPolicyDenial();
   // Route a failed skill mutation to the persistent policy banner when it is an
   // explicit-policy (State B) or platform-safety (State C) denial; otherwise keep
@@ -4827,7 +4818,6 @@ export function CompanySkills() {
   const eligibleAgentsForAttach = useMemo(() => {
     const data = agentsQuery.data ?? [];
     return data.map((agent: Agent) => {
-      const caps = adapterCaps(agent.adapterType);
       const requiredKeys: string[] = [];
       const usedSet = new Set((activeDetail?.usedByAgents ?? []).map((entry) => entry.id));
       const isRequired = false; // detection currently lives server-side; default false until detail surfaces required state
@@ -4835,7 +4825,6 @@ export function CompanySkills() {
         id: agent.id,
         name: agent.name,
         adapterType: agent.adapterType,
-        supportsSkills: Boolean(caps.supportsSkills),
         required: isRequired,
         icon: agent.icon,
         paused: agent.status === "paused" || agent.pausedAt != null,
@@ -4843,11 +4832,18 @@ export function CompanySkills() {
         requiredKeys,
       };
     });
-  }, [agentsQuery.data, adapterCaps, activeDetail]);
+  }, [agentsQuery.data, activeDetail]);
 
   const attachAgentsMutation = useMutation({
-    mutationFn: async (input: { agentId: string; desiredSkills: Array<string | AgentDesiredSkillEntry> }) => {
-      return agentsApi.syncSkills(input.agentId, input.desiredSkills, selectedCompanyId ?? undefined);
+    mutationFn: async (input: {
+      agentId: string;
+      entries: CompanySkillPin[];
+    }) => {
+      return agentsApi.replaceCompanySkillPins(
+        input.agentId,
+        input.entries,
+        selectedCompanyId ?? undefined,
+      );
     },
     onSuccess: async () => {
       await Promise.all([
@@ -4861,6 +4857,15 @@ export function CompanySkills() {
   async function handleAttachSubmit(nextAgentIds: string[], versionId: string | null = null) {
     if (!activeDetail) return;
     const skillKey = activeDetail.key;
+    const pinnedVersionId = versionId ?? activeDetail.currentVersionId;
+    if (!pinnedVersionId) {
+      pushToast({
+        tone: "error",
+        title: "Update failed",
+        body: "This skill has no immutable version to pin.",
+      });
+      return;
+    }
     const targetSet = new Set(nextAgentIds);
     const current = (activeDetail.usedByAgents ?? []).map((entry) => entry.id);
     const currentSet = new Set(current);
@@ -4878,13 +4883,19 @@ export function CompanySkills() {
     }
     try {
       for (const agentId of affected) {
-        const snapshot = await agentsApi.skills(agentId, selectedCompanyId ?? undefined);
-        const currentEntries: AgentDesiredSkillEntry[] = (snapshot.desiredSkillEntries ?? snapshot.desiredSkills.map((key) => ({ key, versionId: null })))
+        const selection = await agentsApi.companySkillPins(
+          agentId,
+          selectedCompanyId ?? undefined,
+        );
+        const currentEntries: CompanySkillPin[] = selection.entries
           .filter((entry) => entry.key !== skillKey);
         if (targetSet.has(agentId)) {
-          currentEntries.push({ key: skillKey, versionId });
+          currentEntries.push({ key: skillKey, versionId: pinnedVersionId });
         }
-        await attachAgentsMutation.mutateAsync({ agentId, desiredSkills: currentEntries });
+        await attachAgentsMutation.mutateAsync({
+          agentId,
+          entries: currentEntries,
+        });
       }
       pushToast({ tone: "success", title: "Agents updated", body: `${nextAgentIds.length} agent(s) attached.` });
     } catch (error) {

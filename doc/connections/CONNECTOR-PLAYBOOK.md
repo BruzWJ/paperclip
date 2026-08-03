@@ -156,7 +156,7 @@ Governance is automatic because every catalog entry becomes a normal tool-access
 1. Catalog status gates first: `disabled` and `quarantined` deny immediately.
 2. Profiles decide which actors can see catalog entries. Bindings can target company, project, agent, routine, or issue scopes.
 3. Policies decide whether a visible action is allowed, blocked, rate-limited, or requires approval.
-4. Ask-first calls create action requests with signed arguments. Approval applies only to the reviewed argument shape and unchanged schema hashes.
+4. Ask-first calls create action requests with immutable private PostgreSQL-stored arguments and a redacted review projection. Approval applies only to the stored argument hash, policy/target snapshot, and unchanged schema hashes.
 5. Every decision and call writes audit with actor, run, issue, connection, catalog entry, decision, reason code, redaction summary, outcome, and latency.
 
 Recommended defaults for a new catalog entry:
@@ -360,4 +360,3 @@ Linear's real-vendor evidence belongs in [PAP-12373](/PAP/issues/PAP-12373). The
 ### AppDefinition catalog authoring
 
 Connector proposals now target the versioned `AppDefinition` contract in `packages/shared/src/types/app-definition.ts`. Seed data is one JSON file per provider under `packages/shared/src/app-definitions/`; regenerate Wave 1 with `pnpm connections:ingest-app-definitions`. The generator parses all 99 captured templates, validates required placeholders, OAuth ownership modes, and API-key placement, and produces deterministic output for review. FIRST-30 remains authoritative for `riskTier` and `requiredResourceFilters`; managed ownership modes stay data-visible but runtime-hidden until availability is injected.
-

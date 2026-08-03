@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -8,24 +8,19 @@ import type {
   SummarySlotRevision,
   SummarySlotScopeKind,
 } from "@paperclipai/shared";
-import { Bot, Clock3, History, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { History, Loader2, RefreshCw, Sparkles } from "lucide-react";
 
 import { agentsApi } from "@/api/agents";
-import { builtInAgentsApi, type BuiltInAgentState } from "@/api/builtInAgents";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { summarySlotsApi, type SummarySlotSelector } from "@/api/summarySlots";
 import { MarkdownBody } from "@/components/MarkdownBody";
-import { ConfigureBuiltInAgentModal } from "@/components/ConfigureBuiltInAgentModal";
 import { InlineBanner } from "@/components/InlineBanner";
-import { useSummaryDraftStream } from "@/components/useSummaryDraftStream";
-import { useCompanyLiveEvent } from "@/context/LiveUpdatesProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, formatDateTime, relativeTime } from "@/lib/utils";
 
-const SUMMARIZER_KEY = "summarizer";
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 const LATEST_REVISION_SELECT_VALUE = "__latest__";
 const MAX_REVISION_OPTIONS = 30;
@@ -71,67 +66,6 @@ function latestRevisionOptionLabel(
   }`;
 }
 
-interface LiveGenerationStatus {
-  message: string | null;
-  currentToolName: string | null;
-  lastAssistantSnippet: string | null;
-}
-
-function readPayloadString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-/**
- * Pick the single most useful line to show while a summary is generating.
- * Prefers the server-derived status `message`, then the last streamed
- * assistant snippet, then the active tool name. Returns null when nothing
- * has streamed yet so the card falls back to its static generating text.
- */
-export function resolveGenerationStatusLine(status: LiveGenerationStatus | null): string | null {
-  if (!status) return null;
-  if (status.message) return status.message;
-  if (status.lastAssistantSnippet) return status.lastAssistantSnippet;
-  if (status.currentToolName) return `Working with ${status.currentToolName}`;
-  return null;
-}
-
-/**
- * Subscribe to the shared LiveUpdates socket and track the generation run's
- * live status derived from `heartbeat.run.progress` events matching the slot's
- * generating issue. Resets whenever the tracked generation changes, and stays
- * null (static fallback) when no events arrive.
- */
-function useGenerationStatus(generatingIssueId: string | null): LiveGenerationStatus | null {
-  const [status, setStatus] = useState<LiveGenerationStatus | null>(null);
-
-  useEffect(() => {
-    setStatus(null);
-  }, [generatingIssueId]);
-
-  useCompanyLiveEvent((event) => {
-    if (!generatingIssueId) return;
-    if (event.type !== "heartbeat.run.progress") return;
-    const payload = event.payload ?? {};
-    if (payload.issueId !== generatingIssueId) return;
-    setStatus({
-      message: readPayloadString(payload.message),
-      currentToolName: readPayloadString(payload.currentToolName),
-      lastAssistantSnippet: readPayloadString(payload.lastAssistantSnippet),
-    });
-  });
-
-  return generatingIssueId ? status : null;
-}
-
-function setupState(state: BuiltInAgentState | undefined) {
-  if (!state) return null;
-  return state.status === "not_provisioned"
-    || state.status === "needs_setup"
-    || state.status === "pending_approval"
-    ? state
-    : null;
-}
-
 export function SummarySlotCard({
   companyId,
   scopeKind,
@@ -143,7 +77,7 @@ export function SummarySlotCard({
 }: SummarySlotCardProps) {
   const queryClient = useQueryClient();
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
-  const [configureOpen, setConfigureOpen] = useState(false);
+  const [ownerAgentId, setOwnerAgentId] = useState<string>("");
   const [actionError, setActionError] = useState<string | null>(null);
   const selector: SummarySlotSelector | null = companyId
     ? { companyId, scopeKind, scopeId, slotKey }
@@ -155,18 +89,18 @@ export function SummarySlotCard({
   });
   const summariesEnabled = experimentalQuery.data?.enableSummaries === true;
 
-  const builtInAgentsQuery = useQuery({
-    queryKey: queryKeys.builtInAgents.list(companyId ?? "__none__"),
-    queryFn: () => builtInAgentsApi.list(companyId!),
+  const agentsQuery = useQuery({
+    queryKey: queryKeys.agents.list(companyId ?? "__none__"),
+    queryFn: () => agentsApi.list(companyId!),
     enabled: Boolean(companyId && summariesEnabled),
     retry: false,
   });
-
-  const summarizerState = builtInAgentsQuery.data?.find(
-    (entry) => entry.definition.key === SUMMARIZER_KEY,
+  const eligibleOwners = useMemo(
+    () => (agentsQuery.data ?? []).filter((agent) => (
+      agent.status === "active" || agent.status === "idle" || agent.status === "running"
+    )),
+    [agentsQuery.data],
   );
-  const needsSetup = setupState(summarizerState);
-
   const slotQueryKey = selector
     ? queryKeys.summarySlots.detail(selector.companyId, selector.scopeKind, selector.slotKey, selector.scopeId)
     : queryKeys.summarySlots.detail("__none__", scopeKind, slotKey, scopeId);
@@ -189,8 +123,11 @@ export function SummarySlotCard({
     retry: false,
   });
 
-  const generateMutation = useMutation({
-    mutationFn: () => summarySlotsApi.generate(selector!),
+  const refreshMutation = useMutation({
+    mutationFn: () => summarySlotsApi.refresh(
+      selector!,
+      slotQuery.data?.slot?.routineId ? undefined : ownerAgentId,
+    ),
     onMutate: () => setActionError(null),
     onSuccess: async () => {
       setSelectedRevisionId(null);
@@ -201,15 +138,6 @@ export function SummarySlotCard({
     },
     onError: (error) => {
       setActionError(error instanceof Error ? error.message : "Summary generation could not be started.");
-    },
-  });
-
-  const resumeSummarizer = useMutation({
-    mutationFn: (agentId: string) => agentsApi.resume(agentId, companyId ?? undefined),
-    onSuccess: async () => {
-      if (companyId) {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.builtInAgents.list(companyId) });
-      }
     },
   });
 
@@ -235,22 +163,18 @@ export function SummarySlotCard({
   const revisionSelectValue = historicalRevision?.id ?? LATEST_REVISION_SELECT_VALUE;
   const latestSelectLabel = latestDocument ? latestRevisionOptionLabel(latestDocument, latestRevision) : "Latest";
   const generatingIssue = slotQuery.data?.generatingIssue ?? null;
-  const liveStatusLine = resolveGenerationStatusLine(useGenerationStatus(generatingIssue?.id ?? null));
-  const draftStream = useSummaryDraftStream(companyId, generatingIssue);
-  // The token-streamed STATUS line is more responsive than the server-derived
-  // progress snippet; prefer it and fall back to the Phase 1 status line.
-  const generationStatusLine = draftStream.statusLine ?? liveStatusLine;
+  const configuredRoutineId = slotQuery.data?.slot?.routineId ?? null;
   const isGenerating = slotQuery.data?.slot?.status === "generating"
     && generatingIssue
-    && !TERMINAL_ISSUE_STATUSES.has(generatingIssue.status);
+    && !TERMINAL_ISSUE_STATUSES.has(generatingIssue.boardPresentationStatus);
   const generationFailed = slotQuery.data?.slot?.status === "failed";
-  const canGenerateFirstSummary = summarizerState?.status === "ready";
+  const canGenerate = Boolean(configuredRoutineId || ownerAgentId);
 
   if (experimentalQuery.isLoading || !summariesEnabled) return null;
 
-  const startGeneration = () => {
-    if (!selector || generateMutation.isPending) return;
-    generateMutation.mutate();
+  const startRefresh = () => {
+    if (!selector || !canGenerate || refreshMutation.isPending) return;
+    refreshMutation.mutate();
   };
 
   return (
@@ -282,73 +206,42 @@ export function SummarySlotCard({
               type="button"
               size="sm"
               variant="outline"
-              onClick={startGeneration}
-              disabled={!selector || generateMutation.isPending || Boolean(isGenerating)}
+              onClick={startRefresh}
+              disabled={!selector || !canGenerate || refreshMutation.isPending || Boolean(isGenerating)}
             >
-              {generateMutation.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+              {refreshMutation.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
               Refresh
             </Button>
           ) : null}
         </div>
       </div>
 
-      {needsSetup ? (
-        <>
-          <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              {needsSetup.status === "pending_approval" ? (
-                <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-              <div className="space-y-1 text-sm">
-                <p className="font-medium text-foreground">
-                  {needsSetup.status === "pending_approval"
-                    ? "Summarizer setup is pending approval"
-                    : "Set up the Summarizer"}
-                </p>
-                <p className="text-muted-foreground">
-                  Summaries are generated by Paperclip's built-in Summarizer agent. Configure its adapter and model
-                  before requesting this summary.
-                </p>
-              </div>
-            </div>
-            {needsSetup.status === "pending_approval" ? null : (
-              <Button type="button" size="sm" onClick={() => setConfigureOpen(true)}>
-                Set up Summarizer
-              </Button>
-            )}
-          </div>
-          {companyId ? (
-            <ConfigureBuiltInAgentModal
-              companyId={companyId}
-              state={needsSetup}
-              open={configureOpen}
-              onOpenChange={setConfigureOpen}
-              onConfigured={() => setActionError(null)}
-            />
-          ) : null}
-        </>
-      ) : null}
-
-      {!needsSetup && summarizerState?.status === "paused" && summarizerState.agent ? (
-        <InlineBanner
-          tone="warning"
-          title="Summarizer is paused"
-          actions={
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => summarizerState.agent && resumeSummarizer.mutate(summarizerState.agent.id)}
-              disabled={resumeSummarizer.isPending}
-            >
-              {resumeSummarizer.isPending ? "Resuming..." : "Resume agent"}
-            </Button>
-          }
-        >
-          Existing summaries remain readable, but new summaries will not be generated until the agent resumes.
+      {configuredRoutineId ? (
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Summary routine</span>
+          <Link className="underline" to={`/routines/${configuredRoutineId}`}>
+            Configure owner and schedule
+          </Link>
+        </div>
+      ) : eligibleOwners.length > 0 ? (
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Choose summary owner</span>
+          <Select value={ownerAgentId} onValueChange={setOwnerAgentId}>
+            <SelectTrigger size="sm" className="w-56" aria-label="Select summary owner">
+              <SelectValue placeholder="Select an agent" />
+            </SelectTrigger>
+            <SelectContent>
+              {eligibleOwners.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <InlineBanner tone="warning" title="No summary owner configured">
+          Add or resume an ordinary agent before generating a summary.
         </InlineBanner>
-      ) : null}
+      )}
 
       {actionError ? (
         <InlineBanner tone="warning" title="Summary request failed">
@@ -378,10 +271,10 @@ export function SummarySlotCard({
             <Button
               type="button"
               size="sm"
-              onClick={startGeneration}
-              disabled={!selector || generateMutation.isPending}
+              onClick={startRefresh}
+              disabled={!selector || !canGenerate || refreshMutation.isPending}
             >
-              {generateMutation.isPending ? "Retrying..." : "Retry"}
+              {refreshMutation.isPending ? "Retrying..." : "Retry"}
             </Button>
           }
         >
@@ -394,36 +287,8 @@ export function SummarySlotCard({
           <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
           <div className="min-w-0 space-y-1">
             <p className="font-medium text-foreground">Generating summary</p>
-            {generationStatusLine ? (
-              <p
-                className="animate-pulse truncate text-muted-foreground"
-                aria-live="polite"
-                data-testid="summary-generation-status-line"
-                title={generationStatusLine}
-              >
-                {generationStatusLine}
-              </p>
-            ) : null}
-            {draftStream.draft ? (
-              <div
-                className="mt-2 rounded-md border border-border bg-muted/20 p-3"
-                data-testid="summary-generation-draft"
-                aria-live="polite"
-              >
-                <MarkdownBody className="text-sm leading-7 text-foreground">
-                  {draftStream.draft}
-                </MarkdownBody>
-                {!draftStream.draftClosed ? (
-                  <span
-                    className="mt-1 inline-block h-4 w-px animate-pulse bg-foreground align-text-bottom"
-                    aria-hidden="true"
-                    data-testid="summary-generation-caret"
-                  />
-                ) : null}
-              </div>
-            ) : null}
             <p className="text-muted-foreground">
-              Summarizer is working in{" "}
+              The selected agent is working in{" "}
               <Link className="underline" to={`/issues/${generatingIssue.identifier ?? generatingIssue.id}`}>
                 {issueLabel(generatingIssue)}
               </Link>
@@ -433,7 +298,7 @@ export function SummarySlotCard({
         </div>
       ) : null}
 
-      {!slotQuery.isError && !latestDocument && !isGenerating && !generationFailed && canGenerateFirstSummary ? (
+      {!slotQuery.isError && !latestDocument && !isGenerating && !generationFailed && canGenerate ? (
         <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1 text-sm">
             <p className="font-medium text-foreground">No summary yet</p>
@@ -442,11 +307,11 @@ export function SummarySlotCard({
           <Button
             type="button"
             size="sm"
-            onClick={startGeneration}
-            disabled={!selector || generateMutation.isPending}
+            onClick={startRefresh}
+            disabled={!selector || !canGenerate || refreshMutation.isPending}
           >
-            {generateMutation.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
-            {generateMutation.isPending ? "Generating..." : "Generate summary"}
+            {refreshMutation.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
+            {refreshMutation.isPending ? "Starting..." : "Create summary"}
           </Button>
         </div>
       ) : null}

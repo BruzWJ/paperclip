@@ -1,20 +1,26 @@
-import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { agents, companies, createDb, heartbeatRuns } from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { dashboardService, getUtcMonthStart } from "../services/dashboard.ts";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const mocks = vi.hoisted(() => ({
+  listRuns: vi.fn(),
+  costSummary: vi.fn(),
+  budgetOverview: vi.fn(),
+}));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres dashboard service tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
+vi.mock("../services/issue-execution-run-service.js", () => ({
+  listIssueExecutionRunsForActivity: mocks.listRuns,
+}));
+
+vi.mock("../services/costs.js", () => ({
+  costService: () => ({ summary: mocks.costSummary }),
+}));
+
+vi.mock("../services/budgets.js", () => ({
+  budgetService: () => ({ overview: mocks.budgetOverview }),
+}));
+
+const companyId = "00000000-0000-4000-8000-000000000001";
 
 function utcDay(offsetDays: number): Date {
   const now = new Date();
@@ -24,6 +30,32 @@ function utcDay(offsetDays: number): Date {
 
 function utcDateKey(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function run(
+  runId: string,
+  status: "succeeded" | "failed" | "timed_out" | "cancelled",
+  createdAt: Date,
+  input: { retryOfRunId?: string | null; terminalReasonCode?: string | null } = {},
+) {
+  return {
+    runId,
+    status,
+    createdAt,
+    retryOfRunId: input.retryOfRunId ?? null,
+    terminalReasonCode: input.terminalReasonCode ?? null,
+  };
+}
+
+function createDashboardDb() {
+  return createMockDb({
+    select: [
+      [{ id: companyId }],
+      [],
+      [],
+      [{ count: 0 }],
+    ],
+  }).db;
 }
 
 describe("getUtcMonthStart", () => {
@@ -37,122 +69,42 @@ describe("getUtcMonthStart", () => {
   });
 });
 
-describeEmbeddedPostgres("dashboard service", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-dashboard-service-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(heartbeatRuns);
-    await db.delete(agents);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
+describe("dashboard service", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.costSummary.mockResolvedValue({
+      budgetCurrency: "USD",
+      knownSpendAmount: "0",
+      budgetMonthlyAmount: "0",
+      remainingAmount: "0",
+      utilizationPercent: 0,
+      unpricedPromptCount: 0,
+    });
+    mocks.budgetOverview.mockResolvedValue({
+      activeIncidents: [],
+      pendingApprovalCount: 0,
+      pausedAgentCount: 0,
+      pausedProjectCount: 0,
+    });
   });
 
   it("aggregates the full 14-day run activity window without recent-run truncation", async () => {
-    const companyId = randomUUID();
-    const otherCompanyId = randomUUID();
-    const agentId = randomUUID();
-    const otherAgentId = randomUUID();
     const today = utcDay(0);
     const weekAgo = utcDay(-7);
+    const runs = [
+      ...Array.from({ length: 105 }, (_, index) =>
+        run(`run-today-${index}`, "succeeded", today)),
+      run("run-failed", "failed", weekAgo),
+      run("run-timed-out", "timed_out", weekAgo),
+      run("run-cancelled", "cancelled", weekAgo),
+    ];
+    mocks.listRuns.mockResolvedValue({ items: runs, nextCursor: null });
 
-    await db.insert(companies).values([
-      {
-        id: companyId,
-        name: "Paperclip",
-        issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-      {
-        id: otherCompanyId,
-        name: "Other",
-        issuePrefix: `T${otherCompanyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-    ]);
-
-    await db.insert(agents).values([
-      {
-        id: agentId,
-        companyId,
-        name: "CodexCoder",
-        role: "engineer",
-        status: "running",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: otherAgentId,
-        companyId: otherCompanyId,
-        name: "OtherAgent",
-        role: "engineer",
-        status: "running",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-    ]);
-
-    await db.insert(heartbeatRuns).values([
-      ...Array.from({ length: 105 }, () => ({
-        id: randomUUID(),
-        companyId,
-        agentId,
-        invocationSource: "assignment",
-        status: "succeeded",
-        createdAt: today,
-      })),
-      {
-        id: randomUUID(),
-        companyId,
-        agentId,
-        invocationSource: "assignment",
-        status: "failed",
-        createdAt: weekAgo,
-      },
-      {
-        id: randomUUID(),
-        companyId,
-        agentId,
-        invocationSource: "assignment",
-        status: "timed_out",
-        createdAt: weekAgo,
-      },
-      {
-        id: randomUUID(),
-        companyId,
-        agentId,
-        invocationSource: "assignment",
-        status: "cancelled",
-        createdAt: weekAgo,
-      },
-      {
-        id: randomUUID(),
-        companyId: otherCompanyId,
-        agentId: otherAgentId,
-        invocationSource: "assignment",
-        status: "succeeded",
-        createdAt: weekAgo,
-      },
-    ]);
-
-    const summary = await dashboardService(db).summary(companyId);
+    const summary = await dashboardService(createDashboardDb()).summary(companyId);
 
     expect(summary.runActivity).toHaveLength(14);
     const todayBucket = summary.runActivity.find((bucket) => bucket.date === utcDateKey(today));
     const weekAgoBucket = summary.runActivity.find((bucket) => bucket.date === utcDateKey(weekAgo));
-
     expect(todayBucket).toMatchObject({
       succeeded: 105,
       failed: 0,
@@ -167,74 +119,43 @@ describeEmbeddedPostgres("dashboard service", () => {
       recovered: 0,
       other: 1,
       total: 3,
-      // failed + timed_out with no error code both bucket under "unknown"
       failedByErrorCode: { unknown: 2 },
+    });
+    expect(mocks.listRuns).toHaveBeenCalledWith(expect.anything(), {
+      companyId,
+      cursor: null,
+      limit: 200,
     });
   });
 
   it("separates recovered restart kills from true failures and breaks failures down by error code", async () => {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
     const day = utcDay(-2);
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
+    mocks.listRuns.mockResolvedValue({
+      items: [
+        run("original", "failed", day, { terminalReasonCode: "process_lost" }),
+        run("retry", "succeeded", day, { retryOfRunId: "original" }),
+        run("chain-original", "failed", day, { terminalReasonCode: "process_lost" }),
+        run("chain-retry", "failed", day, {
+          retryOfRunId: "chain-original",
+          terminalReasonCode: "process_lost",
+        }),
+        run("chain-success", "succeeded", day, { retryOfRunId: "chain-retry" }),
+        run("quota", "failed", day, { terminalReasonCode: "provider_quota" }),
+      ],
+      nextCursor: null,
     });
 
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "CodexCoder",
-      role: "engineer",
-      status: "running",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    });
-
-    const base = {
-      companyId,
-      agentId,
-      invocationSource: "assignment",
-      createdAt: day,
-    };
-
-    // Direct recovery: a process-loss kill whose retry succeeded.
-    const original = randomUUID();
-    const retry = randomUUID();
-    // Chained recovery: kill -> failed retry -> succeeded retry (both kills recovered).
-    const chainedOriginal = randomUUID();
-    const chainedRetry = randomUUID();
-    const chainedRetrySuccess = randomUUID();
-    // A genuine, unrecovered failure that should remain in the failed count.
-    const trueFailure = randomUUID();
-
-    await db.insert(heartbeatRuns).values([
-      { ...base, id: original, status: "failed", errorCode: "process_lost" },
-      { ...base, id: retry, status: "succeeded", retryOfRunId: original },
-      { ...base, id: chainedOriginal, status: "failed", errorCode: "process_lost" },
-      { ...base, id: chainedRetry, status: "failed", errorCode: "process_lost", retryOfRunId: chainedOriginal },
-      { ...base, id: chainedRetrySuccess, status: "succeeded", retryOfRunId: chainedRetry },
-      { ...base, id: trueFailure, status: "failed", errorCode: "provider_quota" },
-    ]);
-
-    const summary = await dashboardService(db).summary(companyId);
-    const bucket = summary.runActivity.find((b) => b.date === utcDateKey(day));
+    const summary = await dashboardService(createDashboardDb()).summary(companyId);
+    const bucket = summary.runActivity.find((entry) => entry.date === utcDateKey(day));
 
     expect(bucket).toMatchObject({
       succeeded: 2,
-      // original + chainedOriginal + chainedRetry all recovered via a later success
       recovered: 3,
       failed: 1,
       other: 0,
       total: 6,
       failedByErrorCode: { provider_quota: 1 },
     });
-    // process_lost kills that recovered must not leak into the failed breakdown.
     expect(bucket?.failedByErrorCode.process_lost).toBeUndefined();
   });
 });

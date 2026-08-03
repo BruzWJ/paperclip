@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { secretRoutes } from "../routes/secrets.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { HttpError, unprocessable } from "../errors.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockSecretService = vi.hoisted(() => ({
   listProviders: vi.fn(),
@@ -37,8 +38,6 @@ const mockSecretService = vi.hoisted(() => ({
   importRemoteSecrets: vi.fn(),
   listBindingReferences: vi.fn(),
   listAccessEvents: vi.fn(),
-  listAgentSecretAccess: vi.fn(),
-  resolveSecretValueForAgentAccess: vi.fn(),
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
@@ -47,13 +46,21 @@ vi.mock("../services/index.js", () => ({
   logActivity: mockLogActivity,
 }));
 
-function createApp(actor: Record<string, unknown> = {
-  type: "board",
-  userId: "user-1",
-  source: "session",
-  companyIds: ["company-1"],
-  memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
-}) {
+function boardActor(overrides: Record<string, unknown> = {}) {
+  return {
+    ...testBoardSessionActor({
+      userId: "user-1",
+      userName: "User One",
+      userEmail: "user-1@example.com",
+      sessionId: "session-1",
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+    }),
+    ...overrides,
+  };
+}
+
+function createApp(actor: Record<string, unknown> = boardActor()) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -160,13 +167,9 @@ describe("secret routes", () => {
   });
 
   it("restricts user secret definition management to company admins", async () => {
-    const res = await request(createApp({
-      type: "board",
-      userId: "user-1",
-      source: "session",
-      companyIds: ["company-1"],
+    const res = await request(createApp(boardActor({
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
-    })).post("/api/companies/company-1/user-secret-definitions").send({
+    }))).post("/api/companies/company-1/user-secret-definitions").send({
       key: "github_token",
       name: "GitHub token",
       provider: "local_encrypted",
@@ -176,7 +179,7 @@ describe("secret routes", () => {
     expect(mockSecretService.createUserSecretDefinition).not.toHaveBeenCalled();
   });
 
-  it("records implicit user-secret definition admins as system actors instead of board pseudo-users", async () => {
+  it("records authenticated instance admins as canonical user actors", async () => {
     mockSecretService.createUserSecretDefinition.mockResolvedValue({
       id: "definition-1",
       companyId: "company-1",
@@ -186,13 +189,10 @@ describe("secret routes", () => {
       status: "active",
     });
 
-    const res = await request(createApp({
-      type: "board",
-      source: "local_implicit",
+    const res = await request(createApp(boardActor({
       isInstanceAdmin: true,
-      companyIds: ["company-1"],
       memberships: [],
-    })).post("/api/companies/company-1/user-secret-definitions").send({
+    }))).post("/api/companies/company-1/user-secret-definitions").send({
       key: "github_token",
       name: "GitHub token",
       provider: "local_encrypted",
@@ -202,17 +202,16 @@ describe("secret routes", () => {
     expect(mockSecretService.createUserSecretDefinition).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({ key: "github_token" }),
-      { userId: null, agentId: null },
+      { type: "user", userId: "user-1" },
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        actorType: "system",
-        actorId: "local_implicit",
+        actorType: "user",
+        actorId: "user-1",
         action: "user_secret_definition.created",
       }),
     );
-    expect(JSON.stringify(mockLogActivity.mock.calls)).not.toContain("\"board\"");
   });
 
   it("logs patched user-secret definition deletion as deletion activity", async () => {
@@ -234,7 +233,7 @@ describe("secret routes", () => {
       "company-1",
       "definition-1",
       expect.objectContaining({ status: "deleted" }),
-      { userId: "user-1", agentId: null },
+      { type: "user", userId: "user-1" },
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
@@ -274,24 +273,22 @@ describe("secret routes", () => {
         providerVersionRef: undefined,
         providerConfigId: undefined,
       },
-      { userId: "user-1", agentId: null },
+      { type: "user", userId: "user-1" },
     );
     expect(JSON.stringify(mockLogActivity.mock.calls)).not.toContain("secret-value");
   });
 
   it("rejects current-user secret values without a concrete user identity", async () => {
     const res = await request(createApp({
-      type: "board",
-      source: "local_implicit",
-      companyIds: ["company-1"],
-      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      ...boardActor(),
+      userId: undefined,
     })).post("/api/companies/company-1/me/user-secrets").send({
       definitionKey: "github_token",
       value: "secret-value",
     });
 
-    expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ error: "User identity required for user-specific secrets" });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: "Board access required" });
     expect(mockSecretService.createCurrentUserSecretValue).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
@@ -335,13 +332,10 @@ describe("secret routes", () => {
   });
 
   it("rejects provider vault cross-company access before calling the service", async () => {
-    const res = await request(createApp({
-      type: "board",
-      userId: "user-1",
-      source: "session",
+    const res = await request(createApp(boardActor({
       companyIds: ["company-2"],
       memberships: [{ companyId: "company-2", status: "active", membershipRole: "admin" }],
-    })).get("/api/companies/company-1/secret-provider-configs");
+    }))).get("/api/companies/company-1/secret-provider-configs");
 
     expect(res.status).toBe(403);
     expect(mockSecretService.listProviderConfigs).not.toHaveBeenCalled();
@@ -608,7 +602,7 @@ describe("secret routes", () => {
         isDefault: true,
         config: { region: "us-east-1" },
       },
-      { userId: "user-1", agentId: null },
+      { type: "user", userId: "user-1" },
     );
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       action: "secret_provider_config.created",
@@ -652,6 +646,7 @@ describe("secret routes", () => {
     expect(res.status).toBe(200);
     expect(mockSecretService.removeProviderConfig).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
+      { type: "user", userId: "user-1" },
     );
     expect(mockSecretService.disableProviderConfig).not.toHaveBeenCalled();
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -799,7 +794,7 @@ describe("secret routes", () => {
           },
         ],
       },
-      { userId: "user-1", agentId: null },
+      { type: "user", userId: "user-1" },
     );
     expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       action: "secret.remote_import.completed",
@@ -839,6 +834,7 @@ describe("secret routes", () => {
       expect.objectContaining({
         externalRef: "arn:aws:secretsmanager:us-east-1:123456789012:secret:shared/repointed",
       }),
+      { type: "user", userId: "user-1" },
     );
     expect(mockLogActivity).not.toHaveBeenCalled();
     expect(JSON.stringify(mockLogActivity.mock.calls)).not.toContain("shared/repointed");
@@ -854,14 +850,15 @@ describe("secret routes", () => {
       managedMode: "paperclip_managed",
     });
 
-    const crossTenantApp = createApp({
-      type: "board",
+    const crossTenantApp = createApp(boardActor({
       userId: "mallory",
-      source: "session",
+      userName: "Mallory",
+      userEmail: "mallory@example.com",
+      sessionId: "session-mallory",
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(crossTenantApp).get(
       "/api/secrets/44444444-4444-4444-8444-444444444444/usage",
@@ -894,14 +891,15 @@ describe("secret routes", () => {
       managedMode: "paperclip_managed",
     });
 
-    const crossTenantApp = createApp({
-      type: "board",
+    const crossTenantApp = createApp(boardActor({
       userId: "mallory",
-      source: "session",
+      userName: "Mallory",
+      userEmail: "mallory@example.com",
+      sessionId: "session-mallory",
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(crossTenantApp).get(
       "/api/secrets/66666666-6666-4666-8666-666666666666/access-events",
@@ -971,6 +969,7 @@ describe("secret routes", () => {
     expect(res.body).toEqual({ ok: true });
     expect(mockSecretService.remove).toHaveBeenCalledWith(
       "33333333-3333-4333-8333-333333333333",
+      { type: "user", userId: "user-1" },
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),

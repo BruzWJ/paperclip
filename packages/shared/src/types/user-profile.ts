@@ -1,4 +1,5 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface UserProfileIdentity {
   id: string;
@@ -20,31 +21,28 @@ export interface UserProfileWindowStats {
   assignedOpenIssues: number;
   commentCount: number;
   activityCount: number;
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  costEventCount: number;
+  knownCostAmount: MoneyAmount;
+  pricedPromptCount: number;
+  unpricedPromptCount: number;
 }
 
 export interface UserProfileDailyPoint {
   date: string;
   activityCount: number;
   completedIssues: number;
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
+  knownCostAmount: MoneyAmount;
+  pricedPromptCount: number;
+  unpricedPromptCount: number;
 }
 
 export interface UserProfileIssueSummary {
   id: string;
   identifier: string | null;
-  title: string;
-  status: IssueStatus;
+  title: string | null;
+  boardPresentationStatus: IssueStatus;
   priority: IssuePriority;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
   updatedAt: Date;
   completedAt: Date | null;
 }
@@ -61,28 +59,17 @@ export interface UserProfileActivitySummary {
 export interface UserProfileAgentUsage {
   agentId: string;
   agentName: string | null;
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-}
-
-export interface UserProfileProviderUsage {
-  provider: string;
-  biller: string;
-  model: string;
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
+  knownCostAmount: MoneyAmount;
+  pricedPromptCount: number;
+  unpricedPromptCount: number;
 }
 
 export interface UserProfileResponse {
   user: UserProfileIdentity;
+  budgetCurrency: BudgetCurrency;
   stats: UserProfileWindowStats[];
   daily: UserProfileDailyPoint[];
   recentIssues: UserProfileIssueSummary[];
   recentActivity: UserProfileActivitySummary[];
   topAgents: UserProfileAgentUsage[];
-  topProviders: UserProfileProviderUsage[];
 }

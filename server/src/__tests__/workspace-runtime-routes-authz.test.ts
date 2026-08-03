@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockProjectService = vi.hoisted(() => ({
   create: vi.fn(),
@@ -14,6 +16,7 @@ const mockProjectService = vi.hoisted(() => ({
 
 const mockExecutionWorkspaceService = vi.hoisted(() => ({
   getById: vi.fn(),
+  listCurrentBindings: vi.fn(),
   update: vi.fn(),
 }));
 
@@ -26,7 +29,6 @@ const mockEnvironmentService = vi.hoisted(() => ({
 }));
 
 const mockWorkspaceOperationService = vi.hoisted(() => ({}));
-const mockHeartbeatService = vi.hoisted(() => ({}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockAccessService = vi.hoisted(() => ({
@@ -43,7 +45,6 @@ vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
   environmentService: () => mockEnvironmentService,
   executionWorkspaceService: () => mockExecutionWorkspaceService,
-  heartbeatService: () => mockHeartbeatService,
   logActivity: mockLogActivity,
   projectService: () => mockProjectService,
   secretService: () => mockSecretService,
@@ -71,7 +72,6 @@ function registerWorkspaceRouteMocks() {
     accessService: () => mockAccessService,
     environmentService: () => mockEnvironmentService,
     executionWorkspaceService: () => mockExecutionWorkspaceService,
-    heartbeatService: () => mockHeartbeatService,
     logActivity: mockLogActivity,
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
@@ -108,6 +108,7 @@ async function createProjectApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
+  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", projectRoutes({} as any));
   app.use(errorHandler);
   return app;
@@ -128,6 +129,7 @@ async function createExecutionWorkspaceApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
+  app.use("/api", denyGenericAgentRest("REST"));
   app.use("/api", executionWorkspaceRoutes({} as any));
   app.use(errorHandler);
   return app;
@@ -281,11 +283,12 @@ describe.sequential("workspace runtime service route authorization", () => {
       updatedAt: new Date(),
     });
     mockExecutionWorkspaceService.update.mockResolvedValue(buildExecutionWorkspace());
+    mockExecutionWorkspaceService.listCurrentBindings.mockResolvedValue([]);
     mockAssertCanManageProjectWorkspaceRuntimeServices.mockResolvedValue(undefined);
     mockAssertCanManageExecutionWorkspaceRuntimeServices.mockResolvedValue(undefined);
   });
 
-  it("rejects agent callers for project workspace runtime service mutations when workspace auth denies access", async () => {
+  it("rejects agent callers for project workspace runtime service mutations at the generic REST boundary", async () => {
     const { forbidden } = await import("../errors.js");
     mockProjectService.getById.mockResolvedValue(buildProject({
       id: projectId,
@@ -320,7 +323,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -329,9 +332,9 @@ describe.sequential("workspace runtime service route authorization", () => {
       .send({});
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Missing permission");
-    expect(mockProjectService.getById).toHaveBeenCalledWith(projectId);
-    expect(mockAssertCanManageProjectWorkspaceRuntimeServices).toHaveBeenCalled();
+    expect(res.body.code).toBe("compiled_run_interface_required");
+    expect(mockProjectService.getById).not.toHaveBeenCalled();
+    expect(mockAssertCanManageProjectWorkspaceRuntimeServices).not.toHaveBeenCalled();
   }, 15000);
 
   it("blocks shared-project stop/restart requests from agents", async () => {
@@ -365,7 +368,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -376,8 +379,8 @@ describe.sequential("workspace runtime service route authorization", () => {
 
     for (const res of responses) {
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain("Missing permission");
-      expect(mockProjectService.getById).toHaveBeenCalledWith(projectId);
+      expect(res.body.code).toBe("compiled_run_interface_required");
+      expect(mockProjectService.getById).not.toHaveBeenCalled();
       expect(mockAssertCanManageProjectWorkspaceRuntimeServices).not.toHaveBeenCalled();
     }
 
@@ -388,7 +391,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -406,7 +409,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockProjectService.create).not.toHaveBeenCalled();
   });
 
@@ -416,7 +419,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -427,19 +430,26 @@ describe.sequential("workspace runtime service route authorization", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body.code).toBe("compiled_run_interface_required");
+    expect(mockProjectService.getById).not.toHaveBeenCalled();
     expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
   });
 
   it("allows board callers through the project workspace runtime auth gate", async () => {
     mockProjectService.getById.mockResolvedValue(null);
-    const app = await createProjectApp({
-      type: "board",
+    const app = await createProjectApp(testBoardSessionActor({
       userId: "board-1",
+      userName: "Board One",
+      userEmail: "board-1@paperclip.test",
+      sessionId: "session-board-1",
       companyIds: ["company-1"],
-      source: "session",
+      memberships: [{
+        companyId: "company-1",
+        membershipRole: "operator",
+        status: "active",
+      }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app)
       .post(`/api/projects/${projectId}/workspaces/${workspaceId}/runtime-services/start`)
@@ -450,17 +460,13 @@ describe.sequential("workspace runtime service route authorization", () => {
     expect(mockProjectService.getById).toHaveBeenCalledWith(projectId);
   });
 
-  it("rejects agent callers for execution workspace runtime service mutations when workspace auth denies access", async () => {
-    const { forbidden } = await import("../errors.js");
+  it("rejects agent callers before execution workspace runtime service authorization", async () => {
     mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({ id: executionWorkspaceId }));
-    mockAssertCanManageExecutionWorkspaceRuntimeServices.mockRejectedValue(
-      forbidden("Missing permission to manage workspace runtime services"),
-    );
     const app = await createExecutionWorkspaceApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -469,9 +475,9 @@ describe.sequential("workspace runtime service route authorization", () => {
       .send({});
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Missing permission");
-    expect(mockExecutionWorkspaceService.getById).toHaveBeenCalledWith(executionWorkspaceId);
-    expect(mockAssertCanManageExecutionWorkspaceRuntimeServices).toHaveBeenCalled();
+    expect(res.body.code).toBe("compiled_run_interface_required");
+    expect(mockExecutionWorkspaceService.getById).not.toHaveBeenCalled();
+    expect(mockAssertCanManageExecutionWorkspaceRuntimeServices).not.toHaveBeenCalled();
   }, 15000);
 
   it("rejects agent callers that patch execution workspace command config", async () => {
@@ -480,7 +486,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -493,7 +499,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
   });
 
@@ -503,7 +509,7 @@ describe.sequential("workspace runtime service route authorization", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -518,19 +524,25 @@ describe.sequential("workspace runtime service route authorization", () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(res.body.code).toBe("compiled_run_interface_required");
     expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
   });
 
   it("allows board callers through the execution workspace runtime auth gate", async () => {
     mockExecutionWorkspaceService.getById.mockResolvedValue(null);
-    const app = await createExecutionWorkspaceApp({
-      type: "board",
+    const app = await createExecutionWorkspaceApp(testBoardSessionActor({
       userId: "board-1",
+      userName: "Board One",
+      userEmail: "board-1@paperclip.test",
+      sessionId: "session-board-1",
       companyIds: ["company-1"],
-      source: "session",
+      memberships: [{
+        companyId: "company-1",
+        membershipRole: "operator",
+        status: "active",
+      }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app)
       .post(`/api/execution-workspaces/${executionWorkspaceId}/runtime-services/restart`)

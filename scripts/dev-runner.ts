@@ -1,14 +1,13 @@
 #!/usr/bin/env -S node --import tsx
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-import { createCapturedOutputBuffer, parseJsonResponseWithLimit } from "./dev-runner-output.ts";
+import { createCapturedOutputBuffer } from "./dev-runner-output.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
 import { bootstrapDevRunnerWorktreeEnv } from "../server/src/dev-runner-worktree.ts";
+import { consumeDevServerRestartRequest } from "../server/src/dev-server-status.ts";
+import { loadRuntimeEnvironmentFiles } from "../server/src/runtime-environment.ts";
 import {
   findAdoptableLocalService,
   removeLocalServiceRegistryRecord,
@@ -21,7 +20,10 @@ import {
 const BIND_MODES = ["loopback", "lan", "tailnet", "custom"] as const;
 type BindMode = (typeof BIND_MODES)[number];
 
-const worktreeEnvBootstrap = bootstrapDevRunnerWorktreeEnv(repoRoot, process.env);
+const worktreeEnvBootstrap = await bootstrapDevRunnerWorktreeEnv(
+  repoRoot,
+  process.env,
+);
 if (worktreeEnvBootstrap.missingEnv) {
   console.error(
     `[paperclip] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`paperclipai worktree init\` in this worktree before \`pnpm dev\`.`,
@@ -29,16 +31,19 @@ if (worktreeEnvBootstrap.missingEnv) {
   process.exit(1);
 }
 
+loadRuntimeEnvironmentFiles({
+  cwd: repoRoot,
+  environment: process.env,
+});
+
 const mode = process.argv[2] === "watch" ? "watch" : "dev";
 const cliArgs = process.argv.slice(3);
 const scanIntervalMs = 1500;
-const autoRestartPollIntervalMs = 2500;
+const restartRequestPollIntervalMs = 2500;
 const gracefulShutdownTimeoutMs = 10_000;
 const changedPathSampleLimit = 5;
 const devServerStatusFilePath = path.join(repoRoot, ".paperclip", "dev-server-status.json");
 const devServerRestartRequestFilePath = path.join(repoRoot, ".paperclip", "dev-server-restart-request.json");
-const devServerStatusToken = mode === "dev" ? randomUUID() : null;
-const devServerStatusTokenHeader = "x-paperclip-dev-server-status-token";
 
 const watchedDirectories = [
   "cli",
@@ -76,22 +81,12 @@ const ignoredRelativePaths = new Set([
   ".paperclip/dev-server-status.json",
 ]);
 
-const tailscaleAuthFlagNames = new Set([
-  "--tailscale-auth",
-  "--authenticated-private",
-]);
-
-let tailscaleAuth = false;
 let bindMode: BindMode | null = null;
 let bindHost: string | null = null;
 const forwardedArgs: string[] = [];
 
 for (let index = 0; index < cliArgs.length; index += 1) {
   const arg = cliArgs[index];
-  if (tailscaleAuthFlagNames.has(arg)) {
-    tailscaleAuth = true;
-    continue;
-  }
   if (arg === "--bind") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--") || !BIND_MODES.includes(value as BindMode)) {
@@ -115,12 +110,6 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   forwardedArgs.push(arg);
 }
 
-if (process.env.npm_config_tailscale_auth === "true") {
-  tailscaleAuth = true;
-}
-if (process.env.npm_config_authenticated_private === "true") {
-  tailscaleAuth = true;
-}
 if (!bindMode && process.env.npm_config_bind && BIND_MODES.includes(process.env.npm_config_bind as BindMode)) {
   bindMode = process.env.npm_config_bind as BindMode;
 }
@@ -139,54 +128,31 @@ const env: NodeJS.ProcessEnv = {
 
 if (mode === "dev") {
   env.PAPERCLIP_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
-  env.PAPERCLIP_DEV_SERVER_STATUS_TOKEN = devServerStatusToken ?? "";
-  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= "true";
 }
 
-if (mode === "watch") {
-  delete env.PAPERCLIP_DEV_SERVER_STATUS_TOKEN;
-  env.PAPERCLIP_MIGRATION_PROMPT ??= "never";
-  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= "true";
-}
-
-if (tailscaleAuth || bindMode) {
-  const effectiveBind = bindMode ?? "lan";
-  if (tailscaleAuth) {
-    console.log("[paperclip] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
-  }
-  env.PAPERCLIP_BIND = effectiveBind;
+if (bindMode) {
+  env.PAPERCLIP_BIND = bindMode;
   if (bindHost) {
     env.PAPERCLIP_BIND_HOST = bindHost;
   } else {
     delete env.PAPERCLIP_BIND_HOST;
   }
-  if (effectiveBind === "loopback" && !tailscaleAuth) {
-    delete env.PAPERCLIP_DEPLOYMENT_MODE;
-    delete env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
-    delete env.PAPERCLIP_AUTH_BASE_URL_MODE;
-    console.log("[paperclip] dev mode: local_trusted (bind=loopback)");
-  } else {
-    env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
-    env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "private";
-    env.PAPERCLIP_AUTH_BASE_URL_MODE = "auto";
-    console.log(
-      `[paperclip] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
-    );
-  }
+  env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "private";
+  console.log(
+    `[paperclip] dev exposure: private (bind=${bindMode}${bindHost ? `:${bindHost}` : ""})`,
+  );
 } else {
   delete env.PAPERCLIP_BIND;
   delete env.PAPERCLIP_BIND_HOST;
-  delete env.PAPERCLIP_DEPLOYMENT_MODE;
-  delete env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
-  delete env.PAPERCLIP_AUTH_BASE_URL_MODE;
-  console.log("[paperclip] dev mode: local_trusted (default)");
+  env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "private";
+  console.log("[paperclip] dev exposure: private (bind=loopback)");
 }
 
 const serverPort = Number.parseInt(env.PORT ?? process.env.PORT ?? "3100", 10) || 3100;
 const devService = createDevServiceIdentity({
   mode,
   forwardedArgs,
-  networkProfile: tailscaleAuth ? `legacy:${bindMode ?? "lan"}` : (bindMode ?? "default"),
+  networkProfile: bindMode ?? "default",
   port: serverPort,
 });
 
@@ -206,7 +172,6 @@ if (existingRunner) {
 const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 let previousSnapshot = collectWatchedSnapshot();
 let dirtyPaths = new Set<string>();
-let pendingMigrations: string[] = [];
 let lastChangedAt: string | null = null;
 let lastRestartAt: string | null = null;
 let scanInFlight = false;
@@ -216,7 +181,7 @@ let childExitWasExpected = false;
 let child: ReturnType<typeof spawn> | null = null;
 let childExitPromise: Promise<{ code: number; signal: NodeJS.Signals | null }> | null = null;
 let scanTimer: ReturnType<typeof setInterval> | null = null;
-let autoRestartTimer: ReturnType<typeof setInterval> | null = null;
+let restartRequestTimer: ReturnType<typeof setInterval> | null = null;
 
 function toError(error: unknown, context = "Dev runner command failed") {
   if (error instanceof Error) return error;
@@ -243,13 +208,6 @@ process.on("unhandledRejection", async (reason) => {
   process.stderr.write(`${err.stack ?? err.message}\n`);
   process.exit(1);
 });
-
-function formatPendingMigrationSummary(migrations: string[]) {
-  if (migrations.length === 0) return "none";
-  return migrations.length > 3
-    ? `${migrations.slice(0, 3).join(", ")} (+${migrations.length - 3} more)`
-    : migrations.join(", ");
-}
 
 function exitForSignal(signal: NodeJS.Signals) {
   if (signal === "SIGINT") {
@@ -283,11 +241,10 @@ function writeDevServerStatus() {
   writeFileSync(
     devServerStatusFilePath,
     `${JSON.stringify({
-      dirty: changedPaths.length > 0 || pendingMigrations.length > 0,
+      dirty: changedPaths.length > 0,
       lastChangedAt,
       changedPathCount: changedPaths.length,
       changedPathsSample: changedPaths.slice(0, changedPathSampleLimit),
-      pendingMigrations,
       lastRestartAt,
     }, null, 2)}\n`,
     "utf8",
@@ -298,12 +255,6 @@ function clearDevServerStatus() {
   if (mode !== "dev") return;
   rmSync(devServerStatusFilePath, { force: true });
   rmSync(devServerRestartRequestFilePath, { force: true });
-}
-
-function consumeDevServerRestartRequest() {
-  if (mode !== "dev" || !existsSync(devServerRestartRequestFilePath)) return false;
-  rmSync(devServerRestartRequestFilePath, { force: true });
-  return true;
 }
 
 async function updateDevServiceRecord(extra?: Record<string, unknown>) {
@@ -375,100 +326,6 @@ async function runPnpm(args: string[], options: {
   });
 }
 
-async function getMigrationStatusPayload() {
-  const status = await runPnpm(
-    ["--filter", "@paperclipai/db", "exec", "tsx", "src/migration-status.ts", "--json"],
-    { env },
-  );
-  if (status.code !== 0) {
-    process.stderr.write(
-      status.stderr ||
-        status.stdout ||
-        `[paperclip] Command failed with code ${status.code}: pnpm --filter @paperclipai/db exec tsx src/migration-status.ts --json\n`,
-    );
-    process.exit(status.code);
-  }
-
-  try {
-    return JSON.parse(status.stdout.trim()) as { status?: string; pendingMigrations?: string[] };
-  } catch (error) {
-    process.stderr.write(
-      status.stderr ||
-        status.stdout ||
-        "[paperclip] migration-status returned invalid JSON payload\n",
-    );
-    throw toError(error, "Unable to parse migration-status JSON output");
-  }
-}
-
-async function refreshPendingMigrations() {
-  const payload = await getMigrationStatusPayload();
-  pendingMigrations =
-    payload.status === "needsMigrations" && Array.isArray(payload.pendingMigrations)
-      ? payload.pendingMigrations.filter((entry) => typeof entry === "string" && entry.trim().length > 0)
-      : [];
-  writeDevServerStatus();
-  return payload;
-}
-
-async function maybePreflightMigrations(options: { interactive?: boolean; autoApply?: boolean; exitOnDecline?: boolean } = {}) {
-  const interactive = options.interactive ?? mode === "watch";
-  const autoApply = options.autoApply ?? env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true";
-  const exitOnDecline = options.exitOnDecline ?? mode === "watch";
-
-  const payload = await refreshPendingMigrations();
-  if (payload.status !== "needsMigrations" || pendingMigrations.length === 0) {
-    return;
-  }
-
-  let shouldApply = autoApply;
-
-  if (!autoApply && interactive) {
-    if (!stdin.isTTY || !stdout.isTTY) {
-      shouldApply = true;
-    } else {
-      const prompt = createInterface({ input: stdin, output: stdout });
-      try {
-        const answer = (
-          await prompt.question(
-            `Apply pending migrations (${formatPendingMigrationSummary(pendingMigrations)}) now? (y/N): `,
-          )
-        )
-          .trim()
-          .toLowerCase();
-        shouldApply = answer === "y" || answer === "yes";
-      } finally {
-        prompt.close();
-      }
-    }
-  }
-
-  if (!shouldApply) {
-    if (exitOnDecline) {
-      process.stderr.write(
-        `[paperclip] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
-      );
-      process.exit(1);
-    }
-    return;
-  }
-
-  const exit = await runPnpm(["db:migrate"], {
-    stdio: "inherit",
-    env,
-    cwd: repoRoot,
-  });
-  if (exit.signal) {
-    exitForSignal(exit.signal);
-    return;
-  }
-  if (exit.code !== 0) {
-    process.exit(exit.code);
-  }
-
-  await refreshPendingMigrations();
-}
-
 async function buildPluginSdk() {
   console.log("[paperclip] building plugin sdk...");
   const result = await runPnpm(
@@ -490,7 +347,7 @@ async function markChildAsCurrent() {
   dirtyPaths = new Set();
   lastChangedAt = null;
   lastRestartAt = new Date().toISOString();
-  await refreshPendingMigrations();
+  writeDevServerStatus();
   await updateDevServiceRecord();
 }
 
@@ -507,20 +364,10 @@ async function scanForBackendChanges() {
       dirtyPaths.add(relativePath);
     }
     lastChangedAt = new Date().toISOString();
-    await refreshPendingMigrations();
+    writeDevServerStatus();
   } finally {
     scanInFlight = false;
   }
-}
-
-async function getDevHealthPayload() {
-  const response = await fetch(`http://127.0.0.1:${serverPort}/api/health`, {
-    headers: devServerStatusToken ? { [devServerStatusTokenHeader]: devServerStatusToken } : undefined,
-  });
-  if (!response.ok) {
-    throw new Error(`Health request failed (${response.status})`);
-  }
-  return await parseJsonResponseWithLimit(response);
 }
 
 async function waitForChildExit() {
@@ -587,44 +434,19 @@ async function startServerChild() {
   await markChildAsCurrent();
 }
 
-async function maybeAutoRestartChild() {
+async function maybeRestartChildFromRequest() {
   if (mode !== "dev" || restartInFlight || !child) return;
-  const manualRestartRequested = consumeDevServerRestartRequest();
-  if (!manualRestartRequested && dirtyPaths.size === 0 && pendingMigrations.length === 0) return;
+  const restartRequest = consumeDevServerRestartRequest(env);
+  if (!restartRequest) return;
 
   restartInFlight = true;
-  let health: { devServer?: { enabled?: boolean; autoRestartEnabled?: boolean; activeRunCount?: number } } | null = null;
-  try {
-    health = await getDevHealthPayload();
-  } catch {
-    restartInFlight = false;
-    return;
-  }
-
-  const devServer = health?.devServer;
-  if (!devServer?.enabled) {
-    restartInFlight = false;
-    return;
-  }
-  if (!manualRestartRequested && devServer.autoRestartEnabled !== true) {
-    restartInFlight = false;
-    return;
-  }
-  if (!manualRestartRequested && (devServer.activeRunCount ?? 0) > 0) {
-    restartInFlight = false;
-    return;
-  }
 
   try {
-    await maybePreflightMigrations({
-      autoApply: true,
-      interactive: false,
-      exitOnDecline: false,
-    });
+    console.log(`[paperclip] restarting dev server (${restartRequest.reason})...`);
     await stopChildForRestart();
     await startServerChild();
   } catch (error) {
-    const err = toError(error, "Auto-restart failed");
+    const err = toError(error, "Dev-server restart failed");
     process.stderr.write(`${err.stack ?? err.message}\n`);
     process.exit(1);
   } finally {
@@ -638,9 +460,9 @@ function installDevIntervals() {
   scanTimer = setInterval(() => {
     void scanForBackendChanges();
   }, scanIntervalMs);
-  autoRestartTimer = setInterval(() => {
-    void maybeAutoRestartChild();
-  }, autoRestartPollIntervalMs);
+  restartRequestTimer = setInterval(() => {
+    void maybeRestartChildFromRequest();
+  }, restartRequestPollIntervalMs);
 }
 
 function clearDevIntervals() {
@@ -648,9 +470,9 @@ function clearDevIntervals() {
     clearInterval(scanTimer);
     scanTimer = null;
   }
-  if (autoRestartTimer) {
-    clearInterval(autoRestartTimer);
-    autoRestartTimer = null;
+  if (restartRequestTimer) {
+    clearInterval(restartRequestTimer);
+    restartRequestTimer = null;
   }
 }
 
@@ -683,7 +505,6 @@ process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
 
-await maybePreflightMigrations();
 await startServerChild();
 installDevIntervals();
 

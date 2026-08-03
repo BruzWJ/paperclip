@@ -1,172 +1,41 @@
-# Agent Runtime Guide
+# Agent Runtime Contract
 
-Status: User-facing guide  
-Last updated: 2026-02-17  
-Audience: Operators setting up and running agents in Paperclip
+Status: current
 
-## 1. What this system does
+The user-facing runtime guide is [docs/agents-runtime.md](../../docs/agents-runtime.md). This file records the protocol boundary expected by adapter and server implementations.
 
-Agents in Paperclip do not run continuously.  
-They run in **heartbeats**: short execution windows triggered by a wakeup.
+## Admission
 
-Each heartbeat:
+A provider run may start only from a persisted, active `IssueExecutionRef` produced by a canonical issue operation. The dispatcher must lease and revalidate the exact company, issue, ownership epoch, target agent, adapter revision, authority, source, and session input immediately before launch.
 
-1. Starts the configured agent adapter (for example, Claude CLI or Codex CLI)
-2. Gives it the current prompt/context
-3. Lets it work until it exits, times out, or is cancelled
-4. Stores results (status, token usage, errors, logs)
-5. Updates the UI live
+There is no generic invoke, wake, timer ping, agent REST credential, or provider-side issue polling loop. Scheduled work is represented by a routine-created ordinary issue.
 
-## 2. When an agent wakes up
+## Input
 
-An agent can be woken up in four ways:
+The Paperclip-authored user message is exactly the immutable issue request or typed follow-up text. A fresh execution may prepend only the deterministic issue-session composition authorized by the current-issue comment/run dial cells. With both false, no prefix exists.
 
-- `timer`: scheduled interval (for example every 5 minutes)
-- `assignment`: when work is assigned/checked out to that agent
-- `on_demand`: manual wakeup (button/API)
-- `automation`: system-triggered wakeup for future automations
+Paperclip supplies no caller profile, company context, goal ancestry, lifecycle prose, managed instructions, prompt template, workspace metadata, or generic REST bridge.
 
-If an agent is already running, new wakeups are merged (coalesced) instead of launching duplicate runs.
+## Interface
 
-## 3. What to configure per agent
+Each lease receives a `paperclip.run-tools/v1` descriptor compiled from live context/action/mention grants, dynamic owner/creator authority, and selected company tools. False grants make surfaces absent. The bearer is accepted only by the compiled endpoint and expires with the lease.
 
-## 3.1 Adapter choice
+## Session
 
-Common choices:
+The canonical record is the issue's Paperclip Session log. Effective `carry_context` permits a codec-validated provider-native handle only for the same issue, ownership epoch, agent, and adapter configuration identity. False-carry, consult, reassignment, reset, and revision changes run fresh.
 
-- `claude_local`: runs your local `claude` CLI
-- `codex_local`: runs your local `codex` CLI
-- `process`: generic shell command adapter
-- `http`: calls an external HTTP endpoint
+Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across issues.
 
-For `claude_local` and `codex_local`, Paperclip assumes the CLI is already installed and authenticated on the host machine.
+## Workspace
 
-## 3.2 Runtime behavior
+The execution workspace is selected only by the persisted issue/epoch binding. The common execution-target bridge realizes its absolute workspace for local, SSH, sandbox, or plugin drivers and culminates in the one worker-supervised ACP subprocess; declarative adapters do not receive a process callback or alternate remote transport. No agent-home, adapter-configured cwd, process cwd, prior conversational session, or workspace environment metadata is a fallback.
 
-In agent runtime settings, configure heartbeat policy:
+## Output
 
-- `enabled`: allow scheduled heartbeats
-- `intervalSec`: timer interval (0 = disabled)
-- `wakeOnAssignment`: wake when assigned work
-- `wakeOnOnDemand`: allow ping-style on-demand wakeups
-- `wakeOnAutomation`: allow system automation wakeups
+Adapters normalize stream events into the Paperclip Session event/message vocabulary. The projector derives structured run history, chronological comments, telemetry, and lifecycle effects. Provider-hidden state and credentials never enter the log.
 
-## 3.3 Working directory and execution limits
+A productive final always yields the canonical assistant turn. The outcome translator applies any authorized zero-tool completion or counterpart routing and writes at most one comment of record. Compaction is a separately kinded run and produces no comment.
 
-For local adapters, set:
+## Recovery
 
-- `cwd` (working directory)
-- `timeoutSec` (max runtime per heartbeat)
-- `graceSec` (time before force-kill after timeout/cancel)
-- optional env vars and extra CLI args
-
-## 3.4 Prompt templates
-
-You can set:
-
-- `promptTemplate`: used for every run (first run and resumed sessions)
-
-Templates support variables like `{{agent.id}}`, `{{agent.name}}`, and run context values.
-
-## 4. Session resume behavior
-
-Paperclip stores resumable session state per `(agent, taskKey, adapterType)`.
-`taskKey` is derived from wakeup context (`taskKey`, `taskId`, or `issueId`).
-
-- A heartbeat for the same task key reuses the previous session for that task.
-- Different task keys for the same agent keep separate session state.
-- If restore fails, adapters should retry once with a fresh session and continue.
-- You can reset all sessions for an agent or reset one task session by task key.
-
-Use session reset when:
-
-- you significantly changed prompt strategy
-- the agent is stuck in a bad loop
-- you want a clean restart
-
-## 5. Logs, status, and run history
-
-For each heartbeat run you get:
-
-- run status (`queued`, `running`, `succeeded`, `failed`, `timed_out`, `cancelled`)
-- error text and stderr/stdout excerpts
-- token usage/cost when available from the adapter
-- full logs (stored outside core run rows, optimized for large output)
-
-In local/dev setups, full logs are stored on disk under the configured run-log path.
-
-## 6. Live updates in the UI
-
-Paperclip pushes runtime/activity updates to the browser in real time.
-
-You should see live changes for:
-
-- agent status
-- heartbeat run status
-- task/activity updates caused by agent work
-- dashboard/cost/activity panels as relevant
-
-If the connection drops, the UI reconnects automatically.
-
-## 7. Common operating patterns
-
-## 7.1 Simple autonomous loop
-
-1. Enable timer wakeups (for example every 300s)
-2. Keep assignment wakeups on
-3. Use a focused prompt template that tells agents to act in the same heartbeat, leave durable progress, and mark blocked work with an owner/action
-4. Watch run logs and adjust prompt/config over time
-
-## 7.2 Event-driven loop (less constant polling)
-
-1. Disable timer or set a long interval
-2. Keep wake-on-assignment enabled
-3. Use child issues, comments, and on-demand wakeups for handoffs instead of loops that poll agents, sessions, or processes
-
-## 7.3 Safety-first loop
-
-1. Short timeout
-2. Conservative prompt
-3. Monitor errors + cancel quickly when needed
-4. Reset sessions when drift appears
-
-## 8. Troubleshooting
-
-If runs fail repeatedly:
-
-1. Check adapter command availability (`claude`/`codex` installed and logged in).
-2. Verify `cwd` exists and is accessible.
-3. Inspect run error + stderr excerpt, then full log.
-4. Confirm timeout is not too low.
-5. Reset session and retry.
-6. Pause agent if it is causing repeated bad updates.
-
-Typical failure causes:
-
-- CLI not installed/authenticated
-- bad working directory
-- malformed adapter args/env
-- prompt too broad or missing constraints
-- process timeout
-
-## 9. Security and risk notes
-
-Local CLI adapters run unsandboxed on the host machine.
-
-That means:
-
-- prompt instructions matter
-- configured credentials/env vars are sensitive
-- working directory permissions matter
-
-Start with least privilege where possible, and avoid exposing secrets in broad reusable prompts unless intentionally required.
-
-## 10. Minimal setup checklist
-
-1. Choose adapter (`claude_local` or `codex_local`).
-2. Set `cwd` to the target workspace.
-3. Add bootstrap + normal prompt templates.
-4. Configure heartbeat policy (timer and/or assignment wakeups).
-5. Trigger a manual wakeup.
-6. Confirm run succeeds and session/token usage is recorded.
-7. Watch live updates and iterate prompt/config.
+Process loss and retry re-lease the original persisted reference and resume its persisted execution view. They never create a replacement wake, prompt, session, or idempotency identity. Stale authority, epoch, revision, lease, input, or source causes terminal rejection.

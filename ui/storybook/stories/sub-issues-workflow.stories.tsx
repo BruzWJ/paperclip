@@ -36,10 +36,10 @@ const blockerRef = (issue: Issue): BlockerRef => ({
   id: issue.id,
   identifier: issue.identifier,
   title: issue.title,
-  status: issue.status,
+  boardPresentationStatus: issue.boardPresentationStatus,
   priority: issue.priority,
-  assigneeAgentId: issue.assigneeAgentId,
-  assigneeUserId: issue.assigneeUserId,
+  ownerAgentId: issue.ownerAgentId,
+  ownerUserId: issue.ownerUserId,
 });
 
 const baseCreatedAt = new Date("2026-04-10T12:00:00.000Z").getTime();
@@ -60,7 +60,7 @@ const scoping = child({
   identifier: "PAP-1954",
   issueNumber: 1954,
   title: "Scoping review",
-  status: "done",
+  boardPresentationStatus: "done",
   priority: "medium",
   completedAt: createdAt(120),
   createdAt: createdAt(0),
@@ -71,7 +71,7 @@ const security = child({
   identifier: "PAP-1955",
   issueNumber: 1955,
   title: "Security scoping",
-  status: "done",
+  boardPresentationStatus: "done",
   priority: "medium",
   completedAt: createdAt(180),
   createdAt: createdAt(10),
@@ -82,7 +82,7 @@ const phase1 = child({
   identifier: "PAP-1960",
   issueNumber: 1960,
   title: "Phase 1 — groundwork",
-  status: "done",
+  boardPresentationStatus: "done",
   priority: "medium",
   completedAt: createdAt(600),
   createdAt: createdAt(20),
@@ -93,7 +93,7 @@ const phase2 = child({
   identifier: "PAP-1961",
   issueNumber: 1961,
   title: "Phase 2 — integration",
-  status: "done",
+  boardPresentationStatus: "done",
   priority: "medium",
   completedAt: createdAt(720),
   createdAt: createdAt(30),
@@ -105,7 +105,7 @@ const phase3 = child({
   identifier: "PAP-1962",
   issueNumber: 1962,
   title: "Phase 3 — data model",
-  status: "done",
+  boardPresentationStatus: "done",
   priority: "medium",
   completedAt: createdAt(800),
   createdAt: createdAt(40),
@@ -116,7 +116,7 @@ const phase4 = child({
   identifier: "PAP-1963",
   issueNumber: 1963,
   title: "Phase 4 — API surface",
-  status: "done",
+  boardPresentationStatus: "done",
   priority: "medium",
   completedAt: createdAt(900),
   createdAt: createdAt(50),
@@ -128,7 +128,7 @@ const phase5 = child({
   identifier: "PAP-1964",
   issueNumber: 1964,
   title: "Phase 5 — UI polish",
-  status: "in_progress",
+  boardPresentationStatus: "in_progress",
   priority: "high",
   createdAt: createdAt(60),
   blockedBy: [blockerRef(phase4)],
@@ -139,7 +139,7 @@ const phase6 = child({
   identifier: "PAP-1965",
   issueNumber: 1965,
   title: "Phase 6 — telemetry wiring",
-  status: "blocked",
+  boardPresentationStatus: "blocked",
   priority: "medium",
   createdAt: createdAt(70),
   blockedBy: [blockerRef(phase5)],
@@ -150,7 +150,7 @@ const phase7 = child({
   identifier: "PAP-1966",
   issueNumber: 1966,
   title: "Phase 7 — rollout",
-  status: "blocked",
+  boardPresentationStatus: "blocked",
   priority: "medium",
   createdAt: createdAt(80),
   blockedBy: [blockerRef(phase6)],
@@ -243,7 +243,6 @@ function SubIssuesWorkflowPanel() {
               viewStateKey={viewStateKey}
               defaultSortField="workflow"
               showProgressSummary
-              onUpdateIssue={() => undefined}
               createIssueLabel="Sub-issue"
             />
           </div>

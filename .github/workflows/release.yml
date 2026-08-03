@@ -26,6 +26,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve_stable_ref:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+
+    steps:
+      - name: Resolve stable source to one immutable commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref }}
+
+      - name: Export immutable source commit
+        id: resolve
+        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   verify_canary:
     if: github.event_name == 'push'
     uses: ./.github/workflows/release-verify.yml
@@ -35,6 +55,8 @@ jobs:
   publish_canary:
     if: github.event_name == 'push'
     needs: verify_canary
+    outputs:
+      published_version: ${{ steps.published_version.outputs.version }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: npm-canary
@@ -47,6 +69,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -56,7 +79,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Validate release package manifest
@@ -89,23 +112,52 @@ jobs:
           done
 
       - name: Push canary tag
+        id: published_version
         run: |
           tag="$(git tag --points-at HEAD | grep '^canary/v' | head -1)"
           if [ -z "$tag" ]; then
             echo "Error: no canary tag points at HEAD after release." >&2
             exit 1
           fi
+          echo "version=${tag#canary/v}" >> "$GITHUB_OUTPUT"
           git push origin "refs/tags/${tag}"
+
+  smoke_canary:
+    if: github.event_name == 'push'
+    needs: publish_canary
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      ref: ${{ github.sha }}
+      paperclip_version: ${{ needs.publish_canary.outputs.published_version }}
+      artifact_name: release-smoke-canary
+
+  complete_canary:
+    if: ${{ always() && github.event_name == 'push' }}
+    needs: [verify_canary, publish_canary, smoke_canary]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require exact published canary smoke
+        env:
+          VERIFY_RESULT: ${{ needs.verify_canary.result }}
+          PUBLISH_RESULT: ${{ needs.publish_canary.result }}
+          SMOKE_RESULT: ${{ needs.smoke_canary.result }}
+        run: |
+          test "$VERIFY_RESULT" = "success"
+          test "$PUBLISH_RESULT" = "success"
+          test "$SMOKE_RESULT" = "success"
 
   verify_stable:
     if: github.event_name == 'workflow_dispatch'
+    needs: resolve_stable_ref
     uses: ./.github/workflows/release-verify.yml
     with:
-      ref: ${{ inputs.source_ref }}
+      ref: ${{ needs.resolve_stable_ref.outputs.source_sha }}
 
   preview_stable:
     if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-    needs: verify_stable
+    needs: [resolve_stable_ref, verify_stable]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -116,7 +168,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.resolve_stable_ref.outputs.source_sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -126,7 +178,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Validate release package manifest
@@ -147,7 +199,9 @@ jobs:
 
   publish_stable:
     if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
-    needs: verify_stable
+    needs: [resolve_stable_ref, verify_stable]
+    outputs:
+      published_version: ${{ steps.published_version.outputs.version }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: npm-stable
@@ -160,7 +214,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.resolve_stable_ref.outputs.source_sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -170,7 +224,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies
@@ -205,12 +259,14 @@ jobs:
           done
 
       - name: Push stable tag
+        id: published_version
         run: |
           tag="$(git tag --points-at HEAD | grep '^v' | head -1)"
           if [ -z "$tag" ]; then
             echo "Error: no stable tag points at HEAD after release." >&2
             exit 1
           fi
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           git push origin "refs/tags/${tag}"
 
       - name: Create GitHub Release
@@ -224,3 +280,31 @@ jobs:
             exit 1
           fi
           ./scripts/create-github-release.sh "$version"
+
+  smoke_stable:
+    if: github.event_name == 'workflow_dispatch' && !inputs.dry_run
+    needs: [resolve_stable_ref, publish_stable]
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      ref: ${{ needs.resolve_stable_ref.outputs.source_sha }}
+      paperclip_version: ${{ needs.publish_stable.outputs.published_version }}
+      artifact_name: release-smoke-stable
+
+  complete_stable:
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+    needs: [resolve_stable_ref, verify_stable, publish_stable, smoke_stable]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require exact published stable smoke
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve_stable_ref.result }}
+          VERIFY_RESULT: ${{ needs.verify_stable.result }}
+          PUBLISH_RESULT: ${{ needs.publish_stable.result }}
+          SMOKE_RESULT: ${{ needs.smoke_stable.result }}
+        run: |
+          test "$RESOLVE_RESULT" = "success"
+          test "$VERIFY_RESULT" = "success"
+          test "$PUBLISH_RESULT" = "success"
+          test "$SMOKE_RESULT" = "success"

@@ -1,13 +1,10 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import type {
-  Agent,
-  AgentEnvConfig,
   CompanyPortabilityEnvInput,
   CompanyPortabilityExportPreviewResult,
   CompanyPortabilityInclude,
   CompanySecret,
-  EnvBinding,
   SecretProvider,
   SecretProviderDescriptor,
 } from "@paperclipai/shared";
@@ -69,11 +66,6 @@ interface SecretDoctorOptions extends BaseClientOptions {
   companyId?: string;
 }
 
-interface SecretMigrateInlineEnvOptions extends BaseClientOptions {
-  companyId?: string;
-  apply?: boolean;
-}
-
 interface SecretJsonOptions extends BaseClientOptions {
   companyId?: string;
   payloadJson?: string;
@@ -92,20 +84,9 @@ interface SecretProviderHealthResponse {
   providers: SecretProviderHealth[];
 }
 
-export interface InlineSecretMigrationCandidate {
-  agentId: string;
-  agentName: string;
-  envKey: string;
-  secretName: string;
-  existingSecretId: string | null;
-}
-
-const SENSITIVE_ENV_KEY_RE =
-  /(^token$|[-_]?token$|api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
-
 const DEFAULT_DECLARATION_INCLUDE: CompanyPortabilityInclude = {
   company: true,
-  agents: true,
+  agents: false,
   projects: true,
   issues: false,
   skills: false,
@@ -114,81 +95,27 @@ const DEFAULT_DECLARATION_INCLUDE: CompanyPortabilityInclude = {
 export function parseSecretsInclude(input: string | undefined): CompanyPortabilityInclude {
   if (!input?.trim()) return { ...DEFAULT_DECLARATION_INCLUDE };
   const values = input.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
+  const unsupported = values.filter(
+    (value) => value !== "company" && value !== "projects",
+  );
+  if (unsupported.length > 0) {
+    throw new Error(
+      "Invalid --include value. Use one or more of: company,projects",
+    );
+  }
   const include = {
     company: values.includes("company"),
-    agents: values.includes("agents"),
+    agents: false,
     projects: values.includes("projects"),
-    issues: values.includes("issues") || values.includes("tasks"),
-    skills: values.includes("skills"),
+    issues: false,
+    skills: false,
   };
   if (!Object.values(include).some(Boolean)) {
-    throw new Error("Invalid --include value. Use one or more of: company,agents,projects,issues,tasks,skills");
+    throw new Error(
+      "Invalid --include value. Use one or more of: company,projects",
+    );
   }
   return include;
-}
-
-export function isSensitiveEnvKey(key: string): boolean {
-  return SENSITIVE_ENV_KEY_RE.test(key);
-}
-
-export function toPlainEnvValue(binding: unknown): string | null {
-  if (typeof binding === "string") return binding;
-  if (typeof binding !== "object" || binding === null || Array.isArray(binding)) return null;
-  const record = binding as Record<string, unknown>;
-  if (record.type === "plain" && typeof record.value === "string") return record.value;
-  return null;
-}
-
-export function buildInlineMigrationSecretName(agentId: string, key: string): string {
-  return `agent_${agentId.slice(0, 8)}_${key.toLowerCase()}`;
-}
-
-export function collectInlineSecretMigrationCandidates(
-  agents: Agent[],
-  existingSecrets: CompanySecret[],
-): InlineSecretMigrationCandidate[] {
-  const secretByName = new Map(existingSecrets.map((secret) => [secret.name, secret]));
-  const candidates: InlineSecretMigrationCandidate[] = [];
-
-  for (const agent of agents) {
-    const env = asRecord(agent.adapterConfig.env);
-    if (!env) continue;
-    for (const [envKey, binding] of Object.entries(env)) {
-      if (!isSensitiveEnvKey(envKey)) continue;
-      const plain = toPlainEnvValue(binding);
-      if (plain === null || plain.trim().length === 0) continue;
-      const secretName = buildInlineMigrationSecretName(agent.id, envKey);
-      candidates.push({
-        agentId: agent.id,
-        agentName: agent.name,
-        envKey,
-        secretName,
-        existingSecretId: secretByName.get(secretName)?.id ?? null,
-      });
-    }
-  }
-
-  return candidates;
-}
-
-export function buildMigratedAgentEnv(
-  env: Record<string, unknown>,
-  secretIdByEnvKey: Map<string, string>,
-): AgentEnvConfig {
-  const next: AgentEnvConfig = { ...(env as Record<string, EnvBinding>) };
-  for (const [envKey, secretId] of secretIdByEnvKey) {
-    next[envKey] = {
-      type: "secret_ref",
-      secretId,
-      version: "latest",
-    };
-  }
-  return next;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
 }
 
 function readValueFromOptions(opts: { value?: string; valueEnv?: string }): string {
@@ -205,11 +132,9 @@ function readValueFromOptions(opts: { value?: string; valueEnv?: string }): stri
 }
 
 function renderDeclaration(input: CompanyPortabilityEnvInput): Record<string, unknown> {
-  const scope = input.agentSlug
-    ? `agent:${input.agentSlug}`
-    : input.projectSlug
-      ? `project:${input.projectSlug}`
-      : "company";
+  const scope = input.projectSlug
+    ? `project:${input.projectSlug}`
+    : "company";
   return {
     key: input.key,
     scope,
@@ -280,90 +205,6 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
-async function migrateInlineEnv(opts: SecretMigrateInlineEnvOptions): Promise<void> {
-  const ctx = resolveCommandContext(opts, { requireCompany: true });
-  const companyId = ctx.companyId!;
-  const agents = (await ctx.api.get<Agent[]>(apiPath`/api/companies/${companyId}/agents`)) ?? [];
-  const secrets = (await ctx.api.get<CompanySecret[]>(apiPath`/api/companies/${companyId}/secrets`)) ?? [];
-  const candidates = collectInlineSecretMigrationCandidates(agents, secrets);
-
-  if (!opts.apply) {
-    printOutput(
-      {
-        apply: false,
-        agentsToUpdate: new Set(candidates.map((candidate) => candidate.agentId)).size,
-        secretsToCreate: candidates.filter((candidate) => !candidate.existingSecretId).length,
-        secretsToRotate: candidates.filter((candidate) => candidate.existingSecretId).length,
-        candidates,
-      },
-      { json: ctx.json },
-    );
-    if (!ctx.json) {
-      console.log(pc.dim("Re-run with --apply to create/rotate secrets and update agent env bindings."));
-    }
-    return;
-  }
-
-  const createdOrRotated = new Map<string, string>();
-  let createdSecrets = 0;
-  let rotatedSecrets = 0;
-
-  for (const candidate of candidates) {
-    const agent = agents.find((row) => row.id === candidate.agentId);
-    const env = asRecord(agent?.adapterConfig.env);
-    const value = env ? toPlainEnvValue(env[candidate.envKey]) : null;
-    if (!value) continue;
-
-    if (candidate.existingSecretId) {
-      await ctx.api.post(apiPath`/api/secrets/${candidate.existingSecretId}/rotate`, { value });
-      createdOrRotated.set(`${candidate.agentId}:${candidate.envKey}`, candidate.existingSecretId);
-      rotatedSecrets += 1;
-      continue;
-    }
-
-    const created = await ctx.api.post<CompanySecret>(apiPath`/api/companies/${companyId}/secrets`, {
-      name: candidate.secretName,
-      provider: "local_encrypted",
-      value,
-      description: `Migrated from agent ${candidate.agentId} env ${candidate.envKey}`,
-    });
-    if (!created) throw new Error(`Secret create returned no data for ${candidate.secretName}`);
-    createdOrRotated.set(`${candidate.agentId}:${candidate.envKey}`, created.id);
-    createdSecrets += 1;
-  }
-
-  let updatedAgents = 0;
-  for (const agent of agents) {
-    const env = asRecord(agent.adapterConfig.env);
-    if (!env) continue;
-    const secretIdByEnvKey = new Map<string, string>();
-    for (const [key] of Object.entries(env)) {
-      const secretId = createdOrRotated.get(`${agent.id}:${key}`);
-      if (secretId) secretIdByEnvKey.set(key, secretId);
-    }
-    if (secretIdByEnvKey.size === 0) continue;
-    const adapterConfig = {
-      ...agent.adapterConfig,
-      env: buildMigratedAgentEnv(env, secretIdByEnvKey),
-    };
-    await ctx.api.patch(apiPath`/api/agents/${agent.id}`, {
-      adapterConfig,
-      replaceAdapterConfig: true,
-    });
-    updatedAgents += 1;
-  }
-
-  printOutput(
-    {
-      apply: true,
-      updatedAgents,
-      createdSecrets,
-      rotatedSecrets,
-    },
-    { json: ctx.json },
-  );
-}
-
 export function registerSecretCommands(program: Command): void {
   const secrets = program.command("secrets").description("Secret declaration and provider operations");
 
@@ -388,7 +229,7 @@ export function registerSecretCommands(program: Command): void {
       .command("declarations")
       .description("List portable env declarations emitted by company export")
       .requiredOption("-C, --company-id <id>", "Company ID")
-      .option("--include <values>", "Comma-separated include set: company,agents,projects,issues,tasks,skills", "company,agents,projects")
+      .option("--include <values>", "Comma-separated include set: company,projects", "company,projects")
       .option("--kind <kind>", "Filter declarations: all | secret | plain", "all")
       .action(async (opts: SecretDeclarationsOptions) => {
         try {
@@ -618,20 +459,6 @@ export function registerSecretCommands(program: Command): void {
   addCompanySecretJsonPost(secrets, "remote-import:preview", "Preview remote secret import", "secrets/remote-import/preview");
   addCompanySecretJsonPost(secrets, "remote-import", "Import selected remote secrets", "secrets/remote-import");
 
-  addCommonClientOptions(
-    secrets
-      .command("migrate-inline-env")
-      .description("Migrate inline sensitive agent env values into secret references")
-      .requiredOption("-C, --company-id <id>", "Company ID")
-      .option("--apply", "Persist changes; default is a dry run", false)
-      .action(async (opts: SecretMigrateInlineEnvOptions) => {
-        try {
-          await migrateInlineEnv(opts);
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
 }
 
 function addCompanySecretJsonPost(parent: Command, name: string, description: string, path: string): void {

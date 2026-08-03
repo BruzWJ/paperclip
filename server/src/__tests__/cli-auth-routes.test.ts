@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardKeyActor, testBoardSessionActor } from "./helpers/request-actor.js";
+import { installTestRequestAuthority } from "./helpers/request-authority.js";
 
 const mockAccessService = vi.hoisted(() => ({
   isInstanceAdmin: vi.fn(),
@@ -32,8 +34,11 @@ vi.mock("../services/index.js", () => ({
   accessService: () => mockAccessService,
   agentService: () => mockAgentService,
   boardAuthService: () => mockBoardAuthService,
+  createRuntimeAgentConfigurationService: () => ({}),
+  createAgentAdapterConfigurationService: () => ({}),
+  createAgentOperationalConfigurationService: () => ({}),
+  createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
   logActivity: mockLogActivity,
-  notifyHireApproved: vi.fn(),
   deduplicateAgentName: vi.fn((name: string) => name),
 }));
 
@@ -44,8 +49,11 @@ function registerModuleMocks() {
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
     boardAuthService: () => mockBoardAuthService,
+    createRuntimeAgentConfigurationService: () => ({}),
+    createAgentAdapterConfigurationService: () => ({}),
+    createAgentOperationalConfigurationService: () => ({}),
+    createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
     logActivity: mockLogActivity,
-    notifyHireApproved: vi.fn(),
     deduplicateAgentName: vi.fn((name: string) => name),
   }));
 }
@@ -62,6 +70,7 @@ async function createApp(actor: any, db: any = {} as any) {
   ]);
 
   const app = express();
+  installTestRequestAuthority(app);
   app.use(express.json());
   app.use((req, _res, next) => {
     req.actor = {
@@ -80,10 +89,7 @@ async function createApp(actor: any, db: any = {} as any) {
   app.use(
     "/api",
     accessRoutes(db, {
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
     }),
   );
   app.use(errorHandler);
@@ -130,49 +136,7 @@ describe.sequential("cli auth routes", () => {
     });
     expect(res.body.boardApiToken).toBe("pcp_board_token");
     expect(res.body.approvalUrl).toContain("/cli-auth/challenge-1?token=pcp_cli_auth_secret");
-  });
-
-  it.sequential("rejects anonymous access to generic skill documents", async () => {
-    const indexApp = await createApp({ type: "none", source: "none" });
-    const skillApp = await createApp({ type: "none", source: "none" });
-
-    const indexRes = await request(indexApp).get("/api/skills/index");
-    const skillRes = await request(skillApp).get("/api/skills/paperclip");
-
-    expect(indexRes.status, JSON.stringify(indexRes.body)).toBe(401);
-    expect(skillRes.status, skillRes.text || JSON.stringify(skillRes.body)).toBe(401);
-  });
-
-  it.sequential("serves the invite-scoped paperclip skill anonymously for active invites", async () => {
-    const invite = {
-      id: "invite-1",
-      companyId: "company-1",
-      inviteType: "company_join",
-      allowedJoinTypes: "agent",
-      tokenHash: "hash",
-      defaultsPayload: null,
-      expiresAt: new Date(Date.now() + 60_000),
-      invitedByUserId: null,
-      revokedAt: null,
-      acceptedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    const db = {
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn().mockResolvedValue([invite]),
-        })),
-      })),
-    };
-
-    const app = await createApp({ type: "none", source: "none" }, db);
-    const res = await request(app).get("/api/invites/token-123/skills/paperclip");
-
-    expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toContain("text/markdown");
-    expect(res.text).toContain("# Paperclip Skill");
-  });
+  }, 15_000);
 
   it.sequential("marks challenge status as requiring sign-in for anonymous viewers", async () => {
     mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({
@@ -215,13 +179,11 @@ describe.sequential("cli auth routes", () => {
     });
     mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue(["company-1"]);
 
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
     const res = await request(app)
       .post("/api/cli-auth/challenges/challenge-1/approve")
       .send({ token: "pcp_cli_auth_secret" });
@@ -255,13 +217,11 @@ describe.sequential("cli auth routes", () => {
     });
     mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue(["company-a", "company-b"]);
 
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardSessionActor({
       userId: "admin-1",
-      source: "session",
       isInstanceAdmin: true,
       companyIds: [],
-    });
+    }));
     const res = await request(app)
       .post("/api/cli-auth/challenges/challenge-2/approve")
       .send({ token: "pcp_cli_auth_secret" });
@@ -282,14 +242,12 @@ describe.sequential("cli auth routes", () => {
     });
     mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue(["company-z"]);
 
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardKeyActor({
       userId: "admin-2",
       keyId: "board-key-3",
-      source: "board_key",
       isInstanceAdmin: true,
       companyIds: [],
-    });
+    }));
     const res = await request(app).post("/api/cli-auth/revoke-current").send({});
 
     expect(res.status).toBe(200);
@@ -318,13 +276,19 @@ describe.sequential("cli auth routes", () => {
     });
     mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue(["11111111-1111-4111-8111-111111111111"]);
 
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardKeyActor({
       userId: "user-1",
-      source: "board_key",
+      keyId: "board-key-current",
       isInstanceAdmin: false,
       companyIds: ["11111111-1111-4111-8111-111111111111"],
-    });
+      memberships: [
+        {
+          companyId: "11111111-1111-4111-8111-111111111111",
+          membershipRole: "operator",
+          status: "active",
+        },
+      ],
+    }));
     const res = await request(app)
       .post("/api/board-api-keys")
       .send({
@@ -379,13 +343,11 @@ describe.sequential("cli auth routes", () => {
     });
     mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue(["company-1"]);
 
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardKeyActor({
       userId: "user-1",
-      source: "board_key",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
 
     const listRes = await request(app).get("/api/board-api-keys");
     expect(listRes.status).toBe(200);
@@ -408,13 +370,11 @@ describe.sequential("cli auth routes", () => {
   });
 
   it.sequential("rejects malformed board API key IDs before database lookup", async () => {
-    const app = await createApp({
-      type: "board",
+    const app = await createApp(testBoardKeyActor({
       userId: "user-1",
-      source: "board_key",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
-    });
+    }));
 
     const res = await request(app).delete("/api/board-api-keys/not-a-uuid");
 

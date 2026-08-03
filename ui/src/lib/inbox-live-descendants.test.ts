@@ -8,7 +8,7 @@ import {
 function makeIssue(overrides: Partial<Issue>): Issue {
   return {
     id: "issue-1",
-    status: "blocked",
+    boardPresentationStatus: "blocked",
     blockerAttention: null,
     liveDescendantCount: 0,
     ...overrides,
@@ -76,13 +76,13 @@ describe("inbox live descendant status helpers", () => {
   it("does not synthesize covered attention for the live row itself or non-blocked parents", () => {
     expect(
       resolveInboxIssueBlockerAttention(
-        makeIssue({ status: "blocked", liveDescendantCount: 2 }),
+        makeIssue({ boardPresentationStatus: "blocked", liveDescendantCount: 2 }),
         { isLive: true },
       ),
     ).toBeNull();
     expect(
       resolveInboxIssueBlockerAttention(
-        makeIssue({ status: "done", liveDescendantCount: 2 }),
+        makeIssue({ boardPresentationStatus: "done", liveDescendantCount: 2 }),
         { isLive: false },
       ),
     ).toBeNull();

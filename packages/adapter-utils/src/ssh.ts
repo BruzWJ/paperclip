@@ -154,6 +154,38 @@ function isValidShellEnvKey(value: string) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
+function buildCleanRemoteShellCommand(
+  env: Record<string, string>,
+  command: string,
+): string {
+  const configuredHome =
+    env.HOME?.trim() || env.USERPROFILE?.trim() || null;
+  const effectiveEnv = { ...env };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const configuredPath = effectiveEnv.PATH?.trim() || null;
+  delete effectiveEnv.PATH;
+  const envArgs = Object.entries(effectiveEnv)
+    .map(([key, value]) => `${key}=${shellQuote(value)}`);
+  const pathArg = configuredPath
+    ? shellQuote(configuredPath)
+    : '"${PATH:-/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin}"';
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const execute =
+    `${configuredHome ? "exec " : ""}env -i PATH=${pathArg}${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${command}`;
+  if (configuredHome) return execute;
+  return [
+    'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+    'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+    execute,
+  ].join(" && ");
+}
+
 export function parseSshRemoteExecutionSpec(value: unknown): SshRemoteExecutionSpec | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -1166,19 +1198,10 @@ export async function runSshCommand(
       }
     }
 
-    // Mirror buildSshSpawnTarget: source login profiles first, then run
-    // `env KEY=VAL cmd` so user-supplied identity overrides win over anything
-    // a profile re-exports. Without this, a remote profile that resets HOME
-    // / NVM_DIR / etc. would silently undo the explicit env passed in here.
-    const envArgs = envEntries.map(([key, value]) => `${key}=${shellQuote(value)}`);
-    const remoteScript = [
-      'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-      'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; fi',
-      'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-      envArgs.length > 0
-        ? `exec env ${envArgs.join(" ")} sh -c ${shellQuote(remoteCommand)}`
-        : `exec sh -c ${shellQuote(remoteCommand)}`,
-    ].join(" && ");
+    const remoteScript = buildCleanRemoteShellCommand(
+      Object.fromEntries(envEntries),
+      `sh -c ${shellQuote(remoteCommand)}`,
+    );
 
     sshArgs.push(
       "-p",
@@ -1207,6 +1230,8 @@ export async function buildSshSpawnTarget(input: {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /** Exact target-side cwd for this invocation. */
+  cwd?: string;
 }): Promise<{
   command: string;
   args: string[];
@@ -1219,20 +1244,10 @@ export async function buildSshSpawnTarget(input: {
   }
   const auth = await createSshAuthArgs(input.spec);
   const sshArgs = [...auth.args];
-  const envArgs = Object.entries(input.env)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    .map(([key, value]) => `${key}=${shellQuote(value)}`);
   const remoteCommandParts = [shellQuote(input.command), ...input.args.map((arg) => shellQuote(arg))].join(" ");
   const remoteScript = [
-    'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
-    `cd ${shellQuote(input.spec.remoteCwd)}`,
-    envArgs.length > 0
-      ? `exec env ${envArgs.join(" ")} ${remoteCommandParts}`
-      : `exec ${remoteCommandParts}`,
+    `cd ${shellQuote(input.cwd ?? input.spec.remoteCwd)}`,
+    buildCleanRemoteShellCommand(input.env, remoteCommandParts),
   ].join(" && ");
 
   sshArgs.push(

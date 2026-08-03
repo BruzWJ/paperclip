@@ -1,4 +1,7 @@
-import type { DashboardRunActivityDay, HeartbeatRun } from "@paperclipai/shared";
+import type {
+  DashboardRunActivityDay,
+  IssueExecutionRunEnvelopeRecord,
+} from "@paperclipai/shared";
 
 /* ---- Utilities ---- */
 
@@ -85,9 +88,11 @@ export function ChartCard({ title, subtitle, children }: { title: string; subtit
 
 type RunChartProps =
   | { activity?: DashboardRunActivityDay[] | null; runs?: never }
-  | { runs?: HeartbeatRun[] | null; activity?: never };
+  | { runs?: IssueExecutionRunEnvelopeRecord[] | null; activity?: never };
 
-function aggregateRuns(runs: readonly HeartbeatRun[] = []): DashboardRunActivityDay[] {
+function aggregateRuns(
+  runs: readonly IssueExecutionRunEnvelopeRecord[] = [],
+): DashboardRunActivityDay[] {
   const days = getLast14Days();
   const grouped = new Map<string, DashboardRunActivityDay>();
   for (const day of days) grouped.set(day, emptyRunDay(day));
@@ -102,7 +107,9 @@ function aggregateRuns(runs: readonly HeartbeatRun[] = []): DashboardRunActivity
       // here (the company dashboard computes it server-side). Attribute the
       // failure to its error class so the breakdown still renders.
       entry.failed++;
-      const code = run.errorCode && run.errorCode.length > 0 ? run.errorCode : "unknown";
+      const code = run.terminalReasonCode && run.terminalReasonCode.length > 0
+        ? run.terminalReasonCode
+        : "unknown";
       entry.failedByErrorCode[code] = (entry.failedByErrorCode[code] ?? 0) + 1;
     } else {
       entry.other++;
@@ -245,7 +252,7 @@ const statusLabels: Record<string, string> = {
   backlog: "Backlog",
 };
 
-export function IssueStatusChart({ issues }: { issues: { status: string; createdAt: Date }[] }) {
+export function IssueStatusChart({ issues }: { issues: { boardPresentationStatus: string; createdAt: Date }[] }) {
   const days = getLast14Days();
   const allStatuses = new Set<string>();
   const grouped = new Map<string, Record<string, number>>();
@@ -254,8 +261,8 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
     const day = new Date(issue.createdAt).toISOString().slice(0, 10);
     const entry = grouped.get(day);
     if (!entry) continue;
-    entry[issue.status] = (entry[issue.status] ?? 0) + 1;
-    allStatuses.add(issue.status);
+    entry[issue.boardPresentationStatus] = (entry[issue.boardPresentationStatus] ?? 0) + 1;
+    allStatuses.add(issue.boardPresentationStatus);
   }
 
   const statusOrder = ["todo", "in_progress", "in_review", "done", "blocked", "cancelled", "backlog"].filter(s => allStatuses.has(s));

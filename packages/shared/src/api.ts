@@ -26,7 +26,7 @@ export const API = {
   issueTreeHolds: `${API_PREFIX}/issues/:issueId/tree-holds`,
   summarySlot: `${API_PREFIX}/companies/:companyId/summary-slots/:scopeKind/:slotKey`,
   summarySlotRevisions: `${API_PREFIX}/companies/:companyId/summary-slots/:scopeKind/:slotKey/revisions`,
-  summarySlotGenerate: `${API_PREFIX}/companies/:companyId/summary-slots/:scopeKind/:slotKey/generate`,
+  summarySlotRefresh: `${API_PREFIX}/companies/:companyId/summary-slots/:scopeKind/:slotKey/refresh`,
   goals: `${API_PREFIX}/goals`,
   approvals: `${API_PREFIX}/approvals`,
   secrets: `${API_PREFIX}/secrets`,

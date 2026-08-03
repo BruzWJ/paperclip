@@ -1,20 +1,7 @@
 import type { ComponentType } from "react";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 
-// Re-export shared types so local consumers don't need to change imports
-export type { TranscriptEntry, StdoutLineParser, CreateConfigValues } from "@paperclipai/adapter-utils";
-
-export interface StatefulStdoutParser {
-  parseLine: (line: string, ts: string) => import("@paperclipai/adapter-utils").TranscriptEntry[];
-  reset: () => void;
-}
-
-export type StdoutParserFactory = () => StatefulStdoutParser;
-
-export interface TranscriptParserSource {
-  parseStdoutLine: (line: string, ts: string) => import("@paperclipai/adapter-utils").TranscriptEntry[];
-  createStdoutParser?: StdoutParserFactory;
-}
+export type { CreateConfigValues } from "@paperclipai/adapter-utils";
 
 export interface AdapterConfigFieldsProps {
   mode: "create" | "edit";
@@ -32,11 +19,11 @@ export interface AdapterConfigFieldsProps {
   mark: (group: "adapterConfig", field: string, value: unknown) => void;
   /** Available models for dropdowns */
   models: { id: string; label: string }[];
-  /** When true, hides the instructions file path field (e.g. during import where it's set automatically) */
-  hideInstructionsFile?: boolean;
+  /** Create mode may suppress schema defaults when every value must be explicit. */
+  applySchemaDefaults?: boolean;
 }
 
-export interface UIAdapterModule extends TranscriptParserSource {
+export interface UIAdapterModule {
   type: string;
   label: string;
   ConfigFields: ComponentType<AdapterConfigFieldsProps>;

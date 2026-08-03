@@ -46,7 +46,7 @@ GUARDRAILS
 - No redesign, no layout changes, no new colors/typefaces, no component
   merges or deletions (consolidation and shadcn swaps are
   recommendations-only in COMPONENT-INVENTORY.md), no copy renames
-  (issue->task is a separate later run), no new dependencies beyond
+  (issue vocabulary is a separate later run), no new dependencies beyond
   snapshot tooling, no server or app-logic changes.
 - If reality conflicts with DESIGN.md, record the conflict in
   TOKEN-AUDIT.md instead of guessing. If a phase cannot be completed,

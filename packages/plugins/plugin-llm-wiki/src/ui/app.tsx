@@ -1,5 +1,5 @@
 import {
-  AssigneePicker,
+  OwnerPicker,
   FileTree,
   IssuesList as PluginIssuesList,
   ManagedRoutinesList as PluginManagedRoutinesList,
@@ -8,7 +8,6 @@ import {
   ProjectPicker,
   usePluginAction,
   usePluginData,
-  usePluginStream,
   usePluginToast,
   useHostLocation,
   useHostNavigation,
@@ -41,9 +40,9 @@ const tokens = {
   pluginBg: "oklch(0.3 0.06 70)",
   pluginFg: "oklch(0.92 0.08 80)",
   pluginBorder: "oklch(0.55 0.15 70)",
-  hiddenOpBg: "oklch(0.27 0.04 280)",
-  hiddenOpFg: "oklch(0.85 0.08 280)",
-  hiddenOpBorder: "oklch(0.45 0.1 280)",
+  operationBg: "oklch(0.27 0.04 280)",
+  operationFg: "oklch(0.85 0.08 280)",
+  operationBorder: "oklch(0.45 0.1 280)",
   callout: { bg: "oklch(0.2 0.04 250)", fg: "oklch(0.85 0.08 250)", border: "oklch(0.4 0.1 250)" },
   statusDone: "oklch(0.65 0.16 145)",
   statusRunning: "oklch(0.7 0.13 200)",
@@ -110,7 +109,6 @@ type ManagedAgent = {
   agentId?: string | null;
   resourceKey?: string | null;
   details?: { name?: string; status?: string; adapterType?: string | null; icon?: string | null; urlKey?: string | null } | null;
-  defaultDrift?: { entryFile: string; changedFiles: string[] } | null;
 };
 
 type ManagedProject = {
@@ -256,8 +254,6 @@ type SettingsData = {
   distillationPolicy?: {
     autoApplyAllowed: boolean;
     autoApplyRestriction: string | null;
-    deploymentMode: "local_trusted" | "authenticated" | null;
-    deploymentExposure: "private" | "public" | null;
   };
   eventIngestion: EventIngestionSettings;
   agentOptions: Array<{ id: string; name: string; status?: string | null; adapterType?: string | null; icon?: string | null; urlKey?: string | null }>;
@@ -337,10 +333,18 @@ type WikiOperationRow = {
   id: string;
   operationType: string;
   status: string;
-  hiddenIssueId: string | null;
-  hiddenIssueIdentifier: string | null;
-  hiddenIssueTitle: string | null;
-  hiddenIssueStatus: string | null;
+  issueId: string | null;
+  issueIdentifier: string | null;
+  issueTitle: string | null;
+  issueStatus: string | null;
+  queryQuestion: string | null;
+  comments: Array<{
+    id: string;
+    body: string;
+    authorType: "agent" | "user" | "system" | "plugin" | null;
+    projectedSequence: number | null;
+    createdAt: string;
+  }>;
   projectId: string | null;
   runIds: unknown[];
   costCents: number;
@@ -411,9 +415,9 @@ function HiddenOpBadge() {
       borderRadius: 999,
       fontSize: 11,
       fontWeight: 500,
-      background: tokens.hiddenOpBg,
-      color: tokens.hiddenOpFg,
-      border: `1px solid ${tokens.hiddenOpBorder}`,
+      background: tokens.operationBg,
+      color: tokens.operationFg,
+      border: `1px solid ${tokens.operationBorder}`,
     }}>📖 wiki task</span>
   );
 }
@@ -4292,12 +4296,12 @@ function OperationCard({ op }: { op: WikiOperationRow }) {
       <div style={{ padding: "12px 14px" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
           <StatusIcon status={op.status} />
-          <strong style={{ flex: "1 1 180px", minWidth: 0, fontSize: 13, overflowWrap: "anywhere" }}>{op.hiddenIssueTitle ?? `LLM Wiki ${op.operationType}`}</strong>
+          <strong style={{ flex: "1 1 180px", minWidth: 0, fontSize: 13, overflowWrap: "anywhere" }}>{op.issueTitle ?? `LLM Wiki ${op.operationType}`}</strong>
           <Badge tone={statusTone(op.status)} style={{ marginLeft: "auto" }}>{op.status}</Badge>
         </div>
         <Tiny style={{ marginTop: 4 }}>
           {op.operationType.toUpperCase()} · started {formatTime(op.createdAt)} · op-{op.id.slice(0, 6)}
-          {op.hiddenIssueIdentifier ? <> · <Mono>{op.hiddenIssueIdentifier}</Mono></> : null}
+          {op.issueIdentifier ? <> · <Mono>{op.issueIdentifier}</Mono></> : null}
         </Tiny>
         {Array.isArray(op.warnings) && op.warnings.length > 0 ? (
           <Tiny style={{ marginTop: 4, color: tokens.statusBlocked }}>
@@ -4326,79 +4330,77 @@ type QueryThreadEntry = {
   id: string;
   prompt: string;
   operationId: string | null;
-  querySessionId: string | null;
-  hiddenIssueIdentifier: string | null;
-  channel: string | null;
-  status: "queued" | "running" | "done" | "error";
+  issueId: string | null;
+  issueIdentifier: string | null;
+  status: "queued" | "running" | "done" | "blocked" | "cancelled" | "error";
   createdAt: string;
-  answer: string;
+  comments: WikiOperationRow["comments"];
   errorMessage?: string;
 };
 
-type QueryStreamEvent = {
-  type: string;
-  operationId?: string;
-  querySessionId?: string;
-  message?: string | null;
-  payload?: Record<string, unknown> | null;
-  eventType?: string;
-  stream?: string | null;
-  answer?: string;
-};
+function queryThreadStatus(operation: WikiOperationRow): QueryThreadEntry["status"] {
+  const status = operation.issueStatus ?? operation.status;
+  if (status === "done") return "done";
+  if (status === "blocked") return "blocked";
+  if (status === "cancelled") return "cancelled";
+  if (status === "open") return operation.status === "queued" ? "queued" : "running";
+  return operation.status === "queued" ? "queued" : "running";
+}
 
 function QueryTab({ context, overview }: { context: { companyId: string | null }; overview: OverviewData }) {
   const startQuery = usePluginAction("start-query");
-  const fileAsPage = usePluginAction("file-as-page");
   const toast = usePluginToast();
   const { pathname } = useHostLocation();
   const activeSpaceSlug = useMemo(() => readActiveSpaceSlugFromLocation(pathname), [pathname]);
+  const operations = useOperations(context.companyId, {
+    operationType: "query",
+    spaceSlug: activeSpaceSlug,
+  });
   const isMobile = useIsMobileLayout();
   const [thread, setThread] = useState<QueryThreadEntry[]>([]);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
-  const [filePath, setFilePath] = useState("wiki/concepts/new-page.md");
-  const [fileBody, setFileBody] = useState("");
-  const [filing, setFiling] = useState<string | null>(null);
-  const fileSource = useMemo(() => {
-    for (let i = thread.length - 1; i >= 0; i -= 1) {
-      const entry = thread[i];
-      if (entry.answer.trim()) return entry;
-    }
-    return null;
-  }, [thread]);
-
-  const activeEntry = useMemo(() => {
-    for (let i = thread.length - 1; i >= 0; i -= 1) {
-      const entry = thread[i];
-      if (entry.status === "running" || entry.status === "queued") return entry;
-    }
-    return null;
-  }, [thread]);
-
-  const stream = usePluginStream<QueryStreamEvent>(activeEntry?.channel ?? "llm-wiki:idle", {
-    companyId: context.companyId ?? undefined,
-  });
 
   useEffect(() => {
-    if (!activeEntry || !stream.lastEvent) return;
-    const event = stream.lastEvent;
-    setThread((prev) => prev.map((entry) => {
-      if (entry.id !== activeEntry.id) return entry;
-      if (event.type === "agent.event" && event.eventType === "chunk" && event.message && event.stream !== "stderr") {
-        return { ...entry, answer: entry.answer + event.message, status: "running" };
-      }
-      if (event.type === "query.done") {
-        return { ...entry, status: "done", answer: event.answer ?? entry.answer };
-      }
-      if (event.type === "query.error") {
-        return { ...entry, status: "error", errorMessage: event.message ?? "agent session error" };
-      }
-      return entry;
-    }));
-    if (event.type === "query.done" && event.answer && !fileBody.trim()) {
-      setFileBody(event.answer);
-    }
-  }, [fileBody, stream.lastEvent, activeEntry?.id]);
+    const persisted = [...(operations.data?.operations ?? [])].reverse();
+    setThread((previous) => {
+      const previousByOperation = new Map(
+        previous.flatMap((entry) =>
+          entry.operationId ? [[entry.operationId, entry] as const] : [],
+        ),
+      );
+      const persistedIds = new Set(persisted.map((operation) => operation.id));
+      const localOnly = previous.filter(
+        (entry) => !entry.operationId || !persistedIds.has(entry.operationId),
+      );
+      const durableEntries = persisted.map((operation) => {
+        const prior = previousByOperation.get(operation.id);
+        return {
+          id: prior?.id ?? `operation-${operation.id}`,
+          prompt:
+            operation.queryQuestion ??
+            operation.issueTitle ??
+            "LLM Wiki query",
+          operationId: operation.id,
+          issueId: operation.issueId,
+          issueIdentifier: operation.issueIdentifier,
+          status: queryThreadStatus(operation),
+          createdAt: operation.createdAt,
+          comments: operation.comments,
+        } satisfies QueryThreadEntry;
+      });
+      return [...durableEntries, ...localOnly];
+    });
+  }, [operations.data]);
+
+  const hasActiveQuery = thread.some(
+    (entry) => entry.status === "queued" || entry.status === "running",
+  );
+  useEffect(() => {
+    if (!hasActiveQuery) return;
+    const timer = window.setInterval(() => operations.refresh(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveQuery, operations.refresh]);
 
   async function send() {
     if (!context.companyId || !prompt.trim()) return;
@@ -4408,32 +4410,29 @@ function QueryTab({ context, overview }: { context: { companyId: string | null }
       id: entryId,
       prompt: prompt.trim(),
       operationId: null,
-      querySessionId: null,
-      hiddenIssueIdentifier: null,
-      channel: null,
+      issueId: null,
+      issueIdentifier: null,
       status: "queued",
       createdAt: new Date().toISOString(),
-      answer: "",
+      comments: [],
     }]);
     try {
       const res = await startQuery({ companyId: context.companyId, spaceSlug: activeSpaceSlug, question: prompt.trim() });
       const result = res as {
         operationId: string;
-        querySessionId?: string;
-        channel?: string;
-        issue?: { identifier?: string | null };
+        issue?: { id?: string; identifier?: string | null };
       };
       setThread((prev) => prev.map((entry) =>
         entry.id === entryId ? {
           ...entry,
           operationId: result.operationId,
-          querySessionId: result.querySessionId ?? result.operationId,
-          hiddenIssueIdentifier: result.issue?.identifier ?? null,
-          channel: result.channel ?? `llm-wiki:query:${result.operationId}`,
-          status: "running",
+          issueId: result.issue?.id ?? null,
+          issueIdentifier: result.issue?.identifier ?? null,
+          status: "queued",
         } : entry,
       ));
       setPrompt("");
+      operations.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setThread((prev) => prev.map((entry) =>
@@ -4445,37 +4444,12 @@ function QueryTab({ context, overview }: { context: { companyId: string | null }
     }
   }
 
-  async function fileAnswer(entry?: QueryThreadEntry) {
-    const source = entry ?? fileSource;
-    const answer = fileBody.trim() || source?.answer.trim() || "";
-    if (!context.companyId || !filePath.trim() || !answer) return;
-    setFiling(source?.id ?? "manual");
-    try {
-      await fileAsPage({
-        companyId: context.companyId,
-        wikiId: overview.wikiId,
-        spaceSlug: activeSpaceSlug,
-        path: filePath.trim(),
-        question: source?.prompt,
-        answer,
-        querySessionId: source?.querySessionId,
-      });
-      toast({ tone: "success", title: "Answer filed", body: `Wrote ${filePath.trim()} and recorded a file-as-page task.` });
-      setFileBody("");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      toast({ tone: "error", title: "Could not file answer", body: message });
-    } finally {
-      setFiling(null);
-    }
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flex: 1, minHeight: isMobile ? "auto" : 0, minWidth: 0 }}>
       <div style={{ flex: 1, padding: isMobile ? "16px" : "24px 28px", overflow: isMobile ? "visible" : "auto", minWidth: 0 }}>
         {thread.length === 0 ? (
           <Callout>
-            Ask the wiki anything. Each question initiates a task assigned to the Wiki Maintainer. The answer streams below; you can promote useful answers into a wiki page.
+            Ask the wiki anything. Each question creates one ordinary issue assigned to the Wiki Maintainer. Follow its durable issue thread for the answer and lifecycle.
           </Callout>
         ) : null}
         <div style={{ display: "grid", gap: 22, marginTop: 18 }}>
@@ -4485,33 +4459,46 @@ function QueryTab({ context, overview }: { context: { companyId: string | null }
               <div style={{ background: tokens.card, border: `1px solid ${tokens.border}`, padding: "10px 12px", borderRadius: 8, fontSize: 13 }}>{entry.prompt}</div>
               <Tiny style={{ marginTop: 8 }}>
                 Wiki Maintainer · {entry.status}
-                {entry.hiddenIssueIdentifier ? <> · <Mono>{entry.hiddenIssueIdentifier}</Mono></> : null}
+                {entry.issueIdentifier ? <> · <Mono>{entry.issueIdentifier}</Mono></> : null}
               </Tiny>
+              {entry.comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  style={{
+                    marginTop: 8,
+                    background: tokens.card,
+                    border: `1px solid ${tokens.border}`,
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                  }}
+                >
+                  <Tiny style={{ marginBottom: 6 }}>
+                    {comment.authorType === "agent" ? "Wiki Maintainer" : comment.authorType ?? "Issue"}
+                    {" · "}
+                    {formatTime(comment.createdAt)}
+                  </Tiny>
+                  <MarkdownBlock content={comment.body} />
+                </div>
+              ))}
               {entry.status === "error" ? (
                 <div style={{ marginTop: 6 }}><Callout tone="danger">{entry.errorMessage}</Callout></div>
               ) : (
-                <pre style={{
-                  margin: "8px 0 0",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontFamily: "ui-sans-serif, system-ui, sans-serif",
-                  fontSize: 13,
-                  lineHeight: 1.65,
-                  color: tokens.fg,
-                }}>{entry.answer || (entry.status === "running" ? "Streaming…" : "")}</pre>
-              )}
-              {entry.answer.trim() && entry.status === "done" ? (
-                <div style={{ marginTop: 10, border: `1px dashed ${tokens.border}`, borderRadius: 8, padding: "10px 12px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <strong style={{ fontSize: 13 }}>📑 File this answer as a wiki page?</strong>
-                    <Tiny style={{ marginLeft: isMobile ? 0 : "auto", width: isMobile ? "100%" : undefined }}>Path: <Mono>{filePath}</Mono></Tiny>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <TextInput value={filePath} onChange={(e) => setFilePath(e.target.value)} style={{ maxWidth: isMobile ? "none" : 360 }} />
-                    <Button size="sm" variant="primary" onClick={() => fileAnswer(entry)} disabled={!filePath.trim()} loading={filing === entry.id}>Accept &amp; file</Button>
-                  </div>
+                <div style={{ marginTop: 8 }}>
+                  {entry.comments.length === 0 && entry.issueId ? (
+                    <Tiny>Awaiting a durable owner comment or lifecycle update.</Tiny>
+                  ) : null}
+                  {entry.issueId || entry.issueIdentifier ? (
+                    <a
+                      href={`/issues/${entry.issueIdentifier ?? entry.issueId}`}
+                      style={{ color: tokens.pluginFg, fontSize: 13 }}
+                    >
+                      Open durable issue thread ↗
+                    </a>
+                  ) : (
+                    <Tiny>Creating ordinary issue…</Tiny>
+                  )}
                 </div>
-              ) : null}
+              )}
             </div>
           ))}
         </div>
@@ -4520,8 +4507,7 @@ function QueryTab({ context, overview }: { context: { companyId: string | null }
           <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
             <Button variant="primary" size="sm" onClick={send} disabled={!prompt.trim()} loading={busy}>Send (⌘↵)</Button>
             <Badge>Cite: wiki + raw</Badge>
-            <Badge>Max steps: 6</Badge>
-            <Tiny style={{ marginLeft: "auto" }}>Streamed via agent session · maintainer task</Tiny>
+            <Tiny style={{ marginLeft: "auto" }}>Durable issue comments and callback lifecycle only</Tiny>
           </div>
         </div>
       </div>
@@ -4533,12 +4519,12 @@ function QueryTab({ context, overview }: { context: { companyId: string | null }
         overflow: isMobile ? "visible" : "auto",
         minWidth: 0,
       }}>
-        <Tiny style={{ marginBottom: 8 }}>SESSION</Tiny>
+        <Tiny style={{ marginBottom: 8 }}>ISSUE EXECUTION</Tiny>
         <PropRow label="Wiki" value={overview.wikiId} />
         <PropRow label="Project" value={overview.managedProject.details?.name ?? overview.managedProject.status} />
         <PropRow label="Agent" value={overview.managedAgent.details?.name ?? overview.managedAgent.status} />
         <PropRow label="Operations" value={overview.operationCount} />
-        <PropRow label="Stream" value={stream.connected ? "live" : stream.connecting ? "connecting…" : "idle"} />
+        <PropRow label="Active queries" value={thread.filter((entry) => entry.status === "queued" || entry.status === "running").length} />
         <Divider />
         <Tiny style={{ marginBottom: 8 }}>ASK PROMPT</Tiny>
         <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "ui-monospace, monospace", fontSize: 12, color: tokens.muted }}>{overview.prompts.query}</pre>
@@ -4677,7 +4663,7 @@ function LintPanelContent({
           {recent.length === 0 ? <div style={{ padding: 12, color: tokens.muted, fontSize: 13 }}>No lint runs yet.</div> : recent.map((op) => (
             <Row
               key={op.id}
-              primary={<><Mono>op-{op.id.slice(0, 6)}</Mono> {op.hiddenIssueTitle ?? "Wiki lint"}</>}
+              primary={<><Mono>op-{op.id.slice(0, 6)}</Mono> {op.issueTitle ?? "Wiki lint"}</>}
               secondary={formatTime(op.createdAt)}
               right={<Badge tone={statusTone(op.status)}>{op.status}</Badge>}
             />
@@ -4755,7 +4741,6 @@ function runStatusLabel(status: string): string {
 function HistoryTab({ context, overview }: { context: { companyId: string | null; companyPrefix?: string | null }; overview: OverviewData }) {
   const isMobile = useIsMobileLayout();
   const projectId = overview.managedProject.projectId;
-  const originKindPrefix = `plugin:${PLUGIN_ID}:operation`;
 
   if (!context.companyId) {
     return <div style={{ padding: isMobile ? 16 : 24, flex: 1 }}><Callout>Choose a company to view LLM Wiki history.</Callout></div>;
@@ -4774,7 +4759,6 @@ function HistoryTab({ context, overview }: { context: { companyId: string | null
       <PluginIssuesList
         companyId={context.companyId}
         projectId={projectId}
-        filters={{ originKindPrefix }}
         viewStateKey="paperclip:llm-wiki-history-issues-view"
         searchWithinLoadedIssues
       />
@@ -4854,11 +4838,9 @@ function buildAgentHealthItems(managedAgent: ManagedAgent): RoutineHealthItem[] 
   const agentName = managedAgent.details?.name ?? "Wiki Maintainer";
   return [{
     label: agentName,
-    ok: managedAgentIsReady(managedAgent) && !managedAgent.defaultDrift?.changedFiles.length,
+    ok: managedAgentIsReady(managedAgent),
     detail: managedAgent.source === "managed"
-      ? managedAgent.defaultDrift?.changedFiles.length
-        ? `The Wiki Maintainer instructions differ from the plugin default: ${managedAgent.defaultDrift.changedFiles.join(", ")}.`
-        : "The plugin-managed Wiki Maintainer exists with current default instructions."
+      ? "The plugin-managed Wiki Maintainer exists and is available for ordinary issue ownership."
       : "The settings page is using a selected maintainer instead of the plugin-managed Wiki Maintainer.",
   }];
 }
@@ -5443,7 +5425,6 @@ function DistillationSettingsPanel({ context, settings }: { context: { companyId
   const counts = data?.counts ?? { cursors: 0, runningRuns: 0, failedRuns24h: 0, reviewRequired: 0 };
   const isConfigured = cursors.length > 0;
   const autoApplyRestriction = settings.distillationPolicy?.autoApplyRestriction ?? null;
-  const [useCheapPath, setUseCheapPath] = useState(true);
 
   const projectsCovered = useMemo(() => {
     const set = new Set<string>();
@@ -5463,7 +5444,6 @@ function DistillationSettingsPanel({ context, settings }: { context: { companyId
     try {
       await distillNow({
         companyId: context.companyId,
-        useCheapModelProfile: useCheapPath,
         idempotencyKey: `manual:company:${Date.now()}`,
       });
       toast({
@@ -5515,7 +5495,6 @@ function DistillationSettingsPanel({ context, settings }: { context: { companyId
         companyId: context.companyId,
         projectId: target.projectId ?? undefined,
         rootIssueId: target.rootIssueId ?? undefined,
-        useCheapModelProfile: useCheapPath,
       });
       toast({ tone: "success", title: "Backfill queued", body: target.projectName ?? target.rootIssueIdentifier ?? "Selected scope" });
       overview.refresh();
@@ -5625,15 +5604,15 @@ function DistillationSettingsPanel({ context, settings }: { context: { companyId
                 These filters narrow the Paperclip source scope. The destination is always the default
                 wiki space in Phase 1.
               </Tiny>
-              <Tiny>Plugin-operation issues are always excluded to prevent feedback loops.</Tiny>
+              <Tiny>Issues correlated to LLM Wiki operations are always excluded to prevent feedback loops.</Tiny>
             </fieldset>
             <fieldset style={{ border: 0, padding: 0, margin: 0, display: "grid", gap: 6 }}>
               <legend style={{ fontSize: 12, color: tokens.muted, marginBottom: 4 }}>Source kinds</legend>
-              <CheckboxRow label="Issue title + description" defaultChecked locked />
-              <CheckboxRow label="Comments (ranked, clipped)" defaultChecked />
-              <CheckboxRow label="Documents (plan, spec, report)" defaultChecked />
+              <CheckboxRow label="Issue title + immutable request" defaultChecked locked />
+              <CheckboxRow label="Comment bodies" locked suffix="run-scoped only" />
+              <CheckboxRow label="Document bodies" locked suffix="run-scoped only" />
               <CheckboxRow label="Work products / attachments" suffix="coming soon" />
-              <Tiny>Heartbeats and hidden documents are never included.</Tiny>
+              <Tiny>The plugin control plane never copies comment or document bodies into a source bundle.</Tiny>
             </fieldset>
           </div>
         </CardBody>
@@ -5662,20 +5641,13 @@ function DistillationSettingsPanel({ context, settings }: { context: { companyId
       <Card>
         <CardHeader title="Agent execution" />
         <CardBody padding={14}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
-            <SettingField label="Assigned maintainer" hint="Model selection comes from the agent adapter and its runtime config. The plugin does not choose Claude/Codex/Gemini models here.">
+          <div style={{ display: "grid", gap: 16 }}>
+            <SettingField label="Assigned maintainer" hint="Model selection belongs to the selected agent adapter and its runtime config; the plugin does not choose a provider model.">
               <div style={{ minHeight: 34, display: "flex", alignItems: "center", border: `1px solid ${tokens.border}`, borderRadius: 6, padding: "6px 10px", fontSize: 13 }}>
                 {settings.managedAgent.details
                   ? `${settings.managedAgent.details.name} · ${adapterTypeLabel(settings.managedAgent.details.adapterType)}`
                   : "No maintainer agent resolved"}
               </div>
-            </SettingField>
-            <SettingField label="Cheap path" hint="When enabled, manual distill and backfill operation issues request assigneeAdapterOverrides.modelProfile = cheap.">
-              <CheckboxRow
-                label="Request the assigned agent's cheap model profile for distillation tasks"
-                checked={useCheapPath}
-                onChange={setUseCheapPath}
-              />
             </SettingField>
           </div>
         </CardBody>
@@ -5942,7 +5914,6 @@ function SettingsBody({ context, initialSection = "root" }: { context: { company
     };
   });
   const routineDefaultDriftItems = managedRoutineItems.filter((routine) => routine.defaultDrift?.changedFields.length);
-  const agentDefaultDrift = data.managedAgent.defaultDrift;
   const activeSpaceSlug = readActiveSpaceSlugFromLocation(pathname);
 
   function routineBusyKeyFor(prefix: string) {
@@ -6060,8 +6031,7 @@ function SettingsBody({ context, initialSection = "root" }: { context: { company
 
       const shouldResetAgent =
         data.managedAgent.source !== "managed" ||
-        !managedAgentIsReady(data.managedAgent) ||
-        Boolean(data.managedAgent.defaultDrift?.changedFiles.length);
+        !managedAgentIsReady(data.managedAgent);
       const shouldResetProject =
         data.managedProject.source !== "managed" ||
         !managedProjectIsReady(data.managedProject);
@@ -6165,10 +6135,8 @@ function SettingsBody({ context, initialSection = "root" }: { context: { company
 
   async function resetManagedAgentToDefaults() {
     if (!context.companyId) return;
-    const changedFiles = agentDefaultDrift?.changedFiles ?? [];
-    const fileList = changedFiles.length > 0 ? changedFiles.join(", ") : "managed instructions and defaults";
     const confirmed = typeof window === "undefined" || window.confirm(
-      `Update the Wiki Maintainer to the current LLM Wiki plugin defaults? This replaces ${fileList}. Cancel to keep the current custom instructions.`,
+      "Update the Wiki Maintainer to the current LLM Wiki plugin configuration? Cancel to keep the current ordinary agent configuration.",
     );
     if (!confirmed) return;
 
@@ -6286,16 +6254,15 @@ function SettingsBody({ context, initialSection = "root" }: { context: { company
                     disabled={agentBusy}
                     style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
                   >
-                    <AssigneePicker
+                    <OwnerPicker
                       companyId={context.companyId}
-                      value={effectiveSelectedAgentId ? `agent:${effectiveSelectedAgentId}` : ""}
-                      includeUsers={false}
+                      value={effectiveSelectedAgentId}
                       placeholder="Select maintainer"
                       noneLabel="No maintainer"
                       searchPlaceholder="Search agents..."
                       emptyMessage="No agents found."
                       onChange={(_value, selection) => {
-                        setSelectedAgentId(selection.assigneeAgentId ?? "");
+                        setSelectedAgentId(selection.ownerAgentId ?? "");
                       }}
                     />
                   </fieldset>
@@ -6309,12 +6276,7 @@ function SettingsBody({ context, initialSection = "root" }: { context: { company
                   ) : null}
                   {showMaintainerWarning ? (
                     <Callout tone="warn">
-                      This is not the Paperclip-provided Wiki Maintainer. Plugin operations and routines may miss the recommended wiki role, tools, and default instructions.
-                    </Callout>
-                  ) : null}
-                  {agentDefaultDrift?.changedFiles.length ? (
-                    <Callout tone="warn">
-                      Wiki Maintainer instruction defaults changed: {agentDefaultDrift.changedFiles.join(", ")}. Reset only if you want to replace current custom instructions with the plugin template.
+                      This agent is not the plugin-managed Wiki Maintainer. Verify its selected company tools, selected skills, and capabilities before routing wiki work to it.
                     </Callout>
                   ) : null}
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

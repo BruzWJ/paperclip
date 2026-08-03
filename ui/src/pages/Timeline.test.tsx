@@ -59,8 +59,8 @@ const populatedTimeline: WorkTimelineResult = {
   spans: [
     {
       actorId: "agent:codex",
-      laneHint: "assignment",
       runId: "run-1",
+      kind: "productive",
       issueId: "issue-1",
       issueIdentifier: "PAP-1",
       issueTitle: "Implement timeline stats",
@@ -68,17 +68,11 @@ const populatedTimeline: WorkTimelineResult = {
       end: "2026-07-02T10:30:00.000Z",
       status: "succeeded",
       retryOfRunId: null,
-      usage: {
-        inputTokens: 1_000,
-        cachedInputTokens: 0,
-        outputTokens: 500,
-        totalTokens: 1_500,
-      },
     },
     {
       actorId: "agent:qa",
-      laneHint: "assignment",
       runId: "run-2",
+      kind: "productive",
       issueId: "issue-2",
       issueIdentifier: "PAP-2",
       issueTitle: "Verify timeline stats",
@@ -86,12 +80,6 @@ const populatedTimeline: WorkTimelineResult = {
       end: "2026-07-02T11:15:00.000Z",
       status: "succeeded",
       retryOfRunId: null,
-      usage: {
-        inputTokens: 900,
-        cachedInputTokens: 100,
-        outputTokens: 500,
-        totalTokens: 1_500,
-      },
     },
   ],
   events: [],
@@ -193,9 +181,7 @@ describe("Timeline", () => {
     expect(container.textContent).toContain("Runs");
     expect(container.textContent).toContain("Agents");
     expect(container.textContent).toContain("Run time");
-    expect(container.textContent).toContain("Tokens used");
     expect(container.textContent).toContain("45m");
-    expect(container.textContent).toContain("3K");
 
     const footer = Array.from(container.querySelectorAll("div")).find((element) =>
       element.textContent?.includes("2 runs") && element.textContent.includes("Range"),
@@ -234,44 +220,6 @@ describe("Timeline", () => {
     expect(container.textContent).toContain("2h 0m");
   });
 
-  it("prorates summary tokens to the returned timeline window for clipped spans", async () => {
-    mockWorkTimelineApi.get.mockResolvedValue({
-      ...populatedTimeline,
-      spans: [
-        {
-          ...populatedTimeline.spans[0],
-          start: "2026-07-02T00:00:00.000Z",
-          end: "2026-07-02T04:00:00.000Z",
-          usage: {
-            inputTokens: 2_000,
-            cachedInputTokens: 0,
-            outputTokens: 2_000,
-            totalTokens: 4_000,
-          },
-        },
-      ],
-      window: {
-        from: "2026-07-02T02:00:00.000Z",
-        to: "2026-07-02T04:00:00.000Z",
-        capped: false,
-      },
-    });
-    root = createRoot(container);
-
-    flushSync(() => {
-      root?.render(
-        <QueryClientProvider client={queryClient}>
-          <Timeline />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-
-    expect(container.textContent).toContain("Tokens used");
-    expect(container.textContent).toContain("2K");
-    expect(container.textContent).not.toContain("4K");
-  });
-
   it("summarizes only runs that overlap the visible timeline window", () => {
     const summary = timelineSummary(populatedTimeline, {
       fromMs: new Date("2026-07-02T10:15:00.000Z").getTime(),
@@ -282,7 +230,6 @@ describe("Timeline", () => {
       runs: 2,
       agents: 2,
       activeMs: 20 * 60 * 1000,
-      totalTokens: 1_250,
     });
   });
 

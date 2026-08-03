@@ -12,11 +12,12 @@ substrate on the PAP-10341 branch canonical:
 
 - **D1: Apps v2 is the substrate.** The active model is
   `tool_applications`, `tool_connections`, catalog entries, profiles, policy
-  rules, action requests, gateway sessions, audit events, and runtime slots.
+  rules, action requests, compiler-owned run-interface bindings, named gateway
+  tokens, audit events, and runtime slots.
   Connections v1 is retired as an implementation path.
-- **D2: one vault, brokered projections.** Durable third-party credentials live
+- **D2: one vault, server-side credential resolution.** Durable third-party credentials live
   in `company_secrets` as secret refs. Adapter config, plugin config, harness
-  credential files, and run environments may receive only brokered or projected
+  credential files, and run environments may receive only governed
   credentials.
 - **D3: the vocabulary and three-door IA are product law.** The default product
   doors are Apps, Connections, and Review. Protocol and operator-depth concepts
@@ -61,13 +62,15 @@ solves the problem:
 | Surface | user-facing Apps, Connections, Review, Developer/Advanced screens | gallery cards, setup wizard, review queue |
 | Governance | profiles, bindings, allow/ask-first/block rules, quarantine, audit | read-only profile, ask-first write policy |
 | Capability | action catalogs, schemas, risk classes, changed-tool review | `search_issues`, `create_comment`, schema hash |
-| Credential | `company_secrets`, OAuth broker, credential resolver, token broker | Slack bot token ref, Google OAuth refresh token ref |
+| Credential | `company_secrets`, OAuth resolver, credential resolver | Slack bot token ref, Google OAuth refresh token ref |
 | Identity | actor attribution and token exchange | board user, agent run, first-party service identity |
 | Transport | how the external system is reached | remote HTTP MCP, local stdio, REST/OpenAPI, webhook |
 
-The agent should not hold a durable provider credential. It should hold a
-Paperclip run/session token; the server or broker resolves the connection,
-checks governance, invokes the provider, and writes audit.
+The agent should not hold a durable provider credential or a general Paperclip
+API token. During one leased issue execution it receives only the
+compiler-owned `paperclip.run-tools/v1` interface bearer; the server resolves
+the selected connection, checks governance, invokes the provider, and writes
+audit.
 
 ## Packaging Rule
 

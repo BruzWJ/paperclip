@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
 import type {
   Agent,
-  AgentDesiredSkillEntry,
+  CompanySkillPin,
   CompanySkillDetail,
   CompanySkillUsageAgent,
   CompanySkillVersion,
@@ -12,7 +12,6 @@ import { Link } from "@/lib/router";
 import { agentsApi } from "@/api/agents";
 import { companySkillsApi } from "@/api/companySkills";
 import { queryKeys } from "@/lib/queryKeys";
-import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
 import { useOptionalToastActions } from "@/context/ToastContext";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";
@@ -32,16 +31,16 @@ import { cn } from "@/lib/utils";
 
 const LATEST_VALUE = "__latest__";
 
-// A single change the operator can request against one agent's desired skill
-// set. The sync endpoint replaces the *entire* set, so every mutation is
-// applied against a freshly fetched snapshot (see `applyChange`).
+// A single change the operator can request against the skill pins in one
+// agent's current immutable adapter revision. Every mutation starts from a
+// fresh revision read and appends a new revision.
 type SkillChange =
   | { kind: "add" }
   | { kind: "remove" }
   | { kind: "pin"; versionId: string | null };
 
 /**
- * Header pill that shows how many agents have this skill in their desired set
+ * Header pill that shows how many agents have this skill selected
  * and opens the management modal. Owns the dialog's open state so the header
  * stays declarative.
  */
@@ -87,10 +86,8 @@ export function AgentsUsingSkillBadge({
 
 /**
  * Modal listing the agents that have this skill assigned, with per-agent
- * version pinning and add/remove. All writes go through
- * `POST /api/agents/:id/skills/sync`, which *replaces* the agent's whole
- * desired set — so we always read the agent's current set first and send it
- * back with just the one change applied (never derive from skill-detail data).
+ * version pinning and add/remove. Writes append a canonical adapter revision
+ * containing the complete exact pin set.
  */
 export function AgentsUsingSkillDialog({
   open,
@@ -107,7 +104,6 @@ export function AgentsUsingSkillDialog({
 }) {
   const queryClient = useQueryClient();
   const toast = useOptionalToastActions();
-  const adapterCaps = useAdapterCapabilities();
   const [pendingAgentId, setPendingAgentId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
@@ -145,8 +141,8 @@ export function AgentsUsingSkillDialog({
     [agentsQuery.data],
   );
 
-  // Company agents that support skills and don't already have this one — the
-  // footer add-agent picker.
+  // Every non-terminated company agent can receive an explicit company-skill
+  // selection. Runtime exposure is owned by the issue-execution boundary.
   const attachedIds = useMemo(
     () => new Set(skill.usedByAgents.map((entry) => entry.id)),
     [skill.usedByAgents],
@@ -157,11 +153,10 @@ export function AgentsUsingSkillDialog({
         .filter(
           (agent) =>
             !attachedIds.has(agent.id) &&
-            agent.status !== "terminated" &&
-            adapterCaps(agent.adapterType).supportsSkills,
+            agent.status !== "terminated",
         )
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [agentsQuery.data, attachedIds, adapterCaps],
+    [agentsQuery.data, attachedIds],
   );
 
   const syncMutation = useMutation({
@@ -173,23 +168,32 @@ export function AgentsUsingSkillDialog({
       change: SkillChange;
     }) => {
       const skillKey = skill.key;
-      const snapshot = await agentsApi.skills(agent.id, companyId);
-      // Prefer the richer entries payload; fall back to bare keys (versionId
-      // null = tracks latest) for older snapshots.
-      const currentEntries: AgentDesiredSkillEntry[] =
-        snapshot.desiredSkillEntries ?? snapshot.desiredSkills.map((key) => ({ key, versionId: null }));
+      const selection = await agentsApi.companySkillPins(
+        agent.id,
+        companyId,
+      );
+      const currentEntries: CompanySkillPin[] = selection.entries;
       const others = currentEntries.filter((entry) => entry.key !== skillKey);
       const nextEntries = [...others];
       if (change.kind !== "remove") {
-        const versionId = change.kind === "pin" ? change.versionId : null;
+        const versionId =
+          (change.kind === "pin" ? change.versionId : null)
+          ?? skill.currentVersionId;
+        if (!versionId) {
+          throw new Error("This skill has no immutable version to pin.");
+        }
         nextEntries.push({ key: skillKey, versionId });
       }
       // Set-equality round-trip: skip the write if nothing actually changed so
       // we don't churn the agent's config (order-insensitive per b8b6f4446).
-      if (desiredSetsEqual(currentEntries, nextEntries)) {
+      if (selectionSetsEqual(currentEntries, nextEntries)) {
         return { agentId: agent.id, changed: false };
       }
-      await agentsApi.syncSkills(agent.id, nextEntries, companyId);
+      await agentsApi.replaceCompanySkillPins(
+        agent.id,
+        nextEntries,
+        companyId,
+      );
       return { agentId: agent.id, changed: true };
     },
     onSuccess: async ({ agentId }) => {
@@ -197,7 +201,9 @@ export function AgentsUsingSkillDialog({
         queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.detail(companyId, skill.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.list(companyId) }),
         // Keep the agent's own Skills tab (PAP-13194) in sync.
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents.skills(agentId) }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.companySkillPins(agentId),
+        }),
       ]);
     },
     onError: (error) => {
@@ -236,7 +242,7 @@ export function AgentsUsingSkillDialog({
           <DialogDescription>
             {count === 0
               ? "No agents have this skill assigned yet."
-              : `${count} ${count === 1 ? "agent has" : "agents have"} this skill in their desired set.`}
+              : `${count} ${count === 1 ? "agent has" : "agents have"} this skill selected.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -468,10 +474,14 @@ function AddAgentPicker({
   );
 }
 
-/** Order-insensitive comparison of desired skill sets by (key, versionId). */
-function desiredSetsEqual(a: AgentDesiredSkillEntry[], b: AgentDesiredSkillEntry[]): boolean {
+/** Order-insensitive comparison of selections by (key, versionId). */
+function selectionSetsEqual(
+  a: CompanySkillPin[],
+  b: CompanySkillPin[],
+): boolean {
   if (a.length !== b.length) return false;
-  const encode = (entry: AgentDesiredSkillEntry) => `${entry.key} ${entry.versionId ?? ""}`;
+  const encode = (entry: CompanySkillPin) =>
+    `${entry.key}\u0000${entry.versionId}`;
   const setA = new Set(a.map(encode));
   return b.every((entry) => setA.has(encode(entry)));
 }

@@ -39,7 +39,6 @@ export interface CatalogSkill {
   trustLevel: CatalogTrustLevel;
   compatibility: CatalogCompatibility;
   defaultInstall: boolean;
-  recommendedForRoles: string[];
   requires: string[];
   tags: string[];
   files: CatalogSkillFile[];

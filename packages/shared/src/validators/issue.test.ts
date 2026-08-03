@@ -1,284 +1,450 @@
+// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: AGENT_HOME, CODEX_HOME, codexHome
 import { describe, expect, it } from "vitest";
-import { MAX_ISSUE_REQUEST_DEPTH } from "../index.js";
 import {
-  addIssueCommentSchema,
+  createChildIssueSchema,
   createIssueSchema,
+  createIssueUserCommentSchema,
+  boardIssueCommentGroupPageSchema,
+  commitIssueCreatorFormSchema,
+  commitIssueOwnerFormSchema,
   issueBlockedInboxAttentionSchema,
-  resolveIssueRecoveryActionSchema,
-  respondIssueThreadInteractionSchema,
-  suggestedTaskDraftSchema,
-  updateIssueSchema,
+  decideIssueExecutionStageSchema,
+  reassignIssueSchema,
+  reopenIssueSchema,
+  selfAssignIssueWithdrawalSchema,
+  updateIssueExecutionPolicySchema,
+  updateIssueTitleSchema,
   upsertIssueDocumentSchema,
+  upsertIssueWatchdogSchema,
 } from "./issue.js";
-import { createAgentSchema } from "./agent.js";
+import {
+  adapterConfigSchema,
+  agentRuntimeConfigSchema,
+} from "./agent.js";
+import type { CompactIssue, Issue } from "../types/issue.js";
+
+type AssertFalse<T extends false> = T;
+type _IssueHasNoScheduledRetry = AssertFalse<"scheduledRetry" extends keyof Issue ? true : false>;
+type _CompactIssueHasNoScheduledRetry =
+  AssertFalse<"scheduledRetry" extends keyof CompactIssue ? true : false>;
+// @ts-expect-error The issue-level scheduled-retry DTO is intentionally retired.
+type _RetiredIssueScheduledRetryExport = import("../index.js").IssueScheduledRetry;
+// @ts-expect-error The manual issue retry-now response is intentionally retired.
+type _RetiredIssueRetryNowResponseExport = import("../index.js").IssueRetryNowResponse;
 
 describe("issue validators", () => {
-  it("passes real line breaks through unchanged", () => {
-    const parsed = createIssueSchema.parse({
-      title: "Follow up PR",
-      description: "Line 1\n\nLine 2",
-    });
+  const ownerAgentId = "22222222-2222-4222-8222-222222222222";
 
-    expect(parsed.description).toBe("Line 1\n\nLine 2");
-  });
-
-  it("accepts null and omitted optional multiline issue fields", () => {
-    expect(createIssueSchema.parse({ title: "Follow up PR", description: null }).description)
-      .toBeNull();
-    expect(createIssueSchema.parse({ title: "Follow up PR" }).description)
-      .toBeUndefined();
-    expect(updateIssueSchema.parse({ comment: undefined }).comment)
-      .toBeUndefined();
-  });
-
-  it("normalizes JSON-escaped line breaks in issue descriptions", () => {
-    const parsed = createIssueSchema.parse({
-      title: "Follow up PR",
-      description: "PR: https://example.com/pr/1\\n\\nShip the follow-up.",
-    });
-
-    expect(parsed.description).toBe("PR: https://example.com/pr/1\n\nShip the follow-up.");
-  });
-
-  it("normalizes escaped line breaks in issue update comments", () => {
-    const parsed = updateIssueSchema.parse({
-      comment: "Done\\n\\n- Verified the route",
-    });
-
-    expect(parsed.comment).toBe("Done\n\n- Verified the route");
-  });
-
-  it("keeps issue attribution fields create-only", () => {
-    const created = createIssueSchema.parse({
-      title: "Preserve attribution input for route checks",
-      createdByUserId: "spoofed-creator",
-      responsibleUserId: "spoofed-responsible",
-    });
-    const updated = updateIssueSchema.parse({
-      title: "Do not update attribution",
-      createdByUserId: "spoofed-creator",
-      responsibleUserId: "spoofed-responsible",
-    });
-
-    expect(created.createdByUserId).toBe("spoofed-creator");
-    expect(created.responsibleUserId).toBe("spoofed-responsible");
-    expect(updated).not.toHaveProperty("createdByUserId");
-    expect(updated).not.toHaveProperty("responsibleUserId");
-  });
-
-  it("allows false-positive recovery resolutions to atomically restore the source issue status", () => {
-    expect(
-      resolveIssueRecoveryActionSchema.parse({
-        outcome: "false_positive",
-        sourceIssueStatus: "in_review",
-      }),
-    ).toMatchObject({
-      outcome: "false_positive",
-      sourceIssueStatus: "in_review",
-    });
-
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "false_positive",
-        sourceIssueStatus: "blocked",
-      }).success,
-    ).toBe(false);
-
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "false_positive",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("allows restored recovery resolutions to return the source issue to todo", () => {
-    expect(
-      resolveIssueRecoveryActionSchema.parse({
-        outcome: "restored",
-        sourceIssueStatus: "todo",
-      }),
-    ).toMatchObject({
-      outcome: "restored",
-      sourceIssueStatus: "todo",
-    });
-
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "false_positive",
-        sourceIssueStatus: "todo",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("allows cancelled recovery resolutions to atomically restore the source issue status", () => {
-    expect(
-      resolveIssueRecoveryActionSchema.parse({
-        outcome: "cancelled",
-        sourceIssueStatus: "in_review",
-      }),
-    ).toMatchObject({
-      outcome: "cancelled",
-      sourceIssueStatus: "in_review",
-    });
-
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "cancelled",
-        sourceIssueStatus: "blocked",
-      }).success,
-    ).toBe(false);
-
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "cancelled",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects recovery outcomes that are not supported by the source-scoped resolution endpoint", () => {
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "delegated",
-      }).success,
-    ).toBe(false);
-
-    expect(
-      resolveIssueRecoveryActionSchema.safeParse({
-        outcome: "escalated",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("normalizes escaped line breaks in issue comment bodies", () => {
-    const parsed = addIssueCommentSchema.parse({
-      body: "Progress update\\r\\n\\r\\nNext action.",
-    });
-
-    expect(parsed.body).toBe("Progress update\n\nNext action.");
-  });
-
-  it("accepts structured issue comment presentation and metadata", () => {
-    const parsed = addIssueCommentSchema.parse({
-      body: "Paperclip needs a disposition before this issue can continue.",
-      authorType: "system",
-      presentation: {
-        kind: "system_notice",
-        tone: "warning",
-        title: "Needs disposition",
+  it("accepts only the narrow board execution-policy configuration body", () => {
+    expect(updateIssueExecutionPolicySchema.safeParse({
+      executionPolicy: {
+        stages: [{
+          type: "review",
+          participants: [{ type: "user", userId: "board-user" }],
+        }],
       },
-      metadata: {
-        version: 1,
-        sourceRunId: "11111111-1111-4111-8111-111111111111",
-        sections: [
-          {
-            title: "Evidence",
-            rows: [
-              { type: "key_value", label: "Cause", value: "successful_run_missing_state" },
-              { type: "issue_link", label: "Source issue", identifier: "PAP-3440" },
-              { type: "run_link", label: "Run", runId: "11111111-1111-4111-8111-111111111111" },
-            ],
+    }).success).toBe(true);
+    expect(updateIssueExecutionPolicySchema.safeParse({
+      executionPolicy: null,
+    }).success).toBe(true);
+    expect(updateIssueExecutionPolicySchema.safeParse({
+      executionPolicy: null,
+      status: "done",
+    }).success).toBe(false);
+  });
+
+  it("requires an audited idempotent execution-stage decision body", () => {
+    expect(decideIssueExecutionStageSchema.safeParse({
+      outcome: "approved",
+      body: "Reviewed and approved",
+      idempotencyKey: "decision-1",
+    }).success).toBe(true);
+    expect(decideIssueExecutionStageSchema.safeParse({
+      outcome: "changes_requested",
+      body: " ",
+      idempotencyKey: "decision-2",
+    }).success).toBe(false);
+    expect(decideIssueExecutionStageSchema.safeParse({
+      outcome: "approved",
+      body: "Approved",
+    }).success).toBe(false);
+  });
+
+  it("preserves the immutable issue request byte-for-byte", () => {
+    const request = "  Line 1\n\nLine 2\\n  ";
+    const parsed = createIssueSchema.parse({
+      request,
+      ownerAgentId,
+      idempotencyKey: "board-create-1",
+      title: "Follow up PR",
+    });
+
+    expect(parsed.request).toBe(request);
+  });
+
+  it("requires request, owner, and idempotency and rejects every retired create field", () => {
+    const canonical = {
+      request: "Ship the canonical ingress",
+      ownerAgentId,
+      idempotencyKey: "board-create-2",
+    };
+    expect(createIssueSchema.safeParse(canonical).success).toBe(true);
+    expect(createIssueSchema.safeParse({ ...canonical, request: "   " }).success).toBe(false);
+    expect(createIssueSchema.safeParse({ ...canonical, ownerAgentId: undefined }).success).toBe(false);
+    expect(createIssueSchema.safeParse({ ...canonical, idempotencyKey: undefined }).success).toBe(false);
+    for (const retiredField of [
+      "description",
+      "status",
+      "ownerAgentId",
+      "ownerUserId",
+      "allowDuplicate",
+      "workMode",
+      "harnessKind",
+      "requestDepth",
+      "ownerAdapterOverrides",
+      "executionPolicy",
+      "watchdog",
+      "watchdogDiscovery",
+      "createdByUserId",
+      "responsibleUserId",
+    ]) {
+      expect(
+        createIssueSchema.safeParse({ ...canonical, [retiredField]: "legacy" }).success,
+        retiredField,
+      ).toBe(false);
+    }
+  });
+
+  it("preserves explicit execution-workspace intent at canonical ingress", () => {
+    const executionWorkspaceId =
+      "33333333-3333-4333-8333-333333333333";
+    const parsed = createIssueSchema.parse({
+      request: "Continue in the explicitly pinned workspace",
+      ownerAgentId,
+      idempotencyKey: "board-create-workspace",
+      executionWorkspaceId,
+      executionWorkspacePreference: "reuse_existing",
+      executionWorkspaceSettings: {
+        mode: "reuse_existing",
+        environmentId: null,
+        workspaceStrategy: {
+          type: "project_primary",
+          baseRef: "main",
+        },
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      executionWorkspaceId,
+      executionWorkspacePreference: "reuse_existing",
+      executionWorkspaceSettings: {
+        mode: "reuse_existing",
+        environmentId: null,
+        workspaceStrategy: {
+          type: "project_primary",
+          baseRef: "main",
+        },
+      },
+    });
+  });
+
+  it("enables the system safeguard with an empty strict payload", () => {
+    expect(upsertIssueWatchdogSchema.parse({})).toEqual({});
+    expect(upsertIssueWatchdogSchema.safeParse({ agentId: ownerAgentId }).success).toBe(false);
+    expect(upsertIssueWatchdogSchema.safeParse({ instructions: "legacy prompt" }).success).toBe(false);
+  });
+
+  it("accepts raw booleans and canonicalizes attention masks to sparse false-only cells", () => {
+    const canonical = {
+      request: "Work with narrowed context",
+      ownerAgentId,
+      idempotencyKey: "board-create-3",
+    };
+    expect(createIssueSchema.parse({
+      ...canonical,
+      attentionMask: {
+        carry_context: false,
+        read_company_issue_agent_run: false,
+      },
+    }).attentionMask).toEqual({
+      carry_context: false,
+      read_company_issue_agent_run: false,
+    });
+    expect(createIssueSchema.parse({
+      ...canonical,
+      attentionMask: { carry_context: true },
+    }).attentionMask).toBeNull();
+    expect(createIssueSchema.safeParse({
+      ...canonical,
+      attentionMask: { arbitrary_context: false },
+    }).success).toBe(false);
+  });
+
+  it("keeps parent selection outside the child-create body", () => {
+    const child = {
+      request: "Implement the child request",
+      ownerAgentId,
+      idempotencyKey: "board-child-1",
+    };
+    expect(createChildIssueSchema.safeParse(child).success).toBe(true);
+    expect(createChildIssueSchema.safeParse({
+      ...child,
+      parentId: "11111111-1111-4111-8111-111111111111",
+    }).success).toBe(false);
+  });
+
+  it("preserves canonical issue and comment message bytes", () => {
+    const message = " \t前置\r\nactual newline\\n literal\\r tail\t \n";
+
+    expect(createIssueSchema.parse({
+      request: message,
+      ownerAgentId,
+      idempotencyKey: "issue-byte-exact-1",
+    }).request).toBe(message);
+    expect(commitIssueCreatorFormSchema.parse({
+      issueId: ownerAgentId,
+      message,
+    }).message).toBe(message);
+    expect(commitIssueOwnerFormSchema.parse({
+      issueId: ownerAgentId,
+      message,
+    }).message).toBe(message);
+    expect(createIssueUserCommentSchema.parse({
+      message,
+      idempotencyKey: "comment-byte-exact-1",
+    }).message).toBe(message);
+  });
+
+  it("accepts only an explicit owner-and-epoch mention tuple", () => {
+    const parsed = createIssueUserCommentSchema.parse({
+      message: "@Coder please take another look.",
+      idempotencyKey: "comment-2",
+      mention: {
+        targetAgentId: ownerAgentId,
+        ownershipEpoch: 3,
+      },
+    });
+
+    expect(parsed.mention).toEqual({
+      targetAgentId: ownerAgentId,
+      ownershipEpoch: 3,
+    });
+  });
+
+  it("accepts only the nullable canonical reply parent identity", () => {
+    const replyToCommentId = "11111111-1111-4111-8111-111111111111";
+    expect(createIssueUserCommentSchema.parse({
+      message: "Steer the run represented by this comment.",
+      idempotencyKey: "comment-reply-1",
+      replyToCommentId,
+    }).replyToCommentId).toBe(replyToCommentId);
+    expect(createIssueUserCommentSchema.parse({
+      message: "Remove the reply target.",
+      idempotencyKey: "comment-reply-2",
+      replyToCommentId: null,
+    }).replyToCommentId).toBeNull();
+    expect(createIssueUserCommentSchema.safeParse({
+      message: "Do not accept a captured sequence.",
+      idempotencyKey: "comment-reply-3",
+      replyToCommentId,
+      replyToProjectedEventSeq: 4,
+    }).success).toBe(false);
+    expect(createIssueUserCommentSchema.safeParse({
+      message: "Do not accept a root tuple.",
+      idempotencyKey: "comment-reply-4",
+      threadRootCommentId: replyToCommentId,
+    }).success).toBe(false);
+    expect(createIssueUserCommentSchema.safeParse({
+      message: "Do not mix independent dispatch contracts.",
+      idempotencyKey: "comment-reply-5",
+      mention: {
+        targetAgentId: ownerAgentId,
+        ownershipEpoch: 3,
+      },
+      replyToCommentId,
+    }).success).toBe(false);
+  });
+
+  it("keeps the grouped board comment projection closed and selector-free", () => {
+    const root = {
+      id: "11111111-1111-4111-8111-111111111111",
+      author: {
+        type: "user" as const,
+        label: "Dotta",
+        agentId: null,
+        userId: "user-1",
+        pluginKey: null,
+      },
+      body: "Root comment",
+      presentation: null,
+      metadata: null,
+      sourceTrust: null,
+      runState: null,
+      canonicalSequence: 4,
+      immediateParentDisplayReference: null,
+      createdAt: "2026-07-31T12:00:00.000Z",
+      updatedAt: "2026-07-31T12:00:00.000Z",
+    };
+    expect(boardIssueCommentGroupPageSchema.safeParse({
+      groups: [{
+        root,
+        replyCount: 1,
+        runSegmentCount: 0,
+        entries: [{
+          kind: "comment",
+          ...root,
+          id: "22222222-2222-4222-8222-222222222222",
+          body: "Nested reply",
+          canonicalSequence: 5,
+          immediateParentDisplayReference: {
+            authorLabel: "Dotta",
+            excerpt: "Root comment",
           },
-        ],
-      },
-    });
-
-    expect(parsed.presentation?.detailsDefaultOpen).toBe(false);
-    expect(parsed.metadata?.sourceRunId).toBe("11111111-1111-4111-8111-111111111111");
-    expect(parsed.metadata?.sections[0]?.rows).toHaveLength(3);
+        }],
+        entriesNextCursor: null,
+      }],
+      nextCursor: null,
+    }).success).toBe(true);
+    expect(boardIssueCommentGroupPageSchema.safeParse({
+      groups: [{
+        root: { ...root, sessionId: "private-session" },
+        replyCount: 0,
+        runSegmentCount: 0,
+        entries: [],
+        entriesNextCursor: null,
+      }],
+      nextCursor: null,
+    }).success).toBe(false);
+    expect(boardIssueCommentGroupPageSchema.safeParse({
+      groups: [{
+        root,
+        replyCount: 0,
+        runSegmentCount: 1,
+        entries: [{ kind: "provider_event", payload: {} }],
+        entriesNextCursor: null,
+      }],
+      nextCursor: null,
+    }).success).toBe(false);
   });
 
-  it("rejects arbitrary issue comment metadata", () => {
-    const parsed = addIssueCommentSchema.safeParse({
-      body: "Hidden details",
-      metadata: {
-        version: 1,
-        transcript: "raw log dump",
-      },
-    });
-
-    expect(parsed.success).toBe(false);
+  it("rejects legacy comment control fields and malformed mention tuples", () => {
+    const canonical = {
+      message: "A plain non-dispatch comment",
+      idempotencyKey: "comment-3",
+    };
+    for (const legacyField of ["body", "reopen", "resume", "interrupt", "presentation", "metadata"]) {
+      expect(
+        createIssueUserCommentSchema.safeParse({
+          ...canonical,
+          [legacyField]: legacyField === "body" ? canonical.message : true,
+        }).success,
+        legacyField,
+      ).toBe(false);
+    }
+    expect(createIssueUserCommentSchema.safeParse({
+      ...canonical,
+      mention: { targetAgentId: ownerAgentId },
+    }).success).toBe(false);
   });
 
-  it("normalizes escaped line breaks in generated task drafts", () => {
-    const parsed = suggestedTaskDraftSchema.parse({
-      clientKey: "task-1",
-      title: "Follow up",
-      description: "Line 1\\n\\nLine 2",
-    });
-
-    expect(parsed.description).toBe("Line 1\n\nLine 2");
-  });
-
-  it("normalizes escaped line breaks in thread summaries and documents", () => {
-    const response = respondIssueThreadInteractionSchema.parse({
-      answers: [],
-      summaryMarkdown: "Summary\\n\\nNext action",
-    });
+  it("normalizes escaped line breaks in documents", () => {
     const document = upsertIssueDocumentSchema.parse({
       format: "markdown",
       body: "# Plan\\n\\nShip it",
     });
 
-    expect(response.summaryMarkdown).toBe("Summary\n\nNext action");
     expect(document.body).toBe("# Plan\n\nShip it");
   });
 
-  it("clamps oversized requestDepth values on create", () => {
-    const parsed = createIssueSchema.parse({
-      title: "Clamp request depth",
-      requestDepth: MAX_ISSUE_REQUEST_DEPTH + 500,
+  it("keeps the board metadata patch title-only", () => {
+    expect(updateIssueTitleSchema.parse({ title: "A clearer title" })).toEqual({
+      title: "A clearer title",
     });
-
-    expect(parsed.requestDepth).toBe(MAX_ISSUE_REQUEST_DEPTH);
+    expect(updateIssueTitleSchema.parse({ title: null })).toEqual({ title: null });
+    expect(updateIssueTitleSchema.safeParse({
+      title: "A clearer title",
+      request: "mutated",
+    }).success).toBe(false);
+    expect(updateIssueTitleSchema.safeParse({ status: "done" }).success).toBe(false);
   });
 
-  it("defaults omitted create status to todo when an assignee is present", () => {
-    expect(createIssueSchema.parse({
-      title: "Assigned work",
-      assigneeAgentId: "22222222-2222-4222-8222-222222222222",
-    }).status).toBe("todo");
-    expect(createIssueSchema.parse({ title: "Unassigned work" }).status).toBe("backlog");
-    expect(createIssueSchema.parse({
-      title: "Deliberately parked",
-      assigneeAgentId: "22222222-2222-4222-8222-222222222222",
-      status: "backlog",
-    }).status).toBe("backlog");
+  it("validates canonical reassignment and audited reopen commands", () => {
+    expect(reassignIssueSchema.parse({
+      ownerAgentId,
+      idempotencyKey: "reassign-1",
+    })).toEqual({
+      ownerAgentId,
+      idempotencyKey: "reassign-1",
+    });
+    expect(reassignIssueSchema.safeParse({
+      ownerAgentId,
+      idempotencyKey: "reassign-1",
+      assigneeAgentId: ownerAgentId,
+    }).success).toBe(false);
+
+    expect(reopenIssueSchema.parse({
+      reason: "  Re-open with the stored request.  ",
+      idempotencyKey: "reopen-1",
+    }).reason).toBe("  Re-open with the stored request.  ");
+    expect(reopenIssueSchema.safeParse({
+      reason: "   ",
+      idempotencyKey: "reopen-2",
+    }).success).toBe(false);
   });
 
-  it("defaults issue work mode to standard and accepts ask, planning, and skill_test", () => {
-    expect(createIssueSchema.parse({ title: "Plan first" }).workMode).toBe("standard");
-    expect(createIssueSchema.parse({ title: "Ask first", workMode: "ask" }).workMode).toBe("ask");
-    expect(createIssueSchema.parse({ title: "Plan first", workMode: "planning" }).workMode).toBe("planning");
-    expect(createIssueSchema.parse({
-      title: "Harness test",
-      workMode: "skill_test",
-      harnessKind: "skill_test",
-    })).toMatchObject({ workMode: "skill_test", harnessKind: "skill_test" });
-    expect(updateIssueSchema.parse({ workMode: "ask" }).workMode).toBe("ask");
-    expect(updateIssueSchema.parse({ workMode: "planning" }).workMode).toBe("planning");
-    expect(updateIssueSchema.parse({ workMode: "skill_test" }).workMode).toBe("skill_test");
-    expect(suggestedTaskDraftSchema.parse({
-      clientKey: "ask-child",
-      title: "Ask child",
-      workMode: "ask",
-    }).workMode).toBe("ask");
-    expect(suggestedTaskDraftSchema.parse({
-      clientKey: "planning-child",
-      title: "Plan child",
-      workMode: "planning",
-    }).workMode).toBe("planning");
-    expect(suggestedTaskDraftSchema.parse({
-      clientKey: "skill-test-child",
-      title: "Test child",
-      workMode: "skill_test",
-    }).workMode).toBe("skill_test");
+  it("keeps human creator, owner, and withdrawal forms exact", () => {
+    expect(
+      commitIssueCreatorFormSchema.parse({
+        issueId: ownerAgentId,
+        message: "  Preserve these message bytes.  ",
+      }),
+    ).toEqual({
+      issueId: ownerAgentId,
+      message: "  Preserve these message bytes.  ",
+    });
+    expect(
+      commitIssueCreatorFormSchema.safeParse({
+        issueId: ownerAgentId,
+        message: "follow up",
+        idempotencyKey: "not-part-of-this-form",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      commitIssueOwnerFormSchema.parse({
+        issueId: ownerAgentId,
+        message: "Resolved with a structured result.",
+        status: "done",
+        structuredResult: { outcome: "accepted" },
+      }),
+    ).toMatchObject({ status: "done" });
+    expect(
+      commitIssueOwnerFormSchema.safeParse({
+        issueId: ownerAgentId,
+        message: "Still working.",
+        status: "open",
+        structuredResult: { outcome: "premature" },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      selfAssignIssueWithdrawalSchema.parse({
+        idempotencyKey: "withdrawal-1",
+      }),
+    ).toEqual({ idempotencyKey: "withdrawal-1" });
+    expect(
+      selfAssignIssueWithdrawalSchema.safeParse({
+        idempotencyKey: "withdrawal-1",
+        ownerUserId: "caller-controlled",
+      }).success,
+    ).toBe(false);
   });
 
   it("validates blocked inbox attention payloads and requires redacted secret fields", () => {
     const parsed = issueBlockedInboxAttentionSchema.parse({
       kind: "blocked",
       state: "needs_attention",
-      reason: "blocked_by_unassigned_issue",
+      reason: "blocked_chain_stalled",
       severity: "critical",
       stoppedSinceAt: "2026-05-09T12:00:00.000Z",
       owner: { type: "unknown", agentId: null, userId: null, label: null },
@@ -287,23 +453,21 @@ describe("issue validators", () => {
         id: "11111111-1111-4111-8111-111111111111",
         identifier: "PAP-1",
         title: "Blocked source",
-        status: "blocked",
+        boardPresentationStatus: "blocked",
         priority: "high",
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
       },
       leafIssue: {
         id: "22222222-2222-4222-8222-222222222222",
         identifier: "PAP-2",
         title: "Unassigned leaf",
-        status: "todo",
+        boardPresentationStatus: "todo",
         priority: "medium",
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
       },
-      recoveryIssue: null,
       approvalId: null,
-      interactionId: null,
       sampleIssueIdentifier: "PAP-2",
       redaction: {
         externalDetailsRedacted: false,
@@ -318,79 +482,52 @@ describe("issue validators", () => {
     }).success).toBe(false);
   });
 
-  it("rejects unknown issue work modes", () => {
-    expect(createIssueSchema.safeParse({ title: "Plan first", workMode: "normal" }).success).toBe(false);
-    expect(suggestedTaskDraftSchema.safeParse({
-      clientKey: "bad-child",
-      title: "Bad child",
-      workMode: "analysis",
+  it("validates agent runtime cheap model profile config and rejects retired heartbeat fields", () => {
+    const parsed = agentRuntimeConfigSchema.parse({
+      modelProfiles: {
+        cheap: {
+          enabled: true,
+          label: "Budget model",
+          adapterConfig: {
+            model: "fixture-small",
+          },
+        },
+      },
+    });
+
+    expect(parsed.modelProfiles?.cheap?.adapterConfig).toEqual({
+      model: "fixture-small",
+    });
+    expect(agentRuntimeConfigSchema.safeParse({
+      heartbeat: { cooldownSec: 30 },
     }).success).toBe(false);
   });
 
-  it("clamps oversized requestDepth values on update", () => {
-    const parsed = updateIssueSchema.parse({
-      requestDepth: MAX_ISSUE_REQUEST_DEPTH + 1,
-    });
-
-    expect(parsed.requestDepth).toBe(MAX_ISSUE_REQUEST_DEPTH);
-  });
-
-  it("accepts the cheap model profile in issue assignee adapter overrides", () => {
-    const parsed = createIssueSchema.parse({
-      title: "Run a cheap heartbeat",
-      assigneeAdapterOverrides: {
-        modelProfile: "cheap",
-      },
-    });
-
-    expect(parsed.assigneeAdapterOverrides?.modelProfile).toBe("cheap");
-  });
-
-  it("rejects unknown issue model profile keys", () => {
-    const parsed = updateIssueSchema.safeParse({
-      assigneeAdapterOverrides: {
-        modelProfile: "fast",
-      },
-    });
-
-    expect(parsed.success).toBe(false);
-  });
-
-  it("validates agent runtime cheap model profile config without rejecting other runtime fields", () => {
-    const parsed = createAgentSchema.parse({
-      name: "Coder",
-      adapterType: "codex_local",
-      runtimeConfig: {
-        heartbeat: { enabled: true },
-        modelProfiles: {
-          cheap: {
-            enabled: true,
-            label: "Cheap Codex",
-            adapterConfig: {
-              model: "gpt-5.3-codex-spark",
-            },
-          },
-        },
-      },
-    });
-
-    expect(parsed.runtimeConfig.modelProfiles?.cheap?.adapterConfig).toEqual({
-      model: "gpt-5.3-codex-spark",
-    });
-    expect(parsed.runtimeConfig.heartbeat).toEqual({ enabled: true });
+  it("keeps raw output-token overrides separate and closed", () => {
+    expect(
+      agentRuntimeConfigSchema.parse({
+        runtimeFlags: { outputTokenMax: 12_345 },
+      }).runtimeFlags,
+    ).toEqual({ outputTokenMax: 12_345 });
+    expect(
+      agentRuntimeConfigSchema.safeParse({
+        runtimeFlags: { contextWindow: 200_000 },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentRuntimeConfigSchema.safeParse({
+        runtimeFlags: { outputTokenMax: -1 },
+      }).success,
+    ).toBe(false);
   });
 
   it("validates cheap model profile env bindings like top-level adapter config", () => {
-    const parsed = createAgentSchema.safeParse({
-      name: "Coder",
-      adapterType: "codex_local",
-      runtimeConfig: {
-        modelProfiles: {
-          cheap: {
-            adapterConfig: {
-              env: {
-                API_TOKEN: 123,
-              },
+    const parsed = agentRuntimeConfigSchema.safeParse({
+      modelProfiles: {
+        cheap: {
+          adapterConfig: {
+            env: {
+              API_TOKEN: 123,
             },
           },
         },
@@ -400,16 +537,36 @@ describe("issue validators", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("accepts an opaque operator-supplied CODEX_HOME without importing it into Paperclip state", () => {
+    const parsed = adapterConfigSchema.parse({
+      env: {
+        CODEX_HOME: "/operator/native/codex-home",
+      },
+    });
+
+    expect(parsed.env).toEqual({
+      CODEX_HOME: "/operator/native/codex-home",
+    });
+  });
+
+  it("continues to reject generic or Paperclip-managed home bridges", () => {
+    expect(adapterConfigSchema.safeParse({
+      env: {
+        AGENT_HOME: "/paperclip/agent-homes/coder",
+      },
+    }).success).toBe(false);
+
+    expect(adapterConfigSchema.safeParse({
+      codexHome: "/paperclip/codex-homes/coder",
+    }).success).toBe(false);
+  });
+
   it("rejects unknown agent runtime model profile keys", () => {
-    const parsed = createAgentSchema.safeParse({
-      name: "Coder",
-      adapterType: "codex_local",
-      runtimeConfig: {
-        modelProfiles: {
-          fast: {
-            adapterConfig: {
-              model: "gpt-5-mini",
-            },
+    const parsed = agentRuntimeConfigSchema.safeParse({
+      modelProfiles: {
+        fast: {
+          adapterConfig: {
+            model: "gpt-5-mini",
           },
         },
       },

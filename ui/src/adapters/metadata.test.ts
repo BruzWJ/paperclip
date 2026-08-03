@@ -1,60 +1,46 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   isEnabledAdapterType,
   isValidAdapterType,
   isVisualAdapterChoice,
   listAdapterOptions,
 } from "./metadata";
-import type { UIAdapterModule } from "./types";
-
-const externalAdapter: UIAdapterModule = {
-  type: "external_test",
-  label: "External Test",
-  parseStdoutLine: () => [],
-  ConfigFields: () => null,
-  buildAdapterConfig: () => ({}),
-};
+import { syncServerAdapters } from "./registry";
 
 describe("adapter metadata", () => {
-  it("treats registered external adapters as enabled by default", () => {
-    expect(isEnabledAdapterType("external_test")).toBe(true);
+  beforeEach(() => {
+    syncServerAdapters([{ type: "codex", label: "Codex" }]);
+  });
 
-    expect(
-      listAdapterOptions((type) => type, [externalAdapter]),
-    ).toEqual([
+  afterEach(() => {
+    syncServerAdapters([{ type: "codex", label: "Codex" }]);
+  });
+
+  it("exposes only the exact server-admitted ACP catalog", () => {
+    expect(isEnabledAdapterType("codex")).toBe(true);
+    expect(isValidAdapterType("codex")).toBe(true);
+    expect(isVisualAdapterChoice("codex")).toBe(true);
+    expect(isValidAdapterType("unknown")).toBe(false);
+    expect(isValidAdapterType("Codex")).toBe(false);
+
+    expect(listAdapterOptions()).toEqual([
       {
-        value: "external_test",
-        label: "external_test",
+        value: "codex",
+        label: "Codex",
         comingSoon: false,
-        hidden: false,
         experimental: false,
       },
     ]);
   });
 
-  it("keeps intentionally withheld built-in adapters marked as coming soon", () => {
-    expect(isEnabledAdapterType("process")).toBe(false);
-    expect(isEnabledAdapterType("http")).toBe(false);
-  });
+  it("uses the exact server catalog label instead of static presentation metadata", () => {
+    syncServerAdapters([{ type: "codex", label: "Pinned Codex Frontend" }]);
 
-  it("marks the retired ACPX adapter as unavailable for new selections", () => {
-    expect(isEnabledAdapterType("acpx_local")).toBe(false);
-    expect(isValidAdapterType("acpx_local")).toBe(false);
-    expect(isVisualAdapterChoice("acpx_local")).toBe(false);
-
-    expect(
-      listAdapterOptions((type) => type, [
-        {
-          ...externalAdapter,
-          type: "acpx_local",
-        },
-      ]),
-    ).toEqual([
+    expect(listAdapterOptions()).toEqual([
       {
-        value: "acpx_local",
-        label: "acpx_local",
-        comingSoon: true,
-        hidden: false,
+        value: "codex",
+        label: "Pinned Codex Frontend",
+        comingSoon: false,
         experimental: false,
       },
     ]);

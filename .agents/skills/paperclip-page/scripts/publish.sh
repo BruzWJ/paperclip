@@ -11,10 +11,10 @@ Publishes a static directory with a root index.html to the configured Paperclip
 pages bucket and prints the public URL and S3 prefix.
 
 Required environment for live publish:
-  PAPERCLIP_PAGE_BUCKET, PAPERCLIP_PAGE_BASE_URL, AWS_REGION, AWS credentials
+  STATIC_PAGE_BUCKET, STATIC_PAGE_BASE_URL, AWS_REGION, AWS credentials
 
 Optional environment:
-  PAPERCLIP_PAGE_DEFAULT_PREFIX, PAPERCLIP_PAGE_AWS_PROFILE
+  STATIC_PAGE_DEFAULT_PREFIX, STATIC_PAGE_AWS_PROFILE
 
 Options:
   --slug SLUG   Lowercase URL slug. Allowed: a-z, 0-9, hyphen.
@@ -38,8 +38,8 @@ require_command() {
 normalize_base_url() {
   local value="$1"
   value="${value%/}"
-  [[ "$value" == https://* ]] || die "PAPERCLIP_PAGE_BASE_URL must be an https URL"
-  [[ ! "$value" =~ [[:space:]] ]] || die "PAPERCLIP_PAGE_BASE_URL cannot contain whitespace"
+  [[ "$value" == https://* ]] || die "STATIC_PAGE_BASE_URL must be an https URL"
+  [[ ! "$value" =~ [[:space:]] ]] || die "STATIC_PAGE_BASE_URL cannot contain whitespace"
   printf '%s\n' "$value"
 }
 
@@ -95,7 +95,7 @@ normalize_default_prefix() {
 
   raw="${raw#/}"
   raw="${raw%/}"
-  [[ "$raw" != *"//"* ]] || die "PAPERCLIP_PAGE_DEFAULT_PREFIX cannot contain empty path segments"
+  [[ "$raw" != *"//"* ]] || die "STATIC_PAGE_DEFAULT_PREFIX cannot contain empty path segments"
   if [[ -z "$raw" ]]; then
     printf '\n'
     return
@@ -287,14 +287,14 @@ require_command sed
 source_dir="$(cd "$source_arg" && pwd -P)"
 assert_safe_source_tree "$source_dir"
 
-bucket="${PAPERCLIP_PAGE_BUCKET:-}"
-base_url="${PAPERCLIP_PAGE_BASE_URL:-}"
+bucket="${STATIC_PAGE_BUCKET:-}"
+base_url="${STATIC_PAGE_BASE_URL:-}"
 region="${AWS_REGION:-}"
-default_prefix="$(normalize_default_prefix "${PAPERCLIP_PAGE_DEFAULT_PREFIX:-}")"
+default_prefix="$(normalize_default_prefix "${STATIC_PAGE_DEFAULT_PREFIX:-}")"
 
-[[ -n "$bucket" ]] || die "PAPERCLIP_PAGE_BUCKET is required"
-[[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || die "PAPERCLIP_PAGE_BUCKET does not look like a valid S3 bucket name"
-[[ -n "$base_url" ]] || die "PAPERCLIP_PAGE_BASE_URL is required"
+[[ -n "$bucket" ]] || die "STATIC_PAGE_BUCKET is required"
+[[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || die "STATIC_PAGE_BUCKET does not look like a valid S3 bucket name"
+[[ -n "$base_url" ]] || die "STATIC_PAGE_BASE_URL is required"
 base_url="$(normalize_base_url "$base_url")"
 
 explicit_slug=0
@@ -310,8 +310,8 @@ if [[ "$dry_run" == "0" ]]; then
   require_command curl
   [[ -n "$region" ]] || die "AWS_REGION is required for live publish"
   aws_base_args=(--region "$region")
-  if [[ -n "${PAPERCLIP_PAGE_AWS_PROFILE:-}" ]]; then
-    aws_base_args+=(--profile "$PAPERCLIP_PAGE_AWS_PROFILE")
+  if [[ -n "${STATIC_PAGE_AWS_PROFILE:-}" ]]; then
+    aws_base_args+=(--profile "$STATIC_PAGE_AWS_PROFILE")
   fi
 fi
 

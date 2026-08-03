@@ -4,7 +4,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tansta
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
-import { heartbeatsApi } from "../api/heartbeats";
+import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
@@ -97,25 +97,25 @@ export function Issues() {
     enabled: !!selectedCompanyId,
   });
 
-  const liveRunsQueryKey = queryKeys.liveRuns(selectedCompanyId!);
-  const sharedLiveRuns = useSharedPollingQuery({
+  const activeRunsQueryKey = queryKeys.runs(selectedCompanyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const sharedActiveRuns = useSharedPollingQuery({
     companyId: selectedCompanyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (#9627); no interval poll needed.
+    // Event-sourced via LiveUpdatesProvider; no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(selectedCompanyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    enabled: sharedActiveRuns.enabled,
+    refetchInterval: sharedActiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
+  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
 
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
 
   const issueLinkState = useMemo(
     () =>
@@ -179,14 +179,6 @@ export function Issues() {
     });
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      issuesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
-    },
-  });
-
   if (!selectedCompanyId) {
     return <EmptyState icon={CircleDot} message="Select a company to view tasks." />;
   }
@@ -202,14 +194,13 @@ export function Issues() {
       liveIssueIds={liveIssueIds}
       viewStateKey="paperclip:issues-view"
       issueLinkState={issueLinkState}
-      initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
+      initialOwners={searchParams.get("owner") ? [searchParams.get("owner")!] : undefined}
       initialWorkspaces={initialWorkspaces.length > 0 ? initialWorkspaces : undefined}
       initialSearch={syncedSearch}
       onSearchChange={handleSearchChange}
       enableRoutineVisibilityFilter
       hasMoreIssues={hasMoreServerIssues}
       onLoadMoreIssues={loadMoreServerIssues}
-      onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
       searchFilters={participantAgentId || workspaceIdFilter ? { participantAgentId, workspaceId: workspaceIdFilter } : undefined}
     />
   );

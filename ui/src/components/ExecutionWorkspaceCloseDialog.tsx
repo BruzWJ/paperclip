@@ -138,7 +138,7 @@ export function ExecutionWorkspaceCloseDialog({
                         <Link to={issueUrl(issue)} className="min-w-0 break-words font-medium hover:underline">
                           {issue.identifier ?? issue.id} · {issue.title}
                         </Link>
-                        <span className="text-xs text-muted-foreground">{issue.status}</span>
+                        <span className="text-xs text-muted-foreground">{issue.boardPresentationStatus}</span>
                       </div>
                     </div>
                   ))}
@@ -218,7 +218,7 @@ export function ExecutionWorkspaceCloseDialog({
                         <Link to={issueUrl(issue)} className="min-w-0 break-words font-medium hover:underline">
                           {issue.identifier ?? issue.id} · {issue.title}
                         </Link>
-                        <span className="text-xs text-muted-foreground">{issue.status}</span>
+                        <span className="text-xs text-muted-foreground">{issue.boardPresentationStatus}</span>
                       </div>
                     </div>
                   ))}

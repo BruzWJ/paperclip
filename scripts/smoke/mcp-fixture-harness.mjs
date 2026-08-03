@@ -18,18 +18,14 @@ const httpServerPath = resolve(repoRoot, "scripts/mcp-fixtures/servers/http-fixt
 
 function parseArgs(argv) {
   const args = {
-    paperclipUrl: process.env.PAPERCLIP_API_URL ?? "http://127.0.0.1:3100/api",
-    requirePaperclip: false,
     json: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--") continue;
-    if (arg === "--paperclip-url") args.paperclipUrl = argv[++i];
-    else if (arg === "--require-paperclip") args.requirePaperclip = true;
-    else if (arg === "--json") args.json = true;
+    if (arg === "--json") args.json = true;
     else if (arg === "--help") {
-      console.log(`Usage: node scripts/smoke/mcp-fixture-harness.mjs [--paperclip-url URL] [--require-paperclip] [--json]`);
+      console.log("Usage: node scripts/smoke/mcp-fixture-harness.mjs [--json]");
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -38,32 +34,10 @@ function parseArgs(argv) {
   return args;
 }
 
-function normalizePaperclipUrl(raw) {
-  const url = new URL(raw);
-  if (url.pathname.endsWith("/api")) {
-    url.pathname = url.pathname.slice(0, -4) || "/";
-  }
-  return url.toString().replace(/\/$/, "");
-}
-
-async function checkPaperclipHealth(rawUrl, required) {
-  const baseUrl = normalizePaperclipUrl(rawUrl);
-  try {
-    const response = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(1500) });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return { ok: true, baseUrl };
-  } catch (error) {
-    if (required) {
-      throw new Error(`Paperclip health check failed at ${baseUrl}/api/health: ${error.message}`);
-    }
-    return { ok: false, baseUrl, skippedReason: error.message };
-  }
-}
-
 function redactHostileText(value) {
   return JSON.stringify(value)
     .replace(/pc_live_[A-Za-z0-9_=-]+/g, "[REDACTED_SECRET]")
-    .replace(/PAPERCLIP_API_KEY/g, "[REDACTED_ENV_NAME]");
+    .replace(/PROVIDER_SECRET_TOKEN/g, "[REDACTED_ENV_NAME]");
 }
 
 function fingerprintTool(tool) {
@@ -298,7 +272,6 @@ function assert(condition, message) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const paperclip = await checkPaperclipHealth(args.paperclipUrl, args.requirePaperclip);
   const stdioClient = new StdioFixtureClient();
   const httpClient = new HttpFixtureClient();
   const results = [];
@@ -381,7 +354,7 @@ async function main() {
       assert(response.ok, "malicious result fixture should return a result");
       assert(response.outcome === "malicious_result_quarantined", "malicious result should be quarantined");
       assert(!response.result.redacted.includes("pc_live_should_be_redacted"), "synthetic secret should be redacted");
-      assert(!response.result.redacted.includes("PAPERCLIP_API_KEY"), "env key name should be redacted");
+      assert(!response.result.redacted.includes("PROVIDER_SECRET_TOKEN"), "env key name should be redacted");
     });
 
     await runCase(results, "idempotent approved writes only execute once", async () => {
@@ -401,7 +374,6 @@ async function main() {
 
     const summary = {
       ok: results.every((result) => result.ok),
-      paperclip,
       results,
       auditEvents: harness.audit.length,
       profiles: fixtureProfiles.map((profile) => profile.id),
@@ -411,7 +383,6 @@ async function main() {
       console.log(JSON.stringify(summary, null, 2));
     } else {
       console.log(`MCP fixture smoke: ${summary.ok ? "PASS" : "FAIL"}`);
-      console.log(`Paperclip health: ${paperclip.ok ? "ok" : `skipped (${paperclip.skippedReason})`}`);
       for (const result of results) {
         console.log(`${result.ok ? "PASS" : "FAIL"} ${result.name}${result.error ? ` - ${result.error}` : ""}`);
       }

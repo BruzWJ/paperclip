@@ -31,6 +31,7 @@ import {
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { companyPortabilityService } from "./company-portability.js";
 import { localEncryptedProvider } from "../secrets/local-encrypted-provider.js";
+import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 const DEFAULT_SCOPES = ["upstream_import:preview", "upstream_import:write", "upstream_import:read"];
 const TRANSFER_SCHEMA = {
@@ -120,9 +121,13 @@ type LocalUpstreamExportBundle = {
 type ConnectionRow = typeof cloudUpstreamConnections.$inferSelect;
 type RunRow = typeof cloudUpstreamRuns.$inferSelect;
 
-export function cloudUpstreamService(db: Db, options: { instanceId?: string } = {}) {
+export function cloudUpstreamService(
+  db: Db,
+  ordinaryIssues: OrdinaryIssueRuntime,
+  options: { instanceId?: string } = {},
+) {
   const sourceInstanceId = `paperclip-local-${options.instanceId ?? "default"}`;
-  const portability = companyPortabilityService(db);
+  const portability = companyPortabilityService(db, undefined, ordinaryIssues);
 
   return {
     list: async (companyId: string): Promise<CloudUpstreamsState> => {

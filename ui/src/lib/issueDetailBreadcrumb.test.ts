@@ -12,6 +12,7 @@ import {
   withIssueDetailHeaderSeed,
 } from "./issueDetailBreadcrumb";
 import type { Issue } from "@paperclipai/shared";
+import { createTestIssue } from "../test-utils/issue";
 
 const sessionStorageMock = (() => {
   const store = new Map<string, string>();
@@ -33,43 +34,17 @@ Object.defineProperty(globalThis, "window", {
 
 describe("issueDetailBreadcrumb", () => {
   function createIssue(overrides: Partial<Issue> = {}): Issue {
-    return {
+    return createTestIssue({
       id: "11111111-1111-4111-8111-111111111111",
-      companyId: "company-1",
       projectId: "project-1",
-      projectWorkspaceId: null,
-      goalId: null,
-      parentId: null,
       title: "Prefilled issue title",
-      description: null,
-      status: "todo",
-      priority: "medium",
-      assigneeAgentId: null,
-      assigneeUserId: null,
-      responsibleUserId: null,
-      checkoutRunId: null,
-      executionRunId: null,
-      executionAgentNameKey: null,
-      executionLockedAt: null,
-      createdByAgentId: null,
-      createdByUserId: null,
       issueNumber: 42,
       identifier: "PAP-42",
       originKind: "manual",
       originId: null,
       originRunId: null,
-      requestDepth: 0,
-      billingCode: null,
-      assigneeAdapterOverrides: null,
       executionPolicy: null,
       executionState: null,
-      executionWorkspaceId: null,
-      executionWorkspacePreference: null,
-      executionWorkspaceSettings: null,
-      startedAt: null,
-      completedAt: null,
-      cancelledAt: null,
-      hiddenAt: null,
       project: {
         id: "project-1",
         companyId: "company-1",
@@ -116,8 +91,7 @@ describe("issueDetailBreadcrumb", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       ...overrides,
-      workMode: overrides.workMode ?? "standard",
-    };
+    });
   }
 
   it("returns clean issue detail paths", () => {
@@ -178,7 +152,7 @@ describe("issueDetailBreadcrumb", () => {
       id: "11111111-1111-4111-8111-111111111111",
       identifier: "PAP-42",
       title: "Prefilled issue title",
-      status: "todo",
+      boardPresentationStatus: "todo",
       priority: "medium",
       projectId: "project-1",
       projectName: "Paperclip App",
@@ -201,7 +175,7 @@ describe("issueDetailBreadcrumb", () => {
       id: "11111111-1111-4111-8111-111111111111",
       identifier: "PAP-42",
       title: "Prefilled issue title",
-      status: "todo",
+      boardPresentationStatus: "todo",
       priority: "medium",
       projectId: "project-1",
       projectName: "Paperclip App",

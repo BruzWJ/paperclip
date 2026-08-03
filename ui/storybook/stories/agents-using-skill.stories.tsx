@@ -37,10 +37,10 @@ const VERSIONS: CompanySkillVersion[] = [
 ];
 
 const AGENTS = [
-  { id: "agent-1", name: "Reviewer", urlKey: "reviewer", adapterType: "claude_local", icon: "bot", status: "idle" },
-  { id: "agent-2", name: "Coder", urlKey: "coder", adapterType: "codex_local", icon: "code", status: "idle" },
-  { id: "agent-3", name: "Planner", urlKey: "planner", adapterType: "claude_local", icon: "compass", status: "idle" },
-  { id: "agent-4", name: "QA Bot", urlKey: "qa-bot", adapterType: "claude_local", icon: "bug", status: "idle" },
+  { id: "agent-1", name: "Reviewer", urlKey: "reviewer", adapterType: "codex", icon: "bot", status: "idle" },
+  { id: "agent-2", name: "Coder", urlKey: "coder", adapterType: "codex", icon: "code", status: "idle" },
+  { id: "agent-3", name: "Planner", urlKey: "planner", adapterType: "codex", icon: "compass", status: "idle" },
+  { id: "agent-4", name: "QA Bot", urlKey: "qa-bot", adapterType: "codex", icon: "bug", status: "idle" },
 ];
 
 function usageAgent(overrides: Partial<CompanySkillUsageAgent>): CompanySkillUsageAgent {
@@ -48,7 +48,7 @@ function usageAgent(overrides: Partial<CompanySkillUsageAgent>): CompanySkillUsa
     id: "agent-1",
     name: "Reviewer",
     urlKey: "reviewer",
-    adapterType: "claude_local",
+    adapterType: "codex",
     desired: true,
     actualState: null,
     versionId: null,
@@ -91,7 +91,7 @@ function makeSkill(overrides: Partial<CompanySkillDetail> = {}): CompanySkillDet
     attachedAgentCount: 3,
     usedByAgents: [
       usageAgent({ id: "agent-1", name: "Reviewer", urlKey: "reviewer", versionId: null }),
-      usageAgent({ id: "agent-2", name: "Coder", urlKey: "coder", adapterType: "codex_local", versionId: "ver-1" }),
+      usageAgent({ id: "agent-2", name: "Coder", urlKey: "coder", adapterType: "codex", versionId: "ver-1" }),
       usageAgent({ id: "agent-3", name: "Planner", urlKey: "planner", versionId: "ver-3" }),
     ],
     editable: true,

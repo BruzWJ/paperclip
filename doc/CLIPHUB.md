@@ -1,8 +1,14 @@
 # ClipHub — The Company Registry
 
+> Historical concept document. Any future registry artifact must use ordinary
+> agent identities, explicit grants/selections, canonical issue
+> request/creator/owner fields, and the data-only ACP adapter contract. It may
+> not publish Paperclip-managed instructions, provider credentials, launch
+> commands, endpoints, or legacy adapter configuration.
+
 **Download a company.**
 
-ClipHub is the public registry where people share, discover, and download Paperclip company configurations. A company template is a portable artifact containing an entire org — agents, reporting structure, adapter configs, role definitions, seed tasks — ready to spin up with one command.
+ClipHub is the public registry where people share, discover, and download Paperclip company configurations. A company template is a portable artifact containing an entire org — ordinary agent identities, reporting structure, explicit grants and selections, approved adapter revisions, and seed issues — ready to spin up with one command.
 
 ---
 
@@ -24,12 +30,12 @@ A ClipHub package is a **company template export** — the portable artifact for
 |---|---|
 | **Company metadata** | Name, description, intended use case, category |
 | **Org chart** | Full reporting hierarchy — who reports to whom |
-| **Agent definitions** | Every agent: name, role, title, capabilities description |
-| **Adapter configs** | Per-agent adapter type and configuration (SOUL.md, HEARTBEAT.md, CLAUDE.md, process commands, webhook URLs — whatever the adapter needs) |
-| **Seed tasks** | Optional starter tasks and initiatives to bootstrap the company's first run |
+| **Agent definitions** | Every agent: name, optional title, capabilities, reporting edge, and explicit context/action selections |
+| **ACP adapter revisions** | Exact approved adapter type plus its closed non-secret stable ACP option values and execution-target selection |
+| **Seed issues** | Optional starter issues and initiatives to bootstrap the company's first run |
 | **Budget defaults** | Suggested token/cost budgets per agent and per company |
 
-Templates are **structure, not state.** No in-progress tasks, no historical cost data, no runtime artifacts. Just the blueprint.
+Templates are **structure, not state.** No in-progress issues, no historical cost data, no runtime artifacts. Just the blueprint.
 
 ### Sub-packages
 
@@ -37,7 +43,7 @@ Not every use case needs a whole company. ClipHub also supports publishing indiv
 
 - **Agent templates** — a single agent config (e.g. "Senior TypeScript Engineer", "SEO Content Writer", "DevOps Agent")
 - **Team templates** — a subtree of the org chart (e.g. "Marketing Team: CMO + 3 reports", "Engineering Pod: Tech Lead + 4 Engineers")
-- **Adapter configs** — reusable adapter configurations independent of any specific agent role
+- **ACP adapter selections** — reusable non-secret selections that resolve only through an instance's exact conformance-approved registry
 
 These can be mixed into existing companies. Download an agent, slot it into your org, assign a manager, go.
 
@@ -71,9 +77,9 @@ Also supports filtering by: category, agent count range, adapter types, star cou
 Clicking into a company template shows:
 
 - **Full description** — what this company does, how it operates, what to expect
-- **Interactive org chart** — visual tree of every agent with role, title, and capabilities
-- **Agent list** — expandable details for each agent (adapter type, config summary, role description)
-- **Seed tasks** — the starter initiatives and tasks included
+- **Interactive org chart** — visual tree of every agent with name, optional title, and capabilities
+- **Agent list** — expandable details for each agent (approved adapter type, non-secret option summary, capabilities)
+- **Seed issues** — the starter initiatives and issues included
 - **Budget overview** — suggested cost structure
 - **Install command** — one-line CLI command to download and create
 - **Version history** — changelog, semver, previous versions available
@@ -87,7 +93,11 @@ Two ways to use a template:
 ```
 paperclip install cliphub:<publisher>/<company-slug>
 ```
-Downloads the template and creates a new company in your local Paperclip instance. You add your own API keys, set budgets, customize agents, and hit go.
+Downloads the template and creates a new company in your Paperclip instance.
+You authenticate each selected AI CLI through its native login on the chosen
+execution target, confirm the exact approved adapter/model selections, set
+budgets, customize agents, and start ordinary issue work. ClipHub never carries
+provider credentials or makes an omitted adapter resolve to a default.
 
 **Fork:**
 Forking creates a copy of the template under your own ClipHub account. You can modify it, republish it as your own variant, and the fork lineage is tracked. This enables evolutionary improvement — someone publishes a marketing agency, you fork it, add a social media team, republish.
@@ -187,9 +197,12 @@ Publishers who meet certain thresholds (account age, published templates with go
 
 ### Security Review
 
-Company templates contain adapter configurations, which may include executable commands (process adapter) or webhook URLs (HTTP adapter). The moderation system:
+Company templates may contain data-only ACP adapter revision selections. They
+may identify only an exact approved adapter and its closed non-secret stable
+ACP option values; launch argv/frontend identity is resolved from the receiving
+instance's immutable catalog. The moderation system:
 
-1. **Automated scanning** — checks adapter configs for suspicious patterns (arbitrary code execution, exfiltration URLs, credential harvesting)
+1. **Automated validation** — rejects unknown adapter names, commands/endpoints, provider payloads or credentials, native-session selectors, aliases, and values outside the adapter's closed schema
 2. **Community reporting** — any signed-in user can flag a template. Auto-hidden after multiple reports pending review.
 3. **Manual review** — moderators can approve, reject, or request changes
 
@@ -262,7 +275,7 @@ Report
 3. Read the description, inspect the org chart, check the comments
 4. Run `paperclipai install cliphub:acme/lean-saas-shop`
 5. Paperclip creates the company locally with all agents pre-configured
-6. Set your API keys, adjust budgets, add your initial tasks
+6. Complete each selected CLI's native login on its execution target, confirm adapter/model selections, adjust budgets, and add initial issues
 7. Hit go
 
 ### "I built something great and want to share it"
@@ -324,7 +337,7 @@ ClipHub is to Paperclip what a package registry is to a language runtime: option
 - [ ] Forking with lineage tracking
 - [ ] Agent and team sub-packages
 - [ ] Verified publisher badges
-- [ ] Automated security scanning of adapter configs
+- [ ] Automated validation of data-only ACP adapter revisions
 - [ ] "Browse ClipHub" panel in Paperclip web UI
 - [ ] `paperclipai cliphub sync` for bulk publishing
 - [ ] Publisher profiles and portfolios

@@ -41,7 +41,6 @@ export function GatewayAdvancedPanel({
       authConfig: gateway.authConfig,
       headerPolicy: gateway.headerPolicy,
       metadataPolicy: gateway.metadataPolicy,
-      onDemandToolsConfig: gateway.onDemandToolsConfig,
     },
     null,
     2,

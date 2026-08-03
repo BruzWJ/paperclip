@@ -14,11 +14,9 @@ export const SLOT_IDS = {
   projectSidebarItem: "kitchen-sink-project-link",
   projectTab: "kitchen-sink-project-tab",
   issueTab: "kitchen-sink-issue-tab",
-  taskDetailView: "kitchen-sink-task-detail",
+  issueDetailView: "kitchen-sink-task-detail",
   toolbarButton: "kitchen-sink-toolbar-action",
   contextMenuItem: "kitchen-sink-context-action",
-  commentAnnotation: "kitchen-sink-comment-annotation",
-  commentContextMenuItem: "kitchen-sink-comment-action",
 } as const;
 
 export const EXPORT_NAMES = {
@@ -31,11 +29,9 @@ export const EXPORT_NAMES = {
   projectSidebarItem: "KitchenSinkProjectSidebarItem",
   projectTab: "KitchenSinkProjectTab",
   issueTab: "KitchenSinkIssueTab",
-  taskDetailView: "KitchenSinkTaskDetailView",
+  issueDetailView: "KitchenSinkTaskDetailView",
   toolbarButton: "KitchenSinkToolbarButton",
   contextMenuItem: "KitchenSinkContextMenuItem",
-  commentAnnotation: "KitchenSinkCommentAnnotation",
-  commentContextMenuItem: "KitchenSinkCommentContextMenuItem",
   launcherModal: "KitchenSinkLauncherModal",
 } as const;
 
@@ -50,12 +46,10 @@ export const WEBHOOK_KEYS = {
 export const TOOL_NAMES = {
   echo: "echo",
   companySummary: "company-summary",
-  createIssue: "create-issue",
 } as const;
 
 export const STREAM_CHANNELS = {
   progress: "progress",
-  agentChat: "agent-chat",
 } as const;
 
 export const SAFE_COMMANDS = [
@@ -88,8 +82,6 @@ export const DEFAULT_CONFIG = {
   showSidebarEntry: true,
   showSidebarPanel: true,
   showProjectSidebarItem: true,
-  showCommentAnnotation: true,
-  showCommentContextMenuItem: true,
   enableWorkspaceDemos: true,
   enableProcessDemos: false,
   secretRefExample: "",

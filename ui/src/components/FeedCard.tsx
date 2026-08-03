@@ -7,7 +7,6 @@ import { issueStatusIcon, issueStatusIconDefault } from "../lib/status-colors";
 import {
   FileText,
   UserPlus,
-  Loader2,
   Package,
   User,
   Settings,
@@ -18,7 +17,6 @@ import {
   PauseCircle,
   PlayCircle,
   MessageCircle,
-  LogIn,
   Target,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -63,10 +61,6 @@ function formatVerb(
       return "updated work on";
     case "issue.work_product_deleted":
       return "removed work from";
-    case "issue.checked_out":
-      return "picked up";
-    case "issue.released":
-      return "released";
     case "issue.commented":
     case "issue.comment_added":
       return "commented on";
@@ -74,8 +68,6 @@ function formatVerb(
       return "attached a file to";
     case "issue.attachment_removed":
       return "removed attachment from";
-    case "issue.deleted":
-      return "deleted";
 
     case "approval.created":
       return context === "pinned" ? "needs approval on" : "requested approval on";
@@ -96,11 +88,6 @@ function formatVerb(
       return "updated";
     case "agent.terminated":
       return "terminated";
-
-    case "heartbeat.invoked":
-      return "started a run on";
-    case "heartbeat.cancelled":
-      return "cancelled a run on";
 
     case "project.created":
       return "created project";
@@ -171,17 +158,8 @@ type IconSpec =
 function getIconSpec(
   event: ActivityEvent,
   details: Record<string, unknown> | null | undefined,
-  isActive: boolean,
 ): IconSpec {
   const action = event.action;
-
-  // Heartbeat — animated when active, static otherwise
-  if (action.startsWith("heartbeat.")) {
-    if (isActive && action === "heartbeat.invoked") {
-      return { kind: "lucide", Icon: Loader2, color: "text-blue-600 dark:text-blue-400", spin: true };
-    }
-    return { kind: "lucide", Icon: Loader2, color: "text-muted-foreground" };
-  }
 
   // Approval — distinct from task status icons (those still use StatusCircle).
   // Rendered unfilled so the stroke glyph (check / alert / slash) stays visible.
@@ -222,11 +200,6 @@ function getIconSpec(
   // Comments
   if (action === "issue.commented" || action === "issue.comment_added") {
     return { kind: "lucide", Icon: MessageCircle, color: "text-muted-foreground" };
-  }
-
-  // Issue check-out
-  if (action === "issue.checked_out") {
-    return { kind: "lucide", Icon: LogIn, color: "text-muted-foreground" };
   }
 
   // Generic issue lifecycle → StatusCircle with event-derived status
@@ -300,13 +273,13 @@ function resolveContent(
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`) ?? null;
 
-  const isHeartbeatEvent = event.entityType === "heartbeat_run";
-  const heartbeatAgentId = isHeartbeatEvent
-    ? (details?.agentId as string | undefined)
+  const isRunEvent = event.entityType === "issue_execution_run";
+  const runAgentId = isRunEvent
+    ? event.agentId ?? (details?.targetAgentId as string | undefined)
     : undefined;
-  const entityName = isHeartbeatEvent
-    ? heartbeatAgentId
-      ? entityNameMap.get(`agent:${heartbeatAgentId}`) ?? null
+  const entityName = isRunEvent
+    ? runAgentId
+      ? entityNameMap.get(`agent:${runAgentId}`) ?? null
       : null
     : entityNameMap.get(`${event.entityType}:${event.entityId}`) ?? null;
 
@@ -319,8 +292,8 @@ function resolveContent(
   const approvalAgentName = approvalAgentId ? agentMap.get(approvalAgentId)?.name ?? null : null;
   const approvalType = details?.type as string | undefined;
 
-  const link = isHeartbeatEvent && heartbeatAgentId
-    ? `/agents/${heartbeatAgentId}/runs/${event.entityId}`
+  const link = isRunEvent && runAgentId
+    ? `/agents/${runAgentId}/runs/${event.entityId}`
     : event.entityType === "issue"
       ? isDocEvent && docKey
         ? `/issues/${issueSlug}#document-${encodeURIComponent(docKey)}`
@@ -358,7 +331,7 @@ function resolveContent(
   } else if (event.entityType === "agent") {
     identifier = (details?.name as string | undefined) ?? entityName ?? event.entityId;
     title = null;
-  } else if (isHeartbeatEvent) {
+  } else if (isRunEvent) {
     identifier = entityName;
     title = null;
   } else {
@@ -405,7 +378,6 @@ interface FeedCardProps {
    *  card always shows the event-derived status. Lifecycle aggregation (a
    *  later pass) will pass the live status through its own wrapper. */
   entityStatusMap?: Map<string, string>;
-  isActive?: boolean;
   /** Tier 2 treatment: mutes the verb and title text. Actor name and
    *  timestamp retain their color; leading icon retains its color. */
   isMuted?: boolean;
@@ -420,7 +392,6 @@ export function FeedCard({
   agentMap,
   entityNameMap,
   entityTitleMap,
-  isActive = false,
   isMuted = false,
   isPinned = false,
   className,
@@ -428,7 +399,7 @@ export function FeedCard({
   const details = event.details as Record<string, unknown> | null;
   const content = resolveContent(event, agentMap, entityNameMap, entityTitleMap);
   const verb = formatVerb(event.action, details, isPinned ? "pinned" : "chronological");
-  const iconSpec = getIconSpec(event, details, isActive);
+  const iconSpec = getIconSpec(event, details);
 
   const mutedTextBase = isMuted ? "text-muted-foreground/70" : "text-(--hex-959596)";
   const mutedTextHover = isMuted ? "" : "group-hover:text-white";

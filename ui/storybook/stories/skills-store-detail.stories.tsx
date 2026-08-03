@@ -50,10 +50,10 @@ const MOCK_DETAIL: CompanySkillDetail = {
   attachedAgentCount: 4,
   existingForks: [],
   usedByAgents: [
-    { id: "a-1", name: "Astra", urlKey: "astra", adapterType: "process", desired: true, actualState: null, versionId: null },
-    { id: "a-2", name: "Scout", urlKey: "scout", adapterType: "http", desired: true, actualState: null, versionId: null },
-    { id: "a-3", name: "Quill", urlKey: "quill", adapterType: "process", desired: true, actualState: null, versionId: null },
-    { id: "a-4", name: "Marlow", urlKey: "marlow", adapterType: "process", desired: true, actualState: null, versionId: null },
+    { id: "a-1", name: "Astra", urlKey: "astra", adapterType: "codex", desired: true, actualState: null, versionId: null },
+    { id: "a-2", name: "Scout", urlKey: "scout", adapterType: "codex", desired: true, actualState: null, versionId: null },
+    { id: "a-3", name: "Quill", urlKey: "quill", adapterType: "codex", desired: true, actualState: null, versionId: null },
+    { id: "a-4", name: "Marlow", urlKey: "marlow", adapterType: "codex", desired: true, actualState: null, versionId: null },
   ],
   editable: true,
   editableReason: null,
@@ -111,12 +111,12 @@ const MOCK_FILE: CompanySkillFileDetail = {
 
 // Agents available to attach, including a paused one to exercise the badge.
 const MOCK_ATTACH_AGENTS = [
-  { id: "a-1", name: "Astra", adapterType: "process", supportsSkills: true, required: false, icon: "telescope", paused: false },
-  { id: "a-2", name: "Scout", adapterType: "http", supportsSkills: true, required: false, icon: "compass", paused: false },
-  { id: "a-3", name: "Quill", adapterType: "process", supportsSkills: true, required: false, icon: "feather", paused: true },
-  { id: "a-4", name: "Marlow", adapterType: "process", supportsSkills: true, required: false, icon: "bot", paused: false },
-  { id: "a-5", name: "Pixel", adapterType: "process", supportsSkills: true, required: false, icon: "palette", paused: false },
-  { id: "a-6", name: "Forge", adapterType: "process", supportsSkills: false, required: false, icon: "hammer", paused: false },
+  { id: "a-1", name: "Astra", adapterType: "codex", supportsSkills: true, required: false, icon: "telescope", paused: false },
+  { id: "a-2", name: "Scout", adapterType: "codex", supportsSkills: true, required: false, icon: "compass", paused: false },
+  { id: "a-3", name: "Quill", adapterType: "codex", supportsSkills: true, required: false, icon: "feather", paused: true },
+  { id: "a-4", name: "Marlow", adapterType: "codex", supportsSkills: true, required: false, icon: "bot", paused: false },
+  { id: "a-5", name: "Pixel", adapterType: "codex", supportsSkills: true, required: false, icon: "palette", paused: false },
+  { id: "a-6", name: "Forge", adapterType: "codex", supportsSkills: false, required: false, icon: "hammer", paused: false },
 ];
 
 function SkillDetailHarness({ initialTab = "overview" as DetailTab }: { initialTab?: DetailTab }) {

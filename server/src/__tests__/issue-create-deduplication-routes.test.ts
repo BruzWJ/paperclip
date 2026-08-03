@@ -1,325 +1,237 @@
-import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  activityLog,
-  agents,
-  companies,
-  createDb,
-  heartbeatRuns,
-  issueCreateIdempotencyKeys,
-  issues,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { actorMiddleware } from "../middleware/auth.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Db } from "@paperclipai/db";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
-import {
-  ISSUE_CREATE_IDEMPOTENCY_KEY_RETENTION_DAYS,
-  issueService,
-} from "../services/issues.js";
+import { OrdinaryIssueRuntimeRejected } from "../services/ordinary-issue-runtime.js";
+import { createMockDb } from "./helpers/mock-db.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const companyId = "00000000-0000-4000-8000-000000000001";
+const ownerAgentId = "00000000-0000-4000-8000-000000000010";
+const boardUserId = "board-user";
+const firstIssueId = "00000000-0000-4000-8000-000000000020";
+const secondIssueId = "00000000-0000-4000-8000-000000000021";
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres issue create deduplication route tests on this host: ${
-      embeddedPostgresSupport.reason ?? "unsupported environment"
-    }`,
-  );
+const createIssue = vi.fn();
+const ordinaryIssues = { create: createIssue } as never;
+
+function createdResult(input: {
+  id?: string;
+  request: string;
+  title: string;
+  idempotencyKey: string;
+  retried: boolean;
+}) {
+  return {
+    issue: {
+      id: input.id ?? firstIssueId,
+      companyId,
+      request: input.request,
+      title: input.title,
+      ownerKind: "agent",
+      ownerAgentId,
+      ownerUserId: null,
+      creatorKind: "user/board",
+      creatorUserId: boardUserId,
+      originKind: "manual",
+    },
+    ref: { id: `ordinary-issue-create:${companyId}:${input.idempotencyKey}` },
+    retried: input.retried,
+  };
 }
 
-describeEmbeddedPostgres("issue create deduplication routes", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-create-deduplication-routes-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(issueCreateIdempotencyKeys);
-    await db.delete(issues);
-    await db.delete(heartbeatRuns);
-    await db.delete(agents);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  function createApp() {
-    const app = express();
-    app.use(express.json());
-    app.use(actorMiddleware(db, { deploymentMode: "local_trusted" }));
-    app.use("/api", issueRoutes(db, {} as any));
-    app.use(errorHandler);
-    return app;
-  }
-
-  async function seedCompany() {
-    const companyId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: `D${companyId.replace(/-/g, "").slice(0, 5).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
+function createApp(db: Db) {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.actor = testBoardSessionActor({
+      userId: boardUserId,
+      companyIds: [companyId],
+      memberships: [{ companyId, membershipRole: "owner", status: "active" }],
+      isInstanceAdmin: false,
     });
-    return companyId;
-  }
+    next();
+  });
+  app.use("/api", issueRoutes(db, {} as never, { ordinaryIssues }));
+  app.use(errorHandler);
+  return app;
+}
 
-  async function seedParent(companyId: string) {
-    const [parent] = await db.insert(issues).values({
+describe("issue create deduplication routes", () => {
+  beforeEach(() => createIssue.mockReset());
+
+  it("returns 201 for the canonical create and 200 for an exact idempotent replay", async () => {
+    const input = {
+      request: "Prepare the release without changing these bytes.",
+      ownerAgentId,
+      title: "Prepare release",
+      idempotencyKey: "run-1:prepare-release",
+    };
+    createIssue
+      .mockResolvedValueOnce(createdResult({ ...input, retried: false }))
+      .mockResolvedValueOnce(createdResult({ ...input, retried: true }));
+    const harness = createMockDb();
+    const app = createApp(harness.db);
+
+    const first = await request(app).post(`/api/companies/${companyId}/issues`).send(input);
+    const replay = await request(app).post(`/api/companies/${companyId}/issues`).send(input);
+
+    expect(first.status).toBe(201);
+    expect(replay.status).toBe(200);
+    expect(first.body).toMatchObject({ id: firstIssueId, request: input.request, ownerAgentId, retried: false });
+    expect(replay.body).toMatchObject({ id: firstIssueId, request: input.request, ownerAgentId, retried: true });
+    expect(createIssue).toHaveBeenCalledTimes(2);
+    expect(createIssue).toHaveBeenNthCalledWith(1, expect.objectContaining({
       companyId,
-      title: "Parent issue",
-      status: "todo",
-      priority: "medium",
-    }).returning();
-    return parent;
-  }
+      request: input.request,
+      ownerAgentId,
+      creator: { kind: "user/board", userId: boardUserId },
+      idempotencyKey: input.idempotencyKey,
+      sourceKind: "issue_request",
+    }));
+    expect(harness.calls).toEqual([]);
+  });
 
-  it("replays the existing issue for the same company idempotency key", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
+  it("maps an immutable-payload idempotency rejection to the canonical conflict response", async () => {
+    const input = {
+      request: "Prepare the release.",
+      ownerAgentId,
+      title: "Prepare release",
+      idempotencyKey: "run-1:immutable-retry",
+    };
+    createIssue
+      .mockResolvedValueOnce(createdResult({ ...input, retried: false }))
+      .mockRejectedValueOnce(new OrdinaryIssueRuntimeRejected(
+        "Issue creation idempotency key was retried with different immutable input",
+        "create_idempotency_conflict",
+      ));
+    const app = createApp(createMockDb().db);
 
-    const first = await request(app)
+    const first = await request(app).post(`/api/companies/${companyId}/issues`).send(input);
+    const conflict = await request(app).post(`/api/companies/${companyId}/issues`).send({
+      ...input,
+      request: "A changed request must not reuse the existing creation.",
+    });
+
+    expect(first.status).toBe(201);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body).toMatchObject({
+      error: "Issue creation idempotency key was retried with different immutable input",
+      details: { code: "create_idempotency_conflict" },
+    });
+  });
+
+  it("keeps identical titles independent when the explicit idempotency keys differ", async () => {
+    createIssue
+      .mockResolvedValueOnce(createdResult({
+        id: firstIssueId,
+        request: "First independent request.",
+        title: "Coordinate launch",
+        idempotencyKey: "run-2:coordinate-launch-a",
+        retried: false,
+      }))
+      .mockResolvedValueOnce(createdResult({
+        id: secondIssueId,
+        request: "Second independent request.",
+        title: "Coordinate launch",
+        idempotencyKey: "run-2:coordinate-launch-b",
+        retried: false,
+      }));
+    const app = createApp(createMockDb().db);
+
+    const first = await request(app).post(`/api/companies/${companyId}/issues`).send({
+      request: "First independent request.",
+      ownerAgentId,
+      title: "Coordinate launch",
+      idempotencyKey: "run-2:coordinate-launch-a",
+    });
+    const second = await request(app).post(`/api/companies/${companyId}/issues`).send({
+      request: "Second independent request.",
+      ownerAgentId,
+      title: "Coordinate launch",
+      idempotencyKey: "run-2:coordinate-launch-b",
+    });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(first.body.id).toBe(firstIssueId);
+    expect(second.body.id).toBe(secondIssueId);
+  });
+
+  it("preserves serialized retry outcomes returned by the canonical runtime", async () => {
+    const input = {
+      request: "Coordinate one launch.",
+      ownerAgentId,
+      title: "Coordinate launch",
+      idempotencyKey: "run-2:coordinate-launch",
+    };
+    createIssue
+      .mockResolvedValueOnce(createdResult({ ...input, retried: false }))
+      .mockResolvedValueOnce(createdResult({ ...input, retried: true }));
+    const app = createApp(createMockDb().db);
+
+    const [first, retry] = await Promise.all([
+      request(app).post(`/api/companies/${companyId}/issues`).send(input),
+      request(app).post(`/api/companies/${companyId}/issues`).send(input),
+    ]);
+
+    expect([first.status, retry.status].sort()).toEqual([200, 201]);
+    expect(first.body.id).toBe(retry.body.id);
+    expect([first.body.retried, retry.body.retried].sort()).toEqual([false, true]);
+  });
+
+  it("rejects retired title-only and allowDuplicate inputs before runtime dispatch", async () => {
+    const app = createApp(createMockDb().db);
+
+    const titleOnly = await request(app)
       .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Prepare release", idempotencyKey: "run-1:prepare-release" })
-      .expect(201);
-    const replay = await request(app)
+      .send({ title: "Title-only compatibility create" });
+    const allowDuplicate = await request(app)
       .post(`/api/companies/${companyId}/issues`)
       .send({
-        parentId: parent.id,
-        title: "Different retry payload",
-        idempotencyKey: "run-1:prepare-release",
+        request: "Do not restore the soft duplicate bypass.",
+        ownerAgentId,
+        title: "Explicit duplicate",
+        idempotencyKey: "retired-allow-duplicate",
         allowDuplicate: true,
-      })
-      .expect(200);
+      });
 
-    expect(replay.body).toMatchObject({
-      id: first.body.id,
-      title: "Prepare release",
-      deduplicated: true,
-      deduplicationReason: "idempotency_key",
-    });
-    expect(await db.select().from(issueCreateIdempotencyKeys)).toHaveLength(1);
+    expect(titleOnly.status).toBe(400);
+    expect(allowDuplicate.status).toBe(400);
+    expect(createIssue).not.toHaveBeenCalled();
   });
 
-  it("expires old idempotency keys before replay lookup", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
-    const oldIssueId = randomUUID();
-    const idempotencyKey = "run-1:expired-retry";
-    const expiredCreatedAt = new Date(
-      Date.now() - (ISSUE_CREATE_IDEMPOTENCY_KEY_RETENTION_DAYS + 1) * 24 * 60 * 60 * 1000,
-    );
-    await db.insert(issues).values({
-      id: oldIssueId,
-      companyId,
-      parentId: parent.id,
-      title: "Expired retry target",
-      status: "todo",
-      priority: "medium",
-    });
-    await db.insert(issueCreateIdempotencyKeys).values({
-      companyId,
-      idempotencyKey,
-      issueId: oldIssueId,
-      createdAt: expiredCreatedAt,
-    });
+  it("passes exact request bytes and canonical board creator identity to the runtime", async () => {
+    const exactRequest = "  Keep leading, internal\n, and trailing bytes.  ";
+    const input = {
+      request: exactRequest,
+      ownerAgentId,
+      title: "Attributed create",
+      idempotencyKey: "board-attributed-create",
+    };
+    createIssue.mockResolvedValue(createdResult({ ...input, retried: false }));
+    const harness = createMockDb();
 
-    const recreated = await request(app)
+    const response = await request(createApp(harness.db))
       .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Expired retry creates new work", idempotencyKey })
-      .expect(201);
+      .send(input);
 
-    const rows = await db.select().from(issueCreateIdempotencyKeys);
-    expect(recreated.body.id).not.toBe(oldIssueId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      companyId,
-      idempotencyKey,
-      issueId: recreated.body.id,
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      request: exactRequest,
+      ownerKind: "agent",
+      ownerAgentId,
+      ownerUserId: null,
+      creatorKind: "user/board",
+      creatorUserId: boardUserId,
+      originKind: "manual",
     });
-  });
-
-  it("returns a recent open sibling whose normalized title matches", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
-
-    const first = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Create   a single PR" })
-      .expect(201);
-    const duplicate = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "  create a SINGLE pr  " })
-      .expect(200);
-
-    expect(duplicate.body).toMatchObject({
-      id: first.body.id,
-      deduplicated: true,
-      deduplicationReason: "recent_open_title",
-    });
-  });
-
-  it("serializes keyed and title-only creates for the same issue", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
-
-    const [keyed, titleOnly] = await Promise.all([
-      request(app)
-        .post(`/api/companies/${companyId}/issues`)
-        .send({ parentId: parent.id, title: "Coordinate launch", idempotencyKey: "run-2:coordinate-launch" }),
-      request(app)
-        .post(`/api/companies/${companyId}/issues`)
-        .send({ parentId: parent.id, title: "Coordinate launch" }),
-    ]);
-
-    expect([keyed.status, titleOnly.status].sort()).toEqual([200, 201]);
-    expect(keyed.body.id).toBe(titleOnly.body.id);
-    expect([keyed, titleOnly].find((response) => response.status === 200)?.body).toMatchObject({
-      deduplicated: true,
-      deduplicationReason: "recent_open_title",
-    });
-    expect(await db.select().from(issues).where(eq(issues.parentId, parent.id))).toHaveLength(1);
-    expect(await db.select().from(issueCreateIdempotencyKeys)).toEqual([
-      expect.objectContaining({ issueId: keyed.body.id, idempotencyKey: "run-2:coordinate-launch" }),
-    ]);
-
-    const replay = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Different title", idempotencyKey: "run-2:coordinate-launch" })
-      .expect(200);
-    expect(replay.body).toMatchObject({
-      id: keyed.body.id,
-      deduplicated: true,
-      deduplicationReason: "idempotency_key",
-    });
-  });
-
-  it("allows an explicit duplicate create", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
-
-    const first = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Investigate incident" })
-      .expect(201);
-    const duplicate = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Investigate incident", allowDuplicate: true })
-      .expect(201);
-
-    expect(duplicate.body.id).not.toBe(first.body.id);
-  });
-
-  it("does not apply the route soft guard to internal service creates", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const svc = issueService(db);
-
-    const first = await svc.create(companyId, {
-      parentId: parent.id,
-      title: "System-generated follow-up",
-      status: "todo",
-      priority: "medium",
-    });
-    const second = await svc.create(companyId, {
-      parentId: parent.id,
-      title: "System-generated follow-up",
-      status: "todo",
-      priority: "medium",
-    });
-
-    expect(second.id).not.toBe(first.id);
-  });
-
-  it("does not let closed or older issues block a recreate", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
-    const oldIssueId = randomUUID();
-    const closedIssueId = randomUUID();
-    await db.insert(issues).values([
-      {
-        id: oldIssueId,
-        companyId,
-        parentId: parent.id,
-        title: "Retry old work",
-        status: "todo",
-        priority: "medium",
-        createdAt: new Date(Date.now() - 49 * 60 * 60 * 1000),
-      },
-      {
-        id: closedIssueId,
-        companyId,
-        parentId: parent.id,
-        title: "Retry closed work",
-        status: "done",
-        priority: "medium",
-      },
-    ]);
-
-    const recreatedOld = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Retry old work" })
-      .expect(201);
-    const recreatedClosed = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .send({ parentId: parent.id, title: "Retry closed work" })
-      .expect(201);
-
-    expect(recreatedOld.body.id).not.toBe(oldIssueId);
-    expect(recreatedClosed.body.id).not.toBe(closedIssueId);
-  });
-
-  it("stores the request run header on manual creates", async () => {
-    const companyId = await seedCompany();
-    const parent = await seedParent(companyId);
-    const app = createApp();
-    const runId = randomUUID();
-    const agentId = randomUUID();
-    await db.insert(agents).values({
-      id: agentId,
-      companyId,
-      name: "Creating agent",
-      role: "engineer",
-      status: "active",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    });
-    await db.insert(heartbeatRuns).values({
-      id: runId,
-      companyId,
-      agentId,
-      status: "running",
-    });
-
-    const response = await request(app)
-      .post(`/api/companies/${companyId}/issues`)
-      .set("X-Paperclip-Run-Id", runId)
-      .send({ parentId: parent.id, title: "Attributed create" })
-      .expect(201);
-    const [created] = await db.select().from(issues).where(eq(issues.id, response.body.id));
-
-    expect(created.originKind).toBe("manual");
-    expect(created.originRunId).toBe(runId);
+    expect(createIssue).toHaveBeenCalledWith(expect.objectContaining({
+      request: exactRequest,
+      creator: { kind: "user/board", userId: boardUserId },
+    }));
+    expect(harness.calls).toEqual([]);
   });
 });

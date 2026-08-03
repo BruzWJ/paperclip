@@ -14,10 +14,9 @@ interface NewIssueDefaults {
   executionWorkspaceId?: string;
   executionWorkspaceMode?: string;
   parentExecutionWorkspaceLabel?: string;
-  assigneeAgentId?: string;
-  assigneeUserId?: string;
+  ownerAgentId?: string;
   title?: string;
-  description?: string;
+  request?: string;
 }
 
 interface NewGoalDefaults {

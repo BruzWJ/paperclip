@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 export const REQUIRED_WIKI_DIRECTORIES = [
   "raw",
@@ -17,32 +17,7 @@ function templateFile(path: string): string {
   return readFileSync(new URL(`../templates/${path}`, import.meta.url), "utf8");
 }
 
-function agentInstructionFiles(agentKey: string): Record<string, string> {
-  const root = new URL(`../agents/${agentKey}/`, import.meta.url);
-  const files: Record<string, string> = {};
-
-  function walk(relativeDir: string) {
-    const dirUrl = new URL(relativeDir ? `${relativeDir}/` : "./", root);
-    for (const entry of readdirSync(dirUrl)) {
-      if (entry === ".DS_Store") continue;
-      const relativePath = relativeDir ? `${relativeDir}/${entry}` : entry;
-      const entryUrl = new URL(relativePath, root);
-      const stat = statSync(entryUrl);
-      if (stat.isDirectory()) {
-        walk(relativePath);
-      } else if (stat.isFile()) {
-        files[relativePath] = readFileSync(entryUrl, "utf8");
-      }
-    }
-  }
-
-  walk("");
-  return Object.fromEntries(Object.entries(files).sort(([left], [right]) => left.localeCompare(right)));
-}
-
 export const DEFAULT_WIKI_SCHEMA = templateFile("AGENTS.md");
-export const DEFAULT_AGENT_INSTRUCTION_FILES = agentInstructionFiles("wiki-maintainer");
-export const DEFAULT_AGENT_INSTRUCTIONS = DEFAULT_AGENT_INSTRUCTION_FILES["AGENTS.md"] ?? "";
 export const DEFAULT_IDEA = templateFile("IDEA.md");
 export const DEFAULT_INDEX = templateFile("wiki/index.md");
 export const DEFAULT_LOG = templateFile("wiki/log.md");

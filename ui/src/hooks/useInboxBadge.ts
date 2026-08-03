@@ -6,7 +6,7 @@ import { inboxDismissalsApi } from "../api/inboxDismissals";
 import { approvalsApi } from "../api/approvals";
 import { authApi } from "../api/auth";
 import { dashboardApi } from "../api/dashboard";
-import { heartbeatsApi } from "../api/heartbeats";
+import { runsApi } from "../api/runs";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import {
@@ -27,7 +27,7 @@ import {
 
 const INBOX_ISSUE_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
 const INBOX_BADGE_ISSUE_LIMIT = 500;
-const INBOX_BADGE_HEARTBEAT_RUN_LIMIT = 200;
+const INBOX_BADGE_RUN_LIMIT = 200;
 const INBOX_BADGE_HOT_PATH_STALE_MS = 30_000;
 
 export function useDismissedInboxAlerts() {
@@ -250,9 +250,9 @@ export function useInboxBadge(companyId: string | null | undefined) {
   );
   const currentUserId = session?.user.id ?? session?.session.userId ?? null;
 
-  const { data: heartbeatRuns = [] } = useQuery({
-    queryKey: [...queryKeys.heartbeats(companyId!), "limit", INBOX_BADGE_HEARTBEAT_RUN_LIMIT],
-    queryFn: () => heartbeatsApi.list(companyId!, undefined, INBOX_BADGE_HEARTBEAT_RUN_LIMIT, { summary: true }),
+  const { data: runPage } = useQuery({
+    queryKey: queryKeys.runs(companyId!),
+    queryFn: () => runsApi.listForCompany(companyId!, { limit: INBOX_BADGE_RUN_LIMIT }),
     enabled: !!companyId,
     refetchOnWindowFocus: false,
     staleTime: INBOX_BADGE_HOT_PATH_STALE_MS,
@@ -264,12 +264,12 @@ export function useInboxBadge(companyId: string | null | undefined) {
         approvals,
         joinRequests,
         dashboard,
-        heartbeatRuns,
+        runs: runPage?.items ?? [],
         mineIssues,
         dismissedAlerts,
         dismissedAtByKey,
         currentUserId,
       }),
-    [approvals, joinRequests, dashboard, heartbeatRuns, mineIssues, dismissedAlerts, dismissedAtByKey, currentUserId],
+    [approvals, joinRequests, dashboard, runPage?.items, mineIssues, dismissedAlerts, dismissedAtByKey, currentUserId],
   );
 }

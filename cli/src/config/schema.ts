@@ -1,7 +1,6 @@
 export {
   paperclipConfigSchema,
   configMetaSchema,
-  llmConfigSchema,
   databaseBackupConfigSchema,
   databaseConfigSchema,
   loggingConfigSchema,
@@ -14,7 +13,6 @@ export {
   secretsConfigSchema,
   secretsLocalEncryptedConfigSchema,
   type PaperclipConfig,
-  type LlmConfig,
   type DatabaseBackupConfig,
   type DatabaseConfig,
   type LoggingConfig,

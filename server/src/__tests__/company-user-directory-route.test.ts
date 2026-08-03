@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accessRoutes } from "../routes/access.js";
 import { errorHandler } from "../middleware/index.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 vi.mock("../services/index.js", () => ({
   accessService: () => ({
@@ -19,9 +20,12 @@ vi.mock("../services/index.js", () => ({
     assertCurrentBoardKey: vi.fn(),
     revokeBoardApiKey: vi.fn(),
   }),
+  createRuntimeAgentConfigurationService: () => ({}),
+  createAgentAdapterConfigurationService: () => ({}),
+  createAgentOperationalConfigurationService: () => ({}),
+  createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
   deduplicateAgentName: vi.fn(),
   logActivity: vi.fn(),
-  notifyHireApproved: vi.fn(),
 }));
 
 function createDbStub() {
@@ -39,7 +43,7 @@ function createDbStub() {
     typeof table === "object" &&
     "membershipRole" in table &&
     "principalType" in table &&
-    "principalId" in table;
+    "principalUserId" in table;
   const isAuthUsersTable = (table: unknown) =>
     !!table &&
     typeof table === "object" &&
@@ -86,10 +90,7 @@ function createApp(actor: Express.Request["actor"]) {
   app.use(
     "/api",
     accessRoutes(createDbStub() as never, {
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
     }),
   );
   app.use(errorHandler);
@@ -102,14 +103,15 @@ describe("GET /companies/:companyId/user-directory", () => {
   });
 
   it("returns active human users for operators without manage-permissions access", async () => {
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
+      userName: "User One",
+      userEmail: "user-1@example.com",
+      sessionId: "session-user-1",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
-    });
+    }));
 
     const res = await request(app).get("/api/companies/company-1/user-directory");
 

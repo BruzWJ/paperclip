@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
@@ -7,8 +8,6 @@ import {
   agents,
   documents,
   documentRevisions,
-  heartbeatRuns,
-  issueDocuments,
   issues as issueRows,
   issueRelations,
   pipelineAutomationExecutions,
@@ -24,14 +23,13 @@ import {
   routines,
 } from "@paperclipai/db";
 import { validate } from "../middleware/validate.js";
-import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
+import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import {
   PIPELINE_CASE_EVENTS_DEFAULT_LIMIT,
   PIPELINE_CASE_EVENTS_MAX_LIMIT,
   PIPELINE_CONTEXT_PACK_EVENT_LIMIT,
   ensurePipelineCaseBodyDocumentFromSummary,
   pipelineService,
-  resolvePipelineCaseConversationSource,
   type PipelineActor,
   type PipelineStageConfig,
   type PipelineStageKind,
@@ -54,14 +52,15 @@ import {
 } from "../services/pipelines-aggregation.js";
 import { accessService } from "../services/access.js";
 import { authorizationService } from "../services/authorization.js";
-import { issueService } from "../services/issues.js";
-import { assertCompanyAccess } from "./authz.js";
+import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import { assertBoard, assertCompanyAccess } from "./authz.js";
 import {
   computePipelineHealth,
   deriveCaseType,
   envConfigSchema,
+  issueCreationAttentionMaskSchema,
   issueDocumentKeySchema,
-  PIPELINE_CASE_BODY_DOCUMENT_KEY,
+  pipelineCaseGenericIssueLinkRoleSchema,
   pipelineAutomationRetryRequestSchema,
   pipelineAutomationRetryScopeSchema,
   type PipelineStageAutomation,
@@ -69,15 +68,8 @@ import {
   type PipelineHealthFailedAutomationInput,
   type PipelineHealthStageInput,
 } from "@paperclipai/shared";
-import { documentAnnotationService } from "../services/document-annotations.js";
 import { logActivity } from "../services/activity-log.js";
 import {
-  formatPipelineConversationBodyDocumentContextMarkdown,
-  loadPipelineConversationBodyDocumentContext,
-} from "../services/pipeline-conversation-context.js";
-import { resolveActorSourceTrustForIssue } from "../services/source-trust.js";
-import {
-  formatPipelineCaseOutputContextMarkdown,
   pipelineCaseOutputsService,
   summarizePipelineCaseOutputsForContext,
 } from "../services/pipeline-case-outputs.js";
@@ -85,6 +77,8 @@ import {
 /** Per-stage instructions document keys look like `stage-instructions:{stageId}`. */
 const STAGE_INSTRUCTIONS_PREFIX = "stage-instructions:";
 type PipelineRouteDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+type BoardPipelineActor = Extract<PipelineActor, { type: "user" }>;
+type BoardAttentionCaller = Extract<AttentionCaller, { type: "user" }>;
 
 const stageKindSchema = z.enum(["open", "working", "review", "done", "cancelled"]);
 const jsonObjectSchema = z.record(z.string(), z.unknown());
@@ -211,11 +205,21 @@ const reviewCaseSchema = z.object({
   leaseToken: z.string().uuid().nullable().optional(),
 });
 const blockersSchema = z.object({ blockedByCaseIds: z.array(z.string().uuid()).max(100) });
-const issueLinkRoleSchema = z.enum(["origin", "conversation", "work", "automation"]);
 const createIssueLinkSchema = z.object({
   issueId: z.string().uuid(),
-  role: issueLinkRoleSchema,
-});
+  role: pipelineCaseGenericIssueLinkRoleSchema,
+}).strict();
+const openConversationSchema = z.object({
+  ownerAgentId: z.string().uuid(),
+  request: z
+    .string()
+    .max(200_000)
+    .refine((value) => value.trim().length > 0, {
+      message: "Request must contain non-whitespace text",
+    }),
+  attentionMask: issueCreationAttentionMaskSchema.nullable().optional(),
+  idempotencyKey: z.string().trim().min(1).max(512).optional(),
+}).strict();
 const bulkReviewSchema = z.object({
   items: z.array(reviewCaseSchema.extend({ caseId: z.string().uuid() })).max(100),
 });
@@ -377,27 +381,14 @@ function assertPipelineCompanyAccess(req: Request, companyId: string) {
   }
 }
 
-function actorForMutation(req: Request): PipelineActor {
-  if (req.actor.type === "agent") {
-    if (!req.actor.agentId) throw unauthorized();
-    if (!req.actor.runId) throw unprocessable("Agent pipeline mutations require a run id", { code: "run_id_required" });
-    return { type: "agent", agentId: req.actor.agentId, runId: req.actor.runId };
-  }
-  if (req.actor.type === "board") {
-    return { type: "user", userId: req.actor.userId ?? "board" };
-  }
-  throw unauthorized();
+function actorForMutation(req: Request): BoardPipelineActor {
+  assertBoard(req);
+  return { type: "user", userId: req.actor.userId };
 }
 
-function attentionCallerFor(req: Request): AttentionCaller {
-  if (req.actor.type === "agent") {
-    if (!req.actor.agentId) throw unauthorized();
-    return { type: "agent", agentId: req.actor.agentId };
-  }
-  if (req.actor.type === "board") {
-    return { type: "user", userId: req.actor.userId ?? "board" };
-  }
-  throw unauthorized();
+function attentionCallerFor(req: Request): BoardAttentionCaller {
+  assertBoard(req);
+  return { type: "user", userId: req.actor.userId };
 }
 
 function parseEventTypesQuery(value: unknown): string[] | undefined {
@@ -632,77 +623,11 @@ async function resolveCasePipelineId(db: Db, input: { companyId: string; caseId:
   return row.pipelineId;
 }
 
-function activityActorForPipelineRoute(actor: PipelineActor) {
-  if (actor.type === "agent") {
-    return { actorType: "agent" as const, actorId: actor.agentId, agentId: actor.agentId, runId: actor.runId };
-  }
-  if (actor.type === "user") {
-    return { actorType: "user" as const, actorId: actor.userId, agentId: null, runId: null };
-  }
-  return { actorType: "system" as const, actorId: "pipeline", agentId: null, runId: null };
-}
-
-function issueIdFromPipelineRouteRunContext(contextSnapshot: unknown) {
-  if (!contextSnapshot || typeof contextSnapshot !== "object" || Array.isArray(contextSnapshot)) return null;
-  const context = contextSnapshot as Record<string, unknown>;
-  const issueId = context.issueId ?? context.taskId;
-  return typeof issueId === "string" && issueId.trim().length > 0 ? issueId.trim() : null;
-}
-
-async function sourceTrustForPipelineCaseDocumentWrite(
-  dbOrTx: Db | any,
-  input: {
-    companyId: string;
-    caseId: string;
-    actor: PipelineActor;
-  },
-) {
-  if (input.actor.type !== "agent") return null;
-
-  const conversationSource = await resolvePipelineCaseConversationSource(dbOrTx, input.companyId, input.caseId);
-  let issue = conversationSource?.isActive ? conversationSource.issue : null;
-
-  if (!issue) {
-    const runIssueId = await dbOrTx
-      .select({ contextSnapshot: heartbeatRuns.contextSnapshot })
-      .from(heartbeatRuns)
-      .where(and(
-        eq(heartbeatRuns.companyId, input.companyId),
-        eq(heartbeatRuns.id, input.actor.runId),
-        eq(heartbeatRuns.agentId, input.actor.agentId),
-      ))
-      .limit(1)
-      .then((rows: Array<{ contextSnapshot: unknown }>) =>
-        issueIdFromPipelineRouteRunContext(rows[0]?.contextSnapshot),
-      );
-
-    issue = runIssueId
-      ? await dbOrTx
-          .select()
-          .from(issueRows)
-          .where(and(eq(issueRows.companyId, input.companyId), eq(issueRows.id, runIssueId)))
-          .limit(1)
-          .then((rows: Array<typeof issueRows.$inferSelect>) => rows[0] ?? null)
-      : null;
-  }
-
-  if (!issue) return null;
-
-  return resolveActorSourceTrustForIssue({
-    db: dbOrTx as Db,
-    issue: {
-      id: issue.id,
-      companyId: issue.companyId,
-      projectId: issue.projectId,
-      executionPolicy: issue.executionPolicy,
-    },
-    actor: {
-      actorType: "agent",
-      actorId: input.actor.agentId,
-      agentId: input.actor.agentId,
-      runId: input.actor.runId,
-    },
-  });
+function activityActorForPipelineRoute(actor: BoardPipelineActor) {
+  return {
+    actorType: "user" as const,
+    actorId: actor.userId,
+  };
 }
 
 async function assertCaseAccess(db: Db, req: Request, caseId: string) {
@@ -722,15 +647,14 @@ async function writeRouteEvent(
     companyId: string;
     caseId: string;
     type: string;
-    actor: PipelineActor;
+    actor: BoardPipelineActor;
     payload?: Record<string, unknown>;
   },
 ) {
-  const actorPatch = input.actor.type === "agent"
-    ? { actorType: "agent", actorAgentId: input.actor.agentId, runId: input.actor.runId }
-    : input.actor.type === "user"
-      ? { actorType: "user", actorUserId: input.actor.userId }
-      : { actorType: "system" };
+  const actorPatch = {
+    actorType: "user",
+    actorUserId: input.actor.userId,
+  };
   const [event] = await db.insert(pipelineCaseEvents).values({
     companyId: input.companyId,
     caseId: input.caseId,
@@ -748,9 +672,9 @@ async function getIssueMutationTarget(db: Db, input: { companyId: string; issueI
       companyId: issueRows.companyId,
       projectId: issueRows.projectId,
       parentId: issueRows.parentId,
-      assigneeAgentId: issueRows.assigneeAgentId,
-      assigneeUserId: issueRows.assigneeUserId,
-      status: issueRows.status,
+      ownerAgentId: issueRows.ownerAgentId,
+      ownerUserId: issueRows.ownerUserId,
+      boardPresentationStatus: issueRows.boardPresentationStatus,
     })
     .from(issueRows)
     .where(and(eq(issueRows.id, input.issueId), eq(issueRows.companyId, input.companyId)))
@@ -761,8 +685,8 @@ async function getIssueMutationTarget(db: Db, input: { companyId: string; issueI
 async function assertIssueLinkMutationAllowed(
   req: Request,
   input: {
+    db: Db;
     access: ReturnType<typeof accessService>;
-    issuesSvc: ReturnType<typeof issueService>;
     issue: NonNullable<Awaited<ReturnType<typeof getIssueMutationTarget>>>;
   },
 ) {
@@ -775,48 +699,31 @@ async function assertIssueLinkMutationAllowed(
       issueId: input.issue.id,
       projectId: input.issue.projectId,
       parentIssueId: input.issue.parentId,
-      assigneeAgentId: input.issue.assigneeAgentId,
-      assigneeUserId: input.issue.assigneeUserId,
-      status: input.issue.status,
+      ownerAgentId: input.issue.ownerAgentId,
+      ownerUserId: input.issue.ownerUserId,
     },
     scope: {
       issueId: input.issue.id,
       projectId: input.issue.projectId,
       parentIssueId: input.issue.parentId,
-      assigneeAgentId: input.issue.assigneeAgentId,
-      assigneeUserId: input.issue.assigneeUserId,
+      ownerAgentId: input.issue.ownerAgentId,
+      ownerUserId: input.issue.ownerUserId,
     },
   });
   if (!decision.allowed) {
     throw forbidden("Issue is outside this actor's authorization boundary");
   }
-  if (req.actor.type !== "agent") return;
-  const actorAgentId = req.actor.agentId;
-  if (!actorAgentId) throw forbidden("Agent authentication required");
-  if (input.issue.assigneeAgentId === null) return;
-  if (input.issue.assigneeAgentId !== actorAgentId) {
-    if (input.issue.status === "in_progress") {
-      throw conflict("Issue is checked out by another agent", {
-        issueId: input.issue.id,
-        assigneeAgentId: input.issue.assigneeAgentId,
-        actorAgentId,
-      });
-    }
-    throw forbidden("Agent cannot mutate another agent's issue");
-  }
-  if (input.issue.status !== "in_progress") return;
-  const runId = req.actor.runId?.trim();
-  if (!runId) throw unauthorized("Agent run id required");
-  await input.issuesSvc.assertCheckoutOwner(input.issue.id, actorAgentId, runId);
 }
 
-export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineService>[1] = {}) {
+export function pipelineRoutes(
+  db: Db,
+  opts: { ordinaryIssues: OrdinaryIssueRuntime },
+) {
   const router = Router();
-  const svc = pipelineService(db, options);
+  const ordinaryIssues = opts.ordinaryIssues;
+  const svc = pipelineService(db, { ordinaryIssues });
   const outputsSvc = pipelineCaseOutputsService(db);
   const access = accessService(db);
-  const issuesSvc = issueService(db);
-  const documentAnnotationsSvc = documentAnnotationService(db);
 
   router.get("/companies/:companyId/pipelines", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -1333,18 +1240,18 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         ? await tx.update(documents).set({
           title: req.body.title ?? key,
           updatedAt: now,
-          updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-          updatedByUserId: actor.type === "user" ? actor.userId : null,
+          updatedByAgentId: null,
+          updatedByUserId: actor.userId,
         }).where(eq(documents.id, existing.document.id)).returning()
         : await tx.insert(documents).values({
           companyId,
           title: req.body.title ?? key,
           latestBody: req.body.body,
           latestRevisionNumber: 1,
-          createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-          createdByUserId: actor.type === "user" ? actor.userId : null,
-          updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-          updatedByUserId: actor.type === "user" ? actor.userId : null,
+          createdByAgentId: null,
+          createdByUserId: actor.userId,
+          updatedByAgentId: null,
+          updatedByUserId: actor.userId,
         }).returning();
       const [revision] = await tx.insert(documentRevisions).values({
         companyId,
@@ -1352,9 +1259,9 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         revisionNumber: existing ? existing.document.latestRevisionNumber + 1 : 1,
         title: req.body.title ?? document!.title,
         body: req.body.body,
-        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-        createdByUserId: actor.type === "user" ? actor.userId : null,
-        createdByRunId: actor.type === "agent" ? actor.runId : null,
+        createdByAgentId: null,
+        createdByUserId: actor.userId,
+        createdByRunId: null,
         createdAt: now,
       }).returning();
       await tx.update(documents).set({
@@ -1362,8 +1269,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         latestRevisionId: revision!.id,
         latestRevisionNumber: revision!.revisionNumber,
         updatedAt: now,
-        updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-        updatedByUserId: actor.type === "user" ? actor.userId : null,
+        updatedByAgentId: null,
+        updatedByUserId: actor.userId,
       }).where(eq(documents.id, document!.id));
       if (!existing) {
         await tx.insert(pipelineDocuments).values({ companyId, pipelineId, documentId: document!.id, key, createdAt: now, updatedAt: now });
@@ -1377,8 +1284,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
           latestRevisionId: revision!.id,
           latestRevisionNumber: revision!.revisionNumber,
           updatedAt: now,
-          updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-          updatedByUserId: actor.type === "user" ? actor.userId : null,
+          updatedByAgentId: null,
+          updatedByUserId: actor.userId,
         },
         revision,
       };
@@ -1437,9 +1344,9 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         format: sourceRevision.format,
         body: sourceRevision.body,
         changeSummary: `Restored from revision ${sourceRevision.revisionNumber}`,
-        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-        createdByUserId: actor.type === "user" ? actor.userId : null,
-        createdByRunId: actor.type === "agent" ? actor.runId : null,
+        createdByAgentId: null,
+        createdByUserId: actor.userId,
+        createdByRunId: null,
         createdAt: now,
       }).returning();
 
@@ -1449,8 +1356,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         latestBody: sourceRevision.body,
         latestRevisionId: restoredRevision!.id,
         latestRevisionNumber: nextRevisionNumber,
-        updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-        updatedByUserId: actor.type === "user" ? actor.userId : null,
+        updatedByAgentId: null,
+        updatedByUserId: actor.userId,
         updatedAt: now,
       }).where(eq(documents.id, existing.document.id)).returning();
 
@@ -1598,7 +1505,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const pipelineId = await resolveCasePipelineId(db, { companyId, caseId });
     await assertPipelineWriteAccess(req, { access, companyId, pipelineId });
     const actor = actorForMutation(req);
-    const sourceTrust = await sourceTrustForPipelineCaseDocumentWrite(db, { companyId, caseId, actor });
+    const sourceTrust = null;
 
     const result = await db.transaction(async (tx) => {
       const existing = await tx
@@ -1653,8 +1560,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
           title: req.body.title ?? existing.document.title,
           format: req.body.format,
           updatedAt: now,
-          updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-          updatedByUserId: actor.type === "user" ? actor.userId : null,
+          updatedByAgentId: null,
+          updatedByUserId: actor.userId,
           sourceTrust,
         }).where(eq(documents.id, existing.document.id)).returning()
         : await tx.insert(documents).values({
@@ -1663,10 +1570,10 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
           format: req.body.format,
           latestBody: req.body.body,
           latestRevisionNumber: 1,
-          createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-          createdByUserId: actor.type === "user" ? actor.userId : null,
-          updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-          updatedByUserId: actor.type === "user" ? actor.userId : null,
+          createdByAgentId: null,
+          createdByUserId: actor.userId,
+          updatedByAgentId: null,
+          updatedByUserId: actor.userId,
           sourceTrust,
           createdAt: now,
           updatedAt: now,
@@ -1680,9 +1587,9 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         format: req.body.format,
         body: req.body.body,
         changeSummary: req.body.changeSummary ?? null,
-        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-        createdByUserId: actor.type === "user" ? actor.userId : null,
-        createdByRunId: actor.type === "agent" ? actor.runId : null,
+        createdByAgentId: null,
+        createdByUserId: actor.userId,
+        createdByRunId: null,
         createdAt: now,
       }).returning();
       await tx.update(documents).set({
@@ -1692,8 +1599,8 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         latestRevisionId: revision!.id,
         latestRevisionNumber: revision!.revisionNumber,
         updatedAt: now,
-        updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-        updatedByUserId: actor.type === "user" ? actor.userId : null,
+        updatedByAgentId: null,
+        updatedByUserId: actor.userId,
         sourceTrust,
       }).where(eq(documents.id, document!.id));
       if (!existing) {
@@ -1701,28 +1608,6 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
       } else {
         await tx.update(pipelineCaseDocuments).set({ updatedAt: now }).where(eq(pipelineCaseDocuments.documentId, document!.id));
       }
-
-      if (key === "body") {
-        const conversationSource = await resolvePipelineCaseConversationSource(tx, companyId, caseId);
-        if (conversationSource?.isActive) {
-          await tx.insert(issueDocuments).values({
-            companyId,
-            issueId: conversationSource.issue.id,
-            documentId: document!.id,
-            key: PIPELINE_CASE_BODY_DOCUMENT_KEY,
-            createdAt: now,
-            updatedAt: now,
-          }).onConflictDoUpdate({
-            target: [issueDocuments.companyId, issueDocuments.issueId, issueDocuments.key],
-            set: { documentId: document!.id, updatedAt: now },
-          });
-        }
-      }
-
-      const linkedIssueDocuments = await tx
-        .select({ issueId: issueDocuments.issueId, key: issueDocuments.key })
-        .from(issueDocuments)
-        .where(and(eq(issueDocuments.companyId, companyId), eq(issueDocuments.documentId, document!.id)));
 
       return {
         created: !existing,
@@ -1734,27 +1619,14 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
           latestRevisionId: revision!.id,
           latestRevisionNumber: revision!.revisionNumber,
           updatedAt: now,
-          updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-          updatedByUserId: actor.type === "user" ? actor.userId : null,
+          updatedByAgentId: null,
+          updatedByUserId: actor.userId,
           sourceTrust,
         },
         revision,
-        linkedIssueDocuments,
       };
     });
 
-    if (!result.created) {
-      await Promise.all(result.linkedIssueDocuments.map((link) =>
-        documentAnnotationsSvc.remapOpenThreadsForDocument({
-          issueId: link.issueId,
-          key: link.key,
-          documentId: result.document.id,
-          nextRevisionId: result.document.latestRevisionId,
-          nextRevisionNumber: result.document.latestRevisionNumber,
-          nextBody: result.document.latestBody,
-        })
-      ));
-    }
     await logActivity(db, {
       companyId,
       ...activityActorForPipelineRoute(actor),
@@ -1766,7 +1638,6 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         documentId: result.document.id,
         revisionId: result.revision!.id,
         revisionNumber: result.revision!.revisionNumber,
-        linkedIssueIds: result.linkedIssueDocuments.map((link) => link.issueId),
       },
     });
     res.json({ document: result.document, revision: result.revision });
@@ -1827,9 +1698,9 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         format: sourceRevision.format,
         body: sourceRevision.body,
         changeSummary: `Restored from revision ${sourceRevision.revisionNumber}`,
-        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-        createdByUserId: actor.type === "user" ? actor.userId : null,
-        createdByRunId: actor.type === "agent" ? actor.runId : null,
+        createdByAgentId: null,
+        createdByUserId: actor.userId,
+        createdByRunId: null,
         createdAt: now,
       }).returning();
       const [document] = await tx.update(documents).set({
@@ -1838,36 +1709,20 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         latestBody: sourceRevision.body,
         latestRevisionId: restoredRevision!.id,
         latestRevisionNumber: nextRevisionNumber,
-        updatedByAgentId: actor.type === "agent" ? actor.agentId : null,
-        updatedByUserId: actor.type === "user" ? actor.userId : null,
+        updatedByAgentId: null,
+        updatedByUserId: actor.userId,
         updatedAt: now,
       }).where(eq(documents.id, existing.document.id)).returning();
       await tx.update(pipelineCaseDocuments).set({ updatedAt: now }).where(eq(pipelineCaseDocuments.documentId, existing.document.id));
-
-      const linkedIssueDocuments = await tx
-        .select({ issueId: issueDocuments.issueId, key: issueDocuments.key })
-        .from(issueDocuments)
-        .where(and(eq(issueDocuments.companyId, companyId), eq(issueDocuments.documentId, existing.document.id)));
 
       return {
         document: document!,
         revision: restoredRevision!,
         restoredFromRevisionId: sourceRevision.id,
         restoredFromRevisionNumber: sourceRevision.revisionNumber,
-        linkedIssueDocuments,
       };
     });
 
-    await Promise.all(result.linkedIssueDocuments.map((link) =>
-      documentAnnotationsSvc.remapOpenThreadsForDocument({
-        issueId: link.issueId,
-        key: link.key,
-        documentId: result.document.id,
-        nextRevisionId: result.document.latestRevisionId,
-        nextRevisionNumber: result.document.latestRevisionNumber,
-        nextBody: result.document.latestBody,
-      })
-    ));
     await logActivity(db, {
       companyId,
       ...activityActorForPipelineRoute(actor),
@@ -1881,7 +1736,6 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         revisionNumber: result.revision.revisionNumber,
         restoredFromRevisionId: result.restoredFromRevisionId,
         restoredFromRevisionNumber: result.restoredFromRevisionNumber,
-        linkedIssueIds: result.linkedIssueDocuments.map((link) => link.issueId),
       },
     });
     res.json(result);
@@ -1928,7 +1782,6 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const caseId = req.params.caseId as string;
     const companyId = await assertCaseAccess(db, req, caseId);
     const actor = actorForMutation(req);
-    if (actor.type === "system") throw forbidden();
     const claimed = await svc.claimCase({ companyId, caseId, actor, leaseMs: req.body.leaseSeconds ? req.body.leaseSeconds * 1000 : undefined });
     res.json({ case: claimed, leaseToken: claimed.leaseToken, leaseExpiresAt: claimed.leaseExpiresAt });
   });
@@ -1937,7 +1790,6 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const caseId = req.params.caseId as string;
     const companyId = await assertCaseAccess(db, req, caseId);
     const actor = actorForMutation(req);
-    if (req.body.force && actor.type === "agent") throw new HttpError(403, "Agents cannot force-release pipeline leases", { code: "forbidden" });
     res.json(await svc.releaseCase({ companyId, caseId, actor, leaseToken: req.body.leaseToken, force: req.body.force }));
   });
 
@@ -2007,65 +1859,53 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.json(await svc.replaceBlockers({ companyId, caseId, blockedByCaseIds: req.body.blockedByCaseIds, actor }));
   });
 
-  router.post("/cases/:caseId/open-conversation", async (req, res) => {
-    const caseId = req.params.caseId as string;
-    const companyId = await assertCaseAccess(db, req, caseId);
-    const actor = actorForMutation(req);
-    const conversationSource = await resolvePipelineCaseConversationSource(db, companyId, caseId);
-    if (conversationSource?.isActive) {
-      res.json({ issue: conversationSource.issue, created: false });
-      return;
-    }
-    const detail = await getCaseDetail(db, companyId, caseId);
-    const [bodyDocumentContext, outputSummaries] = await Promise.all([
-      loadPipelineConversationBodyDocumentContext(db, { companyId, caseId }),
-      outputsSvc.listCaseOutputs(companyId, caseId).then((outputs) => summarizePipelineCaseOutputsForContext(outputs)),
-    ]);
-    const result = await db.transaction(async (tx) => {
-      const existingConversationSource = await resolvePipelineCaseConversationSource(tx, companyId, caseId);
-      if (existingConversationSource?.isActive) {
-        return { issue: existingConversationSource.issue, created: false };
+  router.post(
+    "/cases/:caseId/open-conversation",
+    validate(openConversationSchema),
+    async (req, res) => {
+      const caseId = req.params.caseId as string;
+      const companyId = await assertCaseAccess(db, req, caseId);
+      assertBoard(req);
+      const userId = req.actor.userId.trim();
+      if (!userId) {
+        throw forbidden(
+          "Pipeline conversations require an authenticated named board user",
+        );
       }
-      const [issue] = await tx.insert(issueRows).values({
+      const detail = await getCaseDetail(db, companyId, caseId);
+      const result = await ordinaryIssues.create({
         companyId,
+        request: req.body.request,
+        ownerAgentId: req.body.ownerAgentId,
+        creator: { kind: "user/board", userId },
+        idempotencyKey: req.body.idempotencyKey ?? randomUUID(),
         title: `Discuss: ${detail.case.title}`,
-        description: buildCaseContextMarkdown(detail, bodyDocumentContext, outputSummaries),
-        status: "todo",
         priority: "medium",
-        parentId: existingConversationSource?.issue?.id ?? conversationSource?.issue?.id ?? null,
-        originKind: "pipeline_case_conversation",
-        originId: detail.case.id,
-        createdByAgentId: actor.type === "agent" ? actor.agentId : null,
-        createdByUserId: actor.type === "user" ? actor.userId : null,
-      }).returning();
-      await tx.insert(pipelineCaseIssueLinks).values({
-        companyId,
-        caseId,
-        issueId: issue!.id,
-        role: "conversation",
-        createdByRunId: actor.type === "agent" ? actor.runId : null,
+        attentionMask: req.body.attentionMask ?? null,
+        correlate: async (tx, persisted) => {
+          await tx.insert(pipelineCaseIssueLinks).values({
+            companyId,
+            caseId,
+            issueId: persisted.issue.id,
+            role: "conversation",
+            createdByRunId: null,
+          });
+          await writeRouteEvent(tx, {
+            companyId,
+            caseId,
+            type: "conversation_opened",
+            actor: { type: "user", userId },
+            payload: { issueId: persisted.issue.id },
+          });
+        },
       });
-      if (bodyDocumentContext.bodyDocument) {
-        await tx.insert(issueDocuments).values({
-          companyId,
-          issueId: issue!.id,
-          documentId: bodyDocumentContext.bodyDocument.id,
-          key: PIPELINE_CASE_BODY_DOCUMENT_KEY,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }).onConflictDoNothing();
-      }
-      await writeRouteEvent(tx, {
-        companyId,
-        caseId,
-        type: "conversation_opened",
-        actor,
-        payload: { issueId: issue!.id },
+      res.status(result.retried ? 200 : 201).json({
+        issue: result.issue,
+        created: !result.retried,
+        refId: result.ref.id,
       });
-      return { issue: issue!, created: true };
-    });
-    res.status(result.created ? 201 : 200).json(result);
-  });
+    },
+  );
 
   router.get("/cases/:caseId/issue-links", async (req, res) => {
     const caseId = req.params.caseId as string;
@@ -2095,7 +1935,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const actor = actorForMutation(req);
     const targetIssue = await getIssueMutationTarget(db, { companyId, issueId: req.body.issueId });
     if (!targetIssue) throw notFound("Issue not found");
-    await assertIssueLinkMutationAllowed(req, { access, issuesSvc, issue: targetIssue });
+    await assertIssueLinkMutationAllowed(req, { db, access, issue: targetIssue });
     try {
       const link = await db.transaction(async (tx) => {
         const [created] = await tx.insert(pipelineCaseIssueLinks).values({
@@ -2103,7 +1943,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
           caseId,
           issueId: req.body.issueId,
           role: req.body.role,
-          createdByRunId: actor.type === "agent" ? actor.runId : null,
+          createdByRunId: null,
         }).returning();
         await writeRouteEvent(tx, {
           companyId,
@@ -2138,7 +1978,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     if (!existingLink) throw notFound("Pipeline case issue link not found");
     const targetIssue = await getIssueMutationTarget(db, { companyId, issueId: existingLink.issueId });
     if (!targetIssue) throw notFound("Issue not found");
-    await assertIssueLinkMutationAllowed(req, { access, issuesSvc, issue: targetIssue });
+    await assertIssueLinkMutationAllowed(req, { db, access, issue: targetIssue });
     const deleted = await db.transaction(async (tx) => {
       const [removed] = await tx
         .delete(pipelineCaseIssueLinks)
@@ -2307,7 +2147,6 @@ async function getCaseDetail(db: Db, companyId: string, caseId: string) {
     activeWorkByCase,
     descendantActiveWorkCounts,
     parentCase,
-    conversationSource,
     liveness,
     builtFromAutomation,
   ] = await Promise.all([
@@ -2319,7 +2158,6 @@ async function getCaseDetail(db: Db, companyId: string, caseId: string) {
     loadActiveWorkForCases(db, companyId, [caseId]),
     loadDescendantActiveWorkCountsForCases(db, companyId, [caseId]),
     parentCasePromise,
-    resolvePipelineCaseConversationSource(db, companyId, caseId),
     derivePipelineCaseLiveness(db, companyId, row),
     loadBuiltFromAutomation(db, companyId, row.case),
   ]);
@@ -2341,7 +2179,6 @@ async function getCaseDetail(db: Db, companyId: string, caseId: string) {
     },
     activeWork: activeWorkByCase.get(caseId) ?? null,
     liveness,
-    conversationSource,
     builtFromAutomation,
     parentCase,
     pendingSuggestion: row.case.pendingSuggestion,
@@ -2442,7 +2279,7 @@ function summarizeLinkedIssue(issue: typeof issueRows.$inferSelect) {
     id: issue.id,
     identifier: issue.identifier,
     title: issue.title,
-    status: issue.status,
+    boardPresentationStatus: issue.boardPresentationStatus,
   };
 }
 
@@ -2633,14 +2470,16 @@ async function derivePipelineCaseLiveness(
       isNull(issueRows.hiddenAt),
     ))
     .orderBy(desc(issueRows.updatedAt), desc(pipelineCaseIssueLinks.createdAt));
-  const blockedIssue = linkedIssues.find(({ issue }) => issue.status === "blocked");
+  const blockedIssue = linkedIssues.find(
+    ({ issue }) => issue.boardPresentationStatus === "blocked",
+  );
   if (blockedIssue) {
     const blocker = await db
       .select({
         id: issueRows.id,
         identifier: issueRows.identifier,
         title: issueRows.title,
-        status: issueRows.status,
+        status: issueRows.boardPresentationStatus,
       })
       .from(issueRelations)
       .innerJoin(issueRows, eq(issueRelations.issueId, issueRows.id))
@@ -2655,28 +2494,34 @@ async function derivePipelineCaseLiveness(
     return {
       state: "blocked",
       reason: "linked_issue_blocked",
-      message: `Linked ${blockedIssue.link.role} task is blocked.`,
+      message: `Linked ${blockedIssue.link.role} issue is blocked.`,
       issue: summarizeLinkedIssue(blockedIssue.issue),
       blocker: blocker
         ? { issueId: blocker.id, title: blocker.title, status: blocker.status }
         : null,
     };
   }
-  const activeIssue = linkedIssues.find(({ issue }) => issue.status === "in_progress");
+  const activeIssue = linkedIssues.find(
+    ({ issue }) => issue.boardPresentationStatus === "in_progress",
+  );
   if (activeIssue) {
     return {
       state: "live",
       reason: "linked_issue_active",
-      message: `Linked ${activeIssue.link.role} task is in progress.`,
+      message: `Linked ${activeIssue.link.role} issue is in progress.`,
       issue: summarizeLinkedIssue(activeIssue.issue),
     };
   }
-  const waitingIssue = linkedIssues.find(({ issue }) => isWaitingIssueStatus(issue.status));
+  const waitingIssue = linkedIssues.find(({ issue }) =>
+    isWaitingIssueStatus(issue.boardPresentationStatus),
+  );
   if (waitingIssue) {
     return {
-      state: isLiveIssueStatus(waitingIssue.issue.status) ? "waiting" : "attention",
+      state: isLiveIssueStatus(waitingIssue.issue.boardPresentationStatus)
+        ? "waiting"
+        : "attention",
       reason: "linked_issue_waiting",
-      message: `Linked ${waitingIssue.link.role} task is ${waitingIssue.issue.status}.`,
+      message: `Linked ${waitingIssue.link.role} issue is ${waitingIssue.issue.boardPresentationStatus}.`,
       issue: summarizeLinkedIssue(waitingIssue.issue),
     };
   }
@@ -2702,7 +2547,7 @@ async function derivePipelineCaseLiveness(
           type: "agent",
           agentId: parsedFingerprint.principalId,
           companyId,
-          source: "agent_key",
+          source: "internal",
         },
         action: "pipelines:write",
         resource: { type: "company", companyId },
@@ -2805,63 +2650,6 @@ async function derivePipelineCaseLiveness(
     reason: "no_action_path",
     message: "No lease, linked work, blocker, automation retry, review, or breakdown action path is visible.",
   };
-}
-
-function buildCaseContextMarkdown(
-  detail: Awaited<ReturnType<typeof getCaseDetail>>,
-  bodyDocumentContext?: Awaited<ReturnType<typeof loadPipelineConversationBodyDocumentContext>> | null,
-  outputSummaries?: ReturnType<typeof summarizePipelineCaseOutputsForContext> | null,
-) {
-  const bodyDocumentMarkdown = formatPipelineConversationBodyDocumentContextMarkdown(bodyDocumentContext ?? null);
-  const outputMarkdown = formatPipelineCaseOutputContextMarkdown(outputSummaries ?? null);
-  return [
-    "## Pipeline Case Context",
-    "",
-    "## Conversation Instructions",
-    "",
-    "This task is the conversation thread for the linked pipeline item.",
-    "Treat user comments in this thread as feedback on that pipeline item unless the user explicitly says otherwise.",
-    "Iterate the pipeline item body document unless the user explicitly asks for item metadata, stage changes, or follow-up work.",
-    "Inspect connected documents and outputs when present; if feedback affects a connected document, revise it too so the item and supporting documents stay in sync.",
-    "Editing this discussion task itself is not the primary deliverable unless the user specifically requests it.",
-    "",
-    bodyDocumentMarkdown,
-    bodyDocumentMarkdown ? "" : null,
-    outputMarkdown,
-    outputMarkdown ? "" : null,
-    "## Pipeline Item Context",
-    "",
-    `Item: ${detail.case.title}`,
-    `Pipeline: ${detail.pipeline.name} (${detail.pipeline.key})`,
-    `Stage: ${detail.stage.name} (${detail.stage.key}, ${detail.stage.kind})`,
-    `Item link: /PAP/pipelines/${detail.pipeline.id}/items/${detail.case.id}`,
-    "",
-    "```json",
-    JSON.stringify({
-      pipeline: {
-        id: detail.pipeline.id,
-        key: detail.pipeline.key,
-        name: detail.pipeline.name,
-      },
-      case: {
-        id: detail.case.id,
-        caseKey: detail.case.caseKey,
-        title: detail.case.title,
-        version: detail.case.version,
-        untrustedContent: {
-          summary: detail.case.summary,
-          fields: detail.case.fields,
-        },
-      },
-      stage: {
-        id: detail.stage.id,
-        key: detail.stage.key,
-        name: detail.stage.name,
-        kind: detail.stage.kind,
-      },
-    }, null, 2),
-    "```",
-  ].filter((line) => line !== null).join("\n");
 }
 
 async function getChildOutcomeSummaries(db: Db, companyId: string, caseId: string) {

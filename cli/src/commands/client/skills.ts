@@ -1,7 +1,5 @@
 import { Command } from "commander";
 import type {
-  Agent,
-  AgentSkillSnapshot,
   CatalogSkill,
   CompanySkill,
   CompanySkillAuditResult,
@@ -67,10 +65,6 @@ interface ConfirmedSkillOptions extends SkillsOptions {
   force?: boolean;
 }
 
-interface AgentSkillSyncOptions extends SkillsOptions {
-  skill?: string[];
-}
-
 type CompanySkillReferenceTarget = Pick<CompanySkillListItem, "id" | "key" | "slug" | "name">;
 
 export interface CompanySkillCheckRow {
@@ -87,7 +81,7 @@ export interface CompanySkillUpdateRow {
 }
 
 export function registerSkillsCommands(program: Command): void {
-  const skills = program.command("skills").description("Company and agent skill operations");
+  const skills = program.command("skills").description("Company skill catalog and import operations");
 
   addCommonClientOptions(
     skills
@@ -469,101 +463,6 @@ export function registerSkillsCommands(program: Command): void {
     { includeCompany: true },
   );
 
-  registerAgentSkillCommands(skills);
-}
-
-function registerAgentSkillCommands(skills: Command): void {
-  const agent = skills.command("agent").description("Agent desired-skill and runtime sync operations");
-
-  addCommonClientOptions(
-    agent
-      .command("list")
-      .description("List an agent runtime skill snapshot")
-      .argument("<agentRef>", "Agent ID or shortname/url-key")
-      .action(async (agentRef: string, opts: SkillsOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const agentRow = await resolveAgent(ctx, agentRef);
-          const snapshot = await ctx.api.get<AgentSkillSnapshot>(
-            `/api/agents/${encodeURIComponent(agentRow.id)}/skills`,
-          );
-          if (ctx.json) {
-            printOutput(snapshot, { json: true });
-            return;
-          }
-          printAgentSkillSnapshot(snapshot, agentRow);
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-    { includeCompany: true },
-  );
-
-  addCommonClientOptions(
-    agent
-      .command("sync")
-      .description("Replace an agent's desired company skills and sync runtime state")
-      .argument("<agentRef>", "Agent ID or shortname/url-key")
-      .option("--skill <skillRef>", "Desired company skill ID, key, or slug; may be repeated", collectOptionValue, [] as string[])
-      .action(async (agentRef: string, opts: AgentSkillSyncOptions) => {
-        try {
-          const desiredSkills = opts.skill ?? [];
-          if (desiredSkills.length === 0) {
-            throw new Error("At least one --skill value is required for skills agent sync.");
-          }
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const agentRow = await resolveAgent(ctx, agentRef);
-          const snapshot = await ctx.api.post<AgentSkillSnapshot>(
-            `/api/agents/${encodeURIComponent(agentRow.id)}/skills/sync`,
-            { desiredSkills },
-          );
-          if (ctx.json) {
-            printOutput(snapshot, { json: true });
-            return;
-          }
-          console.log(
-            `Desired company skills replaced for ${agentRow.name} (${agentRow.id}); runtime sync returned ${snapshot?.entries.length ?? 0} entrie(s).`,
-          );
-          printAgentSkillSnapshot(snapshot, agentRow);
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-    { includeCompany: true },
-  );
-
-  addCommonClientOptions(
-    agent
-      .command("clear")
-      .description("Clear an agent's desired company skills and sync runtime state")
-      .argument("<agentRef>", "Agent ID or shortname/url-key")
-      .option("--yes", "Confirm clear without prompting", false)
-      .action(async (agentRef: string, opts: ConfirmedSkillOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const agentRow = await resolveAgent(ctx, agentRef);
-          await confirmDangerousAction(
-            opts.yes,
-            `Clear desired company skills for "${agentRow.name}" (${agentRow.id})?`,
-          );
-          const snapshot = await ctx.api.post<AgentSkillSnapshot>(
-            `/api/agents/${encodeURIComponent(agentRow.id)}/skills/sync`,
-            { desiredSkills: [] },
-          );
-          if (ctx.json) {
-            printOutput(snapshot, { json: true });
-            return;
-          }
-          console.log(
-            `Desired company skills cleared for ${agentRow.name} (${agentRow.id}).`,
-          );
-          printAgentSkillSnapshot(snapshot, agentRow);
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-    { includeCompany: true },
-  );
 }
 
 async function listCompanySkills(ctx: ResolvedClientContext): Promise<CompanySkillListItem[]> {
@@ -727,15 +626,6 @@ async function auditCompanySkills(
   return rows;
 }
 
-async function resolveAgent(ctx: ResolvedClientContext, agentRef: string): Promise<Agent> {
-  const params = new URLSearchParams({ companyId: ctx.companyId ?? "" });
-  const agent = await ctx.api.get<Agent>(`/api/agents/${encodeURIComponent(agentRef)}?${params.toString()}`);
-  if (!agent) {
-    throw new Error(`Agent not found: ${agentRef}`);
-  }
-  return agent;
-}
-
 function printCompanySkillRows(rows: Array<CompanySkillListItem | CompanySkill>): void {
   if (rows.length === 0) {
     printOutput([], { json: false });
@@ -770,7 +660,6 @@ function printCatalogSkillRows(rows: CatalogSkill[]): void {
     slug: row.slug,
     name: row.name,
     trust: row.trustLevel,
-    roles: row.recommendedForRoles.join(",") || "-",
   })));
 }
 
@@ -789,7 +678,6 @@ function printCatalogSkillDetail(skill: CatalogSkill): void {
     }),
   );
   console.log(`description=${skill.description || "-"}`);
-  console.log(`recommendedForRoles=${skill.recommendedForRoles.join(",") || "-"}`);
   console.log(`tags=${skill.tags.join(",") || "-"}`);
   console.log("files:");
   printTable(skill.files.map((file) => ({
@@ -809,7 +697,7 @@ function printCatalogInstallResult(result: CompanySkillInstallCatalogResult | nu
     `Catalog skill ${result.action}: ${result.skill.name} (${result.skill.key}) in company skill library.`,
   );
   console.log(
-    "This does not attach the skill to an agent. Use `paperclipai skills agent sync <agent> --skill <skill>` when you want an agent to use it.",
+    "This installs the skill in the company library. Agent selection is managed through runtime-agent configuration.",
   );
   for (const warning of result.warnings) {
     console.log(`warning=${warning}`);
@@ -882,38 +770,6 @@ function printCompanySkillUpdateRows(rows: CompanySkillUpdateRow[]): void {
         slug: row.skill?.slug,
         hasUpdate: row.status?.hasUpdate,
         reason: row.reason,
-      }),
-    );
-  }
-}
-
-function printAgentSkillSnapshot(snapshot: AgentSkillSnapshot | null, agent: Agent): void {
-  if (!snapshot) {
-    console.log(`Agent ${agent.name} (${agent.id}) returned no skill snapshot.`);
-    return;
-  }
-  console.log(
-    `Agent ${agent.name} (${agent.id}) adapter=${snapshot.adapterType} supported=${snapshot.supported} mode=${snapshot.mode} desiredCompanySkills=${snapshot.desiredSkills.length}`,
-  );
-  if (snapshot.warnings.length > 0) {
-    for (const warning of snapshot.warnings) {
-      console.log(`warning=${warning}`);
-    }
-  }
-  if (snapshot.entries.length === 0) {
-    printOutput([], { json: false });
-    return;
-  }
-  for (const entry of snapshot.entries) {
-    console.log(
-      formatInlineRecord({
-        key: entry.key,
-        runtimeName: entry.runtimeName,
-        desired: entry.desired,
-        managed: entry.managed,
-        state: entry.state,
-        origin: entry.origin,
-        detail: entry.detail,
       }),
     );
   }

@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -6,168 +6,739 @@ import {
   pluginEntities,
   pluginManagedResources,
 } from "@paperclipai/db";
-import type {
-  Agent,
-  PaperclipPluginManifestV1,
-  PluginManagedAgentDeclaration,
-  PluginManagedAgentResolution,
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+  type Agent,
+  type PaperclipPluginManifestV1,
+  type PluginManagedAgentDeclaration,
+  type PluginManagedAgentResolution,
 } from "@paperclipai/shared";
-import { notFound } from "../errors.js";
-import { agentService } from "./agents.js";
-import { approvalService } from "./approvals.js";
+import { conflict, notFound } from "../errors.js";
+import {
+  agentService,
+  terminateAgentToTombstoneInTransaction,
+  type AgentLifecycleCancellationService,
+  type AgentLifecyclePostCommit,
+  type AgentSuspensionService,
+} from "./agents.js";
 import { logActivity } from "./activity-log.js";
-import { agentInstructionsService } from "./agent-instructions.js";
+import {
+  createRuntimeAgentConfigurationService,
+  RuntimeAgentConfigurationDenied,
+} from "./runtime-agent-configuration.js";
+import {
+  withdrawOpenHireApprovalForAgentInTransaction,
+  type ApprovalLifecycleTransaction,
+  type HireRejectionAgentTerminationInput,
+} from "./approvals.js";
+import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type {
+  RequestedAgentRunCancellations,
+  RequestedAgentSuspensions,
+} from "./issue-execution-cancellation.js";
+import { lockCompanyAgentGraph } from "./agent-org-graph-lock.js";
 
 const MANAGED_AGENT_ENTITY_TYPE = "managed_agent";
-const DEFAULT_MANAGED_AGENT_ADAPTER_TYPE = "process";
+type PluginManagedAgentBinding =
+  typeof pluginManagedResources.$inferSelect;
+
+async function lockPairedManagedAgentEntity(
+  tx: IssueSessionDbTransaction,
+  binding: PluginManagedAgentBinding,
+) {
+  const rows = await tx
+    .select()
+    .from(pluginEntities)
+    .where(
+      and(
+        eq(pluginEntities.pluginId, binding.pluginId),
+        eq(pluginEntities.companyId, binding.companyId),
+        eq(pluginEntities.entityType, MANAGED_AGENT_ENTITY_TYPE),
+        eq(
+          pluginEntities.externalId,
+          bindingExternalId(binding.companyId, binding.resourceKey),
+        ),
+      ),
+    )
+    .limit(2)
+    .for("update");
+  if (rows.length !== 1) {
+    throw conflict(
+      "Plugin-managed agent binding lost its unique paired entity",
+    );
+  }
+  const entity = rows[0]!;
+  if (
+    entity.status !== binding.lifecycleState ||
+    entity.scopeKind !== "company" ||
+    entity.scopeId !== binding.companyId ||
+    binding.pluginKey !== managedEntityPluginKey(entity) ||
+    binding.resourceId !== managedEntityAgentId(entity)
+  ) {
+    throw conflict(
+      "Plugin-managed agent binding and entity disagree on lifecycle or identity",
+    );
+  }
+  return entity;
+}
+
+export interface PausePluginManagedAgentsIntoTriageInput {
+  pluginId: string;
+  pluginKey: string;
+  reason: string;
+  actorType?: "system" | "user";
+  actorId?: string | null;
+}
+
+export interface PausePluginManagedAgentsIntoTriageResult {
+  triagePausedAgentIds: string[];
+  suspensionRequests: RequestedAgentSuspensions[];
+}
+
+export async function getPluginManagedAgentBinding(
+  db: Db,
+  input: { companyId: string; agentId: string },
+) {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(pluginManagedResources)
+      .where(
+        and(
+          eq(pluginManagedResources.companyId, input.companyId),
+          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(pluginManagedResources.resourceId, input.agentId),
+        ),
+      )
+      .orderBy(desc(pluginManagedResources.updatedAt))
+      .limit(2)
+      .for("share");
+    if (rows.length > 1) {
+      throw conflict(
+        "Agent has multiple plugin-managed lifecycle bindings",
+      );
+    }
+    const binding = rows[0] ?? null;
+    if (binding) {
+      await lockPairedManagedAgentEntity(tx, binding);
+    }
+    return binding;
+  });
+}
+
+export async function adoptPluginManagedAgentFromBoard(
+  db: Db,
+  input: {
+    companyId: string;
+    agentId: string;
+    actorUserId: string;
+  },
+) {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const graph = await lockCompanyAgentGraph(tx, input.companyId);
+    const bindingRows = await tx
+      .select()
+      .from(pluginManagedResources)
+      .where(
+        and(
+          eq(pluginManagedResources.companyId, input.companyId),
+          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(pluginManagedResources.resourceId, input.agentId),
+        ),
+      )
+      .orderBy(desc(pluginManagedResources.updatedAt))
+      .limit(2)
+      .for("update");
+    if (bindingRows.length > 1) {
+      throw conflict(
+        "Agent has multiple active plugin-managed lifecycle bindings",
+      );
+    }
+    const binding = bindingRows[0] ?? null;
+    if (!binding) throw notFound("Plugin-managed agent binding not found");
+    if (binding.lifecycleState !== "triage_paused") {
+      throw conflict(
+        "Only a plugin-managed agent in board triage can be adopted",
+        {
+          code: "plugin_managed_agent_not_in_triage",
+          lifecycleState: binding.lifecycleState,
+        },
+      );
+    }
+    const pairedEntity = await lockPairedManagedAgentEntity(tx, binding);
+
+    const agent = graph.agents.find(
+      (candidate) => candidate.id === input.agentId,
+    );
+    if (!agent || agent.status === "terminated") {
+      throw conflict("Plugin-managed agent can no longer be adopted", {
+        code: "plugin_managed_agent_not_adoptable",
+      });
+    }
+    if (agent.status !== "paused") {
+      throw conflict("Plugin-managed agent must remain paused during adoption", {
+        code: "plugin_managed_agent_triage_state_conflict",
+      });
+    }
+
+    const audit = {
+      event: "plugin_managed_agent_adopted",
+      pluginInstallationId: binding.pluginId,
+      pluginKey: binding.pluginKey,
+      resourceKey: binding.resourceKey,
+      resourceId: binding.resourceId,
+      previousLifecycleState: binding.lifecycleState,
+      previousAgentStatus: agent.status,
+      actorType: "user",
+      actorId: input.actorUserId,
+      occurredAt: now.toISOString(),
+    };
+    const adopted = await tx
+      .update(pluginManagedResources)
+      .set({
+        lifecycleState: "adopted",
+        lifecycleReason: "board_adopted",
+        adoptedAt: now,
+        lifecycleActorType: "user",
+        lifecycleActorId: input.actorUserId,
+        lifecycleAudit: audit,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(pluginManagedResources.id, binding.id),
+          eq(pluginManagedResources.lifecycleState, "triage_paused"),
+        ),
+      )
+      .returning()
+      .then((rows) => rows[0] ?? null);
+    if (!adopted) {
+      throw conflict("Plugin-managed agent adoption lost its locked transition");
+    }
+    const adoptedEntity = await tx
+      .update(pluginEntities)
+      .set({ status: "adopted", updatedAt: now })
+      .where(
+        and(
+          eq(pluginEntities.id, pairedEntity.id),
+          eq(pluginEntities.status, "triage_paused"),
+        ),
+      )
+      .returning({ id: pluginEntities.id })
+      .then((rows) => rows[0] ?? null);
+    if (!adoptedEntity) {
+      throw conflict(
+        "Plugin-managed agent adoption lost its managed-entity transition",
+      );
+    }
+    await logActivity(tx as unknown as Db, {
+      companyId: binding.companyId,
+      actorType: "user",
+      actorId: input.actorUserId,
+      action: "plugin.managed_agent.adopted",
+      entityType: "agent",
+      entityId: binding.resourceId,
+      details: audit,
+    });
+    return adopted;
+  });
+}
+
+async function recordPluginManagedAgentTerminationInTransaction(
+  tx: IssueSessionDbTransaction,
+  input: {
+    binding: PluginManagedAgentBinding;
+    previousAgentStatus: string;
+    actorUserId: string;
+    event:
+      | "plugin_managed_agent_terminated_by_board"
+      | "plugin_managed_agent_terminated_by_hire_rejection";
+    sourceId: string;
+    now: Date;
+  },
+) {
+  const pairedEntity = await lockPairedManagedAgentEntity(tx, input.binding);
+  const audit = {
+    event: input.event,
+    pluginInstallationId: input.binding.pluginId,
+    pluginKey: input.binding.pluginKey,
+    resourceKey: input.binding.resourceKey,
+    resourceId: input.binding.resourceId,
+    previousLifecycleState: input.binding.lifecycleState,
+    previousAgentStatus: input.previousAgentStatus,
+    actorType: "user",
+    actorId: input.actorUserId,
+    reason: "agent_terminated",
+    sourceId: input.sourceId,
+    occurredAt: input.now.toISOString(),
+  };
+  const terminatedBinding = await tx
+    .update(pluginManagedResources)
+    .set({
+      lifecycleState: "terminated",
+      lifecycleReason: "agent_terminated",
+      terminatedAt: input.now,
+      lifecycleActorType: "user",
+      lifecycleActorId: input.actorUserId,
+      lifecycleAudit: audit,
+      updatedAt: input.now,
+    })
+    .where(
+      and(
+        eq(pluginManagedResources.id, input.binding.id),
+        inArray(pluginManagedResources.lifecycleState, [
+          "active",
+          "triage_paused",
+        ]),
+      ),
+    )
+    .returning()
+    .then((rows) => rows[0] ?? null);
+  if (!terminatedBinding) {
+    throw conflict(
+      "Plugin-managed agent termination lost its locked binding transition",
+    );
+  }
+  const entity = await tx
+    .update(pluginEntities)
+    .set({ status: "terminated", updatedAt: input.now })
+    .where(
+      and(
+        eq(pluginEntities.id, pairedEntity.id),
+        inArray(pluginEntities.status, ["active", "triage_paused"]),
+      ),
+    )
+    .returning({ id: pluginEntities.id })
+    .then((rows) => rows[0] ?? null);
+  if (!entity) {
+    throw conflict(
+      "Plugin-managed agent termination lost its managed-entity transition",
+    );
+  }
+  await logActivity(tx as unknown as Db, {
+    companyId: input.binding.companyId,
+    actorType: "user",
+    actorId: input.actorUserId,
+    action: "plugin.managed_agent.terminated",
+    entityType: "agent",
+    entityId: input.binding.resourceId,
+    details: audit,
+  });
+  return terminatedBinding;
+}
+
+export async function terminateAgentForHireRejectionInTransaction(
+  tx: ApprovalLifecycleTransaction,
+  input: HireRejectionAgentTerminationInput,
+  cancellation: AgentLifecycleCancellationService,
+) {
+  const graph = await lockCompanyAgentGraph(tx, input.companyId);
+  const bindingRows = await tx
+    .select()
+    .from(pluginManagedResources)
+    .where(
+      and(
+        eq(pluginManagedResources.companyId, input.companyId),
+        eq(pluginManagedResources.resourceKind, "agent"),
+        eq(pluginManagedResources.resourceId, input.agentId),
+        inArray(pluginManagedResources.lifecycleState, [
+          "active",
+          "triage_paused",
+        ]),
+      ),
+    )
+    .orderBy(desc(pluginManagedResources.updatedAt))
+    .limit(2)
+    .for("update");
+  if (bindingRows.length > 1) {
+    throw conflict(
+      "Agent has multiple active plugin-managed lifecycle bindings",
+    );
+  }
+  const previousAgent = graph.agents.find(
+    (candidate) => candidate.id === input.agentId,
+  );
+  const termination = await terminateAgentToTombstoneInTransaction(
+    tx,
+    {
+      companyId: input.companyId,
+      agentId: input.agentId,
+      sourceId: input.sourceId,
+      actor: { kind: "user", userId: input.decidedByUserId },
+      now: input.now,
+    },
+    cancellation,
+  );
+  const binding = bindingRows[0];
+  if (termination && binding) {
+    await recordPluginManagedAgentTerminationInTransaction(tx, {
+      binding,
+      previousAgentStatus: previousAgent?.status ?? "missing",
+      actorUserId: input.decidedByUserId,
+      event: "plugin_managed_agent_terminated_by_hire_rejection",
+      sourceId: input.sourceId,
+      now: input.now,
+    });
+  }
+  return termination;
+}
+
+export async function terminatePluginManagedAgentFromBoard(
+  db: Db,
+  input: {
+    companyId: string;
+    agentId: string;
+    actorUserId: string;
+  },
+  postCommit: AgentLifecyclePostCommit,
+) {
+  const committed = await db.transaction(async (tx) => {
+    const now = new Date();
+    const graph = await lockCompanyAgentGraph(tx, input.companyId);
+    const binding = await tx
+      .select()
+      .from(pluginManagedResources)
+      .where(
+        and(
+          eq(pluginManagedResources.companyId, input.companyId),
+          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(pluginManagedResources.resourceId, input.agentId),
+          inArray(pluginManagedResources.lifecycleState, [
+            "active",
+            "triage_paused",
+          ]),
+        ),
+      )
+      .orderBy(desc(pluginManagedResources.updatedAt))
+      .limit(1)
+      .for("update")
+      .then((rows) => rows[0] ?? null);
+    if (!binding) {
+      return {
+        terminatedBinding: null,
+        creatorDeliveryIds: [] as string[],
+        dispatchRefIds: [] as string[],
+        cancellationRequests: [] as RequestedAgentRunCancellations[],
+        suspensionRequests: [] as RequestedAgentSuspensions[],
+      };
+    }
+
+    const agent = graph.agents.find(
+      (candidate) => candidate.id === input.agentId,
+    );
+    if (!agent) throw notFound("Agent not found");
+
+    const sourceId =
+      `plugin-managed-agent-board-termination:${binding.id}:${agent.id}`;
+    const withdrawn = await withdrawOpenHireApprovalForAgentInTransaction(
+      tx,
+      {
+        companyId: input.companyId,
+        agentId: input.agentId,
+        decidedByUserId: input.actorUserId,
+        decisionNote:
+          "Hire rejected because the board terminated the plugin-managed agent",
+        sourceId,
+        now,
+      },
+      postCommit.issueExecutionCancellation,
+    );
+    const termination =
+      withdrawn ??
+      (await terminateAgentToTombstoneInTransaction(
+        tx,
+        {
+          companyId: input.companyId,
+          agentId: input.agentId,
+          sourceId,
+          actor: { kind: "user", userId: input.actorUserId },
+          now,
+        },
+        postCommit.issueExecutionCancellation,
+      ));
+    if (!termination) {
+      throw conflict(
+        "Plugin-managed agent termination lost its agent transition",
+      );
+    }
+
+    const terminatedBinding =
+      await recordPluginManagedAgentTerminationInTransaction(tx, {
+        binding,
+        previousAgentStatus: agent.status,
+        actorUserId: input.actorUserId,
+        event: "plugin_managed_agent_terminated_by_board",
+        sourceId,
+        now,
+      });
+    return {
+      terminatedBinding,
+      creatorDeliveryIds: termination.creatorDeliveryIds,
+      dispatchRefIds: termination.dispatchRefIds,
+      cancellationRequests: termination.cancellationRequests
+        ? [termination.cancellationRequests]
+        : [],
+      suspensionRequests: termination.suspensionRequests
+        ? [termination.suspensionRequests]
+        : [],
+    };
+  });
+  for (const cancellationRequests of committed.cancellationRequests) {
+    await postCommit.issueExecutionCancellation
+      .reconcileRequestedAgentCancellations(cancellationRequests);
+  }
+  for (const suspensionRequests of committed.suspensionRequests) {
+    await postCommit.issueExecutionCancellation
+      .reconcileRequestedAgentSuspensions(suspensionRequests);
+  }
+  for (const refId of committed.dispatchRefIds) {
+    await postCommit.dispatchRef(refId);
+  }
+  for (const deliveryId of committed.creatorDeliveryIds) {
+    await postCommit.notifyCreatorDelivery(deliveryId);
+  }
+  return committed.terminatedBinding;
+}
+
+/**
+ * Transaction-capable form used by the plugin lifecycle owner so the plugin
+ * tombstone, managed-agent triage, and creator-edge terminalization commit as
+ * one database invariant. The caller must lock the plugin installation first.
+ */
+export async function pausePluginManagedAgentsIntoTriageInTransaction(
+  tx: IssueSessionDbTransaction,
+  input: PausePluginManagedAgentsIntoTriageInput,
+  suspension: AgentSuspensionService,
+  now = new Date(),
+): Promise<PausePluginManagedAgentsIntoTriageResult> {
+    if (input.actorType === "user" && !input.actorId) {
+      throw conflict(
+        "Board triage requires the exact authenticated user actor",
+      );
+    }
+    const candidateCompanies = await tx
+      .select({ companyId: pluginManagedResources.companyId })
+      .from(pluginManagedResources)
+      .where(
+        and(
+          eq(pluginManagedResources.pluginId, input.pluginId),
+          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(pluginManagedResources.lifecycleState, "active"),
+        ),
+      )
+      .orderBy(asc(pluginManagedResources.companyId));
+    const lockedGraphs = new Map<
+      string,
+      Awaited<ReturnType<typeof lockCompanyAgentGraph>>
+    >();
+    for (const companyId of [
+      ...new Set(candidateCompanies.map((row) => row.companyId)),
+    ]) {
+      lockedGraphs.set(
+        companyId,
+        await lockCompanyAgentGraph(tx, companyId),
+      );
+    }
+    const bindings = await tx
+      .select()
+      .from(pluginManagedResources)
+      .where(
+        and(
+          eq(pluginManagedResources.pluginId, input.pluginId),
+          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(pluginManagedResources.lifecycleState, "active"),
+        ),
+      )
+      .orderBy(
+        asc(pluginManagedResources.companyId),
+        asc(pluginManagedResources.resourceId),
+        asc(pluginManagedResources.id),
+      )
+      .for("update");
+    const triagePausedAgentIds: string[] = [];
+    const suspensionRequests: RequestedAgentSuspensions[] = [];
+
+    for (const binding of bindings) {
+      if (binding.pluginKey !== input.pluginKey) {
+        throw conflict(
+          "Plugin-managed binding crossed its immutable plugin installation key",
+        );
+      }
+      const lockedGraph = lockedGraphs.get(binding.companyId);
+      if (!lockedGraph) {
+        throw conflict(
+          "Plugin-managed agent binding changed companies during lifecycle locking",
+        );
+      }
+      const agent = lockedGraph.agents.find(
+        (candidate) => candidate.id === binding.resourceId,
+      );
+      if (!agent || agent.status === "terminated") {
+        throw conflict(
+          "Active plugin-managed binding has no live agent target to move into board triage",
+        );
+      }
+      const pairedEntity = await lockPairedManagedAgentEntity(tx, binding);
+      const actorType = input.actorType ?? "system";
+      const actorId = input.actorId ?? input.pluginId;
+      const audit = {
+        event: "plugin_managed_agent_moved_to_board_triage",
+        pluginInstallationId: input.pluginId,
+        pluginKey: input.pluginKey,
+        resourceKey: binding.resourceKey,
+        resourceId: binding.resourceId,
+        previousAgentStatus: agent.status,
+        previousPauseReason: agent.pauseReason,
+        reason: input.reason,
+        actorType,
+        actorId,
+        occurredAt: now.toISOString(),
+      };
+
+      const pausedAgent = await tx
+        .update(agents)
+        .set({
+          status: "paused",
+          pauseReason: "system",
+          pausedAt: now,
+          errorReason: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(agents.id, agent.id),
+            eq(agents.companyId, binding.companyId),
+            ne(agents.status, "terminated"),
+          ),
+        )
+        .returning({ id: agents.id })
+        .then((rows) => rows[0] ?? null);
+      if (!pausedAgent) {
+        throw conflict(
+          "Plugin-managed agent triage lost its locked agent transition",
+        );
+      }
+      const pausedResource = await tx
+        .update(pluginManagedResources)
+        .set({
+          lifecycleState: "triage_paused",
+          lifecycleReason: input.reason,
+          triagePausedAt: now,
+          lifecycleActorType: actorType,
+          lifecycleActorId: actorId,
+          lifecycleAudit: audit,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(pluginManagedResources.id, binding.id),
+            eq(pluginManagedResources.lifecycleState, "active"),
+          ),
+        )
+        .returning({ id: pluginManagedResources.id })
+        .then((rows) => rows[0] ?? null);
+      if (!pausedResource) {
+        throw conflict(
+          "Plugin-managed agent triage lost its locked binding transition",
+        );
+      }
+      const pausedEntity = await tx
+        .update(pluginEntities)
+        .set({
+          status: "triage_paused",
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(pluginEntities.id, pairedEntity.id),
+            eq(pluginEntities.status, "active"),
+          ),
+        )
+        .returning({ id: pluginEntities.id })
+        .then((rows) => rows[0] ?? null);
+      if (!pausedEntity) {
+        throw conflict(
+          "Plugin-managed agent triage lost its managed-entity transition",
+        );
+      }
+      await logActivity(tx as unknown as Db, {
+        companyId: binding.companyId,
+        actorType,
+        actorId,
+        action: "plugin.managed_agent.moved_to_board_triage",
+        entityType: "agent",
+        entityId: agent.id,
+        details: audit,
+      });
+      triagePausedAgentIds.push(agent.id);
+    }
+
+    const pausedByCompany = new Map<string, string[]>();
+    for (const binding of bindings) {
+      if (!triagePausedAgentIds.includes(binding.resourceId)) continue;
+      const agentIds = pausedByCompany.get(binding.companyId) ?? [];
+      agentIds.push(binding.resourceId);
+      pausedByCompany.set(binding.companyId, agentIds);
+    }
+    for (const [companyId, agentIds] of pausedByCompany) {
+      suspensionRequests.push(
+        await suspension.requestAgentSuspensionsInTransaction(tx, {
+          companyId,
+          agentIds,
+          reason: input.reason,
+          actor: input.actorType === "user" && input.actorId
+            ? { kind: "user", userId: input.actorId }
+            : { kind: "system" },
+          now,
+        }),
+      );
+    }
+
+    return {
+      triagePausedAgentIds,
+      suspensionRequests,
+    };
+}
 
 interface PluginManagedAgentServiceOptions {
   pluginId: string;
   pluginKey: string;
   manifest?: PaperclipPluginManifestV1 | null;
-  instructionTemplateVariables?: (companyId: string) => Promise<Record<string, string | null | undefined>>;
 }
 
 function bindingExternalId(companyId: string, agentKey: string) {
   return `managed:agent:${companyId}:${agentKey}`;
 }
 
-function managedMetadata(
-  pluginId: string,
-  pluginKey: string,
-  declaration: PluginManagedAgentDeclaration,
-  existing?: Record<string, unknown> | null,
-) {
-  return {
-    ...(existing ?? {}),
-    paperclipManagedResource: {
-      pluginId,
-      pluginKey,
-      resourceKind: "agent",
-      resourceKey: declaration.agentKey,
-    },
-    pluginManagedAgent: {
-      pluginId,
-      pluginKey,
-      agentKey: declaration.agentKey,
-      displayName: declaration.displayName,
-      instructions: declaration.instructions ?? null,
-    },
-  };
-}
-
-function normalizeAdapterType(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function fallbackAdapterType(declaration: PluginManagedAgentDeclaration) {
-  return normalizeAdapterType(declaration.adapterType) ?? DEFAULT_MANAGED_AGENT_ADAPTER_TYPE;
-}
-
-function adapterPreference(declaration: PluginManagedAgentDeclaration) {
-  const seen = new Set<string>();
-  const preference: string[] = [];
-  for (const value of declaration.adapterPreference ?? []) {
-    const adapterType = normalizeAdapterType(value);
-    if (!adapterType || seen.has(adapterType)) continue;
-    seen.add(adapterType);
-    preference.push(adapterType);
+function managedEntityAgentId(
+  entity: typeof pluginEntities.$inferSelect,
+): string | null {
+  if (
+    !entity.data ||
+    typeof entity.data !== "object" ||
+    Array.isArray(entity.data)
+  ) {
+    return null;
   }
-  return preference;
+  const agentId = (entity.data as Record<string, unknown>).agentId;
+  return typeof agentId === "string" ? agentId : null;
 }
 
-function selectPreferredAdapterType(
-  declaration: PluginManagedAgentDeclaration,
-  usage: Array<{ adapterType: string; count: number }>,
-) {
-  const fallback = fallbackAdapterType(declaration);
-  const preference = adapterPreference(declaration);
-  if (preference.length === 0) return fallback;
-
-  const rank = new Map(preference.map((adapterType, index) => [adapterType, index]));
-  let selected: { adapterType: string; count: number; rank: number } | null = null;
-  for (const entry of usage) {
-    const adapterRank = rank.get(entry.adapterType);
-    if (adapterRank === undefined) continue;
-    if (
-      !selected ||
-      entry.count > selected.count ||
-      (entry.count === selected.count && adapterRank < selected.rank)
-    ) {
-      selected = { ...entry, rank: adapterRank };
-    }
+function managedEntityPluginKey(
+  entity: typeof pluginEntities.$inferSelect,
+): string | null {
+  if (
+    !entity.data ||
+    typeof entity.data !== "object" ||
+    Array.isArray(entity.data)
+  ) {
+    return null;
   }
-  return selected?.adapterType ?? fallback;
-}
-
-function declarationPatch(declaration: PluginManagedAgentDeclaration, input: { adapterType?: string } = {}) {
-  return {
-    name: declaration.displayName,
-    role: declaration.role ?? "general",
-    title: declaration.title ?? null,
-    icon: declaration.icon ?? null,
-    capabilities: declaration.capabilities ?? null,
-    adapterType: input.adapterType ?? fallbackAdapterType(declaration),
-    adapterConfig: declaration.adapterConfig ?? {},
-    runtimeConfig: declaration.runtimeConfig ?? {},
-    permissions: declaration.permissions ?? {},
-    budgetMonthlyCents: declaration.budgetMonthlyCents ?? 0,
-  };
-}
-
-function applyInstructionTemplateVariables(
-  content: string,
-  variables: Record<string, string | null | undefined>,
-) {
-  let next = content;
-  for (const [key, value] of Object.entries(variables)) {
-    next = next.replaceAll(`{{${key}}}`, value?.trim() || "(not configured)");
-  }
-  return next;
-}
-
-function declaredInstructionFiles(
-  declaration: PluginManagedAgentDeclaration,
-  variables: Record<string, string | null | undefined>,
-) {
-  const instructionDeclaration = declaration.instructions;
-  if (!instructionDeclaration?.content && !instructionDeclaration?.files) return null;
-
-  const entryFile = instructionDeclaration.entryFile ?? "AGENTS.md";
-  const files = { ...(instructionDeclaration.files ?? {}) };
-  if (instructionDeclaration.content !== undefined) {
-    files[entryFile] = instructionDeclaration.content;
-  }
-  if (files[entryFile] === undefined) {
-    files[entryFile] = "";
-  }
-
-  return {
-    entryFile,
-    files: Object.fromEntries(
-      Object.entries(files).map(([filePath, content]) => [
-        filePath,
-        applyInstructionTemplateVariables(content, variables),
-      ]),
-    ),
-  };
-}
-
-function rowIsManagedAgent(
-  row: typeof agents.$inferSelect,
-  pluginKey: string,
-  agentKey: string,
-) {
-  const metadata = row.metadata;
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
-  const marker = (metadata as Record<string, unknown>).paperclipManagedResource;
-  if (!marker || typeof marker !== "object" || Array.isArray(marker)) return false;
-  const record = marker as Record<string, unknown>;
-  return (
-    record.pluginKey === pluginKey
-    && record.resourceKind === "agent"
-    && record.resourceKey === agentKey
-  );
+  const pluginKey = (entity.data as Record<string, unknown>).pluginKey;
+  return typeof pluginKey === "string" ? pluginKey : null;
 }
 
 export function pluginManagedAgentService(
@@ -175,8 +746,20 @@ export function pluginManagedAgentService(
   options: PluginManagedAgentServiceOptions,
 ) {
   const agentSvc = agentService(db);
-  const approvalSvc = approvalService(db);
-  const instructions = agentInstructionsService();
+  const runtimeAgents = createRuntimeAgentConfigurationService(db, {
+    assertPluginAuthority: async (_tx, input) => {
+      if (
+        input.actor.pluginInstallationId !== options.pluginId ||
+        input.actor.actorId !== options.pluginKey ||
+        !options.manifest?.capabilities?.includes("agents.managed")
+      ) {
+        throw new RuntimeAgentConfigurationDenied(
+          "Plugin does not hold the exact managed-agent creation authority",
+          "plugin_managed_agent_authority_missing",
+        );
+      }
+    },
+  });
 
   function declarationFor(agentKey: string) {
     const declaration = options.manifest?.agents?.find((agent) => agent.agentKey === agentKey);
@@ -186,15 +769,39 @@ export function pluginManagedAgentService(
     return declaration;
   }
 
-  async function getBinding(companyId: string, agentKey: string) {
-    return db
+  async function getBinding(
+    companyId: string,
+    agentKey: string,
+    database: Db = db,
+  ) {
+    return database
       .select()
       .from(pluginEntities)
       .where(
         and(
           eq(pluginEntities.pluginId, options.pluginId),
+          eq(pluginEntities.companyId, companyId),
           eq(pluginEntities.entityType, MANAGED_AGENT_ENTITY_TYPE),
           eq(pluginEntities.externalId, bindingExternalId(companyId, agentKey)),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async function getManagedResourceBinding(
+    companyId: string,
+    agentKey: string,
+    database: Db = db,
+  ) {
+    return database
+      .select()
+      .from(pluginManagedResources)
+      .where(
+        and(
+          eq(pluginManagedResources.companyId, companyId),
+          eq(pluginManagedResources.pluginId, options.pluginId),
+          eq(pluginManagedResources.resourceKind, "agent"),
+          eq(pluginManagedResources.resourceKey, agentKey),
         ),
       )
       .then((rows) => rows[0] ?? null);
@@ -205,41 +812,69 @@ export function pluginManagedAgentService(
     declaration: PluginManagedAgentDeclaration,
     agentId: string,
     extraData: Record<string, unknown> = {},
-    effectiveAdapterType?: string,
+    database: Db = db,
   ) {
-    const adapterType = effectiveAdapterType ?? (await resolveManagedAdapterType(companyId, declaration));
     const defaultsJson = {
       agentKey: declaration.agentKey,
       displayName: declaration.displayName,
-      role: declaration.role ?? "general",
       title: declaration.title ?? null,
-      icon: declaration.icon ?? null,
       capabilities: declaration.capabilities ?? null,
-      adapterType,
-      adapterPreference: declaration.adapterPreference ?? null,
-      adapterConfig: declaration.adapterConfig ?? {},
-      runtimeConfig: declaration.runtimeConfig ?? {},
-      permissions: declaration.permissions ?? {},
-      budgetMonthlyCents: declaration.budgetMonthlyCents ?? 0,
-      instructions: declaration.instructions ?? null,
     };
-    const managedResource = await db
-      .select({ id: pluginManagedResources.id })
-      .from(pluginManagedResources)
-      .where(and(
-        eq(pluginManagedResources.companyId, companyId),
-        eq(pluginManagedResources.pluginId, options.pluginId),
-        eq(pluginManagedResources.resourceKind, "agent"),
-        eq(pluginManagedResources.resourceKey, declaration.agentKey),
-      ))
-      .then((rows) => rows[0] ?? null);
+    const managedResource = await getManagedResourceBinding(
+      companyId,
+      declaration.agentKey,
+      database,
+    );
+    const originalDeclarationRef = {
+      pluginInstallationId: options.pluginId,
+      pluginKey: options.pluginKey,
+      pluginVersion: options.manifest?.version ?? null,
+      resourceKind: "agent",
+      resourceKey: declaration.agentKey,
+      declaration,
+    };
     if (managedResource) {
-      await db
+      if (managedResource.lifecycleState !== "active") {
+        throw conflict(
+          `Managed agent binding '${declaration.agentKey}' is ${managedResource.lifecycleState} and cannot be reacquired`,
+        );
+      }
+      if (managedResource.resourceId !== agentId) {
+        throw conflict(
+          `Managed agent binding '${declaration.agentKey}' cannot be relinked to another agent`,
+        );
+      }
+      if (managedResource.pluginKey !== options.pluginKey) {
+        throw conflict(
+          `Managed agent binding '${declaration.agentKey}' crossed its immutable plugin key`,
+        );
+      }
+      if (!managedResource.originalDeclarationRef) {
+        throw conflict(
+          `Managed agent binding '${declaration.agentKey}' lost its immutable declaration provenance`,
+        );
+      }
+      const updatedResource = await database
         .update(pluginManagedResources)
-        .set({ resourceId: agentId, defaultsJson, updatedAt: new Date() })
-        .where(eq(pluginManagedResources.id, managedResource.id));
+        .set({
+          defaultsJson,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(pluginManagedResources.id, managedResource.id),
+            eq(pluginManagedResources.lifecycleState, "active"),
+          ),
+        )
+        .returning({ id: pluginManagedResources.id })
+        .then((rows) => rows[0] ?? null);
+      if (!updatedResource) {
+        throw conflict(
+          `Managed agent binding '${declaration.agentKey}' lost its active lifecycle transition`,
+        );
+      }
     } else {
-      await db.insert(pluginManagedResources).values({
+      await database.insert(pluginManagedResources).values({
         companyId,
         pluginId: options.pluginId,
         pluginKey: options.pluginKey,
@@ -247,6 +882,8 @@ export function pluginManagedAgentService(
         resourceKey: declaration.agentKey,
         resourceId: agentId,
         defaultsJson,
+        lifecycleState: "active",
+        originalDeclarationRef,
       });
     }
 
@@ -256,134 +893,83 @@ export function pluginManagedAgentService(
       resourceKind: "agent",
       resourceKey: declaration.agentKey,
       agentId,
-      adapterType,
       declarationSnapshot: declaration,
       lastReconciledAt: new Date().toISOString(),
       ...extraData,
     };
-    const existing = await getBinding(companyId, declaration.agentKey);
+    const existing = await getBinding(
+      companyId,
+      declaration.agentKey,
+      database,
+    );
+    if (managedResource && !existing) {
+      throw conflict(
+        `Managed agent binding '${declaration.agentKey}' lost its paired entity`,
+      );
+    }
+    if (!managedResource && existing) {
+      throw conflict(
+        `Managed agent entity '${declaration.agentKey}' lost its paired resource binding`,
+      );
+    }
     if (existing) {
-      return db
+      if (existing.status !== "active") {
+        throw conflict(
+          `Managed agent entity '${declaration.agentKey}' is ${existing.status} and cannot be reacquired`,
+        );
+      }
+      const existingAgentId = managedEntityAgentId(existing);
+      if (existingAgentId !== agentId) {
+        throw conflict(
+          `Managed agent entity '${declaration.agentKey}' cannot be relinked to another agent`,
+        );
+      }
+      if (managedEntityPluginKey(existing) !== options.pluginKey) {
+        throw conflict(
+          `Managed agent entity '${declaration.agentKey}' crossed its immutable plugin key`,
+        );
+      }
+      const updatedEntity = await database
         .update(pluginEntities)
         .set({
           scopeKind: "company",
           scopeId: companyId,
+          companyId,
           title: declaration.displayName,
-          status: "resolved",
+          status: "active",
           data,
           updatedAt: new Date(),
         })
-        .where(eq(pluginEntities.id, existing.id))
+        .where(
+          and(
+            eq(pluginEntities.id, existing.id),
+            eq(pluginEntities.status, "active"),
+          ),
+        )
         .returning()
-        .then((rows) => rows[0]);
+        .then((rows) => rows[0] ?? null);
+      if (!updatedEntity) {
+        throw conflict(
+          `Managed agent entity '${declaration.agentKey}' lost its active lifecycle transition`,
+        );
+      }
+      return updatedEntity;
     }
-    return db
+    return database
       .insert(pluginEntities)
       .values({
         pluginId: options.pluginId,
+        companyId,
         entityType: MANAGED_AGENT_ENTITY_TYPE,
         scopeKind: "company",
         scopeId: companyId,
         externalId,
         title: declaration.displayName,
-        status: "resolved",
+        status: "active",
         data,
       })
       .returning()
       .then((rows) => rows[0]);
-  }
-
-  async function findRelinkCandidate(companyId: string, declaration: PluginManagedAgentDeclaration) {
-    const rows = await db
-      .select()
-      .from(agents)
-      .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")));
-    return rows.find((row) => rowIsManagedAgent(row, options.pluginKey, declaration.agentKey)) ?? null;
-  }
-
-  async function companyAdapterUsage(companyId: string) {
-    const rows = await db
-      .select({ adapterType: agents.adapterType })
-      .from(agents)
-      .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")));
-    const counts = new Map<string, number>();
-    for (const row of rows) {
-      const adapterType = normalizeAdapterType(row.adapterType);
-      if (!adapterType) continue;
-      counts.set(adapterType, (counts.get(adapterType) ?? 0) + 1);
-    }
-    return [...counts.entries()]
-      .map(([adapterType, count]) => ({ adapterType, count }))
-      .sort((a, b) => b.count - a.count || a.adapterType.localeCompare(b.adapterType))
-      .slice(0, 10);
-  }
-
-  async function resolveManagedAdapterType(companyId: string, declaration: PluginManagedAgentDeclaration) {
-    return selectPreferredAdapterType(declaration, await companyAdapterUsage(companyId));
-  }
-
-  async function materializeDeclaredInstructions(
-    companyId: string,
-    agent: Agent,
-    declaration: PluginManagedAgentDeclaration,
-    materializeOptions: { replaceExisting: boolean },
-  ): Promise<Agent> {
-    const variables = await optionsForInstructionVariables(companyId);
-    const declared = declaredInstructionFiles(declaration, variables);
-    if (!declared) return agent;
-
-    const materialized = await instructions.materializeManagedBundle(
-      agent,
-      declared.files,
-      {
-        entryFile: declared.entryFile,
-        replaceExisting: materializeOptions.replaceExisting,
-        clearLegacyPromptTemplate: true,
-      },
-    );
-    const updated = await agentSvc.update(agent.id, {
-      adapterConfig: materialized.adapterConfig,
-    }, {
-      recordRevision: {
-        source: `plugin:${optionsForRevisionSource()}:managed-agent-instructions`,
-      },
-    });
-    return (updated as Agent | null) ?? { ...agent, adapterConfig: materialized.adapterConfig };
-  }
-
-  async function managedInstructionDefaultDrift(
-    companyId: string,
-    agent: Agent | null,
-    declaration: PluginManagedAgentDeclaration,
-  ): Promise<PluginManagedAgentResolution["defaultDrift"]> {
-    if (!agent) return null;
-    const variables = await optionsForInstructionVariables(companyId);
-    const declared = declaredInstructionFiles(declaration, variables);
-    if (!declared) return null;
-
-    let exported: Awaited<ReturnType<typeof instructions.exportFiles>>;
-    try {
-      exported = await instructions.exportFiles(agent);
-    } catch {
-      return { entryFile: declared.entryFile, changedFiles: [declared.entryFile] };
-    }
-
-    const paths = new Set([...Object.keys(declared.files), ...Object.keys(exported.files)]);
-    const changedFiles = [...paths]
-      .filter((filePath) => (exported.files[filePath] ?? null) !== (declared.files[filePath] ?? null))
-      .sort((left, right) => left.localeCompare(right));
-    if (exported.entryFile !== declared.entryFile && !changedFiles.includes(declared.entryFile)) {
-      changedFiles.unshift(declared.entryFile);
-    }
-    return changedFiles.length > 0 ? { entryFile: declared.entryFile, changedFiles } : null;
-  }
-
-  async function optionsForInstructionVariables(companyId: string) {
-    return options.instructionTemplateVariables ? options.instructionTemplateVariables(companyId) : {};
-  }
-
-  function optionsForRevisionSource() {
-    return options.pluginKey;
   }
 
   async function resolution(
@@ -402,156 +988,204 @@ export function pluginManagedAgentService(
       agent,
       status,
       approvalId: approvalId ?? null,
-      defaultDrift: await managedInstructionDefaultDrift(companyId, agent, declaration),
     };
   }
 
   async function createManagedAgent(companyId: string, declaration: PluginManagedAgentDeclaration) {
-    const company = await db
-      .select()
-      .from(companies)
-      .where(eq(companies.id, companyId))
-      .then((rows) => rows[0] ?? null);
-    if (!company) throw notFound("Company not found");
+    const committed = await db.transaction(async (tx) => {
+      const company = await tx
+        .select()
+        .from(companies)
+        .where(eq(companies.id, companyId))
+        .then((rows) => rows[0] ?? null);
+      if (!company) throw notFound("Company not found");
 
-    const requiresApproval = company.requireBoardApprovalForNewAgents;
-    const adapterType = await resolveManagedAdapterType(companyId, declaration);
-    let created = await agentSvc.create(companyId, {
-      ...declarationPatch(declaration, { adapterType }),
-      status: requiresApproval ? "pending_approval" : declaration.status ?? "idle",
-      metadata: managedMetadata(options.pluginId, options.pluginKey, declaration),
-      spentMonthlyCents: 0,
-      lastHeartbeatAt: null,
-    }) as Agent;
-    created = await materializeDeclaredInstructions(companyId, created, declaration, { replaceExisting: true });
-
-    let approvalId: string | null = null;
-    if (requiresApproval) {
-      const approval = await approvalSvc.create(companyId, {
-        type: "hire_agent",
-        requestedByAgentId: null,
-        requestedByUserId: null,
-        status: "pending",
-        payload: {
-          name: created.name,
-          role: created.role,
-          title: created.title,
-          icon: created.icon,
-          reportsTo: created.reportsTo,
-          capabilities: created.capabilities,
-          adapterType: created.adapterType,
-          adapterConfig: created.adapterConfig,
-          runtimeConfig: created.runtimeConfig,
-          budgetMonthlyCents: created.budgetMonthlyCents,
-          metadata: created.metadata,
-          agentId: created.id,
-          sourcePluginId: options.pluginId,
-          sourcePluginKey: options.pluginKey,
-          managedResourceKey: declaration.agentKey,
-        },
-        decisionNote: null,
-        decidedByUserId: null,
-        decidedAt: null,
-        updatedAt: new Date(),
-      });
-      approvalId = approval.id;
-      await logActivity(db, {
+      const createdResult = await runtimeAgents.createInTransaction({
+        transaction: tx,
         companyId,
-        actorType: "plugin",
-        actorId: options.pluginId,
-        action: "approval.created",
-        entityType: "approval",
-        entityId: approval.id,
-        details: {
-          type: "hire_agent",
-          linkedAgentId: created.id,
-          sourcePluginKey: options.pluginKey,
-          managedResourceKey: declaration.agentKey,
+        actor: {
+          kind: "plugin",
+          actorId: options.pluginKey,
+          pluginInstallationId: options.pluginId,
+        },
+        source: "plugin_control",
+        idempotencyKey:
+          `plugin_managed_agent:${options.pluginId}:${companyId}:${declaration.agentKey}`,
+        configuration: {
+          name: declaration.displayName,
+          title: declaration.title ?? null,
+          capabilities: declaration.capabilities ?? null,
+          reportsTo: null,
+          contextGrants: Object.fromEntries(
+            AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false]),
+          ),
+          actionGrants: Object.fromEntries(
+            PAPERCLIP_ACTION_KEYS.map((key) => [key, false]),
+          ),
+          mentionReachGrants: Object.fromEntries(
+            AGENT_MENTION_REACH_GRANT_KEYS.map((key) => [key, false]),
+          ),
+          companyToolIds: [],
         },
       });
-    }
-
-    await upsertBinding(companyId, declaration, created.id, { approvalId }, adapterType);
-    await logActivity(db, {
-      companyId,
-      actorType: "plugin",
-      actorId: options.pluginId,
-      action: "plugin.managed_agent.created",
-      entityType: "agent",
-      entityId: created.id,
-      details: {
-        sourcePluginKey: options.pluginKey,
-        managedResourceKey: declaration.agentKey,
-        adapterType,
-        requiresApproval,
+      const created = await tx
+        .select()
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, createdResult.agentId),
+            eq(agents.companyId, companyId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!created) {
+        throw notFound("Managed agent was not persisted");
+      }
+      const existingBinding = await getManagedResourceBinding(
+        companyId,
+        declaration.agentKey,
+        tx as unknown as Db,
+      );
+      if (createdResult.retried !== Boolean(existingBinding)) {
+        throw conflict(
+          "Managed-agent creation idempotency disagrees with its canonical binding",
+        );
+      }
+      const approvalId = createdResult.approvalId;
+      if (approvalId && !createdResult.retried) {
+        await logActivity(tx as unknown as Db, {
+          companyId,
+          actorType: "plugin",
+          actorId: options.pluginId,
+          action: "approval.created",
+          entityType: "approval",
+          entityId: approvalId,
+          details: {
+            type: "hire_agent",
+            linkedAgentId: created.id,
+            runtimeAgentConfigurationAuditId: createdResult.auditId,
+            sourcePluginKey: options.pluginKey,
+            managedResourceKey: declaration.agentKey,
+          },
+        });
+      }
+      await upsertBinding(
+        companyId,
+        declaration,
+        created.id,
+        {
+          approvalId,
+          runtimeAgentConfigurationAuditId: createdResult.auditId,
+        },
+        tx as unknown as Db,
+      );
+      if (!createdResult.retried) {
+        await logActivity(tx as unknown as Db, {
+          companyId,
+          actorType: "plugin",
+          actorId: options.pluginId,
+          action: "plugin.managed_agent.created",
+          entityType: "agent",
+          entityId: created.id,
+          details: {
+            sourcePluginKey: options.pluginKey,
+            managedResourceKey: declaration.agentKey,
+            runtimeAgentConfigurationAuditId: createdResult.auditId,
+            requiresApproval: company.requireBoardApprovalForNewAgents,
+            approvalId,
+          },
+        });
+      }
+      return {
+        agentId: created.id,
         approvalId,
-      },
+        status: createdResult.retried ? "resolved" as const : "created" as const,
+      };
     });
-    return resolution(companyId, declaration, created as Agent, "created", approvalId);
+    const created = await agentSvc.getById(committed.agentId);
+    if (!created) {
+      throw notFound("Managed agent was not persisted");
+    }
+    return resolution(
+      companyId,
+      declaration,
+      created as Agent,
+      committed.status,
+      committed.approvalId,
+    );
   }
 
   async function get(agentKey: string, companyId: string) {
-      const declaration = declarationFor(agentKey);
-      const binding = await getBinding(companyId, agentKey);
-      const boundAgentId = typeof binding?.data?.agentId === "string" ? binding.data.agentId : null;
-      if (!boundAgentId) return resolution(companyId, declaration, null, "missing");
-      const agent = await agentSvc.getById(boundAgentId);
-      if (!agent || agent.companyId !== companyId || agent.status === "terminated") {
-        return resolution(companyId, declaration, null, "missing");
-      }
-      return resolution(companyId, declaration, agent as Agent, "resolved");
+    const declaration = declarationFor(agentKey);
+    const [binding, entity] = await Promise.all([
+      getManagedResourceBinding(companyId, agentKey),
+      getBinding(companyId, agentKey),
+    ]);
+    if (!binding && !entity) {
+      return resolution(companyId, declaration, null, "missing");
+    }
+    if (!binding || !entity) {
+      throw conflict(
+        "Plugin-managed agent provenance lost its canonical resource/entity pair",
+      );
+    }
+    if (
+      entity.status !== binding.lifecycleState ||
+      entity.scopeKind !== "company" ||
+      entity.scopeId !== companyId ||
+      binding.pluginKey !== options.pluginKey ||
+      managedEntityPluginKey(entity) !== options.pluginKey ||
+      managedEntityAgentId(entity) !== binding.resourceId
+    ) {
+      throw conflict(
+        "Plugin-managed agent resource/entity pair disagrees on lifecycle or identity",
+      );
+    }
+    if (binding.lifecycleState !== "active") {
+      return resolution(companyId, declaration, null, "missing");
+    }
+    const agent = await agentSvc.getById(binding.resourceId);
+    if (
+      !agent ||
+      agent.companyId !== companyId ||
+      agent.status === "terminated"
+    ) {
+      throw conflict(
+        "Active plugin-managed binding does not resolve to its live canonical agent",
+      );
+    }
+    return resolution(companyId, declaration, agent as Agent, "resolved");
   }
 
   async function reconcile(agentKey: string, companyId: string) {
-      const declaration = declarationFor(agentKey);
-      const current = await get(agentKey, companyId);
-      if (current.agent) {
-        await upsertBinding(companyId, declaration, current.agent.id);
-        return current;
-      }
-
-      const relinkCandidate = await findRelinkCandidate(companyId, declaration);
-      if (relinkCandidate) {
-        await upsertBinding(companyId, declaration, relinkCandidate.id);
-        const agent = await agentSvc.getById(relinkCandidate.id);
-        return resolution(companyId, declaration, agent as Agent, "relinked");
-      }
-
-      return createManagedAgent(companyId, declaration);
+    const declaration = declarationFor(agentKey);
+    const lifecycleBinding = await getManagedResourceBinding(
+      companyId,
+      agentKey,
+    );
+    if (lifecycleBinding && lifecycleBinding.lifecycleState !== "active") {
+      return resolution(companyId, declaration, null, "missing");
+    }
+    const current = await get(agentKey, companyId);
+    if (current.agent) {
+      await db.transaction((tx) =>
+        upsertBinding(
+          companyId,
+          declaration,
+          current.agent!.id,
+          {},
+          tx as unknown as Db,
+        ));
+      return current;
+    }
+    return createManagedAgent(companyId, declaration);
   }
 
   async function reset(agentKey: string, companyId: string) {
-      const declaration = declarationFor(agentKey);
-      const reconciled = await reconcile(agentKey, companyId);
-      if (!reconciled.agent) return reconciled;
-      const currentMetadata = reconciled.agent.metadata && typeof reconciled.agent.metadata === "object"
-        ? reconciled.agent.metadata
-        : {};
-      const adapterType = await resolveManagedAdapterType(companyId, declaration);
-      const updated = await agentSvc.update(reconciled.agent.id, {
-        ...declarationPatch(declaration, { adapterType }),
-        metadata: managedMetadata(options.pluginId, options.pluginKey, declaration, currentMetadata),
-      }, {
-        recordRevision: {
-          source: `plugin:${options.pluginKey}:managed-agent-reset`,
-        },
-      });
-      if (!updated) throw notFound("Managed agent not found");
-      const updatedAgent = await materializeDeclaredInstructions(companyId, updated as Agent, declaration, { replaceExisting: true });
-      await upsertBinding(companyId, declaration, updatedAgent.id, {}, adapterType);
-      await logActivity(db, {
-        companyId,
-        actorType: "plugin",
-        actorId: options.pluginId,
-        action: "plugin.managed_agent.reset",
-        entityType: "agent",
-        entityId: updatedAgent.id,
-        details: {
-          sourcePluginKey: options.pluginKey,
-          managedResourceKey: declaration.agentKey,
-        },
-      });
-      return resolution(companyId, declaration, updatedAgent, "reset");
+    // A managed declaration is provenance, not an authority source. The
+    // retained reset RPC validates the active binding but cannot restore
+    // declaration defaults over ordinary board-managed agent state.
+    return reconcile(agentKey, companyId);
   }
 
   return {

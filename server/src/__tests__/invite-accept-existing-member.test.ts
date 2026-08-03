@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accessRoutes } from "../routes/access.js";
 import { errorHandler } from "../middleware/index.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const accessServiceMock = vi.hoisted(() => ({
   isInstanceAdmin: vi.fn(),
@@ -24,9 +25,12 @@ vi.mock("../services/index.js", () => ({
     assertCurrentBoardKey: vi.fn(),
     revokeBoardApiKey: vi.fn(),
   }),
+  createRuntimeAgentConfigurationService: () => ({}),
+  createAgentAdapterConfigurationService: () => ({}),
+  createAgentOperationalConfigurationService: () => ({}),
+  createJoinRequestApprovalService: () => ({ approve: vi.fn() }),
   deduplicateAgentName: vi.fn(),
   logActivity: logActivityMock,
-  notifyHireApproved: vi.fn(),
 }));
 
 type QueryHooks = {
@@ -61,6 +65,7 @@ function createDbStub() {
     id: "invite-1",
     companyId: "company-1",
     inviteType: "company_join",
+    source: "board_api",
     allowedJoinTypes: "human",
     tokenHash: "hash",
     defaultsPayload: { humanRole: "viewer" },
@@ -106,9 +111,7 @@ function createDbStub() {
 }
 
 function createApp(db: Record<string, unknown>) {
-  return createAppWithActor(db, {
-    type: "board",
-    source: "session",
+  return createAppWithActor(db, testBoardSessionActor({
     userId: "user-1",
     companyIds: ["company-1"],
     memberships: [
@@ -118,7 +121,7 @@ function createApp(db: Record<string, unknown>) {
         status: "active",
       },
     ],
-  });
+  }));
 }
 
 function createAppWithActor(db: Record<string, unknown>, actor: Record<string, unknown>) {
@@ -131,10 +134,7 @@ function createAppWithActor(db: Record<string, unknown>, actor: Record<string, u
   app.use(
     "/api",
     accessRoutes(db as any, {
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
     }),
   );
   app.use(errorHandler);
@@ -148,6 +148,7 @@ function createDirectHumanInviteDbStub() {
     id: "invite-1",
     companyId: "company-1",
     inviteType: "company_join",
+    source: "board_api",
     allowedJoinTypes: "human",
     tokenHash: "hash",
     defaultsPayload: { human: { role: "owner" } },
@@ -171,9 +172,6 @@ function createDirectHumanInviteDbStub() {
     adapterType: null,
     capabilities: null,
     agentDefaultsPayload: null,
-    claimSecretHash: null,
-    claimSecretExpiresAt: null,
-    claimSecretConsumedAt: null,
     createdAgentId: null,
     approvedByUserId: null,
     approvedAt: null,
@@ -225,6 +223,7 @@ function createAcceptedHumanInviteReplayDbStub() {
     id: "invite-1",
     companyId: "company-1",
     inviteType: "company_join",
+    source: "board_api",
     allowedJoinTypes: "human",
     tokenHash: "hash",
     defaultsPayload: { human: { role: "operator" } },
@@ -248,9 +247,6 @@ function createAcceptedHumanInviteReplayDbStub() {
     adapterType: null,
     capabilities: null,
     agentDefaultsPayload: null,
-    claimSecretHash: null,
-    claimSecretExpiresAt: null,
-    claimSecretConsumedAt: null,
     createdAgentId: null,
     approvedByUserId: null,
     approvedAt: null,
@@ -317,13 +313,11 @@ describe("POST /invites/:token/accept", () => {
 
   it("grants company access immediately for a human invite", async () => {
     const { db, insertedValues, updateValues } = createDirectHumanInviteDbStub();
-    const app = createAppWithActor(db, {
-      type: "board",
-      source: "session",
+    const app = createAppWithActor(db, testBoardSessionActor({
       userId: "invitee-user",
       companyIds: [],
       memberships: [],
-    });
+    }));
 
     const res = await request(app)
       .post("/api/invites/pcp_invite_test/accept")
@@ -382,13 +376,11 @@ describe("POST /invites/:token/accept", () => {
 
   it("replays a consumed human invite for the same user and repairs company access", async () => {
     const { db, updateValues } = createAcceptedHumanInviteReplayDbStub();
-    const app = createAppWithActor(db, {
-      type: "board",
-      source: "session",
+    const app = createAppWithActor(db, testBoardSessionActor({
       userId: "invitee-user",
       companyIds: [],
       memberships: [],
-    });
+    }));
 
     const res = await request(app)
       .post("/api/invites/pcp_invite_test/accept")

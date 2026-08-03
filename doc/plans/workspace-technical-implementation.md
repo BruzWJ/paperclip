@@ -288,7 +288,7 @@ Create a new durable table for outputs.
 - `issue_id -> issues.id on delete cascade`
 - `execution_workspace_id -> execution_workspaces.id on delete set null`
 - `runtime_service_id -> workspace_runtime_services.id on delete set null`
-- `created_by_run_id -> heartbeat_runs.id on delete set null`
+- `created_by_run_id -> issue_execution_runs.id on delete set null`
 
 ### Indexes
 

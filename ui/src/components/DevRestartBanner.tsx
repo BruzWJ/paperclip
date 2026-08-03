@@ -21,12 +21,6 @@ function formatRelativeTimestamp(value: string | null): string | null {
 }
 
 function describeReason(devServer: DevServerHealthStatus): string {
-  if (devServer.reason === "backend_changes_and_pending_migrations") {
-    return "backend files changed and migrations are pending";
-  }
-  if (devServer.reason === "pending_migrations") {
-    return "pending migrations need a fresh boot";
-  }
   return "backend files changed since this server booted";
 }
 
@@ -87,12 +81,6 @@ export function DevRestartBanner({ devServer }: { devServer?: DevServerHealthSta
               <span>
                 Changed: {sample.join(", ")}
                 {devServer.changedPathCount > sample.length ? ` +${devServer.changedPathCount - sample.length} more` : ""}
-              </span>
-            ) : null}
-            {devServer.pendingMigrations.length > 0 ? (
-              <span>
-                Pending migrations: {devServer.pendingMigrations.slice(0, 2).join(", ")}
-                {devServer.pendingMigrations.length > 2 ? ` +${devServer.pendingMigrations.length - 2} more` : ""}
               </span>
             ) : null}
           </div>

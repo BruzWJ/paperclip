@@ -7,6 +7,7 @@ import {
   type InstanceDatabaseBackupService,
 } from "../routes/instance-database-backups.js";
 import { conflict } from "../errors.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 function createApp(actor: Record<string, unknown>, service: InstanceDatabaseBackupService) {
   const app = express();
@@ -24,7 +25,26 @@ function createBackupService(overrides: Partial<InstanceDatabaseBackupService> =
   return {
     runManualBackup: vi.fn().mockResolvedValue({
       trigger: "manual",
-      backupFile: "/tmp/paperclip-20260416.sql.gz",
+      backupFile: "/tmp/paperclip-20260416.dump",
+      manifestFile: "/tmp/paperclip-20260416.dump.manifest.json",
+      manifestFormat: "paperclip-postgresql-disaster-recovery",
+      manifestFormatVersion: 1,
+      payloadChecksum: "a".repeat(64),
+      sourceDatabaseIdentity: {
+        clusterSystemIdentifier: "7312345678901234567",
+        databaseOid: "16384",
+        databaseName: "paperclip",
+      },
+      migrationJournal: [
+        {
+          hash: "b".repeat(64),
+          createdAt: "1776388800000",
+        },
+      ],
+      tableSet: [
+        "drizzle.__drizzle_migrations",
+        "public.users",
+      ],
       sizeBytes: 1234,
       prunedCount: 2,
       backupDir: "/tmp",
@@ -45,12 +65,10 @@ describe("instance database backup routes", () => {
   it("runs a manual backup for an instance admin and returns the server result", async () => {
     const service = createBackupService();
     const app = createApp(
-      {
-        type: "board",
+      testBoardSessionActor({
         userId: "admin-1",
-        source: "session",
         isInstanceAdmin: true,
-      },
+      }),
       service,
     );
 
@@ -60,7 +78,26 @@ describe("instance database backup routes", () => {
     expect(service.runManualBackup).toHaveBeenCalledTimes(1);
     expect(res.body).toEqual({
       trigger: "manual",
-      backupFile: "/tmp/paperclip-20260416.sql.gz",
+      backupFile: "/tmp/paperclip-20260416.dump",
+      manifestFile: "/tmp/paperclip-20260416.dump.manifest.json",
+      manifestFormat: "paperclip-postgresql-disaster-recovery",
+      manifestFormatVersion: 1,
+      payloadChecksum: "a".repeat(64),
+      sourceDatabaseIdentity: {
+        clusterSystemIdentifier: "7312345678901234567",
+        databaseOid: "16384",
+        databaseName: "paperclip",
+      },
+      migrationJournal: [
+        {
+          hash: "b".repeat(64),
+          createdAt: "1776388800000",
+        },
+      ],
+      tableSet: [
+        "drizzle.__drizzle_migrations",
+        "public.users",
+      ],
       sizeBytes: 1234,
       prunedCount: 2,
       backupDir: "/tmp",
@@ -75,33 +112,29 @@ describe("instance database backup routes", () => {
     });
   });
 
-  it("allows local implicit board access", async () => {
+  it("rejects the retired session board identity", async () => {
     const service = createBackupService();
     const app = createApp(
-      {
-        type: "board",
-        userId: "local-board",
-        source: "local_implicit",
+      testBoardSessionActor({
+        userId: "board-user",
         isInstanceAdmin: false,
-      },
+      }),
       service,
     );
 
-    await request(app).post("/api/instance/database-backups").send({}).expect(201);
+    await request(app).post("/api/instance/database-backups").send({}).expect(403);
 
-    expect(service.runManualBackup).toHaveBeenCalledTimes(1);
+    expect(service.runManualBackup).not.toHaveBeenCalled();
   });
 
   it("rejects non-admin board users", async () => {
     const service = createBackupService();
     const app = createApp(
-      {
-        type: "board",
+      testBoardSessionActor({
         userId: "user-1",
-        source: "session",
         isInstanceAdmin: false,
         companyIds: ["company-1"],
-      },
+      }),
       service,
     );
 
@@ -117,7 +150,7 @@ describe("instance database backup routes", () => {
         type: "agent",
         agentId: "agent-1",
         companyId: "company-1",
-        source: "agent_key",
+        source: "internal",
       },
       service,
     );
@@ -132,12 +165,10 @@ describe("instance database backup routes", () => {
       runManualBackup: vi.fn().mockRejectedValue(conflict("Database backup already in progress")),
     });
     const app = createApp(
-      {
-        type: "board",
+      testBoardSessionActor({
         userId: "admin-1",
-        source: "session",
         isInstanceAdmin: true,
-      },
+      }),
       service,
     );
 

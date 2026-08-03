@@ -1,140 +1,178 @@
 import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { agents, companies, createDb } from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 import { teamsCatalogService } from "../services/teams-catalog.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
+const mocks = vi.hoisted(() => ({
+  previewImport: vi.fn(),
+  importBundle: vi.fn(),
+  installFromCatalog: vi.fn(),
+  importFromSource: vi.fn(),
+  listAgents: vi.fn(),
+  getAgentById: vi.fn(),
+  logActivity: vi.fn(),
+  validateAdapterConfiguration: vi.fn(),
+}));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres teams catalog no-overrides install tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
+vi.mock("../services/company-portability.js", () => ({
+  companyPortabilityService: vi.fn(() => ({
+    previewImport: mocks.previewImport,
+    importBundle: mocks.importBundle,
+  })),
+}));
 
-describeEmbeddedPostgres("teams catalog install with no caller adapter overrides", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  let tempHome: string | null = null;
-  let oldPaperclipHome: string | undefined;
+vi.mock("../services/company-skills.js", () => ({
+  companySkillService: vi.fn(() => ({
+    installFromCatalog: mocks.installFromCatalog,
+    importFromSource: mocks.importFromSource,
+  })),
+}));
 
-  beforeAll(async () => {
-    oldPaperclipHome = process.env.PAPERCLIP_HOME;
-    tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-teams-catalog-no-overrides-"));
-    process.env.PAPERCLIP_HOME = tempHome;
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-teams-catalog-no-overrides-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+vi.mock("../services/agents.js", () => ({
+  agentService: vi.fn(() => ({
+    list: mocks.listAgents,
+    getById: mocks.getAgentById,
+  })),
+}));
 
-  afterAll(async () => {
-    if (oldPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-    else process.env.PAPERCLIP_HOME = oldPaperclipHome;
-    if (tempHome) await fs.rm(tempHome, { recursive: true, force: true });
-    await tempDb?.cleanup();
+vi.mock("../services/activity-log.js", () => ({
+  logActivity: mocks.logActivity,
+}));
+
+vi.mock("../services/agent-adapter-config-revisions.js", () => ({
+  validateRegisteredAdapterRuntimeConfiguration:
+    mocks.validateAdapterConfiguration,
+}));
+
+const ordinaryIssues = {} as never;
+const db = {} as never;
+
+describe.sequential("teams catalog explicit adapter contract", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.previewImport.mockResolvedValue({ warnings: [], errors: [] });
+    mocks.importBundle.mockResolvedValue({
+      agents: [],
+      projects: [],
+      issues: [],
+      skills: [],
+      warnings: [],
+    });
+    mocks.installFromCatalog.mockResolvedValue({ warnings: [] });
+    mocks.importFromSource.mockResolvedValue({ warnings: [] });
+    mocks.listAgents.mockResolvedValue([]);
+    mocks.getAgentById.mockResolvedValue(null);
+    mocks.logActivity.mockResolvedValue(undefined);
+    mocks.validateAdapterConfiguration.mockResolvedValue(undefined);
   });
 
-  async function seedEmptyCompany() {
+  it("rejects a catalog install with no explicit adapter configuration", async () => {
+    const service = teamsCatalogService(db, ordinaryIssues);
+
+    await expect(
+      service.installCatalogTeam(randomUUID(), "core-exec-team", {
+        targetManagerAgentId: null,
+        collisionStrategy: "rename",
+        include: { projects: false, issues: false },
+        actor: {
+          actorType: "system",
+          actorId: "teams-catalog-test",
+        },
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+
+    expect(mocks.previewImport).not.toHaveBeenCalled();
+    expect(mocks.importBundle).not.toHaveBeenCalled();
+  });
+
+  it("rejects a partial adapter selection instead of filling the missing agent", async () => {
+    const service = teamsCatalogService(db, ordinaryIssues);
+
+    await expect(
+      service.installCatalogTeam(randomUUID(), "product-engineering", {
+        targetManagerAgentId: null,
+        collisionStrategy: "rename",
+        include: { projects: false, issues: false },
+        actor: {
+          actorType: "system",
+          actorId: "teams-catalog-test",
+        },
+        adapterOverrides: {
+          "engineering-lead": {
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+
+    expect(mocks.validateAdapterConfiguration).toHaveBeenCalledOnce();
+    expect(mocks.previewImport).not.toHaveBeenCalled();
+    expect(mocks.importBundle).not.toHaveBeenCalled();
+  });
+
+  it("imports the ordinary core team with exactly the operator's adapter choices", async () => {
     const companyId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Clean install company",
-      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
-    });
-    return companyId;
-  }
-
-  async function listAdapterTypesByName(companyId: string) {
-    const rows = await db
-      .select({
-        name: agents.name,
-        role: agents.role,
-        adapterType: agents.adapterType,
-        permissions: agents.permissions,
-      })
-      .from(agents)
-      .where(eq(agents.companyId, companyId));
-    return new Map(rows.map((row) => [row.name, row]));
-  }
-
-  it("installs core-exec-team end-to-end with no caller overrides and creates 3 claude_local agents", async () => {
-    const companyId = await seedEmptyCompany();
-    const svc = teamsCatalogService(db);
-
-    await svc.installCatalogTeam(companyId, "core-exec-team", {
-      collisionStrategy: "rename",
-      include: { projects: false, issues: false },
-    });
-
-    const byName = await listAdapterTypesByName(companyId);
-    expect(byName.size).toBe(3);
-
-    const adapterTypes = Array.from(byName.values()).map((row) => row.adapterType);
-    expect(adapterTypes).toEqual(["claude_local", "claude_local", "claude_local"]);
-    expect(adapterTypes).not.toContain("process");
-    expect(adapterTypes).not.toContain("http");
-  });
-
-  it("installs product-design end-to-end with no caller overrides and uses claude_local", async () => {
-    const companyId = await seedEmptyCompany();
-    const svc = teamsCatalogService(db);
-
-    await svc.installCatalogTeam(companyId, "product-design", {
-      collisionStrategy: "rename",
-      include: { projects: false, issues: false },
-    });
-
-    const byName = await listAdapterTypesByName(companyId);
-    expect(byName.size).toBe(1);
-    const adapterTypes = Array.from(byName.values()).map((row) => row.adapterType);
-    expect(adapterTypes).toEqual(["claude_local"]);
-    expect(adapterTypes).not.toContain("process");
-  });
-
-  it("installs product-engineering end-to-end with no caller overrides and uses claude_local for every agent", async () => {
-    const companyId = await seedEmptyCompany();
-    const svc = teamsCatalogService(db);
-
-    await svc.installCatalogTeam(companyId, "product-engineering", {
-      collisionStrategy: "rename",
-      include: { projects: false, issues: false },
-    });
-
-    const byName = await listAdapterTypesByName(companyId);
-    expect(byName.size).toBe(3);
-    const adapterTypes = Array.from(byName.values()).map((row) => row.adapterType);
-    expect(adapterTypes).toEqual(["claude_local", "claude_local", "claude_local"]);
-    expect(adapterTypes).not.toContain("process");
-    expect(byName.get("CTO")?.permissions).toMatchObject({ canCreateAgents: true });
-  });
-
-  it("honors an explicit caller adapter override for a single slug while defaulting the rest to claude_local", async () => {
-    const companyId = await seedEmptyCompany();
-    const svc = teamsCatalogService(db);
-
-    await svc.installCatalogTeam(companyId, "core-exec-team", {
-      collisionStrategy: "rename",
-      include: { projects: false, issues: false },
-      adapterOverrides: {
-        cto: { adapterType: "opencode_local", adapterConfig: { model: "anthropic/claude-opus-4" } },
+    const environmentId = randomUUID();
+    const adapterOverrides = {
+      "company-lead": {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId: environmentId,
       },
+      "engineering-lead": {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId: environmentId,
+      },
+      qa: {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId: environmentId,
+      },
+    };
+    mocks.importBundle.mockResolvedValue({
+      agents: [
+        { name: "Company Lead" },
+        { name: "Engineering Lead" },
+        { name: "QA" },
+      ],
+      projects: [],
+      issues: [],
+      skills: [],
+      warnings: [],
+    });
+    const service = teamsCatalogService(db, ordinaryIssues);
+
+    await service.installCatalogTeam(companyId, "core-exec-team", {
+      targetManagerAgentId: null,
+      collisionStrategy: "rename",
+      include: { projects: false, issues: false },
+      actor: {
+        actorType: "user",
+        actorId: "board-user",
+        userId: "board-user",
+      },
+      authorizationActor: testBoardSessionActor({
+        userId: "board-user",
+        companyIds: [companyId],
+      }),
+      adapterOverrides,
     });
 
-    const byName = await listAdapterTypesByName(companyId);
-    expect(byName.size).toBe(3);
-    const ctoRow = Array.from(byName.values()).find((row) => row.role === "engineering-manager" || row.name === "CTO");
-    expect(ctoRow?.adapterType).toBe("opencode_local");
-    const otherAdapters = Array.from(byName.values())
-      .filter((row) => row !== ctoRow)
-      .map((row) => row.adapterType);
-    expect(otherAdapters).toEqual(["claude_local", "claude_local"]);
+    expect(mocks.validateAdapterConfiguration).toHaveBeenCalledTimes(3);
+    expect(mocks.previewImport).toHaveBeenCalledOnce();
+    expect(mocks.importBundle).toHaveBeenCalledOnce();
+    expect(mocks.previewImport.mock.calls[0]?.[0]).toMatchObject({
+      target: { mode: "existing_company", companyId },
+      adapterOverrides,
+    });
+    expect(mocks.importBundle.mock.calls[0]?.[0]).toMatchObject({
+      target: { mode: "existing_company", companyId },
+      adapterOverrides,
+    });
+    expect(mocks.importBundle.mock.calls[0]?.[0].adapterOverrides).toEqual(
+      adapterOverrides,
+    );
   });
 });

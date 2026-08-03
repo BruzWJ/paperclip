@@ -23,6 +23,7 @@ import {
   sortBlockedInboxRows,
   type BlockedInboxIssueRow,
 } from "./blockedInbox";
+import { createTestIssue, type TestIssueOverrides } from "../test-utils/issue";
 
 function makeAttention(
   overrides: Partial<IssueBlockedInboxAttention> = {},
@@ -37,9 +38,7 @@ function makeAttention(
     action: { label: "Resolve PAP-1", detail: null },
     sourceIssue: null,
     leafIssue: null,
-    recoveryIssue: null,
     approvalId: null,
-    interactionId: null,
     sampleIssueIdentifier: null,
     redaction: { externalDetailsRedacted: false, secretFieldsOmitted: true },
     ...overrides,
@@ -47,47 +46,21 @@ function makeAttention(
 }
 
 function makeIssue(
-  overrides: Partial<Issue> & { id: string },
+  overrides: TestIssueOverrides & { id: string },
   attention: IssueBlockedInboxAttention | null = null,
 ): Issue {
   const { id, ...rest } = overrides;
-  return {
+  return createTestIssue({
     id,
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title: "Title",
-    description: null,
-    status: "in_progress",
-    workMode: "standard",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
+    request: "",
+    boardPresentationStatus: "in_progress",
     identifier: "PAP-1",
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     blockedInboxAttention: attention,
     createdAt: new Date("2026-05-09T00:00:00.000Z"),
     updatedAt: new Date("2026-05-09T00:00:00.000Z"),
     ...rest,
-  } as Issue;
+  });
 }
 
 describe("blockedInbox", () => {
@@ -95,15 +68,7 @@ describe("blockedInbox", () => {
     const reasons: IssueBlockedInboxReason[] = [
       "pending_board_decision",
       "pending_user_decision",
-      "missing_successful_run_disposition",
       "blocked_chain_stalled",
-      "blocked_by_unassigned_issue",
-      "blocked_by_assigned_backlog_issue",
-      "blocked_by_cancelled_issue",
-      "blocked_by_uninvokable_assignee",
-      "in_review_without_action_path",
-      "invalid_review_participant",
-      "open_recovery_issue",
       "external_owner_action",
     ];
     for (const reason of reasons) {
@@ -233,7 +198,7 @@ describe("blockedInbox", () => {
     const issue = makeIssue(
       { id: "issue-1", identifier: "PAP-77", title: "Resume parked work" },
       makeAttention({
-        reason: "blocked_by_assigned_backlog_issue",
+        reason: "blocked_chain_stalled",
         owner: { type: "agent", agentId: null, userId: null, label: "Charlie" },
         action: { label: "Resume parked blocker", detail: null },
       }),

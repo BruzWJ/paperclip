@@ -3,7 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  consumeDevServerRestartRequest,
   getDevServerRestartRequestFilePath,
+  readDevServerRestartRequest,
   readPersistedDevServerStatus,
   toDevServerHealthStatus,
   writeDevServerRestartRequest,
@@ -32,7 +34,6 @@ describe("dev server status helpers", () => {
       lastChangedAt: "2026-03-20T12:00:00.000Z",
       changedPathCount: 4,
       changedPathsSample: ["server/src/app.ts", "packages/shared/src/index.ts"],
-      pendingMigrations: ["0040_restart_banner.sql"],
       lastRestartAt: "2026-03-20T11:30:00.000Z",
     });
 
@@ -41,7 +42,6 @@ describe("dev server status helpers", () => {
       lastChangedAt: "2026-03-20T12:00:00.000Z",
       changedPathCount: 4,
       changedPathsSample: ["server/src/app.ts", "packages/shared/src/index.ts"],
-      pendingMigrations: ["0040_restart_banner.sql"],
       lastRestartAt: "2026-03-20T11:30:00.000Z",
     });
   });
@@ -53,7 +53,6 @@ describe("dev server status helpers", () => {
         lastChangedAt: "2026-03-20T12:00:00.000Z",
         changedPathCount: 2,
         changedPathsSample: ["server/src/app.ts"],
-        pendingMigrations: [],
         lastRestartAt: "2026-03-20T11:30:00.000Z",
       },
       { autoRestartEnabled: true, activeRunCount: 3 },
@@ -73,7 +72,6 @@ describe("dev server status helpers", () => {
     const filePath = createTempStatusFile({
       dirty: true,
       changedPathsSample: ["x".repeat(70 * 1024)],
-      pendingMigrations: [],
     });
 
     expect(readPersistedDevServerStatus({ PAPERCLIP_DEV_SERVER_STATUS_FILE: filePath })).toBeNull();
@@ -83,7 +81,6 @@ describe("dev server status helpers", () => {
     const filePath = createTempStatusFile({
       dirty: true,
       changedPathsSample: ["server/src/app.ts"],
-      pendingMigrations: [],
     });
 
     const env = { PAPERCLIP_DEV_SERVER_STATUS_FILE: filePath };
@@ -99,5 +96,70 @@ describe("dev server status helpers", () => {
       requestedAt: "2026-03-20T12:05:00.000Z",
       reason: "manual_restart_now",
     });
+    expect(readDevServerRestartRequest(env)).toEqual({
+      requestedAt: "2026-03-20T12:05:00.000Z",
+      reason: "manual_restart_now",
+    });
+    expect(consumeDevServerRestartRequest(env)).toEqual({
+      requestedAt: "2026-03-20T12:05:00.000Z",
+      reason: "manual_restart_now",
+    });
+    expect(requestPath && existsSync(requestPath)).toBe(false);
+  });
+
+  it("accepts the server-owned automatic restart reason", () => {
+    const filePath = createTempStatusFile({
+      dirty: true,
+      changedPathsSample: ["server/src/app.ts"],
+    });
+    const env = { PAPERCLIP_DEV_SERVER_STATUS_FILE: filePath };
+
+    expect(writeDevServerRestartRequest({
+      requestedAt: "2026-03-20T12:05:00.000Z",
+      reason: "auto_restart_when_idle",
+    }, env)).toBe(true);
+
+    expect(readDevServerRestartRequest(env)).toEqual({
+      requestedAt: "2026-03-20T12:05:00.000Z",
+      reason: "auto_restart_when_idle",
+    });
+  });
+
+  it("preserves an existing restart request when requested", () => {
+    const filePath = createTempStatusFile({
+      dirty: true,
+      changedPathsSample: ["server/src/app.ts"],
+    });
+    const env = { PAPERCLIP_DEV_SERVER_STATUS_FILE: filePath };
+    expect(writeDevServerRestartRequest({
+      requestedAt: "2026-03-20T12:04:00.000Z",
+      reason: "manual_restart_now",
+    }, env)).toBe(true);
+
+    expect(writeDevServerRestartRequest({
+      requestedAt: "2026-03-20T12:05:00.000Z",
+      reason: "auto_restart_when_idle",
+    }, env, { preserveExisting: true })).toBe(false);
+    expect(readDevServerRestartRequest(env)).toEqual({
+      requestedAt: "2026-03-20T12:04:00.000Z",
+      reason: "manual_restart_now",
+    });
+  });
+
+  it("does not consume malformed restart requests", () => {
+    const filePath = createTempStatusFile({
+      dirty: true,
+      changedPathsSample: ["server/src/app.ts"],
+    });
+    const env = { PAPERCLIP_DEV_SERVER_STATUS_FILE: filePath };
+    const requestPath = getDevServerRestartRequestFilePath(env)!;
+    writeFileSync(requestPath, JSON.stringify({
+      requestedAt: "not-a-timestamp",
+      reason: "manual_restart_now",
+    }), "utf8");
+
+    expect(readDevServerRestartRequest(env)).toBeNull();
+    expect(consumeDevServerRestartRequest(env)).toBeNull();
+    expect(existsSync(requestPath)).toBe(true);
   });
 });

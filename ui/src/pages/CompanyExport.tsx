@@ -46,30 +46,30 @@ import {
 } from "../components/FileTree";
 
 /**
- * Extract the set of agent/project/task slugs that are "checked" based on
+ * Extract the set of agent/project/issue slugs that are "checked" based on
  * which file paths are in the checked set.
  *   agents/{slug}/AGENT.md   → agents slug
  *   projects/{slug}/PROJECT.md → projects slug
- *   tasks/{slug}/TASK.md     → tasks slug
+ *   issues/{slug}/ISSUE.md   → issue slug
  */
 function checkedSlugs(checkedFiles: Set<string>): {
   agents: Set<string>;
   projects: Set<string>;
-  tasks: Set<string>;
+  issues: Set<string>;
   routines: Set<string>;
 } {
   const agents = new Set<string>();
   const projects = new Set<string>();
-  const tasks = new Set<string>();
+  const issues = new Set<string>();
   for (const p of checkedFiles) {
     const agentMatch = p.match(/^agents\/([^/]+)\//);
     if (agentMatch) agents.add(agentMatch[1]);
     const projectMatch = p.match(/^projects\/([^/]+)\//);
     if (projectMatch) projects.add(projectMatch[1]);
-    const taskMatch = p.match(/^tasks\/([^/]+)\//);
-    if (taskMatch) tasks.add(taskMatch[1]);
+    const issueMatch = p.match(/^issues\/([^/]+)\//);
+    if (issueMatch) issues.add(issueMatch[1]);
   }
-  return { agents, projects, tasks, routines: new Set(tasks) };
+  return { agents, projects, issues, routines: new Set(issues) };
 }
 
 /**
@@ -84,7 +84,7 @@ function filterPaperclipYaml(yaml: string, checkedFiles: Set<string>): string {
   const out: string[] = [];
 
   // Sections whose entries are slug-keyed and should be filtered
-  const filterableSections = new Set(["agents", "projects", "tasks", "routines"]);
+  const filterableSections = new Set(["agents", "projects", "issues", "routines"]);
   const sidebarSections = new Set(["agents", "projects"]);
 
   let currentSection: string | null = null; // top-level key (e.g. "agents")
@@ -283,8 +283,8 @@ function paginateTaskNodes(
   let visibleTaskChildren = 0;
 
   const result = nodes.map((node) => {
-    // Only paginate direct children of "tasks" directories
-    if (node.kind === "dir" && node.name === "tasks") {
+    // Only paginate direct children of "issues" directories
+    if (node.kind === "dir" && node.name === "issues") {
       totalTaskChildren = node.children.length;
 
       // Partition children: pinned (checked or search-matched) vs rest
@@ -390,11 +390,6 @@ function FrontmatterCard({
 
 // ── Client-side README generation ────────────────────────────────────
 
-const ROLE_LABELS: Record<string, string> = {
-  ceo: "CEO", cto: "CTO", cmo: "CMO", cfo: "CFO", coo: "COO",
-  vp: "VP", manager: "Manager", engineer: "Engineer", agent: "Agent",
-};
-
 /**
  * Regenerate README.md content based on the currently checked files.
  * Only counts/lists entities whose files are in the checked set.
@@ -409,7 +404,7 @@ function generateReadmeFromSelection(
 
   const agents = manifest.agents.filter((a) => slugs.agents.has(a.slug));
   const projects = manifest.projects.filter((p) => slugs.projects.has(p.slug));
-  const tasks = manifest.issues.filter((t) => slugs.tasks.has(t.slug));
+  const tasks = manifest.issues.filter((t) => slugs.issues.has(t.slug));
   const skills = manifest.skills.filter((s) => {
     // Skill files live under skills/{key}/...
     return [...checkedFiles].some((f) => f.startsWith(`skills/${s.key}/`) || f.startsWith(`skills/`) && f.includes(`/${s.slug}/`));
@@ -451,12 +446,11 @@ function generateReadmeFromSelection(
   if (agents.length > 0) {
     lines.push("### Agents");
     lines.push("");
-    lines.push("| Agent | Role | Reports To |");
+    lines.push("| Agent | Title | Reports To |");
     lines.push("|-------|------|------------|");
     for (const agent of agents) {
-      const roleLabel = ROLE_LABELS[agent.role] ?? agent.role;
       const reportsTo = agent.reportsToSlug ?? "\u2014";
-      lines.push(`| ${agent.name} | ${roleLabel} | ${reportsTo} |`);
+      lines.push(`| ${agent.name} | ${agent.title ?? "\u2014"} | ${reportsTo} |`);
     }
     lines.push("");
   }
@@ -694,11 +688,11 @@ export function CompanyExport() {
           prev,
         ),
       );
-      // Expand top-level dirs (except tasks — collapsed by default)
+      // Expand top-level dirs (except issues — collapsed by default)
       const tree = buildFileTree(result.files);
       const topDirs = new Set<string>();
       for (const node of tree) {
-        if (node.kind === "dir" && node.name !== "tasks") topDirs.add(node.path);
+        if (node.kind === "dir" && node.name !== "issues") topDirs.add(node.path);
       }
 
       // If URL contains a deep-linked file path, select it and expand ancestors

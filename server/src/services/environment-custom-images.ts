@@ -347,7 +347,7 @@ export function environmentCustomImageService(
       db,
       secretContextCompanyId,
       input.environment,
-      { issueId: null, heartbeatRunId: null },
+      { issueId: null, runId: null },
     );
     if (parsed.driver !== "sandbox") {
       throw unprocessable("Environment customImage setup is only supported for sandbox environments.");

@@ -253,7 +253,6 @@ function searchText(skill: CatalogSkill) {
     skill.description,
     skill.category,
     skill.kind,
-    ...skill.recommendedForRoles,
     ...skill.tags,
   ].join("\n").toLowerCase();
 }

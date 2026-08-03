@@ -1,9 +1,7 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
-  PLUGIN_RPC_ERROR_CODES,
   createRequest,
-  isJsonRpcErrorResponse,
   isJsonRpcSuccessResponse,
   parseMessage,
   serializeMessage,
@@ -94,7 +92,7 @@ describe("plugin environment driver seam", () => {
     });
   });
 
-  it("dispatches environment driver worker hooks and reports support", async () => {
+  it("dispatches the execution lifecycle and reports exact worker support", async () => {
     const plugin = definePlugin({
       async setup() {},
       async onEnvironmentProbe(params) {
@@ -116,6 +114,52 @@ describe("plugin environment driver seam", () => {
           },
           connectionPayload: null,
           metadata: { environmentId: params.environmentId },
+        };
+      },
+      async onEnvironmentAcquireLease(params) {
+        return {
+          providerLeaseId: `lease-${params.runId}`,
+          metadata: { remoteCwd: "/plugin/workspace" },
+        };
+      },
+      async onEnvironmentReleaseLease() {},
+      async onEnvironmentRealizeWorkspace() {
+        return {
+          cwd: "/plugin/workspace",
+          metadata: { realized: true },
+        };
+      },
+      async onEnvironmentExecute(params) {
+        return {
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          stdout: `${params.executionId}:${params.command}`,
+          stderr: "",
+        };
+      },
+      async onEnvironmentCancelExecution(params) {
+        return {
+          executionId: params.executionId,
+          cancelled: true,
+        };
+      },
+      async onEnvironmentSyncIn(params) {
+        return {
+          operations: params.operations.map((operation) => ({
+            operationId: operation.operationId,
+            filesTransferred: operation.files.length,
+            bytesTransferred: 1,
+          })),
+        };
+      },
+      async onEnvironmentSyncOut(params) {
+        return {
+          operations: params.operations.map((operation) => ({
+            operationId: operation.operationId,
+            filesTransferred: operation.files.length,
+            bytesTransferred: 1,
+          })),
         };
       },
     });
@@ -144,6 +188,17 @@ describe("plugin environment driver seam", () => {
     if (!isJsonRpcSuccessResponse(initializeResponse)) return;
     expect(initializeResponse.result.supportedMethods).toContain("environmentProbe");
     expect(initializeResponse.result.supportedMethods).toContain("environmentStartInteractiveSetup");
+    expect(initializeResponse.result.supportedMethods).toEqual(
+      expect.arrayContaining([
+        "environmentAcquireLease",
+        "environmentReleaseLease",
+        "environmentRealizeWorkspace",
+        "environmentExecute",
+        "environmentCancelExecution",
+        "environmentSyncIn",
+        "environmentSyncOut",
+      ]),
+    );
 
     stdin.write(serializeMessage(createRequest("environmentProbe", {
       driverKey: "fake-plugin",
@@ -184,21 +239,144 @@ describe("plugin environment driver seam", () => {
       },
     });
 
+    stdin.write(serializeMessage(createRequest("environmentAcquireLease", {
+      driverKey: "fake-plugin",
+      companyId: "company-1",
+      environmentId: "environment-1",
+      config: { template: "base" },
+      runId: "productive-run-1",
+      workspaceMode: "isolated",
+      executionWorkspaceId: "workspace-1",
+      adapterType: "codex",
+    }, 4)));
+    await waitForResponses(responses, 4);
+
+    const acquireResponse = responses[3];
+    expect(isJsonRpcSuccessResponse(acquireResponse)).toBe(true);
+    if (!isJsonRpcSuccessResponse(acquireResponse)) return;
+    expect(acquireResponse.result).toMatchObject({
+      providerLeaseId: "lease-productive-run-1",
+      metadata: { remoteCwd: "/plugin/workspace" },
+    });
+
+    stdin.write(serializeMessage(createRequest("environmentRealizeWorkspace", {
+      driverKey: "fake-plugin",
+      companyId: "company-1",
+      environmentId: "environment-1",
+      config: { template: "base" },
+      lease: { providerLeaseId: "lease-productive-run-1" },
+      workspace: {
+        localPath: "/host/workspace",
+        mode: "isolated",
+      },
+    }, 5)));
+    await waitForResponses(responses, 5);
+
+    const realizeResponse = responses[4];
+    expect(isJsonRpcSuccessResponse(realizeResponse)).toBe(true);
+    if (!isJsonRpcSuccessResponse(realizeResponse)) return;
+    expect(realizeResponse.result).toEqual({
+      cwd: "/plugin/workspace",
+      metadata: { realized: true },
+    });
+
     stdin.write(serializeMessage(createRequest("environmentExecute", {
       driverKey: "fake-plugin",
       companyId: "company-1",
       environmentId: "environment-1",
       config: { template: "base" },
-      lease: { providerLeaseId: "lease-1" },
+      lease: { providerLeaseId: "lease-productive-run-1" },
+      executionId: "productive-attempt-1",
       command: "echo",
-    }, 4)));
-    await waitForResponses(responses, 4);
+      cwd: "/plugin/workspace",
+    }, 6)));
+    await waitForResponses(responses, 6);
 
-    const executeResponse = responses[3];
-    expect(isJsonRpcErrorResponse(executeResponse)).toBe(true);
-    if (!isJsonRpcErrorResponse(executeResponse)) return;
-    expect(executeResponse.error.code).toBe(PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED);
-    expect(executeResponse.error.message).toContain("environmentExecute");
+    const executeResponse = responses[5];
+    expect(isJsonRpcSuccessResponse(executeResponse)).toBe(true);
+    if (!isJsonRpcSuccessResponse(executeResponse)) return;
+    expect(executeResponse.result).toMatchObject({
+      exitCode: 0,
+      stdout: "productive-attempt-1:echo",
+    });
+
+    stdin.write(serializeMessage(createRequest("environmentCancelExecution", {
+      driverKey: "fake-plugin",
+      companyId: "company-1",
+      environmentId: "environment-1",
+      config: { template: "base" },
+      lease: { providerLeaseId: "lease-productive-run-1" },
+      executionId: "productive-attempt-1",
+      reason: "operator cancelled",
+    }, 7)));
+    await waitForResponses(responses, 7);
+
+    const cancelResponse = responses[6];
+    expect(isJsonRpcSuccessResponse(cancelResponse)).toBe(true);
+    if (!isJsonRpcSuccessResponse(cancelResponse)) return;
+    expect(cancelResponse.result).toEqual({
+      executionId: "productive-attempt-1",
+      cancelled: true,
+    });
+
+    const syncParams = {
+      driverKey: "fake-plugin",
+      companyId: "company-1",
+      environmentId: "environment-1",
+      config: { template: "base" },
+      lease: { providerLeaseId: "lease-productive-run-1" },
+      operations: [
+        {
+          operationId: "workspace-sync",
+          files: [
+            {
+              sourcePath: "/source",
+              targetPath: "/target",
+              kind: "directory" as const,
+            },
+          ],
+        },
+      ],
+    };
+    stdin.write(serializeMessage(createRequest(
+      "environmentSyncIn",
+      syncParams,
+      8,
+    )));
+    stdin.write(serializeMessage(createRequest(
+      "environmentSyncOut",
+      syncParams,
+      9,
+    )));
+    await waitForResponses(responses, 9);
+
+    for (const response of responses.slice(7, 9)) {
+      expect(isJsonRpcSuccessResponse(response)).toBe(true);
+      if (!isJsonRpcSuccessResponse(response)) continue;
+      expect(response.result.operations).toEqual([
+        {
+          operationId: "workspace-sync",
+          filesTransferred: 1,
+          bytesTransferred: 1,
+        },
+      ]);
+    }
+
+    stdin.write(serializeMessage(createRequest(
+      "environmentReleaseLease",
+      {
+        driverKey: "fake-plugin",
+        companyId: "company-1",
+        environmentId: "environment-1",
+        config: { template: "base" },
+        providerLeaseId: "lease-productive-run-1",
+      },
+      10,
+    )));
+    await waitForResponses(responses, 10);
+    expect(
+      isJsonRpcSuccessResponse(responses[9]),
+    ).toBe(true);
 
     host.stop();
   });

@@ -14,7 +14,6 @@ import {
   PLUGIN_STATE_SCOPE_KINDS,
   PLUGIN_DATABASE_CORE_READ_TABLES,
   PLUGIN_API_ROUTE_AUTH_MODES,
-  PLUGIN_API_ROUTE_CHECKOUT_POLICIES,
   PLUGIN_API_ROUTE_METHODS,
   ISSUE_PRIORITIES,
   ROUTINE_CATCH_UP_POLICIES,
@@ -25,6 +24,7 @@ import {
   ISSUE_SURFACE_VISIBILITIES,
 } from "../constants.js";
 import { routineVariableSchema } from "./routine.js";
+import { issueCreationAttentionMaskSchema } from "./issue.js";
 import { externalObjectProviderKeySchema, externalObjectTypeSchema } from "./external-object.js";
 
 // ---------------------------------------------------------------------------
@@ -183,24 +183,9 @@ export const pluginManagedAgentDeclarationSchema = z.object({
     message: "agentKey must start with a lowercase alphanumeric and contain only lowercase letters, digits, dots, colons, underscores, or hyphens",
   }),
   displayName: z.string().min(1).max(100),
-  role: z.string().min(1).max(100).optional(),
   title: z.string().max(200).nullable().optional(),
-  icon: z.string().max(100).nullable().optional(),
   capabilities: z.string().max(2000).nullable().optional(),
-  adapterType: z.string().min(1).max(100).optional(),
-  adapterPreference: z.array(z.string().min(1).max(100)).max(10).optional(),
-  adapterConfig: z.record(z.string(), z.unknown()).optional(),
-  runtimeConfig: z.record(z.string(), z.unknown()).optional(),
-  permissions: z.record(z.string(), z.unknown()).optional(),
-  status: z.enum(["idle", "paused"]).optional(),
-  budgetMonthlyCents: z.number().int().min(0).optional(),
-  instructions: z.object({
-    entryFile: z.string().min(1).max(200).optional(),
-    content: z.string().max(200_000).optional(),
-    files: z.record(z.string().max(200_000)).optional(),
-    assetPath: z.string().min(1).max(500).optional(),
-  }).optional(),
-});
+}).strict();
 
 export type PluginManagedAgentDeclarationInput = z.infer<typeof pluginManagedAgentDeclarationSchema>;
 
@@ -252,6 +237,7 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
     surfaceVisibility: z.enum(ISSUE_SURFACE_VISIBILITIES).optional(),
     originId: z.string().trim().max(255).nullable().optional(),
     billingCode: z.string().trim().max(200).nullable().optional(),
+    attentionMask: issueCreationAttentionMaskSchema.nullable().optional(),
   }).optional(),
 });
 
@@ -333,7 +319,7 @@ export const pluginUiSlotDeclarationSchema = z.object({
   order: z.number().int().optional(),
 }).superRefine((value, ctx) => {
   // context-sensitive slots require explicit entity targeting.
-  const entityScopedTypes = ["detailTab", "taskDetailView", "contextMenuItem", "commentAnnotation", "commentContextMenuItem", "projectSidebarItem"];
+  const entityScopedTypes = ["detailTab", "issueDetailView", "contextMenuItem", "commentAnnotation", "commentContextMenuItem", "projectSidebarItem"];
   if (
     entityScopedTypes.includes(value.type)
     && (!value.entityTypes || value.entityTypes.length === 0)
@@ -413,7 +399,7 @@ export type PluginUiSlotDeclarationInput = z.infer<typeof pluginUiSlotDeclaratio
 
 const entityScopedLauncherPlacementZones = [
   "detailTab",
-  "taskDetailView",
+  "issueDetailView",
   "contextMenuItem",
   "commentAnnotation",
   "commentContextMenuItem",
@@ -602,7 +588,6 @@ export const pluginApiRouteDeclarationSchema = z.object({
   ),
   auth: z.enum(PLUGIN_API_ROUTE_AUTH_MODES),
   capability: z.literal("api.routes.register"),
-  checkoutPolicy: z.enum(PLUGIN_API_ROUTE_CHECKOUT_POLICIES).optional(),
   companyResolution: z.discriminatedUnion("from", [
     z.object({ from: z.literal("body"), key: z.string().min(1) }),
     z.object({ from: z.literal("query"), key: z.string().min(1) }),
@@ -1182,10 +1167,10 @@ export type UpdatePluginStatus = z.infer<typeof updatePluginStatusSchema>;
 // Plugin uninstall
 // ---------------------------------------------------------------------------
 
-/** Schema for the uninstall request. `removeData` controls hard vs soft delete. */
+/** Schema for uninstalling and optionally purging operational plugin data. */
 export const uninstallPluginSchema = z.object({
-  removeData: z.boolean().optional().default(false),
-});
+  purge: z.boolean().optional().default(false),
+}).strict();
 
 export type UninstallPlugin = z.infer<typeof uninstallPluginSchema>;
 

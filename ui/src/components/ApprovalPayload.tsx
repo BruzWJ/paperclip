@@ -1,9 +1,14 @@
-import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck } from "lucide-react";
-import { formatCents } from "../lib/utils";
+import { UserPlus, ShieldAlert, ShieldCheck } from "lucide-react";
+import {
+  parseBudgetCurrency,
+  parseMoneyAmount,
+  type BudgetCurrency,
+  type MoneyAmount,
+} from "@paperclipai/shared";
+import { formatMoneyAmount } from "../lib/utils";
 
 export const typeLabel: Record<string, string> = {
   hire_agent: "Hire Agent",
-  approve_ceo_strategy: "CEO Strategy",
   budget_override_required: "Budget Override",
   request_board_approval: "Board Approval",
 };
@@ -38,7 +43,6 @@ export function approvalLabel(type: string, payload?: Record<string, unknown> | 
 
 export const typeIcon: Record<string, typeof UserPlus> = {
   hire_agent: UserPlus,
-  approve_ceo_strategy: Lightbulb,
   budget_override_required: ShieldAlert,
   request_board_approval: ShieldCheck,
 };
@@ -87,7 +91,6 @@ export function HireAgentPayload({ payload }: { payload: Record<string, unknown>
         <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs">Name</span>
         <span className="font-medium">{String(payload.name ?? "—")}</span>
       </div>
-      <PayloadField label="Role" value={payload.role} />
       <PayloadField label="Title" value={payload.title} />
       <PayloadField label="Icon" value={payload.icon} />
       {!!payload.capabilities && (
@@ -104,7 +107,7 @@ export function HireAgentPayload({ payload }: { payload: Record<string, unknown>
           </span>
         </div>
       )}
-      <SkillList values={payload.desiredSkills} />
+      <SkillList values={payload.selectedCompanySkills} />
     </div>
   );
 }
@@ -129,18 +132,30 @@ export function CeoStrategyPayload({ payload }: { payload: Record<string, unknow
 }
 
 export function BudgetOverridePayload({ payload }: { payload: Record<string, unknown> }) {
-  const budgetAmount = typeof payload.budgetAmount === "number" ? payload.budgetAmount : null;
-  const observedAmount = typeof payload.observedAmount === "number" ? payload.observedAmount : null;
+  let budgetCurrency: BudgetCurrency | null = null;
+  let limitAmount: MoneyAmount | null = null;
+  let observedAmount: MoneyAmount | null = null;
+  try {
+    budgetCurrency = parseBudgetCurrency(payload.budgetCurrency);
+    limitAmount = parseMoneyAmount(payload.limitAmount);
+    observedAmount = parseMoneyAmount(payload.observedAmount);
+  } catch {
+    // Approval payloads are immutable audit data. Invalid canonical money is
+    // shown as unavailable rather than coerced through a compatibility shape.
+  }
   return (
     <div className="mt-3 space-y-1.5 text-sm">
       <PayloadField label="Scope" value={payload.scopeName ?? payload.scopeType} />
       <PayloadField label="Window" value={payload.windowKind} />
-      <PayloadField label="Metric" value={payload.metric} />
-      {(budgetAmount !== null || observedAmount !== null) ? (
+      {budgetCurrency && limitAmount && observedAmount ? (
         <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          Limit {budgetAmount !== null ? formatCents(budgetAmount) : "—"} · Observed {observedAmount !== null ? formatCents(observedAmount) : "—"}
+          Limit {formatMoneyAmount(limitAmount, budgetCurrency)} · Observed {formatMoneyAmount(observedAmount, budgetCurrency)}
         </div>
-      ) : null}
+      ) : (
+        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Budget amounts unavailable
+        </div>
+      )}
       {!!payload.guidance && (
         <p className="text-muted-foreground">{String(payload.guidance)}</p>
       )}

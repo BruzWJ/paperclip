@@ -31,19 +31,19 @@ interface ActivityRowProps {
 export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, entityTitleMap, className }: ActivityRowProps) {
   const verb = formatActivityVerb(event.action, event.details, { agentMap, userProfileMap });
 
-  const isHeartbeatEvent = event.entityType === "heartbeat_run";
-  const heartbeatAgentId = isHeartbeatEvent
-    ? (event.details as Record<string, unknown> | null)?.agentId as string | undefined
+  const isRunEvent = event.entityType === "issue_execution_run";
+  const runAgentId = isRunEvent
+    ? event.agentId ?? (event.details as Record<string, unknown> | null)?.targetAgentId as string | undefined
     : undefined;
 
-  const name = isHeartbeatEvent
-    ? (heartbeatAgentId ? entityNameMap.get(`agent:${heartbeatAgentId}`) : null)
+  const name = isRunEvent
+    ? (runAgentId ? entityNameMap.get(`agent:${runAgentId}`) : null)
     : entityNameMap.get(`${event.entityType}:${event.entityId}`);
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`);
 
-  const link = isHeartbeatEvent && heartbeatAgentId
-    ? `/agents/${heartbeatAgentId}/runs/${event.entityId}`
+  const link = isRunEvent && runAgentId
+    ? `/agents/${runAgentId}/runs/${event.entityId}`
     : entityLink(event.entityType, event.entityId, name);
 
   const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;

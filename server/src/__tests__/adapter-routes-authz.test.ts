@@ -2,6 +2,8 @@ import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServerAdapterModule } from "../adapters/index.js";
+import { createDeclarativeTestAdapter } from "./helpers/declarative-adapter.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mocks = vi.hoisted(() => {
   const externalRecords = new Map<string, any>();
@@ -31,9 +33,8 @@ const mocks = vi.hoisted(() => {
     setAdapterDisabled: vi.fn(),
     loadExternalAdapterPackage: vi.fn(),
     buildExternalAdapters: vi.fn(async () => []),
+    buildRetainedExternalAdapters: vi.fn(async () => []),
     reloadExternalAdapter: vi.fn(),
-    getUiParserSource: vi.fn(),
-    getOrExtractUiParserSource: vi.fn(),
   };
 });
 
@@ -53,9 +54,8 @@ vi.mock("../services/adapter-plugin-store.js", () => ({
 
 vi.mock("../adapters/plugin-loader.js", () => ({
   buildExternalAdapters: mocks.buildExternalAdapters,
+  buildRetainedExternalAdapters: mocks.buildRetainedExternalAdapters,
   loadExternalAdapterPackage: mocks.loadExternalAdapterPackage,
-  getUiParserSource: mocks.getUiParserSource,
-  getOrExtractUiParserSource: mocks.getOrExtractUiParserSource,
   reloadExternalAdapter: mocks.reloadExternalAdapter,
 }));
 
@@ -76,9 +76,8 @@ function registerRouteMocks() {
 
   vi.doMock("../adapters/plugin-loader.js", () => ({
     buildExternalAdapters: mocks.buildExternalAdapters,
+    buildRetainedExternalAdapters: mocks.buildRetainedExternalAdapters,
     loadExternalAdapterPackage: mocks.loadExternalAdapterPackage,
-    getUiParserSource: mocks.getUiParserSource,
-    getOrExtractUiParserSource: mocks.getOrExtractUiParserSource,
     reloadExternalAdapter: mocks.reloadExternalAdapter,
   }));
 }
@@ -92,17 +91,7 @@ let unregisterServerAdapter: typeof import("../adapters/registry.js").unregister
 let setOverridePaused: typeof import("../adapters/registry.js").setOverridePaused;
 
 function createAdapter(type = EXTERNAL_ADAPTER_TYPE): ServerAdapterModule {
-  return {
-    type,
-    models: [],
-    execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
-    testEnvironment: async () => ({
-      adapterType: type,
-      status: "pass",
-      checks: [],
-      testedAt: new Date(0).toISOString(),
-    }),
-  };
+  return createDeclarativeTestAdapter({ type });
 }
 
 function installedRecord(type = EXTERNAL_ADAPTER_TYPE) {
@@ -163,12 +152,10 @@ async function requestApp(
 }
 
 function boardMember(membershipRole: "admin" | "operator" | "viewer"): Express.Request["actor"] {
-  return {
-    type: "board",
+  return testBoardSessionActor({
     userId: `${membershipRole}-user`,
     userName: null,
     userEmail: null,
-    source: "session",
     isInstanceAdmin: false,
     companyIds: ["company-1"],
     memberships: [
@@ -178,19 +165,17 @@ function boardMember(membershipRole: "admin" | "operator" | "viewer"): Express.R
         status: "active",
       },
     ],
-  };
+  });
 }
 
-const instanceAdmin: Express.Request["actor"] = {
-  type: "board",
+const instanceAdmin: Express.Request["actor"] = testBoardSessionActor({
   userId: "instance-admin",
   userName: null,
   userEmail: null,
-  source: "session",
   isInstanceAdmin: true,
   companyIds: [],
   memberships: [],
-};
+});
 
 function sendMutatingRequest(app: express.Express, name: string) {
   switch (name) {
@@ -209,7 +194,7 @@ function sendMutatingRequest(app: express.Express, name: string) {
     case "override":
       return requestApp(app, (baseUrl) =>
         request(baseUrl)
-          .patch("/api/adapters/claude_local/override")
+          .patch("/api/adapters/codex/override")
           .send({ paused: true }),
       );
     case "delete":
@@ -232,7 +217,7 @@ function seedInstalledExternalAdapter() {
 function resetInstalledExternalAdapterState() {
   mocks.externalRecords.clear();
   unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-  setOverridePaused("claude_local", false);
+  setOverridePaused("codex", false);
 }
 
 describe.sequential("adapter management route authorization", () => {
@@ -262,19 +247,20 @@ describe.sequential("adapter management route authorization", () => {
     mocks.externalRecords.clear();
 
     unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-    setOverridePaused("claude_local", false);
+    setOverridePaused("codex", false);
     mocks.listAdapterPlugins.mockImplementation(() => [...mocks.externalRecords.values()]);
     mocks.getAdapterPluginsDir.mockReturnValue("/tmp/paperclip-adapter-route-authz-test");
     mocks.getDisabledAdapterTypes.mockReturnValue([]);
     mocks.setAdapterDisabled.mockReturnValue(true);
     mocks.buildExternalAdapters.mockResolvedValue([]);
+    mocks.buildRetainedExternalAdapters.mockResolvedValue([]);
     mocks.loadExternalAdapterPackage.mockResolvedValue(createAdapter());
     mocks.reloadExternalAdapter.mockImplementation(async (type: string) => createAdapter(type));
   }, 20_000);
 
   afterEach(() => {
     unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-    setOverridePaused("claude_local", false);
+    setOverridePaused("codex", false);
   });
 
   it("rejects mutating adapter routes for a non-instance-admin board user with company membership", async () => {

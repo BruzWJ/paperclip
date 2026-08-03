@@ -16,10 +16,9 @@ type SurfaceStatus = {
   summary: null | {
     rootIssueId: string;
     childIssueId: string | null;
-    blockerIssueId: string | null;
-    billingCode: string;
-    subtreeIssueIds: string[];
-    wakeupQueued: boolean;
+    ownerAgentId: string;
+    request: string;
+    childStatus: string | null;
   };
 };
 
@@ -62,13 +61,13 @@ export function DashboardWidget({ context }: PluginWidgetProps) {
     companyId: context.companyId,
   });
 
-  if (loading) return <div>Loading orchestration smoke status...</div>;
-  if (error) return <div>Orchestration smoke error: {error.message}</div>;
+  if (loading) return <div>Loading issue runtime smoke status...</div>;
+  if (error) return <div>Issue runtime smoke error: {error.message}</div>;
   if (!data) return null;
 
   return (
     <div style={panelStyle}>
-      <strong>Orchestration Smoke</strong>
+      <strong>Issue Runtime Smoke</strong>
       <SurfaceRows data={data} />
       <div>Checked {data.checkedAt}</div>
     </div>
@@ -82,14 +81,14 @@ export function IssuePanel({ context }: PluginDetailTabProps) {
   });
   const initialize = usePluginAction("initialize-smoke");
 
-  if (loading) return <div>Loading orchestration smoke...</div>;
-  if (error) return <div>Orchestration smoke error: {error.message}</div>;
+  if (loading) return <div>Loading issue runtime smoke...</div>;
+  if (error) return <div>Issue runtime smoke error: {error.message}</div>;
   if (!data) return null;
 
   return (
     <div style={panelStyle}>
       <div style={rowStyle}>
-        <strong>Orchestration Smoke</strong>
+        <strong>Issue Runtime Smoke</strong>
         <button
           style={buttonStyle}
           onClick={async () => {
@@ -104,10 +103,9 @@ export function IssuePanel({ context }: PluginDetailTabProps) {
       {data.summary ? (
         <div style={{ display: "grid", gap: 4 }}>
           <div style={rowStyle}><span>Child</span><code>{data.summary.childIssueId ?? "none"}</code></div>
-          <div style={rowStyle}><span>Blocker</span><code>{data.summary.blockerIssueId ?? "none"}</code></div>
-          <div style={rowStyle}><span>Billing</span><code>{data.summary.billingCode}</code></div>
-          <div style={rowStyle}><span>Subtree</span><strong>{data.summary.subtreeIssueIds.length}</strong></div>
-          <div style={rowStyle}><span>Wakeup</span><strong>{data.summary.wakeupQueued ? "queued" : "not queued"}</strong></div>
+          <div style={rowStyle}><span>Owner</span><code>{data.summary.ownerAgentId}</code></div>
+          <div style={rowStyle}><span>Status</span><strong>{data.summary.childStatus ?? "unknown"}</strong></div>
+          <div style={rowStyle}><span>Request</span><span>{data.summary.request}</span></div>
         </div>
       ) : (
         <div>No smoke run recorded for this issue.</div>
@@ -121,13 +119,13 @@ export function SettingsPage({ context }: PluginSettingsPageProps) {
     companyId: context.companyId,
   });
 
-  if (loading) return <div>Loading orchestration smoke settings...</div>;
-  if (error) return <div>Orchestration smoke settings error: {error.message}</div>;
+  if (loading) return <div>Loading issue runtime smoke settings...</div>;
+  if (error) return <div>Issue runtime smoke settings error: {error.message}</div>;
   if (!data) return null;
 
   return (
     <div style={panelStyle}>
-      <strong>Orchestration Smoke Surface</strong>
+      <strong>Issue Runtime Smoke Surface</strong>
       <SurfaceRows data={data} />
     </div>
   );

@@ -1,32 +1,29 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, Issue, IssueAttachment, IssueComment, IssueTreeControlPreview, IssueTreeHold, IssueWorkProduct } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type Agent, type BoardIssueComment, type Issue, type IssueAttachment, type IssueTreeControlPreview, type IssueTreeHold, type IssueWorkProduct } from "@paperclipai/shared";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 import { NavigationType } from "react-router-dom";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  canBoardManageRuntime,
-  canBoardResolveRecoveryAction,
   IssueDetail,
-  readRecoveryReconcileWorkspaceId,
   shouldScrollIssueDetailToTopOnNavigation,
 } from "./IssueDetail";
+import { canBoardManageRuntime } from "../lib/workspace-reconcile";
 import { queryKeys } from "../lib/queryKeys";
 import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
+import { createTestIssue } from "../test-utils/issue";
 
 const mockIssuesApi = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),
-  listAcceptedPlanDecompositions: vi.fn(),
   listComments: vi.fn(),
   listAttachments: vi.fn(),
   listWorkProducts: vi.fn(),
   listFeedbackVotes: vi.fn(),
   markRead: vi.fn(),
-  update: vi.fn(),
   previewTreeControl: vi.fn(),
   getTreeControlState: vi.fn(),
   listTreeHolds: vi.fn(),
@@ -34,7 +31,6 @@ const mockIssuesApi = vi.hoisted(() => ({
   releaseTreeHold: vi.fn(),
   archiveFromInbox: vi.fn(),
   addComment: vi.fn(),
-  cancelComment: vi.fn(),
   upsertFeedbackVote: vi.fn(),
   uploadAttachment: vi.fn(),
   deleteAttachment: vi.fn(),
@@ -43,17 +39,17 @@ const mockIssuesApi = vi.hoisted(() => ({
 
 const mockActivityApi = vi.hoisted(() => ({
   forIssue: vi.fn(),
-  runsForIssue: vi.fn(),
 }));
 
-const mockHeartbeatsApi = vi.hoisted(() => ({
-  liveRunsForIssue: vi.fn(),
-  activeRunForIssue: vi.fn(),
-  cancel: vi.fn(),
+const mockRunsApi = vi.hoisted(() => ({
+  listForIssue: vi.fn(),
+  listForCompany: vi.fn(),
+  get: vi.fn(),
 }));
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
+  listInvokableIssueOwners: vi.fn(),
 }));
 
 const mockAccessApi = vi.hoisted(() => ({
@@ -107,9 +103,10 @@ vi.mock("../api/activity", () => ({
   activityApi: mockActivityApi,
 }));
 
-vi.mock("../api/heartbeats", () => ({
-  heartbeatsApi: mockHeartbeatsApi,
-}));
+vi.mock("../api/runs", async () => {
+  const actual = await vi.importActual<typeof import("../api/runs")>("../api/runs");
+  return { ...actual, runsApi: mockRunsApi };
+});
 
 vi.mock("../api/approvals", () => ({
   approvalsApi: {
@@ -433,44 +430,18 @@ function createDeferred<T>() {
 }
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
+  return createTestIssue({
     goalId: "goal-1",
-    parentId: null,
     title: "Issue detail smoke",
-    description: "Loads after the initial pending query.",
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
+    request: "Loads after the initial pending query.",
     currentExecutionWorkspace: null,
-    createdByAgentId: null,
-    createdByUserId: null,
     identifier: "PAP-1",
-    issueNumber: 1,
     originKind: "manual",
     originId: null,
     originRunId: null,
     originFingerprint: "default",
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
     executionPolicy: null,
     executionState: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     createdAt: new Date("2026-04-21T00:00:00.000Z"),
     updatedAt: new Date("2026-04-21T00:00:00.000Z"),
     labels: [],
@@ -478,20 +449,28 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     ancestors: [],
     documentSummaries: [],
     ...overrides,
-  } as Issue;
+  });
 }
 
-function createIssueComment(overrides: Partial<IssueComment> = {}): IssueComment {
+function createIssueComment(
+  overrides: Partial<BoardIssueComment> = {},
+): BoardIssueComment {
   return {
     id: "comment-1",
-    companyId: "company-1",
-    issueId: "issue-1",
-    authorType: "user",
-    authorAgentId: null,
-    authorUserId: "user-1",
+    author: {
+      type: "user",
+      label: "User",
+      agentId: null,
+      userId: "user-1",
+      pluginKey: null,
+    },
     body: "Fresh comment",
     presentation: null,
     metadata: null,
+    sourceTrust: null,
+    runState: null,
+    canonicalSequence: 0,
+    immediateParentDisplayReference: null,
     createdAt: new Date("2026-04-21T00:00:05.000Z"),
     updatedAt: new Date("2026-04-21T00:00:05.000Z"),
     ...overrides,
@@ -572,21 +551,20 @@ function createAgent(overrides: Partial<Agent> = {}): Agent {
     companyId: "company-1",
     name: "CodexCoder",
     urlKey: "codexcoder",
-    role: "engineer",
     title: "Software Engineer",
     icon: "code",
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
+    currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
-    lastHeartbeatAt: null,
+    governance: {},
     metadata: null,
     createdAt: new Date("2026-04-21T00:00:00.000Z"),
     updatedAt: new Date("2026-04-21T00:00:00.000Z"),
@@ -628,8 +606,8 @@ function createPauseHold(overrides: Partial<IssueTreeHold> = {}): IssueTreeHold 
         issueIdentifier: "PAP-1",
         issueTitle: "Issue detail smoke",
         issueStatus: "todo",
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRunId: null,
         activeRunStatus: null,
         skipped: false,
@@ -646,8 +624,8 @@ function createPauseHold(overrides: Partial<IssueTreeHold> = {}): IssueTreeHold 
         issueIdentifier: "PAP-2",
         issueTitle: "Held child",
         issueStatus: "todo",
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRunId: null,
         activeRunStatus: null,
         skipped: false,
@@ -680,11 +658,11 @@ function createResumePreview(): IssueTreeControlPreview {
         id: "issue-1",
         identifier: "PAP-1",
         title: "Issue detail smoke",
-        status: "todo",
+        boardPresentationStatus: "todo",
         parentId: null,
         depth: 0,
-        assigneeAgentId: "agent-1",
-        assigneeUserId: null,
+        ownerAgentId: "agent-1",
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: ["hold-1"],
         action: "resume",
@@ -695,11 +673,11 @@ function createResumePreview(): IssueTreeControlPreview {
         id: "child-1",
         identifier: "PAP-2",
         title: "Held child",
-        status: "todo",
+        boardPresentationStatus: "todo",
         parentId: "issue-1",
         depth: 1,
-        assigneeAgentId: "agent-1",
-        assigneeUserId: null,
+        ownerAgentId: "agent-1",
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: ["hold-1"],
         action: "resume",
@@ -735,11 +713,11 @@ function createPausePreview(): IssueTreeControlPreview {
         id: "issue-1",
         identifier: "PAP-1",
         title: "Issue detail smoke",
-        status: "todo",
+        boardPresentationStatus: "todo",
         parentId: null,
         depth: 0,
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: [],
         action: "pause",
@@ -750,11 +728,11 @@ function createPausePreview(): IssueTreeControlPreview {
         id: "child-1",
         identifier: "PAP-2",
         title: "Paused child",
-        status: "in_review",
+        boardPresentationStatus: "in_review",
         parentId: "issue-1",
         depth: 1,
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: [],
         action: "pause",
@@ -765,11 +743,11 @@ function createPausePreview(): IssueTreeControlPreview {
         id: "child-2",
         identifier: "PAP-3",
         title: "Completed child",
-        status: "done",
+        boardPresentationStatus: "done",
         parentId: "issue-1",
         depth: 1,
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: [],
         action: "pause",
@@ -782,11 +760,11 @@ function createPausePreview(): IssueTreeControlPreview {
         id: "child-2",
         identifier: "PAP-3",
         title: "Completed child",
-        status: "done",
+        boardPresentationStatus: "done",
         parentId: "issue-1",
         depth: 1,
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: [],
         action: "pause",
@@ -821,11 +799,11 @@ function createRestorePreview(): IssueTreeControlPreview {
         id: "issue-1",
         identifier: "PAP-1",
         title: "Issue detail smoke",
-        status: "todo",
+        boardPresentationStatus: "todo",
         parentId: null,
         depth: 0,
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: [],
         action: "restore",
@@ -836,11 +814,11 @@ function createRestorePreview(): IssueTreeControlPreview {
         id: "child-1",
         identifier: "PAP-2",
         title: "Cancelled child",
-        status: "cancelled",
+        boardPresentationStatus: "cancelled",
         parentId: "issue-1",
         depth: 1,
-        assigneeAgentId: "agent-1",
-        assigneeUserId: null,
+        ownerAgentId: "agent-1",
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: ["cancel-hold-1"],
         action: "restore",
@@ -853,11 +831,11 @@ function createRestorePreview(): IssueTreeControlPreview {
         id: "issue-1",
         identifier: "PAP-1",
         title: "Issue detail smoke",
-        status: "todo",
+        boardPresentationStatus: "todo",
         parentId: null,
         depth: 0,
-        assigneeAgentId: null,
-        assigneeUserId: null,
+        ownerAgentId: null,
+        ownerUserId: null,
         activeRun: null,
         activeHoldIds: [],
         action: "restore",
@@ -876,11 +854,11 @@ function createCancelPreview(issueCount = 8): IssueTreeControlPreview {
     id: index === 0 ? "issue-1" : `child-${index}`,
     identifier: index === 0 ? "PAP-1" : `PAP-${index + 1}`,
     title: index === 0 ? "Issue detail smoke" : `Cancellable child ${index}`,
-    status: "todo" as const,
+    boardPresentationStatus: "todo" as const,
     parentId: index === 0 ? null : "issue-1",
     depth: index === 0 ? 0 : 1,
-    assigneeAgentId: null,
-    assigneeUserId: null,
+    ownerAgentId: null,
+    ownerUserId: null,
     activeRun: null,
     activeHoldIds: [],
     action: "cancel" as const,
@@ -956,7 +934,7 @@ describe("IssueDetail", () => {
     } as Response);
 
     mockIssuesApi.list.mockResolvedValue([]);
-    mockIssuesApi.listComments.mockResolvedValue([]);
+    mockIssuesApi.listComments.mockResolvedValue({ groups: [], nextCursor: null });
     mockIssuesApi.listAttachments.mockResolvedValue([]);
     mockIssuesApi.listWorkProducts.mockResolvedValue([]);
     mockIssuesApi.listFeedbackVotes.mockResolvedValue([]);
@@ -965,10 +943,24 @@ describe("IssueDetail", () => {
     mockIssuesApi.getTreeControlState.mockResolvedValue({ activePauseHold: null });
     mockIssuesApi.listTreeHolds.mockResolvedValue([]);
     mockActivityApi.forIssue.mockResolvedValue([]);
-    mockActivityApi.runsForIssue.mockResolvedValue([]);
-    mockHeartbeatsApi.liveRunsForIssue.mockResolvedValue([]);
-    mockHeartbeatsApi.activeRunForIssue.mockResolvedValue(null);
+    mockRunsApi.listForIssue.mockResolvedValue({ items: [], nextCursor: null });
+    mockRunsApi.listForCompany.mockResolvedValue({ items: [], nextCursor: null });
+    mockRunsApi.get.mockResolvedValue(null);
     mockAgentsApi.list.mockResolvedValue([]);
+    mockAgentsApi.listInvokableIssueOwners.mockImplementation(async (companyId: string) =>
+      (await mockAgentsApi.list(companyId))
+        .filter((agent: Agent) =>
+          agent.status !== "paused" &&
+          agent.status !== "pending_approval" &&
+          agent.status !== "terminated",
+        )
+        .map((agent: Agent) => ({
+          id: agent.id,
+          name: agent.name,
+          title: agent.title ?? null,
+          icon: agent.icon ?? null,
+        })),
+    );
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
       companyIds: ["company-1"],
       isInstanceAdmin: true,
@@ -985,11 +977,9 @@ describe("IssueDetail", () => {
       feedbackDataSharingPreference: "prompt",
     });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: false,
       enableExternalObjects: false,
     });
-    mockIssuesApi.listAcceptedPlanDecompositions.mockResolvedValue([]);
     mockIssuesListRender.mockClear();
     mockIssueChatThreadRender.mockClear();
     mockImageGalleryRender.mockClear();
@@ -1094,11 +1084,11 @@ describe("IssueDetail", () => {
     expect(mockPushToast).toHaveBeenCalledWith({ title: "Task archived from inbox", tone: "success" });
   });
 
-  it("shows assignee and originating avatars in the issue header metadata", async () => {
+  it("shows owner and originating avatars in the issue header metadata", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({
-      assigneeAgentId: "agent-1",
+      ownerAgentId: "agent-1",
       projectId: "project-1",
-      createdByUserId: "user-1",
+      creatorUserId: "user-1",
     }));
     mockAgentsApi.list.mockResolvedValue([createAgent({ name: "CodexCoder" })]);
     mockProjectsApi.list.mockResolvedValue([{ id: "project-1", name: "Core Product", color: "#2563eb" }]);
@@ -1128,31 +1118,31 @@ describe("IssueDetail", () => {
 
     await waitForAssertion(() => {
       const avatarStack = container.querySelector('[data-testid="issue-attribution-avatar-stack"]');
-      const assigneeAvatar = container.querySelector('[data-testid="issue-assignee-avatar"]');
+      const ownerAvatar = container.querySelector('[data-testid="issue-owner-avatar"]');
       const originatingAvatar = container.querySelector('[data-testid="issue-originating-avatar"]');
 
       expect(container.textContent).toContain("Core Product");
       expect(avatarStack).toBeTruthy();
-      expect(assigneeAvatar?.getAttribute("aria-label")).toBe("Assignee: CodexCoder");
+      expect(ownerAvatar?.getAttribute("aria-label")).toBe("Owner: CodexCoder");
       expect(originatingAvatar?.getAttribute("aria-label")).toBe("Originating: Dotta");
-      expect(assigneeAvatar?.getAttribute("title")).toBeNull();
+      expect(ownerAvatar?.getAttribute("title")).toBeNull();
       expect(originatingAvatar?.getAttribute("title")).toBeNull();
-      expect(avatarStack?.textContent).not.toContain("Assignee");
+      expect(avatarStack?.textContent).not.toContain("Owner");
       expect(avatarStack?.textContent).not.toContain("Originating");
       expect(avatarStack?.textContent).not.toContain("CodexCoder");
       expect(avatarStack?.textContent).not.toContain("Dotta");
     });
 
     const pointerEvent = window.PointerEvent ?? MouseEvent;
-    const assigneeAvatar = container.querySelector('[data-testid="issue-assignee-avatar"]');
+    const ownerAvatar = container.querySelector('[data-testid="issue-owner-avatar"]');
     const originatingAvatar = container.querySelector('[data-testid="issue-originating-avatar"]');
 
     await act(async () => {
-      assigneeAvatar?.dispatchEvent(new pointerEvent("pointermove", { bubbles: true }));
+      ownerAvatar?.dispatchEvent(new pointerEvent("pointermove", { bubbles: true }));
     });
     await waitForAssertion(() => {
-      const tooltip = document.body.querySelector('[data-testid="issue-assignee-tooltip"]');
-      expect(tooltip?.textContent).toContain("Assignee");
+      const tooltip = document.body.querySelector('[data-testid="issue-owner-tooltip"]');
+      expect(tooltip?.textContent).toContain("Owner");
       expect(tooltip?.textContent).toContain("CodexCoder");
     });
 
@@ -1168,9 +1158,10 @@ describe("IssueDetail", () => {
 
   it("attributes an agent-created issue to the transitive responsible user with a via affordance", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({
-      assigneeAgentId: "agent-1",
-      createdByAgentId: "agent-1",
-      createdByUserId: null,
+      ownerAgentId: "agent-1",
+      creatorKind: "agent-execution",
+      creatorAuthorityId: "agent-1",
+      creatorAdapterConfigRevisionId: "adapter-revision-1",
       responsibleUserId: "user-1",
     }));
     mockAgentsApi.list.mockResolvedValue([createAgent({ name: "CodexCoder" })]);
@@ -1215,229 +1206,6 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("does not mark the wake comment for the current live run as queued when active-run cache is stale", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "in_progress",
-      executionRunId: "run-stale",
-    }));
-    mockIssuesApi.listComments.mockResolvedValue([
-      createIssueComment({
-        id: "comment-fresh",
-        createdAt: new Date("2026-04-21T00:00:05.000Z"),
-        updatedAt: new Date("2026-04-21T00:00:05.000Z"),
-      }),
-    ]);
-    mockHeartbeatsApi.activeRunForIssue.mockResolvedValue({
-      id: "run-stale",
-      status: "running",
-      invocationSource: "issue",
-      triggerDetail: null,
-      contextCommentId: null,
-      contextWakeCommentId: null,
-      startedAt: "2026-04-21T00:00:00.000Z",
-      finishedAt: null,
-      createdAt: "2026-04-21T00:00:00.000Z",
-      agentId: "agent-1",
-      agentName: "Coder",
-      adapterType: "codex_local",
-      issueId: "issue-1",
-    });
-    mockHeartbeatsApi.liveRunsForIssue.mockResolvedValue([
-      {
-        id: "run-current",
-        status: "running",
-        invocationSource: "issue",
-        triggerDetail: null,
-        contextCommentId: "comment-fresh",
-        contextWakeCommentId: "comment-fresh",
-        startedAt: "2026-04-21T00:00:01.000Z",
-        finishedAt: null,
-        createdAt: "2026-04-21T00:00:01.000Z",
-        agentId: "agent-1",
-        agentName: "Coder",
-        adapterType: "codex_local",
-        issueId: "issue-1",
-      },
-    ]);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    const props = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as { comments?: Array<{ id: string; queueState?: string }> };
-    const freshComment = props.comments?.find((comment) => comment.id === "comment-fresh");
-    expect(freshComment?.queueState).toBeUndefined();
-  });
-
-  it("queues messages against a queued live run and interrupts that exact run", async () => {
-    const postedComment = createDeferred<IssueComment>();
-    mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "in_progress",
-      executionRunId: "run-queued",
-    }));
-    mockIssuesApi.addComment.mockReturnValue(postedComment.promise);
-    mockHeartbeatsApi.cancel.mockResolvedValue({});
-    mockHeartbeatsApi.liveRunsForIssue.mockResolvedValue([
-      {
-        id: "run-queued",
-        status: "queued",
-        invocationSource: "issue",
-        triggerDetail: null,
-        contextCommentId: null,
-        contextWakeCommentId: null,
-        startedAt: null,
-        finishedAt: null,
-        createdAt: "2026-04-21T00:00:01.000Z",
-        agentId: "agent-1",
-        agentName: "Coder",
-        adapterType: "codex_local",
-        issueId: "issue-1",
-      },
-    ]);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    const props = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as {
-      onAdd: (body: string) => Promise<void>;
-    };
-    await act(async () => {
-      void props.onAdd("Queued run message");
-      await Promise.resolve();
-    });
-    await flushReact();
-
-    const queuedProps = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as {
-      comments?: Array<{
-        body: string;
-        clientStatus?: string;
-        queueState?: string;
-        queueTargetRunId?: string | null;
-      }>;
-      onInterruptQueued: (runId: string) => Promise<void>;
-    };
-    const optimisticComment = queuedProps.comments?.find((comment) => comment.body === "Queued run message");
-    expect(optimisticComment).toMatchObject({
-      clientStatus: "queued",
-      queueState: "queued",
-      queueTargetRunId: "run-queued",
-    });
-
-    await act(async () => {
-      postedComment.resolve(createIssueComment({ body: "Queued run message" }));
-    });
-    await flushReact();
-
-    const persistedProps = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as {
-      comments?: Array<{
-        body: string;
-        clientStatus?: string;
-        queueState?: string;
-        queueTargetRunId?: string | null;
-      }>;
-      onInterruptQueued: (runId: string) => Promise<void>;
-    };
-    const persistedComment = persistedProps.comments?.find((comment) => comment.body === "Queued run message");
-    expect(persistedComment).toMatchObject({
-      queueState: "queued",
-      queueTargetRunId: "run-queued",
-    });
-
-    await act(async () => {
-      await persistedProps.onInterruptQueued(persistedComment!.queueTargetRunId!);
-    });
-
-    expect(mockHeartbeatsApi.cancel).toHaveBeenCalledWith("run-queued");
-    mockHeartbeatsApi.cancel.mockClear();
-  });
-
-  it("does not optimistically queue a fresh comment from an unlocked stale active-run cache", async () => {
-    const postedComment = createDeferred<IssueComment>();
-    mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "todo",
-      executionRunId: null,
-    }));
-    mockIssuesApi.addComment.mockReturnValue(postedComment.promise);
-    queryClient.setQueryData(queryKeys.issues.activeRun("PAP-1"), {
-      id: "run-stale",
-      status: "running",
-      invocationSource: "issue",
-      triggerDetail: null,
-      contextCommentId: null,
-      contextWakeCommentId: null,
-      startedAt: "2026-04-21T00:00:00.000Z",
-      finishedAt: null,
-      createdAt: "2026-04-21T00:00:00.000Z",
-      agentId: "agent-1",
-      agentName: "Coder",
-      adapterType: "codex_local",
-      issueId: "issue-1",
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    const props = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as {
-      onAdd: (body: string) => Promise<void>;
-      comments?: Array<{ body: string; clientStatus?: string; queueState?: string }>;
-    };
-    await act(async () => {
-      void props.onAdd("Fresh comment");
-      await Promise.resolve();
-    });
-    await flushReact();
-
-    const nextProps = mockIssueChatThreadRender.mock.calls.at(-1)?.[0] as {
-      comments?: Array<{ body: string; clientStatus?: string; queueState?: string }>;
-    };
-    const optimisticComment = nextProps.comments?.find((comment) => comment.body === "Fresh comment");
-    expect(optimisticComment).toMatchObject({ clientStatus: "pending" });
-    expect(optimisticComment?.queueState).toBeUndefined();
-
-    await act(async () => {
-      postedComment.resolve(createIssueComment({ body: "Fresh comment" }));
-    });
-    await flushReact();
-  });
-
-  it("hides the plan decomposition panel by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).not.toContain("Plan decomposition");
-    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
-  });
-
   it("hides file viewer entry points by default", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
 
@@ -1461,7 +1229,6 @@ describe("IssueDetail", () => {
   it("shows file viewer entry points when the experimental flag is enabled", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIssuePlanDecompositions: false,
       enableExperimentalFileViewer: true,
     });
 
@@ -1482,62 +1249,6 @@ describe("IssueDetail", () => {
     expect(latestWorkspaceProps?.onOpenFileByPath).toEqual(expect.any(Function));
   });
 
-  it("shows the plan decomposition panel when the experimental flag is enabled", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIssuePlanDecompositions: true,
-      enableExperimentalFileViewer: false,
-    });
-    mockIssuesApi.listAcceptedPlanDecompositions.mockResolvedValue([
-      {
-        id: "decomp-1",
-        companyId: "company-1",
-        sourceIssueId: "issue-1",
-        acceptedPlanRevisionId: "plan-rev-1",
-        acceptedPlanRevisionNumber: 2,
-        acceptedInteractionId: null,
-        status: "completed",
-        requestFingerprint: "fingerprint-1",
-        requestedChildCount: 2,
-        childIssueIds: ["issue-2", "issue-3"],
-        childIssues: [
-          {
-            id: "issue-2",
-            identifier: "PAP-2",
-            title: "First child issue",
-            status: "todo",
-            priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
-          },
-        ],
-        ownerAgentId: null,
-        ownerUserId: null,
-        ownerRunId: null,
-        completedAt: "2026-05-28T06:00:00.000Z",
-        createdAt: "2026-05-28T05:50:00.000Z",
-        updatedAt: "2026-05-28T06:00:00.000Z",
-      },
-    ]);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).toContain("Plan decomposition");
-    expect(container.textContent).toContain("Plan revision 2");
-    expect(container.textContent).toContain("2 of 2 child tasks created");
-    expect(container.textContent).toContain("First child issue");
-    expect(mockIssuesApi.listAcceptedPlanDecompositions).toHaveBeenCalledWith("issue-1");
-  });
-
   it("renders sibling previous and next navigation at the chat footer", async () => {
     const issue = createIssue({
       id: "issue-2",
@@ -1553,7 +1264,7 @@ describe("IssueDetail", () => {
       issueNumber: 1,
       parentId: "parent-1",
       title: "Previous sibling",
-      status: "done",
+      boardPresentationStatus: "done",
       createdAt: new Date("2026-04-01T00:00:00.000Z"),
     });
     const next = createIssue({
@@ -1650,7 +1361,7 @@ describe("IssueDetail", () => {
 
   it("passes blocker attention to the issue detail header status icon", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "blocked",
+      boardPresentationStatus: "blocked",
       blockerAttention: {
         state: "covered",
         reason: "active_child",
@@ -1758,7 +1469,6 @@ describe("IssueDetail", () => {
       .filter((button) => button.textContent?.trim() === "Resume subtree")
       .at(-1);
     expect(applyResumeButton).toBeTruthy();
-    expect(container.textContent).toContain("CodexCoder");
 
     await act(async () => {
       applyResumeButton!.click();
@@ -1768,7 +1478,6 @@ describe("IssueDetail", () => {
 
     expect(mockIssuesApi.releaseTreeHold).toHaveBeenCalledWith("PAP-1", "hold-1", {
       reason: null,
-      metadata: { wakeAgents: true },
     });
     expect(mockIssuesApi.getTreeControlState.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
@@ -1865,95 +1574,11 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("exposes leaf pause controls and routes issue active-run stop through Pause work", async () => {
-    const pausePreview = createPausePreview();
-    pausePreview.totals = {
-      ...pausePreview.totals,
-      totalIssues: 1,
-      affectedIssues: 1,
-      skippedIssues: 0,
-      activeRuns: 1,
-    };
-    pausePreview.issues = [pausePreview.issues[0]!];
-    pausePreview.skippedIssues = [];
-    const pauseHold = createPauseHold({
-      id: "leaf-pause-hold-1",
-      mode: "pause",
-      reason: "Paused from active run controls.",
-      releasePolicy: { strategy: "manual", note: "leaf_pause" },
-      members: [],
-    });
-
+  it("does not expose generic lifecycle finalization actions for a live run", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "in_progress",
-      assigneeAgentId: "agent-1",
-      executionRunId: "run-active-1",
+      boardPresentationStatus: "in_progress",
+      ownerAgentId: "agent-1",
     }));
-    mockIssuesApi.previewTreeControl.mockResolvedValue(pausePreview);
-    mockIssuesApi.createTreeHold.mockResolvedValue({ hold: pauseHold, preview: pausePreview });
-    mockAgentsApi.list.mockResolvedValue([createAgent()]);
-    mockAuthApi.getSession.mockResolvedValue({
-      session: { userId: "user-1" },
-      user: { id: "user-1" },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(mockIssueChatThreadRender.mock.calls.at(-1)?.[0]).toMatchObject({
-      stopRunLabel: "Pause work",
-      stoppingRunLabel: "Pausing...",
-      issueWorkMode: "standard",
-    });
-
-    const chatPauseButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Pause work");
-    expect(chatPauseButton).toBeTruthy();
-
-    await act(async () => {
-      chatPauseButton!.click();
-    });
-    await flushReact();
-
-    expect(mockIssuesApi.createTreeHold).toHaveBeenCalledWith("PAP-1", {
-      mode: "pause",
-      reason: "Paused from active run controls.",
-      releasePolicy: { strategy: "manual", note: "leaf_pause" },
-      metadata: { source: "issue_active_run_control", runId: "run-active-1" },
-    });
-
-    const moreButton = container.querySelector('button[aria-label="More task actions"]') as HTMLButtonElement | null;
-    expect(moreButton).toBeTruthy();
-    await act(async () => {
-      moreButton!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-    await flushReact();
-
-    const pauseMenuButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Pause work...");
-    expect(pauseMenuButton).toBeTruthy();
-  });
-
-  it("routes live-run finalization actions through run cancellation before issue status update", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "in_progress",
-      assigneeAgentId: "agent-1",
-      executionRunId: "run-active-1",
-    }));
-    mockIssuesApi.update.mockImplementation((_id, data) =>
-      Promise.resolve(createIssue({
-        status: data.status as Issue["status"],
-        assigneeAgentId: "agent-1",
-      })),
-    );
-    mockHeartbeatsApi.cancel.mockResolvedValue(undefined);
     mockAgentsApi.list.mockResolvedValue([createAgent()]);
     mockAuthApi.getSession.mockResolvedValue({
       session: { userId: "user-1" },
@@ -1971,71 +1596,12 @@ describe("IssueDetail", () => {
 
     const stopAndDoneButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.trim() === "Stop and done");
-    expect(stopAndDoneButton).toBeTruthy();
-
-    await act(async () => {
-      stopAndDoneButton!.click();
-    });
-    await flushReact();
-
-    expect(mockHeartbeatsApi.cancel).toHaveBeenCalledWith("run-active-1");
-    expect(mockIssuesApi.update).toHaveBeenCalledWith("PAP-1", { status: "done" });
-    expect(mockHeartbeatsApi.cancel.mock.invocationCallOrder[0])
-      .toBeLessThan(mockIssuesApi.update.mock.invocationCallOrder[0]);
-
     const stopAndCancelButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.trim() === "Stop and cancel");
-    expect(stopAndCancelButton).toBeTruthy();
-
-    await act(async () => {
-      stopAndCancelButton!.click();
-    });
-    await flushReact();
-
-    expect(mockIssuesApi.update).toHaveBeenLastCalledWith("PAP-1", { status: "cancelled" });
-    expect(mockHeartbeatsApi.cancel).toHaveBeenCalledTimes(2);
-    expect(mockHeartbeatsApi.cancel.mock.invocationCallOrder[1])
-      .toBeLessThan(mockIssuesApi.update.mock.invocationCallOrder[1]);
-  });
-
-  it("reports partial success when run finalization stops the run but task status update fails", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "in_progress",
-      assigneeAgentId: "agent-1",
-      executionRunId: "run-active-1",
-    }));
-    mockIssuesApi.update.mockRejectedValue(new Error("Status write failed"));
-    mockHeartbeatsApi.cancel.mockResolvedValue(undefined);
-    mockAgentsApi.list.mockResolvedValue([createAgent()]);
-    mockAuthApi.getSession.mockResolvedValue({
-      session: { userId: "user-1" },
-      user: { id: "user-1" },
-    });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-
-    const stopAndDoneButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Stop and done");
-    expect(stopAndDoneButton).toBeTruthy();
-
-    await act(async () => {
-      stopAndDoneButton!.click();
-    });
-    await flushReact();
-
-    expect(mockHeartbeatsApi.cancel).toHaveBeenCalledWith("run-active-1");
-    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Run stopped; task update failed",
-      body: "Run was stopped, but updating the task failed: Status write failed",
-      tone: "error",
-    }));
+    const chatProps = mockIssueChatThreadRender.mock.calls.at(-1)?.[0];
+    expect(stopAndDoneButton).toBeUndefined();
+    expect(stopAndCancelButton).toBeUndefined();
+    expect(chatProps?.runFinalizationActions).toBeUndefined();
   });
 
   it("passes planning work mode to the issue chat thread", async () => {
@@ -2095,7 +1661,7 @@ describe("IssueDetail", () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({
       identifier: "PAP-1",
       title: "Copy me",
-      description: "Task body",
+      request: "Task body",
     }));
 
     try {
@@ -2211,7 +1777,7 @@ describe("IssueDetail", () => {
     );
   });
 
-  it("forwards composer work mode changes to the issues API", async () => {
+  it("keeps composer work mode read-only under the canonical board API", async () => {
     const issue = createIssue();
     mockIssuesApi.get.mockResolvedValue(issue);
     mockIssuesApi.listAttachments.mockResolvedValue([
@@ -2228,7 +1794,6 @@ describe("IssueDetail", () => {
       },
     ]);
     localStorage.setItem("paperclip:issue-comment-draft:issue-1", "Draft follow-up message");
-    mockIssuesApi.update.mockResolvedValue(createIssue({ workMode: "planning" }));
 
     await act(async () => {
       root.render(
@@ -2242,14 +1807,7 @@ describe("IssueDetail", () => {
 
     const lastChatThreadProps = mockIssueChatThreadRender.mock.calls.at(-1)?.[0];
     expect(lastChatThreadProps?.issueWorkMode).toBe("standard");
-    expect(typeof lastChatThreadProps?.onWorkModeChange).toBe("function");
-
-    await act(async () => {
-      lastChatThreadProps?.onWorkModeChange?.("ask");
-    });
-    await flushReact();
-
-    expect(mockIssuesApi.update).toHaveBeenCalledWith(issue.identifier, { workMode: "ask" });
+    expect(lastChatThreadProps?.onWorkModeChange).toBeUndefined();
     expect(localStorage.getItem("paperclip:issue-comment-draft:issue-1")).toBe("Draft follow-up message");
     expect(container.textContent).toContain("planning-notes.txt");
     localStorage.removeItem("paperclip:issue-comment-draft:issue-1");
@@ -2330,8 +1888,8 @@ describe("IssueDetail", () => {
     });
 
     mockIssuesApi.get.mockResolvedValue(createIssue({
-      status: "in_review",
-      assigneeAgentId: "agent-1",
+      boardPresentationStatus: "in_review",
+      ownerAgentId: "agent-1",
     }));
     mockIssuesApi.getTreeControlState.mockResolvedValue({
       activePauseHold: {
@@ -2379,9 +1937,6 @@ describe("IssueDetail", () => {
     await flushReact();
     await flushReact();
 
-    const wakeCheckbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-    expect(wakeCheckbox?.checked).toBe(true);
-
     const applyResumeButton = Array.from(container.querySelectorAll("button"))
       .filter((button) => button.textContent?.trim() === "Resume work")
       .at(-1);
@@ -2394,7 +1949,6 @@ describe("IssueDetail", () => {
 
     expect(mockIssuesApi.releaseTreeHold).toHaveBeenCalledWith("PAP-1", "hold-1", {
       reason: null,
-      metadata: { wakeAgents: true },
     });
   });
 
@@ -2405,8 +1959,8 @@ describe("IssueDetail", () => {
       identifier: "PAP-2",
       issueNumber: 2,
       title: "Cancelled child",
-      status: "cancelled",
-      assigneeAgentId: "agent-1",
+      boardPresentationStatus: "cancelled",
+      ownerAgentId: "agent-1",
     });
     const cancelHold = createPauseHold({
       id: "cancel-hold-1",
@@ -2487,7 +2041,6 @@ describe("IssueDetail", () => {
       mode: "restore",
       reason: null,
       releasePolicy: { strategy: "manual" },
-      metadata: { wakeAgents: false },
     });
   });
 
@@ -2573,42 +2126,6 @@ describe("IssueDetail", () => {
   });
 });
 
-describe("canBoardResolveRecoveryAction", () => {
-  it("falls back to companyIds when memberships are not populated", () => {
-    expect(
-      canBoardResolveRecoveryAction("company-1", {
-        companyIds: ["company-1"],
-        memberships: [],
-        isInstanceAdmin: false,
-        source: "session",
-        keyId: null,
-        user: null,
-        userId: "user-1",
-      }),
-    ).toBe(true);
-  });
-
-  it("uses populated memberships as the authoritative board access source", () => {
-    expect(
-      canBoardResolveRecoveryAction("company-1", {
-        companyIds: ["company-1"],
-        memberships: [
-          {
-            companyId: "company-1",
-            membershipRole: "viewer",
-            status: "active",
-          },
-        ],
-        isInstanceAdmin: false,
-        source: "session",
-        keyId: null,
-        user: null,
-        userId: "user-1",
-      }),
-    ).toBe(false);
-  });
-});
-
 describe("canBoardManageRuntime", () => {
   it("falls back to companyIds when memberships are not populated", () => {
     expect(
@@ -2662,76 +2179,6 @@ describe("canBoardManageRuntime", () => {
         userId: "user-1",
       }),
     ).toBe(true);
-  });
-});
-
-describe("readRecoveryReconcileWorkspaceId", () => {
-  const makeAction = (evidence: Record<string, unknown>, kind = "workspace_validation") =>
-    ({ kind, evidence } as unknown as Parameters<typeof readRecoveryReconcileWorkspaceId>[0]);
-
-  it("returns null when the action is missing", () => {
-    expect(readRecoveryReconcileWorkspaceId(null)).toBeNull();
-    expect(readRecoveryReconcileWorkspaceId(undefined)).toBeNull();
-  });
-
-  it("returns null for non-workspace_validation actions even with a workspace id in evidence", () => {
-    expect(
-      readRecoveryReconcileWorkspaceId(
-        makeAction(
-          { workspaceValidation: { persistedExecutionWorkspaceId: "ws-1" } },
-          "stranded_assigned_issue",
-        ),
-      ),
-    ).toBeNull();
-  });
-
-  it("prefers persistedExecutionWorkspaceId (git_worktree_branch_incoherence shape)", () => {
-    expect(
-      readRecoveryReconcileWorkspaceId(
-        makeAction({
-          workspaceValidation: {
-            reason: "git_worktree_branch_incoherence",
-            persistedExecutionWorkspaceId: "ws-diverged",
-            executionWorkspaceId: "ws-other",
-          },
-        }),
-      ),
-    ).toBe("ws-diverged");
-  });
-
-  it("falls back to executionWorkspaceId (git_worktree_not_reusable shape)", () => {
-    expect(
-      readRecoveryReconcileWorkspaceId(
-        makeAction({
-          workspaceValidation: {
-            reason: "git_worktree_not_reusable",
-            executionWorkspaceId: "ws-not-reusable",
-          },
-        }),
-      ),
-    ).toBe("ws-not-reusable");
-  });
-
-  it("returns null when the evidence carries no workspace reference (so the caller falls back to the page-level id)", () => {
-    expect(readRecoveryReconcileWorkspaceId(makeAction({}))).toBeNull();
-    expect(
-      readRecoveryReconcileWorkspaceId(
-        makeAction({ workspaceValidation: { reason: "git_worktree_branch_incoherence" } }),
-      ),
-    ).toBeNull();
-  });
-
-  it("ignores non-string / empty workspace ids", () => {
-    expect(
-      readRecoveryReconcileWorkspaceId(
-        makeAction({ workspaceValidation: { persistedExecutionWorkspaceId: "" } }),
-      ),
-    ).toBeNull();
-    expect(
-      readRecoveryReconcileWorkspaceId(
-        makeAction({ workspaceValidation: { persistedExecutionWorkspaceId: 42 } }),
-      ),
-    ).toBeNull();
   });
 });
 

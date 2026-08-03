@@ -28,19 +28,58 @@ export type PluginDatabaseRuntimeResult<T = Record<string, unknown>> = {
   rowCount?: number;
 };
 
-export function derivePluginDatabaseNamespace(
+function normalizedNamespaceSlug(
   pluginKey: string,
   namespaceSlug?: string,
 ): string {
-  const hash = createHash("sha256").update(pluginKey).digest("hex").slice(0, 10);
-  const slug = (namespaceSlug ?? pluginKey)
+  return (namespaceSlug ?? pluginKey)
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_")
     .slice(0, 36) || "plugin";
+}
+
+/**
+ * Stable logical namespace used in plugin-authored migration SQL. The host
+ * compiles this identifier to the installation-scoped physical namespace
+ * before validation and execution.
+ */
+export function derivePluginDatabaseMigrationNamespace(
+  pluginKey: string,
+  namespaceSlug?: string,
+): string {
+  const hash = createHash("sha256").update(pluginKey).digest("hex").slice(0, 10);
+  const slug = normalizedNamespaceSlug(pluginKey, namespaceSlug);
   const namespace = `plugin_${slug}_${hash}`;
   return namespace.slice(0, MAX_POSTGRES_IDENTIFIER_LENGTH);
+}
+
+/** Physical namespace owned by one immutable plugin installation. */
+export function derivePluginDatabaseNamespace(
+  pluginKey: string,
+  pluginInstallationId: string,
+  namespaceSlug?: string,
+): string {
+  const hash = createHash("sha256")
+    .update(`${pluginKey}\0${pluginInstallationId}`)
+    .digest("hex")
+    .slice(0, 10);
+  const slug = normalizedNamespaceSlug(pluginKey, namespaceSlug);
+  const namespace = `plugin_${slug}_${hash}`;
+  return namespace.slice(0, MAX_POSTGRES_IDENTIFIER_LENGTH);
+}
+
+function compilePluginMigrationNamespace(
+  statement: string,
+  logicalNamespace: string,
+  physicalNamespace: string,
+): string {
+  const escaped = logicalNamespace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return statement.replace(
+    new RegExp(`(?<![A-Za-z0-9_])${escaped}(?=\\s*\\.)`, "g"),
+    physicalNamespace,
+  );
 }
 
 function assertIdentifier(value: string, label = "identifier"): string {
@@ -371,6 +410,7 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
     if (!manifest.database) return null;
     const namespaceName = derivePluginDatabaseNamespace(
       manifest.id,
+      pluginId,
       manifest.database.namespaceSlug,
     );
     await client.execute(sql.raw(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(namespaceName)}`));
@@ -401,18 +441,26 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
     return ensureNamespaceWithClient(db, pluginId, manifest);
   }
 
-  async function getNamespace(pluginId: string) {
-    const rows = await db
-      .select()
-      .from(pluginDatabaseNamespaces)
-      .where(eq(pluginDatabaseNamespaces.pluginId, pluginId))
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
   async function getRuntimeNamespace(pluginId: string) {
-    const namespace = await getNamespace(pluginId);
-    if (!namespace || namespace.status !== "active") {
+    const namespace = await db
+      .select({ namespace: pluginDatabaseNamespaces })
+      .from(pluginDatabaseNamespaces)
+      .innerJoin(
+        plugins,
+        and(
+          eq(plugins.id, pluginDatabaseNamespaces.pluginId),
+          eq(plugins.status, "ready"),
+        ),
+      )
+      .where(
+        and(
+          eq(pluginDatabaseNamespaces.pluginId, pluginId),
+          eq(pluginDatabaseNamespaces.status, "active"),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]?.namespace ?? null);
+    if (!namespace) {
       throw new Error("Plugin database namespace is not active");
     }
     return namespace.namespaceName;
@@ -473,6 +521,10 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
       const migrationDir = resolveMigrationsDir(packageRoot, manifest.database.migrationsDir);
       const migrationFiles = await listSqlMigrationFiles(migrationDir);
       const coreReadTables = manifest.database.coreReadTables ?? [];
+      const migrationNamespace = derivePluginDatabaseMigrationNamespace(
+        manifest.id,
+        manifest.database.namespaceSlug,
+      );
       const lockKey = Number.parseInt(createHash("sha256").update(pluginId).digest("hex").slice(0, 12), 16);
       const persistFailure = options.persistFailure ?? true;
 
@@ -499,7 +551,12 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
             if (statements.length === 0) {
               throw new Error(`Plugin migration ${migrationKey} is empty`);
             }
-            for (const statement of statements) {
+            for (const sourceStatement of statements) {
+              const statement = compilePluginMigrationNamespace(
+                sourceStatement,
+                migrationNamespace,
+                namespace.namespaceName,
+              );
               validatePluginMigrationStatement(statement, namespace.namespaceName, coreReadTables);
               await client.execute(sql.raw(statement));
             }

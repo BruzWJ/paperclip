@@ -324,18 +324,13 @@ export interface FileTreeProps {
 }
 
 export interface IssuesListFilters {
-  status?: string;
+  status?: "open" | "blocked" | "done" | "cancelled";
   projectId?: string;
   parentId?: string;
-  assigneeAgentId?: string;
+  ownerAgentId?: string;
   participantAgentId?: string;
-  assigneeUserId?: string;
   labelId?: string;
   workspaceId?: string;
-  executionWorkspaceId?: string;
-  originKind?: string;
-  originKindPrefix?: string;
-  originId?: string;
   descendantOf?: string;
   includeRoutineExecutions?: boolean;
   includeLiveDescendantSummary?: boolean;
@@ -351,28 +346,25 @@ export interface IssuesListProps {
   searchWithinLoadedIssues?: boolean;
 }
 
-export interface AssigneePickerSelection {
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+export interface OwnerPickerSelection {
+  ownerAgentId: string | null;
 }
 
-export interface AssigneePickerProps {
-  /** Company whose agents and users should be listed. Defaults to host context. */
+export interface OwnerPickerProps {
+  /** Company whose invokable agent owners should be listed. Defaults to host context. */
   companyId?: string | null;
-  /** Controlled value. Use `agent:<id>`, `user:<id>`, or an empty string. */
+  /** Controlled agent id, or an empty string before a required owner is chosen. */
   value: string;
-  /** Called with the encoded value plus parsed assignee IDs. */
-  onChange: (value: string, selection: AssigneePickerSelection) => void;
-  /** Button placeholder when no assignee is selected. */
+  /** Called with the selected agent id and canonical owner payload. */
+  onChange: (value: string, selection: OwnerPickerSelection) => void;
+  /** Button placeholder before an owner is selected. */
   placeholder?: string;
-  /** Label for the empty option. */
+  /** Label for the empty form state. */
   noneLabel?: string;
   /** Search input placeholder. */
   searchPlaceholder?: string;
   /** Empty search result message. */
   emptyMessage?: string;
-  /** Include active board users alongside agents. Defaults to true. */
-  includeUsers?: boolean;
   /** Include terminated agents. Defaults to false. */
   includeTerminatedAgents?: boolean;
   /** CSS class forwarded to the trigger button. */
@@ -582,9 +574,10 @@ export const FileTree = createSdkUiComponent<FileTreeProps>("FileTree");
 export const IssuesList = createSdkUiComponent<IssuesListProps>("IssuesList");
 
 /**
- * Renders the same host assignee picker used by the new issue pane.
+ * Renders an agent-only owner picker for canonical issue creation and
+ * reassignment.
  */
-export const AssigneePicker = createSdkUiComponent<AssigneePickerProps>("AssigneePicker");
+export const OwnerPicker = createSdkUiComponent<OwnerPickerProps>("OwnerPicker");
 
 /**
  * Renders the same host project picker used by the new issue pane.

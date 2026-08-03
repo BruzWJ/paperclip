@@ -13,8 +13,8 @@ export type CompanySearchResultType = "issue" | "artifact" | "agent" | "project"
 export type CompanySearchCountType = CompanySearchResultType | "comment" | "document";
 export type CompanySearchIssueFilterKey =
   | "status"
-  | "assigneeAgentId"
-  | "assigneeUserId"
+  | "ownerAgentId"
+  | "ownerUserId"
   | "projectId"
   | "labelId"
   | "priority"
@@ -36,11 +36,12 @@ export interface CompanySearchSnippet {
 export interface CompanySearchIssueSummary {
   id: string;
   identifier: string | null;
-  title: string;
-  status: IssueStatus;
+  title: string | null;
+  boardPresentationStatus: IssueStatus;
   priority: IssuePriority;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+  request: string;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
   projectId: string | null;
   updatedAt: string;
 }
@@ -51,7 +52,7 @@ export interface CompanySearchArtifactSummary {
   mediaKind: "image" | "video" | "text" | "document" | "file" | "empty";
   issueId: string;
   issueIdentifier: string;
-  issueTitle: string;
+  issueTitle: string | null;
   projectId: string | null;
   projectName: string | null;
   updatedAt: string;
@@ -76,8 +77,8 @@ export interface CompanySearchResult {
 export interface CompanySearchFilterOptionCounts {
   status: Partial<Record<IssueStatus, number>>;
   priority: Partial<Record<IssuePriority, number>>;
-  assigneeAgentId: Record<string, number>;
-  assigneeUserId: Record<string, number>;
+  ownerAgentId: Record<string, number>;
+  ownerUserId: Record<string, number>;
   projectId: Record<string, number>;
   labelId: Record<string, number>;
   updatedWithin: Partial<Record<CompanySearchUpdatedWithinOption, number>>;
@@ -122,7 +123,7 @@ export type CompanySearchExtractSourceRef =
 
 export interface CompanySearchExtractMatch {
   value: string;
-  field: "title" | "description" | "comment" | "document_title" | "document_body";
+  field: "title" | "request" | "comment" | "document_title" | "document_body";
   label: string;
   excerpt: string;
   excerptTruncated: boolean;
@@ -132,9 +133,11 @@ export interface CompanySearchExtractMatch {
 export interface CompanySearchExtractIssueResult {
   issueId: string;
   identifier: string | null;
-  title: string;
-  status: IssueStatus;
-  assigneeAgentId: string | null;
+  title: string | null;
+  boardPresentationStatus: IssueStatus;
+  request: string;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
   updatedAt: string;
   matches: CompanySearchExtractMatch[];
   matchesTruncated: boolean;

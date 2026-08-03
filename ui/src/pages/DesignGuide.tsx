@@ -25,7 +25,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InlineBanner } from "@/components/InlineBanner";
-import { BuiltInLifecycleChip } from "@/components/BuiltInAgentBadges";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -425,9 +424,9 @@ export function DesignGuide() {
             <div className="flex flex-wrap gap-2">
               {[
                 "StatusBadge", "StatusIcon", "PriorityIcon", "EntityRow", "EmptyState", "MetricCard",
-                "FilterBar", "InlineEditor", "PageSkeleton", "Identity", "CommentThread", "MarkdownEditor",
+                "FilterBar", "InlineEditor", "PageSkeleton", "Identity", "IssueChatThread", "MarkdownEditor",
                 "PropertiesPanel", "Sidebar", "CommandPalette", "EnvironmentVariablesEditor",
-                "InlineBanner", "BuiltInAgentGate", "BuiltInLifecycleChip",
+                "InlineBanner",
               ].map((name) => (
                 <Badge key={name} variant="ghost" className="font-mono text-(length:--text-nano)">
                   {name}
@@ -668,10 +667,9 @@ export function DesignGuide() {
         <SubSection title="Run invocation badges">
           <div className="flex items-center gap-2 flex-wrap">
             {[
-              ["timer", "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"],
-              ["assignment", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
-              ["on_demand", "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300"],
-              ["automation", "bg-muted text-muted-foreground"],
+              ["issue_ref:issue_request", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
+              ["issue_ref:consult_mention", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
+              ["issue_session_automatic", "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"],
             ].map(([label, cls]) => (
               <Badge variant="ghost" key={label} className={`px-1.5 text-(length:--text-nano) ${cls}`}>
                 {label}
@@ -683,15 +681,15 @@ export function DesignGuide() {
         <SubSection title="IssueReferencePill">
           <p className="text-xs text-muted-foreground">
             Used wherever a task is referenced — in markdown, the Related Work tab, and activity summaries.
-            Pass <code className="font-mono">status</code> to show the target issue&apos;s state at a glance.
+            Pass <code className="font-mono">boardPresentationStatus</code> to show the target issue&apos;s state at a glance.
             Use <code className="font-mono">strikethrough</code> for &quot;removed&quot; contexts.
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             <IssueReferencePill issue={{ id: "demo-1", identifier: "PAP-123", title: "Identifier only — no status yet" }} />
-            <IssueReferencePill issue={{ id: "demo-2", identifier: "PAP-456", title: "With in_progress status", status: "in_progress" }} />
-            <IssueReferencePill issue={{ id: "demo-3", identifier: "PAP-789", title: "Done status", status: "done" }} />
-            <IssueReferencePill issue={{ id: "demo-4", identifier: "PAP-101", title: "Blocked status", status: "blocked" }} />
-            <IssueReferencePill strikethrough issue={{ id: "demo-5", identifier: "PAP-202", title: "Removed (strikethrough)", status: "todo" }} />
+            <IssueReferencePill issue={{ id: "demo-2", identifier: "PAP-456", title: "With in_progress status", boardPresentationStatus: "in_progress" }} />
+            <IssueReferencePill issue={{ id: "demo-3", identifier: "PAP-789", title: "Done status", boardPresentationStatus: "done" }} />
+            <IssueReferencePill issue={{ id: "demo-4", identifier: "PAP-101", title: "Blocked status", boardPresentationStatus: "blocked" }} />
+            <IssueReferencePill strikethrough issue={{ id: "demo-5", identifier: "PAP-202", title: "Removed (strikethrough)", boardPresentationStatus: "todo" }} />
           </div>
         </SubSection>
       </Section>
@@ -907,11 +905,11 @@ export function DesignGuide() {
             <Button variant="outline" size="sm">Open Popover</Button>
           </PopoverTrigger>
           <PopoverContent className="space-y-2">
-            <p className="text-sm font-medium">Agent heartbeat</p>
+            <p className="text-sm font-medium">Issue execution</p>
             <p className="text-xs text-muted-foreground">
-              Last run succeeded 24s ago. Next timer run in 9m.
+              Last run succeeded 24s ago. The next issue ref is ready to lease.
             </p>
-            <Button size="xs">Wake now</Button>
+            <Button size="xs">View issue</Button>
           </PopoverContent>
         </Popover>
       </Section>
@@ -974,7 +972,7 @@ export function DesignGuide() {
           <div className="space-y-2 p-3">
             {Array.from({ length: 12 }).map((_, i) => (
               <div key={i} className="rounded-md border border-border p-2 text-sm">
-                Heartbeat run #{i + 1}: completed successfully
+                Agent run #{i + 1}: completed successfully
               </div>
             ))}
           </div>
@@ -1294,7 +1292,7 @@ export function DesignGuide() {
 
         <SubSection title="Initials derivation">
           <div className="flex flex-col gap-2">
-            <Identity name="CEO Agent" size="sm" />
+            <Identity name="Build Agent" size="sm" />
             <Identity name="Alpha" size="sm" />
             <Identity name="Quality Assurance Lead" size="sm" />
           </div>
@@ -1503,7 +1501,7 @@ export function DesignGuide() {
             <EntityRow
               leading={<PriorityIcon priority="high" />}
               identifier="PAP-101"
-              title="Build agent heartbeat system"
+              title="Build agent execution system"
               onClick={() => {}}
             />
             <EntityRow
@@ -1974,7 +1972,7 @@ export function DesignGuide() {
       </Section>
 
       {/* ============================================================ */}
-      {/*  INLINE BANNER + BUILT-IN AGENTS                              */}
+      {/*  INLINE BANNER + FEATURE-MANAGED AGENTS                       */}
       {/* ============================================================ */}
       <Section title="Inline Banner">
         <p className="text-sm text-muted-foreground">
@@ -1988,10 +1986,11 @@ export function DesignGuide() {
         <div className="space-y-3">
           <InlineBanner
             tone="info"
-            title="Built-in agent"
-            actions={<Button variant="outline" size="sm">Reset to defaults</Button>}
+            title="Plugin-managed agent"
+            actions={<Button variant="outline" size="sm">Manage plugin</Button>}
           >
-            Ships with Paperclip and powers <strong>Briefs</strong>. It can be paused but not deleted.
+            Created by an installed plugin and powers <strong>Briefs</strong>. Manage its lifecycle
+            through the plugin installation.
           </InlineBanner>
           <InlineBanner
             tone="warning"
@@ -2003,7 +2002,7 @@ export function DesignGuide() {
               </>
             }
           >
-            Its built-in agent was paused 2 days ago, so new briefs aren't being generated.
+            Its configured owner was paused 2 days ago, so new briefs aren't being generated.
           </InlineBanner>
           <InlineBanner
             tone="danger"
@@ -2018,24 +2017,6 @@ export function DesignGuide() {
         </div>
       </Section>
 
-      <Section title="Built-in Agent Lifecycle Chips">
-        <p className="text-sm text-muted-foreground">
-          A derived lifecycle chip (amber) for attention states. The lifecycle chip is separate from
-          the agent status vocabulary and only shows for{" "}
-          <span className="font-mono">needs_setup</span> / <span className="font-mono">pending_approval</span>.
-        </p>
-        <div className="flex flex-wrap items-center gap-4">
-          <BuiltInLifecycleChip status="needs_setup" />
-          <BuiltInLifecycleChip status="pending_approval" />
-          <BuiltInLifecycleChip status="needs_setup" compact />
-        </div>
-        <p className="mt-3 text-sm text-muted-foreground">
-          <span className="font-mono">&lt;BuiltInAgentGate agentKey&gt;</span> composes{" "}
-          <span className="font-mono">PageSkeleton</span> + <span className="font-mono">EmptyState</span>{" "}
-          + <span className="font-mono">InlineBanner</span> to render the loading / setup /
-          pending-approval / paused / ready states of a feature that depends on a built-in agent.
-        </p>
-      </Section>
     </div>
   );
 }

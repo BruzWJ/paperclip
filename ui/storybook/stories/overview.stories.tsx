@@ -64,7 +64,7 @@ const storyGroups = [
   {
     title: "Budget & Finance",
     icon: Wallet,
-    stories: "Incident cards, provider quotas, biller spend, subscription panels",
+    stories: "Incident cards, provider spend, biller spend, and finance ledgers",
     why: "Financial controls are safety-critical and need threshold state coverage.",
   },
   {
@@ -99,7 +99,7 @@ const coverageRows = [
   ["Agent management", "Planned", "Agent properties, config forms, icon picker, action buttons, active panel"],
   ["Issue management", "Planned", "Issue lists, filters, properties, documents, run ledger, workspace cards"],
   ["Forms & editors", "Planned", "Markdown editor, JSON schema, env vars, schedule editor, pickers"],
-  ["Budget & finance", "Planned", "Incident cards, provider quotas, biller spend, subscription panels"],
+  ["Budget & finance", "Planned", "Incident cards, provider spend, biller spend, and finance ledgers"],
   ["Dialogs & modals", "Planned", "New issue/agent/goal/project dialogs, diff modal, image gallery"],
   ["Projects & goals", "Planned", "Project properties, workspace cards, goal trees, runtime controls"],
   ["Chat & comments", "Covered", "Comment threads, run chat, issue chat with timeline events"],

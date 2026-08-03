@@ -32,11 +32,20 @@ In a separate terminal:
 cd /path/to/paperclip
 export PAPERCLIP_HOME=/tmp/paperclip-smoke
 export PAPERCLIP_INSTANCE_ID=smoke
-export PAPERCLIP_DEPLOYMENT_MODE=local_trusted
+: "${PAPERCLIP_EXTERNAL_DATABASE_URL:?set this to a newly provisioned external PostgreSQL database}"
+export DATABASE_URL="$PAPERCLIP_EXTERNAL_DATABASE_URL"
+export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
 pnpm --filter @paperclipai/server dev
 ```
 
 Wait for `Server listening on 127.0.0.1:3100`.
+
+Open Paperclip, create a Better Auth account, claim first-admin authority, and
+mint a board API key. Every smoke request uses that real user's authorization:
+
+```bash
+export PAPERCLIP_BOARD_API_KEY=<board-api-key>
+```
 
 ### 3. Install the plugin via the CLI
 
@@ -52,12 +61,14 @@ Expected: `✓ Installed paperclip.kubernetes-sandbox-provider v0.1.0 (ready)`.
 
 ```bash
 CO_ID=$(curl -s -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_API_KEY" \
   -d '{"name":"SmokeCo"}' \
   http://127.0.0.1:3100/api/companies | jq -r '.id')
 
 KUBECONFIG_CONTENT=$(cat ~/.kube/config | jq -Rs .)
 
 curl -s -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_API_KEY" \
   -d "{
     \"name\": \"k8s-sandbox\",
     \"driver\": \"sandbox\",
@@ -65,8 +76,13 @@ curl -s -X POST -H "Content-Type: application/json" \
       \"provider\": \"kubernetes\",
       \"kubeconfig\": $KUBECONFIG_CONTENT,
       \"companySlug\": \"smoke\",
-      \"adapterType\": \"claude_local\",
-      \"imageAllowList\": [\"ghcr.io/paperclipai/agent-runtime-claude:v1\"]
+      \"adapterType\": \"codex\",
+      \"adapters\": [{
+        \"adapterType\": \"codex\",
+        \"runtimeImage\": \"ghcr.io/paperclipai/agent-runtime-base:v1\",
+        \"allowFqdns\": [],
+        \"probeCommand\": [\"paperclip-agent-shim\", \"-h\"]
+      }]
     }
   }" \
   http://127.0.0.1:3100/api/companies/$CO_ID/environments | jq
@@ -77,8 +93,10 @@ Expected: HTTP 201 with the new environment row.
 ### 5. Probe the environment
 
 ```bash
-ENV_ID=$(curl -s http://127.0.0.1:3100/api/companies/$CO_ID/environments | jq -r '.[0].id')
+ENV_ID=$(curl -s -H "Authorization: Bearer $PAPERCLIP_BOARD_API_KEY" \
+  http://127.0.0.1:3100/api/companies/$CO_ID/environments | jq -r '.[0].id')
 curl -s -X POST -d '{}' -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $PAPERCLIP_BOARD_API_KEY" \
   http://127.0.0.1:3100/api/environments/$ENV_ID/probe | jq
 ```
 
@@ -94,9 +112,8 @@ The plugin's `onEnvironmentAcquireLease` will:
 
 1. `ensureTenant` — provision the `paperclip-smoke` namespace, SA, Role,
    RoleBinding, ResourceQuota, LimitRange, NetworkPolicies
-2. `buildJobManifest` — render the security-hardened Job manifest
-3. `createJob` — submit to `batch/v1`
-4. `createPerRunSecret` — owned by the Job for cascade-delete
+2. `buildSandboxCrManifest` — render the security-hardened Sandbox manifest
+3. `createSandboxCr` — submit to `agents.x-k8s.io/v1alpha1`
 
 ### 7. Verify the tenant resources
 
@@ -113,8 +130,7 @@ Expected:
 - Role `paperclip-tenant-role`, RoleBinding `paperclip-tenant-rb`
 - ResourceQuota `paperclip-quota`, LimitRange `paperclip-limits`
 - NetworkPolicies `paperclip-deny-all` + `paperclip-egress-allow`
-- Job `pc-{ulid}` and its child Pod
-- Secret `pc-{ulid}-env` with `ownerReferences` pointing at the Job
+- Sandbox `pc-{ulid}` and its controller-managed Pod
 
 ### 8. Tear down
 

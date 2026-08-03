@@ -1,73 +1,40 @@
-import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  activityLog,
-  agentConfigRevisions,
-  agents,
-  companies,
-  createDb,
-  documentRevisions,
-  documents,
-  issues,
-  pluginManagedResources,
-  plugins,
-  projects,
-  routineDocuments,
-  routineRuns,
-  routineTriggers,
-  routines,
-} from "@paperclipai/db";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { buildHostServices } from "../services/plugin-host-services.js";
-import { routineService } from "../services/routines.js";
+import { pluginManagedRoutineService } from "../services/plugin-managed-routines.js";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const routineMocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  createTrigger: vi.fn(),
+  update: vi.fn(),
+  runRoutine: vi.fn(),
+}));
+const logActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
-function createEventBusStub() {
-  return {
-    forPlugin() {
-      return {
-        emit: async () => {},
-        subscribe: () => {},
-      };
-    },
-  } as any;
-}
+vi.mock("../services/routines.js", () => ({
+  routineService: vi.fn(() => routineMocks),
+}));
+vi.mock("../services/activity-log.js", () => ({ logActivity }));
 
-function issuePrefix(id: string) {
-  return `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-}
+const companyId = "11111111-1111-4111-8111-111111111111";
+const pluginId = "22222222-2222-4222-8222-222222222222";
+const agentId = "33333333-3333-4333-8333-333333333333";
+const projectId = "44444444-4444-4444-8444-444444444444";
+const routineId = "55555555-5555-4555-8555-555555555555";
+const now = new Date("2026-08-01T12:00:00.000Z");
+const pluginKey = "paperclip.managed-routines-test";
 
 function manifest(): PaperclipPluginManifestV1 {
   return {
-    id: "paperclip.managed-routines-test",
+    id: pluginKey,
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Managed Routines Test",
     description: "Test plugin",
     author: "Paperclip",
     categories: ["automation"],
-    capabilities: ["agents.managed", "projects.managed", "routines.managed"],
+    capabilities: ["routines.managed"],
     entrypoints: { worker: "./dist/worker.js" },
-    agents: [{
-      agentKey: "wiki-maintainer",
-      displayName: "Wiki Maintainer",
-      role: "engineer",
-      adapterType: "process",
-      adapterConfig: { command: "pnpm wiki:maintain" },
-    }],
-    projects: [{
-      projectKey: "operations",
-      displayName: "Plugin Operations",
-      description: "Plugin operation inspection",
-      status: "in_progress",
-    }],
     routines: [{
       routineKey: "nightly-lint",
       title: "Nightly lint",
@@ -93,164 +60,186 @@ function manifest(): PaperclipPluginManifestV1 {
   };
 }
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres plugin-managed routine tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+function binding(resourceId = routineId) {
+  return {
+    id: "66666666-6666-4666-8666-666666666666",
+    companyId,
+    pluginId,
+    pluginKey,
+    resourceKind: "routine",
+    resourceKey: "nightly-lint",
+    resourceId,
+    defaultsJson: {},
+    manifestJson: { displayName: "Managed Routines Test" },
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
-describeEmbeddedPostgres("plugin-managed routines", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+function routine(overrides: Record<string, unknown> = {}) {
+  return {
+    id: routineId,
+    companyId,
+    projectId,
+    goalId: null,
+    title: "Nightly lint",
+    description: "Lint plugin state",
+    assigneeAgentId: agentId,
+    priority: "medium",
+    status: "active",
+    concurrencyPolicy: "coalesce_if_active",
+    catchUpPolicy: "skip_missed",
+    variables: [],
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
 
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-managed-routines-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
+function service(db: ReturnType<typeof createMockDb>["db"]) {
+  return pluginManagedRoutineService(db, {
+    pluginId,
+    pluginKey,
+    manifest: manifest(),
+    ordinaryIssues: {} as never,
+  });
+}
 
-  afterEach(async () => {
-    await db.delete(routineRuns);
-    await db.delete(routineTriggers);
-    await db.delete(routineDocuments);
-    await db.delete(routines);
-    await db.delete(documentRevisions);
-    await db.delete(documents);
-    await db.delete(issues);
-    await db.delete(agentConfigRevisions);
-    await db.delete(activityLog);
-    await db.delete(pluginManagedResources);
-    await db.delete(agents);
-    await db.delete(projects);
-    await db.delete(plugins);
-    await db.delete(companies);
+beforeEach(() => {
+  vi.clearAllMocks();
+  routineMocks.create.mockResolvedValue(routine());
+  routineMocks.createTrigger.mockResolvedValue({ id: "trigger-1" });
+  routineMocks.update.mockResolvedValue(routine());
+  routineMocks.runRoutine.mockResolvedValue({
+    id: "run-1",
+    status: "issue_created",
+    linkedIssueId: "77777777-7777-4777-8777-777777777777",
+  });
+});
+
+describe("plugin-managed routines", () => {
+  it("reports unresolved managed refs without creating a routine", async () => {
+    const harness = createMockDb({ select: [[], [], []] });
+
+    await expect(
+      service(harness.db).reconcile("nightly-lint", companyId),
+    ).resolves.toMatchObject({
+      status: "missing_refs",
+      routineId: null,
+      missingRefs: [
+        { resourceKind: "agent", resourceKey: "wiki-maintainer", pluginKey },
+        { resourceKind: "project", resourceKey: "operations", pluginKey },
+      ],
+    });
+
+    expect(routineMocks.create).not.toHaveBeenCalled();
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(harness.remaining("select")).toBe(0);
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedCompanyAndPlugin(pluginManifest = manifest()) {
-    const companyId = randomUUID();
-    const pluginId = randomUUID();
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix: issuePrefix(companyId),
-      defaultResponsibleUserId: "responsible-user",
+  it("resolves stable managed refs, creates the routine, and installs its trigger", async () => {
+    const managedBinding = binding();
+    const harness = createMockDb({
+      select: [
+        [],
+        [{ resourceId: agentId }],
+        [{ resourceId: projectId }],
+        [{ id: agentId }],
+        [{ id: projectId }],
+        [],
+        [],
+        [managedBinding],
+        [routine()],
+      ],
+      insert: [[managedBinding]],
     });
-    await db.insert(plugins).values({
-      id: pluginId,
-      pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-routines-test",
-      version: pluginManifest.version,
-      apiVersion: pluginManifest.apiVersion,
-      categories: pluginManifest.categories,
-      manifestJson: pluginManifest,
-      status: "ready",
-      installOrder: 1,
+
+    await expect(
+      service(harness.db).reconcile("nightly-lint", companyId),
+    ).resolves.toMatchObject({
+      status: "created",
+      routineId,
+      routine: {
+        id: routineId,
+        assigneeAgentId: agentId,
+        projectId,
+        managedByPlugin: {
+          pluginKey,
+          resourceKind: "routine",
+          resourceKey: "nightly-lint",
+        },
+      },
     });
-    const services = buildHostServices(db, pluginId, pluginManifest.id, createEventBusStub(), undefined, {
-      manifest: pluginManifest,
-    });
-    return { companyId, pluginId, pluginManifest, services };
-  }
 
-  it("resolves routine agent and project refs by stable managed keys", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const agent = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-    const project = await services.projects.reconcileManaged({ companyId, projectKey: "operations" });
-
-    const created = await services.routines.managedReconcile({ companyId, routineKey: "nightly-lint" });
-
-    expect(created.status).toBe("created");
-    expect(created.routine).toMatchObject({
-      title: "Nightly lint",
-      assigneeAgentId: agent.agentId,
-      projectId: project.projectId,
-      managedByPlugin: expect.objectContaining({
-        pluginKey: "paperclip.managed-routines-test",
-        resourceKind: "routine",
-        resourceKey: "nightly-lint",
+    expect(routineMocks.create).toHaveBeenCalledWith(
+      companyId,
+      expect.objectContaining({
+        assigneeAgentId: agentId,
+        projectId,
+        title: "Nightly lint",
+        status: "active",
       }),
-    });
-
-    const [trigger] = await db.select().from(routineTriggers).where(eq(routineTriggers.routineId, created.routineId!));
-    expect(trigger).toMatchObject({
-      kind: "schedule",
-      cronExpression: "0 3 * * *",
-      timezone: "UTC",
-    });
+      { type: "system" },
+    );
+    expect(routineMocks.createTrigger).toHaveBeenCalledWith(
+      routineId,
+      {
+        kind: "schedule",
+        label: "Nightly",
+        enabled: true,
+        cronExpression: "0 3 * * *",
+        timezone: "UTC",
+      },
+      { type: "system" },
+    );
+    expect(logActivity).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({ action: "plugin.managed_routine.created" }),
+    );
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("insert")).toBe(0);
   });
 
-  it("returns missing refs until the operator repairs them and preserves routine edits on reconcile", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-
-    const missing = await services.routines.managedReconcile({ companyId, routineKey: "nightly-lint" });
-    expect(missing.status).toBe("missing_refs");
-    expect(missing.missingRefs).toEqual([
-      expect.objectContaining({ resourceKind: "agent", resourceKey: "wiki-maintainer" }),
-      expect.objectContaining({ resourceKind: "project", resourceKey: "operations" }),
-    ]);
-
-    const [agent] = await db.insert(agents).values({
-      companyId,
-      name: "Operator-selected maintainer",
-      role: "engineer",
-      status: "idle",
-      adapterType: "process",
-      adapterConfig: {},
-      runtimeConfig: {},
-      permissions: {},
-    }).returning();
-    const [project] = await db.insert(projects).values({
-      companyId,
-      name: "Operator-selected project",
-      status: "in_progress",
-    }).returning();
-
-    const repaired = await services.routines.managedReconcile({
-      companyId,
-      routineKey: "nightly-lint",
-      assigneeAgentId: agent.id,
-      projectId: project.id,
-    });
-    expect(repaired.status).toBe("created");
-    expect(repaired.routine).toMatchObject({
-      assigneeAgentId: agent.id,
-      projectId: project.id,
+  it("preserves operator edits and avoids recreating an existing routine", async () => {
+    const edited = routine({ title: "Operator renamed lint" });
+    const harness = createMockDb({
+      select: [[binding()], [edited], [binding()], [{ id: "trigger-1" }]],
+      update: [[binding()]],
     });
 
-    await db
-      .update(routines)
-      .set({ title: "Operator renamed lint", updatedAt: new Date() })
-      .where(eq(routines.id, repaired.routineId!));
+    await expect(
+      service(harness.db).reconcile("nightly-lint", companyId),
+    ).resolves.toMatchObject({
+      status: "resolved",
+      routine: { id: routineId, title: "Operator renamed lint" },
+    });
 
-    const reconciled = await services.routines.managedReconcile({ companyId, routineKey: "nightly-lint" });
-    expect(reconciled.status).toBe("resolved");
-    expect(reconciled.routine?.title).toBe("Operator renamed lint");
+    expect(routineMocks.create).not.toHaveBeenCalled();
+    expect(routineMocks.update).not.toHaveBeenCalled();
+    expect(routineMocks.createTrigger).not.toHaveBeenCalled();
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
   });
 
-  it("creates routine operation issues with plugin visibility and managed project scoping", async () => {
-    const { companyId, services } = await seedCompanyAndPlugin();
-    const agent = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
-    const project = await services.projects.reconcileManaged({ companyId, projectKey: "operations" });
-    const routine = await services.routines.managedReconcile({ companyId, routineKey: "nightly-lint" });
-    const wakeup = vi.fn(async () => ({ id: randomUUID() }));
-    const routinesSvc = routineService(db, { heartbeat: { wakeup } });
+  it("runs the resolved managed routine through the canonical routine service", async () => {
+    const harness = createMockDb({ select: [[binding()], [routine()]] });
 
-    const run = await routinesSvc.runRoutine(routine.routineId!, { source: "manual" }, { userId: "board-user" });
+    await expect(
+      service(harness.db).run("nightly-lint", companyId),
+    ).resolves.toMatchObject({ id: "run-1", status: "issue_created" });
 
-    expect(run.status).toBe("issue_created");
-    const [issue] = await db.select().from(issues).where(eq(issues.id, run.linkedIssueId!));
-    expect(issue).toMatchObject({
-      originKind: "plugin:paperclip.managed-routines-test:operation",
-      originId: "operation:nightly-lint",
-      billingCode: "plugin-test:nightly-lint",
-      projectId: project.projectId,
-      assigneeAgentId: agent.agentId,
-    });
-    expect(wakeup).toHaveBeenCalledWith(agent.agentId, expect.objectContaining({
-      reason: "issue_assigned",
-    }));
+    expect(routineMocks.runRoutine).toHaveBeenCalledWith(
+      routineId,
+      {
+        source: "manual",
+        assigneeAgentId: undefined,
+        projectId: undefined,
+      },
+      { type: "system" },
+    );
+    expect(logActivity).toHaveBeenCalledWith(
+      harness.db,
+      expect.objectContaining({ action: "plugin.managed_routine.run_triggered" }),
+    );
   });
 });

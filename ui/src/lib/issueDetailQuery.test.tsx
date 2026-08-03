@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
 import { getIssueDetailQueryOptions } from "./issueDetailCache";
+import { createTestIssue } from "../test-utils/issue";
 
 vi.mock("@/api/issues", () => ({
   issuesApi: {
@@ -20,43 +21,14 @@ vi.mock("@/api/issues", () => ({
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
   const now = new Date("2026-04-13T20:00:00.000Z");
-  return {
-    id: "issue-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
+  return createTestIssue({
     title: "Issue title",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: null,
     issueNumber: 1442,
     identifier: "PAP-1442",
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 function IssueDetailQueryHarness({
@@ -71,7 +43,7 @@ function IssueDetailQueryHarness({
     ...getIssueDetailQueryOptions(queryClient, issueRef, { placeholderIssue }),
   });
 
-  return <div>{query.data?.description ?? "EMPTY"}</div>;
+  return <div>{query.data?.request ?? "EMPTY"}</div>;
 }
 
 async function flush() {
@@ -99,8 +71,8 @@ describe("getIssueDetailQueryOptions", () => {
         },
       },
     });
-    const partialIssue = makeIssue({ description: null });
-    const fullIssue = makeIssue({ description: "GitHub Security Advisory body" });
+    const partialIssue = makeIssue({ request: "" });
+    const fullIssue = makeIssue({ request: "GitHub Security Advisory body" });
 
     queryClient.setQueryData(queryKeys.issues.detail("issue-1"), partialIssue);
     queryClient.setQueryData(queryKeys.issues.detail("PAP-1442"), partialIssue);

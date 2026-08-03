@@ -1,6 +1,4 @@
-import { randomBytes } from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import type { PaperclipConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 import { resolveRuntimeLikePath } from "./path-resolver.js";
@@ -30,20 +28,20 @@ function decodeMasterKey(raw: string): Buffer | null {
 }
 
 function withStrictModeNote(
-  base: Pick<CheckResult, "name" | "status" | "message" | "canRepair" | "repair" | "repairHint">,
+  base: Pick<CheckResult, "name" | "status" | "message" | "guidance">,
   config: PaperclipConfig,
 ): CheckResult {
   const strictModeDisabledInDeployedSetup =
-    config.database.mode === "postgres" && config.secrets.strictMode === false;
+    config.secrets.strictMode === false;
   if (!strictModeDisabledInDeployedSetup) return base;
 
   if (base.status === "fail") return base;
   return {
     ...base,
     status: "warn",
-    message: `${base.message}; strict secret mode is disabled for postgres deployment`,
-    repairHint: base.repairHint
-      ? `${base.repairHint}. Consider enabling secrets.strictMode`
+    message: `${base.message}; strict secret mode is disabled for the external PostgreSQL deployment`,
+    guidance: base.guidance
+      ? `${base.guidance}. Consider enabling secrets.strictMode`
       : "Consider enabling secrets.strictMode",
   };
 }
@@ -58,8 +56,7 @@ export function secretsCheck(config: PaperclipConfig, configPath?: string): Chec
       name: "Secrets adapter",
       status: "fail",
       message: `${provider} is configured, but this build only supports local_encrypted and aws_secrets_manager`,
-      canRepair: false,
-      repairHint: "Run `paperclipai configure --section secrets` and choose local_encrypted or aws_secrets_manager",
+      guidance: "Run `paperclipai configure --section secrets` and choose local_encrypted or aws_secrets_manager",
     };
   }
 
@@ -71,8 +68,7 @@ export function secretsCheck(config: PaperclipConfig, configPath?: string): Chec
         status: "fail",
         message:
           "PAPERCLIP_SECRETS_MASTER_KEY is invalid (expected 32-byte base64, 64-char hex, or raw 32-char string)",
-        canRepair: false,
-        repairHint: "Set PAPERCLIP_SECRETS_MASTER_KEY to a valid key or unset it to use a key file",
+        guidance: "Set PAPERCLIP_SECRETS_MASTER_KEY to a valid key or use the configured key file",
       };
     }
 
@@ -97,22 +93,9 @@ export function secretsCheck(config: PaperclipConfig, configPath?: string): Chec
     return withStrictModeNote(
       {
         name: "Secrets adapter",
-        status: "warn",
+        status: "fail",
         message: `Secrets key file does not exist yet: ${keyFilePath}`,
-        canRepair: true,
-        repair: () => {
-          fs.mkdirSync(path.dirname(keyFilePath), { recursive: true });
-          fs.writeFileSync(keyFilePath, randomBytes(32).toString("base64"), {
-            encoding: "utf8",
-            mode: 0o600,
-          });
-          try {
-            fs.chmodSync(keyFilePath, 0o600);
-          } catch {
-            // best effort
-          }
-        },
-        repairHint: "Run with --repair to create a local encrypted secrets key file",
+        guidance: "Create the deployment through `paperclipai onboard` or explicitly configure its secrets provider",
       },
       config,
     );
@@ -126,8 +109,7 @@ export function secretsCheck(config: PaperclipConfig, configPath?: string): Chec
       name: "Secrets adapter",
       status: "fail",
       message: `Could not read secrets key file: ${err instanceof Error ? err.message : String(err)}`,
-      canRepair: false,
-      repairHint: "Check file permissions or set PAPERCLIP_SECRETS_MASTER_KEY",
+      guidance: "Check file permissions or set PAPERCLIP_SECRETS_MASTER_KEY",
     };
   }
 
@@ -136,8 +118,7 @@ export function secretsCheck(config: PaperclipConfig, configPath?: string): Chec
       name: "Secrets adapter",
       status: "fail",
       message: `Invalid key material in ${keyFilePath}`,
-      canRepair: false,
-      repairHint: "Replace with valid key material or delete it and run doctor --repair",
+      guidance: "Provide the deployment's original valid key material or provision a new deployment",
     };
   }
 
@@ -152,7 +133,7 @@ export function secretsCheck(config: PaperclipConfig, configPath?: string): Chec
       name: "Secrets adapter",
       status: permissionWarning ? "warn" : "pass",
       message: `Local encrypted provider configured with key file ${keyFilePath}${permissionWarning}`,
-      repairHint: permissionWarning
+      guidance: permissionWarning
         ? "Restrict the local encrypted secrets key file to owner read/write permissions"
         : undefined,
     },
@@ -167,8 +148,7 @@ function awsSecretsManagerCheck(): CheckResult {
       name: "Secrets adapter",
       status: "fail",
       message: `AWS Secrets Manager provider is missing non-secret config: ${missingConfig.join(", ")}`,
-      canRepair: false,
-      repairHint:
+      guidance:
         `Set ${missingConfig.join(", ")} in the Paperclip server runtime. ${AWS_CREDENTIAL_SOURCE_HINT}. Do not store AWS root credentials or long-lived IAM user keys in Paperclip secrets.`,
     };
   }
@@ -185,8 +165,7 @@ function awsSecretsManagerCheck(): CheckResult {
       name: "Secrets adapter",
       status: "warn",
       message,
-      canRepair: false,
-      repairHint:
+      guidance:
         "AWS static environment credentials are visible. Use only short-lived shell credentials locally; prefer IAM role/workload identity for hosted deployments and never store AWS access keys in Paperclip company secrets.",
     };
   }

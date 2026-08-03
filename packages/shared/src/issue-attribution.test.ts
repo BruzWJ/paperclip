@@ -6,7 +6,8 @@ describe("deriveResponsibleUser", () => {
     expect(
       deriveResponsibleUser({
         responsibleUserId: "user-responsible",
-        createdByUserId: "user-creator",
+        creatorKind: "user/board",
+        creatorUserId: "user-creator",
       }),
     ).toEqual({
       userId: "user-responsible",
@@ -19,7 +20,8 @@ describe("deriveResponsibleUser", () => {
     expect(
       deriveResponsibleUser({
         responsibleUserId: null,
-        createdByUserId: "user-creator",
+        creatorKind: "user/board",
+        creatorUserId: "user-creator",
       }),
     ).toEqual({
       userId: "user-creator",
@@ -32,7 +34,8 @@ describe("deriveResponsibleUser", () => {
     expect(
       deriveResponsibleUser({
         responsibleUserId: null,
-        createdByUserId: null,
+        creatorKind: "system",
+        creatorUserId: null,
       }),
     ).toEqual({
       userId: null,
@@ -46,8 +49,9 @@ describe("deriveOriginatingActor", () => {
   it("prefers the human creator over an explicit responsible user", () => {
     expect(
       deriveOriginatingActor({
-        createdByUserId: "user-creator",
-        createdByAgentId: null,
+        creatorKind: "user/board",
+        creatorUserId: "user-creator",
+        creatorAuthorityId: null,
         responsibleUserId: "user-responsible",
       }),
     ).toEqual({ kind: "user", id: "user-creator" });
@@ -56,8 +60,9 @@ describe("deriveOriginatingActor", () => {
   it("attributes an agent-created issue to the transitive responsible user via the agent", () => {
     expect(
       deriveOriginatingActor({
-        createdByUserId: null,
-        createdByAgentId: "agent-claude",
+        creatorKind: "agent-execution",
+        creatorUserId: null,
+        creatorAuthorityId: "agent-claude",
         responsibleUserId: "user-responsible",
       }),
     ).toEqual({ kind: "user", id: "user-responsible", viaAgentId: "agent-claude" });
@@ -66,8 +71,9 @@ describe("deriveOriginatingActor", () => {
   it("falls back to the creating agent when no responsible user is known", () => {
     expect(
       deriveOriginatingActor({
-        createdByUserId: null,
-        createdByAgentId: "agent-claude",
+        creatorKind: "agent-execution",
+        creatorUserId: null,
+        creatorAuthorityId: "agent-claude",
         responsibleUserId: null,
       }),
     ).toEqual({ kind: "agent", id: "agent-claude" });
@@ -76,8 +82,9 @@ describe("deriveOriginatingActor", () => {
   it("surfaces the responsible user for routine executions with no creator", () => {
     expect(
       deriveOriginatingActor({
-        createdByUserId: null,
-        createdByAgentId: null,
+        creatorKind: "routine",
+        creatorUserId: null,
+        creatorAuthorityId: null,
         responsibleUserId: "user-responsible",
       }),
     ).toEqual({ kind: "user", id: "user-responsible" });
@@ -86,8 +93,9 @@ describe("deriveOriginatingActor", () => {
   it("returns null when nothing is attributable", () => {
     expect(
       deriveOriginatingActor({
-        createdByUserId: null,
-        createdByAgentId: null,
+        creatorKind: "system",
+        creatorUserId: null,
+        creatorAuthorityId: null,
         responsibleUserId: null,
       }),
     ).toBeNull();

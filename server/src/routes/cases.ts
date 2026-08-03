@@ -15,6 +15,7 @@ import {
   companies,
   documents,
   documentRevisions,
+  issueExecutionRunRefs,
   issues,
   labels,
   projects,
@@ -31,10 +32,10 @@ import { validate } from "../middleware/validate.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { documentAnnotationService, logActivity } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
-import { assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { assertBoard, assertCompanyAccess, hasCompanyAccess } from "./authz.js";
 
 type CaseRouteDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
-type CaseActor = ReturnType<typeof getActorInfo>;
+type CaseBoardActor = { userId: string };
 
 const CASE_STATUSES = ["draft", "in_progress", "in_review", "approved", "done", "cancelled"] as const;
 const CASE_LINK_ROLES = ["origin", "work", "reference"] as const;
@@ -105,12 +106,10 @@ const listEventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(MAX_EVENTS_LIMIT).optional().default(DEFAULT_EVENTS_LIMIT),
 }).strict();
 
-function eventActorValues(actor: CaseActor) {
+function eventActorValues(actor: CaseBoardActor) {
   return {
-    actorType: actor.actorType,
-    actorUserId: actor.actorType === "user" ? actor.actorId : null,
-    actorAgentId: actor.agentId,
-    runId: actor.runId && isUuidLike(actor.runId) ? actor.runId : null,
+    actorType: "user" as const,
+    actorUserId: actor.userId,
   };
 }
 
@@ -152,15 +151,13 @@ function parseQueryList(value: string | string[] | undefined): string[] {
 }
 
 function annotationActorInput(req: Request) {
-  const actor = getActorInfo(req);
+  assertBoard(req);
   return {
-    actor,
+    userId: req.actor.userId,
     annotationActor: {
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      userId: actor.actorType === "user" ? actor.actorId : null,
-      runId: actor.runId,
+      actorType: "user" as const,
+      actorId: req.actor.userId,
+      userId: req.actor.userId,
     },
   };
 }
@@ -195,8 +192,6 @@ async function loadIssueByIdOrIdentifier(db: CaseRouteDb, idOrIdentifier: string
 }
 
 function caseLookupCompanyIds(req: Request) {
-  if (req.actor.type === "agent") return req.actor.companyId ? [req.actor.companyId] : [];
-  if (req.actor.type === "board" && req.actor.source === "local_implicit") return undefined;
   if (req.actor.type === "board" && Array.isArray(req.actor.companyIds) && req.actor.companyIds.length > 0) {
     return req.actor.companyIds;
   }
@@ -269,7 +264,7 @@ async function insertCaseEvent(db: CaseRouteDb, input: {
   companyId: string;
   caseId: string;
   kind: typeof caseEvents.$inferInsert["kind"];
-  actor: CaseActor;
+  actor: CaseBoardActor;
   payload?: Record<string, unknown>;
 }) {
   const now = new Date();
@@ -285,24 +280,6 @@ async function insertCaseEvent(db: CaseRouteDb, input: {
   return event!;
 }
 
-async function resolveIssueForRun(db: CaseRouteDb, companyId: string, runId: string | null | undefined) {
-  if (!runId || !isUuidLike(runId)) return null;
-  return db
-    .select({ id: issues.id })
-    .from(issues)
-    .where(and(
-      eq(issues.companyId, companyId),
-      or(
-        eq(issues.executionRunId, runId),
-        eq(issues.checkoutRunId, runId),
-        eq(issues.originRunId, runId),
-      ),
-    ))
-    .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-}
-
 /** Batch resolve agent display names for a set of agent ids. */
 async function resolveAgentNames(db: CaseRouteDb, agentIds: (string | null)[]) {
   const valid = [...new Set(agentIds.filter((id): id is string => !!id))];
@@ -315,43 +292,73 @@ async function resolveAgentNames(db: CaseRouteDb, agentIds: (string | null)[]) {
 }
 
 /**
- * Batch resolve run → issue attribution. Mirrors resolveIssueForRun's precedence
- * (latest-updated issue whose execution/checkout/origin run matches), but for a
- * whole set of runs at once so the activity feed / revisions rail avoid N+1s.
+ * Batch resolve run → issue attribution through typed execution refs, with
+ * issue origin provenance as a fallback for non-execution source runs.
  */
 async function resolveIssuesForRuns(db: CaseRouteDb, companyId: string, runIds: (string | null)[]) {
   const valid = [...new Set(runIds.filter((id): id is string => !!id && isUuidLike(id)))];
-  const map = new Map<string, { id: string; identifier: string; title: string; status: string }>();
+  const map = new Map<
+    string,
+    {
+      id: string;
+      identifier: string;
+      title: string | null;
+      boardPresentationStatus: string;
+    }
+  >();
   if (valid.length === 0) return map;
   const rows = await db
     .select({
       id: issues.id,
       identifier: issues.identifier,
       title: issues.title,
-      status: issues.status,
-      executionRunId: issues.executionRunId,
-      checkoutRunId: issues.checkoutRunId,
+      boardPresentationStatus: issues.boardPresentationStatus,
+      runId: issueExecutionRunRefs.runId,
+    })
+    .from(issueExecutionRunRefs)
+    .innerJoin(
+      issues,
+      and(
+        eq(issues.companyId, issueExecutionRunRefs.companyId),
+        eq(issues.id, issueExecutionRunRefs.issueId),
+      ),
+    )
+    .where(and(
+      eq(issueExecutionRunRefs.companyId, companyId),
+      inArray(issueExecutionRunRefs.runId, valid),
+    ))
+    .orderBy(desc(issueExecutionRunRefs.createdAt), asc(issueExecutionRunRefs.refOrdinal));
+  for (const row of rows) {
+    if (!row.runId || map.has(row.runId)) continue;
+    map.set(row.runId, {
+      id: row.id,
+      identifier: row.identifier ?? row.id,
+      title: row.title,
+      boardPresentationStatus: row.boardPresentationStatus,
+    });
+  }
+
+  const unmatched = valid.filter((runId) => !map.has(runId));
+  if (unmatched.length === 0) return map;
+  const originRows = await db
+    .select({
+      id: issues.id,
+      identifier: issues.identifier,
+      title: issues.title,
+      boardPresentationStatus: issues.boardPresentationStatus,
       originRunId: issues.originRunId,
-      updatedAt: issues.updatedAt,
-      createdAt: issues.createdAt,
     })
     .from(issues)
-    .where(and(
-      eq(issues.companyId, companyId),
-      or(
-        inArray(issues.executionRunId, valid),
-        inArray(issues.checkoutRunId, valid),
-        inArray(issues.originRunId, valid),
-      ),
-    ))
+    .where(and(eq(issues.companyId, companyId), inArray(issues.originRunId, unmatched)))
     .orderBy(desc(issues.updatedAt), desc(issues.createdAt));
-  for (const runId of valid) {
-    const match = rows.find(
-      (row) => row.executionRunId === runId || row.checkoutRunId === runId || row.originRunId === runId,
-    );
-    if (match) {
-      map.set(runId, { id: match.id, identifier: match.identifier ?? match.id, title: match.title, status: match.status });
-    }
+  for (const row of originRows) {
+    if (!row.originRunId || map.has(row.originRunId)) continue;
+    map.set(row.originRunId, {
+      id: row.id,
+      identifier: row.identifier ?? row.id,
+      title: row.title,
+      boardPresentationStatus: row.boardPresentationStatus,
+    });
   }
   return map;
 }
@@ -364,52 +371,34 @@ function payloadIssueIdForEvent(kind: string, payload: Record<string, unknown> |
 
 async function resolveIssuesByIds(db: CaseRouteDb, companyId: string, issueIds: (string | null)[]) {
   const valid = [...new Set(issueIds.filter((id): id is string => !!id && isUuidLike(id)))];
-  const map = new Map<string, { id: string; identifier: string; title: string; status: string }>();
+  const map = new Map<
+    string,
+    {
+      id: string;
+      identifier: string;
+      title: string | null;
+      boardPresentationStatus: string;
+    }
+  >();
   if (valid.length === 0) return map;
   const rows = await db
     .select({
       id: issues.id,
       identifier: issues.identifier,
       title: issues.title,
-      status: issues.status,
+      boardPresentationStatus: issues.boardPresentationStatus,
     })
     .from(issues)
     .where(and(eq(issues.companyId, companyId), inArray(issues.id, valid)));
   for (const row of rows) {
-    map.set(row.id, { id: row.id, identifier: row.identifier ?? row.id, title: row.title, status: row.status });
+    map.set(row.id, {
+      id: row.id,
+      identifier: row.identifier ?? row.id,
+      title: row.title,
+      boardPresentationStatus: row.boardPresentationStatus,
+    });
   }
   return map;
-}
-
-async function autoLinkRunIssue(db: CaseRouteDb, input: {
-  companyId: string;
-  caseId: string;
-  actor: CaseActor;
-  role: "origin" | "work";
-}) {
-  const issue = await resolveIssueForRun(db, input.companyId, input.actor.runId);
-  if (!issue) return null;
-  const now = new Date();
-  const [link] = await db.insert(caseIssueLinks).values({
-    companyId: input.companyId,
-    caseId: input.caseId,
-    issueId: issue.id,
-    role: input.role,
-    createdByRunId: input.actor.runId && isUuidLike(input.actor.runId) ? input.actor.runId : null,
-    createdAt: now,
-    updatedAt: now,
-  }).onConflictDoNothing({
-    target: [caseIssueLinks.caseId, caseIssueLinks.issueId],
-  }).returning();
-  if (!link) return null;
-  await insertCaseEvent(db, {
-    companyId: input.companyId,
-    caseId: input.caseId,
-    kind: "issue_linked",
-    actor: input.actor,
-    payload: { issueId: issue.id, role: input.role, autoLinked: true },
-  });
-  return link;
 }
 
 async function nextCaseIdentity(db: CaseRouteDb, companyId: string) {
@@ -506,7 +495,7 @@ async function loadCaseDetail(db: CaseRouteDb, row: typeof cases.$inferSelect) {
         id: item.issue.id,
         identifier: item.issue.identifier,
         title: item.issue.title,
-        status: item.issue.status,
+        boardPresentationStatus: item.issue.boardPresentationStatus,
       },
     })),
     documents: documentRows.map((item) => ({
@@ -606,7 +595,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     key: string;
     document: Pick<typeof documents.$inferSelect, "id" | "latestRevisionId" | "latestRevisionNumber">;
     body: string;
-    actor: CaseActor;
+    actor: CaseBoardActor;
   }) {
     const remapped = await documentAnnotationsSvc.remapOpenThreadsForCaseDocument({
       caseId: input.caseRow.id,
@@ -619,10 +608,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
     for (const remap of remapped) {
       await logActivity(db, {
         companyId: input.caseRow.companyId,
-        actorType: input.actor.actorType,
-        actorId: input.actor.actorId,
-        agentId: input.actor.agentId,
-        runId: input.actor.runId,
+        actorType: "user",
+        actorId: input.actor.userId,
         action: "case.document_annotation_remapped",
         entityType: "case",
         entityId: input.caseRow.id,
@@ -644,7 +631,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
     await assertCasesEnabled(db);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const actor = getActorInfo(req);
+    const actor = { userId: req.actor.userId };
     const body = req.body as z.infer<typeof createCaseSchema>;
 
     const result = await db.transaction(async (tx) => {
@@ -680,7 +667,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
           actor,
           payload: { upsert: true },
         });
-        await autoLinkRunIssue(tx, { companyId, caseId: existing.id, actor, role: "origin" });
         return { created: false, row: updated! };
       }
 
@@ -697,8 +683,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         status,
         fields: body.fields ?? {},
         parentCaseId: body.parentCaseId ?? null,
-        createdByAgentId: actor.agentId,
-        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+        createdByUserId: actor.userId,
         completedAt: completedAtForStatus(status),
         createdAt: now,
         updatedAt: now,
@@ -710,7 +695,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
         actor,
         payload: { caseType: body.caseType, key: body.key ?? null },
       });
-      await autoLinkRunIssue(tx, { companyId, caseId: created!.id, actor, role: "origin" });
       return { created: true, row: created! };
     });
 
@@ -823,7 +807,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
       const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
       if (!caseRow) return next();
       const key = parseDocumentKey(req.params.key as string);
-      const { actor, annotationActor } = annotationActorInput(req);
+      const { userId, annotationActor } = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.createCaseThread(
         caseRow.id,
         key,
@@ -833,11 +817,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
       const firstComment = thread.comments[0];
       await logActivity(db, {
         companyId: caseRow.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: userId,
         action: "case.document_annotation_thread_created",
         entityType: "case",
         entityId: caseRow.id,
@@ -862,7 +843,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
       const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
       if (!caseRow) return next();
       const key = parseDocumentKey(req.params.key as string);
-      const { actor, annotationActor } = annotationActorInput(req);
+      const { userId, annotationActor } = annotationActorInput(req);
       const comment = await documentAnnotationsSvc.addCaseComment(
         caseRow.id,
         key,
@@ -872,11 +853,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
       );
       await logActivity(db, {
         companyId: caseRow.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: userId,
         action: "case.document_annotation_comment_added",
         entityType: "case",
         entityId: caseRow.id,
@@ -899,7 +877,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
       const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
       if (!caseRow) return next();
       const key = parseDocumentKey(req.params.key as string);
-      const { actor, annotationActor } = annotationActorInput(req);
+      const { userId, annotationActor } = annotationActorInput(req);
       const thread = await documentAnnotationsSvc.updateCaseThread(
         caseRow.id,
         key,
@@ -909,11 +887,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
       );
       await logActivity(db, {
         companyId: caseRow.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: userId,
         action: thread.status === "resolved"
           ? "case.document_annotation_thread_resolved"
           : "case.document_annotation_thread_reopened",
@@ -934,8 +909,9 @@ export function caseRoutes(db: Db, storage: StorageService) {
   router.put("/cases/:id/documents/:key", async (req, res, next) => {
     const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
     if (!caseRow) return next();
+    assertBoard(req);
     const key = parseDocumentKey(req.params.key as string);
-    const actor = getActorInfo(req);
+    const actor = { userId: req.actor.userId };
     const body = upsertCaseDocumentSchema.parse(req.body);
 
     const result = await db.transaction(async (tx) => {
@@ -989,8 +965,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
           title: body.title ?? existing.document.title,
           format: body.format,
           updatedAt: now,
-          updatedByAgentId: actor.agentId,
-          updatedByUserId: actor.actorType === "user" ? actor.actorId : null,
+          updatedByUserId: actor.userId,
         }).where(eq(documents.id, existing.document.id)).returning()
         : await tx.insert(documents).values({
           companyId: caseRow.companyId,
@@ -998,10 +973,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
           format: body.format,
           latestBody: body.body,
           latestRevisionNumber: 1,
-          createdByAgentId: actor.agentId,
-          createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-          updatedByAgentId: actor.agentId,
-          updatedByUserId: actor.actorType === "user" ? actor.actorId : null,
+          createdByUserId: actor.userId,
+          updatedByUserId: actor.userId,
           createdAt: now,
           updatedAt: now,
         }).returning();
@@ -1014,9 +987,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         format: body.format,
         body: body.body,
         changeSummary: body.changeSummary ?? null,
-        createdByAgentId: actor.agentId,
-        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-        createdByRunId: actor.runId && isUuidLike(actor.runId) ? actor.runId : null,
+        createdByUserId: actor.userId,
         createdAt: now,
       }).returning();
       await tx.update(documents).set({
@@ -1025,8 +996,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         latestBody: body.body,
         latestRevisionId: revision!.id,
         latestRevisionNumber: revision!.revisionNumber,
-        updatedByAgentId: actor.agentId,
-        updatedByUserId: actor.actorType === "user" ? actor.actorId : null,
+        updatedByUserId: actor.userId,
         updatedAt: now,
       }).where(eq(documents.id, document!.id));
       if (!existing) {
@@ -1048,7 +1018,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
         actor,
         payload: { key, documentId: document!.id, revisionId: revision!.id, revisionNumber: revision!.revisionNumber },
       });
-      await autoLinkRunIssue(tx, { companyId: caseRow.companyId, caseId: caseRow.id, actor, role: "work" });
       return {
         document: {
           ...document!,
@@ -1075,8 +1044,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
   router.post("/cases/:id/documents/:key/lock", async (req, res, next) => {
     const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
     if (!caseRow) return next();
+    assertBoard(req);
     const key = parseDocumentKey(req.params.key as string);
-    const actor = getActorInfo(req);
     const result = await db.transaction(async (tx) => {
       await lockCaseDocumentKey(tx, { companyId: caseRow.companyId, caseId: caseRow.id, key });
       const link = await loadCaseDocumentLink(tx, { companyId: caseRow.companyId, caseId: caseRow.id, key });
@@ -1085,8 +1054,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
       const now = new Date();
       const [document] = await tx.update(documents).set({
         lockedAt: now,
-        lockedByAgentId: actor.agentId,
-        lockedByUserId: actor.actorType === "user" ? actor.actorId : null,
+        lockedByUserId: req.actor.userId,
         updatedAt: now,
       }).where(eq(documents.id, link.document.id)).returning();
       await tx.update(caseDocuments).set({ updatedAt: now }).where(eq(caseDocuments.documentId, link.document.id));
@@ -1120,9 +1088,10 @@ export function caseRoutes(db: Db, storage: StorageService) {
   router.post("/cases/:id/documents/:key/revisions/:revisionId/restore", async (req, res, next) => {
     const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
     if (!caseRow) return next();
+    assertBoard(req);
     const key = parseDocumentKey(req.params.key as string);
     const revisionId = req.params.revisionId as string;
-    const actor = getActorInfo(req);
+    const actor = { userId: req.actor.userId };
 
     const result = await db.transaction(async (tx) => {
       await lockCaseDocumentKey(tx, { companyId: caseRow.companyId, caseId: caseRow.id, key });
@@ -1158,9 +1127,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         format: sourceRevision.format,
         body: sourceRevision.body,
         changeSummary: `Restored from revision ${sourceRevision.revisionNumber}`,
-        createdByAgentId: actor.agentId,
-        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-        createdByRunId: actor.runId && isUuidLike(actor.runId) ? actor.runId : null,
+        createdByUserId: actor.userId,
         createdAt: now,
       }).returning();
       const [document] = await tx.update(documents).set({
@@ -1169,8 +1136,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         latestBody: sourceRevision.body,
         latestRevisionId: restoredRevision!.id,
         latestRevisionNumber: nextRevisionNumber,
-        updatedByAgentId: actor.agentId,
-        updatedByUserId: actor.actorType === "user" ? actor.actorId : null,
+        updatedByUserId: actor.userId,
         updatedAt: now,
       }).where(eq(documents.id, existing.document.id)).returning();
       await tx.update(caseDocuments).set({ updatedAt: now }).where(eq(caseDocuments.documentId, existing.document.id));
@@ -1188,7 +1154,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
           restoredFromRevisionNumber: sourceRevision.revisionNumber,
         },
       });
-      await autoLinkRunIssue(tx, { companyId: caseRow.companyId, caseId: caseRow.id, actor, role: "work" });
       return {
         document: caseDocumentResponse({ key, document: document! }),
         revision: restoredRevision!,
@@ -1230,7 +1195,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
   router.post("/cases/:id/links", validate(createIssueLinkSchema), async (req, res) => {
     await assertCasesEnabled(db);
     const caseRow = await assertCaseAccess(db, req, req.params.id as string);
-    const actor = getActorInfo(req);
+    assertBoard(req);
+    const actor = { userId: req.actor.userId };
     const body = req.body as z.infer<typeof createIssueLinkSchema>;
 
     const result = await db.transaction(async (tx) => {
@@ -1247,7 +1213,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
         caseId: caseRow.id,
         issueId: body.issueId,
         role: body.role,
-        createdByRunId: actor.runId && isUuidLike(actor.runId) ? actor.runId : null,
         createdAt: now,
         updatedAt: now,
       }).onConflictDoNothing({
@@ -1275,7 +1240,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
   router.post("/cases/:id/attachments", async (req, res) => {
     await assertCasesEnabled(db);
     const caseRow = await assertCaseAccess(db, req, req.params.id as string);
-    const actor = getActorInfo(req);
+    assertBoard(req);
+    const actor = { userId: req.actor.userId };
     const [company] = await db
       .select({ attachmentMaxBytes: companies.attachmentMaxBytes })
       .from(companies)
@@ -1315,8 +1281,7 @@ export function caseRoutes(db: Db, storage: StorageService) {
         byteSize: stored.byteSize,
         sha256: stored.sha256,
         originalFilename: stored.originalFilename,
-        createdByAgentId: actor.agentId,
-        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+        createdByUserId: actor.userId,
         createdAt: now,
         updatedAt: now,
       }).returning();
@@ -1334,7 +1299,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
         actor,
         payload: { attachmentId: attachment!.id, assetId: asset!.id, originalFilename: asset!.originalFilename },
       });
-      await autoLinkRunIssue(tx, { companyId: caseRow.companyId, caseId: caseRow.id, actor, role: "work" });
       return { ...attachment!, asset };
     });
     res.status(201).json(result);
@@ -1456,7 +1420,8 @@ export function caseRoutes(db: Db, storage: StorageService) {
   router.patch("/cases/:id", async (req, res, next) => {
     const caseRow = await resolveSharedPathCase(db, req, req.params.id as string);
     if (!caseRow) return next();
-    const actor = getActorInfo(req);
+    assertBoard(req);
+    const actor = { userId: req.actor.userId };
     const body = patchCaseSchema.parse(req.body);
     const nextLabelIds = body.labelIds ?? body.labels;
 
@@ -1532,7 +1497,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
           parentCaseId: body.parentCaseId,
         },
       });
-      await autoLinkRunIssue(tx, { companyId: caseRow.companyId, caseId: caseRow.id, actor, role: "work" });
       return row!;
     });
     res.json(await loadCaseDetail(db, updated));

@@ -1,70 +1,127 @@
 import { readConfigFile } from "./config-file.js";
 import { execFileSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { config as loadDotenv } from "dotenv";
-import { resolvePaperclipEnvPath } from "./paths.js";
-import { maybeRepairLegacyWorktreeConfigAndEnvFiles } from "./worktree-config.js";
 import {
-  AUTH_BASE_URL_MODES,
+  resolveDatabaseTarget,
+  resolveOptionalExternalPostgresConnectionString,
+  type ExternalDatabaseTargetSource,
+} from "@paperclipai/db";
+import {
   BIND_MODES,
   DEPLOYMENT_EXPOSURES,
-  DEPLOYMENT_MODES,
   SECRET_PROVIDERS,
   STORAGE_PROVIDERS,
   type BindMode,
-  type AuthBaseUrlMode,
   type DeploymentExposure,
-  type DeploymentMode,
   type SecretProvider,
   type StorageProvider,
   inferBindModeFromHost,
+  normalizePublicOrigin,
   resolveRuntimeBind,
   validateConfiguredBindMode,
 } from "@paperclipai/shared";
 import {
   resolveDefaultBackupDir,
-  resolveDefaultEmbeddedPostgresDir,
   resolveDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir,
   resolveHomeAwarePath,
 } from "./home-paths.js";
 
-const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
-if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
-  loadDotenv({ path: PAPERCLIP_ENV_FILE_PATH, override: false, quiet: true });
-}
-
-const CWD_ENV_PATH = resolve(process.cwd(), ".env");
-const isSameFile = existsSync(CWD_ENV_PATH) && existsSync(PAPERCLIP_ENV_FILE_PATH)
-  ? realpathSync(CWD_ENV_PATH) === realpathSync(PAPERCLIP_ENV_FILE_PATH)
-  : CWD_ENV_PATH === PAPERCLIP_ENV_FILE_PATH;
-if (!isSameFile && existsSync(CWD_ENV_PATH)) {
-  loadDotenv({ path: CWD_ENV_PATH, override: false, quiet: true });
-}
-
-maybeRepairLegacyWorktreeConfigAndEnvFiles();
-
 const TAILSCALE_DETECT_TIMEOUT_MS = 3000;
 
-type DatabaseMode = "embedded-postgres" | "postgres";
+const AMBIENT_AUTH_ORIGIN_ENV_KEYS = [
+  ["BETTER", "AUTH", "URL"],
+  ["BETTER", "AUTH", "BASE", "URL"],
+  ["NEXT", "PUBLIC", "BETTER", "AUTH", "URL"],
+  ["PUBLIC", "BETTER", "AUTH", "URL"],
+  ["NUXT", "PUBLIC", "BETTER", "AUTH", "URL"],
+  ["NUXT", "PUBLIC", "AUTH", "URL"],
+  ["PAPERCLIP", "AUTH", "PUBLIC", "BASE", "URL"],
+  ["NEXT", "PUBLIC", "URL"],
+  ["BASE", "URL"],
+  ["BETTER", "AUTH", "TRUSTED", "ORIGINS"],
+].map((segments) => segments.join("_"));
+
+export function assertNoAmbientAuthOriginEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const configuredKeys = AMBIENT_AUTH_ORIGIN_ENV_KEYS.filter(
+    (key) => env[key]?.trim(),
+  );
+  if (configuredKeys.length === 0) return;
+
+  throw new Error(
+    `Unsupported ambient auth-origin environment variable(s): ${configuredKeys.join(", ")}. ` +
+      "Use PAPERCLIP_PUBLIC_URL only for public exposure; private exposure derives origin from requests.",
+  );
+}
+
+function resolveExternalMigrationUrl(value: string | undefined): string | undefined {
+  return resolveOptionalExternalPostgresConnectionString(value, "DATABASE_MIGRATION_URL");
+}
+
+function resolveConfiguredPublicOrigin(
+  rawValue: string | undefined,
+  source: string,
+): string | undefined {
+  if (!rawValue?.trim()) return undefined;
+  try {
+    return normalizePublicOrigin(rawValue);
+  } catch (error) {
+    throw new Error(
+      `${source} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+export function resolveCanonicalPublicOrigin(input: {
+  deploymentExposure: DeploymentExposure;
+  environmentValue?: string;
+  persistedValue?: string;
+}): string | undefined {
+  const environmentOrigin = resolveConfiguredPublicOrigin(
+    input.environmentValue,
+    "PAPERCLIP_PUBLIC_URL",
+  );
+  const persistedOrigin = resolveConfiguredPublicOrigin(
+    input.persistedValue,
+    "auth.publicBaseUrl",
+  );
+  if (
+    environmentOrigin &&
+    persistedOrigin &&
+    environmentOrigin !== persistedOrigin
+  ) {
+    throw new Error(
+      "PAPERCLIP_PUBLIC_URL must match the persisted auth.publicBaseUrl when both are configured",
+    );
+  }
+
+  const canonicalOrigin = environmentOrigin ?? persistedOrigin;
+  if (input.deploymentExposure === "public" && !canonicalOrigin) {
+    throw new Error(
+      "PAPERCLIP_PUBLIC_URL or persisted auth.publicBaseUrl is required when server.exposure=public",
+    );
+  }
+  if (input.deploymentExposure === "private" && canonicalOrigin) {
+    throw new Error(
+      "PAPERCLIP_PUBLIC_URL and auth.publicBaseUrl are only valid when server.exposure=public",
+    );
+  }
+  return canonicalOrigin;
+}
 
 export interface Config {
-  deploymentMode: DeploymentMode;
   deploymentExposure: DeploymentExposure;
   bind: BindMode;
   customBindHost: string | undefined;
   host: string;
   port: number;
   allowedHostnames: string[];
-  authBaseUrlMode: AuthBaseUrlMode;
   authPublicBaseUrl: string | undefined;
   authDisableSignUp: boolean;
-  databaseMode: DatabaseMode;
-  databaseUrl: string | undefined;
+  databaseUrl: string;
+  databaseTargetSource: ExternalDatabaseTargetSource;
   databaseMigrationUrl: string | undefined;
-  embeddedPostgresDataDir: string;
-  embeddedPostgresPort: number;
   databaseBackupEnabled: boolean;
   databaseBackupIntervalMinutes: number;
   databaseBackupRetentionDays: number;
@@ -83,8 +140,8 @@ export interface Config {
   storageS3ForcePathStyle: boolean;
   feedbackExportBackendUrl: string | undefined;
   feedbackExportBackendToken: string | undefined;
-  heartbeatSchedulerEnabled: boolean;
-  heartbeatSchedulerIntervalMs: number;
+  issueExecutionSchedulerEnabled: boolean;
+  issueExecutionSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
   telemetryEnabled: boolean;
 }
@@ -109,14 +166,9 @@ function detectTailnetBindHost(): string | undefined {
 }
 
 export function loadConfig(): Config {
+  assertNoAmbientAuthOriginEnvironment();
+  const databaseTarget = resolveDatabaseTarget();
   const fileConfig = readConfigFile();
-  const fileDatabaseMode =
-    (fileConfig?.database.mode === "postgres" ? "postgres" : "embedded-postgres") as DatabaseMode;
-
-  const fileDbUrl =
-    fileDatabaseMode === "postgres"
-      ? fileConfig?.database.connectionString
-      : undefined;
   const fileDatabaseBackup = fileConfig?.database.backup;
   const fileSecrets = fileConfig?.secrets;
   const fileStorage = fileConfig?.storage;
@@ -157,17 +209,11 @@ export function loadConfig(): Config {
     process.env.PAPERCLIP_TELEMETRY_BACKEND_TOKEN?.trim() ||
     undefined;
 
-  const deploymentModeFromEnvRaw = process.env.PAPERCLIP_DEPLOYMENT_MODE;
-  const deploymentModeFromEnv =
-    deploymentModeFromEnvRaw && DEPLOYMENT_MODES.includes(deploymentModeFromEnvRaw as DeploymentMode)
-      ? (deploymentModeFromEnvRaw as DeploymentMode)
-      : null;
-  const deploymentMode: DeploymentMode = deploymentModeFromEnv ?? fileConfig?.server.deploymentMode ?? "local_trusted";
   const strictModeFromEnv = process.env.PAPERCLIP_SECRETS_STRICT_MODE;
   const secretsStrictMode =
     strictModeFromEnv !== undefined
       ? strictModeFromEnv === "true"
-      : (fileSecrets?.strictMode ?? deploymentMode === "authenticated");
+      : (fileSecrets?.strictMode ?? false);
   const deploymentExposureFromEnvRaw = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
   const deploymentExposureFromEnv =
     deploymentExposureFromEnvRaw &&
@@ -175,9 +221,9 @@ export function loadConfig(): Config {
       ? (deploymentExposureFromEnvRaw as DeploymentExposure)
       : null;
   const deploymentExposure: DeploymentExposure =
-    deploymentMode === "local_trusted"
-      ? "private"
-      : (deploymentExposureFromEnv ?? fileConfig?.server.exposure ?? "private");
+    deploymentExposureFromEnv ??
+    fileConfig?.server.exposure ??
+    "private";
   const bindFromEnvRaw = process.env.PAPERCLIP_BIND;
   const bindFromEnv =
     bindFromEnvRaw && BIND_MODES.includes(bindFromEnvRaw as BindMode)
@@ -190,24 +236,11 @@ export function loadConfig(): Config {
     fileConfig?.server.bind ??
     inferBindModeFromHost(configuredHost, { tailnetBindHost });
   const customBindHost = process.env.PAPERCLIP_BIND_HOST ?? fileConfig?.server.customBindHost;
-  const authBaseUrlModeFromEnvRaw = process.env.PAPERCLIP_AUTH_BASE_URL_MODE;
-  const authBaseUrlModeFromEnv =
-    authBaseUrlModeFromEnvRaw &&
-    AUTH_BASE_URL_MODES.includes(authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
-      ? (authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
-      : null;
-  const publicUrlFromEnv = process.env.PAPERCLIP_PUBLIC_URL;
-  const authPublicBaseUrlRaw =
-    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ??
-    process.env.BETTER_AUTH_URL ??
-    process.env.BETTER_AUTH_BASE_URL ??
-    publicUrlFromEnv ??
-    fileConfig?.auth?.publicBaseUrl;
-  const authPublicBaseUrl = authPublicBaseUrlRaw?.trim() || undefined;
-  const authBaseUrlMode: AuthBaseUrlMode =
-    authBaseUrlModeFromEnv ??
-    fileConfig?.auth?.baseUrlMode ??
-    (authPublicBaseUrl ? "explicit" : "auto");
+  const authPublicBaseUrl = resolveCanonicalPublicOrigin({
+    deploymentExposure,
+    environmentValue: process.env.PAPERCLIP_PUBLIC_URL,
+    persistedValue: fileConfig?.auth?.publicBaseUrl,
+  });
   const disableSignUpFromEnv = process.env.PAPERCLIP_AUTH_DISABLE_SIGN_UP;
   const authDisableSignUp: boolean =
     disableSignUpFromEnv !== undefined
@@ -220,21 +253,9 @@ export function loadConfig(): Config {
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value.length > 0)
     : null;
-  const publicUrlHostname = authPublicBaseUrl
-    ? (() => {
-      try {
-        return new URL(authPublicBaseUrl).hostname.trim().toLowerCase();
-      } catch {
-        return null;
-      }
-    })()
-    : null;
   const allowedHostnames = Array.from(
     new Set(
-      [
-        ...(allowedHostnamesFromEnv ?? fileConfig?.server.allowedHostnames ?? []),
-        ...(publicUrlHostname ? [publicUrlHostname] : []),
-      ]
+      (allowedHostnamesFromEnv ?? fileConfig?.server.allowedHostnames ?? [])
         .map((value) => value.trim().toLowerCase())
         .filter(Boolean),
     ),
@@ -243,7 +264,7 @@ export function loadConfig(): Config {
   const companyDeletionEnabled =
     companyDeletionEnvRaw !== undefined
       ? companyDeletionEnvRaw === "true"
-      : deploymentMode === "local_trusted";
+      : false;
   const databaseBackupEnabled =
     process.env.PAPERCLIP_DB_BACKUP_ENABLED !== undefined
       ? process.env.PAPERCLIP_DB_BACKUP_ENABLED === "true"
@@ -266,8 +287,7 @@ export function loadConfig(): Config {
       resolveDefaultBackupDir(),
   );
   const bindValidationErrors = validateConfiguredBindMode({
-    deploymentMode,
-    deploymentExposure,
+    exposure: deploymentExposure,
     bind,
     host: configuredHost,
     customBindHost,
@@ -286,23 +306,17 @@ export function loadConfig(): Config {
   }
 
   return {
-    deploymentMode,
     deploymentExposure,
     bind: resolvedBind.bind,
     customBindHost: resolvedBind.customBindHost,
     host: resolvedBind.host,
     port: Number(process.env.PORT) || fileConfig?.server.port || 3100,
     allowedHostnames,
-    authBaseUrlMode,
     authPublicBaseUrl,
     authDisableSignUp,
-    databaseMode: fileDatabaseMode,
-    databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
-    databaseMigrationUrl: process.env.DATABASE_MIGRATION_URL,
-    embeddedPostgresDataDir: resolveHomeAwarePath(
-      fileConfig?.database.embeddedPostgresDataDir ?? resolveDefaultEmbeddedPostgresDir(),
-    ),
-    embeddedPostgresPort: fileConfig?.database.embeddedPostgresPort ?? 54329,
+    databaseUrl: databaseTarget.connectionString,
+    databaseTargetSource: databaseTarget.source,
+    databaseMigrationUrl: resolveExternalMigrationUrl(process.env.DATABASE_MIGRATION_URL),
     databaseBackupEnabled,
     databaseBackupIntervalMinutes,
     databaseBackupRetentionDays,
@@ -329,8 +343,11 @@ export function loadConfig(): Config {
     storageS3ForcePathStyle,
     feedbackExportBackendUrl,
     feedbackExportBackendToken,
-    heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
-    heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
+    issueExecutionSchedulerEnabled: process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED !== "false",
+    issueExecutionSchedulerIntervalMs: Math.max(
+      10000,
+      Number(process.env.ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS) || 30000,
+    ),
     companyDeletionEnabled,
     telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
   };

@@ -1,0 +1,5003 @@
+{
+  "version": 6,
+  "donor": {
+    "repository": "reference/opencode",
+    "commit": "2b2aacc93975330f9fd045d4306f698b0c6a8f8f"
+  },
+  "schema": {
+    "roots": [
+      "packages/schema/src/session.ts",
+      "packages/schema/src/session-id.ts",
+      "packages/schema/src/session-message.ts",
+      "packages/schema/src/session-event.ts",
+      "packages/schema/src/session-input.ts",
+      "packages/schema/src/session-delivery.ts"
+    ],
+    "staticRelativeClosure": [
+      {
+        "sourcePath": "packages/schema/src/agent.ts",
+        "gitBlob": "adf7aec2823fe622e0fd7406b44f5a52ca4759ea",
+        "sha256": "6cfa9079348278e0bb11a217d65bd3cd48d543ecd276e71ea3ce38e429d5f7da",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/agent.ts",
+          "packages/schema/src/model.ts",
+          "packages/schema/src/permission.ts",
+          "packages/schema/src/provider.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Agent",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 32,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "2b26da3defcfd816c0e7bff30fc3c046b4c2da205b25cf150c7dba2cc2ceeca1"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 263,
+            "end": 327,
+            "startLine": 10,
+            "endLine": 10,
+            "sha256": "81ec1c6192cf1c3a91cfd55bfc400215b5792600f301b5d890a64dcee442a0c2"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 328,
+            "end": 359,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "Color",
+            "kind": "FirstStatement",
+            "start": 361,
+            "end": 595,
+            "startLine": 13,
+            "endLine": 16,
+            "sha256": "07372276a8b9bdbac13937a56573ddfdcc22c5a5f1eed8afb0245c9e73a7dbd7"
+          },
+          {
+            "symbol": "Color",
+            "kind": "TypeAliasDeclaration",
+            "start": 596,
+            "end": 633,
+            "startLine": 17,
+            "endLine": 17,
+            "sha256": "8dbaf7823aace716b9f00687713b6d4089f3e0a9203e10ddbd0d746703f1c840"
+          },
+          {
+            "symbol": "Info",
+            "kind": "InterfaceDeclaration",
+            "start": 635,
+            "end": 699,
+            "startLine": 19,
+            "endLine": 19,
+            "sha256": "1821aa3b7f74efd8509504538923e05b87fc96058c83f618ceb48007f5370917"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 700,
+            "end": 1311,
+            "startLine": 20,
+            "endLine": 38,
+            "sha256": "4c416db04c24b79e769dea90abb76a54c13a57212ac4f9ab1674005d56ef3ffc"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/connection.ts",
+        "gitBlob": "2bacb977a870b5515d4745b16e3748c7b4d79e93",
+        "sha256": "37d3914dab08b851c9c5a0c0dd7e1a3c77ab6224a8802a0a00fbb178565ecaab",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/connection.ts",
+          "packages/schema/src/credential.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Connection",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 42,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "5ed129300c067a0dca1a2fd9cd624f4d59db7ec1823d9a5403d2a60eba5c5f88"
+          },
+          {
+            "symbol": "CredentialInfo",
+            "kind": "InterfaceDeclaration",
+            "start": 119,
+            "end": 203,
+            "startLine": 6,
+            "endLine": 6,
+            "sha256": "77a2f25679792f6becc4d2f32b7720c70019a8a9e2e20f3d26e54a3cd79591d6"
+          },
+          {
+            "symbol": "CredentialInfo",
+            "kind": "FirstStatement",
+            "start": 204,
+            "end": 389,
+            "startLine": 7,
+            "endLine": 11,
+            "sha256": "aed45d5f01c73e1528d3dceb2e797576efae842af3fe7a379154c6ab8d07b8b4"
+          },
+          {
+            "symbol": "EnvInfo",
+            "kind": "InterfaceDeclaration",
+            "start": 391,
+            "end": 461,
+            "startLine": 13,
+            "endLine": 13,
+            "sha256": "3151a82d6d39c8d68503d0a2021e6c11cb824061a3a2c4cfbfe2c443a4fbe4ee"
+          },
+          {
+            "symbol": "EnvInfo",
+            "kind": "FirstStatement",
+            "start": 462,
+            "end": 604,
+            "startLine": 14,
+            "endLine": 17,
+            "sha256": "f38d296d487f40416c023d3d3e588dc5a1d2d3e311f3471c4e9f348529a57c9f"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 606,
+            "end": 750,
+            "startLine": 19,
+            "endLine": 21,
+            "sha256": "3153df790ac92aac85172b9b971b642d293705c676d08aa912d7ab6adc41e416"
+          },
+          {
+            "symbol": "Info",
+            "kind": "TypeAliasDeclaration",
+            "start": 751,
+            "end": 786,
+            "startLine": 22,
+            "endLine": 22,
+            "sha256": "a64c8fb3a1eb70f02275c85240884be2dbd722a858f87c301405ef177b8667d2"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/credential.ts",
+        "gitBlob": "e54e2f680b7b3179a28996078d670def3012c3dd",
+        "sha256": "141f051d45fbb49d08b72154d5ddc4d398b87f18b106b948e67fa05a72e4bef6",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/credential.ts",
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/integration-id.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Credential",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 42,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "ef59ef49d43e5ffb33d082010bf557fd82a579d4345be618b4a9a281e0452291"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 260,
+            "end": 411,
+            "startLine": 9,
+            "endLine": 12,
+            "sha256": "998dd3e4099ee2ad93e41f3495bdf1c79ef29bfa27ffdd517d65d73b5a7bfaf9"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 412,
+            "end": 443,
+            "startLine": 13,
+            "endLine": 13,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "OAuth",
+            "kind": "InterfaceDeclaration",
+            "start": 445,
+            "end": 511,
+            "startLine": 15,
+            "endLine": 15,
+            "sha256": "7fdd3f5944f22ab96e9e7962019b303d0115373497b26b290ae69161851b324d"
+          },
+          {
+            "symbol": "OAuth",
+            "kind": "FirstStatement",
+            "start": 512,
+            "end": 808,
+            "startLine": 16,
+            "endLine": 23,
+            "sha256": "b94f29c2b5d99ba9ebc748cb187c60bbdafe12aba836e10c9bc38a718fbd13a8"
+          },
+          {
+            "symbol": "Key",
+            "kind": "InterfaceDeclaration",
+            "start": 810,
+            "end": 872,
+            "startLine": 25,
+            "endLine": 25,
+            "sha256": "6432fd29f1f6fcd9d62717197ffdf303ca09e119efc90305af9fc02c754f9f11"
+          },
+          {
+            "symbol": "Key",
+            "kind": "FirstStatement",
+            "start": 873,
+            "end": 1074,
+            "startLine": 26,
+            "endLine": 30,
+            "sha256": "e4534a729fa63a0a080241befd73cc85e1724eafd50e18a47c8d5e67bdd27657"
+          },
+          {
+            "symbol": "Value",
+            "kind": "FirstStatement",
+            "start": 1076,
+            "end": 1209,
+            "startLine": 32,
+            "endLine": 34,
+            "sha256": "648554869c241cc7d8d9389367c1e09a9b27ddda96eeee264b0bc973de55e727"
+          },
+          {
+            "symbol": "Value",
+            "kind": "TypeAliasDeclaration",
+            "start": 1210,
+            "end": 1262,
+            "startLine": 35,
+            "endLine": 35,
+            "sha256": "a7bda8a8c606ffb7aca3e3a6c179f1a7f2fe47b3ecdba16dfdd37ea84ed25d2e"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/event.ts",
+        "gitBlob": "0d6ec9775aa475a8c491dbdae7a40a41fd43cdf5",
+        "sha256": "60ec352e97c19724143ca398b74200b734f2dfb93080b583c84ff30af7b72a29",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/event.ts",
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/location.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Event",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 32,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "6615f9671bb9baf592fa2b225175379d9f342a5ca689bfc553df7fc6da76e2d6"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 217,
+            "end": 397,
+            "startLine": 9,
+            "endLine": 12,
+            "sha256": "33869c49fb8b8e3c0e336a07d3732c904386a6ac11f489c538039b73bb0e7500"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 398,
+            "end": 429,
+            "startLine": 13,
+            "endLine": 13,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "Definition",
+            "kind": "TypeAliasDeclaration",
+            "start": 431,
+            "end": 730,
+            "startLine": 15,
+            "endLine": 25,
+            "sha256": "471baef9ff8e115d587c232553bb25a83e28d14551b94ea3bc08c82ac0fd166b"
+          },
+          {
+            "symbol": "Data",
+            "kind": "TypeAliasDeclaration",
+            "start": 732,
+            "end": 802,
+            "startLine": 27,
+            "endLine": 27,
+            "sha256": "137a64992bf60dbcc2ddaa88e5809f1e8bc03ece3c2bde814832cdd8d2e39a29"
+          },
+          {
+            "symbol": "Payload",
+            "kind": "TypeAliasDeclaration",
+            "start": 804,
+            "end": 1129,
+            "startLine": 29,
+            "endLine": 40,
+            "sha256": "83cef3ebe95d942f84e48bdd668625dd7d00739f53ea4b763c499f0e430ca902"
+          },
+          {
+            "symbol": "define",
+            "kind": "FunctionDeclaration",
+            "start": 1131,
+            "end": 2020,
+            "startLine": 42,
+            "endLine": 70,
+            "sha256": "336049e9d2240a205d567f2fbc1a8bfdaea77465bfdbba85d2452f8f345186c6"
+          },
+          {
+            "symbol": "inventory",
+            "kind": "FunctionDeclaration",
+            "start": 2022,
+            "end": 2169,
+            "startLine": 72,
+            "endLine": 74,
+            "sha256": "a6414cc3206470260a6e232531728a7f70cb560a83eed6232db4e07d0d49e6b5"
+          },
+          {
+            "symbol": "latest",
+            "kind": "FunctionDeclaration",
+            "start": 2171,
+            "end": 2882,
+            "startLine": 76,
+            "endLine": 92,
+            "sha256": "334610c9d42de9fb9c777ce330c8b5c2c407db6e086fd0e0055d4f6d02b46a0d"
+          },
+          {
+            "symbol": "versionedType",
+            "kind": "FunctionDeclaration",
+            "start": 2884,
+            "end": 2978,
+            "startLine": 94,
+            "endLine": 96,
+            "sha256": "6705067a27ee9854cda155ba7eb038a03afd8d3607c95c8f54735329225e2170"
+          },
+          {
+            "symbol": "durable",
+            "kind": "FunctionDeclaration",
+            "start": 2980,
+            "end": 3477,
+            "startLine": 98,
+            "endLine": 108,
+            "sha256": "e7716338146b74614bc8b026e70a2e62cfacb637a7ac25779a048a420e87d705"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/identifier.ts",
+        "gitBlob": "9812a673fb06d00a262de2a6dba6d674ecd52365",
+        "sha256": "3eeb8c682210921b6dac49f0d785d9088a48503c4539d590f5c3b0e848d78b27",
+        "roots": false,
+        "staticRelativeImports": [],
+        "adoptedExports": [
+          {
+            "symbol": "ascending",
+            "kind": "FunctionDeclaration",
+            "start": 136,
+            "end": 190,
+            "startLine": 6,
+            "endLine": 8,
+            "sha256": "4dfa7af898890f0ec4f5d10fb2d6d6730dea64354f11514b452b953ece79c384"
+          },
+          {
+            "symbol": "descending",
+            "kind": "FunctionDeclaration",
+            "start": 192,
+            "end": 246,
+            "startLine": 10,
+            "endLine": 12,
+            "sha256": "650c7f39ef7f7953be10a0e4629c8ece27c9aa6e815c05735d543b3477a79873"
+          },
+          {
+            "symbol": "create",
+            "kind": "FunctionDeclaration",
+            "start": 248,
+            "end": 837,
+            "startLine": 14,
+            "endLine": 30,
+            "sha256": "1dc8eb3baf710ff33bca260e7dc6accca856eec6200206b5bf0d268aee9c1496"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/integration-id.ts",
+        "gitBlob": "2590dfe9f691c0410a419326e03587e554e6ac88",
+        "sha256": "7f905d10763d397041dc8112e1761a27b8ebd976b0dc0a38ecfeb3dec84b5294",
+        "roots": false,
+        "staticRelativeImports": [],
+        "adoptedExports": [
+          {
+            "symbol": "IntegrationID",
+            "kind": "FirstStatement",
+            "start": 33,
+            "end": 112,
+            "startLine": 3,
+            "endLine": 3,
+            "sha256": "a9b8797cda6f89f3e7ef4935ccf706e394c2439decf9ee7a2678bd321b984bcc"
+          },
+          {
+            "symbol": "IntegrationID",
+            "kind": "TypeAliasDeclaration",
+            "start": 113,
+            "end": 166,
+            "startLine": 4,
+            "endLine": 4,
+            "sha256": "3514ec21f9aca0750e2f7e8de7a95209102968128e71357f1821311a51e9ca5a"
+          },
+          {
+            "symbol": "IntegrationMethodID",
+            "kind": "FirstStatement",
+            "start": 168,
+            "end": 259,
+            "startLine": 6,
+            "endLine": 6,
+            "sha256": "0f4b46d5701b829ad6b2ac1c8fbc5ca5bc42585211b4c12cf3c333075f2bec07"
+          },
+          {
+            "symbol": "IntegrationMethodID",
+            "kind": "TypeAliasDeclaration",
+            "start": 260,
+            "end": 325,
+            "startLine": 7,
+            "endLine": 7,
+            "sha256": "17b3a82fd1eab886cc55bb49010a8a5c95af47cc129b90fac78f375ba91886e0"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/integration.ts",
+        "gitBlob": "1345318da18bec5dccbee42846473ec5f1a4dc93",
+        "sha256": "07cdfc9f79a8f64719ed099906936eda87a188c045611af7bbe929e585dd5641",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/connection.ts",
+          "packages/schema/src/event.ts",
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/integration-id.ts",
+          "packages/schema/src/integration.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Integration",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 44,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "d38fbab7d4023229e817512585b085b9cd9afb29667e506dc3a6acc7bf710be6"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 347,
+            "end": 378,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "142a7d6f01124cf6af30d277e9d9a55ef0ce68b1fddbafd6e8da07078d950ec7"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 379,
+            "end": 410,
+            "startLine": 12,
+            "endLine": 12,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "MethodID",
+            "kind": "FirstStatement",
+            "start": 412,
+            "end": 455,
+            "startLine": 14,
+            "endLine": 14,
+            "sha256": "9727e56eaac6a1c9223500956c6936d8a1ebbed81381ef81c850355a79febb2d"
+          },
+          {
+            "symbol": "MethodID",
+            "kind": "TypeAliasDeclaration",
+            "start": 456,
+            "end": 499,
+            "startLine": 15,
+            "endLine": 15,
+            "sha256": "db2fd59bbcb8653a9140f4e028f2d8f1bd43e2aa87bff118479556ec263f5d20"
+          },
+          {
+            "symbol": "When",
+            "kind": "InterfaceDeclaration",
+            "start": 501,
+            "end": 565,
+            "startLine": 17,
+            "endLine": 17,
+            "sha256": "0ec7448240d75d239e04b851de3012d84b620ccfeb117dfe315cb59e74a6583f"
+          },
+          {
+            "symbol": "When",
+            "kind": "FirstStatement",
+            "start": 566,
+            "end": 733,
+            "startLine": 18,
+            "endLine": 22,
+            "sha256": "90d43198177c88728ad0b438217f593aa367286c8c1aa17f417bf36b399d7e14"
+          },
+          {
+            "symbol": "TextPrompt",
+            "kind": "InterfaceDeclaration",
+            "start": 735,
+            "end": 811,
+            "startLine": 24,
+            "endLine": 24,
+            "sha256": "1b98d3e4e83b090031c178e9d8fdd1ca89178d7d458e51f253b3b1c97e835aa4"
+          },
+          {
+            "symbol": "TextPrompt",
+            "kind": "FirstStatement",
+            "start": 812,
+            "end": 1051,
+            "startLine": 25,
+            "endLine": 31,
+            "sha256": "7eac9db7c72778587d5c58f23088048ea7c8cc846ffe1e0b86c77909d644e79d"
+          },
+          {
+            "symbol": "SelectPrompt",
+            "kind": "InterfaceDeclaration",
+            "start": 1053,
+            "end": 1133,
+            "startLine": 33,
+            "endLine": 33,
+            "sha256": "9eb90c3e61a7dab0b6b19106eddd7f08b3dfa36c7e518c7563eee2d9fc3df434"
+          },
+          {
+            "symbol": "SelectPrompt",
+            "kind": "FirstStatement",
+            "start": 1134,
+            "end": 1490,
+            "startLine": 34,
+            "endLine": 46,
+            "sha256": "412744a75a37de5760ec135bb79412fa80adf56f1ab7c46794011880890d79cb"
+          },
+          {
+            "symbol": "Prompt",
+            "kind": "FirstStatement",
+            "start": 1492,
+            "end": 1589,
+            "startLine": 48,
+            "endLine": 48,
+            "sha256": "4b50daf8ebd34ecdfdabf8282bdebb0e299ef8db27ec951587ff89fcfe2746ab"
+          },
+          {
+            "symbol": "Prompt",
+            "kind": "TypeAliasDeclaration",
+            "start": 1590,
+            "end": 1629,
+            "startLine": 49,
+            "endLine": 49,
+            "sha256": "5a70dba924767f305f1c76b0455b8bed3203897707ed4a8d9811912e3748e8a3"
+          },
+          {
+            "symbol": "OAuthMethod",
+            "kind": "InterfaceDeclaration",
+            "start": 1631,
+            "end": 1709,
+            "startLine": 51,
+            "endLine": 51,
+            "sha256": "0b87b04e6f34f2d1365c2147116cf7d135ce3b4cb4029c0ceda21d91f94af2d0"
+          },
+          {
+            "symbol": "OAuthMethod",
+            "kind": "FirstStatement",
+            "start": 1710,
+            "end": 1923,
+            "startLine": 52,
+            "endLine": 57,
+            "sha256": "80dc00f7688b0fa68abe1017cd712d831ae3c39b2b206db03ed5b4a7a6f8ceb0"
+          },
+          {
+            "symbol": "KeyMethod",
+            "kind": "InterfaceDeclaration",
+            "start": 1925,
+            "end": 1999,
+            "startLine": 59,
+            "endLine": 59,
+            "sha256": "fb3b65a29999ba2be0e5b407c48fcea84fe4835e506d1d533bce9d9401c6372a"
+          },
+          {
+            "symbol": "KeyMethod",
+            "kind": "FirstStatement",
+            "start": 2000,
+            "end": 2158,
+            "startLine": 60,
+            "endLine": 63,
+            "sha256": "07554a9f8833de7c600ddd422061c3f14272c65dc73fb1220e03d28b8c282a6f"
+          },
+          {
+            "symbol": "EnvMethod",
+            "kind": "InterfaceDeclaration",
+            "start": 2160,
+            "end": 2234,
+            "startLine": 65,
+            "endLine": 65,
+            "sha256": "5423963a89007810fa565ab1d11e2aef04aec83123ff6f9f2f44696490ed9884"
+          },
+          {
+            "symbol": "EnvMethod",
+            "kind": "FirstStatement",
+            "start": 2235,
+            "end": 2397,
+            "startLine": 66,
+            "endLine": 69,
+            "sha256": "5f22908121f1328173b0224cf64309636a2a19f513ecce520ebbb3a400c585ff"
+          },
+          {
+            "symbol": "Method",
+            "kind": "FirstStatement",
+            "start": 2399,
+            "end": 2558,
+            "startLine": 71,
+            "endLine": 73,
+            "sha256": "a8f4a96953d014089fd4075e2ac09785c41dfe32ff7fbb3272ccc55ac44c1835"
+          },
+          {
+            "symbol": "Method",
+            "kind": "TypeAliasDeclaration",
+            "start": 2559,
+            "end": 2598,
+            "startLine": 74,
+            "endLine": 74,
+            "sha256": "ae7513079ecbad7deec0f017299cf379856196e30eda8b0434ce7ebbe25fe4ae"
+          },
+          {
+            "symbol": "Inputs",
+            "kind": "FirstStatement",
+            "start": 2600,
+            "end": 2712,
+            "startLine": 76,
+            "endLine": 76,
+            "sha256": "d2da50ee8f8691e006c0a2d1f777cad2329c9e4c436a29d087f9aa5ebc2c1cfd"
+          },
+          {
+            "symbol": "Inputs",
+            "kind": "TypeAliasDeclaration",
+            "start": 2713,
+            "end": 2752,
+            "startLine": 77,
+            "endLine": 77,
+            "sha256": "354ec3f846f95a244539a61b0c5dd160b6acec091c63c2fa5583cbe669ef53b2"
+          },
+          {
+            "symbol": "Event",
+            "kind": "FirstStatement",
+            "start": 2940,
+            "end": 3043,
+            "startLine": 87,
+            "endLine": 87,
+            "sha256": "24aa6f9fb76b58e4ddc1aa277a75f903700b1e5d4774431a50c1cdb10d71b78a"
+          },
+          {
+            "symbol": "Ref",
+            "kind": "InterfaceDeclaration",
+            "start": 3045,
+            "end": 3107,
+            "startLine": 89,
+            "endLine": 89,
+            "sha256": "27e170edcfd44921652f2c7fe455e17e8f03557e691bb268c82807b97e249a91"
+          },
+          {
+            "symbol": "Ref",
+            "kind": "FirstStatement",
+            "start": 3108,
+            "end": 3222,
+            "startLine": 90,
+            "endLine": 93,
+            "sha256": "3556700aa0e1c08a97841b4120ea06d3ab67d861db13808c1cea68e26726f332"
+          },
+          {
+            "symbol": "Info",
+            "kind": "ClassDeclaration",
+            "start": 3224,
+            "end": 3408,
+            "startLine": 95,
+            "endLine": 100,
+            "sha256": "34987430d3232336815d23b6fff92c9b1ccc0bc404c8c182036146b4f2a2b5d3"
+          },
+          {
+            "symbol": "AttemptID",
+            "kind": "FirstStatement",
+            "start": 3410,
+            "end": 3575,
+            "startLine": 102,
+            "endLine": 105,
+            "sha256": "e73db5b9cd7f39ddf2ce9dd9d6a47ff59de61ae06908c72e1b14eab59a13e6db"
+          },
+          {
+            "symbol": "AttemptID",
+            "kind": "TypeAliasDeclaration",
+            "start": 3576,
+            "end": 3621,
+            "startLine": 106,
+            "endLine": 106,
+            "sha256": "867d671215f9e971ee2183b78221652a096482726214b3763c2a099e76a5322f"
+          },
+          {
+            "symbol": "Attempt",
+            "kind": "ClassDeclaration",
+            "start": 3715,
+            "end": 3937,
+            "startLine": 113,
+            "endLine": 119,
+            "sha256": "63e441cc4e0025b15245a3329334891376707e21baf5853c9c0b12af804bdba7"
+          },
+          {
+            "symbol": "AttemptStatus",
+            "kind": "FirstStatement",
+            "start": 3939,
+            "end": 4406,
+            "startLine": 121,
+            "endLine": 128,
+            "sha256": "38c10b1abf9c867932fa00e1d53f9a3e01a6d5440253505cde3561696a5f3ace"
+          },
+          {
+            "symbol": "AttemptStatus",
+            "kind": "TypeAliasDeclaration",
+            "start": 4407,
+            "end": 4460,
+            "startLine": 129,
+            "endLine": 129,
+            "sha256": "43521f07f0cd0512ecf8803743b04c1857886272a4fbd5d041d1560f8a11d96b"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/llm.ts",
+        "gitBlob": "44101dd87671745c56151d74417a9e6ba6ade97d",
+        "sha256": "2fe451dc9d1c854d6aeaa64a61a25df3d1c4886de36ac3217a04f99a8d14a527",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/llm.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "LLM",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 28,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "e26f339a5a6cad2b88c2c24008df06321dfddeacb263c6a5ebbde69b6264d462"
+          },
+          {
+            "symbol": "ProviderMetadata",
+            "kind": "FirstStatement",
+            "start": 99,
+            "end": 257,
+            "startLine": 6,
+            "endLine": 8,
+            "sha256": "392b30e026c00d8f7f993129c49942c6f1a62035223b31155ee5a5c6d1fbda65"
+          },
+          {
+            "symbol": "ProviderMetadata",
+            "kind": "TypeAliasDeclaration",
+            "start": 258,
+            "end": 332,
+            "startLine": 9,
+            "endLine": 9,
+            "sha256": "f38a2eba63429318b39e6c2832d79f3376aef968ad5724ffe553ba3ef55b5128"
+          },
+          {
+            "symbol": "ToolTextContent",
+            "kind": "InterfaceDeclaration",
+            "start": 334,
+            "end": 420,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "a7844afa8b4ea37c0c65cf337c83d24ff67d930e273e217d4aa9150c8f4b5ae0"
+          },
+          {
+            "symbol": "ToolTextContent",
+            "kind": "FirstStatement",
+            "start": 421,
+            "end": 570,
+            "startLine": 12,
+            "endLine": 15,
+            "sha256": "64fc78c349c5717678e6b8ca756a68e4f2a4d31612a03a4d90fbf7e9bf341336"
+          },
+          {
+            "symbol": "ToolFileContent",
+            "kind": "InterfaceDeclaration",
+            "start": 572,
+            "end": 658,
+            "startLine": 17,
+            "endLine": 17,
+            "sha256": "fe72136a64f3f74cf4872fe6cf52f72404ff03f22a25fab787e98d5615f2937c"
+          },
+          {
+            "symbol": "ToolFileContent",
+            "kind": "FirstStatement",
+            "start": 659,
+            "end": 863,
+            "startLine": 18,
+            "endLine": 23,
+            "sha256": "2045b84776b8da58cef18f940be4434f80e4c2c3f44c091cfa3e6b51e6ca0bee"
+          },
+          {
+            "symbol": "ToolContent",
+            "kind": "FirstStatement",
+            "start": 865,
+            "end": 1025,
+            "startLine": 25,
+            "endLine": 27,
+            "sha256": "95fe459dd790085f048226bb3ae9325e336df361684dcb9ea2b57964f2ea9f1c"
+          },
+          {
+            "symbol": "ToolContent",
+            "kind": "TypeAliasDeclaration",
+            "start": 1026,
+            "end": 1090,
+            "startLine": 28,
+            "endLine": 28,
+            "sha256": "998f69b9d959f3a45df6197b87165b0124ef170ee27d87cfde4d04e27c3d6697"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/location.ts",
+        "gitBlob": "c01ce36372a698a289b1591466d4b01b323543d9",
+        "sha256": "69198bd4bcbec4dc406d5e8d35977ccb3174828fee859814462e3278caf2a603",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/location.ts",
+          "packages/schema/src/project-id.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/workspace-id.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Location",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 38,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "40a33a5ba034f2e56d93d8c1edfc6cd03869c5a3c3fbf0018033124c6acd853c"
+          },
+          {
+            "symbol": "Ref",
+            "kind": "InterfaceDeclaration",
+            "start": 209,
+            "end": 271,
+            "startLine": 8,
+            "endLine": 8,
+            "sha256": "27e170edcfd44921652f2c7fe455e17e8f03557e691bb268c82807b97e249a91"
+          },
+          {
+            "symbol": "Ref",
+            "kind": "FirstStatement",
+            "start": 272,
+            "end": 415,
+            "startLine": 9,
+            "endLine": 12,
+            "sha256": "169d499c3f740e8a52886ae982ed7768a07496b673a210f47748e821c6fa1363"
+          },
+          {
+            "symbol": "Info",
+            "kind": "ClassDeclaration",
+            "start": 417,
+            "end": 632,
+            "startLine": 14,
+            "endLine": 21,
+            "sha256": "601bc297115caaedc4f10973649088d646b6e5db9154aa36837ae87c152f2912"
+          },
+          {
+            "symbol": "response",
+            "kind": "FunctionDeclaration",
+            "start": 634,
+            "end": 742,
+            "startLine": 23,
+            "endLine": 25,
+            "sha256": "95ca02c5abb352440f4cd26be2bf421b55e4617feeee52a5dbebc9b702634adf"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/model.ts",
+        "gitBlob": "10fa175e247bfcbaa968e41fd7d61bd57945896a",
+        "sha256": "cd7717a4699cb24ce617f66352e77981281d0ff1af2b0f52dac8bbfd6d150e84",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/model.ts",
+          "packages/schema/src/provider.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Model",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 32,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "31ff44b80707ed5392c74be4572d4e5af82f8a60691b9eaa02070229bb815563"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 176,
+            "end": 240,
+            "startLine": 8,
+            "endLine": 8,
+            "sha256": "8510b71de314cba15a698fa0283647a5950dcad62a9b1c5bb54dab8780933084"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 241,
+            "end": 272,
+            "startLine": 9,
+            "endLine": 9,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "VariantID",
+            "kind": "FirstStatement",
+            "start": 274,
+            "end": 344,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "f962b9254e07719840888e2afe7bd261602f473f9fbaaefd2f9e1159fcb3de49"
+          },
+          {
+            "symbol": "VariantID",
+            "kind": "TypeAliasDeclaration",
+            "start": 345,
+            "end": 390,
+            "startLine": 12,
+            "endLine": 12,
+            "sha256": "8833ae1938b7c1563f79656b6cfb6e63796fccc88393b89bfad8f8f2730ba856"
+          },
+          {
+            "symbol": "Ref",
+            "kind": "FirstStatement",
+            "start": 392,
+            "end": 541,
+            "startLine": 14,
+            "endLine": 18,
+            "sha256": "49513d78e7dabbe7de21900eb3024a0afa1bdcaa0f113e4e8da03f0a2bcf78a2"
+          },
+          {
+            "symbol": "Ref",
+            "kind": "InterfaceDeclaration",
+            "start": 542,
+            "end": 604,
+            "startLine": 19,
+            "endLine": 19,
+            "sha256": "27e170edcfd44921652f2c7fe455e17e8f03557e691bb268c82807b97e249a91"
+          },
+          {
+            "symbol": "Family",
+            "kind": "FirstStatement",
+            "start": 606,
+            "end": 670,
+            "startLine": 21,
+            "endLine": 21,
+            "sha256": "8f93c1169b52172beda6cc9b36220f7511300583b13bf5b572fcbced6f972230"
+          },
+          {
+            "symbol": "Family",
+            "kind": "TypeAliasDeclaration",
+            "start": 671,
+            "end": 710,
+            "startLine": 22,
+            "endLine": 22,
+            "sha256": "74c2e63012611e8e445064ec31507e76678fdac0ab4ed65af004f9c7d60c22bf"
+          },
+          {
+            "symbol": "Capabilities",
+            "kind": "InterfaceDeclaration",
+            "start": 712,
+            "end": 792,
+            "startLine": 24,
+            "endLine": 24,
+            "sha256": "550c7c73ea448f0c2811d2698cd32335a88f6a5054c6c48ac782005dc2095dc2"
+          },
+          {
+            "symbol": "Capabilities",
+            "kind": "FirstStatement",
+            "start": 793,
+            "end": 988,
+            "startLine": 25,
+            "endLine": 29,
+            "sha256": "607e7a71674ad45c70b61788f80d602edbb36854952de6d994c9c30ed5bd7bf2"
+          },
+          {
+            "symbol": "Cost",
+            "kind": "InterfaceDeclaration",
+            "start": 990,
+            "end": 1054,
+            "startLine": 31,
+            "endLine": 31,
+            "sha256": "8d5f00dad861299090979c8cf89b4bbd1e5c265bdc1529c9efa6b2434ef080bc"
+          },
+          {
+            "symbol": "Cost",
+            "kind": "FirstStatement",
+            "start": 1055,
+            "end": 1367,
+            "startLine": 32,
+            "endLine": 43,
+            "sha256": "1390e0fb723a51375070796d26d5810b045210a83c0c143aa35186c944a73230"
+          },
+          {
+            "symbol": "Api",
+            "kind": "FirstStatement",
+            "start": 1369,
+            "end": 1617,
+            "startLine": 45,
+            "endLine": 56,
+            "sha256": "e7e7fe508034363394fce278e13acfc164753d9adfbda548e3cc9843399a5b87"
+          },
+          {
+            "symbol": "Api",
+            "kind": "TypeAliasDeclaration",
+            "start": 1618,
+            "end": 1651,
+            "startLine": 57,
+            "endLine": 57,
+            "sha256": "a3eaade4a37f257d0816eb1923fba2fe3fb2ef89e208b9d93dc3c7e5eeacc5d0"
+          },
+          {
+            "symbol": "Info",
+            "kind": "InterfaceDeclaration",
+            "start": 1653,
+            "end": 1717,
+            "startLine": 59,
+            "endLine": 59,
+            "sha256": "1821aa3b7f74efd8509504538923e05b87fc96058c83f618ceb48007f5370917"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 1718,
+            "end": 3004,
+            "startLine": 60,
+            "endLine": 106,
+            "sha256": "d584a3f1a7a872eebfd532b5d173a24f6a2ea36827951c9a1ddc398b1ac03617"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/permission.ts",
+        "gitBlob": "25d776284fd6bf2ce311699708239943f65416e8",
+        "sha256": "229f2da7d245bf86deffed59b10cddf2dd04ffa05d10ef97fc5df289d0e6fb98",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/event.ts",
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/permission.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/session-id.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Permission",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 42,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "692e809e8f86c85680989ba3dcf966cf68ff512b666b9d940501b9178d273975"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 274,
+            "end": 477,
+            "startLine": 10,
+            "endLine": 13,
+            "sha256": "5d505f228db95b9542736daf04884581d0d2cf2593ff540283f9ec68e49fe221"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 478,
+            "end": 509,
+            "startLine": 14,
+            "endLine": 14,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "Source",
+            "kind": "FirstStatement",
+            "start": 511,
+            "end": 713,
+            "startLine": 16,
+            "endLine": 22,
+            "sha256": "eca21c6f7f45c9f8d6dff875451ad2f3570cdadaa46c43713458d3e0fa4365aa"
+          },
+          {
+            "symbol": "Source",
+            "kind": "TypeAliasDeclaration",
+            "start": 714,
+            "end": 753,
+            "startLine": 23,
+            "endLine": 23,
+            "sha256": "d58dd3fd451f14bf28eb50f3559b31e079326be74574c1a74860da3065c5a9d6"
+          },
+          {
+            "symbol": "Request",
+            "kind": "FirstStatement",
+            "start": 1031,
+            "end": 1151,
+            "startLine": 34,
+            "endLine": 37,
+            "sha256": "f33cd79287266ad9260cc719d9db4a93ff8da846fe0051461ba7d4a4e6932fa1"
+          },
+          {
+            "symbol": "Request",
+            "kind": "InterfaceDeclaration",
+            "start": 1152,
+            "end": 1222,
+            "startLine": 38,
+            "endLine": 38,
+            "sha256": "ada63d9bac2354ef9baac3e597bd76973eb91e07db052a9fc6e8653b00e1a978"
+          },
+          {
+            "symbol": "Reply",
+            "kind": "FirstStatement",
+            "start": 1224,
+            "end": 1337,
+            "startLine": 40,
+            "endLine": 40,
+            "sha256": "bad752a93f888a88e1be21c8ba89c8c0218214760a4ca9a987af34344e58e38c"
+          },
+          {
+            "symbol": "Reply",
+            "kind": "TypeAliasDeclaration",
+            "start": 1338,
+            "end": 1375,
+            "startLine": 41,
+            "endLine": 41,
+            "sha256": "653e9b412022f61cf1995b041e1b522dc03773c7db2936f481e1e6c7eabb16ea"
+          },
+          {
+            "symbol": "Event",
+            "kind": "FirstStatement",
+            "start": 1596,
+            "end": 1675,
+            "startLine": 52,
+            "endLine": 52,
+            "sha256": "18473cd164e0c192537c67d3a761691bb8bb747c06285aa10c3b427f5a14b98a"
+          },
+          {
+            "symbol": "Effect",
+            "kind": "FirstStatement",
+            "start": 1677,
+            "end": 1788,
+            "startLine": 54,
+            "endLine": 54,
+            "sha256": "ddaaca4177ee0f5ea51bdf4d56d955dfd0502caeeff70fcc96089d7318eadccf"
+          },
+          {
+            "symbol": "Effect",
+            "kind": "TypeAliasDeclaration",
+            "start": 1789,
+            "end": 1828,
+            "startLine": 55,
+            "endLine": 55,
+            "sha256": "1a5acca451f15f89b392e14662d5f1135bbccdbebc3432c1fb1c0112b5c1fec4"
+          },
+          {
+            "symbol": "Rule",
+            "kind": "InterfaceDeclaration",
+            "start": 1830,
+            "end": 1894,
+            "startLine": 57,
+            "endLine": 57,
+            "sha256": "710d168a4167fec106fd9e27b966db31870e85fd147c2f4888fabc81009e9dc6"
+          },
+          {
+            "symbol": "Rule",
+            "kind": "FirstStatement",
+            "start": 1895,
+            "end": 2049,
+            "startLine": 58,
+            "endLine": 62,
+            "sha256": "50e28ef8c81f4170f27dd19166a103a4129479d0bb1173916c5d99ac31c2bbff"
+          },
+          {
+            "symbol": "Ruleset",
+            "kind": "FirstStatement",
+            "start": 2051,
+            "end": 2141,
+            "startLine": 64,
+            "endLine": 64,
+            "sha256": "d9bcd49a6f2db0cf95c925d7ac1850fe6677311dea3aa1126b8807555133f9ad"
+          },
+          {
+            "symbol": "Ruleset",
+            "kind": "TypeAliasDeclaration",
+            "start": 2142,
+            "end": 2183,
+            "startLine": 65,
+            "endLine": 65,
+            "sha256": "0bdd0241c55ba570cac2333f0e4616e5906cfc3e35a830c5234b8064c065fe4f"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/project-id.ts",
+        "gitBlob": "8d2f061517475e03cad1259e33af5576b174dbc6",
+        "sha256": "47aad330577133240b3c33938363fa980d32cd00de9564b8fccdcad05c110e7d",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "ProjectID",
+            "kind": "FirstStatement",
+            "start": 68,
+            "end": 204,
+            "startLine": 4,
+            "endLine": 7,
+            "sha256": "79903a26fa6248c57a27fee405b0697d28cc17f2614f92a712b222e632c46a16"
+          },
+          {
+            "symbol": "ProjectID",
+            "kind": "TypeAliasDeclaration",
+            "start": 205,
+            "end": 250,
+            "startLine": 8,
+            "endLine": 8,
+            "sha256": "8a87e1f39bad02d610e073bb59b45c574ff2967d507cb44769ce010b8b226baf"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/project.ts",
+        "gitBlob": "7e73530a6d5624127c9086d3b6e783ca8072461b",
+        "sha256": "d12577c05384e8415203a81ff3041246497cdb158427e06158dc134d271dfb97",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/event.ts",
+          "packages/schema/src/project-id.ts",
+          "packages/schema/src/project.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Project",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 36,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "581eb1e82056361bf48d1d9ce274aac4fa8ad5987b0f8e05182f56301d7fac31"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 208,
+            "end": 235,
+            "startLine": 8,
+            "endLine": 8,
+            "sha256": "a552ef8329c54f65b30584fad8f50fc74c573030419969c50839c78667193a3f"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 236,
+            "end": 267,
+            "startLine": 9,
+            "endLine": 9,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "Vcs",
+            "kind": "FirstStatement",
+            "start": 269,
+            "end": 349,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "be4ce14dc61b0ee76281b1b1fcdf503c1ae5e52d5972cb2ff0357e072aaa7326"
+          },
+          {
+            "symbol": "Icon",
+            "kind": "FirstStatement",
+            "start": 350,
+            "end": 532,
+            "startLine": 12,
+            "endLine": 16,
+            "sha256": "fe44c809e9a5fa49879ddf434ed2bd91cb20a1256167dac87a6a1a1f8bdb7950"
+          },
+          {
+            "symbol": "Icon",
+            "kind": "InterfaceDeclaration",
+            "start": 533,
+            "end": 597,
+            "startLine": 17,
+            "endLine": 17,
+            "sha256": "7b3b4b16102bd235f6597c5bbd95d62f24407613dd813b887a15f63678ad0971"
+          },
+          {
+            "symbol": "Commands",
+            "kind": "FirstStatement",
+            "start": 598,
+            "end": 820,
+            "startLine": 18,
+            "endLine": 22,
+            "sha256": "aa1bf3125e8b080d45a446efbb799332094e0af52051c0ed523ea9180f19a355"
+          },
+          {
+            "symbol": "Commands",
+            "kind": "InterfaceDeclaration",
+            "start": 821,
+            "end": 893,
+            "startLine": 23,
+            "endLine": 23,
+            "sha256": "06a8f100dda4e0270028aa1de701361f329a795daf60c70c95df893fc396c920"
+          },
+          {
+            "symbol": "Time",
+            "kind": "FirstStatement",
+            "start": 894,
+            "end": 1068,
+            "startLine": 24,
+            "endLine": 28,
+            "sha256": "b6eb25afb6db978101b75b40069f5ee90ba17e147b0b022a4ed0d08911c14b16"
+          },
+          {
+            "symbol": "Time",
+            "kind": "InterfaceDeclaration",
+            "start": 1069,
+            "end": 1133,
+            "startLine": 29,
+            "endLine": 29,
+            "sha256": "ba89737c1446f760ffe6a01432371a4aa56f037a32933e6930ab95b111cd8985"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 1135,
+            "end": 1413,
+            "startLine": 31,
+            "endLine": 40,
+            "sha256": "0ec1e4d47560ab43c70c36a8df0e391b6ab09a7feaefea06f20c9cf8ee06d90a"
+          },
+          {
+            "symbol": "Info",
+            "kind": "InterfaceDeclaration",
+            "start": 1414,
+            "end": 1478,
+            "startLine": 41,
+            "endLine": 41,
+            "sha256": "1821aa3b7f74efd8509504538923e05b87fc96058c83f618ceb48007f5370917"
+          },
+          {
+            "symbol": "Event",
+            "kind": "FirstStatement",
+            "start": 1553,
+            "end": 1618,
+            "startLine": 44,
+            "endLine": 44,
+            "sha256": "e7550d251b3a47c96b6fea41340f512c00f2a700389cc6ed37031013d7354bec"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/prompt.ts",
+        "gitBlob": "376700cc7a6ccc0613da1ff470b00aeba803a74e",
+        "sha256": "d1fc8764053e3c6b07791cd7f1f319e9c8b9a5942af04432c53a622af0f486a6",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Source",
+            "kind": "InterfaceDeclaration",
+            "start": 104,
+            "end": 172,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "3e790c9d6a160ecc252ac8130be2c6b63e3cf5da00bfeae20f51e83fbfb67772"
+          },
+          {
+            "symbol": "Source",
+            "kind": "FirstStatement",
+            "start": 173,
+            "end": 324,
+            "startLine": 6,
+            "endLine": 10,
+            "sha256": "80227fd9b2e1acee3e82d17a099ff0e84a127c5819fd8424547568a13bcdc8e5"
+          },
+          {
+            "symbol": "FileAttachment",
+            "kind": "InterfaceDeclaration",
+            "start": 326,
+            "end": 410,
+            "startLine": 12,
+            "endLine": 12,
+            "sha256": "45eae25447bd22b5436632f26781d8a2e60e8ff624fa94f5142efab209375742"
+          },
+          {
+            "symbol": "FileAttachment",
+            "kind": "FirstStatement",
+            "start": 411,
+            "end": 953,
+            "startLine": 13,
+            "endLine": 32,
+            "sha256": "9a243647e16ef9eb2994218cf11fa10847388dfdbf1849ec7accaecd5be3b573"
+          },
+          {
+            "symbol": "AgentAttachment",
+            "kind": "InterfaceDeclaration",
+            "start": 955,
+            "end": 1041,
+            "startLine": 34,
+            "endLine": 34,
+            "sha256": "b1447669cdd28fb811ce299d95ac8e431e2583533190be7e4eb8d7da8f337d80"
+          },
+          {
+            "symbol": "AgentAttachment",
+            "kind": "FirstStatement",
+            "start": 1042,
+            "end": 1198,
+            "startLine": 35,
+            "endLine": 38,
+            "sha256": "fab2c1b78746751e0d244208540ed6015d9b930e6363e5a9743c24f7d8b815d0"
+          },
+          {
+            "symbol": "Prompt",
+            "kind": "InterfaceDeclaration",
+            "start": 1200,
+            "end": 1268,
+            "startLine": 40,
+            "endLine": 40,
+            "sha256": "36414d5a37d14f17ad589f1dae371b72ddb1e15327723426e768854c09692230"
+          },
+          {
+            "symbol": "Prompt",
+            "kind": "FirstStatement",
+            "start": 1269,
+            "end": 1864,
+            "startLine": 41,
+            "endLine": 57,
+            "sha256": "e1ddae4c9afe61d5c079f958d1a78a0541e76091dcca674bef4732412e5b359a"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/provider.ts",
+        "gitBlob": "51ff4b37913d568e9c59aef54e64041d9db14de8",
+        "sha256": "f72afc446470bd4ac6fadce7f880539590604052c3cb003f39a415f2adcc1834",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/integration.ts",
+          "packages/schema/src/provider.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Provider",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 38,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "bae242e95e942bca8ea4ed58f75f97df9103d30d5e5143a0e6d8c55df3981477"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 188,
+            "end": 738,
+            "startLine": 8,
+            "endLine": 23,
+            "sha256": "ce2afe3c6ad602ef710d69e36b81ec8a3ea67103dae790f8d847c00bb7f1b796"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 739,
+            "end": 770,
+            "startLine": 24,
+            "endLine": 24,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "AISDK",
+            "kind": "InterfaceDeclaration",
+            "start": 772,
+            "end": 838,
+            "startLine": 26,
+            "endLine": 26,
+            "sha256": "96bc8cb207f8f32734a794f8df0c0034b8b23b1fba5b38962efd9aab1ddd7cef"
+          },
+          {
+            "symbol": "AISDK",
+            "kind": "FirstStatement",
+            "start": 839,
+            "end": 1090,
+            "startLine": 27,
+            "endLine": 32,
+            "sha256": "f8ba0cb93e0b00a7dec651e5a2a15f1a83cf5fe918d6fb6fae152c94c36dacfa"
+          },
+          {
+            "symbol": "Native",
+            "kind": "InterfaceDeclaration",
+            "start": 1092,
+            "end": 1160,
+            "startLine": 34,
+            "endLine": 34,
+            "sha256": "66f4497148ad9a868e525a000ea37fe8e60ffa10200838b8a85c33efa1a5980e"
+          },
+          {
+            "symbol": "Native",
+            "kind": "FirstStatement",
+            "start": 1161,
+            "end": 1374,
+            "startLine": 35,
+            "endLine": 39,
+            "sha256": "c62a98165550ea2f5dd4a2bd67f8b98f8bb02bf01ab40a7512c9980deb9513e8"
+          },
+          {
+            "symbol": "Api",
+            "kind": "FirstStatement",
+            "start": 1376,
+            "end": 1506,
+            "startLine": 41,
+            "endLine": 43,
+            "sha256": "c3827fd12c461f10f60ca01f1395aa3be2b1df92d59d3288a49fd19a1f9aeb5d"
+          },
+          {
+            "symbol": "Api",
+            "kind": "TypeAliasDeclaration",
+            "start": 1507,
+            "end": 1540,
+            "startLine": 44,
+            "endLine": 44,
+            "sha256": "a3eaade4a37f257d0816eb1923fba2fe3fb2ef89e208b9d93dc3c7e5eeacc5d0"
+          },
+          {
+            "symbol": "Request",
+            "kind": "InterfaceDeclaration",
+            "start": 1542,
+            "end": 1612,
+            "startLine": 46,
+            "endLine": 46,
+            "sha256": "ada63d9bac2354ef9baac3e597bd76973eb91e07db052a9fc6e8653b00e1a978"
+          },
+          {
+            "symbol": "Request",
+            "kind": "FirstStatement",
+            "start": 1613,
+            "end": 1806,
+            "startLine": 47,
+            "endLine": 50,
+            "sha256": "f407295d67e4965a9661863e90274ffaabfdd3732924d4e26c7ea3ebf2d08daa"
+          },
+          {
+            "symbol": "Info",
+            "kind": "InterfaceDeclaration",
+            "start": 1808,
+            "end": 1872,
+            "startLine": 52,
+            "endLine": 52,
+            "sha256": "1821aa3b7f74efd8509504538923e05b87fc96058c83f618ceb48007f5370917"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 1873,
+            "end": 2351,
+            "startLine": 53,
+            "endLine": 72,
+            "sha256": "2eb0677f2df94998a15b7245b6816a1633cb47136dc21cdee34747c9d0a98774"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/revert.ts",
+        "gitBlob": "05222d539819ee243c17cb4fd03e8ee6a1eeab69",
+        "sha256": "145a30ba642db86d826e6309d0b0d66c3ec7ba04e891170d228b6cd1b340a47a",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/revert.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/session-message.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Revert",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 34,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "c09dc073ed4bc0e0beb9e21beaaf8602ecb245eb98db09ff54e39e4d1b1a5185"
+          },
+          {
+            "symbol": "FileDiff",
+            "kind": "FirstStatement",
+            "start": 212,
+            "end": 457,
+            "startLine": 8,
+            "endLine": 14,
+            "sha256": "752c1d5c2df91f76a773ed56daceadaf3520943a339d455fb9310dd7b3c8dc3b"
+          },
+          {
+            "symbol": "FileDiff",
+            "kind": "InterfaceDeclaration",
+            "start": 458,
+            "end": 530,
+            "startLine": 15,
+            "endLine": 15,
+            "sha256": "ba8be6b446ec0f04be557be2e0e10eb5b417d783a970c2586a16f9801443c0e5"
+          },
+          {
+            "symbol": "State",
+            "kind": "FirstStatement",
+            "start": 532,
+            "end": 812,
+            "startLine": 17,
+            "endLine": 23,
+            "sha256": "c00524c329245435d36b1fca9b3b08f2ad3a32984ca29fc7ae368e31b72e2dca"
+          },
+          {
+            "symbol": "State",
+            "kind": "InterfaceDeclaration",
+            "start": 813,
+            "end": 879,
+            "startLine": 24,
+            "endLine": 24,
+            "sha256": "294425f79da26488310d675bbf81822eb4d5e9ae24bb82792977523e0dab39a4"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/schema.ts",
+        "gitBlob": "d19a39b9708cfcaeedc1d7c62503afbadfee5dd7",
+        "sha256": "a7cdac1ae9d21d9d71a3783a730ca29bc8fbe769d01479a19101a81eec2bb447",
+        "roots": false,
+        "staticRelativeImports": [],
+        "adoptedExports": [
+          {
+            "symbol": "PositiveInt",
+            "kind": "FirstStatement",
+            "start": 65,
+            "end": 133,
+            "startLine": 3,
+            "endLine": 3,
+            "sha256": "7f68d9cac59905cc3457e15b76debb7d0aed5c4ec45dea1013433380293b79fa"
+          },
+          {
+            "symbol": "NonNegativeInt",
+            "kind": "FirstStatement",
+            "start": 134,
+            "end": 214,
+            "startLine": 4,
+            "endLine": 4,
+            "sha256": "1f05fb2dec0988f930a47be6e604abcbc9f741abcf51f91fa1fcee3e4468061c"
+          },
+          {
+            "symbol": "RelativePath",
+            "kind": "FirstStatement",
+            "start": 216,
+            "end": 292,
+            "startLine": 6,
+            "endLine": 6,
+            "sha256": "c4a8563031ffaf8dea7a7dff60752041def645749a9a05442248e7103443ac0c"
+          },
+          {
+            "symbol": "RelativePath",
+            "kind": "TypeAliasDeclaration",
+            "start": 293,
+            "end": 344,
+            "startLine": 7,
+            "endLine": 7,
+            "sha256": "b41a0565343b6959ac09949229f0cdb9dd368ba6fdaf4fb3e97b87900e18bc6b"
+          },
+          {
+            "symbol": "AbsolutePath",
+            "kind": "FirstStatement",
+            "start": 346,
+            "end": 422,
+            "startLine": 9,
+            "endLine": 9,
+            "sha256": "980b071470adcfddf2a6c750a66bba4b80e50da5681b6477c006f62debdd6471"
+          },
+          {
+            "symbol": "AbsolutePath",
+            "kind": "TypeAliasDeclaration",
+            "start": 423,
+            "end": 474,
+            "startLine": 10,
+            "endLine": 10,
+            "sha256": "82b5fc4e693a7af97878609694bed9443415a169f931073b84d53536808d4e9a"
+          },
+          {
+            "symbol": "optional",
+            "kind": "FirstStatement",
+            "start": 476,
+            "end": 797,
+            "startLine": 12,
+            "endLine": 18,
+            "sha256": "03d22de6f558bc3d941bfda5abd85ec24727b2e430c1b0ef807ee4c136ea77e7"
+          },
+          {
+            "symbol": "statics",
+            "kind": "FirstStatement",
+            "start": 799,
+            "end": 974,
+            "startLine": 20,
+            "endLine": 23,
+            "sha256": "5cd97e382cf3fae8eaf530af5edf9c42a6f69bf2647de76f96d30c4f17eae417"
+          },
+          {
+            "symbol": "DateTimeUtcFromMillis",
+            "kind": "FirstStatement",
+            "start": 976,
+            "end": 1233,
+            "startLine": 25,
+            "endLine": 30,
+            "sha256": "1dea3da129aeece2b6848b45b33b09c32bed6d0ed9c08f19604cb15746f450b6"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/session-delivery.ts",
+        "gitBlob": "9b678dabf9f910b173f2b2cfddebacbd11922264",
+        "sha256": "6c711801312cf2512c46695e44dfcba86f0e9cf9b8485aed4b435adcdba23528",
+        "roots": true,
+        "staticRelativeImports": [
+          "packages/schema/src/session-delivery.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "SessionDelivery",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 53,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "2a0ec42bacd6063c474b3c999f8da92edc15c22a080683018e7c03c5b696bf8e"
+          },
+          {
+            "symbol": "Delivery",
+            "kind": "FirstStatement",
+            "start": 88,
+            "end": 147,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "670f79283cf732008023263a3be8c5dd4c0aa6bdecc97b1b0670e720e1f0a37f"
+          },
+          {
+            "symbol": "Delivery",
+            "kind": "TypeAliasDeclaration",
+            "start": 148,
+            "end": 191,
+            "startLine": 6,
+            "endLine": 6,
+            "sha256": "a8bec2553fb2ae68b4158be337c29f674081fd408eb926050f6503e9cf6b3f16"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/session-event.ts",
+        "gitBlob": "3a559c3e38a401218ac36e3f79051172df4dbe3d",
+        "sha256": "d8a2ee9abba77aa0b33066af197becb81adab2f315d4f78aabfc456319666f20",
+        "roots": true,
+        "staticRelativeImports": [
+          "packages/schema/src/event.ts",
+          "packages/schema/src/llm.ts",
+          "packages/schema/src/location.ts",
+          "packages/schema/src/model.ts",
+          "packages/schema/src/prompt.ts",
+          "packages/schema/src/revert.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/session-delivery.ts",
+          "packages/schema/src/session-event.ts",
+          "packages/schema/src/session-id.ts",
+          "packages/schema/src/session-message.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "SessionEvent",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 47,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "a21a641ff7876f8c4a95bfd36972a811e553fe3fb022072f9288219fbec4f51d"
+          },
+          {
+            "symbol": "FileAttachment",
+            "kind": "ExportDeclaration",
+            "start": 575,
+            "end": 600,
+            "startLine": 16,
+            "endLine": 16,
+            "sha256": "759cf4717ab5f7d452e6773fc306e948a76b4c1e4dcc9cba4a200ed6e8a26668"
+          },
+          {
+            "symbol": "Source",
+            "kind": "FirstStatement",
+            "start": 602,
+            "end": 770,
+            "startLine": 18,
+            "endLine": 24,
+            "sha256": "2a930bdfea883b7de0adbb3ad1d5ab78ee1330f99b77539cc711291701437498"
+          },
+          {
+            "symbol": "Source",
+            "kind": "InterfaceDeclaration",
+            "start": 771,
+            "end": 839,
+            "startLine": 25,
+            "endLine": 25,
+            "sha256": "3e790c9d6a160ecc252ac8130be2c6b63e3cf5da00bfeae20f51e83fbfb67772"
+          },
+          {
+            "symbol": "UnknownError",
+            "kind": "FirstStatement",
+            "start": 1224,
+            "end": 1279,
+            "startLine": 51,
+            "endLine": 51,
+            "sha256": "5f197f59b17c4fe244611c046e223be5bfc46f30e13add50774786269ff4dffe"
+          },
+          {
+            "symbol": "UnknownError",
+            "kind": "TypeAliasDeclaration",
+            "start": 1280,
+            "end": 1334,
+            "startLine": 52,
+            "endLine": 52,
+            "sha256": "e7ad2537a471c9a92fb8225739fd74ab67a709356a2322021ec09c101cd1a76d"
+          },
+          {
+            "symbol": "AgentSwitched",
+            "kind": "FirstStatement",
+            "start": 1336,
+            "end": 1525,
+            "startLine": 54,
+            "endLine": 62,
+            "sha256": "d06abb4f0e7368551f4799a853fb624c3f00737add048959c58d6a983ec99a53"
+          },
+          {
+            "symbol": "AgentSwitched",
+            "kind": "TypeAliasDeclaration",
+            "start": 1526,
+            "end": 1579,
+            "startLine": 63,
+            "endLine": 63,
+            "sha256": "0f2c8e813636012a7a3de7f684abe7a815bef186c667f9e39d000384dd4759ae"
+          },
+          {
+            "symbol": "ModelSwitched",
+            "kind": "FirstStatement",
+            "start": 1581,
+            "end": 1766,
+            "startLine": 65,
+            "endLine": 73,
+            "sha256": "befbc206e1fd3381004cc48c34831d5482b13c123d366fac7e878cfef07bdb41"
+          },
+          {
+            "symbol": "ModelSwitched",
+            "kind": "TypeAliasDeclaration",
+            "start": 1767,
+            "end": 1820,
+            "startLine": 74,
+            "endLine": 74,
+            "sha256": "522f3e0551d2086566c0be00e0d7c66b0eeef25c6b0656ecde24ecdaf7f2fbbe"
+          },
+          {
+            "symbol": "Moved",
+            "kind": "FirstStatement",
+            "start": 1822,
+            "end": 2009,
+            "startLine": 76,
+            "endLine": 84,
+            "sha256": "3da6b576fbbbe81ab3e507551aae77a318f4d0a5389f0fa723e1bfde7d356dcd"
+          },
+          {
+            "symbol": "Moved",
+            "kind": "TypeAliasDeclaration",
+            "start": 2010,
+            "end": 2047,
+            "startLine": 85,
+            "endLine": 85,
+            "sha256": "21f20e9fa5edd9315d7bfaa4e80eb1147930f8e9bd89c9553f1cbd00089c01ad"
+          },
+          {
+            "symbol": "Prompted",
+            "kind": "FirstStatement",
+            "start": 2049,
+            "end": 2161,
+            "startLine": 87,
+            "endLine": 91,
+            "sha256": "6ac5e323c255a15d54a4cc74a224b0513086659595a4106b9c9ab94b9f92caf8"
+          },
+          {
+            "symbol": "Prompted",
+            "kind": "TypeAliasDeclaration",
+            "start": 2162,
+            "end": 2205,
+            "startLine": 92,
+            "endLine": 92,
+            "sha256": "83582639aa10df4d7aa77635784b9dddb66406bbccce724f5fed857d977f32c6"
+          },
+          {
+            "symbol": "PromptAdmitted",
+            "kind": "FirstStatement",
+            "start": 2207,
+            "end": 2332,
+            "startLine": 94,
+            "endLine": 98,
+            "sha256": "2f5ba7c1a9cfbdb13693a1094e2b6c4ec325c61a7ea861d3bae12cd189c61e02"
+          },
+          {
+            "symbol": "PromptAdmitted",
+            "kind": "TypeAliasDeclaration",
+            "start": 2333,
+            "end": 2388,
+            "startLine": 99,
+            "endLine": 99,
+            "sha256": "a10beb8469d8a779641cad429eb63dc7148c376a3615e89a4e4e3966f97e0556"
+          },
+          {
+            "symbol": "ContextUpdated",
+            "kind": "FirstStatement",
+            "start": 2390,
+            "end": 2580,
+            "startLine": 101,
+            "endLine": 109,
+            "sha256": "dcaa27aea90251d808387d449a01d8510c3ca459f54a0518ba01e35376a39ffa"
+          },
+          {
+            "symbol": "ContextUpdated",
+            "kind": "TypeAliasDeclaration",
+            "start": 2581,
+            "end": 2636,
+            "startLine": 110,
+            "endLine": 110,
+            "sha256": "1cf84566d06c994a1074cb35d4a21404a403411682a5a9ffdb07685119e4b332"
+          },
+          {
+            "symbol": "Synthetic",
+            "kind": "FirstStatement",
+            "start": 2638,
+            "end": 2817,
+            "startLine": 112,
+            "endLine": 120,
+            "sha256": "b97377fdf4827b8059b2e0d2ab3c8d2ed75ca1f6a721b87685a3381774bbcaf6"
+          },
+          {
+            "symbol": "Synthetic",
+            "kind": "TypeAliasDeclaration",
+            "start": 2818,
+            "end": 2863,
+            "startLine": 121,
+            "endLine": 121,
+            "sha256": "20363aed5cd4771bb74728f21d8cd37e2784091547afa7ab098ed052a85eb1dc"
+          },
+          {
+            "symbol": "Shell",
+            "kind": "ModuleDeclaration",
+            "start": 2865,
+            "end": 3399,
+            "startLine": 123,
+            "endLine": 146,
+            "sha256": "4b7dfece7364f635f3d9fd7f3621db8bdeb81c7947db16bd120f0cc49696c7c6"
+          },
+          {
+            "symbol": "Step",
+            "kind": "ModuleDeclaration",
+            "start": 3401,
+            "end": 4643,
+            "startLine": 148,
+            "endLine": 195,
+            "sha256": "91d7feb6e018d87f849b9e2e4b94b30b9a9f34b49f0c6cb67c5168ad9c90be95"
+          },
+          {
+            "symbol": "Text",
+            "kind": "ModuleDeclaration",
+            "start": 4645,
+            "end": 5544,
+            "startLine": 197,
+            "endLine": 232,
+            "sha256": "aa83bb93cd74dc5890cacb7027ac3e6a5e7584f8beb55f2889c558a48a94ab51"
+          },
+          {
+            "symbol": "Reasoning",
+            "kind": "ModuleDeclaration",
+            "start": 5546,
+            "end": 6599,
+            "startLine": 234,
+            "endLine": 271,
+            "sha256": "78faab0518e36c4b9c85a0cbdbc0a8c3925884b6e332651bd98d260a7a0bdc84"
+          },
+          {
+            "symbol": "Tool",
+            "kind": "ModuleDeclaration",
+            "start": 6601,
+            "end": 9294,
+            "startLine": 273,
+            "endLine": 373,
+            "sha256": "5125c2fca05501b0976e755d89694ff5378d28b072d924290237a09e9cb92c0f"
+          },
+          {
+            "symbol": "RetryError",
+            "kind": "FirstStatement",
+            "start": 9296,
+            "end": 9694,
+            "startLine": 375,
+            "endLine": 384,
+            "sha256": "d577559d6e7a2e6d1718525f7ce7c10cbe321c81549751aa680f02aad778573d"
+          },
+          {
+            "symbol": "RetryError",
+            "kind": "InterfaceDeclaration",
+            "start": 9695,
+            "end": 9771,
+            "startLine": 385,
+            "endLine": 385,
+            "sha256": "105c1fb74e7daf676ce6518a2a22bade6fe2d43081443e4e71968c5bd54b574e"
+          },
+          {
+            "symbol": "Retried",
+            "kind": "FirstStatement",
+            "start": 9773,
+            "end": 9940,
+            "startLine": 387,
+            "endLine": 395,
+            "sha256": "f561cc8ec127567d27757bf2dc91c38afa9753843c2a27da867b075a47b5c424"
+          },
+          {
+            "symbol": "Retried",
+            "kind": "TypeAliasDeclaration",
+            "start": 9941,
+            "end": 9982,
+            "startLine": 396,
+            "endLine": 396,
+            "sha256": "958b49778e1680f8e9d235ef10ef191a4337bb1f57c8d25e485bced5070b3781"
+          },
+          {
+            "symbol": "Compaction",
+            "kind": "ModuleDeclaration",
+            "start": 9984,
+            "end": 10856,
+            "startLine": 398,
+            "endLine": 432,
+            "sha256": "81c28a55d4be4f14542ca36fcd0880fd7f19977b0cf0de5ae0375ba58cdb3c67"
+          },
+          {
+            "symbol": "RevertEvent",
+            "kind": "ModuleDeclaration",
+            "start": 10858,
+            "end": 11303,
+            "startLine": 434,
+            "endLine": 446,
+            "sha256": "8cecff94dbb2eb45f0aa49fc3c869098abe37777cbccb8eeac2365d3260d012c"
+          },
+          {
+            "symbol": "DurableDefinitions",
+            "kind": "FirstStatement",
+            "start": 11305,
+            "end": 11836,
+            "startLine": 448,
+            "endLine": 477,
+            "sha256": "e21d84c97633eb1ce12a4ff2621b88095cde07922aecd0f3eb600b50b7702d31"
+          },
+          {
+            "symbol": "Definitions",
+            "kind": "FirstStatement",
+            "start": 11838,
+            "end": 12435,
+            "startLine": 479,
+            "endLine": 512,
+            "sha256": "faa3e947a69924621cd81de22e80b955402c2c2f0887b8ce65315b0da38083be"
+          },
+          {
+            "symbol": "Durable",
+            "kind": "FirstStatement",
+            "start": 12437,
+            "end": 12600,
+            "startLine": 514,
+            "endLine": 516,
+            "sha256": "d884990fc1216f0317053386bac6a78fe9c2eaaebefea51f5df43900f3a007d9"
+          },
+          {
+            "symbol": "DurableEvent",
+            "kind": "TypeAliasDeclaration",
+            "start": 12601,
+            "end": 12647,
+            "startLine": 517,
+            "endLine": 517,
+            "sha256": "cd85e978b78f18cde09ea432e05ceef0f35f9d567ba4d3f468552b95bb89c76e"
+          },
+          {
+            "symbol": "All",
+            "kind": "FirstStatement",
+            "start": 12649,
+            "end": 12747,
+            "startLine": 519,
+            "endLine": 519,
+            "sha256": "c2f196c924c1c56dbb244245c824b59d14128931e014a8a2612598c5e7f959c0"
+          },
+          {
+            "symbol": "Event",
+            "kind": "TypeAliasDeclaration",
+            "start": 12748,
+            "end": 12783,
+            "startLine": 520,
+            "endLine": 520,
+            "sha256": "5a0ea47b409420c14437cd4c16ab07d42a96b30a9a09d968f021235ace686cbb"
+          },
+          {
+            "symbol": "Type",
+            "kind": "TypeAliasDeclaration",
+            "start": 12784,
+            "end": 12816,
+            "startLine": 521,
+            "endLine": 521,
+            "sha256": "7a22b6c9e9347fc766b90c8191e4f26772ba191e23b374ce58693751151adda7"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/session-id.ts",
+        "gitBlob": "3603ebe703b7b350018626a74e794f94e33079a3",
+        "sha256": "e9bf2bb2382af14577371b17b22b36f07ef6cf97923e655935fde0460ec3bdc6",
+        "roots": true,
+        "staticRelativeImports": [
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "SessionID",
+            "kind": "FirstStatement",
+            "start": 110,
+            "end": 426,
+            "startLine": 5,
+            "endLine": 14,
+            "sha256": "19523149c0d55e37e02d12b0da03a89829bf07bbd08cb0e3edfe30119ab5c161"
+          },
+          {
+            "symbol": "SessionID",
+            "kind": "TypeAliasDeclaration",
+            "start": 427,
+            "end": 472,
+            "startLine": 15,
+            "endLine": 15,
+            "sha256": "61c16d5f9358596f7faf8b0c7158d6f3731913680d6bc3f5069237af77e74395"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/session-input.ts",
+        "gitBlob": "40babac105f66671baeb59679e275f6536a5ae26",
+        "sha256": "817d9ff37c1c522b5058bb31d818035ed5a72d5328929a398cc922b1fd94cb38",
+        "roots": true,
+        "staticRelativeImports": [
+          "packages/schema/src/prompt.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/session-delivery.ts",
+          "packages/schema/src/session-id.ts",
+          "packages/schema/src/session-input.ts",
+          "packages/schema/src/session-message.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "SessionInput",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 47,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "c9258cb4d8b88ca9606688890692bc44fcdc3df9e91c526219272b64e333af21"
+          },
+          {
+            "symbol": "Delivery",
+            "kind": "FirstStatement",
+            "start": 362,
+            "end": 410,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "5038ce5128bb760037d188344737877d7433132690e3ce94652c27f3339589e2"
+          },
+          {
+            "symbol": "Delivery",
+            "kind": "TypeAliasDeclaration",
+            "start": 411,
+            "end": 458,
+            "startLine": 12,
+            "endLine": 12,
+            "sha256": "7cf3c1cf96e3f4d1cd49d32e306be48ee36ae866f2c8eaffdddb830c8debbbb0"
+          },
+          {
+            "symbol": "Admitted",
+            "kind": "InterfaceDeclaration",
+            "start": 460,
+            "end": 532,
+            "startLine": 14,
+            "endLine": 14,
+            "sha256": "2bb52be1d62b97756914199c719ddd7b3f78febfe4e73714fe91ad523502faf5"
+          },
+          {
+            "symbol": "Admitted",
+            "kind": "FirstStatement",
+            "start": 533,
+            "end": 829,
+            "startLine": 15,
+            "endLine": 23,
+            "sha256": "3e5a4eb694c5337b29946261c1953fbc7f9ba482cd0e770ab231376a1afaf28a"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/session-message.ts",
+        "gitBlob": "58ff532063a0232f91d278ec0e8773ee906c7460",
+        "sha256": "96f5ecaf45a8be46485df65d6b2d22b9e6538144e2cd5b28251fb54e13aa85fc",
+        "roots": true,
+        "staticRelativeImports": [
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/llm.ts",
+          "packages/schema/src/model.ts",
+          "packages/schema/src/prompt.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/session-id.ts",
+          "packages/schema/src/session-message.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "SessionMessage",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 51,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "aa729a88f8555abfef61b4c1414d56eef8809e0ba9d3d9ad91d8590e6b8984b2"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 412,
+            "end": 602,
+            "startLine": 12,
+            "endLine": 15,
+            "sha256": "8e3a971633a19e1dbb64f7d9452405bc7fe6730382dddf9121bdd9aa7d1d4656"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 603,
+            "end": 634,
+            "startLine": 16,
+            "endLine": 16,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "UnknownError",
+            "kind": "InterfaceDeclaration",
+            "start": 636,
+            "end": 716,
+            "startLine": 18,
+            "endLine": 18,
+            "sha256": "c608a4bc7f970846bef811fa5b08d75669ca7b25a6475a97721a0f24c5befe95"
+          },
+          {
+            "symbol": "UnknownError",
+            "kind": "FirstStatement",
+            "start": 717,
+            "end": 874,
+            "startLine": 19,
+            "endLine": 22,
+            "sha256": "dfb8e94f5af50af88ac4d27c245ee7c7209648f010e7043d0545f39d921bf2cd"
+          },
+          {
+            "symbol": "AgentSwitched",
+            "kind": "InterfaceDeclaration",
+            "start": 1036,
+            "end": 1118,
+            "startLine": 30,
+            "endLine": 30,
+            "sha256": "934fdb73bc81b5643d321ee01ab7cc2134a76b0922522a3382783f78f2fe5d62"
+          },
+          {
+            "symbol": "AgentSwitched",
+            "kind": "FirstStatement",
+            "start": 1119,
+            "end": 1301,
+            "startLine": 31,
+            "endLine": 35,
+            "sha256": "93772bac1cd05a70f3e57c80c69a28c2f866f3065e1eb5618ca513db8dc0fc59"
+          },
+          {
+            "symbol": "ModelSwitched",
+            "kind": "InterfaceDeclaration",
+            "start": 1303,
+            "end": 1385,
+            "startLine": 37,
+            "endLine": 37,
+            "sha256": "04bce652b87a05eb98fba6f4ba11d310a3cd41ff9d29fe8eabc81cd5a7a98802"
+          },
+          {
+            "symbol": "ModelSwitched",
+            "kind": "FirstStatement",
+            "start": 1386,
+            "end": 1564,
+            "startLine": 38,
+            "endLine": 42,
+            "sha256": "d2d381b4f4595204bf970614fb38f2eb822e3bf840743f6b7c416638a05a91c6"
+          },
+          {
+            "symbol": "User",
+            "kind": "InterfaceDeclaration",
+            "start": 1566,
+            "end": 1630,
+            "startLine": 44,
+            "endLine": 44,
+            "sha256": "70ba30beba4f3f8a8ee0f062fa3a57e4694f2b9129aa2edbfc65c6e68492b128"
+          },
+          {
+            "symbol": "User",
+            "kind": "FirstStatement",
+            "start": 1631,
+            "end": 1851,
+            "startLine": 45,
+            "endLine": 51,
+            "sha256": "8c4d81c927e928e4ef0c2829be771f6647fa10d51f9ad0fc5e61e9305a759fdb"
+          },
+          {
+            "symbol": "Synthetic",
+            "kind": "InterfaceDeclaration",
+            "start": 1853,
+            "end": 1927,
+            "startLine": 53,
+            "endLine": 53,
+            "sha256": "c27fd85e4a7914f9cb3af845942033fd6ce9212377d2a96203c5ab80dc05fdfb"
+          },
+          {
+            "symbol": "Synthetic",
+            "kind": "FirstStatement",
+            "start": 1928,
+            "end": 2120,
+            "startLine": 54,
+            "endLine": 59,
+            "sha256": "078e3d83b8bfdef54f0a6d8f37f16b25193a7b26014c2f72d9d0311455d39354"
+          },
+          {
+            "symbol": "System",
+            "kind": "InterfaceDeclaration",
+            "start": 2122,
+            "end": 2190,
+            "startLine": 61,
+            "endLine": 61,
+            "sha256": "8699ecb4ebb0d271a88c649cec9fc573cbd988df95df780948d9f2b6b9afdddb"
+          },
+          {
+            "symbol": "System",
+            "kind": "FirstStatement",
+            "start": 2191,
+            "end": 2350,
+            "startLine": 62,
+            "endLine": 66,
+            "sha256": "e3029bcfa09fbaa7030a385e320b5861a405080c8f7dba5eef7faa7b2b006446"
+          },
+          {
+            "symbol": "Shell",
+            "kind": "InterfaceDeclaration",
+            "start": 2352,
+            "end": 2418,
+            "startLine": 68,
+            "endLine": 68,
+            "sha256": "9b7d5f0065c4c383b44231e5a882bd9598e8428adfe6a7e8c6a18d0f693abc17"
+          },
+          {
+            "symbol": "Shell",
+            "kind": "FirstStatement",
+            "start": 2419,
+            "end": 2747,
+            "startLine": 69,
+            "endLine": 79,
+            "sha256": "b5458a0d79f6b89909cb31ab7fe1f4a1d75ca667b0879745539f099b549e5fde"
+          },
+          {
+            "symbol": "ToolStatePending",
+            "kind": "InterfaceDeclaration",
+            "start": 2749,
+            "end": 2837,
+            "startLine": 81,
+            "endLine": 81,
+            "sha256": "88fe356a3d04531f53407a36127f347d943042c0bf3b1ecde3ffe1d130577721"
+          },
+          {
+            "symbol": "ToolStatePending",
+            "kind": "FirstStatement",
+            "start": 2838,
+            "end": 3011,
+            "startLine": 82,
+            "endLine": 85,
+            "sha256": "24d8c48bf1aff81d3a451835df193f967db23c6ec74675a7f8ca4a4b63bb5084"
+          },
+          {
+            "symbol": "ToolStateRunning",
+            "kind": "InterfaceDeclaration",
+            "start": 3013,
+            "end": 3101,
+            "startLine": 87,
+            "endLine": 87,
+            "sha256": "736e7841a8c2414e8ea762a35e6b74e15c142ab0d2ed026c8caf86c8708efc7d"
+          },
+          {
+            "symbol": "ToolStateRunning",
+            "kind": "FirstStatement",
+            "start": 3102,
+            "end": 3409,
+            "startLine": 88,
+            "endLine": 93,
+            "sha256": "40bf88c40770571cb51c7a6870de0c58266655f78ed3efdf0484989b868feb98"
+          },
+          {
+            "symbol": "ToolStateCompleted",
+            "kind": "InterfaceDeclaration",
+            "start": 3411,
+            "end": 3503,
+            "startLine": 95,
+            "endLine": 95,
+            "sha256": "1215741113a5e1ad24028ac706333136206336c428f6f8f9d328881249e98c15"
+          },
+          {
+            "symbol": "ToolStateCompleted",
+            "kind": "FirstStatement",
+            "start": 3504,
+            "end": 3977,
+            "startLine": 96,
+            "endLine": 104,
+            "sha256": "5fd1011a1692ec6d77cdd19a77a6ee14638774dbdf600950b9912383ea554e96"
+          },
+          {
+            "symbol": "ToolStateError",
+            "kind": "InterfaceDeclaration",
+            "start": 3979,
+            "end": 4063,
+            "startLine": 106,
+            "endLine": 106,
+            "sha256": "67da4201a9701f3411cd39b59e6724fcbd39067940be1903a300a09c16c9cd22"
+          },
+          {
+            "symbol": "ToolStateError",
+            "kind": "FirstStatement",
+            "start": 4064,
+            "end": 4429,
+            "startLine": 107,
+            "endLine": 114,
+            "sha256": "99796632b8e92bf91f9c0ebd495ee270beacd077492c10b0852e3137eab84ad3"
+          },
+          {
+            "symbol": "ToolState",
+            "kind": "FirstStatement",
+            "start": 4431,
+            "end": 4584,
+            "startLine": 116,
+            "endLine": 118,
+            "sha256": "8223939b850701b795b2b31932c63a329bb73b2ff5b0dfd9b67a58c87f5d627c"
+          },
+          {
+            "symbol": "ToolState",
+            "kind": "TypeAliasDeclaration",
+            "start": 4585,
+            "end": 4682,
+            "startLine": 119,
+            "endLine": 119,
+            "sha256": "54931cdfb105ad7dced508e410a8f3bc5ce0d19c8a6c0ffecdc79cc597fe1933"
+          },
+          {
+            "symbol": "AssistantTool",
+            "kind": "InterfaceDeclaration",
+            "start": 4684,
+            "end": 4766,
+            "startLine": 121,
+            "endLine": 121,
+            "sha256": "eb33ca04e14649a96ea99b5ce553ff643f552c8a19b80b775319ae154d847303"
+          },
+          {
+            "symbol": "AssistantTool",
+            "kind": "FirstStatement",
+            "start": 4767,
+            "end": 5364,
+            "startLine": 122,
+            "endLine": 138,
+            "sha256": "e520c331292ef5f4500e4bddff288726ba8b35076321c1d344f494657921a713"
+          },
+          {
+            "symbol": "AssistantText",
+            "kind": "InterfaceDeclaration",
+            "start": 5366,
+            "end": 5448,
+            "startLine": 140,
+            "endLine": 140,
+            "sha256": "bf6e6a5009507b3fd070ad537616d0a5a0f3c8a304fab6df928c40f817a20453"
+          },
+          {
+            "symbol": "AssistantText",
+            "kind": "FirstStatement",
+            "start": 5449,
+            "end": 5631,
+            "startLine": 141,
+            "endLine": 145,
+            "sha256": "9fcad330ed4d4b26cdeffc96fddc5496a60f6fa6eed83947d5d5a9626d2ec9b5"
+          },
+          {
+            "symbol": "AssistantReasoning",
+            "kind": "InterfaceDeclaration",
+            "start": 5633,
+            "end": 5725,
+            "startLine": 147,
+            "endLine": 147,
+            "sha256": "48f1b2bb8f8850f911e52b813cc3aa86f599e969cf90e41ede8b2bf0766beda7"
+          },
+          {
+            "symbol": "AssistantReasoning",
+            "kind": "FirstStatement",
+            "start": 5726,
+            "end": 6110,
+            "startLine": 148,
+            "endLine": 157,
+            "sha256": "5c17ef48593b1f3954cca86bab61ad638f2edc91041966d1095ff1312a83c467"
+          },
+          {
+            "symbol": "AssistantContent",
+            "kind": "FirstStatement",
+            "start": 6112,
+            "end": 6248,
+            "startLine": 159,
+            "endLine": 161,
+            "sha256": "df4dcfacb956b319001b36402419cca7b317aee2f85ea6dd9366705867ea3598"
+          },
+          {
+            "symbol": "AssistantContent",
+            "kind": "TypeAliasDeclaration",
+            "start": 6249,
+            "end": 6330,
+            "startLine": 162,
+            "endLine": 162,
+            "sha256": "c13b6504334114f5f3d954668c70071473cc6fc7d85143d4594934810c00ce78"
+          },
+          {
+            "symbol": "Assistant",
+            "kind": "InterfaceDeclaration",
+            "start": 6332,
+            "end": 6406,
+            "startLine": 164,
+            "endLine": 164,
+            "sha256": "affa4149c2a15a0b531330412629f03029afcb1764c3e738b6febb0a12fe147a"
+          },
+          {
+            "symbol": "Assistant",
+            "kind": "FirstStatement",
+            "start": 6407,
+            "end": 7265,
+            "startLine": 165,
+            "endLine": 189,
+            "sha256": "8f1f8c4c18194b929465610fd03391f27a6372d0a6261920874093e85975b54d"
+          },
+          {
+            "symbol": "Compaction",
+            "kind": "InterfaceDeclaration",
+            "start": 7267,
+            "end": 7343,
+            "startLine": 191,
+            "endLine": 191,
+            "sha256": "0b5cdb34b0b3e31c483570c56e5cc60ab6cc4c8e0eb3a5bc1159589663c28203"
+          },
+          {
+            "symbol": "Compaction",
+            "kind": "FirstStatement",
+            "start": 7344,
+            "end": 7590,
+            "startLine": 192,
+            "endLine": 198,
+            "sha256": "58f43b9684d00cb1c4edcaa22483da3517b53f5cf9d057b98fd501d31ddfd53a"
+          },
+          {
+            "symbol": "Message",
+            "kind": "FirstStatement",
+            "start": 7592,
+            "end": 7818,
+            "startLine": 200,
+            "endLine": 211,
+            "sha256": "e25af01b7806b4916338de2d2cab788bf500502c409bf1297aac2870c05d3aa4"
+          },
+          {
+            "symbol": "Message",
+            "kind": "TypeAliasDeclaration",
+            "start": 7819,
+            "end": 7931,
+            "startLine": 212,
+            "endLine": 212,
+            "sha256": "9caa0ae3a51e6612ce2a157b9c1fc9da1371588188898d5636f80e3ec1ac7a87"
+          },
+          {
+            "symbol": "Type",
+            "kind": "TypeAliasDeclaration",
+            "start": 7932,
+            "end": 7966,
+            "startLine": 213,
+            "endLine": 213,
+            "sha256": "9074448519441de691a566089bf07ac111d6805ff478bc0686d7184208f75a5a"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/session.ts",
+        "gitBlob": "937705eeb2f4dd3cb6ba3646a676179e0866e0d0",
+        "sha256": "769622a23591f4aee6ecbfe8d2f9f5751e91a0360505508787b48300ea5cd5ee",
+        "roots": true,
+        "staticRelativeImports": [
+          "packages/schema/src/agent.ts",
+          "packages/schema/src/location.ts",
+          "packages/schema/src/model.ts",
+          "packages/schema/src/project.ts",
+          "packages/schema/src/revert.ts",
+          "packages/schema/src/schema.ts",
+          "packages/schema/src/session-event.ts",
+          "packages/schema/src/session-id.ts",
+          "packages/schema/src/session.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "Session",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 36,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "7d45ceb2fcc9c88118158ad8992825125f10dfd5df04dff5ca2b2ae7e791b223"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 404,
+            "end": 431,
+            "startLine": 13,
+            "endLine": 13,
+            "sha256": "abd6f39b6f39d603e4d44122f9cd7b979862ab41da36e557549faea9ba6e232c"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 432,
+            "end": 458,
+            "startLine": 14,
+            "endLine": 14,
+            "sha256": "3a7b8aa1b39f2a0408f1ae1676910ac31339e52d5490a6b0b4df65af0bd88250"
+          },
+          {
+            "symbol": "Event",
+            "kind": "FirstStatement",
+            "start": 460,
+            "end": 493,
+            "startLine": 16,
+            "endLine": 16,
+            "sha256": "88a0baca52c24159b07d8deecdf3361dbac17783901f1a35e5897a6e6a4781f2"
+          },
+          {
+            "symbol": "Info",
+            "kind": "InterfaceDeclaration",
+            "start": 495,
+            "end": 559,
+            "startLine": 18,
+            "endLine": 18,
+            "sha256": "1821aa3b7f74efd8509504538923e05b87fc96058c83f618ceb48007f5370917"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 560,
+            "end": 1287,
+            "startLine": 19,
+            "endLine": 44,
+            "sha256": "fa3a8f2e9a264975379fb3125ff8d74be9e4fdb22d43a88fba22aa714728db9a"
+          },
+          {
+            "symbol": "ListAnchor",
+            "kind": "FirstStatement",
+            "start": 1289,
+            "end": 1465,
+            "startLine": 46,
+            "endLine": 50,
+            "sha256": "2323cf8698a9c212185da578a613b6b68b2eb393f4a1931d038619152997aea4"
+          },
+          {
+            "symbol": "ListAnchor",
+            "kind": "InterfaceDeclaration",
+            "start": 1466,
+            "end": 1542,
+            "startLine": 51,
+            "endLine": 51,
+            "sha256": "9e0205e0581a9cc1ddfde84a375bf29652c0dec18c012cea833f1f1115a335b4"
+          }
+        ]
+      },
+      {
+        "sourcePath": "packages/schema/src/workspace-id.ts",
+        "gitBlob": "e43e9673f6395fae50aa7f8fc1e727d2af8b7fb4",
+        "sha256": "8756530476173c3888135b3ac76bb14069d61c3d4074464f2a307a0d078d19c9",
+        "roots": false,
+        "staticRelativeImports": [
+          "packages/schema/src/identifier.ts",
+          "packages/schema/src/schema.ts"
+        ],
+        "adoptedExports": [
+          {
+            "symbol": "WorkspaceID",
+            "kind": "FirstStatement",
+            "start": 109,
+            "end": 543,
+            "startLine": 5,
+            "endLine": 18,
+            "sha256": "07f07e43a5d8cbfcd85dcee331b0e69075a0b68ac2c92a03df9c4fc364159379"
+          },
+          {
+            "symbol": "WorkspaceID",
+            "kind": "TypeAliasDeclaration",
+            "start": 544,
+            "end": 593,
+            "startLine": 19,
+            "endLine": 19,
+            "sha256": "f8acc42f9e61164528ea20340796bc67e7d54c0719efd3403918d72c454625ea"
+          }
+        ]
+      }
+    ],
+    "exclusions": [
+      "packages/schema/src/session-compaction-event.ts",
+      "packages/schema/src/session-status-event.ts",
+      "packages/schema/src/session-todo.ts",
+      "packages/schema/src/session-v1.ts",
+      "packages/schema/src/v1/legacy-event.ts",
+      "packages/schema/src/v1/permission.ts",
+      "packages/schema/src/v1/question.ts",
+      "packages/schema/src/v1/session.ts"
+    ]
+  },
+  "coreV2": {
+    "files": [
+      {
+        "sourcePath": "packages/core/src/session.ts",
+        "gitBlob": "2dabfb2d6fba2eeff6306abcae0f5fb8c99b6f13",
+        "sha256": "6a82ac892612207fe3cdce0de556a7e4a06bf701557ebfe09607633641f224be",
+        "role": "v2-session-service",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionV2",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 38,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "615b9923dd8ff631fe3578ec088fe1946204000c31f321c0753fb532f60b4711"
+          },
+          {
+            "symbol": "*:./session/schema",
+            "kind": "ExportDeclaration",
+            "start": 39,
+            "end": 71,
+            "startLine": 2,
+            "endLine": 2,
+            "sha256": "d06066f70a97bac7496083e0ea3fb6736828263944210cb22b84d67ea50e3580"
+          },
+          {
+            "symbol": "ListAnchor",
+            "kind": "ImportDeclaration",
+            "start": 147,
+            "end": 203,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "8063645f6a8f2e5b35ab5f32963a78e425b64d35f576079af77dbefe0c740766"
+          },
+          {
+            "symbol": "RevertState",
+            "kind": "FirstStatement",
+            "start": 1854,
+            "end": 1893,
+            "startLine": 41,
+            "endLine": 41,
+            "sha256": "3ff5c78baedf903f39af8fe5712f221998ae98eddf78ea4feec4e3994672562f"
+          },
+          {
+            "symbol": "RevertState",
+            "kind": "TypeAliasDeclaration",
+            "start": 1894,
+            "end": 1932,
+            "startLine": 42,
+            "endLine": 42,
+            "sha256": "9f3841520f7cdda29ec95a48c823bad656897313a7f8140e0b8dd4a9676dbb02"
+          },
+          {
+            "symbol": "ListAnchor",
+            "kind": "ExportDeclaration",
+            "start": 2068,
+            "end": 2089,
+            "startLine": 53,
+            "endLine": 53,
+            "sha256": "49f3c827490e8bdd150e388a6f2d5cfd2d6494336bf4da08384f2e14d75c5e1e"
+          },
+          {
+            "symbol": "ListInput",
+            "kind": "FirstStatement",
+            "start": 2653,
+            "end": 2744,
+            "startLine": 76,
+            "endLine": 76,
+            "sha256": "077ccccf71003e340ae83d714b48b61e84bed1d4a912058b974f7d24fc18a381"
+          },
+          {
+            "symbol": "ListInput",
+            "kind": "TypeAliasDeclaration",
+            "start": 2745,
+            "end": 2790,
+            "startLine": 77,
+            "endLine": 77,
+            "sha256": "383f88243172c6328ab038202524ae5ac03f3bee8f10bf8c2e667bc7fd04e2b3"
+          },
+          {
+            "symbol": "NotFoundError",
+            "kind": "ClassDeclaration",
+            "start": 2981,
+            "end": 3120,
+            "startLine": 91,
+            "endLine": 93,
+            "sha256": "5aa62b32720402593125d0490bb391e762cc9eb4706344b8f9c950702a4d065c"
+          },
+          {
+            "symbol": "OperationUnavailableError",
+            "kind": "ClassDeclaration",
+            "start": 3122,
+            "end": 3369,
+            "startLine": 95,
+            "endLine": 100,
+            "sha256": "1f69f9e711d4411e7c1f94c80805c3bb040f174f42343d1a889224b1234c4bdf"
+          },
+          {
+            "symbol": "PromptConflictError",
+            "kind": "ClassDeclaration",
+            "start": 3453,
+            "end": 3642,
+            "startLine": 104,
+            "endLine": 107,
+            "sha256": "aeb478e7f6240093ec70fbf975d850d43c727a9aa8b1738ad44181291655b04a"
+          },
+          {
+            "symbol": "MessageNotFoundError",
+            "kind": "FirstStatement",
+            "start": 3643,
+            "end": 3713,
+            "startLine": 108,
+            "endLine": 108,
+            "sha256": "8386d79d803828a0aa8c7a677c01e07571c33b627cb6de28257960b44724deaa"
+          },
+          {
+            "symbol": "MessageNotFoundError",
+            "kind": "TypeAliasDeclaration",
+            "start": 3714,
+            "end": 3783,
+            "startLine": 109,
+            "endLine": 109,
+            "sha256": "cd0b96267414a145c98756eeb5da6bb15045536bba8274599bb99444f3078d08"
+          },
+          {
+            "symbol": "Error",
+            "kind": "TypeAliasDeclaration",
+            "start": 3785,
+            "end": 3889,
+            "startLine": 111,
+            "endLine": 111,
+            "sha256": "c134b320f6c2aec5b7ab2c9e576265e4e409fcca71550bc6374b4ecf318e746b"
+          },
+          {
+            "symbol": "Interface",
+            "kind": "InterfaceDeclaration",
+            "start": 3891,
+            "end": 6851,
+            "startLine": 113,
+            "endLine": 180,
+            "sha256": "fcc30797f2ff936d1444ede7fbc67c91184f7778e8a5a15940116dd3a2aec880"
+          },
+          {
+            "symbol": "Service",
+            "kind": "ClassDeclaration",
+            "start": 6853,
+            "end": 6946,
+            "startLine": 182,
+            "endLine": 182,
+            "sha256": "c822e76a871ce6372bb8ae3ebfbdda6d745dc0daf21e77a05eb62285d8f49730"
+          },
+          {
+            "symbol": "node",
+            "kind": "FirstStatement",
+            "start": 19735,
+            "end": 20006,
+            "startLine": 474,
+            "endLine": 486,
+            "sha256": "19629288795d5d5afa5667d5767ee2494d4ecfc81e765d4b61ccc4d1ae41445d"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "SessionV1",
+            "kind": "ImportDeclaration",
+            "start": 941,
+            "end": 981,
+            "startLine": 21,
+            "endLine": 21,
+            "sha256": "c5a1a5bb0e55c870d8790ac04d111e7f5bc6cc5aad989f3df1c3ae6596a5ecca"
+          },
+          {
+            "symbol": "project",
+            "kind": "PropertyAssignment",
+            "start": 2528,
+            "end": 2549,
+            "startLine": 70,
+            "endLine": 70,
+            "sha256": "c555823a6710e3f9a0662b8867f52b63b072f04b7e6fdc6b1c856535130f26e3"
+          },
+          {
+            "symbol": "create",
+            "kind": "PropertySignature",
+            "start": 3998,
+            "end": 4072,
+            "startLine": 115,
+            "endLine": 115,
+            "sha256": "46e86de2d776f4c378f90834c7bc72635a25346a2d577c181b9efd6539983d6d"
+          },
+          {
+            "symbol": "create",
+            "kind": "PropertyAssignment",
+            "start": 7887,
+            "end": 10413,
+            "startLine": 208,
+            "endLine": 262,
+            "sha256": "543088c1842f067511b33861b14b6446428bd071ef4f2506f4afca833776accb"
+          },
+          {
+            "symbol": "project",
+            "kind": "FirstStatement",
+            "start": 8108,
+            "end": 8173,
+            "startLine": 212,
+            "endLine": 212,
+            "sha256": "24bb20cf902ee8e18920489530d2cad319e160374bd7740270a8e7bbf5c0189b"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "SessionV1",
+          "create",
+          "project"
+        ]
+      },
+      {
+        "sourcePath": "packages/core/src/session/context-epoch.ts",
+        "gitBlob": "65b17a86a4fb131d427e12d489cec2c06a088094",
+        "sha256": "b6e07dccc330779192975a58d763941a9b8ae458cc6974e040c26cd149ff7fd8",
+        "role": "v2-context-epoch",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionContextEpoch",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 54,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "24c9d41c3adb544d50f61da07e9369ace7e798fa558837b8b39b457f1430870e"
+          },
+          {
+            "symbol": "initialize",
+            "kind": "FunctionDeclaration",
+            "start": 723,
+            "end": 1043,
+            "startLine": 23,
+            "endLine": 29,
+            "sha256": "32331b9cc1b779ac9aa9bf0c0fe77778b6c67649705842d31f3c9892b25a0de4"
+          },
+          {
+            "symbol": "prepare",
+            "kind": "FunctionDeclaration",
+            "start": 1045,
+            "end": 1410,
+            "startLine": 31,
+            "endLine": 38,
+            "sha256": "e2797b755beba19d135513ef01f652427c09bdc9ad8bbfa942a83a12160d8d7e"
+          },
+          {
+            "symbol": "reset",
+            "kind": "FirstStatement",
+            "start": 4284,
+            "end": 4564,
+            "startLine": 111,
+            "endLine": 120,
+            "sha256": "9f2e5c0bdbaca594f79479071c2652e3c51db9a634a3c41ba22df78f807396c7"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/error.ts",
+        "gitBlob": "158e46dd073e3f7624ed78a84e5f256e7c0c4d8b",
+        "sha256": "4fca931c2d086db5c38a06f70dd53d413acfec8290266d6c8ac77d0a097437f9",
+        "role": "v2-session-errors",
+        "adoptedSpans": [
+          {
+            "symbol": "MessageDecodeError",
+            "kind": "ClassDeclaration",
+            "start": 117,
+            "end": 420,
+            "startLine": 5,
+            "endLine": 12,
+            "sha256": "1575594ed14de089850ca2e8635e6d3e0b5ad5fb80fa69d1b55bae963341c8be"
+          },
+          {
+            "symbol": "ContextSnapshotDecodeError",
+            "kind": "ClassDeclaration",
+            "start": 422,
+            "end": 765,
+            "startLine": 14,
+            "endLine": 24,
+            "sha256": "77eea6f4ccedb4ff374a2d09f229d65756862fdd5f02567e20f2b02b174f23af"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/event.ts",
+        "gitBlob": "78e40a699416d21882718cc3e4a6aedee2253ddc",
+        "sha256": "123347f1fe182db575b3999d3e21bcb524f4752d043820dfa4899cdf1326a1ad",
+        "role": "v2-event-schema",
+        "adoptedSpans": [
+          {
+            "symbol": "*:@opencode-ai/schema/session-event",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 49,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "7cb11990bba973ae4b0acd13840dd025f8dc43c6f00a3df0878e6ba21091b3e9"
+          },
+          {
+            "symbol": "SessionEvent",
+            "kind": "ExportDeclaration",
+            "start": 50,
+            "end": 115,
+            "startLine": 2,
+            "endLine": 2,
+            "sha256": "c6e22021e8aa49fdaa18abec8d22dd2c407163f64a2dcd0f9008ab52688b44b4"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/history.ts",
+        "gitBlob": "fb55ab075699644006f29dd0e2e2136df706c21b",
+        "sha256": "232f3d6b3c4ef832deab874920de0f513473acc51b5ed56488023ea3ba02d605",
+        "role": "v2-history",
+        "adoptedSpans": [
+          {
+            "symbol": "latestCompaction",
+            "kind": "FirstStatement",
+            "start": 470,
+            "end": 881,
+            "startLine": 13,
+            "endLine": 22,
+            "sha256": "65f19040eb7e4ed4c6f592d868d853dc47ebf055ab718b3069641d2ae4178e46"
+          },
+          {
+            "symbol": "load",
+            "kind": "FirstStatement",
+            "start": 2123,
+            "end": 2728,
+            "startLine": 66,
+            "endLine": 80,
+            "sha256": "638c24421eeb2cd3ae2c9b90ff2302104e20c321715b7f93ac6ed318f7fb9e99"
+          },
+          {
+            "symbol": "loadForRunner",
+            "kind": "FirstStatement",
+            "start": 2730,
+            "end": 2989,
+            "startLine": 82,
+            "endLine": 88,
+            "sha256": "80fdcb0c029df47900738b23c80ebb370918cffa9640d981658151d786d10576"
+          },
+          {
+            "symbol": "entriesForRunner",
+            "kind": "FirstStatement",
+            "start": 2991,
+            "end": 3401,
+            "startLine": 90,
+            "endLine": 99,
+            "sha256": "6e5d72a9f87fc847eb3ec1ad4d0d91493af3bd11234ce3b049fc9741161a095e"
+          },
+          {
+            "symbol": "SessionHistory",
+            "kind": "ExportDeclaration",
+            "start": 3403,
+            "end": 3446,
+            "startLine": 101,
+            "endLine": 101,
+            "sha256": "d7f53b7e506fdf16a6cfb62964aaf8b18daca7c039ec7b1a89ffe12940f393f1"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/info.ts",
+        "gitBlob": "66832750fd65007941f881c0feeb1081738c7ff3",
+        "sha256": "f3ee2a27d80be2898293ca0692b1137d55427bb2243d54c64752e0f6125e235c",
+        "role": "v2-session-info",
+        "adoptedSpans": [
+          {
+            "symbol": "fromRow",
+            "kind": "FunctionDeclaration",
+            "start": 482,
+            "end": 1925,
+            "startLine": 14,
+            "endLine": 50,
+            "sha256": "702784f09ec23f39879f2fbcbe6516287f9e0435e3d5d41cb17226aef8655f9c"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/input.ts",
+        "gitBlob": "14b613678dbe0deb3f14fe4c16ffe26db1f75b4a",
+        "sha256": "3f0fa5e0179f75a3a68c2befcc53d1bf46fc3414355840f4573008ec39393e29",
+        "role": "v2-input-inbox",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionInput",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 39,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "2bb99ab750df5bd934780ea21b495a172bc7b9ce4652cc897720cecd8a429952"
+          },
+          {
+            "symbol": "Admitted",
+            "kind": "ImportDeclaration",
+            "start": 147,
+            "end": 217,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "3e411ce26b4e9ff498d21b3e769db910385ad3d483125722940eb6f83b66709b"
+          },
+          {
+            "symbol": "Delivery",
+            "kind": "ImportDeclaration",
+            "start": 147,
+            "end": 217,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "3e411ce26b4e9ff498d21b3e769db910385ad3d483125722940eb6f83b66709b"
+          },
+          {
+            "symbol": "Admitted",
+            "kind": "ExportDeclaration",
+            "start": 581,
+            "end": 610,
+            "startLine": 16,
+            "endLine": 16,
+            "sha256": "77ff7ec12455bd7e7afaaacac381e31a1dfd52b999efbd03ef94c2d43c99641d"
+          },
+          {
+            "symbol": "Delivery",
+            "kind": "ExportDeclaration",
+            "start": 581,
+            "end": 610,
+            "startLine": 16,
+            "endLine": 16,
+            "sha256": "77ff7ec12455bd7e7afaaacac381e31a1dfd52b999efbd03ef94c2d43c99641d"
+          },
+          {
+            "symbol": "find",
+            "kind": "FirstStatement",
+            "start": 1140,
+            "end": 1422,
+            "startLine": 32,
+            "endLine": 35,
+            "sha256": "5ad939d8fa192237874f34d26c57147d9d5c85f670e8914ec46d97e3356451d5"
+          },
+          {
+            "symbol": "LifecycleConflict",
+            "kind": "ClassDeclaration",
+            "start": 1424,
+            "end": 1574,
+            "startLine": 37,
+            "endLine": 39,
+            "sha256": "d59cdc6b3d2ce2d91e3c29b50af1cfe47530ed1aa3fe6c3bedc440869109b5ad"
+          },
+          {
+            "symbol": "admit",
+            "kind": "FirstStatement",
+            "start": 1576,
+            "end": 2863,
+            "startLine": 41,
+            "endLine": 81,
+            "sha256": "d477c4ba2421a00b96c921a954228bd4e4a996e641a90df5f6c1bf8c96ac0bce"
+          },
+          {
+            "symbol": "projectAdmitted",
+            "kind": "FirstStatement",
+            "start": 2865,
+            "end": 3983,
+            "startLine": 83,
+            "endLine": 116,
+            "sha256": "17eee861b282c92db3b5db1aa78ab03654e1048b489d68ec8b41c669343ed3a7"
+          },
+          {
+            "symbol": "projectPrompted",
+            "kind": "FirstStatement",
+            "start": 3985,
+            "end": 5450,
+            "startLine": 118,
+            "endLine": 168,
+            "sha256": "e7549b8fabdf167bf77e690b3139f66d6c4c0747e46ac5cf1e3b3e012d017fe0"
+          },
+          {
+            "symbol": "hasPending",
+            "kind": "FirstStatement",
+            "start": 5452,
+            "end": 5969,
+            "startLine": 170,
+            "endLine": 189,
+            "sha256": "d67c45d2217eabbedef72062d297b52a8142eb07241d30f81b25683f4e4a71ee"
+          },
+          {
+            "symbol": "equivalent",
+            "kind": "FirstStatement",
+            "start": 5971,
+            "end": 6213,
+            "startLine": 191,
+            "endLine": 198,
+            "sha256": "a24e369d399fbd9f6b78efa3bbb2c2c6c6a4637a0b2483d4c7119091ed11d6e5"
+          },
+          {
+            "symbol": "promoteSteers",
+            "kind": "FirstStatement",
+            "start": 7684,
+            "end": 8319,
+            "startLine": 245,
+            "endLine": 266,
+            "sha256": "cbdb11ccc34884cab1a3a122e2de192dc3b273042da3d163e325905037320fc8"
+          },
+          {
+            "symbol": "promoteNextQueued",
+            "kind": "FirstStatement",
+            "start": 8321,
+            "end": 8957,
+            "startLine": 268,
+            "endLine": 288,
+            "sha256": "3bdef107299473dfddebbeb6cdbd6c281ce674fc5878302f0d80d5c8deed2861"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/message.ts",
+        "gitBlob": "47f1baac052e75abc17f61d056bd93c42cd101f7",
+        "sha256": "02bc45bd7c9647550817d93922df3e955d09c8bacd8c39f1e32afff9a84b86d9",
+        "role": "v2-message-schema",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionMessage",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 43,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "3d545dbc283107ea436cfff38bba62aeaff7e8075b30ca2cd85af3bcef7c0a1c"
+          },
+          {
+            "symbol": "*:@opencode-ai/schema/session-message",
+            "kind": "ExportDeclaration",
+            "start": 44,
+            "end": 95,
+            "startLine": 2,
+            "endLine": 2,
+            "sha256": "b7ba0baaac9be4fcc1fc6946761764e733d0fa6798e51643d3c9e4793fd4461f"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/message-updater.ts",
+        "gitBlob": "46118a89fe4bea5aa13ef585b154626cc069980f",
+        "sha256": "9b9be0e5b38eed69b8cd75fb6856e324b09e399378517df700f97bc637511886",
+        "role": "v2-message-projector-state",
+        "adoptedSpans": [
+          {
+            "symbol": "MemoryState",
+            "kind": "TypeAliasDeclaration",
+            "start": 178,
+            "end": 244,
+            "startLine": 6,
+            "endLine": 8,
+            "sha256": "10a2176b3f13e35152e25a9c471b430d184f11352c17ce479fc65797d456df73"
+          },
+          {
+            "symbol": "Adapter",
+            "kind": "InterfaceDeclaration",
+            "start": 246,
+            "end": 820,
+            "startLine": 10,
+            "endLine": 17,
+            "sha256": "71ceff23bd54d068529e2402f1dce7d542eacfce7986902c337517b969f07d6c"
+          },
+          {
+            "symbol": "memory",
+            "kind": "FunctionDeclaration",
+            "start": 822,
+            "end": 2915,
+            "startLine": 19,
+            "endLine": 76,
+            "sha256": "3bec3daf20d6b36afc1f6df357e86e2b92139a2e97d95e67ea31ec56670b53e2"
+          },
+          {
+            "symbol": "update",
+            "kind": "FunctionDeclaration",
+            "start": 2917,
+            "end": 15772,
+            "startLine": 78,
+            "endLine": 395,
+            "sha256": "e6227c21548c21866b82d8137d13abb14a7d4da50b1f0c1719e1890326ff7044"
+          },
+          {
+            "symbol": "SessionMessageUpdater",
+            "kind": "ExportDeclaration",
+            "start": 15774,
+            "end": 15832,
+            "startLine": 397,
+            "endLine": 397,
+            "sha256": "daa1b26d7dfaff10b04fccc4026cf5c241e49865c3f1422109a627c5acf5ee3c"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/projector.ts",
+        "gitBlob": "afa60dfa88d076c691780f20140d74194c8158ae",
+        "sha256": "4048add7aeee140b77358dd39d5877516af3d8ca141f8b4c209a91d723f08bf0",
+        "role": "v2-projector",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionProjector",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 47,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "cd6ea9c13ad0088ebe0b59b6a73a12ab707be94deb820b2676b70356c06692d1"
+          },
+          {
+            "symbol": "SessionAlreadyProjected",
+            "kind": "ClassDeclaration",
+            "start": 1013,
+            "end": 1066,
+            "startLine": 24,
+            "endLine": 24,
+            "sha256": "33b5a109c7d0cd94c786cc359b3217f4c8c64d02860f7edd9b2e5b95e934780c"
+          },
+          {
+            "symbol": "node",
+            "kind": "FirstStatement",
+            "start": 18597,
+            "end": 18706,
+            "startLine": 458,
+            "endLine": 458,
+            "sha256": "54632a17ca83125d3bd8c67d2df9b312abbda2e88476513f0f37431a10f50789"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "SessionV1",
+            "kind": "ImportDeclaration",
+            "start": 337,
+            "end": 378,
+            "startLine": 9,
+            "endLine": 9,
+            "sha256": "7d6a035786f5ceb5e5a3bf208b39e63fb24b99ae3405ae2a4124546340981502"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "SessionV1",
+          "projectSessionCreated",
+          "projectV1"
+        ]
+      },
+      {
+        "sourcePath": "packages/core/src/session/prompt.ts",
+        "gitBlob": "b079349c566955684fe25ae2fbff4d9a6cfcdd1a",
+        "sha256": "f617d889d032bd762f4c8f57f0839d81d320e223139c24c4838f7992cbe1679b",
+        "role": "v2-prompt-schema",
+        "adoptedSpans": [
+          {
+            "symbol": "Prompt",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 92,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "89c4d48a2ad29bb367eb0fed8864d61d83dec5293ee59bac73b37cd60fd1acbc"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/revert.ts",
+        "gitBlob": "9999d5da5a048b7a7d140e01cd15c4bb3c788233",
+        "sha256": "50b8ed20356fa0fbeca215ab4da7aacbceddd31f157f93d01c6674ecde61a6fa",
+        "role": "v2-revert",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionRevert",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 41,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "909b6c7f1fc78f07a9b5aa9b3bde57187392a0b981d76f69e1ad86ee7ad73a33"
+          },
+          {
+            "symbol": "MessageNotFoundError",
+            "kind": "ClassDeclaration",
+            "start": 471,
+            "end": 676,
+            "startLine": 14,
+            "endLine": 20,
+            "sha256": "75777e1437b4fe5e48d74ec0988f381216b9282cf7b9fc46ba092b619cb153d9"
+          },
+          {
+            "symbol": "stage",
+            "kind": "FirstStatement",
+            "start": 2059,
+            "end": 3443,
+            "startLine": 60,
+            "endLine": 96,
+            "sha256": "3efc53cc979766c5c432ed539430dae97a9b4b6f044fa3caee75f1d7f9f88f17"
+          },
+          {
+            "symbol": "clear",
+            "kind": "FirstStatement",
+            "start": 3445,
+            "end": 4025,
+            "startLine": 98,
+            "endLine": 111,
+            "sha256": "bbc47a3df9d24800795c22c11294d12ed273c07c0bae838786281120538d1eca"
+          },
+          {
+            "symbol": "commit",
+            "kind": "FirstStatement",
+            "start": 4027,
+            "end": 4368,
+            "startLine": 113,
+            "endLine": 121,
+            "sha256": "732e245a7bf7799cfbfb17a78c35d5fffdd0cf7daa2b8a35c7b729fbc421f99f"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/schema.ts",
+        "gitBlob": "05808a27992367fce7f2401cae87502f264bc82c",
+        "sha256": "136518c74fdf1eae73fbe7120376147bf635a0a7143832c3afe87e4e2863f1cd",
+        "role": "v2-session-schema",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionSchema",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 41,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "f2ce1b63165b9d76dca22be7746ee6e7c6bb0c360848afc1bdf1c0f001e285cc"
+          },
+          {
+            "symbol": "ID",
+            "kind": "FirstStatement",
+            "start": 98,
+            "end": 126,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "46a615c5cb10ba352f57506f17352eabeafd7adb25188e34cfae3fae88e8023a"
+          },
+          {
+            "symbol": "ID",
+            "kind": "TypeAliasDeclaration",
+            "start": 127,
+            "end": 158,
+            "startLine": 6,
+            "endLine": 6,
+            "sha256": "3c416a04c03593407842863d2cb5179220e7ca28c066c3ca7f03e5fec13fbec7"
+          },
+          {
+            "symbol": "Info",
+            "kind": "FirstStatement",
+            "start": 160,
+            "end": 192,
+            "startLine": 8,
+            "endLine": 8,
+            "sha256": "7edea1644fe2e19efdd4751517c204c268f25f12942eeccdc42e34f32d0e40ec"
+          },
+          {
+            "symbol": "Info",
+            "kind": "TypeAliasDeclaration",
+            "start": 193,
+            "end": 224,
+            "startLine": 9,
+            "endLine": 9,
+            "sha256": "1636db56719989077794770f7357345ef4df94253ea38cdab5a9f4063d21401e"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/sql.ts",
+        "gitBlob": "264a1d2cca0a351c158600c45cfe4ec475f224d8",
+        "sha256": "8fe00bf61948678bfd5b4f993e1e3884fca8005abcce50a8192b1d06d2b65c10",
+        "role": "v2-sql-shape-reference",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionMessageTable",
+            "kind": "FirstStatement",
+            "start": 4153,
+            "end": 4984,
+            "startLine": 119,
+            "endLine": 138,
+            "sha256": "411c3529fc419cbd1d35b3ba60a18823ddd463b036b4041f84bc824621889226"
+          },
+          {
+            "symbol": "SessionInputTable",
+            "kind": "FirstStatement",
+            "start": 4986,
+            "end": 5919,
+            "startLine": 140,
+            "endLine": 166,
+            "sha256": "5b137c8940b05232d5206f1bbbe95b53721d4dcf9987a16cbae0c7499e822aba"
+          },
+          {
+            "symbol": "SessionContextEpochTable",
+            "kind": "FirstStatement",
+            "start": 5921,
+            "end": 6282,
+            "startLine": 168,
+            "endLine": 176,
+            "sha256": "2a23243964405e4c58a40111cedd160bfe1206760a7e9a1a92b144755cede9a3"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "SessionTable",
+            "kind": "FirstStatement",
+            "start": 1051,
+            "end": 2694,
+            "startLine": 22,
+            "endLine": 66,
+            "sha256": "2d1ef54de81ee0d0a1d13114514b069e312987e55e8610158b7b08318ff373d2"
+          },
+          {
+            "symbol": "MessageTable",
+            "kind": "FirstStatement",
+            "start": 2696,
+            "end": 3146,
+            "startLine": 68,
+            "endLine": 80,
+            "sha256": "e2323570afe1c373fcf542d81f23a6b24227a83770bfb4b9201985a2b5b22f31"
+          },
+          {
+            "symbol": "PartTable",
+            "kind": "FirstStatement",
+            "start": 3148,
+            "end": 3667,
+            "startLine": 82,
+            "endLine": 98,
+            "sha256": "91e12fea1b4f4c8343fc1f249867f10854b7a97f8de119f6387be301d952b532"
+          },
+          {
+            "symbol": "TodoTable",
+            "kind": "FirstStatement",
+            "start": 3669,
+            "end": 4151,
+            "startLine": 100,
+            "endLine": 117,
+            "sha256": "22ace925760fa07d8001333e26bf4bfcfd606989d520fce2a1d6dcecd4c5b211"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "SessionTable",
+          "MessageTable",
+          "PartTable",
+          "TodoTable"
+        ]
+      },
+      {
+        "sourcePath": "packages/core/src/session/store.ts",
+        "gitBlob": "273444d25c9a21aeaa0751543979c09ca6beb70c",
+        "sha256": "f2aa4876e3c0518f6e77d98c7d0ff38637175885ad9bba4f53ed436e8321802e",
+        "role": "v2-store-interface",
+        "adoptedSpans": [
+          {
+            "symbol": "SessionStore",
+            "kind": "ExportDeclaration",
+            "start": 0,
+            "end": 39,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "609d00e2e15fc94594dcb7d4bc65438a64533cda14cb278674f71733c3b5e67f"
+          },
+          {
+            "symbol": "Interface",
+            "kind": "InterfaceDeclaration",
+            "start": 494,
+            "end": 1058,
+            "startLine": 14,
+            "endLine": 24,
+            "sha256": "ad5f2f32b24563d095bf64af489a482b858713c8d9c28e19f196e1bc67ac17a3"
+          },
+          {
+            "symbol": "Service",
+            "kind": "ClassDeclaration",
+            "start": 1060,
+            "end": 1158,
+            "startLine": 26,
+            "endLine": 26,
+            "sha256": "0e6c087ce58edebc5d5dd0381508d3944158694e1e6af10a28eefd29dadfae9e"
+          },
+          {
+            "symbol": "node",
+            "kind": "FirstStatement",
+            "start": 2472,
+            "end": 2558,
+            "startLine": 63,
+            "endLine": 63,
+            "sha256": "788769187e33d41d1ff7ae0537f2c097a47d6aa6964f4fa587d6279a135c1672"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      }
+    ],
+    "excludedFiles": [
+      "packages/core/src/session/execution.ts",
+      "packages/core/src/session/execution/local.ts",
+      "packages/core/src/session/run-coordinator.ts",
+      "packages/core/src/session/runner/index.ts",
+      "packages/core/src/session/runner/llm.ts",
+      "packages/core/src/session/runner/max-steps.ts",
+      "packages/core/src/session/runner/model.ts",
+      "packages/core/src/session/runner/publish-llm-event.ts",
+      "packages/core/src/session/runner/to-llm-message.ts",
+      "packages/core/src/session/todo.ts",
+      "packages/core/src/session/compaction.ts except SUMMARY_TEMPLATE and buildPrompt",
+      "all SessionV1, V1 table/event/create/project spans in mixed files"
+    ]
+  },
+  "productionCompaction": {
+    "files": [
+      {
+        "sourcePath": "packages/opencode/src/session/overflow.ts",
+        "gitBlob": "3374d1c9f8d475c01c7c53987c800a272bc1d71e",
+        "sha256": "fa0d52e8a59b737e8129d6473f9f6416567cd765c6068f854e4ea0dd3d351d10",
+        "role": "production-overflow",
+        "adoptedSpans": [
+          {
+            "symbol": "usable",
+            "kind": "FunctionDeclaration",
+            "start": 355,
+            "end": 879,
+            "startLine": 10,
+            "endLine": 20,
+            "sha256": "92257a3d771b0050d1a394431696224afe5df77353fac100bf1e78fa4bb28194"
+          },
+          {
+            "symbol": "isOverflow",
+            "kind": "FunctionDeclaration",
+            "start": 881,
+            "end": 1312,
+            "startLine": 22,
+            "endLine": 34,
+            "sha256": "830a03608c3b8928820f55e4b205963dd671c77537f53f3f43d862f85b46dbd6"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/opencode/src/session/compaction.ts",
+        "gitBlob": "fa439e4efffa7f4861bc24b998f4a267faa81938",
+        "sha256": "5ce0f453dd2b2446cce626e7a840010d848c8e99c302fbdcaf76488c3c587fa0",
+        "role": "production-compaction-control-flow",
+        "adoptedSpans": [
+          {
+            "symbol": "PRUNE_MINIMUM",
+            "kind": "FirstStatement",
+            "start": 1250,
+            "end": 1285,
+            "startLine": 28,
+            "endLine": 28,
+            "sha256": "66d872e20e18955d8e5e876e1b8fba9a3b7bc441081e49fef1af61cf951728c1"
+          },
+          {
+            "symbol": "PRUNE_PROTECT",
+            "kind": "FirstStatement",
+            "start": 1286,
+            "end": 1321,
+            "startLine": 29,
+            "endLine": 29,
+            "sha256": "d144532b46d5f6f17bece751509c6ee38c9acc7a2f3c1ef370c93ce3f1e2b919"
+          },
+          {
+            "symbol": "PRUNE_PROTECTED_TOOLS",
+            "kind": "FirstStatement",
+            "start": 1358,
+            "end": 1397,
+            "startLine": 31,
+            "endLine": 31,
+            "sha256": "a2b7f6f20182e3e5758a540ab2e2e2c91e2695b535b2375331157e72fd17ea5c"
+          },
+          {
+            "symbol": "DEFAULT_TAIL_TURNS",
+            "kind": "FirstStatement",
+            "start": 1398,
+            "end": 1426,
+            "startLine": 32,
+            "endLine": 32,
+            "sha256": "51361bb5334d1f5cf6d41b83538428dc73fada053d9c04ca3df788e0597d6f29"
+          },
+          {
+            "symbol": "MIN_PRESERVE_RECENT_TOKENS",
+            "kind": "FirstStatement",
+            "start": 1427,
+            "end": 1467,
+            "startLine": 33,
+            "endLine": 33,
+            "sha256": "70cdffe664ef80318022c2ac44c57c2e284620bc6629f5c5e45303a655fba1e7"
+          },
+          {
+            "symbol": "MAX_PRESERVE_RECENT_TOKENS",
+            "kind": "FirstStatement",
+            "start": 1468,
+            "end": 1508,
+            "startLine": 34,
+            "endLine": 34,
+            "sha256": "c902faf27edf956f169062ae1ac61a10094ff3267398078792367710d0607f00"
+          },
+          {
+            "symbol": "Turn",
+            "kind": "TypeAliasDeclaration",
+            "start": 1509,
+            "end": 1570,
+            "startLine": 35,
+            "endLine": 39,
+            "sha256": "fb3a92c963adc531feb8f4ed174c31f6dcfaf05f9acff8c111cbda8441326333"
+          },
+          {
+            "symbol": "Tail",
+            "kind": "TypeAliasDeclaration",
+            "start": 1572,
+            "end": 1619,
+            "startLine": 41,
+            "endLine": 44,
+            "sha256": "118bb30dba917ee3ee9ddb9d25cf548e9307779d94189b2c74a2c22bee0231d7"
+          },
+          {
+            "symbol": "CompletedCompaction",
+            "kind": "TypeAliasDeclaration",
+            "start": 1621,
+            "end": 1726,
+            "startLine": 46,
+            "endLine": 50,
+            "sha256": "05e7ebc145f426ce6525a496a3472637259f917857aa7141b0ecd3db8f22774c"
+          },
+          {
+            "symbol": "summaryText",
+            "kind": "FunctionDeclaration",
+            "start": 1728,
+            "end": 1998,
+            "startLine": 52,
+            "endLine": 60,
+            "sha256": "3c34068d50f1bfce9d6eb81df084037d1602616ccfd99f5b668d881b3320f812"
+          },
+          {
+            "symbol": "completedCompactions",
+            "kind": "FunctionDeclaration",
+            "start": 2000,
+            "end": 2704,
+            "startLine": 62,
+            "endLine": 78,
+            "sha256": "fab5c3d6526108e5f1235190f04804df0233aea5bfff20a46882068235febf2a"
+          },
+          {
+            "symbol": "preserveRecentBudget",
+            "kind": "FunctionDeclaration",
+            "start": 2706,
+            "end": 2973,
+            "startLine": 80,
+            "endLine": 85,
+            "sha256": "02a230c10f11f8bc3223faa660dcf3e03a11d79b95c43d819d4bca335bb40f8d"
+          },
+          {
+            "symbol": "turns",
+            "kind": "FunctionDeclaration",
+            "start": 2975,
+            "end": 3446,
+            "startLine": 87,
+            "endLine": 103,
+            "sha256": "43a8a2c11e0dfb8a6ad3c9debca9493ce9580876138197a4f54d69c8c7be37b2"
+          },
+          {
+            "symbol": "splitTurn",
+            "kind": "FunctionDeclaration",
+            "start": 3448,
+            "end": 4209,
+            "startLine": 105,
+            "endLine": 128,
+            "sha256": "a551668eb0d188a4a24e1f3cc6a783e86fa4b4e8141f1fa537a6f7c4da45db7f"
+          },
+          {
+            "symbol": "estimate",
+            "kind": "PropertySignature",
+            "start": 3566,
+            "end": 3668,
+            "startLine": 110,
+            "endLine": 110,
+            "sha256": "f008578a0322802f97aecf53afd50f70dfd6e225bb03867fabaa875ad8ded696"
+          },
+          {
+            "symbol": "Interface",
+            "kind": "InterfaceDeclaration",
+            "start": 4211,
+            "end": 4850,
+            "startLine": 130,
+            "endLine": 150,
+            "sha256": "7e87c00eba967f72f11cf1461cf8713a72812de22424980e2f246a8882f3b429"
+          },
+          {
+            "symbol": "isOverflow",
+            "kind": "PropertySignature",
+            "start": 4242,
+            "end": 4371,
+            "startLine": 131,
+            "endLine": 134,
+            "sha256": "bbb815a47ad7d48e620e59761980b69b626c8bef139f9f6442ada678e0d951c9"
+          },
+          {
+            "symbol": "prune",
+            "kind": "PropertySignature",
+            "start": 4374,
+            "end": 4446,
+            "startLine": 135,
+            "endLine": 135,
+            "sha256": "cebddbc188821457efd4d610166e2ae993d978dd39b0266215f91a1f24cf9188"
+          },
+          {
+            "symbol": "create",
+            "kind": "PropertySignature",
+            "start": 4648,
+            "end": 4848,
+            "startLine": 143,
+            "endLine": 149,
+            "sha256": "3fb7e5d595ef7ba00a567fe9409aba32b194cee0c9b06d709d770058c758f8e2"
+          },
+          {
+            "symbol": "Service",
+            "kind": "ClassDeclaration",
+            "start": 4852,
+            "end": 4952,
+            "startLine": 152,
+            "endLine": 152,
+            "sha256": "6909a36959157280b85aceba2405f372bc3b3dc9be2fcbb661f640a0514fd377"
+          },
+          {
+            "symbol": "use",
+            "kind": "FirstStatement",
+            "start": 4954,
+            "end": 4992,
+            "startLine": 154,
+            "endLine": 154,
+            "sha256": "80e6c39e5a52ec6cee4d93a4e1bf734a9fa6a8d09d026c734a5ec03eb0e18281"
+          },
+          {
+            "symbol": "isOverflow",
+            "kind": "FirstStatement",
+            "start": 5425,
+            "end": 5764,
+            "startLine": 168,
+            "endLine": 178,
+            "sha256": "f645ddf550da98b6dbc6df7796f89c750cfa84393e20893a0a129ecb4360a6e0"
+          },
+          {
+            "symbol": "estimate",
+            "kind": "FirstStatement",
+            "start": 5770,
+            "end": 6065,
+            "startLine": 180,
+            "endLine": 186,
+            "sha256": "1e0749d2b3fc9cfdd6a53d5e12242644b48da4bf4e0c7001e2a8a50c8a033f2a"
+          },
+          {
+            "symbol": "select",
+            "kind": "FirstStatement",
+            "start": 6071,
+            "end": 7795,
+            "startLine": 188,
+            "endLine": 239,
+            "sha256": "33a3b770f63df71f96082d84a2d4666f54e82008d061aef3647231ab8c33a917"
+          },
+          {
+            "symbol": "prune",
+            "kind": "FirstStatement",
+            "start": 7963,
+            "end": 9690,
+            "startLine": 243,
+            "endLine": 287,
+            "sha256": "950cb75a87c6d8bc61a3876a0d234a5b61868c475ff7d2a8752793b363c21e08"
+          },
+          {
+            "symbol": "turns",
+            "kind": "FirstStatement",
+            "start": 8471,
+            "end": 8484,
+            "startLine": 256,
+            "endLine": 256,
+            "sha256": "457378c8e470c007a5f2a4ed0ec8ec2b3b5bf07a948d9aa9ce50eb158e0568f5"
+          },
+          {
+            "symbol": "estimate",
+            "kind": "FirstStatement",
+            "start": 9108,
+            "end": 9158,
+            "startLine": 269,
+            "endLine": 269,
+            "sha256": "39063c748fb2de65b77252dcff08456ea05d82c10879bdb8ae0265332c8737ef"
+          },
+          {
+            "symbol": "process.parent",
+            "kind": "FirstStatement",
+            "start": 9932,
+            "end": 10007,
+            "startLine": 296,
+            "endLine": 296,
+            "sha256": "b15a35141d76f66af4fcca5e5a2b9e07edc1b9a77a6dd9eea625a5275730447f"
+          },
+          {
+            "symbol": "process.parent-role-guard",
+            "kind": "IfStatement",
+            "start": 10014,
+            "end": 10154,
+            "startLine": 297,
+            "endLine": 299,
+            "sha256": "54ad12a9a708add28a2bf1e04993bc8e7623dd641393c6fc045a4374903072e5"
+          },
+          {
+            "symbol": "process.user-message",
+            "kind": "FirstStatement",
+            "start": 10161,
+            "end": 10192,
+            "startLine": 300,
+            "endLine": 300,
+            "sha256": "bebf7c1ed4ab5396fc8630bab3fd7aaaf78dd4077f97302ea2b409dbecfdd18c"
+          },
+          {
+            "symbol": "process.compaction-part",
+            "kind": "FirstStatement",
+            "start": 10199,
+            "end": 10311,
+            "startLine": 301,
+            "endLine": 301,
+            "sha256": "70387620ac7270dbf269993279c42a279242e333cc24e90f1fcb25e5f7c4513c"
+          },
+          {
+            "symbol": "process.messages",
+            "kind": "FirstStatement",
+            "start": 10319,
+            "end": 10348,
+            "startLine": 303,
+            "endLine": 303,
+            "sha256": "062bce48c11160c1267bc502039cee8d549ce4d6d8907177e31fae37849007ad"
+          },
+          {
+            "symbol": "process.replay",
+            "kind": "FirstStatement",
+            "start": 10355,
+            "end": 10479,
+            "startLine": 304,
+            "endLine": 309,
+            "sha256": "9e1b1240ceb4c422560dbfb369d567ea2eb2610cd4ca3a15007b3e404e292216"
+          },
+          {
+            "symbol": "process.overflow-replay-selection",
+            "kind": "IfStatement",
+            "start": 10486,
+            "end": 11166,
+            "startLine": 310,
+            "endLine": 326,
+            "sha256": "2d5bc01210f15f578f3e6b16345b80a5f2e315827df1b0e0c85c201d319dfaf6"
+          },
+          {
+            "symbol": "process.config",
+            "kind": "FirstStatement",
+            "start": 11468,
+            "end": 11499,
+            "startLine": 332,
+            "endLine": 332,
+            "sha256": "d8375ea5553e4141e09142e0d2468d1574803e1207590741fb587872c8c489c4"
+          },
+          {
+            "symbol": "process.history",
+            "kind": "FirstStatement",
+            "start": 11506,
+            "end": 11618,
+            "startLine": 333,
+            "endLine": 333,
+            "sha256": "0208ce6bc705ab414c79596302065e0113c2cccb1742eb1883ee0073f0a42c74"
+          },
+          {
+            "symbol": "process.completed-compactions",
+            "kind": "FirstStatement",
+            "start": 11625,
+            "end": 11668,
+            "startLine": 334,
+            "endLine": 334,
+            "sha256": "8cea6c48d49bfb2189167c8c1331f1976200fe87bd63d2240d8aff215d345ace"
+          },
+          {
+            "symbol": "process.hidden-compactions",
+            "kind": "FirstStatement",
+            "start": 11675,
+            "end": 11761,
+            "startLine": 335,
+            "endLine": 335,
+            "sha256": "87c6100d6d32965a03d0cf0d8e4989111d487ff911f7714f900eed8e8904c704"
+          },
+          {
+            "symbol": "process.previous-summary",
+            "kind": "FirstStatement",
+            "start": 11768,
+            "end": 11813,
+            "startLine": 336,
+            "endLine": 336,
+            "sha256": "08054b97e588be1e9067df3a81f76635206e0c800515d3b9f669225918d231ca"
+          },
+          {
+            "symbol": "process.selection",
+            "kind": "FirstStatement",
+            "start": 11820,
+            "end": 11957,
+            "startLine": 337,
+            "endLine": 341,
+            "sha256": "7052a58f5c6b959ef9b32ee882e51e6bc5ab218f05eb7e6b52e5ecff188a1c84"
+          },
+          {
+            "symbol": "process.fixed-compacting-binding-site",
+            "kind": "FirstStatement",
+            "start": 12035,
+            "end": 12211,
+            "startLine": 343,
+            "endLine": 347,
+            "sha256": "f70c15d14bba2d42eaafedbc0d7d42d94cf5b0a5ab0c7f056534527c97a41aae"
+          },
+          {
+            "symbol": "process.prompt-selection",
+            "kind": "FirstStatement",
+            "start": 12218,
+            "end": 12319,
+            "startLine": 348,
+            "endLine": 348,
+            "sha256": "8da12da19d44ae032493baf5a1d12525020fa9b466ab80fde0c40cbb1d93085c"
+          },
+          {
+            "symbol": "process.selected-message-clone",
+            "kind": "FirstStatement",
+            "start": 12326,
+            "end": 12369,
+            "startLine": 349,
+            "endLine": 349,
+            "sha256": "5920e5741094834fe65778a19bc90e6628aeaa5fe0d358e01ee4ac1bc58ae4ca"
+          },
+          {
+            "symbol": "process.fixed-message-transform-site",
+            "kind": "ExpressionStatement",
+            "start": 12376,
+            "end": 12461,
+            "startLine": 350,
+            "endLine": 350,
+            "sha256": "0a54932fd3ec52891e8e6035ada6b3f2087ca6921eb9f8b8bd8b24e1236c78d4"
+          },
+          {
+            "symbol": "process.overflow-result",
+            "kind": "IfStatement",
+            "start": 13890,
+            "end": 14356,
+            "startLine": 404,
+            "endLine": 413,
+            "sha256": "a85d5068cbde552376b2c3ee9f96f140fb0c0255206d45106d210c6b134ad7d5"
+          },
+          {
+            "symbol": "process.tail-start-update",
+            "kind": "IfStatement",
+            "start": 14364,
+            "end": 14603,
+            "startLine": 415,
+            "endLine": 420,
+            "sha256": "64247915f3ae20a3133b2fa3b6c8d1970a99aabce11205dee265a8e19b8d7641"
+          },
+          {
+            "symbol": "process.replay-and-autocontinue",
+            "kind": "IfStatement",
+            "start": 14611,
+            "end": 18019,
+            "startLine": 422,
+            "endLine": 504,
+            "sha256": "8d9b53808f05fe2763118bd1b5230beb4ad0fde32044ef2c1dd9d92464f8e39b"
+          },
+          {
+            "symbol": "process.error-result",
+            "kind": "IfStatement",
+            "start": 18027,
+            "end": 18069,
+            "startLine": 506,
+            "endLine": 506,
+            "sha256": "077914af2efd6f9a205873f2caf2f92ec592f1699aa4eb17a3e376e021f079c7"
+          },
+          {
+            "symbol": "process.compaction-ended-cut",
+            "kind": "IfStatement",
+            "start": 18076,
+            "end": 18191,
+            "startLine": 507,
+            "endLine": 509,
+            "sha256": "d6a0058fdd2ac1762a6b65d7af6e1f244f8e9455c729595a04f9067f2376061a"
+          },
+          {
+            "symbol": "process.return",
+            "kind": "ReturnStatement",
+            "start": 18198,
+            "end": 18211,
+            "startLine": 510,
+            "endLine": 510,
+            "sha256": "bffa478fd43608c06d50aa5022c6b4a8407fc234526250dfaa512d5200d252ac"
+          },
+          {
+            "symbol": "create",
+            "kind": "FirstStatement",
+            "start": 18224,
+            "end": 18938,
+            "startLine": 513,
+            "endLine": 536,
+            "sha256": "5c6a2051d27271d39bc4cecb62fd60b6d9cc90ef04257b80a66ba4f51f3ed4dd"
+          },
+          {
+            "symbol": "node",
+            "kind": "FirstStatement",
+            "start": 19059,
+            "end": 19310,
+            "startLine": 547,
+            "endLine": 560,
+            "sha256": "9ff84e3b954d444da0191eb2704a9811eb363a13184e09c227cda94aff55a7dc"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "Plugin",
+            "kind": "ImportDeclaration",
+            "start": 485,
+            "end": 518,
+            "startLine": 11,
+            "endLine": 11,
+            "sha256": "8e3338ee2d627f27a1b9bfc824382e093fab17ab203f408b49efc809971f2bea"
+          },
+          {
+            "symbol": "SessionCompactionEvent",
+            "kind": "ImportDeclaration",
+            "start": 1118,
+            "end": 1203,
+            "startLine": 24,
+            "endLine": 24,
+            "sha256": "ac5f513bafcd5c5d5e135a77a125daa752ccef13ad008d9860d956a537334cb1"
+          },
+          {
+            "symbol": "Event",
+            "kind": "FirstStatement",
+            "start": 1205,
+            "end": 1248,
+            "startLine": 26,
+            "endLine": 26,
+            "sha256": "2d366b6c6f767985d84ef5a5de7f8203350a6e992f2729c3251bee080e199e46"
+          },
+          {
+            "symbol": "TOOL_OUTPUT_MAX_CHARS",
+            "kind": "FirstStatement",
+            "start": 1322,
+            "end": 1357,
+            "startLine": 30,
+            "endLine": 30,
+            "sha256": "b49fadb4390967f1c580ec00bef872ed85b4684afcd3b05afbbd13d5f1c64c84"
+          },
+          {
+            "symbol": "agent-service",
+            "kind": "FirstStatement",
+            "start": 5149,
+            "end": 5184,
+            "startLine": 161,
+            "endLine": 161,
+            "sha256": "2792dd62ccf997751d020054b601cc0c320be7a7b6829595dd3d57e60f67d72f"
+          },
+          {
+            "symbol": "plugin",
+            "kind": "FirstStatement",
+            "start": 5189,
+            "end": 5225,
+            "startLine": 162,
+            "endLine": 162,
+            "sha256": "6ac65ea659ff1355adedaffa19b3403ec4f5307598ed0b1464cbf37c8bf071f9"
+          },
+          {
+            "symbol": "processor-service",
+            "kind": "FirstStatement",
+            "start": 5230,
+            "end": 5280,
+            "startLine": 163,
+            "endLine": 163,
+            "sha256": "80dd81a3270aeb27be7ad7097259e90ebc2a8fa3f47d4ea0dd2af63495b940a9"
+          },
+          {
+            "symbol": "provider-service",
+            "kind": "FirstStatement",
+            "start": 5285,
+            "end": 5325,
+            "startLine": 164,
+            "endLine": 164,
+            "sha256": "f53fd7e4ee14686562403f925dccd34f392d608af703af007473cfa97d245706"
+          },
+          {
+            "symbol": "toModelMessagesEffect",
+            "kind": "CallExpression",
+            "start": 5948,
+            "end": 6008,
+            "startLine": 184,
+            "endLine": 184,
+            "sha256": "6ce37b8c982752a3581caf93a5b9a96f3549caef78e5c0a5ceac81c2047e2862"
+          },
+          {
+            "symbol": "processCompaction",
+            "kind": "FirstStatement",
+            "start": 9696,
+            "end": 18218,
+            "startLine": 289,
+            "endLine": 511,
+            "sha256": "dd4a056fd103c470bac2e04afd29420692ea0bff30bbbb63dde430240b23580f"
+          },
+          {
+            "symbol": "provider-agent-selection",
+            "kind": "FirstStatement",
+            "start": 11174,
+            "end": 11219,
+            "startLine": 328,
+            "endLine": 328,
+            "sha256": "46dbd7fd9587539ecc63a0a25d58af5506c81fbef9c0c224a4bb5c96543a1269"
+          },
+          {
+            "symbol": "provider-model-selection",
+            "kind": "FirstStatement",
+            "start": 11226,
+            "end": 11461,
+            "startLine": 329,
+            "endLine": 331,
+            "sha256": "e406c7dcdac291bd5545f9e8eeec5c65ccba59c33dd910402ffaf43927f353a7"
+          },
+          {
+            "symbol": "provider-message-lowering",
+            "kind": "FirstStatement",
+            "start": 12468,
+            "end": 12629,
+            "startLine": 351,
+            "endLine": 354,
+            "sha256": "63927d627de0a6072ad60af46e50610c09e13c89ae3d9b9d2e62de13932c27af"
+          },
+          {
+            "symbol": "provider-location-context",
+            "kind": "FirstStatement",
+            "start": 12636,
+            "end": 12676,
+            "startLine": 355,
+            "endLine": 355,
+            "sha256": "13da2a0ceaa4d5e2c9950067a1308fb83de024f65754cb7b902d49b9b973dafe"
+          },
+          {
+            "symbol": "provider-assistant-construction",
+            "kind": "FirstStatement",
+            "start": 12683,
+            "end": 13342,
+            "startLine": 356,
+            "endLine": 381,
+            "sha256": "bad8bd3b92373d0a0501281072bfdb8d230789b87998a545e58fd0e0052a21b4"
+          },
+          {
+            "symbol": "provider-assistant-persistence",
+            "kind": "ExpressionStatement",
+            "start": 13349,
+            "end": 13382,
+            "startLine": 382,
+            "endLine": 382,
+            "sha256": "f6bdf2578316ba2219360156f3cc9a42d342a3984fbb02ab3cde3a1f0cf80871"
+          },
+          {
+            "symbol": "provider-processor-construction",
+            "kind": "FirstStatement",
+            "start": 13389,
+            "end": 13524,
+            "startLine": 383,
+            "endLine": 387,
+            "sha256": "4bfdcaa445399dc42fe1a33b180d562aa23b9135259f6c1e77fcd0f7c32ad3bb"
+          },
+          {
+            "symbol": "provider-model-tool-loop",
+            "kind": "FirstStatement",
+            "start": 13531,
+            "end": 13882,
+            "startLine": 388,
+            "endLine": 402,
+            "sha256": "6eb47aaf2361aba1194608aa71a94f26ed330c84b519de7829d7e6e0d2d1575e"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "SessionCompactionEvent import",
+          "Event binding",
+          "Event.Compacted publish expression",
+          "Plugin service/registry",
+          "provider agent/model selection",
+          "toModelMessagesEffect",
+          "provider message/model lowering",
+          "provider assistant construction",
+          "SessionProcessor model/tool loop",
+          "TOOL_OUTPUT_MAX_CHARS provider-lowering constant",
+          "all V1 persistence is replaced only at the PostgreSQL bridge"
+        ]
+      },
+      {
+        "sourcePath": "packages/opencode/src/session/message-v2.ts",
+        "gitBlob": "1bea9f52c3ec6afec280e176a930c747c72091b7",
+        "sha256": "6094dbeaf39b70ca00fca09cfc708c3304a8dec3636dbbc77472bf7716758c54",
+        "role": "production-v1-to-v2-compaction-conversion",
+        "adoptedSpans": [
+          {
+            "symbol": "isMedia",
+            "kind": "ImportDeclaration",
+            "start": 1143,
+            "end": 1181,
+            "startLine": 34,
+            "endLine": 34,
+            "sha256": "82ead22396026d2ff3673427a3e9b3947358bed165fb0cdda7b208f96bda170e"
+          },
+          {
+            "symbol": "isMedia",
+            "kind": "ExportDeclaration",
+            "start": 1583,
+            "end": 1601,
+            "startLine": 47,
+            "endLine": 47,
+            "sha256": "47d8317798f86feecffdd7201a2587ccff2259e7e600bde31e9319e7dcff03d0"
+          },
+          {
+            "symbol": "truncateToolOutput",
+            "kind": "FunctionDeclaration",
+            "start": 1603,
+            "end": 1868,
+            "startLine": 49,
+            "endLine": 53,
+            "sha256": "b1bd4a2f3f2a14deef68257dfaaf64db1e1fadacb77c8ecd48b31930af7874d7"
+          },
+          {
+            "symbol": "filterCompacted",
+            "kind": "FunctionDeclaration",
+            "start": 18650,
+            "end": 20617,
+            "startLine": 521,
+            "endLine": 572,
+            "sha256": "7e5124c0fec658f2438ccfbf96a66943904ae7e4f3292130588e61386bbfcbb7"
+          },
+          {
+            "symbol": "latest",
+            "kind": "FunctionDeclaration",
+            "start": 21247,
+            "end": 21983,
+            "startLine": 585,
+            "endLine": 601,
+            "sha256": "d07a86b79c4329c722471008005765ccf57b9c17a4e28f53dbc03d49321720ac"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "SubtaskPart",
+            "kind": "ImportDeclaration",
+            "start": 161,
+            "end": 376,
+            "startLine": 4,
+            "endLine": 17,
+            "sha256": "fc20400ee88e4e02f98325e04e32517ad7917423e1ae5803aacf7a6301bc3bf5"
+          },
+          {
+            "symbol": "SYNTHETIC_ATTACHMENT_PROMPT",
+            "kind": "FirstStatement",
+            "start": 1505,
+            "end": 1582,
+            "startLine": 46,
+            "endLine": 46,
+            "sha256": "78db0f5c167b4ee0501f1cb11ed1db4f95cea391f7e4c683b5f723303fcd1a9f"
+          },
+          {
+            "symbol": "Event",
+            "kind": "FirstStatement",
+            "start": 1870,
+            "end": 2108,
+            "startLine": 55,
+            "endLine": 61,
+            "sha256": "923f818abaa3cb4ea2baea8a8aef12cbe87556e91f36295a82f2c35ec4aeb09a"
+          },
+          {
+            "symbol": "cursor",
+            "kind": "FirstStatement",
+            "start": 2313,
+            "end": 2554,
+            "startLine": 71,
+            "endLine": 78,
+            "sha256": "950ab78b990fa13369c7067f42f9c7fad5f29fe0edaae3179230babb136acb5b"
+          },
+          {
+            "symbol": "parts",
+            "kind": "PropertyAssignment",
+            "start": 3769,
+            "end": 3807,
+            "startLine": 120,
+            "endLine": 120,
+            "sha256": "f3f67a3f7153e1a4f8cc09cc3d8028cdf82d8b3619393004871196a04971209a"
+          },
+          {
+            "symbol": "providerMeta",
+            "kind": "FunctionDeclaration",
+            "start": 3825,
+            "end": 4036,
+            "startLine": 125,
+            "endLine": 129,
+            "sha256": "700206e44c90d21c311058206fd49797ee74a02e26f1b2e4e1f3c3f7aeced0de"
+          },
+          {
+            "symbol": "toModelMessagesEffect",
+            "kind": "FirstStatement",
+            "start": 4038,
+            "end": 15510,
+            "startLine": 131,
+            "endLine": 415,
+            "sha256": "5a741cf1f56ca2cc1dc6406c510d6868b986d447c9561db4e1f5698442bca7a5"
+          },
+          {
+            "symbol": "parts",
+            "kind": "PropertyAssignment",
+            "start": 6870,
+            "end": 6879,
+            "startLine": 202,
+            "endLine": 202,
+            "sha256": "4fb4b43728a27e502ab2f0a5692c6bb726d15dd1beeb6e2aca2c02e79c941ba6"
+          },
+          {
+            "symbol": "parts",
+            "kind": "PropertyAssignment",
+            "start": 8801,
+            "end": 8810,
+            "startLine": 260,
+            "endLine": 260,
+            "sha256": "4fb4b43728a27e502ab2f0a5692c6bb726d15dd1beeb6e2aca2c02e79c941ba6"
+          },
+          {
+            "symbol": "parts",
+            "kind": "PropertyAssignment",
+            "start": 14666,
+            "end": 15043,
+            "startLine": 386,
+            "endLine": 397,
+            "sha256": "7501e372f4a23b60b29ac4e1a61637fea0f9689e6e65ba7ff041dd9d2bca008c"
+          },
+          {
+            "symbol": "toModelMessages",
+            "kind": "FunctionDeclaration",
+            "start": 15512,
+            "end": 15762,
+            "startLine": 417,
+            "endLine": 423,
+            "sha256": "3dec81cc373ec3962dce67472ec2c504a8f351eab015721a632f6897d0296529"
+          },
+          {
+            "symbol": "page",
+            "kind": "FirstStatement",
+            "start": 15764,
+            "end": 17068,
+            "startLine": 425,
+            "endLine": 467,
+            "sha256": "e207c809e6a507f61f0329685dbd1b9b4927d55c3c8fb30ff769ad2b1d6de7d8"
+          },
+          {
+            "symbol": "cursor",
+            "kind": "PropertyAssignment",
+            "start": 16970,
+            "end": 17060,
+            "startLine": 465,
+            "endLine": 465,
+            "sha256": "c918238dd684d7d14133224eb88b09172b42edb6648edcd606c9dd681a122934"
+          },
+          {
+            "symbol": "stream",
+            "kind": "FunctionDeclaration",
+            "start": 17070,
+            "end": 17774,
+            "startLine": 469,
+            "endLine": 490,
+            "sha256": "785b95afe3f7ddc8260abf75fef7b098f9864683abc3ae42c6eb362d07cc70e1"
+          },
+          {
+            "symbol": "cursor",
+            "kind": "PropertyAssignment",
+            "start": 17455,
+            "end": 17472,
+            "startLine": 477,
+            "endLine": 477,
+            "sha256": "60f70e3f0e6265653e020b9322aad2830472bd25e40fb9731e20b044fba7d58d"
+          },
+          {
+            "symbol": "parts",
+            "kind": "FunctionDeclaration",
+            "start": 17776,
+            "end": 18116,
+            "startLine": 492,
+            "endLine": 504,
+            "sha256": "10ff4aa7f08543011b71d879a3947089d29cc477630c6c40b924346a60a506f1"
+          },
+          {
+            "symbol": "get",
+            "kind": "FirstStatement",
+            "start": 18118,
+            "end": 18648,
+            "startLine": 506,
+            "endLine": 519,
+            "sha256": "1fc3b53e3b2e1e3e3998542894d93ed10bcdd82ebc5b0a1a117cef72947bd5f4"
+          },
+          {
+            "symbol": "parts",
+            "kind": "PropertyAssignment",
+            "start": 18604,
+            "end": 18640,
+            "startLine": 517,
+            "endLine": 517,
+            "sha256": "a722225e6dffc0cbbc018c1bb4203776fff3bca7f9aaf084e3db36dc8ffb7a57"
+          },
+          {
+            "symbol": "filterCompactedEffect",
+            "kind": "FirstStatement",
+            "start": 20619,
+            "end": 20762,
+            "startLine": 574,
+            "endLine": 576,
+            "sha256": "728ccdea9d16017973624759ca021774c909073106290f89a53bfdd5ed609b0a"
+          },
+          {
+            "symbol": "SubtaskPart",
+            "kind": "TypeReference",
+            "start": 21867,
+            "end": 21878,
+            "startLine": 598,
+            "endLine": 598,
+            "sha256": "b3812169bb6d632b0256415c5af2e4c1df1d65a07b043e71cc9fd2286e4dc880"
+          },
+          {
+            "symbol": "subtask-discriminator",
+            "kind": "BinaryExpression",
+            "start": 21909,
+            "end": 21929,
+            "startLine": 598,
+            "endLine": 598,
+            "sha256": "772b483f5ca87ef67e3210860599e298f24e29a9f9b4e7128175360b652ef624"
+          },
+          {
+            "symbol": "fromError",
+            "kind": "FunctionDeclaration",
+            "start": 21985,
+            "end": 25705,
+            "startLine": 603,
+            "endLine": 731,
+            "sha256": "1c58bab5eb8c565f2e2968a295745ea170956e1aab74c20686588b5b7e8825c4"
+          },
+          {
+            "symbol": "node",
+            "kind": "FirstStatement",
+            "start": 25749,
+            "end": 25801,
+            "startLine": 734,
+            "endLine": 734,
+            "sha256": "ef2d5aefee225b63e7775cc7d0d7df38601c223678b52d971cf5610fc85a4c8e"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "Event",
+          "cursor",
+          "page",
+          "stream",
+          "parts",
+          "get",
+          "filterCompactedEffect",
+          "fromError",
+          "node",
+          "SYNTHETIC_ATTACHMENT_PROMPT",
+          "providerMeta",
+          "toModelMessagesEffect",
+          "toModelMessages",
+          "convertToModelMessages",
+          "ModelMessage",
+          "UIMessage",
+          "Vercel ai imports",
+          "provider api.npm branches",
+          "provider metadata regrouping/lowering",
+          "provider tool-output lowering",
+          "SubtaskPart",
+          "subtask discriminator"
+        ]
+      },
+      {
+        "sourcePath": "packages/opencode/src/util/media.ts",
+        "gitBlob": "566ac843a6342925e3e3d53f9b7dedf90c2d4a8e",
+        "sha256": "3682d92955c350c7ad4e1cce838f908ab1eae487cf5e05396d829f7bf579fa38",
+        "role": "production-media-classification",
+        "adoptedSpans": [
+          {
+            "symbol": "isPdfAttachment",
+            "kind": "FunctionDeclaration",
+            "start": 116,
+            "end": 201,
+            "startLine": 3,
+            "endLine": 5,
+            "sha256": "db78b4698862ccabab1284fa4fc242d6b15d2d98945bdcadb4186c91caa52edb"
+          },
+          {
+            "symbol": "isMedia",
+            "kind": "FunctionDeclaration",
+            "start": 203,
+            "end": 304,
+            "startLine": 7,
+            "endLine": 9,
+            "sha256": "27025b0c676eafe00c5551ea039e97251a75f35d1cc927c5d4b562bc41a649c0"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "startsWith",
+            "kind": "FirstStatement",
+            "start": 0,
+            "end": 114,
+            "startLine": 1,
+            "endLine": 1,
+            "sha256": "61cabacff2c96a97c23b6c2fef6b54fa335a325501fbf31d26384c409af4e3c9"
+          },
+          {
+            "symbol": "isImageAttachment",
+            "kind": "FunctionDeclaration",
+            "start": 306,
+            "end": 457,
+            "startLine": 11,
+            "endLine": 13,
+            "sha256": "41eb4ed56d37d2fb7f5f916b3138c1295a589065f624d00e0c72c388daa4148f"
+          },
+          {
+            "symbol": "sniffAttachmentMime",
+            "kind": "FunctionDeclaration",
+            "start": 459,
+            "end": 1063,
+            "startLine": 15,
+            "endLine": 26,
+            "sha256": "629613a25dcc25bd0bec875c4b0fd1edafa4c9f6b8be962cd5a6b6bf666878f4"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "startsWith",
+          "isImageAttachment",
+          "sniffAttachmentMime"
+        ]
+      },
+      {
+        "sourcePath": "packages/opencode/src/provider/transform.ts",
+        "gitBlob": "705af3d5c1b5d03a6514b353381e7756c4beb89c",
+        "sha256": "628ec6b24e13e28ff7d1d88be9deabf2e97c1c69a46ea4d5cfea7eab2f7a9b7c",
+        "role": "production-output-token-limit",
+        "adoptedSpans": [
+          {
+            "symbol": "OUTPUT_TOKEN_MAX",
+            "kind": "FirstStatement",
+            "start": 645,
+            "end": 683,
+            "startLine": 18,
+            "endLine": 18,
+            "sha256": "66bf24847873a06c7f9d393ad84746fe82ae6099ae633d948a464f0cb2c3bf00"
+          },
+          {
+            "symbol": "maxOutputTokens",
+            "kind": "FunctionDeclaration",
+            "start": 48848,
+            "end": 49021,
+            "startLine": 1395,
+            "endLine": 1397,
+            "sha256": "faa9d489aced8e5de6e65f1b6ea961c2d10f1994acffefd968dd52531ed2813e"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/util/token.ts",
+        "gitBlob": "d3d4a8de29bb5d101e967433cbc389bd5d7dcfd3",
+        "sha256": "a157df378a5baaf7a35ac1cb9c94dd29266d916329545529604274d6cddbc635",
+        "role": "production-token-estimator",
+        "adoptedSpans": [
+          {
+            "symbol": "CHARS_PER_TOKEN",
+            "kind": "FirstStatement",
+            "start": 34,
+            "end": 59,
+            "startLine": 3,
+            "endLine": 3,
+            "sha256": "d8af17ed8e0cc07b3038837ce37ec14731f28fdd16aec89d1f931c1fe5335d8b"
+          },
+          {
+            "symbol": "estimate",
+            "kind": "FirstStatement",
+            "start": 61,
+            "end": 159,
+            "startLine": 5,
+            "endLine": 5,
+            "sha256": "d4f5cc6d6d3462a0434107efb4ec91c68a49d899724b5959ea4b1186c5ad00d7"
+          }
+        ],
+        "excludedSpans": [],
+        "explicitExcludedSymbolsOrSpans": []
+      },
+      {
+        "sourcePath": "packages/core/src/session/compaction.ts",
+        "gitBlob": "4b21ff348fe41d2c149ba18c94a26fa3e15a37dd",
+        "sha256": "9b1ddffb82925b340a55faca2ba0e240fa9a62f5d8a07889c5359bd011d787f2",
+        "role": "pure-build-prompt-exception",
+        "adoptedSpans": [
+          {
+            "symbol": "SUMMARY_TEMPLATE",
+            "kind": "FirstStatement",
+            "start": 576,
+            "end": 1710,
+            "startLine": 16,
+            "endLine": 46,
+            "sha256": "91737b08610be635108bf26828cfc79a3ed3c5160ed0f740b9e8a36437425676"
+          },
+          {
+            "symbol": "buildPrompt",
+            "kind": "FirstStatement",
+            "start": 5728,
+            "end": 6233,
+            "startLine": 161,
+            "endLine": 168,
+            "sha256": "60452ffe17c2661a93e266f1cdb80f4d2c9a8ba57988166d963e1943a2634be8"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "serializeToolContent",
+            "kind": "FirstStatement",
+            "start": 2469,
+            "end": 2732,
+            "startLine": 79,
+            "endLine": 84,
+            "sha256": "5a01bf1915788b4a0b5d3b7f96ef39c41951667377a2499e51374e4795455789"
+          },
+          {
+            "symbol": "make",
+            "kind": "FirstStatement",
+            "start": 6235,
+            "end": 9290,
+            "startLine": 170,
+            "endLine": 241,
+            "sha256": "127d98f5a62f98e4c1abcb192b2d0c3daf17559a677b3f76fbee3587cff00a93"
+          },
+          {
+            "symbol": "compactAfterOverflow",
+            "kind": "FirstStatement",
+            "start": 6338,
+            "end": 8616,
+            "startLine": 172,
+            "endLine": 224,
+            "sha256": "f97ac5daad4ea1093ae5bc8502be428988bd1d4302ac849c8abb5bf9f667547c"
+          },
+          {
+            "symbol": "compactIfNeeded",
+            "kind": "FirstStatement",
+            "start": 8619,
+            "end": 9226,
+            "startLine": 225,
+            "endLine": 236,
+            "sha256": "9a1af2776d77b258357a0c3084a4a5ab113f8e88c06cfdb88c371fbb22a4a082"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "serializeToolContent",
+          "make",
+          "compactIfNeeded",
+          "compactAfterOverflow",
+          "all other core compaction spans"
+        ]
+      },
+      {
+        "sourcePath": "packages/core/src/v1/config/config.ts",
+        "gitBlob": "691f55150aedd422e6454fcbf1d2a30304242100",
+        "sha256": "9685af69a7afd0362f2d80c1597d3f95ac9fea0818395559a24d47bc5c132a3b",
+        "role": "production-compaction-config-schema-only",
+        "adoptedSpans": [
+          {
+            "symbol": "compaction",
+            "kind": "PropertyAssignment",
+            "start": 7687,
+            "end": 8645,
+            "startLine": 149,
+            "endLine": 168,
+            "sha256": "6e8dc8a89bdfd5ee0d6c1b6c4d96e64070bec252d90b15f94f6237b0c9fa314a"
+          }
+        ],
+        "excludedSpans": [
+          {
+            "symbol": "compaction",
+            "kind": "PropertyAssignment",
+            "start": 5272,
+            "end": 5319,
+            "startLine": 105,
+            "endLine": 105,
+            "sha256": "f33fdf26578a31a706a2aae84e8cee44d333e2a6f25e30846814f7083d9878b4"
+          }
+        ],
+        "explicitExcludedSymbolsOrSpans": [
+          "agent compaction model selection at 5272-5319",
+          "all non-compaction V1 config spans"
+        ]
+      }
+    ],
+    "replacedEventCut": {
+      "excludedImport": [
+        {
+          "start": 1118,
+          "end": 1203,
+          "startLine": 24,
+          "endLine": 24,
+          "sha256": "ac5f513bafcd5c5d5e135a77a125daa752ccef13ad008d9860d956a537334cb1",
+          "source": "import { SessionCompactionEvent } from \"@opencode-ai/schema/session-compaction-event\""
+        }
+      ],
+      "excludedExpression": [
+        {
+          "start": 18120,
+          "end": 18183,
+          "startLine": 508,
+          "endLine": 508,
+          "sha256": "2de3914b2dd8cf3042afd25ec7dc6b7176b7dc5abd7e147f55a50cfb33e86f7b",
+          "source": "events.publish(Event.Compacted, { sessionID: input.sessionID })"
+        }
+      ],
+      "replacement": "Atomic session.next.compaction.ended publication followed by Paperclip Session-controller re-evaluation."
+    },
+    "p1Target": {
+      "policyPath": "server/src/services/issue-session-compaction/policy.ts",
+      "algorithmsPath": "server/src/services/issue-session-compaction/algorithms.ts",
+      "algorithmsImport": {
+        "symbol": "policy-bindings",
+        "kind": "ImportDeclaration",
+        "start": 33,
+        "end": 171,
+        "startLine": 2,
+        "endLine": 6,
+        "sha256": "1510381d561c1014bd291f7a4f2c81004da7c0fbdb31603de30f57d8c8a5e7b3"
+      },
+      "bindings": [
+        {
+          "name": "experimentalSessionCompacting",
+          "policyDeclaration": {
+            "symbol": "experimentalSessionCompacting",
+            "kind": "FirstStatement",
+            "start": 228,
+            "end": 330,
+            "startLine": 8,
+            "endLine": 11,
+            "sha256": "2af420acc2249f77e5bc3e173e8b3e2e96781fd3c38da4b72dea226eafff9ced"
+          },
+          "algorithmsCallsite": {
+            "symbol": "experimentalSessionCompacting",
+            "kind": "FirstStatement",
+            "start": 10030,
+            "end": 10081,
+            "startLine": 317,
+            "endLine": 317,
+            "sha256": "68c283298ae77eb11f1499653eba9789051f2696107089fdce2a4c8dbb8092bf"
+          }
+        },
+        {
+          "name": "experimentalChatMessagesTransform",
+          "policyDeclaration": {
+            "symbol": "experimentalChatMessagesTransform",
+            "kind": "FirstStatement",
+            "start": 332,
+            "end": 445,
+            "startLine": 13,
+            "endLine": 15,
+            "sha256": "160019a97ae860bfd8c0e4d220f069cbf50e043fd81e674b8c17050f44034bdf"
+          },
+          "algorithmsCallsite": {
+            "symbol": "experimentalChatMessagesTransform",
+            "kind": "FirstStatement",
+            "start": 10135,
+            "end": 10195,
+            "startLine": 319,
+            "endLine": 319,
+            "sha256": "716dc5cd2ccd4388d09b3d45022d0dbcc727239034a455ddfb48b0d7622e6f2c"
+          }
+        },
+        {
+          "name": "experimentalCompactionAutocontinue",
+          "policyDeclaration": {
+            "symbol": "experimentalCompactionAutocontinue",
+            "kind": "FirstStatement",
+            "start": 447,
+            "end": 535,
+            "startLine": 17,
+            "endLine": 19,
+            "sha256": "336dab427f420a359c102e58484ff8cad42987c8c08f245d4f6f1dd4c9e46dfe"
+          },
+          "algorithmsCallsite": {
+            "symbol": "experimentalCompactionAutocontinue",
+            "kind": "CallExpression",
+            "start": 11400,
+            "end": 11436,
+            "startLine": 356,
+            "endLine": 356,
+            "sha256": "e135014970ac1a6e6957f070f3d167d847945e550eb7271207ecc2ac32c3af1e"
+          }
+        }
+      ]
+    }
+  }
+}

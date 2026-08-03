@@ -221,52 +221,42 @@ export interface HostServices {
     managedReset(params: WorkerToHostMethods["skills.managed.reset"][0]): Promise<WorkerToHostMethods["skills.managed.reset"][1]>;
   };
 
-  /** Provides issue read/write, relation, checkout, wakeup, summary, comment methods. */
+  /** Provides the installation-bound issue control plane. */
   issues: {
     list(params: WorkerToHostMethods["issues.list"][0]): Promise<WorkerToHostMethods["issues.list"][1]>;
     get(params: WorkerToHostMethods["issues.get"][0]): Promise<WorkerToHostMethods["issues.get"][1]>;
-    create(params: WorkerToHostMethods["issues.create"][0]): Promise<WorkerToHostMethods["issues.create"][1]>;
-    update(params: WorkerToHostMethods["issues.update"][0]): Promise<WorkerToHostMethods["issues.update"][1]>;
-    getRelations(params: WorkerToHostMethods["issues.relations.get"][0]): Promise<WorkerToHostMethods["issues.relations.get"][1]>;
-    setBlockedBy(params: WorkerToHostMethods["issues.relations.setBlockedBy"][0]): Promise<WorkerToHostMethods["issues.relations.setBlockedBy"][1]>;
-    addBlockers(params: WorkerToHostMethods["issues.relations.addBlockers"][0]): Promise<WorkerToHostMethods["issues.relations.addBlockers"][1]>;
-    removeBlockers(params: WorkerToHostMethods["issues.relations.removeBlockers"][0]): Promise<WorkerToHostMethods["issues.relations.removeBlockers"][1]>;
-    assertCheckoutOwner(params: WorkerToHostMethods["issues.assertCheckoutOwner"][0]): Promise<WorkerToHostMethods["issues.assertCheckoutOwner"][1]>;
-    getSubtree(params: WorkerToHostMethods["issues.getSubtree"][0]): Promise<WorkerToHostMethods["issues.getSubtree"][1]>;
-    requestWakeup(params: WorkerToHostMethods["issues.requestWakeup"][0]): Promise<WorkerToHostMethods["issues.requestWakeup"][1]>;
-    requestWakeups(params: WorkerToHostMethods["issues.requestWakeups"][0]): Promise<WorkerToHostMethods["issues.requestWakeups"][1]>;
-    getOrchestrationSummary(params: WorkerToHostMethods["issues.summaries.getOrchestration"][0]): Promise<WorkerToHostMethods["issues.summaries.getOrchestration"][1]>;
-    listComments(params: WorkerToHostMethods["issues.listComments"][0]): Promise<WorkerToHostMethods["issues.listComments"][1]>;
-    createComment(params: WorkerToHostMethods["issues.createComment"][0]): Promise<WorkerToHostMethods["issues.createComment"][1]>;
-    createInteraction(params: WorkerToHostMethods["issues.createInteraction"][0]): Promise<WorkerToHostMethods["issues.createInteraction"][1]>;
+    registerCreatorCallback(params: WorkerToHostMethods["issues.creatorCallback.register"][0]): Promise<WorkerToHostMethods["issues.creatorCallback.register"][1]>;
+    create(
+      params: WorkerToHostMethods["issues.create"][0],
+      operation: HostRpcOperationContext,
+    ): Promise<WorkerToHostMethods["issues.create"][1]>;
+    update(
+      params: WorkerToHostMethods["issues.update"][0],
+      operation: HostRpcOperationContext,
+    ): Promise<WorkerToHostMethods["issues.update"][1]>;
+    withdraw(
+      params: WorkerToHostMethods["issues.withdraw"][0],
+      operation: HostRpcOperationContext,
+    ): Promise<WorkerToHostMethods["issues.withdraw"][1]>;
   };
 
-  /** Provides `issues.documents.list`, `issues.documents.get`, `issues.documents.upsert`, `issues.documents.delete`. */
-  issueDocuments: {
-    list(params: WorkerToHostMethods["issues.documents.list"][0]): Promise<WorkerToHostMethods["issues.documents.list"][1]>;
-    get(params: WorkerToHostMethods["issues.documents.get"][0]): Promise<WorkerToHostMethods["issues.documents.get"][1]>;
-    upsert(params: WorkerToHostMethods["issues.documents.upsert"][0]): Promise<WorkerToHostMethods["issues.documents.upsert"][1]>;
-    delete(params: WorkerToHostMethods["issues.documents.delete"][0]): Promise<WorkerToHostMethods["issues.documents.delete"][1]>;
+  /** Provides run-scoped issue projections for selected company tools. */
+  runIssues?: {
+    listCompanyIssues(params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]): Promise<WorkerToHostMethods["run.issues.listCompanyIssues"][1]>;
+    listSubIssues(params: WorkerToHostMethods["run.issues.listSubIssues"][0]): Promise<WorkerToHostMethods["run.issues.listSubIssues"][1]>;
+    readIssueComments(params: WorkerToHostMethods["run.issues.readIssueComments"][0]): Promise<WorkerToHostMethods["run.issues.readIssueComments"][1]>;
+    readIssueAgentRun(params: WorkerToHostMethods["run.issues.readIssueAgentRun"][0]): Promise<WorkerToHostMethods["run.issues.readIssueAgentRun"][1]>;
   };
 
-  /** Provides `agents.list`, `agents.get`, `agents.pause`, `agents.resume`, `agents.invoke`. */
+  /** Provides `agents.list`, `agents.get`, `agents.pause`, `agents.resume`. */
   agents: {
     list(params: WorkerToHostMethods["agents.list"][0]): Promise<WorkerToHostMethods["agents.list"][1]>;
     get(params: WorkerToHostMethods["agents.get"][0]): Promise<WorkerToHostMethods["agents.get"][1]>;
     pause(params: WorkerToHostMethods["agents.pause"][0]): Promise<WorkerToHostMethods["agents.pause"][1]>;
     resume(params: WorkerToHostMethods["agents.resume"][0]): Promise<WorkerToHostMethods["agents.resume"][1]>;
-    invoke(params: WorkerToHostMethods["agents.invoke"][0]): Promise<WorkerToHostMethods["agents.invoke"][1]>;
     managedGet(params: WorkerToHostMethods["agents.managed.get"][0]): Promise<WorkerToHostMethods["agents.managed.get"][1]>;
     managedReconcile(params: WorkerToHostMethods["agents.managed.reconcile"][0]): Promise<WorkerToHostMethods["agents.managed.reconcile"][1]>;
     managedReset(params: WorkerToHostMethods["agents.managed.reset"][0]): Promise<WorkerToHostMethods["agents.managed.reset"][1]>;
-  };
-
-  /** Provides `agents.sessions.create`, `agents.sessions.list`, `agents.sessions.sendMessage`, `agents.sessions.close`. */
-  agentSessions: {
-    create(params: WorkerToHostMethods["agents.sessions.create"][0]): Promise<WorkerToHostMethods["agents.sessions.create"][1]>;
-    list(params: WorkerToHostMethods["agents.sessions.list"][0]): Promise<WorkerToHostMethods["agents.sessions.list"][1]>;
-    sendMessage(params: WorkerToHostMethods["agents.sessions.sendMessage"][0]): Promise<WorkerToHostMethods["agents.sessions.sendMessage"][1]>;
-    close(params: WorkerToHostMethods["agents.sessions.close"][0]): Promise<void>;
   };
 
   /** Provides `goals.list`, `goals.get`, `goals.create`, `goals.update`. */
@@ -298,6 +288,10 @@ export interface HostServices {
     explainAssignment(params: WorkerToHostMethods["authorization.policies.explainAssignment"][0]): Promise<WorkerToHostMethods["authorization.policies.explainAssignment"][1]>;
     searchAudit(params: WorkerToHostMethods["authorization.audit.search"][0]): Promise<WorkerToHostMethods["authorization.audit.search"][1]>;
   };
+}
+
+export interface HostRpcOperationContext {
+  readonly hostRpcOperationId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -431,42 +425,23 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   // Issues
   "issues.list": "issues.read",
   "issues.get": "issues.read",
+  "issues.creatorCallback.register": "issues.create",
   "issues.create": "issues.create",
   "issues.update": "issues.update",
-  "issues.relations.get": "issue.relations.read",
-  "issues.relations.setBlockedBy": "issue.relations.write",
-  "issues.relations.addBlockers": "issue.relations.write",
-  "issues.relations.removeBlockers": "issue.relations.write",
-  "issues.assertCheckoutOwner": "issues.checkout",
-  "issues.getSubtree": "issue.subtree.read",
-  "issues.requestWakeup": "issues.wakeup",
-  "issues.requestWakeups": "issues.wakeup",
-  "issues.summaries.getOrchestration": "issues.orchestration.read",
-  "issues.listComments": "issue.comments.read",
-  "issues.createComment": "issue.comments.create",
-  "issues.createInteraction": "issue.interactions.create",
-
-  // Issue Documents
-  "issues.documents.list": "issue.documents.read",
-  "issues.documents.get": "issue.documents.read",
-  "issues.documents.upsert": "issue.documents.write",
-  "issues.documents.delete": "issue.documents.write",
+  "issues.withdraw": "issues.withdraw",
+  "run.issues.listCompanyIssues": "issues.read",
+  "run.issues.listSubIssues": "issues.read",
+  "run.issues.readIssueComments": "issues.read",
+  "run.issues.readIssueAgentRun": "issues.read",
 
   // Agents
   "agents.list": "agents.read",
   "agents.get": "agents.read",
   "agents.pause": "agents.pause",
   "agents.resume": "agents.resume",
-  "agents.invoke": "agents.invoke",
   "agents.managed.get": "agents.managed",
   "agents.managed.reconcile": "agents.managed",
   "agents.managed.reset": "agents.managed",
-
-  // Agent Sessions
-  "agents.sessions.create": "agent.sessions.create",
-  "agents.sessions.list": "agent.sessions.list",
-  "agents.sessions.sendMessage": "agent.sessions.send",
-  "agents.sessions.close": "agent.sessions.close",
 
   // Goals
   "goals.list": "goals.read",
@@ -492,6 +467,16 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "authorization.policies.explainAssignment": "authorization.policies.read",
   "authorization.audit.search": "authorization.audit.read",
 };
+
+const INSTALLATION_ISSUE_CONTROL_PLANE_METHODS: ReadonlySet<WorkerToHostMethodName> =
+  new Set([
+    "issues.list",
+    "issues.get",
+    "issues.creatorCallback.register",
+    "issues.create",
+    "issues.update",
+    "issues.withdraw",
+  ]);
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -636,6 +621,64 @@ export function createHostClientHandlers(
     throw new InvocationScopeDeniedError(pluginId, method, "company context is required");
   }
 
+  function requireExactRunContextHandle(
+    method:
+      | "run.issues.listCompanyIssues"
+      | "run.issues.listSubIssues"
+      | "run.issues.readIssueComments"
+      | "run.issues.readIssueAgentRun",
+    params: WorkerToHostMethods[typeof method][0],
+    context?: WorkerHostCallContext,
+  ): void {
+    if (context?.invalidInvocationScope) {
+      throw new InvocationScopeDeniedError(
+        pluginId,
+        method,
+        "the worker referenced a missing, expired, or unknown invocation scope",
+      );
+    }
+    const supplied = readNonEmptyString(params.runContextHandle);
+    const active = readNonEmptyString(
+      context?.invocationScope?.pluginRunContextHandle,
+    );
+    if (!supplied || !active || supplied !== active) {
+      throw new InvocationScopeDeniedError(
+        pluginId,
+        method,
+        "an exact active plugin run-context handle is required",
+      );
+    }
+  }
+
+  function requireRunIssueContextBoundary(
+    method: WorkerToHostMethodName,
+    context?: WorkerHostCallContext,
+  ): void {
+    if (!INSTALLATION_ISSUE_CONTROL_PLANE_METHODS.has(method)) return;
+    const activeRunContextHandle = readNonEmptyString(
+      context?.invocationScope?.pluginRunContextHandle,
+    );
+    if (!activeRunContextHandle) return;
+    throw new InvocationScopeDeniedError(
+      pluginId,
+      method,
+      "the installation issue control plane is unavailable while serving an agent run; use only run.issues.* with the exact active run-context handle",
+    );
+  }
+
+  function requireHostRpcOperation(
+    method: "issues.create" | "issues.update" | "issues.withdraw",
+    context?: WorkerHostCallContext,
+  ): HostRpcOperationContext {
+    const hostRpcOperationId = readNonEmptyString(context?.rpcOperationId);
+    if (!hostRpcOperationId) {
+      throw new Error(
+        `Host-assigned RPC operation identity is required for "${method}"`,
+      );
+    }
+    return { hostRpcOperationId };
+  }
+
   /**
    * Assert that the plugin has the required capability for a method.
    * Throws `CapabilityDeniedError` if the capability is missing.
@@ -662,6 +705,7 @@ export function createHostClientHandlers(
   ): HostHandler<M> {
     return async (params: WorkerToHostMethods[M][0], context?: WorkerHostCallContext) => {
       requireCapability(method);
+      requireRunIssueContextBoundary(method, context);
       requireInvocationCompanyScope(method, params, context);
       return handler(params, context);
     };
@@ -845,61 +889,70 @@ export function createHostClientHandlers(
     "issues.get": gated("issues.get", async (params) => {
       return services.issues.get(params);
     }),
-    "issues.create": gated("issues.create", async (params) => {
-      return services.issues.create(params);
+    "issues.creatorCallback.register": gated("issues.creatorCallback.register", async (params) => {
+      return services.issues.registerCreatorCallback(params);
     }),
-    "issues.update": gated("issues.update", async (params) => {
-      return services.issues.update(params);
+    "run.issues.listCompanyIssues": gated("run.issues.listCompanyIssues", async (params, context) => {
+      requireExactRunContextHandle("run.issues.listCompanyIssues", params, context);
+      if (!services.runIssues) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "run.issues.listCompanyIssues",
+          "run-serving issue context is not configured",
+        );
+      }
+      return services.runIssues.listCompanyIssues(params);
     }),
-    "issues.relations.get": gated("issues.relations.get", async (params) => {
-      return services.issues.getRelations(params);
+    "run.issues.listSubIssues": gated("run.issues.listSubIssues", async (params, context) => {
+      requireExactRunContextHandle("run.issues.listSubIssues", params, context);
+      if (!services.runIssues) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "run.issues.listSubIssues",
+          "run-serving issue context is not configured",
+        );
+      }
+      return services.runIssues.listSubIssues(params);
     }),
-    "issues.relations.setBlockedBy": gated("issues.relations.setBlockedBy", async (params) => {
-      return services.issues.setBlockedBy(params);
+    "run.issues.readIssueComments": gated("run.issues.readIssueComments", async (params, context) => {
+      requireExactRunContextHandle("run.issues.readIssueComments", params, context);
+      if (!services.runIssues) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "run.issues.readIssueComments",
+          "run-serving issue context is not configured",
+        );
+      }
+      return services.runIssues.readIssueComments(params);
     }),
-    "issues.relations.addBlockers": gated("issues.relations.addBlockers", async (params) => {
-      return services.issues.addBlockers(params);
+    "run.issues.readIssueAgentRun": gated("run.issues.readIssueAgentRun", async (params, context) => {
+      requireExactRunContextHandle("run.issues.readIssueAgentRun", params, context);
+      if (!services.runIssues) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "run.issues.readIssueAgentRun",
+          "run-serving issue context is not configured",
+        );
+      }
+      return services.runIssues.readIssueAgentRun(params);
     }),
-    "issues.relations.removeBlockers": gated("issues.relations.removeBlockers", async (params) => {
-      return services.issues.removeBlockers(params);
+    "issues.create": gated("issues.create", async (params, context) => {
+      return services.issues.create(
+        params,
+        requireHostRpcOperation("issues.create", context),
+      );
     }),
-    "issues.assertCheckoutOwner": gated("issues.assertCheckoutOwner", async (params) => {
-      return services.issues.assertCheckoutOwner(params);
+    "issues.update": gated("issues.update", async (params, context) => {
+      return services.issues.update(
+        params,
+        requireHostRpcOperation("issues.update", context),
+      );
     }),
-    "issues.getSubtree": gated("issues.getSubtree", async (params) => {
-      return services.issues.getSubtree(params);
-    }),
-    "issues.requestWakeup": gated("issues.requestWakeup", async (params) => {
-      return services.issues.requestWakeup(params);
-    }),
-    "issues.requestWakeups": gated("issues.requestWakeups", async (params) => {
-      return services.issues.requestWakeups(params);
-    }),
-    "issues.summaries.getOrchestration": gated("issues.summaries.getOrchestration", async (params) => {
-      return services.issues.getOrchestrationSummary(params);
-    }),
-    "issues.listComments": gated("issues.listComments", async (params) => {
-      return services.issues.listComments(params);
-    }),
-    "issues.createComment": gated("issues.createComment", async (params) => {
-      return services.issues.createComment(params);
-    }),
-    "issues.createInteraction": gated("issues.createInteraction", async (params) => {
-      return services.issues.createInteraction(params);
-    }),
-
-    // Issue Documents
-    "issues.documents.list": gated("issues.documents.list", async (params) => {
-      return services.issueDocuments.list(params);
-    }),
-    "issues.documents.get": gated("issues.documents.get", async (params) => {
-      return services.issueDocuments.get(params);
-    }),
-    "issues.documents.upsert": gated("issues.documents.upsert", async (params) => {
-      return services.issueDocuments.upsert(params);
-    }),
-    "issues.documents.delete": gated("issues.documents.delete", async (params) => {
-      return services.issueDocuments.delete(params);
+    "issues.withdraw": gated("issues.withdraw", async (params, context) => {
+      return services.issues.withdraw(
+        params,
+        requireHostRpcOperation("issues.withdraw", context),
+      );
     }),
 
     // Agents
@@ -915,9 +968,6 @@ export function createHostClientHandlers(
     "agents.resume": gated("agents.resume", async (params) => {
       return services.agents.resume(params);
     }),
-    "agents.invoke": gated("agents.invoke", async (params) => {
-      return services.agents.invoke(params);
-    }),
     "agents.managed.get": gated("agents.managed.get", async (params) => {
       return services.agents.managedGet(params);
     }),
@@ -926,20 +976,6 @@ export function createHostClientHandlers(
     }),
     "agents.managed.reset": gated("agents.managed.reset", async (params) => {
       return services.agents.managedReset(params);
-    }),
-
-    // Agent Sessions
-    "agents.sessions.create": gated("agents.sessions.create", async (params) => {
-      return services.agentSessions.create(params);
-    }),
-    "agents.sessions.list": gated("agents.sessions.list", async (params) => {
-      return services.agentSessions.list(params);
-    }),
-    "agents.sessions.sendMessage": gated("agents.sessions.sendMessage", async (params) => {
-      return services.agentSessions.sendMessage(params);
-    }),
-    "agents.sessions.close": gated("agents.sessions.close", async (params) => {
-      return services.agentSessions.close(params);
     }),
 
     // Goals

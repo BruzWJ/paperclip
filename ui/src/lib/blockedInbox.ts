@@ -4,61 +4,40 @@ import type {
   IssueBlockedInboxReason,
   IssueBlockedInboxSeverity,
 } from "@paperclipai/shared";
+import { issueDisplayTitle } from "./issue-display";
 
 export type BlockedReasonVariant =
   | "needs_decision"
   | "stalled"
   | "needs_attention"
-  | "recovery_required"
-  | "external_wait"
-  | "owner_paused";
+  | "external_wait";
 
 const VARIANT_BY_REASON: Record<IssueBlockedInboxReason, BlockedReasonVariant> = {
   pending_board_decision: "needs_decision",
   pending_user_decision: "needs_decision",
-  missing_successful_run_disposition: "needs_decision",
   blocked_chain_stalled: "stalled",
-  blocked_by_unassigned_issue: "needs_attention",
-  blocked_by_assigned_backlog_issue: "needs_attention",
-  blocked_by_cancelled_issue: "needs_attention",
-  in_review_without_action_path: "needs_attention",
-  invalid_review_participant: "needs_attention",
-  open_recovery_issue: "recovery_required",
   external_owner_action: "external_wait",
-  blocked_by_uninvokable_assignee: "owner_paused",
 };
 
 export const BLOCKED_REASON_VARIANT_ORDER: BlockedReasonVariant[] = [
   "needs_decision",
   "stalled",
   "needs_attention",
-  "recovery_required",
   "external_wait",
-  "owner_paused",
 ];
 
 export const BLOCKED_VARIANT_LABELS: Record<BlockedReasonVariant, string> = {
   needs_decision: "Needs decision",
   stalled: "Blocked chain stalled",
   needs_attention: "Needs attention",
-  recovery_required: "Recovery required",
   external_wait: "External wait",
-  owner_paused: "Owner paused",
 };
 
 const REASON_LABELS: Record<IssueBlockedInboxReason, string> = {
   pending_board_decision: "Pending board decision",
   pending_user_decision: "Pending user decision",
-  missing_successful_run_disposition: "Pick disposition",
   blocked_chain_stalled: "Blocked chain stalled",
-  blocked_by_unassigned_issue: "Unassigned blocker",
-  blocked_by_assigned_backlog_issue: "Parked blocker",
-  blocked_by_cancelled_issue: "Cancelled blocker",
-  in_review_without_action_path: "Review without action path",
-  invalid_review_participant: "Invalid review participant",
-  open_recovery_issue: "Recovery in progress",
   external_owner_action: "External owner action",
-  blocked_by_uninvokable_assignee: "Owner paused",
 };
 
 const SEVERITY_RANK: Record<IssueBlockedInboxSeverity, number> = {
@@ -153,7 +132,7 @@ function blockedRowRecencyMs(row: BlockedInboxIssueRow): number {
 }
 
 function compareBlockedRowsByTitle(a: BlockedInboxIssueRow, b: BlockedInboxIssueRow): number {
-  const byTitle = a.issue.title.localeCompare(b.issue.title);
+  const byTitle = issueDisplayTitle(a.issue).localeCompare(issueDisplayTitle(b.issue));
   if (byTitle !== 0) return byTitle;
   return a.issue.id.localeCompare(b.issue.id);
 }
@@ -227,8 +206,6 @@ export function blockedRowMatchesSearch(row: BlockedInboxIssueRow, query: string
     row.reasonLabel,
     row.attention.leafIssue?.identifier ?? "",
     row.attention.leafIssue?.title ?? "",
-    row.attention.recoveryIssue?.identifier ?? "",
-    row.attention.recoveryIssue?.title ?? "",
   ]
     .join(" ")
     .toLowerCase();

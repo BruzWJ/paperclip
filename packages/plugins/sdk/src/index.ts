@@ -52,6 +52,11 @@
 export { definePlugin } from "./define-plugin.js";
 export { createTestHarness, createEnvironmentTestHarness, createFakeEnvironmentDriver, filterEnvironmentEvents, assertEnvironmentEventOrder, assertLeaseLifecycle, assertWorkspaceRealizationLifecycle, assertExecutionLifecycle, assertEnvironmentError } from "./testing.js";
 export { createPluginBundlerPresets } from "./bundlers.js";
+export {
+  createEnvironmentExecutionCancellationRegistry,
+  wrapCancellableEnvironmentShellCommand,
+  buildCancelEnvironmentShellCommand,
+} from "./environment-execution-control.js";
 export { startPluginDevServer, getUiBuildSnapshot } from "./dev-server.js";
 export { startWorkerRpcHost, runWorker } from "./worker-rpc-host.js";
 export {
@@ -80,6 +85,7 @@ export {
   isJsonRpcErrorResponse,
   serializeMessage,
   parseMessage,
+  decodePluginPerformActionActorContext,
   JsonRpcParseError,
   JsonRpcCallError,
   _resetIdCounter,
@@ -122,6 +128,7 @@ export type {
 } from "./worker-rpc-host.js";
 export type {
   HostServices,
+  HostRpcOperationContext,
   HostClientFactoryOptions,
   HostClientHandlers,
 } from "./host-client-factory.js";
@@ -181,6 +188,8 @@ export type {
   PluginEnvironmentRealizeWorkspaceResult,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginSyncFileMapping,
   PluginSyncOperation,
   PluginEnvironmentSyncInParams,
@@ -240,22 +249,10 @@ export type {
   PluginSkillsClient,
   PluginCompaniesClient,
   PluginIssuesClient,
-  PluginIssueMutationActor,
-  PluginIssueRelationsClient,
-  PluginIssueRelationSummary,
-  PluginIssueCheckoutOwnership,
-  PluginIssueWakeupResult,
-  PluginIssueWakeupBatchResult,
-  PluginIssueRunSummary,
-  PluginIssueApprovalSummary,
-  PluginIssueCostSummary,
-  PluginBudgetIncidentSummary,
-  PluginIssueInvocationBlockSummary,
-  PluginIssueOrchestrationSummary,
-  PluginIssueSubtreeOptions,
-  PluginIssueAssigneeSummary,
-  PluginIssueSubtree,
-  PluginIssueSummariesClient,
+  PluginIssueAttentionMask,
+  PluginIssueCreateInput,
+  PluginIssueUpdateInput,
+  PluginIssueWithdrawalResult,
   PluginAgentsClient,
   PluginAccessClient,
   PluginAccessMembersClient,
@@ -268,10 +265,6 @@ export type {
   PluginAssignmentPreviewInput,
   PluginAuthorizationDecisionResult,
   PluginAuthorizationAuditEntry,
-  PluginAgentSessionsClient,
-  AgentSession,
-  AgentSessionEvent,
-  AgentSessionSendResult,
   PluginGoalsClient,
   PluginDataClient,
   PluginActionsClient,
@@ -289,7 +282,13 @@ export type {
   PluginEvent,
   PluginJobContext,
   PluginLauncherRegistration,
-  ToolRunContext,
+  PluginRunContextHandle,
+  PluginRunIssueProjection,
+  PluginRunIssueCommentProjection,
+  ProviderSafeRunTrace,
+  PluginRunPage,
+  PluginRunIssuesClient,
+  PluginToolRunContext,
   ToolResult,
   PluginEntityUpsert,
   PluginEntityRecord,
@@ -371,7 +370,6 @@ export type {
   PluginDatabaseNamespaceMode,
   PluginDatabaseNamespaceStatus,
   PluginApiRouteAuthMode,
-  PluginApiRouteCheckoutPolicy,
   PluginApiRouteMethod,
   PluginEventType,
   PluginBridgeErrorCode,

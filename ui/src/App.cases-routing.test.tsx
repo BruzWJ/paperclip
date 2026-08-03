@@ -13,7 +13,15 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // jsdom's CSS parser rejects the custom-property marker rule stitches inserts
 // (`--sxs{--sxs:N}`), pulled into <App>'s eager import graph transitively via
@@ -27,7 +35,11 @@ beforeAll(() => {
   };
   if (!sheetProto.__pap13002Patched) {
     const original = sheetProto.insertRule;
-    sheetProto.insertRule = function patched(this: CSSStyleSheet, rule: string, index?: number) {
+    sheetProto.insertRule = function patched(
+      this: CSSStyleSheet,
+      rule: string,
+      index?: number,
+    ) {
       try {
         return original.call(this, rule, index);
       } catch {
@@ -52,7 +64,9 @@ vi.mock("./components/Layout", async () => {
 
 // The experimental gate would otherwise hide the page behind a feature flag.
 vi.mock("./components/CasesExperimentalGate", () => ({
-  CasesExperimentalGate: ({ children }: { children: ReactNode }) => <>{children}</>,
+  CasesExperimentalGate: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
 }));
 
 // Rendered by <App> outside <Routes> and needs DialogProvider; irrelevant here.
@@ -62,9 +76,11 @@ vi.mock("./components/OnboardingWizardVariant", () => ({
 
 // Sentinel pages so we can assert *which* route resolved.
 vi.mock("./pages/Cases", () => ({ Cases: () => <div>CASES_LIST_PAGE</div> }));
-vi.mock("./pages/CaseDetail", () => ({ CaseDetail: () => <div>CASE_DETAIL_PAGE</div> }));
+vi.mock("./pages/CaseDetail", () => ({
+  CaseDetail: () => <div>CASE_DETAIL_PAGE</div>,
+}));
 
-// CloudAccessGate must fall through to <Outlet/> (authorized w/ company access).
+// AuthenticatedAppGate must fall through to <Outlet/> (authorized w/ company access).
 const mockHealthApi = vi.hoisted(() => ({ get: vi.fn() }));
 const mockAuthApi = vi.hoisted(() => ({ getSession: vi.fn() }));
 const mockAccessApi = vi.hoisted(() => ({
@@ -92,6 +108,12 @@ vi.mock("./context/CompanyContext", () => ({
   CompanyProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+let AppComponent: typeof import("./App").App;
+
+beforeAll(async () => {
+  ({ App: AppComponent } = await import("./App"));
+}, 60000);
+
 async function flushReact() {
   for (let i = 0; i < 20; i += 1) {
     await Promise.resolve();
@@ -109,14 +131,15 @@ async function waitForText(container: HTMLElement, text: string) {
 }
 
 async function renderAppAt(container: HTMLElement, path: string) {
-  const { App } = await import("./App");
   const root = createRoot(container);
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   flushSync(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[path]}>
-          <App />
+          <AppComponent />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -132,16 +155,25 @@ describe("App Cases routing (PAP-13002)", () => {
     document.body.appendChild(container);
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
       bootstrapStatus: "ready",
     });
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
     });
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
       userId: "user-1",
       isInstanceAdmin: false,
       companyIds: [PAP_COMPANY.id],

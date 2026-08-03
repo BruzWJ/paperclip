@@ -24,15 +24,21 @@ test("release package list only contains CI-enrolled packages", () => {
   assert.ok(enabledPackages.every((pkg) => pkg.publishFromCi === true));
 });
 
-test("Hermes release surface publishes the unified built-in package and keeps gateway as a shim", () => {
+test("retired built-in adapter packages are absent from the release surface", () => {
   const packages = buildReleasePackagePlan();
-  const hermes = packages.find((pkg) => pkg.name === "@paperclipai/hermes-paperclip-adapter");
-  const gatewayShim = packages.find((pkg) => pkg.name === "@paperclipai/adapter-hermes-gateway");
+  const retiredDirs = new Set([
+    "packages/adapters/claude-local",
+    "packages/adapters/codex-local",
+    "packages/adapters/cursor-cloud",
+    "packages/adapters/cursor-local",
+    "packages/adapters/gemini-local",
+    "packages/adapters/grok-local",
+    "packages/adapters/hermes",
+    "packages/adapters/opencode-local",
+    "packages/adapters/pi-local",
+  ]);
 
-  assert.equal(hermes?.dir, "packages/adapters/hermes");
-  assert.equal(hermes?.publishFromCi, true);
-  assert.equal(gatewayShim?.dir, "packages/adapters/hermes-gateway");
-  assert.equal(gatewayShim?.publishFromCi, false);
+  assert.equal(packages.some((pkg) => retiredDirs.has(pkg.dir)), false);
 });
 
 test("release package configuration validates successfully", () => {

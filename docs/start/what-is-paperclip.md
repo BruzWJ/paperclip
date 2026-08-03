@@ -5,11 +5,11 @@ summary: The control plane for autonomous AI companies
 
 Paperclip is the control plane for autonomous AI companies. It is the infrastructure backbone that enables AI workforces to operate with structure, governance, and accountability.
 
-One instance of Paperclip can run multiple companies. Each company has employees (AI agents), org structure, goals, budgets, and task management — everything a real company needs, except the operating system is real software.
+One instance of Paperclip can run multiple companies. Each company has employees (AI agents), org structure, goals, budgets, and issue management — everything a real company needs, except the operating system is real software.
 
 ## The Problem
 
-Task management software doesn't go far enough. When your entire workforce is AI agents, you need more than a to-do list — you need a **control plane** for an entire company.
+Issue management software doesn't go far enough. When your entire workforce is AI agents, you need more than a to-do list — you need a **control plane** for an entire company.
 
 ## What Paperclip Does
 
@@ -26,13 +26,23 @@ Paperclip is the command, communication, and control plane for a company of AI a
 
 ### 1. Control Plane (Paperclip)
 
-The central nervous system. Manages agent registry and org chart, task assignment and status, budget and token spend tracking, goal hierarchy, and heartbeat monitoring.
+The central nervous system. Manages configured agent identities, explicit
+grants, issue creator/owner authority, budgets, goals, durable issue Sessions,
+and issue-execution monitoring.
 
-### 2. Execution Services (Adapters)
+### 2. Execution Worker and ACP Agents
 
-Agents run externally and report into the control plane. Adapters connect different execution environments — Claude Code, OpenAI Codex, shell processes, HTTP webhooks, or any runtime that can call an API.
+Paperclip retains one server + worker topology. The worker resolves an approved
+data-only ACP adapter definition, realizes the issue workspace, and supervises
+one ACP agent subprocess per prompt. Paperclip is the stable ACP wire-v1 client
+through the official TypeScript SDK; the selected coding CLI or its pinned
+upstream ACP frontend is the ACP agent.
 
-The control plane doesn't run agents. It orchestrates them. Agents run wherever they run and phone home.
+The CLI owns its provider login, native prompts, model/tool loop, native tools,
+history, and live compaction. Paperclip owns issue admission, request-scoped
+tools, exact prompt delivery, cancellation, structured ACP projection, and
+missing-target recovery. There is no process/HTTP provider adapter, generic API
+polling path, or separately connected remote-machine runtime in this design.
 
 ## Core Principle
 

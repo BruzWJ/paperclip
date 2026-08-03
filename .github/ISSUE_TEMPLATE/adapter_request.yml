@@ -11,7 +11,7 @@ body:
     attributes:
       label: Agent or provider
       description: Name of the agent, model, or CLI tool.
-      placeholder: e.g. Gemini CLI, LM Studio, Mistral
+      placeholder: e.g. a vendor CLI or hosted model API
     validations:
       required: true
   - type: textarea

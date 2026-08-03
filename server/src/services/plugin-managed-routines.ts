@@ -22,6 +22,7 @@ import { notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import { routineService } from "./routines.js";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
+import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 const MANAGED_ROUTINE_RESOURCE_KIND = "routine";
 
@@ -30,6 +31,7 @@ interface PluginManagedRoutineServiceOptions {
   pluginKey: string;
   manifest?: import("@paperclipai/shared").PaperclipPluginManifestV1 | null;
   pluginWorkerManager?: PluginWorkerManager;
+  ordinaryIssues: OrdinaryIssueRuntime;
 }
 
 interface RoutineOverrides {
@@ -127,7 +129,7 @@ export function pluginManagedRoutineService(
   options: PluginManagedRoutineServiceOptions,
 ) {
   const routinesSvc = routineService(db, {
-    pluginWorkerManager: options.pluginWorkerManager,
+    ordinaryIssues: options.ordinaryIssues,
   });
 
   function declarationFor(routineKey: string) {
@@ -242,6 +244,7 @@ export function pluginManagedRoutineService(
           eq(pluginManagedResources.pluginId, options.pluginId),
           eq(pluginManagedResources.resourceKind, "agent"),
           eq(pluginManagedResources.resourceKey, ref.resourceKey),
+          eq(pluginManagedResources.lifecycleState, "active"),
         ),
       )
       .then((rows) => rows[0] ?? null);
@@ -346,7 +349,11 @@ export function pluginManagedRoutineService(
     if (existingCount > 0) return;
 
     for (const trigger of triggers) {
-      await routinesSvc.createTrigger(routineId, triggerInput(trigger), { agentId: null, userId: null });
+      await routinesSvc.createTrigger(
+        routineId,
+        triggerInput(trigger),
+        { type: "system" },
+      );
     }
   }
 
@@ -367,11 +374,12 @@ export function pluginManagedRoutineService(
       description: declaration.description ?? null,
       assigneeAgentId: refs.assigneeAgentId,
       priority: declaration.priority ?? "medium",
+      attentionMask: declaration.issueTemplate?.attentionMask,
       status: declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
       concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
       catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
       variables: declaration.variables ?? [],
-    }, { agentId: null, userId: null });
+    }, { type: "system" });
     await upsertBinding(companyId, declaration, created.id);
     await ensureDefaultTriggers(created.id, declaration);
     const routine = await getRoutineWithManagedBy(companyId, declaration);
@@ -427,11 +435,12 @@ export function pluginManagedRoutineService(
       description: declaration.description ?? null,
       assigneeAgentId: refs.assigneeAgentId,
       priority: declaration.priority ?? "medium",
+      attentionMask: declaration.issueTemplate?.attentionMask,
       status: declaration.status ?? (refs.assigneeAgentId ? "active" : "paused"),
       concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
       catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
       variables: declaration.variables ?? [],
-    }, { agentId: null, userId: null });
+    }, { type: "system" });
     if (!updated) throw notFound("Managed routine not found");
     await upsertBinding(companyId, declaration, updated.id);
     await ensureDefaultTriggers(updated.id, declaration);
@@ -468,7 +477,11 @@ export function pluginManagedRoutineService(
       }
       updatePatch.status = patch.status as RoutineStatus;
     }
-    const updated = await routinesSvc.update(current.routine.id, updatePatch, { agentId: null, userId: null });
+    const updated = await routinesSvc.update(
+      current.routine.id,
+      updatePatch,
+      { type: "system" },
+    );
     if (!updated) throw notFound("Managed routine not found");
     await logActivity(db, {
       companyId,
@@ -495,7 +508,7 @@ export function pluginManagedRoutineService(
       source: "manual",
       assigneeAgentId: overrides?.assigneeAgentId,
       projectId: overrides?.projectId,
-    }, { agentId: null, userId: null });
+    }, { type: "system" });
     await logActivity(db, {
       companyId,
       actorType: "plugin",

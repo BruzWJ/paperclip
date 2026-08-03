@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { Issue, IssueLabel, Project } from "@paperclipai/shared";
-import type { RunForIssue } from "@/api/activity";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDownAZ,
@@ -16,7 +15,6 @@ import {
   Rows3,
 } from "lucide-react";
 import { IssueColumnPicker, InboxIssueMetaLeading, InboxIssueTrailingColumns } from "@/components/IssueColumns";
-import { IssueContinuationHandoff } from "@/components/IssueContinuationHandoff";
 import { IssueDocumentsSection } from "@/components/IssueDocumentsSection";
 import { IssueFiltersPopover } from "@/components/IssueFiltersPopover";
 import { IssueGroupHeader } from "@/components/IssueGroupHeader";
@@ -36,12 +34,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { countActiveIssueFilters, defaultIssueFilterState, type IssueFilterState } from "@/lib/issue-filters";
 import { DEFAULT_INBOX_ISSUE_COLUMNS, type InboxIssueColumn } from "@/lib/inbox";
 import { queryKeys } from "@/lib/queryKeys";
+import { createTestIssue } from "@/test-utils/issue";
 import {
   storybookAgentMap,
   storybookAgents,
   storybookAuthSession,
   storybookCompanies,
-  storybookContinuationHandoff,
   storybookExecutionWorkspaces,
   storybookIssueDocuments,
   storybookIssueLabels,
@@ -53,7 +51,7 @@ import {
 const companyId = "company-storybook";
 const issueListViewKey = "storybook:issue-management:list";
 const scopedIssueListViewKey = `${issueListViewKey}:${companyId}`;
-const visibleColumns: InboxIssueColumn[] = ["status", "id", "assignee", "kickedOffBy", "project", "workspace", "labels", "updated"];
+const visibleColumns: InboxIssueColumn[] = ["status", "id", "owner", "kickedOffBy", "project", "workspace", "labels", "updated"];
 
 const issueDocumentSummaries = storybookIssueDocuments.map(({ body: _body, ...summary }) => summary);
 const primaryIssue: Issue = {
@@ -61,19 +59,6 @@ const primaryIssue: Issue = {
   planDocument: storybookIssueDocuments.find((document) => document.key === "plan") ?? null,
   documentSummaries: issueDocumentSummaries,
   currentExecutionWorkspace: storybookExecutionWorkspaces[0]!,
-};
-const modelOverrideIssue: Issue = {
-  ...primaryIssue,
-  id: "issue-model-override-visual",
-  identifier: "MOD-1",
-  issueNumber: 1,
-  title: "Verify task-level model override provenance",
-  assigneeAdapterOverrides: {
-    adapterConfig: {
-      model: "gpt-5.6",
-      modelReasoningEffort: "high",
-    },
-  },
 };
 const childIssues = storybookIssues.filter((issue) => issue.parentId === primaryIssue.id);
 const longProject: Project = {
@@ -124,11 +109,11 @@ const longValueIssue: Issue = {
       id: longParentIssue.id,
       identifier: longParentIssue.identifier,
       title: longParentIssue.title,
-      description: longParentIssue.description,
-      status: longParentIssue.status,
+      request: longParentIssue.request,
+      boardPresentationStatus: longParentIssue.boardPresentationStatus,
       priority: longParentIssue.priority,
-      assigneeAgentId: longParentIssue.assigneeAgentId,
-      assigneeUserId: longParentIssue.assigneeUserId,
+      ownerAgentId: longParentIssue.ownerAgentId,
+      ownerUserId: longParentIssue.ownerUserId,
       projectId: longParentIssue.projectId,
       goalId: longParentIssue.goalId,
       project: null,
@@ -137,33 +122,40 @@ const longValueIssue: Issue = {
   ],
 };
 const attributionIssues: Issue[] = [
-  {
+  createTestIssue({
     ...primaryIssue,
     id: "issue-attribution-explicit",
     title: "Human kickoff with explicit responsible owner",
-    createdByAgentId: null,
-    createdByUserId: "user-board",
     responsibleUserId: "user-product",
-    assigneeAgentId: "agent-codex",
-  },
-  {
+    ownerKind: "agent",
+    ownerAgentId: "agent-codex",
+    ownerUserId: null,
+    ownerAssignmentSource: null,
+  }),
+  createTestIssue({
     ...primaryIssue,
     id: "issue-attribution-collapsed",
     title: "Responsible auto-derived from kickoff user",
-    createdByAgentId: null,
-    createdByUserId: "user-board",
     responsibleUserId: null,
-    assigneeAgentId: "agent-codex",
-  },
-  {
+    ownerKind: "agent",
+    ownerAgentId: "agent-codex",
+    ownerUserId: null,
+    ownerAssignmentSource: null,
+  }),
+  createTestIssue({
     ...primaryIssue,
     id: "issue-attribution-unassigned",
-    title: "Agent-created task with no responsible human",
-    createdByAgentId: "agent-codex",
-    createdByUserId: null,
+    title: "Agent-created task with an agent owner",
+    creatorKind: "agent-execution",
+    creatorAuthorityId: "agent-codex",
+    creatorAdapterConfigRevisionId: "revision-codex",
+    creatorUserId: null,
     responsibleUserId: null,
-    assigneeAgentId: "agent-qa",
-  },
+    ownerKind: "agent",
+    ownerAgentId: "agent-qa",
+    ownerUserId: null,
+    ownerAssignmentSource: null,
+  }),
 ];
 
 function Section({
@@ -194,9 +186,10 @@ function hydrateStorybookQueries(queryClient: ReturnType<typeof useQueryClient>)
   queryClient.setQueryData(queryKeys.issues.list(companyId), storybookIssues);
   queryClient.setQueryData(queryKeys.issues.labels(companyId), storybookIssueLabels);
   queryClient.setQueryData(queryKeys.issues.documents(primaryIssue.id), storybookIssueDocuments);
-  queryClient.setQueryData(queryKeys.issues.runs(primaryIssue.id), storybookIssueRuns);
-  queryClient.setQueryData(queryKeys.issues.liveRuns(primaryIssue.id), []);
-  queryClient.setQueryData(queryKeys.issues.activeRun(primaryIssue.id), null);
+  queryClient.setQueryData(queryKeys.issues.runs(primaryIssue.id), {
+    items: storybookIssueRuns,
+    nextCursor: null,
+  });
   queryClient.setQueryData(queryKeys.instance.experimentalSettings, {
     enableIsolatedWorkspaces: true,
     enableRoutineTriggers: true,
@@ -324,27 +317,6 @@ function IssuePropertiesLongValuePane({ inline = false }: { inline?: boolean }) 
   );
 }
 
-function IssuePropertiesModelOverridePane() {
-  return (
-    <StorybookData>
-      <div className="paperclip-story p-6">
-        <div className="mx-auto w-80 border border-border bg-card">
-          <div className="border-b border-border px-4 py-2 text-sm font-medium">Properties</div>
-          <div className="p-4">
-            <IssueProperties
-              issue={modelOverrideIssue}
-              childIssues={[]}
-              onAddSubIssue={() => undefined}
-              onUpdate={() => undefined}
-              inline
-            />
-          </div>
-        </div>
-      </div>
-    </StorybookData>
-  );
-}
-
 function ColumnConfigurationMatrix() {
   const [columns, setColumns] = useState<InboxIssueColumn[]>(visibleColumns);
   const visibleColumnSet = useMemo(() => new Set(columns), [columns]);
@@ -387,12 +359,12 @@ function ColumnConfigurationMatrix() {
               columns={columns.filter((column) => !["status", "id"].includes(column))}
               projectName={storybookProjects.find((project) => project.id === issue.projectId)?.name ?? null}
               projectColor={storybookProjects.find((project) => project.id === issue.projectId)?.color ?? null}
-              workspaceId={issue.projectWorkspaceId ?? issue.executionWorkspaceId}
+              workspaceId={issue.currentExecutionWorkspace?.id ?? issue.projectWorkspaceId}
               workspaceName={issue.currentExecutionWorkspace?.name ?? "Board UI"}
-              assigneeName={issue.assigneeAgentId ? storybookAgentMap.get(issue.assigneeAgentId)?.name ?? null : null}
-              assigneeUserName={issue.assigneeUserId ? "Riley Board" : null}
-              creatorAgentName={issue.createdByAgentId ? storybookAgentMap.get(issue.createdByAgentId)?.name ?? null : null}
-              creatorUserName={issue.createdByUserId ? "Riley Board" : null}
+              ownerName={issue.ownerAgentId ? storybookAgentMap.get(issue.ownerAgentId)?.name ?? null : null}
+              ownerUserName={issue.ownerUserId ? "Riley Board" : null}
+              originatingAgentName={issue.creatorAuthorityId ? storybookAgentMap.get(issue.creatorAuthorityId)?.name ?? null : null}
+              creatorUserName={issue.creatorUserId ? "Riley Board" : null}
               currentUserId="user-board"
               parentIdentifier={storybookIssues.find((candidate) => candidate.id === issue.parentId)?.identifier ?? null}
               parentTitle={storybookIssues.find((candidate) => candidate.id === issue.parentId)?.title ?? null}
@@ -412,7 +384,7 @@ function ColumnConfigurationMatrix() {
         <CardContent className="space-y-4">
           <div ref={triggerRef}>
             <IssueColumnPicker
-              availableColumns={["status", "id", "assignee", "project", "workspace", "parent", "labels", "updated"]}
+              availableColumns={["status", "id", "owner", "project", "workspace", "parent", "labels", "updated"]}
               visibleColumnSet={visibleColumnSet}
               onToggleColumn={(column, enabled) => {
                 setColumns((current) => {
@@ -454,7 +426,7 @@ function GroupHeaderMatrix() {
   const rows = [
     { label: "In progress", trailing: "1 issue", badge: <StatusBadge status="in_progress" /> },
     { label: "High priority", trailing: "3 issues", badge: <PriorityIcon priority="high" showLabel /> },
-    { label: "CodexCoder", trailing: "3 assigned", badge: <Identity name="CodexCoder" size="sm" /> },
+    { label: "CodexCoder", trailing: "3 owned", badge: <Identity name="CodexCoder" size="sm" /> },
   ];
 
   return (
@@ -479,7 +451,7 @@ function OpenFiltersPopover() {
     ...defaultIssueFilterState,
     statuses: ["in_progress", "blocked", "in_review"],
     priorities: ["critical", "high"],
-    assignees: ["agent-codex", "agent-qa", "__unassigned"],
+    owners: ["agent-codex", "agent-qa"],
   });
   const triggerRef = useRef<HTMLDivElement | null>(null);
 
@@ -510,7 +482,7 @@ function OpenFiltersPopover() {
               id: `agent:${agent.id}`,
               label: agent.name,
               kind: "agent" as const,
-              searchText: `${agent.name} ${agent.role}`,
+              searchText: `${agent.name} ${agent.title ?? ""}`,
             })),
           ]}
         />
@@ -519,145 +491,30 @@ function OpenFiltersPopover() {
   );
 }
 
-const modelProfileLedgerRuns: RunForIssue[] = [
-  {
-    runId: "run-cheap-applied",
-    status: "succeeded",
-    agentId: "agent-codex",
-    adapterType: "codex_local",
-    startedAt: "2026-04-29T09:30:00.000Z",
-    finishedAt: "2026-04-29T09:32:14.000Z",
-    createdAt: "2026-04-29T09:29:55.000Z",
-    invocationSource: "manual",
-    usageJson: { costCents: 17, inputTokens: 6400, outputTokens: 480 },
-    resultJson: {
-      stopReason: "completed",
-      modelProfile: {
-        requested: "cheap",
-        applied: "cheap",
-        configSource: "agent_runtime_config",
-      },
-    },
-    livenessState: "advanced",
-    livenessReason: "Cheap-lane summary completed inside the planned scope.",
-    continuationAttempt: 0,
-    lastUsefulActionAt: "2026-04-29T09:32:10.000Z",
-    nextAction: "Hand the routine output back to the operator inbox.",
-  },
-  {
-    runId: "run-cheap-fallback",
-    status: "succeeded",
-    agentId: "agent-codex",
-    adapterType: "codex_local",
-    startedAt: "2026-04-29T08:10:00.000Z",
-    finishedAt: "2026-04-29T08:14:42.000Z",
-    createdAt: "2026-04-29T08:09:50.000Z",
-    invocationSource: "manual",
-    usageJson: { costCents: 91, inputTokens: 21800, outputTokens: 3200 },
-    resultJson: {
-      stopReason: "completed",
-      modelProfile: {
-        requested: "cheap",
-        applied: "primary",
-        configSource: "adapter_default",
-        fallbackReason: "Cheap profile not configured for this agent",
-      },
-    },
-    livenessState: "advanced",
-    livenessReason: "Routine fell back to the primary model after the cheap lookup missed.",
-    continuationAttempt: 0,
-    lastUsefulActionAt: "2026-04-29T08:14:36.000Z",
-    nextAction: "Configure agent-codex with a cheap profile to avoid the fallback.",
-  },
-  {
-    runId: "run-baseline",
-    status: "succeeded",
-    agentId: "agent-codex",
-    adapterType: "codex_local",
-    startedAt: "2026-04-28T18:05:00.000Z",
-    finishedAt: "2026-04-28T18:14:11.000Z",
-    createdAt: "2026-04-28T18:04:50.000Z",
-    invocationSource: "scheduler",
-    usageJson: { costCents: 142, inputTokens: 38400, outputTokens: 7200 },
-    resultJson: { stopReason: "completed" },
-    livenessState: "advanced",
-    livenessReason: "Standard primary-lane run with no profile metadata recorded.",
-    continuationAttempt: 0,
-    lastUsefulActionAt: "2026-04-28T18:13:58.000Z",
-    nextAction: "Continue with the next planned subtask.",
-  },
-];
-
-function ModelProfileBadgeLedger() {
-  return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <IssueRunLedgerContent
-        runs={modelProfileLedgerRuns}
-        activeRun={null}
-        liveRuns={[]}
-        issueStatus="in_progress"
-        childIssues={[]}
-        agentMap={storybookAgentMap}
-      />
-      <Card className="shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4" />
-            Model profile metadata
-          </CardTitle>
-          <CardDescription>
-            Profile badges read <code>resultJson.modelProfile</code> on each run. Applied matching the request renders
-            emerald; an applied fallback renders amber and surfaces the inline reason.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-xs text-muted-foreground">
-          <div className="rounded-md border border-border bg-background/70 p-3">
-            <div className="font-mono text-emerald-600 dark:text-emerald-400">Profile: cheap</div>
-            <p className="mt-1">requested + applied both equal cheap → emerald badge.</p>
-          </div>
-          <div className="rounded-md border border-border bg-background/70 p-3">
-            <div className="font-mono text-amber-600 dark:text-amber-400">Profile: cheap → primary</div>
-            <p className="mt-1">cheap requested but primary applied → amber badge plus inline fallback reason.</p>
-          </div>
-          <div className="rounded-md border border-border bg-background/70 p-3">
-            <div className="font-mono text-muted-foreground">No profile badge</div>
-            <p className="mt-1">Run with no <code>modelProfile</code> metadata renders without a badge for visual contrast.</p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function RunLedgerWithCostColumns() {
+function RunLedgerWithDurationColumns() {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
       <IssueRunLedgerContent
         runs={storybookIssueRuns}
-        activeRun={null}
-        liveRuns={[]}
-        issueStatus={primaryIssue.status}
+        issueStatus={primaryIssue.boardPresentationStatus}
         childIssues={childIssues}
         agentMap={storybookAgentMap}
       />
       <div className="overflow-hidden rounded-lg border border-border bg-background/70">
-        <div className="grid grid-cols-[1fr_90px_80px_70px] gap-2 border-b border-border px-3 py-2 text-[11px] font-semibold uppercase text-muted-foreground">
+        <div className="grid grid-cols-[1fr_90px_80px] gap-2 border-b border-border px-3 py-2 text-[11px] font-semibold uppercase text-muted-foreground">
           <span>Run</span>
           <span>Status</span>
           <span>Duration</span>
-          <span className="text-right">Cost</span>
         </div>
         {storybookIssueRuns.map((run) => {
           const start = run.startedAt ? new Date(run.startedAt).getTime() : null;
           const end = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now();
           const minutes = start ? Math.max(1, Math.round((end - start) / 60_000)) : null;
-          const costCents = typeof run.usageJson?.costCents === "number" ? run.usageJson.costCents : 0;
           return (
-            <div key={run.runId} className="grid grid-cols-[1fr_90px_80px_70px] gap-2 border-b border-border/60 px-3 py-2 text-xs last:border-b-0">
-              <span className="min-w-0 truncate font-mono">{run.runId}</span>
+            <div key={run.id} className="grid grid-cols-[1fr_90px_80px] gap-2 border-b border-border/60 px-3 py-2 text-xs last:border-b-0">
+              <span className="min-w-0 truncate font-mono">{run.id}</span>
               <span className="capitalize text-muted-foreground">{run.status}</span>
               <span className="text-muted-foreground">{minutes ? `${minutes}m` : "unknown"}</span>
-              <span className="text-right font-mono">${(costCents / 100).toFixed(2)}</span>
             </div>
           );
         })}
@@ -787,7 +644,6 @@ function IssueManagementStories() {
               projects={storybookProjects}
               liveIssueIds={new Set([primaryIssue.id])}
               viewStateKey={issueListViewKey}
-              onUpdateIssue={() => undefined}
               createIssueLabel="issue"
               enableRoutineVisibilityFilter
             />
@@ -797,7 +653,7 @@ function IssueManagementStories() {
             <ColumnConfigurationMatrix />
           </Section>
 
-          <Section eyebrow="IssueGroupHeader" title="Grouped by status, priority, and assignee">
+          <Section eyebrow="IssueGroupHeader" title="Grouped by status, priority, and owner">
             <GroupHeaderMatrix />
           </Section>
 
@@ -805,12 +661,12 @@ function IssueManagementStories() {
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
               <div className="space-y-4 rounded-lg border border-border bg-background/70 p-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge status={primaryIssue.status} />
+                  <StatusBadge status={primaryIssue.boardPresentationStatus} />
                   <PriorityIcon priority={primaryIssue.priority} showLabel />
                   <Badge variant="secondary">{primaryIssue.identifier}</Badge>
                 </div>
                 <h3 className="text-2xl font-semibold tracking-tight">{primaryIssue.title}</h3>
-                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{primaryIssue.description}</p>
+                <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{primaryIssue.request}</p>
               </div>
               <div className="rounded-lg border border-border bg-background/70 p-4">
                 <IssueProperties
@@ -845,20 +701,12 @@ function IssueManagementStories() {
             />
           </Section>
 
-          <Section eyebrow="IssueFiltersPopover" title="Open filter popover with status, priority, and assignee filters">
+          <Section eyebrow="IssueFiltersPopover" title="Open filter popover with status, priority, and owner filters">
             <OpenFiltersPopover />
           </Section>
 
-          <Section eyebrow="IssueContinuationHandoff" title="Expanded handoff for continuing work across runs">
-            <IssueContinuationHandoff document={storybookContinuationHandoff} focusSignal={1} />
-          </Section>
-
           <Section eyebrow="IssueRunLedger" title="Run history table with status, duration, and cost columns">
-            <RunLedgerWithCostColumns />
-          </Section>
-
-          <Section eyebrow="IssueRunLedger" title="Model profile badges for cheap, fallback, and baseline runs">
-            <ModelProfileBadgeLedger />
+            <RunLedgerWithDurationColumns />
           </Section>
 
           <Section eyebrow="IssueWorkspaceCard" title="Workspace info card with branch, path, and runtime status">
@@ -900,7 +748,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Issue-management stories exercise the full list, column, grouping, property, document, filter, continuation, run, workspace, and quicklook surfaces.",
+          "Issue-management stories exercise the full list, column, grouping, property, document, filter, run, workspace, and quicklook surfaces.",
       },
     },
   },
@@ -920,46 +768,4 @@ export const IssuePropertiesLongValuesDesktop: Story = {
 export const IssuePropertiesLongValuesMobile: Story = {
   name: "IssueProperties - long values mobile inline",
   render: () => <IssuePropertiesLongValuePane inline />,
-};
-
-export const IssuePropertiesModelOverride: Story = {
-  name: "IssueProperties - task model override",
-  render: () => <IssuePropertiesModelOverridePane />,
-};
-
-function ModelProfileLedgerStandalone() {
-  return (
-    <StorybookData>
-      <div className="paperclip-story">
-        <main className="paperclip-story__inner space-y-6">
-          <section className="paperclip-story__frame p-6">
-            <div className="flex flex-wrap items-start justify-between gap-5">
-              <div>
-                <div className="paperclip-story__label">IssueRunLedger</div>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight">Model profile badges</h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                  Run ledger isolated to the cheap-lane visual states: an emerald applied=cheap badge, an amber
-                  cheap-fell-back-to-primary badge with the inline fallback reason, and a baseline run without a
-                  modelProfile so the visual diff stays obvious.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">cheap applied</Badge>
-                <Badge variant="outline">cheap → primary</Badge>
-                <Badge variant="outline">no profile</Badge>
-              </div>
-            </div>
-          </section>
-          <Section eyebrow="IssueRunLedger" title="Cheap, fallback, and baseline runs">
-            <ModelProfileBadgeLedger />
-          </Section>
-        </main>
-      </div>
-    </StorybookData>
-  );
-}
-
-export const RunLedgerModelProfileBadges: Story = {
-  name: "Run ledger - Model profile badges",
-  render: () => <ModelProfileLedgerStandalone />,
 };

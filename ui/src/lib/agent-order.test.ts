@@ -1,67 +1,54 @@
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@paperclipai/shared";
-import { sortAgentsByDefaultSidebarOrder, sortAgentsByStoredOrder } from "./agent-order";
+import {
+  sortAgentsByDefaultSidebarOrder,
+  sortAgentsByStoredOrder,
+} from "./agent-order";
 
-function makeAgent(overrides: Partial<Agent> & { id: string; name: string }): Agent {
+function makeAgent(
+  overrides: Partial<Agent> & { id: string; name: string },
+): Agent {
   return {
-    role: "general",
     reportsTo: null,
     ...overrides,
   } as Agent;
 }
 
-describe("sortAgentsByDefaultSidebarOrder", () => {
-  it("surfaces the CEO ahead of alphabetically-earlier root agents when leadershipFirst is on", () => {
-    // "Board" sorts before "CEO" alphabetically, but the CEO should win.
+describe("agent ordering", () => {
+  it("orders root siblings alphabetically without title-based priority", () => {
     const agents = [
-      makeAgent({ id: "board", name: "Board", role: "general" }),
-      makeAgent({ id: "ceo", name: "CEO", role: "ceo" }),
-      makeAgent({ id: "ada", name: "Ada", role: "engineer" }),
+      makeAgent({ id: "sam", name: "Sam", title: "Lead" }),
+      makeAgent({ id: "ada", name: "Ada", title: "Engineer" }),
+      makeAgent({ id: "board", name: "Board" }),
     ];
-    const sorted = sortAgentsByDefaultSidebarOrder(agents, { leadershipFirst: true });
-    expect(sorted.map((a) => a.id)).toEqual(["ceo", "ada", "board"]);
+
+    expect(
+      sortAgentsByDefaultSidebarOrder(agents).map((agent) => agent.id),
+    ).toEqual(["ada", "board", "sam"]);
   });
 
-  it("keeps plain alphabetical order unless leadership-first is requested", () => {
+  it("keeps reports grouped under their manager and sorts siblings by name", () => {
     const agents = [
-      makeAgent({ id: "board", name: "Board", role: "general" }),
-      makeAgent({ id: "ceo", name: "CEO", role: "ceo" }),
-      makeAgent({ id: "ada", name: "Ada", role: "engineer" }),
+      makeAgent({ id: "manager", name: "Sam" }),
+      makeAgent({ id: "zoe", name: "Zoe", reportsTo: "manager" }),
+      makeAgent({ id: "tom", name: "Tom", reportsTo: "manager" }),
     ];
-    const sorted = sortAgentsByDefaultSidebarOrder(agents);
-    expect(sorted.map((a) => a.id)).toEqual(["ada", "board", "ceo"]);
+
+    expect(
+      sortAgentsByDefaultSidebarOrder(agents).map((agent) => agent.id),
+    ).toEqual(["manager", "tom", "zoe"]);
   });
 
-  it("ranks leadership roles before non-leadership, then alphabetically", () => {
+  it("respects an explicit stored order", () => {
     const agents = [
-      makeAgent({ id: "eng", name: "Zoe", role: "engineer" }),
-      makeAgent({ id: "cmo", name: "Mira", role: "cmo" }),
-      makeAgent({ id: "ceo", name: "Sam", role: "ceo" }),
-      makeAgent({ id: "cto", name: "Tom", role: "cto" }),
-      makeAgent({ id: "qa", name: "Amy", role: "qa" }),
+      makeAgent({ id: "sam", name: "Sam" }),
+      makeAgent({ id: "board", name: "Board" }),
     ];
-    const sorted = sortAgentsByDefaultSidebarOrder(agents, { leadershipFirst: true });
-    // ceo, cto, cmo (leadership in priority order), then Amy, Zoe alphabetically.
-    expect(sorted.map((a) => a.id)).toEqual(["ceo", "cto", "cmo", "qa", "eng"]);
-  });
 
-  it("keeps reports nested under their leader while ordering siblings by role", () => {
-    const agents = [
-      makeAgent({ id: "ceo", name: "Sam", role: "ceo" }),
-      makeAgent({ id: "eng", name: "Zoe", role: "engineer", reportsTo: "ceo" }),
-      makeAgent({ id: "cto", name: "Tom", role: "cto", reportsTo: "ceo" }),
-    ];
-    const sorted = sortAgentsByDefaultSidebarOrder(agents, { leadershipFirst: true });
-    // Root CEO first, then its reports with the CTO (leadership) ahead of the engineer.
-    expect(sorted.map((a) => a.id)).toEqual(["ceo", "cto", "eng"]);
-  });
-
-  it("respects an explicit stored order over the role-priority default", () => {
-    const agents = [
-      makeAgent({ id: "ceo", name: "Sam", role: "ceo" }),
-      makeAgent({ id: "board", name: "Board", role: "general" }),
-    ];
-    const sorted = sortAgentsByStoredOrder(agents, ["board", "ceo"], { leadershipFirst: true });
-    expect(sorted.map((a) => a.id)).toEqual(["board", "ceo"]);
+    expect(
+      sortAgentsByStoredOrder(agents, ["sam", "board"]).map(
+        (agent) => agent.id,
+      ),
+    ).toEqual(["sam", "board"]);
   });
 });

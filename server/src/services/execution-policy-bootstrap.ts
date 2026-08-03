@@ -6,12 +6,12 @@
  * calls. On startup we:
  *   1. Parse `PAPERCLIP_EXECUTION_MODE` (+ `PAPERCLIP_K8S_*`) from the env.
  *   2. Persist `executionMode` into instance general settings (so the per-run
- *      heartbeat guard enforces it).
+ *      issue-execution guard enforces it).
  *   3. Idempotently ensure a configured Kubernetes sandbox environment for every
  *      company (mirrors `ensureLocalEnvironment`).
  *
  * The boot hook is *configuration convenience*; the actual security gate is the
- * per-run guard in the heartbeat (see `execution-allowlist.ts`). Even with no
+ * per-run issue-execution guard (see `execution-allowlist.ts`). Even with no
  * boot hook, setting `executionMode=kubernetes` denies local execution.
  *
  * The env-var parsing is a pure function so it is trivially unit-testable.
@@ -84,16 +84,6 @@ export function parseExecutionPolicyBootstrapEnv(
     inCluster: parseBool(env.PAPERCLIP_K8S_IN_CLUSTER) ?? false,
   };
 
-  const backend = env.PAPERCLIP_K8S_BACKEND?.trim();
-  if (backend) {
-    if (backend !== "job" && backend !== "sandbox-cr") {
-      throw new Error(
-        `PAPERCLIP_K8S_BACKEND must be "job" or "sandbox-cr" (got "${backend}").`,
-      );
-    }
-    kubernetesConfig.backend = backend;
-  }
-
   const egressMode = env.PAPERCLIP_K8S_EGRESS_MODE?.trim();
   if (egressMode) {
     if (egressMode !== "cilium" && egressMode !== "standard") {
@@ -116,8 +106,15 @@ export function parseExecutionPolicyBootstrapEnv(
   const rpcTimeoutMs = parsePositiveIntMs(env.PAPERCLIP_K8S_RPC_TIMEOUT_MS);
   if (rpcTimeoutMs !== undefined) kubernetesConfig.timeoutMs = rpcTimeoutMs;
 
-  const adapterType = env.PAPERCLIP_K8S_ADAPTER_TYPE?.trim();
-  if (adapterType) kubernetesConfig.adapterType = adapterType;
+  const adapterType = env.PAPERCLIP_K8S_ADAPTER_TYPE;
+  if (adapterType !== undefined) {
+    if (adapterType.length === 0 || adapterType !== adapterType.trim()) {
+      throw new Error(
+        "PAPERCLIP_K8S_ADAPTER_TYPE must be an exact non-blank adapter type.",
+      );
+    }
+    kubernetesConfig.adapterType = adapterType;
+  }
 
   const egressAllowFqdns = parseList(env.PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS);
   if (egressAllowFqdns) kubernetesConfig.egressAllowFqdns = egressAllowFqdns;
@@ -165,7 +162,6 @@ export async function applyExecutionPolicyBootstrap(
     {
       executionMode: bootstrap.executionMode,
       companiesConfigured: configured,
-      backend: bootstrap.kubernetesConfig.backend,
       runtimeClassName: bootstrap.kubernetesConfig.runtimeClassName,
       egressMode: bootstrap.kubernetesConfig.egressMode,
     },

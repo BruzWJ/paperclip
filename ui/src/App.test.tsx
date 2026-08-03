@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CloudAccessGate } from "./components/CloudAccessGate";
+import { AuthenticatedAppGate } from "./components/AuthenticatedAppGate";
 import appSource from "./App.tsx?raw";
 
 const mockHealthApi = vi.hoisted(() => ({
@@ -34,12 +34,18 @@ vi.mock("./api/access", () => ({
 }));
 
 vi.mock("@/lib/router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
+  Link: ({ to, children }: { to: string; children?: ReactNode }) => (
+    <a href={to}>{children}</a>
+  ),
   Navigate: ({ to }: { to: string }) => <div>Navigate:{to}</div>,
   Outlet: () => <div>Outlet content</div>,
   Route: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Routes: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  useLocation: () => ({ pathname: "/instance/settings/general", search: "", hash: "" }),
+  useLocation: () => ({
+    pathname: "/instance/settings/general",
+    search: "",
+    hash: "",
+  }),
   useParams: () => ({}),
 }));
 
@@ -65,7 +71,7 @@ function renderGate(container: HTMLElement) {
   flushSync(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <CloudAccessGate />
+        <AuthenticatedAppGate />
       </QueryClientProvider>,
     );
   });
@@ -79,7 +85,7 @@ function unmountRoot(root: ReturnType<typeof createRoot>) {
   });
 }
 
-describe("CloudAccessGate", () => {
+describe("AuthenticatedAppGate", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
@@ -87,7 +93,6 @@ describe("CloudAccessGate", () => {
     document.body.appendChild(container);
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
       bootstrapStatus: "ready",
     });
@@ -102,10 +107,20 @@ describe("CloudAccessGate", () => {
   it("shows a no-access message for signed-in users without org access", async () => {
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
     });
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
       userId: "user-1",
       isInstanceAdmin: false,
       companyIds: [],
@@ -125,10 +140,20 @@ describe("CloudAccessGate", () => {
   it("allows authenticated users with company access through to the board", async () => {
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
     });
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
       userId: "user-1",
       isInstanceAdmin: false,
       companyIds: ["company-1"],
@@ -148,7 +173,6 @@ describe("CloudAccessGate", () => {
   it("shows browser sign-in setup for signed-out private bootstrap-pending instances", async () => {
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
       bootstrapStatus: "bootstrap_pending",
       bootstrapInviteActive: false,
@@ -160,7 +184,9 @@ describe("CloudAccessGate", () => {
 
     expect(container.textContent).toContain("Finish setting up this Paperclip");
     expect(container.textContent).toContain("Sign in / Create account");
-    expect(container.textContent).toContain("pnpm paperclipai auth bootstrap-ceo");
+    expect(container.textContent).toContain(
+      "pnpm paperclipai auth bootstrap-admin",
+    );
     expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
 
     unmountRoot(root);
@@ -169,16 +195,23 @@ describe("CloudAccessGate", () => {
   it("shows the claim action for signed-in private bootstrap-pending instances", async () => {
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "private",
       bootstrapStatus: "bootstrap_pending",
       bootstrapInviteActive: false,
     });
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
     });
-    mockAccessApi.claimBootstrapAdmin.mockResolvedValue({ claimed: true, userId: "user-1" });
+    mockAccessApi.claimBootstrapAdmin.mockResolvedValue({
+      claimed: true,
+      userId: "user-1",
+    });
 
     const root = renderGate(container);
     await waitForText(container, "Claim this instance");
@@ -187,8 +220,8 @@ describe("CloudAccessGate", () => {
     expect(container.textContent).toContain("Signed in as user@example.com");
     expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
 
-    const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
-      candidate.textContent?.includes("Claim this instance"),
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Claim this instance"),
     );
     expect(button).toBeTruthy();
     flushSync(() => {
@@ -206,20 +239,29 @@ describe("CloudAccessGate", () => {
   it("keeps public bootstrap-pending instances invite-only", async () => {
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
-      deploymentMode: "authenticated",
       deploymentExposure: "public",
       bootstrapStatus: "bootstrap_pending",
       bootstrapInviteActive: true,
     });
     mockAuthApi.getSession.mockResolvedValue({
       session: { id: "session-1", userId: "user-1" },
-      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
     });
 
     const root = renderGate(container);
-    await waitForText(container, "This Paperclip is waiting on its first admin");
+    await waitForText(
+      container,
+      "This Paperclip is waiting on its first admin",
+    );
 
-    expect(container.textContent).toContain("This Paperclip is waiting on its first admin");
+    expect(container.textContent).toContain(
+      "This Paperclip is waiting on its first admin",
+    );
     expect(container.textContent).toContain("invite-only mode");
     expect(container.textContent).not.toContain("Claim this instance");
     expect(container.textContent).not.toContain("Sign in / Create account");
@@ -233,8 +275,12 @@ describe("Skill Studio routes", () => {
   it("registers create mode before the skillId route in prefixed and unprefixed routing", () => {
     const createRoute = 'path="skills/studio/new"';
     const detailRoute = 'path="skills/studio/:skillId"';
-    const createIndexes = [...appSource.matchAll(new RegExp(createRoute, "g"))].map((match) => match.index ?? -1);
-    const detailIndexes = [...appSource.matchAll(new RegExp(detailRoute, "g"))].map((match) => match.index ?? -1);
+    const createIndexes = [
+      ...appSource.matchAll(new RegExp(createRoute, "g")),
+    ].map((match) => match.index ?? -1);
+    const detailIndexes = [
+      ...appSource.matchAll(new RegExp(detailRoute, "g")),
+    ].map((match) => match.index ?? -1);
 
     expect(createIndexes).toHaveLength(2);
     expect(detailIndexes).toHaveLength(2);

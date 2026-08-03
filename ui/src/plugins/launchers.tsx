@@ -105,7 +105,7 @@ type LauncherInstance = {
 
 const entityScopedZones = new Set<PluginLauncherPlacementZone>([
   "detailTab",
-  "taskDetailView",
+  "issueDetailView",
   "contextMenuItem",
   "commentAnnotation",
   "commentContextMenuItem",

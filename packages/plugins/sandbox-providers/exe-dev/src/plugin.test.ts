@@ -371,7 +371,8 @@ describe("exe.dev sandbox provider plugin", () => {
 
     const body = String(fetchMock.mock.calls[0]?.[1]?.body ?? "");
     expect(body).toContain("--setup-script=");
-    expect(body).toContain("nodesource.com/setup_20.x");
+    expect(body).toContain("const m=[22,13,0]");
+    expect(body).toContain("nodesource.com/setup_22.x");
     expect(body).toContain("sudo apt-get install -y nodejs");
   });
 
@@ -424,7 +425,7 @@ describe("exe.dev sandbox provider plugin", () => {
     await acquirePromise?.catch((error: Error) => {
       // Operator did not supply a setupScript, so the visible default install
       // is not a secret and stays in the error for debuggability.
-      expect(error.message).toContain("nodesource.com/setup_20.x");
+      expect(error.message).toContain("nodesource.com/setup_22.x");
       expect(error.message).not.toContain("[REDACTED]");
     });
   });
@@ -564,6 +565,7 @@ describe("exe.dev sandbox provider plugin", () => {
           sshDest: "vm-1.exe.xyz",
         },
       },
+      executionId: "execution-ssh",
       command: "node",
       args: ["-e", "process.stdout.write('hello\\n')"],
       cwd: "/workspace",
@@ -610,6 +612,7 @@ describe("exe.dev sandbox provider plugin", () => {
           sshDest: "vm-1.exe.xyz",
         },
       },
+      executionId: "execution-ssh-failure",
       command: "node",
       args: ["-v"],
     });

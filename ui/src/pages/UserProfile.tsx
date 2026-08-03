@@ -12,13 +12,11 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import {
-  formatCents,
   formatDate,
+  formatMoneyAmount,
   formatNumber,
   formatShortDate,
-  formatTokens,
   issueUrl,
-  providerDisplayName,
   relativeTime,
 } from "../lib/utils";
 
@@ -31,8 +29,10 @@ function initials(name: string | null | undefined) {
   return value.slice(0, 2).toUpperCase();
 }
 
-function totalTokens(stats: Pick<UserProfileWindowStats, "inputTokens" | "cachedInputTokens" | "outputTokens">) {
-  return stats.inputTokens + stats.cachedInputTokens + stats.outputTokens;
+function promptCount(
+  stats: Pick<UserProfileWindowStats, "pricedPromptCount" | "unpricedPromptCount">,
+) {
+  return stats.pricedPromptCount + stats.unpricedPromptCount;
 }
 
 function completionRate(stats: UserProfileWindowStats) {
@@ -50,8 +50,13 @@ function HeroStat({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
-function WindowColumn({ stats }: { stats: UserProfileWindowStats }) {
-  const tokens = totalTokens(stats);
+function WindowColumn({
+  stats,
+  budgetCurrency,
+}: {
+  stats: UserProfileWindowStats;
+  budgetCurrency: string;
+}) {
   return (
     <div className="flex min-w-0 flex-col gap-4 border-l border-border pl-5 first:border-l-0 first:pl-0">
       <div className="flex items-baseline justify-between gap-3">
@@ -67,10 +72,12 @@ function WindowColumn({ stats }: { stats: UserProfileWindowStats }) {
       </div>
 
       <div className="grid grid-cols-2 gap-x-5 gap-y-1.5 pt-3 text-xs tabular-nums text-muted-foreground">
-        <span>Tokens</span>
-        <span className="text-right text-foreground">{formatTokens(tokens)}</span>
-        <span>Spend</span>
-        <span className="text-right text-foreground">{formatCents(stats.costCents)}</span>
+        <span>Settled prompts</span>
+        <span className="text-right text-foreground">{formatNumber(promptCount(stats))}</span>
+        <span>Known cost</span>
+        <span className="text-right text-foreground">{formatMoneyAmount(stats.knownCostAmount, budgetCurrency)}</span>
+        <span>Unpriced</span>
+        <span className="text-right text-foreground">{formatNumber(stats.unpricedPromptCount)}</span>
         <span>Created</span>
         <span className="text-right text-foreground">{formatNumber(stats.createdIssues)}</span>
         <span>Open</span>
@@ -90,24 +97,24 @@ function Metric({ value, label }: { value: string; label: string }) {
 }
 
 function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
-  const totals = points.map((point) => totalTokens(point));
-  const maxTokens = Math.max(1, ...totals);
+  const totals = points.map((point) => point.pricedPromptCount + point.unpricedPromptCount);
+  const maxPrompts = Math.max(1, ...totals);
   const maxCompleted = Math.max(1, ...points.map((point) => point.completedIssues));
-  const totalTokensSum = totals.reduce((sum, value) => sum + value, 0);
+  const totalPromptCount = totals.reduce((sum, value) => sum + value, 0);
 
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-3">
         <h2 className="text-sm font-semibold">Last 14 days</h2>
         <div className="flex items-baseline gap-4 text-xs text-muted-foreground">
-          <span className="tabular-nums text-foreground">{formatTokens(totalTokensSum)}</span>
-          <span>tokens total</span>
+          <span className="tabular-nums text-foreground">{formatNumber(totalPromptCount)}</span>
+          <span>settled prompts</span>
         </div>
       </div>
       <div className="mt-6 grid grid-cols-(--gtc-57) items-end gap-1.5 sm:gap-2">
         {points.map((point) => {
-          const tokens = totalTokens(point);
-          const heightPct = tokens === 0 ? 0 : Math.max(2, Math.round((tokens / maxTokens) * 100));
+          const prompts = point.pricedPromptCount + point.unpricedPromptCount;
+          const heightPct = prompts === 0 ? 0 : Math.max(2, Math.round((prompts / maxPrompts) * 100));
           const completedPct = point.completedIssues === 0
             ? 0
             : Math.max(8, Math.round((point.completedIssues / maxCompleted) * 36));
@@ -115,8 +122,8 @@ function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
             <div key={point.date} className="group flex h-36 flex-col justify-end">
               <div
                 className="w-full bg-foreground/80 transition-opacity group-hover:bg-foreground"
-                style={{ height: `${heightPct}%`, minHeight: tokens === 0 ? 1 : undefined }}
-                title={`${formatShortDate(point.date)}: ${formatTokens(tokens)} tokens, ${point.completedIssues} completed`}
+                style={{ height: `${heightPct}%`, minHeight: prompts === 0 ? 1 : undefined }}
+                title={`${formatShortDate(point.date)}: ${formatNumber(prompts)} settled prompts, ${point.completedIssues} completed`}
               />
               {completedPct > 0 ? (
                 <div
@@ -137,7 +144,7 @@ function UsageChart({ points }: { points: UserProfileDailyPoint[] }) {
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-4 text-(length:--text-nano) uppercase tracking-wide text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 bg-foreground/80" /> tokens / day
+          <span className="h-2 w-2 bg-foreground/80" /> settled prompts / day
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-(--sz-3px) w-4 rounded-full bg-emerald-500/80" /> completions
@@ -151,20 +158,21 @@ interface UsageRow {
   key: string;
   label: string;
   sublabel: string;
-  costCents: number;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
+  knownCostAmount: UserProfileWindowStats["knownCostAmount"];
+  pricedPromptCount: number;
+  unpricedPromptCount: number;
 }
 
 function UsageList({
   title,
   empty,
   rows,
+  budgetCurrency,
 }: {
   title: string;
   empty: string;
   rows: UsageRow[];
+  budgetCurrency: string;
 }) {
   return (
     <section>
@@ -183,8 +191,10 @@ function UsageList({
                 <div className="truncate text-xs text-muted-foreground">{row.sublabel}</div>
               </div>
               <div className="flex items-baseline gap-4 text-xs tabular-nums sm:justify-end">
-                <span className="text-muted-foreground">{formatTokens(totalTokens(row))}</span>
-                <span className="font-medium">{formatCents(row.costCents)}</span>
+                <span className="text-muted-foreground">
+                  {formatNumber(row.pricedPromptCount)} priced · {formatNumber(row.unpricedPromptCount)} unpriced
+                </span>
+                <span className="font-medium">{formatMoneyAmount(row.knownCostAmount, budgetCurrency)}</span>
               </div>
             </li>
           ))}
@@ -219,27 +229,12 @@ export function UserProfile() {
       (data?.topAgents ?? []).map((row) => ({
         key: row.agentId ?? "unknown",
         label: row.agentName ?? (row.agentId ? row.agentId.slice(0, 8) : "unknown"),
-        sublabel: "Task-linked usage",
-        costCents: row.costCents,
-        inputTokens: row.inputTokens,
-        cachedInputTokens: row.cachedInputTokens,
-        outputTokens: row.outputTokens,
+        sublabel: "Issue-linked settled prompts",
+        knownCostAmount: row.knownCostAmount,
+        pricedPromptCount: row.pricedPromptCount,
+        unpricedPromptCount: row.unpricedPromptCount,
       })),
     [data?.topAgents],
-  );
-
-  const providerUsageRows = useMemo<UsageRow[]>(
-    () =>
-      (data?.topProviders ?? []).map((row) => ({
-        key: `${row.provider}:${row.biller}:${row.model}`,
-        label: `${providerDisplayName(row.provider)} / ${row.model}`,
-        sublabel: `Billed through ${providerDisplayName(row.biller)}`,
-        costCents: row.costCents,
-        inputTokens: row.inputTokens,
-        cachedInputTokens: row.cachedInputTokens,
-        outputTokens: row.outputTokens,
-      })),
-    [data?.topProviders],
   );
 
   if (!selectedCompanyId) {
@@ -254,7 +249,6 @@ export function UserProfile() {
     return <EmptyState icon={AlertCircle} message="User profile not found for this company." />;
   }
 
-  const allTimeTokens = allTime ? totalTokens(allTime) : 0;
   const metaParts = [
     data.user.membershipRole ?? "member",
     data.user.membershipStatus,
@@ -283,7 +277,11 @@ export function UserProfile() {
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          <HeroStat label="All-time tokens" value={formatTokens(allTimeTokens)} hint={formatCents(allTime?.costCents ?? 0) + " spent"} />
+          <HeroStat
+            label="Known AI cost"
+            value={allTime ? formatMoneyAmount(allTime.knownCostAmount, data.budgetCurrency) : `${data.budgetCurrency} 0`}
+            hint={`${formatNumber(allTime?.unpricedPromptCount ?? 0)} unpriced prompts`}
+          />
           <HeroStat label="Completed" value={formatNumber(allTime?.completedIssues ?? 0)} hint={allTime ? `${completionRate(allTime)} rate` : undefined} />
           <HeroStat label="Open assigned" value={formatNumber(allTime?.assignedOpenIssues ?? 0)} hint={`${formatNumber(allTime?.createdIssues ?? 0)} created`} />
           <HeroStat label="7-day actions" value={formatNumber(last7?.activityCount ?? 0)} hint={`${formatNumber(last7?.commentCount ?? 0)} comments`} />
@@ -291,7 +289,13 @@ export function UserProfile() {
       </section>
 
       <section className="grid gap-8 border-b border-border pb-8 lg:grid-cols-3">
-        {data.stats.map((entry) => <WindowColumn key={entry.key} stats={entry} />)}
+        {data.stats.map((entry) => (
+          <WindowColumn
+            key={entry.key}
+            stats={entry}
+            budgetCurrency={data.budgetCurrency}
+          />
+        ))}
       </section>
 
       <UsageChart points={data.daily} />
@@ -315,7 +319,7 @@ export function UserProfile() {
                     <span className="font-mono text-xs text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
                     <span className="truncate text-sm">{issue.title}</span>
                     <span className="flex items-center gap-3 sm:justify-end">
-                      <IssueStatusBadge status={issue.status} />
+                      <IssueStatusBadge status={issue.boardPresentationStatus} />
                       <span className="text-xs tabular-nums text-muted-foreground">{relativeTime(issue.updatedAt)}</span>
                     </span>
                   </Link>
@@ -350,10 +354,12 @@ export function UserProfile() {
         </section>
       </div>
 
-      <div className="grid gap-10 xl:grid-cols-2">
-        <UsageList title="Agent attribution" empty="No issue-linked token usage yet." rows={agentUsageRows} />
-        <UsageList title="Provider mix" empty="No provider usage attributed yet." rows={providerUsageRows} />
-      </div>
+      <UsageList
+        title="Agent attribution"
+        empty="No issue-linked settled prompts yet."
+        rows={agentUsageRows}
+        budgetCurrency={data.budgetCurrency}
+      />
     </div>
   );
 }

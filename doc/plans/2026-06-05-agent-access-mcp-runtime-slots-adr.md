@@ -394,7 +394,6 @@ This ADR was checked against:
 - PAP-10383 deliverables and acceptance criteria.
 - PAP-10341 plan revision 2.
 - `doc/GOAL.md`, `doc/PRODUCT.md`, `doc/SPEC-implementation.md`, `doc/DEVELOPING.md`, and `doc/DATABASE.md`.
-- `packages/mcp-server/README.md` for the current Paperclip MCP server boundary.
 - `server/src/routes/plugins.ts` for the current plugin tool access gap.
 
 No code, schema, or runtime behavior changed in this ADR.

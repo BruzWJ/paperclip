@@ -28,6 +28,7 @@ import {
 import { ListFilter, Layers, ChevronDown, ChevronRight, User, Settings } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 import { timeAgo } from "../lib/timeAgo";
+import { issueDisplayTitle } from "../lib/issue-display";
 
 /* ------------------------------------------------------------------ */
 /*  Event Tier Classification                                          */
@@ -52,11 +53,8 @@ const ACTION_TIER: Record<string, EventTier> = {
   "issue.updated": 2,
   "issue.work_product_updated": 2,
   "issue.work_product_deleted": 2,
-  "issue.checked_out": 2,
   "issue.comment_added": 2,
   "issue.commented": 2,
-  "heartbeat.invoked": 2,
-  "heartbeat.cancelled": 2,
   "agent.paused": 2,
   "agent.resumed": 2,
   "agent.updated": 2,
@@ -66,20 +64,14 @@ const ACTION_TIER: Record<string, EventTier> = {
   "issue.read_unmarked": 3,
   "issue.inbox_archived": 3,
   "issue.inbox_unarchived": 3,
-  "issue.released": 3,
   "issue.attachment_added": 3,
   "issue.attachment_removed": 3,
   "issue.document_deleted": 3,
   "issue.document_updated": 2,
-  "issue.deleted": 3,
   "issue.feedback_vote_saved": 3,
-  "agent.key_created": 3,
   "agent.budget_updated": 3,
-  "agent.runtime_session_reset": 3,
-  "agent.skills_synced": 3,
+  "issue.execution_fresh_session_requested": 2,
   "agent.terminated": 2,
-  "approval.requester_wakeup_queued": 3,
-  "approval.requester_wakeup_failed": 3,
   "company.created": 3,
   "company.updated": 3,
   "company.archived": 3,
@@ -121,7 +113,7 @@ const FILTER_OPTIONS: Array<{ value: FilterValue; label: string }> = [
 
 const FILTER_ACTIONS: Record<FilterValue, Set<string> | null> = {
   all: null,
-  "in-progress": new Set(["issue.created", "issue.checked_out", "heartbeat.invoked"]),
+  "in-progress": new Set(["issue.created"]),
   "for-review": new Set(["approval.created", "issue.document_created", "issue.document_updated"]),
   completed: new Set(["approval.approved"]),
 };
@@ -389,13 +381,13 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
 
   const entityTitleMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, issueDisplayTitle(i));
     return map;
   }, [issues]);
 
   const entityStatusMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.status);
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.boardPresentationStatus);
     return map;
   }, [issues]);
 
@@ -445,23 +437,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
       setVisibleCount((prev) => prev + LOAD_MORE_COUNT);
     }
   }, [hasMore]);
-
-  // Check for active heartbeat runs (recent invoked without cancelled)
-  const activeHeartbeatEntityIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const evt of activity ?? []) {
-      if (evt.action === "heartbeat.invoked" && isRecent(evt.createdAt)) {
-        ids.add(evt.entityId);
-      }
-    }
-    // Remove any that have been cancelled
-    for (const evt of activity ?? []) {
-      if (evt.action === "heartbeat.cancelled") {
-        ids.delete(evt.entityId);
-      }
-    }
-    return ids;
-  }, [activity]);
 
   /* ---------------------------------------------------------------- */
   /*  Render helpers                                                   */
@@ -514,8 +489,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
     const evt = item as ActivityEvent;
     const tier = getEventTier(evt);
     const animClass = isNewItem(evt.id) ? "feed-item-new" : "";
-    const isActiveHeartbeat = activeHeartbeatEntityIds.has(evt.entityId) && evt.action === "heartbeat.invoked";
-
     if (tier === 1) {
       return (
         <div key={evt.id}>
@@ -527,7 +500,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
               entityNameMap={entityNameMap}
               entityTitleMap={entityTitleMap}
               entityStatusMap={entityStatusMap}
-              isActive={isActiveHeartbeat}
             />
           </div>
         </div>
@@ -545,7 +517,6 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
             entityNameMap={entityNameMap}
             entityTitleMap={entityTitleMap}
             entityStatusMap={entityStatusMap}
-            isActive={isActiveHeartbeat}
             isMuted
           />
         </div>

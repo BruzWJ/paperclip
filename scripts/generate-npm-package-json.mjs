@@ -19,6 +19,7 @@ import { bundledCliNpmDependencies } from "./cli-bundled-npm-dependencies.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
+const REQUIRED_NODE_ENGINE = ">=22.13.0";
 
 function readPkg(relativePath) {
   return JSON.parse(readFileSync(resolve(repoRoot, relativePath, "package.json"), "utf8"));
@@ -31,12 +32,6 @@ const workspacePaths = [
   "packages/db",
   "packages/shared",
   "packages/adapter-utils",
-  "packages/adapters/claude-local",
-  "packages/adapters/codex-local",
-  "packages/adapters/hermes-gateway",
-  "packages/adapters/hermes",
-  "packages/adapters/opencode-local",
-  "packages/adapters/openclaw-gateway",
 ];
 
 // Workspace packages that are NOT bundled and must stay as npm dependencies.
@@ -86,6 +81,13 @@ const devPkgPath = resolve(repoRoot, "cli/package.dev.json");
 const cliPkg = existsSync(devPkgPath)
   ? JSON.parse(readFileSync(devPkgPath, "utf8"))
   : readPkg("cli");
+const rootPkg = readPkg(".");
+
+if (rootPkg.engines?.node !== REQUIRED_NODE_ENGINE || cliPkg.engines?.node !== REQUIRED_NODE_ENGINE) {
+  throw new Error(
+    `Root and CLI Node engines must both be ${REQUIRED_NODE_ENGINE} (root: ${rootPkg.engines?.node ?? "missing"}, CLI: ${cliPkg.engines?.node ?? "missing"})`,
+  );
+}
 
 // Build the publishable package.json
 const publishPkg = {
@@ -100,7 +102,7 @@ const publishPkg = {
   homepage: cliPkg.homepage,
   bugs: cliPkg.bugs,
   files: cliPkg.files,
-  engines: { node: ">=20" },
+  engines: cliPkg.engines,
   dependencies: sortedDeps,
 };
 

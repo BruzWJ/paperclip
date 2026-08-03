@@ -20,9 +20,6 @@ interface ContextOptions {
 interface ContextSetOptions extends ContextOptions {
   apiBase?: string;
   companyId?: string;
-  persona?: "board" | "agent";
-  agentId?: string;
-  agentName?: string;
   apiKeyEnvVarName?: string;
   use?: boolean;
 }
@@ -64,9 +61,6 @@ export function registerContextCommands(program: Command): void {
         current: name === store.currentProfile,
         apiBase: profile.apiBase ?? null,
         companyId: profile.companyId ?? null,
-        persona: profile.persona ?? null,
-        agentId: profile.agentId ?? null,
-        agentName: profile.agentName ?? null,
         apiKeyEnvVarName: profile.apiKeyEnvVarName ?? null,
       }));
       printOutput(rows, { json: opts.json });
@@ -91,9 +85,6 @@ export function registerContextCommands(program: Command): void {
     .option("--profile <name>", "Profile name (default: current profile)")
     .option("--api-base <url>", "Default API base URL")
     .option("--company-id <id>", "Default company ID")
-    .option("--persona <persona>", "Profile persona: board or agent")
-    .option("--agent-id <id>", "Default agent ID for agent persona")
-    .option("--agent-name <name>", "Default agent display name")
     .option("--api-key-env-var-name <name>", "Env var containing API key (recommended)")
     .option("--use", "Set this profile as active")
     .option("--json", "Output raw JSON")
@@ -144,15 +135,6 @@ function buildContextPatch(opts: ContextSetOptions): Partial<ClientContextProfil
   const patch: Partial<ClientContextProfile> = {};
   setIfProvided(patch, "apiBase", opts.apiBase);
   setIfProvided(patch, "companyId", opts.companyId);
-  setIfProvided(patch, "persona", parsePersona(opts.persona));
-  setIfProvided(patch, "agentId", opts.agentId);
-  setIfProvided(patch, "agentName", opts.agentName);
   setIfProvided(patch, "apiKeyEnvVarName", opts.apiKeyEnvVarName);
   return patch;
-}
-
-function parsePersona(value: string | undefined): "board" | "agent" | undefined {
-  if (value === undefined) return undefined;
-  if (value === "board" || value === "agent") return value;
-  throw new Error("Invalid --persona value. Use board or agent.");
 }

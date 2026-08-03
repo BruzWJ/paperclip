@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Link, useParams, useNavigate, useLocation, Navigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PROJECT_COLORS, PROJECT_ICON_NAMES, isUuidLike, type BudgetPolicySummary } from "@paperclipai/shared";
+import {
+  PROJECT_COLORS,
+  PROJECT_ICON_NAMES,
+  isUuidLike,
+  parseMoneyAmount,
+  type BudgetPolicySummary,
+  type MoneyAmount,
+} from "@paperclipai/shared";
 import { budgetsApi } from "../api/budgets";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
-import { heartbeatsApi } from "../api/heartbeats";
+import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "../api/runs";
 import { assetsApi } from "../api/assets";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -45,6 +52,8 @@ import {
   useResourceMembershipMutation,
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
+
+const ZERO_AMOUNT = parseMoneyAmount("0");
 
 /* ── Top-level tab types ── */
 
@@ -236,44 +245,35 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     enabled: !!companyId,
   });
 
-  const liveRunsQueryKey = queryKeys.liveRuns(companyId);
-  const sharedLiveRuns = useSharedPollingQuery({
+  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const sharedActiveRuns = useSharedPollingQuery({
     companyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!companyId,
     // Event-sourced via LiveUpdatesProvider (issue 9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    enabled: sharedActiveRuns.enabled,
+    refetchInterval: sharedActiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
+  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(companyId),
     queryFn: () => projectsApi.list(companyId),
     enabled: !!companyId,
   });
 
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.listByProject(companyId, projectId),
     queryFn: () => issuesApi.list(companyId, { projectId }),
     enabled: !!companyId,
-  });
-
-  const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      issuesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-    },
   });
 
   return (
@@ -286,7 +286,6 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       liveIssueIds={liveIssueIds}
       projectId={projectId}
       viewStateKey="paperclip:project-issues-view"
-      onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
     />
   );
 }
@@ -313,39 +312,29 @@ function ProjectPluginOperationsList({
     queryFn: () => projectsApi.list(companyId),
     enabled: !!companyId,
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(companyId);
-  const sharedLiveRuns = useSharedPollingQuery({
+  const activeRunsQueryKey = queryKeys.runs(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const sharedActiveRuns = useSharedPollingQuery({
     companyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!companyId,
     // Event-sourced via LiveUpdatesProvider (issue 9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(companyId, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    enabled: sharedActiveRuns.enabled,
+    refetchInterval: sharedActiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
+  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, projectId, originKindPrefix),
     queryFn: () => issuesApi.list(companyId, { projectId, originKindPrefix }),
     enabled: !!companyId && !!projectId,
-  });
-
-  const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      issuesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, projectId, originKindPrefix) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-    },
   });
 
   return (
@@ -358,7 +347,6 @@ function ProjectPluginOperationsList({
       liveIssueIds={liveIssueIds}
       projectId={projectId}
       viewStateKey={`paperclip:project-plugin-operations-view:${pluginKey}`}
-      onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
     />
   );
 }
@@ -633,17 +621,20 @@ export function ProjectDetail() {
       (policy) => policy.scopeType === "project" && policy.scopeId === (project?.id ?? routeProjectRef),
     );
     if (matched) return matched;
+    const budgetCurrency = budgetOverview?.budgetCurrency
+      ?? companies.find((company) => company.id === resolvedCompanyId)?.budgetCurrency;
+    if (!budgetCurrency) return null;
     return {
       policyId: "",
       companyId: resolvedCompanyId ?? "",
+      budgetCurrency,
       scopeType: "project",
       scopeId: project?.id ?? routeProjectRef,
       scopeName: project?.name ?? "Project",
-      metric: "billed_cents",
       windowKind: "lifetime",
-      amount: 0,
-      observedAmount: 0,
-      remainingAmount: 0,
+      limitAmount: ZERO_AMOUNT,
+      observedAmount: ZERO_AMOUNT,
+      remainingAmount: ZERO_AMOUNT,
       utilizationPercent: 0,
       warnPercent: 80,
       hardStopEnabled: true,
@@ -652,17 +643,17 @@ export function ProjectDetail() {
       status: "ok",
       paused: Boolean(project?.pausedAt),
       pauseReason: project?.pauseReason ?? null,
-      windowStart: new Date(),
-      windowEnd: new Date(),
+      windowStart: new Date(Date.UTC(1970, 0, 1)),
+      windowEnd: new Date(Date.UTC(9999, 0, 1)),
     } satisfies BudgetPolicySummary;
-  }, [budgetOverview?.policies, project, resolvedCompanyId, routeProjectRef]);
+  }, [budgetOverview, companies, project, resolvedCompanyId, routeProjectRef]);
 
   const budgetMutation = useMutation({
-    mutationFn: (amount: number) =>
+    mutationFn: (amount: MoneyAmount) =>
       budgetsApi.upsertPolicy(resolvedCompanyId!, {
         scopeType: "project",
         scopeId: project?.id ?? routeProjectRef,
-        amount,
+        limitAmount: amount,
         windowKind: "lifetime",
       }),
     onSuccess: () => {
@@ -836,7 +827,7 @@ export function ProjectDetail() {
         scopeKind="project"
         scopeId={project.id}
         title="Project summary"
-        description="Summarizer keeps the latest project status, next step, and operator-needed items here."
+        description="A configured routine keeps the latest project status and operator-needed items here."
       />
 
       <PluginSlotOutlet
@@ -945,12 +936,16 @@ export function ProjectDetail() {
 
       {activeTab === "budget" && resolvedCompanyId ? (
         <div className="max-w-3xl">
-          <BudgetPolicyCard
-            summary={projectBudgetSummary}
-            variant="plain"
-            isSaving={budgetMutation.isPending}
-            onSave={(amount) => budgetMutation.mutate(amount)}
-          />
+          {projectBudgetSummary ? (
+            <BudgetPolicyCard
+              summary={projectBudgetSummary}
+              variant="plain"
+              isSaving={budgetMutation.isPending}
+              onSave={(amount) => budgetMutation.mutate(amount)}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Budget data is unavailable.</p>
+          )}
         </div>
       ) : null}
 

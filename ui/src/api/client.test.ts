@@ -77,6 +77,36 @@ describe("in-tab GET coalescing", () => {
   });
 });
 
+describe("request headers", () => {
+  it.each([
+    ["POST", () => api.post("/json", { value: 1 })],
+    ["PUT", () => api.put("/json", { value: 1 })],
+    ["PATCH", () => api.patch("/json", { value: 1 })],
+    ["DELETE", () => api.delete("/json", { value: 1 })],
+    ["DELETE (explicit body)", () => api.deleteWithBody("/json", { value: 1 })],
+  ])("sends %s JSON bodies with the application/json content type", async (_method, request) => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await request();
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it("preserves caller headers alongside the generated JSON content type", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await api.post("/json", { value: 1 }, {
+      headers: { "Idempotency-Key": "request-1" },
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Idempotency-Key")).toBe("request-1");
+  });
+});
+
 describe("per-caller abort semantics", () => {
   it("aborting one caller rejects only that caller, not the shared fetch", async () => {
     const d = deferred<Response>();

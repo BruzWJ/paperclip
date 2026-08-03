@@ -16,7 +16,7 @@ export interface SandboxProviderValidationResult {
 export interface AcquireSandboxLeaseInput {
   config: SandboxEnvironmentConfig;
   environmentId: string;
-  heartbeatRunId: string;
+  runId: string;
   issueId: string | null;
   agentId?: string | null;
   executionWorkspaceId?: string | null;
@@ -142,7 +142,7 @@ class FakeSandboxProvider implements SandboxProvider {
     assertProviderConfig<FakeSandboxEnvironmentConfig>(this.provider, input.config);
     const providerLeaseId = input.config.reuseLease && this.supportsReusableLeases
       ? `sandbox://fake/${input.environmentId}/${input.executionWorkspaceId ?? "workspace"}/${input.agentId ?? "agent"}`
-      : `sandbox://fake/${input.heartbeatRunId}/${randomUUID()}`;
+      : `sandbox://fake/${input.runId}/${randomUUID()}`;
 
     return {
       providerLeaseId,
@@ -331,7 +331,7 @@ export async function probeSandboxProvider(
 export async function acquireSandboxProviderLease(input: {
   config: SandboxEnvironmentConfig;
   environmentId: string;
-  heartbeatRunId: string;
+  runId: string;
   issueId: string | null;
   agentId?: string | null;
   executionWorkspaceId?: string | null;
@@ -351,7 +351,7 @@ export async function acquireSandboxProviderLease(input: {
   return await provider.acquireLease({
     config: input.config,
     environmentId: input.environmentId,
-    heartbeatRunId: input.heartbeatRunId,
+    runId: input.runId,
     issueId: input.issueId,
     agentId: input.agentId,
     executionWorkspaceId: input.executionWorkspaceId,

@@ -2,8 +2,8 @@
 name: release-changelog-discord-message
 description: >
   Write the Discord announcement for a stable Paperclip release from the release
-  changelog. Use when a release issue needs a copy-pasteable dotta-voice Discord
-  post or refreshed discord_announcement document.
+  changelog. Use when a release needs a copy-pasteable dotta-voice Discord post
+  aligned with the stable changelog.
 ---
 
 # Release Discord Announcement Skill
@@ -12,8 +12,7 @@ Write the Discord release announcement for the **stable** Paperclip release.
 
 This is the companion to `.agents/skills/release-changelog/SKILL.md`. That skill
 generates the file at `releases/vYYYY.MDD.P.md`. This skill turns that file into
-a single copy-pasteable Discord block, in dotta's voice, and posts it as the
-`discord_announcement` document on the release issue.
+a single copy-pasteable Discord block in dotta's voice.
 
 ## What dotta said
 
@@ -29,33 +28,22 @@ current Paperclip work — not invented.
 
 - After `release-changelog` has produced `releases/vYYYY.MDD.P.md` on the
   release worktree/PR.
-- When the release issue (the one assigned by the release routine) asks for a
-  Discord announcement, or has a `discord_announcement` document that needs to
-  be refreshed for a new date/version.
+- When the release workflow asks for a Discord announcement or an existing
+  draft needs to be refreshed for a new date/version.
 - Never run this in isolation. The version, date, contributor list, and
   highlight set MUST match the matching changelog file — if the changelog has
   been updated, refresh this too.
 
 ## Output
 
-A single fenced markdown code block, ready to paste into Discord. Attached as
-issue document key `discord_announcement` on the release issue, and pasted
-verbatim into a comment on that issue so the human can copy it out.
-When Cases are enabled, also upsert the social child case described below.
+A single fenced markdown code block, ready to paste into Discord. Return it
+directly and save a workspace copy when the release workflow requests one.
+Never overwrite an existing workspace draft silently; review it first and state
+what changed.
 
-```bash
-PUT /api/issues/{releaseIssueId}/documents/discord_announcement
-{
-  "title": "Discord announcement",
-  "format": "markdown",
-  "body": "<the announcement>",
-  "baseRevisionId": "<latest if updating>"
-}
-```
-
-If the document already exists, fetch it first and pass the current
-`baseRevisionId`. Never overwrite silently — if the version has changed since
-the document was last written, mention what changed in the issue comment.
+This skill grants no Paperclip access. Use only tools exposed in the current
+compiled interface, and return the draft for operator handoff when no suitable
+tool is available.
 
 ## Format (follow this template)
 
@@ -176,70 +164,14 @@ Mimic this register; do not invent a "professional" tone.
 
 1. Read the matching `releases/vYYYY.MDD.P.md` produced by `release-changelog`.
    Use the version and contributor list from that file — never re-derive them.
-2. Resolve the parent `release` case with key `paperclip-release:vYYYY.MDD.P`.
-   If it does not exist and Cases are enabled, create it using the schema in
-   `.agents/skills/release-changelog/SKILL.md` before creating child cases.
-3. Read the **release issue thread** (the one assigned to you that ran the
-   release routine) — comments + linked issues + recent issues in the company
-   are the source for `WHATS NEXT` and `What's on my mind`. Pull real themes,
-   not invented ones.
-4. Re-read the three verbatim examples below — they're the canonical voice.
-5. Draft the announcement using the template above.
-6. PUT it as the `discord_announcement` document on the release issue (see
-   "Output" above). If updating, send the latest `baseRevisionId`.
-7. Upsert the `tweet_storm` child case with `parentCaseId` set to the release
-   case id, then PUT its `body` document to the announcement body.
-8. Post a comment on the release issue that includes the announcement inside a
-   single fenced markdown code block, so dotta can copy-paste it into Discord
-   without opening the document.
-
-## Tweet Storm Case Schema
-
-Use this child case for the Discord/social announcement thread. The key must be
-stable so retries update the same child case:
-
-```http
-POST /api/companies/:companyId/cases
-{
-  "caseType": "tweet_storm",
-  "key": "paperclip-release:vYYYY.MDD.P:tweet-storm",
-  "title": "Paperclip vYYYY.MDD.P tweet storm",
-  "summary": "Social announcement thread for Paperclip vYYYY.MDD.P.",
-  "status": "in_review",
-  "parentCaseId": "<release-case-id>",
-  "fields": {
-    "schema_version": 1,
-    "version": "vYYYY.MDD.P",
-    "channel": "x",
-    "discord_source": true,
-    "post_count": 1,
-    "target_audience": ["operators", "contributors", "agent-company builders"],
-    "links": {
-      "release_notes": "https://github.com/paperclipai/paperclip/blob/master/releases/vYYYY.MDD.P.md",
-      "official_account": "https://x.com/papercliping"
-    },
-    "review": {
-      "needs_human_copy_paste": true,
-      "approved_by": null
-    }
-  }
-}
-```
-
-Then write the body document:
-
-```http
-PUT /api/cases/:tweetStormCaseId/documents/body
-{
-  "title": "Paperclip vYYYY.MDD.P tweet storm body",
-  "format": "markdown",
-  "body": "<announcement body>",
-  "changeSummary": "Draft social announcement"
-}
-```
-
-If updating an existing document, fetch the case and pass the latest
-`baseRevisionId`.
+2. Use only the issue/session context already authorized by the current
+   compiled interface to source `WHATS NEXT` and `What's on my mind`. If that
+   context is unavailable or insufficient, ask the operator for the missing
+   themes instead of inventing them.
+3. Re-read the three verbatim examples below — they're the canonical voice.
+4. Draft the announcement using the template above.
+5. Return the announcement inside one fenced markdown code block and verify any
+   requested workspace copy.
 
 Do not publish to Discord. This skill only prepares the artifact.
 
@@ -452,7 +384,7 @@ Before handing off:
 5. Section style (UPPERCASE vs Title Case) is internally consistent.
 6. Closing tagline is `ITS TIME TO CLIP :paperclip: :paperclip: :paperclip:`
    and `||@everyone||` is the very last line.
-7. Document `discord_announcement` is updated on the release issue, and the
-   announcement is also posted in a comment inside a fenced code block.
+7. The announcement is returned in one fenced code block, and any requested
+   workspace copy has been verified.
 
 This skill never posts to Discord. It only prepares the announcement artifact.

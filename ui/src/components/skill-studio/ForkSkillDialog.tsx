@@ -105,7 +105,7 @@ export function ForkSkillDialog({
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) });
       for (const entry of result.reassignments) {
         queryClient.invalidateQueries({
-          queryKey: queryKeys.agents.skills(entry.agentId),
+          queryKey: queryKeys.agents.companySkillPins(entry.agentId),
         });
       }
       const switched = result.reassignments.length;

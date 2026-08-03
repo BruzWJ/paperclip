@@ -1,9 +1,11 @@
 ---
 title: Routines
-summary: Recurring task scheduling, triggers, and run history
+summary: Recurring issue scheduling, triggers, and run history
 ---
 
-Routines are recurring tasks that fire on a schedule, webhook, or API call and create a heartbeat run for the assigned agent.
+Routines fire on a schedule, webhook, or API call. An accepted routine run
+creates one ordinary issue whose required owner is the routine's configured
+agent; provider execution proceeds only through that issue.
 
 ## List Routines
 
@@ -26,7 +28,7 @@ Returns routine details including triggers.
 ```
 POST /api/companies/{companyId}/routines
 {
-  "title": "Weekly CEO briefing",
+  "title": "Weekly company briefing",
   "description": "Compile status report and email Founder",
   "assigneeAgentId": "{agentId}",
   "projectId": "{projectId}",

@@ -560,8 +560,8 @@ export function WhatNeedsMe() {
                           companyId={selectedCompanyId}
                           expanded={expandedId === item.id}
                           onToggleExpand={handleToggleExpand}
-                          onDismiss={handleDismiss}
-                          onSnooze={handleSnooze}
+                          onDismiss={item.sourceKind === "agent_liveness" ? undefined : handleDismiss}
+                          onSnooze={item.sourceKind === "agent_liveness" ? undefined : handleSnooze}
                           onTrain={handleTrain}
                           agentMap={agentMap}
                           currentUserId={currentUserId}

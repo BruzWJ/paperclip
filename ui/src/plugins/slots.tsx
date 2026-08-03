@@ -149,7 +149,7 @@ function usePluginRegistrySubscription(): void {
 }
 
 function requiresEntityType(slotType: PluginUiSlotType): boolean {
-  return slotType === "detailTab" || slotType === "taskDetailView" || slotType === "contextMenuItem" || slotType === "commentAnnotation" || slotType === "commentContextMenuItem" || slotType === "projectSidebarItem" || slotType === "toolbarButton";
+  return slotType === "detailTab" || slotType === "issueDetailView" || slotType === "contextMenuItem" || slotType === "commentAnnotation" || slotType === "commentContextMenuItem" || slotType === "projectSidebarItem" || slotType === "toolbarButton";
 }
 
 function getErrorMessage(error: unknown): string {
@@ -351,10 +351,10 @@ function getShimBlobUrl(specifier: "react" | "react-dom" | "react-dom/client" | 
         const ErrorBoundary = SDK.ErrorBoundary ?? missing("ErrorBoundary");
         const FileTree = SDK.FileTree ?? missing("FileTree");
         const IssuesList = SDK.IssuesList ?? missing("IssuesList");
-        const AssigneePicker = SDK.AssigneePicker ?? missing("AssigneePicker");
+        const OwnerPicker = SDK.OwnerPicker ?? missing("OwnerPicker");
         const ProjectPicker = SDK.ProjectPicker ?? missing("ProjectPicker");
         const ManagedRoutinesList = SDK.ManagedRoutinesList ?? missing("ManagedRoutinesList");
-        export { usePluginData, usePluginAction, useHostContext, useHostLocation, useHostNavigation, usePluginStream, usePluginToast, MetricCard, StatusBadge, DataTable, TimeseriesChart, MarkdownBlock, MarkdownEditor, KeyValueList, ActionBar, LogView, JsonTree, Spinner, ErrorBoundary, FileTree, IssuesList, AssigneePicker, ProjectPicker, ManagedRoutinesList };
+        export { usePluginData, usePluginAction, useHostContext, useHostLocation, useHostNavigation, usePluginStream, usePluginToast, MetricCard, StatusBadge, DataTable, TimeseriesChart, MarkdownBlock, MarkdownEditor, KeyValueList, ActionBar, LogView, JsonTree, Spinner, ErrorBoundary, FileTree, IssuesList, OwnerPicker, ProjectPicker, ManagedRoutinesList };
       `;
       break;
   }
@@ -632,7 +632,7 @@ function usePluginModuleLoader(contributions: PluginUiContribution[] | undefined
  *
  * Filtering rules:
  * - `slotTypes` must match one of the caller-requested host slot types.
- * - Entity-scoped slot types (`detailTab`, `taskDetailView`, `contextMenuItem`)
+ * - Entity-scoped slot types (`detailTab`, `issueDetailView`, `contextMenuItem`)
  *   require `entityType` and must include it in `slot.entityTypes`.
  *
  * Automatically triggers dynamic import of plugin UI modules for any

@@ -558,10 +558,10 @@
   }
 }
 
-/* Agent heartbeat capsule motion (PAP-75).
+/* Agent status capsule motion (PAP-75).
    `hb-pulse` marks a running agent (live); `hb-blink` marks a broken agent
    (error). The blink alternates the fill between brand red and the page
-   background so the capsule reads as a faltering heartbeat. */
+   background so the capsule reads as a faltering status signal. */
 @keyframes hb-pulse {
   0%, 100% { opacity: 0.4; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1); }
@@ -1437,7 +1437,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    Each consumer sets a local `--sc` to the status' base hue (e.g.
    `--sc: var(--status-task-in_progress)`); these rules derive the rendered
    fill / text / border from it. `.status-chip` is the bordered chip (agent +
-   task chips); `.status-fill` a solid swatch (heartbeat capsule). Light mixes
+   task chips); `.status-fill` a solid swatch (status capsule). Light mixes
    the hue toward white for a soft fill; dark layers the hue at low alpha so it
    reads on dark surfaces. A single hue covers both modes. */
 .status-chip {
@@ -1583,7 +1583,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-12rem: 12rem; /* Extracted from ui/src/components/BlockedInboxView.tsx (max-w-[12rem]). */
   --sz-200px: 200px; /* Extracted from ui/src/components/ChatComposer.test.tsx (max-h-[200px]). */
   --sz-22px: 22px; /* Extracted from ui/src/components/ChatComposer.test.tsx (max-h-[22px]). */
-  --sz-60px: 60px; /* Extracted from ui/src/components/CommentThread.tsx (min-h-[60px]). */
+  --sz-60px: 60px; /* Shared onboarding textarea minimum height. */
   --sz-220px: 220px; /* Extracted from ui/src/components/CompanySwitcher.tsx (w-[220px]). */
   --sz-88vh: 88vh; /* Extracted from ui/src/components/DocumentAnnotationPanel.tsx (max-h-[88vh]). */
   --sz-80vh: 80vh; /* Extracted from ui/src/components/DocumentAnnotationPanel.tsx (max-h-[80vh]). */
@@ -1616,7 +1616,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-300px: 300px; /* Extracted from ui/src/components/IssueColumns.tsx (w-[300px]). */
   --sz-calc-9: min(80vh,42rem); /* Extracted from ui/src/components/IssueFiltersPopover.test.tsx (max-h-[min(80vh,42rem)]). */
   --sz-calc-10: min(780px,calc(100vw - 2rem)); /* Extracted from ui/src/components/IssueFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
-  --sz-24ch: 24ch; /* Extracted from ui/src/components/IssuePlanDecompositionsSection.tsx (max-w-[24ch]). */
   --sz-calc-13: calc(0.75rem + 0.5rem); /* Extracted from ui/src/components/IssueRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
   --sz-140px: 140px; /* Extracted from ui/src/components/JsonSchemaForm.tsx (min-h-[140px]). */
   --sz-52px: 52px; /* Extracted from ui/src/components/KanbanBoard.tsx (w-[52px]). */
@@ -1658,7 +1657,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-11rem: 11rem; /* Extracted from ui/src/components/issue-properties/IssueProperties.tsx (min-w-[11rem]). */
   --sz-32rem: 32rem; /* Extracted from ui/src/components/issue-properties/IssueProperties.tsx (w-[32rem]). */
   --sz-280px: 280px; /* Extracted from ui/src/components/timeline/WorkTimelineChart.tsx (max-w-[280px]). */
-  --sz-7px: 7px; /* Extracted from ui/src/components/transcript/RunTranscriptView.tsx (mt-[7px]). */
   --sz-calc-25: calc(100% - 2rem); /* Extracted from ui/src/components/ui/alert-dialog.tsx (max-w-[calc(100%-2rem)]). */
   --sz-calc-26: max(1rem,env(safe-area-inset-top)); /* Extracted from ui/src/components/ui/alert-dialog.tsx (top-[max(1rem,env(safe-area-inset-top))]). */
   --sz-8rem: 8rem; /* Extracted from ui/src/components/ui/dropdown-menu.tsx (min-w-[8rem]). */
@@ -1696,8 +1694,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-148px: 148px; /* Extracted from ui/src/pages/Pipelines.tsx (w-[148px]). */
   --sz-11px: 11px; /* Extracted from ui/src/pages/Pipelines.tsx (h-[11px]). */
   --sz-9px: 9px; /* Extracted from ui/src/pages/Pipelines.tsx (h-[9px]). */
-  --sz-720px: 720px; /* Extracted from ui/src/pages/RunTranscriptUxLab.tsx (max-h-[720px]). */
-  --sz-460px: 460px; /* Extracted from ui/src/pages/RunTranscriptUxLab.tsx (max-h-[460px]). */
   --sz-960px: 960px; /* Extracted from ui/src/pages/Search.tsx (max-w-[960px]). */
   --sz-70px: 70px; /* Extracted from ui/src/pages/Secrets.tsx (min-h-[70px]). */
   --sz-calc-41: min(520px,calc(100vw - 2rem)); /* Extracted from ui/src/pages/Secrets.tsx (w-[min(520px,calc(100vw-2rem))]). */
@@ -1723,8 +1719,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --shadow-extract-5: 0 -12px 28px rgba(0,0,0,0.28); /* Extracted from ui/src/components/ChatComposer.test.tsx (shadow-[0_-12px_28px_rgba(0,0,0,0.28)]). */
   --shadow-extract-6: 0 0 0 1px var(--color-background); /* Extracted from ui/src/components/DocumentAnnotationLayer.tsx (shadow-[0_0_0_1px_var(--color-background)]). */
   --shadow-extract-7: 0 -12px 28px rgba(15,23,42,0.08),0 0 0 1px hsl(var(--primary)/0.16); /* Extracted from ui/src/components/IssueChatThread.tsx (shadow-[0_-12px_28px_rgba(15,23,42,0.08),0_0_0_1px_hsl(var(--primary)/0.16)]). */
-  --shadow-extract-8: 0 1px 0 rgba(15,23,42,0.02); /* Extracted from ui/src/components/IssueRecoveryActionCard.tsx (shadow-[0_1px_0_rgba(15,23,42,0.02)]). */
-  --shadow-extract-9: 0 18px 42px rgba(15,23,42,0.06); /* Extracted from ui/src/components/IssueThreadInteractionCard.tsx (shadow-[0_18px_42px_rgba(15,23,42,0.06)]). */
+  --shadow-extract-8: 0 1px 0 rgba(15,23,42,0.02); /* Shared inset card shadow. */
+  --shadow-extract-9: 0 18px 42px rgba(15,23,42,0.06);
   --shadow-extract-10: 0 1px 0 1px hsl(var(--border)); /* Extracted from ui/src/components/KeyboardShortcutsCheatsheet.tsx (shadow-[0_1px_0_1px_hsl(var(--border))]). */
   --shadow-extract-11: 0 18px 50px rgba(37,99,235,0.08); /* LiveRunWidget.tsx glow. Gallery feedback r2: liveness glow recolored cyan->status blue (value edit, site unchanged; originally extracted as rgba(6,182,212,0.08)). */
   --shadow-extract-12: 0 0 0 2px hsl(var(--background)); /* Extracted from ui/src/components/SidebarNavItem.tsx (shadow-[0_0_0_2px_hsl(var(--background))]). */
@@ -1778,15 +1774,13 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtc-5: auto minmax(0,1fr); /* Extracted from ui/src/components/FileViewerSheet.tsx (grid-cols-[auto_minmax(0,1fr)]). */
   --gtc-6: auto minmax(0,1fr) auto; /* Extracted from ui/src/components/FileViewerSheet.tsx (grid-cols-[auto_minmax(0,1fr)_auto]). */
   --gtc-7: 7.5rem minmax(0,1fr); /* Extracted from ui/src/components/IssueChatThread.tsx (grid-cols-[7.5rem_minmax(0,1fr)]). */
-  --gtc-8: 7.5rem 1fr; /* Extracted from ui/src/components/IssueRecoveryActionCard.tsx (grid-cols-[7.5rem_1fr]). */
+  --gtc-8: 7.5rem 1fr; /* Shared metadata grid. */
   --gtc-9: 300px minmax(0,1fr); /* Extracted from ui/src/components/RoutineHistoryTab.tsx (grid-cols-[300px_minmax(0,1fr)]). */
   --gtc-10: 10rem 1fr; /* Extracted from ui/src/components/SourceResolvedFoldCallout.tsx (grid-cols-[10rem_1fr]). */
   --gtc-11: 12rem 1fr; /* Extracted from ui/src/components/SourceResolvedFoldCallout.tsx (grid-cols-[12rem_1fr]). */
-  --gtc-12: minmax(0,0.75fr) minmax(0,1fr); /* Extracted from ui/src/components/TrustPresetSection.tsx (grid-cols-[minmax(0,0.75fr)_minmax(0,1fr)]). */
   --gtc-13: minmax(0,1fr) auto; /* Extracted from ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(0,1fr)_auto]). */
   --gtc-14: minmax(160px,2fr) minmax(240px,3fr) 32px; /* Extracted from ui/src/components/environment-variables-editor/Row.tsx (grid-cols-[minmax(160px,2fr)_minmax(240px,3fr)_32px]). */
   --gtc-15: 6rem 1fr; /* Extracted from ui/src/components/issue-properties/IssueProperties.tsx (grid-cols-[6rem_1fr]). */
-  --gtc-16: auto 1fr; /* Extracted from ui/src/components/transcript/RunTranscriptView.tsx (grid-cols-[auto_1fr]). */
   --gtc-17: 1fr auto; /* Extracted from ui/src/components/ui/card.tsx (grid-cols-[1fr_auto]). */
   --gtc-18: auto minmax(0,1fr) minmax(12rem,0.65fr); /* Extracted from ui/src/pages/AgentDetail.tsx (grid-cols-[auto_minmax(0,1fr)_minmax(12rem,0.65fr)]). */
   --gtc-19: 260px minmax(0,1fr); /* Extracted from ui/src/pages/AgentDetail.tsx (grid-cols-[260px_minmax(0,1fr)]). */
@@ -1841,7 +1835,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtr-3: 0fr; /* Extracted from ui/src/pages/CompanySkills.tsx (grid-rows-[0fr]). */
   --tp-background-color-border-color: background-color,border-color; /* Extracted from ui/src/components/ActivityFeed.tsx (transition-[background-color,border-color]). */
   --tp-width-background-color: width,background-color; /* Extracted from ui/src/components/BudgetPolicyCard.tsx (transition-[width,background-color]). */
-  --tp-width: width; /* Extracted from ui/src/components/ClaudeSubscriptionPanel.tsx (transition-[width]). */
+  --tp-width: width; /* Extracted from ui/src/components/ProviderQuotaCard.tsx (transition-[width]). */
   --tp-background-color-color-opacity: background-color,color,opacity; /* Extracted from ui/src/components/FileTree.tsx (transition-[background-color,color,opacity]). */
   --tp-max-height: max-height; /* Extracted from ui/src/components/FoldCurtain.tsx (transition-[max-height]). */
   --tp-border-color-background-color-box-shadow: border-color,background-color,box-shadow; /* Extracted from ui/src/components/IssueChatThread.tsx (transition-[border-color,background-color,box-shadow]). */
@@ -1919,10 +1913,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    * allow ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx (zoom-out-[0.97], zoom-in-[0.97])
    * allow ui/src/components/ProjectWorkspaceSummaryCard.tsx — min-[420px]: is a Tailwind arbitrary BREAKPOINT variant (responsive container-query-style prefix), not a value applied to a property; the variant position cannot reference a CSS custom property, so it cannot be tokenized without changing Tailwind's own variant syntax
    * allow ui/src/components/FileTree.tsx — max-[480px]: arbitrary breakpoint variant (x2), same reasoning as min-[420px] above
-   * allow ui/src/pages/RunTranscriptUxLab.tsx — first-party intentional one-off decoration (demo/UX-lab page): hero/card gradients + shadows reverted from singleton tokens per DECISION-SHEET.md B1 user ruling
    * allow ui/src/pages/InviteUxLab.tsx — first-party intentional one-off decoration (demo/UX-lab page): hero/card gradients + shadows reverted from singleton tokens per DECISION-SHEET.md B1 user ruling
    * allow ui/src/pages/IssueChatUxLab.tsx — first-party intentional one-off decoration (demo/UX-lab page): hero/card gradients + shadows reverted from singleton tokens per DECISION-SHEET.md B1 user ruling
-   * allow ui/src/pages/SystemNoticeUxLab.tsx — first-party intentional one-off decoration (demo/UX-lab page): hero/card gradients + shadows reverted from singleton tokens per DECISION-SHEET.md B1 user ruling
 
    Test-fixture hex-literal policy (Batch 4, resolving TOKEN-AUDIT.md section
    8 item 10 "Needs human decision" for these specific sites): the following

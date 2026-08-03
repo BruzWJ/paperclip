@@ -1,10 +1,21 @@
 import { memo, useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent, type CSSProperties, type DragEvent, type RefObject } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AgentEnvConfig, EnvBinding, IssueWorkMode } from "@paperclipai/shared";
+import {
+  normalizeIssueAttentionMask,
+  type
+  AgentEnvConfig,
+  type
+  CreateIssue,
+  type
+  EnvBinding,
+  type
+  IssueAttentionMask,
+  type
+  IssueWorkMode,
+} from "@paperclipai/shared";
 import { pickTextColorForSolidBg } from "@/lib/color-contrast";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
-import { useAdapterCapabilities } from "../adapters/use-adapter-capabilities";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
 import { MissingUserSecretsBanner } from "../pages/secrets/MissingUserSecretsBanner";
@@ -14,31 +25,23 @@ import { agentsApi } from "../api/agents";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
-import { buildCompanyUserInlineOptions, buildMarkdownMentionOptions, isAgentTaskTarget } from "../lib/company-members";
+import { buildMarkdownMentionOptions, isAgentTaskTarget } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
 import { orderReusableExecutionWorkspaces } from "../lib/reusable-execution-workspaces";
 import {
   defaultExecutionWorkspaceModeForProject,
   defaultProjectWorkspaceIdForProject,
-  issueExecutionWorkspaceModeForExistingWorkspace,
 } from "../lib/project-workspace-defaults";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
-import { buildExecutionPolicy } from "../lib/issue-execution-policy";
 import { isIssueWorkMode, nextWorkMode, workModeMetaFor, workModeMetaList } from "../lib/work-mode-meta";
 import { useToastActions } from "../context/ToastContext";
-import {
-  assigneeValueFromSelection,
-  currentUserAssigneeOption,
-  parseAssigneeValue,
-} from "../lib/assignees";
 import {
   Dialog,
   DialogContent,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import {
   Popover,
   PopoverContent,
@@ -48,8 +51,6 @@ import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
-  ChevronRight,
-  ChevronDown,
   Check,
   CircleDot,
   Minus,
@@ -67,44 +68,36 @@ import {
   Eye,
   ShieldAlert,
   ShieldCheck,
-  ScanEye,
 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "../lib/utils";
-import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { getTrustPreset } from "../lib/trust-policy-ui";
 import { ReusableExecutionWorkspaceSelect } from "./ReusableExecutionWorkspaceSelect";
+import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
 
-const DRAFT_KEY = "paperclip:issue-draft";
+const DRAFT_KEY = "paperclip:issue-request-draft:v2";
 const DEBOUNCE_MS = 800;
 const MOBILE_DIALOG_HEIGHT = "calc(100dvh - max(1rem, env(safe-area-inset-top)) - max(1rem, env(safe-area-inset-bottom)))";
 
 
 interface IssueDraft {
   title: string;
-  description: string;
+  request: string;
   status: string;
   priority: string;
-  assigneeValue: string;
+  ownerAgentId: string;
   reviewerValue: string;
   approverValue: string;
-  watchdogAgentId?: string;
-  watchdogInstructions?: string;
-  assigneeId?: string;
   projectId: string;
   projectWorkspaceId?: string;
-  assigneeModelLane?: IssueModelLane;
-  assigneeModelOverride: string;
-  assigneeThinkingEffort: string;
-  assigneeChrome: boolean;
   executionWorkspaceMode?: string;
   selectedExecutionWorkspaceId?: string;
   useIsolatedExecutionWorkspace?: boolean;
   workMode?: IssueWorkMode;
+  attentionMask?: IssueAttentionMask | null;
 }
 
 type StagedIssueFile = {
@@ -116,45 +109,17 @@ type StagedIssueFile = {
 };
 
 import { Badge } from "@/components/ui/badge";
-import {
-  buildAssigneeAdapterOverrides,
-  ISSUE_OVERRIDE_ADAPTER_TYPES,
-  type IssueModelLane,
-} from "../lib/issue-assignee-overrides";
-
 const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
-
-const ISSUE_THINKING_EFFORT_OPTIONS = {
-  claude_local: [
-    { value: "", label: "Default" },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-  ],
-  codex_local: [
-    { value: "", label: "Default" },
-    { value: "minimal", label: "Minimal" },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-    { value: "xhigh", label: "X-High" },
-  ],
-  opencode_local: [
-    { value: "", label: "Default" },
-    { value: "minimal", label: "Minimal" },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-    { value: "xhigh", label: "X-High" },
-    { value: "max", label: "Max" },
-  ],
-} as const;
 
 function loadDraft(): IssueDraft | null {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as IssueDraft;
+    const draft = JSON.parse(raw) as IssueDraft;
+    return {
+      ...draft,
+      attentionMask: normalizeIssueAttentionMask(draft.attentionMask),
+    };
   } catch {
     return null;
   }
@@ -228,13 +193,13 @@ function buildStatusOptions(): ReadonlyArray<{ value: string; label: string; col
       value: "backlog",
       label: "Backlog",
       color: palette.backlog ?? issueStatusTextDefault,
-      description: "Parked - assignee will not be woken",
+      description: "Parked - owner will not be dispatched",
     },
     {
       value: "todo",
       label: "Todo",
       color: palette.todo ?? issueStatusTextDefault,
-      description: "Executable - assignee will be woken",
+      description: "Executable - owner will be woken",
     },
     { value: "in_progress", label: "In Progress", color: palette.in_progress ?? issueStatusTextDefault },
     { value: "in_review", label: "In Review", color: palette.in_review ?? issueStatusTextDefault },
@@ -266,8 +231,13 @@ function uniqueRequiredUserSecretKeys(inputs: Array<AgentEnvConfig | Record<stri
   return [...new Set(inputs.flatMap(collectRequiredUserSecretKeysFromEnv))];
 }
 
-function shouldWarnAboutRunUserSecrets(status: string, assigneeAgentId: string | null | undefined) {
-  return Boolean(assigneeAgentId) && (status === "todo" || status === "in_progress");
+function shouldWarnAboutRunUserSecrets(status: string, ownerAgentId: string | null | undefined) {
+  return Boolean(ownerAgentId) && (status === "todo" || status === "in_progress");
+}
+
+function participantAgentId(value: string): string | null {
+  if (!value.startsWith("agent:")) return null;
+  return value.slice("agent:".length) || null;
 }
 
 const priorities = [
@@ -310,19 +280,19 @@ function isWorkModeEscapeShortcut(e: Pick<KeyboardEvent, "key" | "metaKey">) {
 const IssueTitleTextarea = memo(function IssueTitleTextarea({
   value,
   pending,
-  assigneeValue,
+  ownerAgentId,
   projectId,
-  descriptionEditorRef,
-  assigneeSelectorRef,
+  requestEditorRef,
+  ownerSelectorRef,
   projectSelectorRef,
   onChange,
 }: {
   value: string;
   pending: boolean;
-  assigneeValue: string;
+  ownerAgentId: string;
   projectId: string;
-  descriptionEditorRef: RefObject<MarkdownEditorRef | null>;
-  assigneeSelectorRef: RefObject<HTMLButtonElement | null>;
+  requestEditorRef: RefObject<MarkdownEditorRef | null>;
+  ownerSelectorRef: RefObject<HTMLButtonElement | null>;
   projectSelectorRef: RefObject<HTMLButtonElement | null>;
   onChange: (value: string) => void;
 }) {
@@ -335,7 +305,7 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
   return (
     <textarea
       className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
-      placeholder="Task title"
+      placeholder="Optional task title"
       rows={1}
       value={draftValue}
       onChange={(e) => {
@@ -354,18 +324,18 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
           !e.nativeEvent.isComposing
         ) {
           e.preventDefault();
-          descriptionEditorRef.current?.focus();
+          requestEditorRef.current?.focus();
         }
         if (e.key === "Tab" && !e.shiftKey) {
           e.preventDefault();
-          if (assigneeValue) {
+          if (ownerAgentId) {
             if (projectId) {
-              descriptionEditorRef.current?.focus();
+              requestEditorRef.current?.focus();
             } else {
               projectSelectorRef.current?.focus();
             }
           } else {
-            assigneeSelectorRef.current?.focus();
+            ownerSelectorRef.current?.focus();
           }
         }
       }}
@@ -374,18 +344,18 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
   );
 });
 
-const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
+const IssueRequestEditor = memo(function IssueRequestEditor({
   value,
   expanded,
   mentions,
-  descriptionEditorRef,
+  requestEditorRef,
   imageUploadHandler,
   onChange,
 }: {
   value: string;
   expanded: boolean;
   mentions: MentionOption[];
-  descriptionEditorRef: RefObject<MarkdownEditorRef | null>;
+  requestEditorRef: RefObject<MarkdownEditorRef | null>;
   imageUploadHandler: (file: File) => Promise<string>;
   onChange: (value: string) => void;
 }) {
@@ -397,13 +367,13 @@ const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
 
   return (
     <MarkdownEditor
-      ref={descriptionEditorRef}
+      ref={requestEditorRef}
       value={draftValue}
       onChange={(nextValue) => {
         setDraftValue(nextValue);
         onChange(nextValue);
       }}
-      placeholder="Add description..."
+      placeholder="Describe the request..."
       bordered={false}
       mentions={mentions}
       contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
@@ -420,30 +390,22 @@ export function NewIssueDialog() {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [request, setRequest] = useState("");
   const titleRef = useRef("");
-  const descriptionRef = useRef("");
-  const [titleHasText, setTitleHasText] = useState(false);
+  const requestRef = useRef("");
+  const [requestHasText, setRequestHasText] = useState(false);
   const [draftHasText, setDraftHasText] = useState(false);
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("");
-  const [assigneeValue, setAssigneeValue] = useState("");
+  const [ownerAgentId, setOwnerAgentId] = useState("");
+  const [attentionMask, setAttentionMask] = useState<IssueAttentionMask | null>(null);
   const [reviewerValue, setReviewerValue] = useState("");
   const [approverValue, setApproverValue] = useState("");
   const [showReviewerRow, setShowReviewerRow] = useState(false);
   const [showApproverRow, setShowApproverRow] = useState(false);
-  const [watchdogAgentId, setWatchdogAgentId] = useState("");
-  const [watchdogInstructions, setWatchdogInstructions] = useState("");
-  const [showWatchdogRow, setShowWatchdogRow] = useState(false);
-  const [watchdogEditorOpen, setWatchdogEditorOpen] = useState(false);
   const [participantMenuOpen, setParticipantMenuOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [projectWorkspaceId, setProjectWorkspaceId] = useState("");
-  const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
-  const [assigneeModelLane, setAssigneeModelLane] = useState<IssueModelLane>("primary");
-  const [assigneeModelOverride, setAssigneeModelOverride] = useState("");
-  const [assigneeThinkingEffort, setAssigneeThinkingEffort] = useState("");
-  const [assigneeChrome, setAssigneeChrome] = useState(false);
   const [executionWorkspaceMode, setExecutionWorkspaceMode] = useState<string>("shared_workspace");
   const [selectedExecutionWorkspaceId, setSelectedExecutionWorkspaceId] = useState("");
   const [workMode, setWorkMode] = useState<IssueWorkMode>("standard");
@@ -454,6 +416,7 @@ export function NewIssueDialog() {
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const executionWorkspaceDefaultProjectId = useRef<string | null>(null);
   const initializationKeyRef = useRef<string | null>(null);
+  const createIdempotencyKeyRef = useRef<string | null>(null);
 
   const effectiveCompanyId = dialogCompanyId ?? selectedCompanyId;
   const dialogCompany = companies.find((c) => c.id === effectiveCompanyId) ?? selectedCompany;
@@ -469,14 +432,19 @@ export function NewIssueDialog() {
   const [workModeOpen, setWorkModeOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
-  const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
+  const requestEditorRef = useRef<MarkdownEditorRef>(null);
   const stageFileInputRef = useRef<HTMLInputElement | null>(null);
-  const assigneeSelectorRef = useRef<HTMLButtonElement | null>(null);
+  const ownerSelectorRef = useRef<HTMLButtonElement | null>(null);
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(effectiveCompanyId!),
     queryFn: () => agentsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
+  const issueOwnerCatalogQuery = useQuery({
+    queryKey: queryKeys.agents.issueOwnerCatalog(effectiveCompanyId!),
+    queryFn: () => agentsApi.listInvokableIssueOwners(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
 
@@ -529,33 +497,7 @@ export function NewIssueDialog() {
     userId: currentUserId,
   });
 
-  const selectedAssignee = useMemo(() => parseAssigneeValue(assigneeValue), [assigneeValue]);
-  const selectedAssigneeAgentId = selectedAssignee.assigneeAgentId;
-  const selectedAssigneeUserId = selectedAssignee.assigneeUserId;
-
-  const assigneeAdapterType = (agents ?? []).find((agent) => agent.id === selectedAssigneeAgentId)?.adapterType ?? null;
-  const supportsAssigneeOverrides = Boolean(
-    assigneeAdapterType && ISSUE_OVERRIDE_ADAPTER_TYPES.has(assigneeAdapterType),
-  );
-  const getAdapterCapabilities = useAdapterCapabilities();
-  const assigneeAdapterCapabilities = assigneeAdapterType
-    ? getAdapterCapabilities(assigneeAdapterType)
-    : null;
-  const assigneeSupportsCheapLane = Boolean(
-    supportsAssigneeOverrides && assigneeAdapterCapabilities?.supportsModelProfiles,
-  );
-
-  const { data: assigneeCheapProfiles } = useQuery({
-    queryKey: effectiveCompanyId && assigneeAdapterType
-      ? queryKeys.agents.adapterModelProfiles(effectiveCompanyId, assigneeAdapterType)
-      : ["agents", "none", "adapter-model-profiles", assigneeAdapterType ?? "none"],
-    queryFn: () => agentsApi.adapterModelProfiles(effectiveCompanyId!, assigneeAdapterType!),
-    enabled: Boolean(effectiveCompanyId) && newIssueOpen && assigneeSupportsCheapLane,
-  });
-  const assigneeCheapProfile = useMemo(
-    () => (assigneeCheapProfiles ?? []).find((profile) => profile.key === "cheap") ?? null,
-    [assigneeCheapProfiles],
-  );
+  const selectedOwnerAgentId = ownerAgentId || null;
   const mentionOptions = useMemo<MentionOption[]>(() => {
     return buildMarkdownMentionOptions({
       agents,
@@ -564,21 +506,15 @@ export function NewIssueDialog() {
     });
   }, [agents, companyMembers?.users, orderedProjects]);
 
-  const { data: assigneeAdapterModels } = useQuery({
-    queryKey:
-      effectiveCompanyId && assigneeAdapterType
-        ? queryKeys.agents.adapterModels(effectiveCompanyId, assigneeAdapterType)
-        : ["agents", "none", "adapter-models", assigneeAdapterType ?? "none"],
-    queryFn: () => agentsApi.adapterModels(effectiveCompanyId!, assigneeAdapterType!),
-    enabled: Boolean(effectiveCompanyId) && newIssueOpen && supportsAssigneeOverrides,
-  });
-
   const createIssue = useMutation({
     mutationFn: async ({
       companyId,
       stagedFiles: pendingStagedFiles,
       ...data
-    }: { companyId: string; stagedFiles: StagedIssueFile[] } & Record<string, unknown>) => {
+    }: {
+      companyId: string;
+      stagedFiles: StagedIssueFile[];
+    } & CreateIssue) => {
       const issue = await issuesApi.create(companyId, data);
       const failures: string[] = [];
 
@@ -627,95 +563,87 @@ export function NewIssueDialog() {
     },
   });
 
-  const uploadDescriptionImage = useMutation({
+  const uploadRequestImage = useMutation({
     mutationFn: async (file: File) => {
       if (!effectiveCompanyId) throw new Error("No company selected");
       return assetsApi.uploadImage(effectiveCompanyId, file, "issues/drafts");
     },
   });
-  const uploadDescriptionImageHandler = useCallback(async (file: File) => {
-    const asset = await uploadDescriptionImage.mutateAsync(file);
+  const uploadRequestImageHandler = useCallback(async (file: File) => {
+    const asset = await uploadRequestImage.mutateAsync(file);
     return asset.contentPath;
-  }, [uploadDescriptionImage.mutateAsync]);
+  }, [uploadRequestImage.mutateAsync]);
 
   // Debounced draft saving
   const scheduleSave = useCallback(
     (draft: IssueDraft) => {
       if (draftTimer.current) clearTimeout(draftTimer.current);
       draftTimer.current = setTimeout(() => {
-        if (draft.title.trim()) saveDraft(draft);
+        if (draft.title.trim() || draft.request.trim()) saveDraft(draft);
       }, DEBOUNCE_MS);
     },
     [],
   );
 
-  const setIssueText = useCallback((nextTitle: string, nextDescription: string) => {
+  const setIssueText = useCallback((nextTitle: string, nextRequest: string) => {
     titleRef.current = nextTitle;
-    descriptionRef.current = nextDescription;
+    requestRef.current = nextRequest;
     setTitle(nextTitle);
-    setDescription(nextDescription);
-    setTitleHasText(nextTitle.trim().length > 0);
-    setDraftHasText(nextTitle.trim().length > 0 || nextDescription.trim().length > 0);
+    setRequest(nextRequest);
+    setRequestHasText(nextRequest.trim().length > 0);
+    setDraftHasText(nextTitle.trim().length > 0 || nextRequest.trim().length > 0);
   }, []);
 
-  const queueDraftSave = useCallback((overrides: { title?: string; description?: string } = {}) => {
+  const queueDraftSave = useCallback((overrides: { title?: string; request?: string } = {}) => {
     if (!newIssueOpen) return;
     const nextTitle = overrides.title ?? titleRef.current;
-    const nextDescription = overrides.description ?? descriptionRef.current;
+    const nextRequest = overrides.request ?? requestRef.current;
     scheduleSave({
       title: nextTitle,
-      description: nextDescription,
+      request: nextRequest,
       status,
       priority,
-      assigneeValue,
+      ownerAgentId,
       reviewerValue,
       approverValue,
-      watchdogAgentId,
-      watchdogInstructions,
       projectId,
       projectWorkspaceId,
-      assigneeModelLane,
-      assigneeModelOverride,
-      assigneeThinkingEffort,
-      assigneeChrome,
       executionWorkspaceMode,
       selectedExecutionWorkspaceId,
       workMode,
+      attentionMask,
     });
   }, [
     newIssueOpen,
     scheduleSave,
     status,
     priority,
-    assigneeValue,
+    ownerAgentId,
     reviewerValue,
     approverValue,
-    watchdogAgentId,
-    watchdogInstructions,
     projectId,
     projectWorkspaceId,
-    assigneeModelOverride,
-    assigneeThinkingEffort,
-    assigneeChrome,
     executionWorkspaceMode,
     selectedExecutionWorkspaceId,
     workMode,
+    attentionMask,
   ]);
 
   const handleTitleChange = useCallback((nextTitle: string) => {
     titleRef.current = nextTitle;
     const nextTitleHasText = nextTitle.trim().length > 0;
-    const nextDraftHasText = nextTitleHasText || descriptionRef.current.trim().length > 0;
-    setTitleHasText((current) => current === nextTitleHasText ? current : nextTitleHasText);
+    const nextDraftHasText = nextTitleHasText || requestRef.current.trim().length > 0;
     setDraftHasText((current) => current === nextDraftHasText ? current : nextDraftHasText);
     queueDraftSave({ title: nextTitle });
   }, [queueDraftSave]);
 
-  const handleDescriptionChange = useCallback((nextDescription: string) => {
-    descriptionRef.current = nextDescription;
-    const nextDraftHasText = titleRef.current.trim().length > 0 || nextDescription.trim().length > 0;
+  const handleRequestChange = useCallback((nextRequest: string) => {
+    requestRef.current = nextRequest;
+    const nextRequestHasText = nextRequest.trim().length > 0;
+    const nextDraftHasText = titleRef.current.trim().length > 0 || nextRequest.trim().length > 0;
+    setRequestHasText((current) => current === nextRequestHasText ? current : nextRequestHasText);
     setDraftHasText((current) => current === nextDraftHasText ? current : nextDraftHasText);
-    queueDraftSave({ description: nextDescription });
+    queueDraftSave({ request: nextRequest });
   }, [queueDraftSave]);
 
   // Save draft on meaningful changes
@@ -725,20 +653,15 @@ export function NewIssueDialog() {
   }, [
     status,
     priority,
-    assigneeValue,
+    ownerAgentId,
     reviewerValue,
     approverValue,
-    watchdogAgentId,
-    watchdogInstructions,
     projectId,
     projectWorkspaceId,
-    assigneeModelLane,
-    assigneeModelOverride,
-    assigneeThinkingEffort,
-    assigneeChrome,
     executionWorkspaceMode,
     selectedExecutionWorkspaceId,
     workMode,
+    attentionMask,
     newIssueOpen,
     queueDraftSave,
   ]);
@@ -747,6 +670,7 @@ export function NewIssueDialog() {
   useEffect(() => {
     if (!newIssueOpen) {
       initializationKeyRef.current = null;
+      createIdempotencyKeyRef.current = null;
       return;
     }
     const initializationKey = `${selectedCompanyId ?? ""}:${JSON.stringify(newIssueDefaults)}`;
@@ -764,25 +688,22 @@ export function NewIssueDialog() {
       const defaultProjectWorkspaceId = newIssueDefaults.projectWorkspaceId
         ?? defaultProjectWorkspaceIdForProject(defaultProject);
       const defaultExecutionWorkspaceMode = defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, defaultProject);
-      setIssueText(newIssueDefaults.title ?? "", newIssueDefaults.description ?? "");
+      setIssueText(newIssueDefaults.title ?? "", newIssueDefaults.request ?? "");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(defaultProjectWorkspaceId);
-      setAssigneeValue(assigneeValueFromSelection(newIssueDefaults));
-      setAssigneeModelLane("primary");
-      setAssigneeModelOverride("");
-      setAssigneeThinkingEffort("");
-      setAssigneeChrome(false);
+      setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
+      setAttentionMask(null);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceMode);
       setWorkMode(nextWorkMode);
       setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
       executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || defaultProject
         ? defaultProjectId || null
         : null;
-    } else if (newIssueDefaults.title) {
+    } else if (newIssueDefaults.title || newIssueDefaults.request) {
       const nextWorkMode = isIssueWorkMode(newIssueDefaults.workMode) ? newIssueDefaults.workMode : "standard";
-      setIssueText(newIssueDefaults.title, newIssueDefaults.description ?? "");
+      setIssueText(newIssueDefaults.title ?? "", newIssueDefaults.request ?? "");
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       const defaultProjectId = newIssueDefaults.projectId ?? "";
@@ -790,55 +711,40 @@ export function NewIssueDialog() {
       const hasExplicitProjectWorkspaceId = newIssueDefaults.projectWorkspaceId !== undefined;
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(defaultProject));
-      setAssigneeValue(assigneeValueFromSelection(newIssueDefaults));
+      setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
+      setAttentionMask(null);
       setReviewerValue("");
       setApproverValue("");
       setShowReviewerRow(false);
       setShowApproverRow(false);
-      setWatchdogAgentId("");
-      setWatchdogInstructions("");
-      setShowWatchdogRow(false);
-      setAssigneeModelOverride("");
-      setAssigneeThinkingEffort("");
-      setAssigneeChrome(false);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, defaultProject));
       setWorkMode(nextWorkMode);
       setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
       executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || newIssueDefaults.executionWorkspaceId || defaultProject
         ? defaultProjectId || null
         : null;
-    } else if (draft && draft.title.trim()) {
+    } else if (draft && (draft.title.trim() || draft.request.trim())) {
       const nextWorkMode = isIssueWorkMode(draft.workMode) ? draft.workMode : "standard";
       const restoredProjectId = newIssueDefaults.projectId ?? draft.projectId;
       const restoredProject = orderedProjects.find((project) => project.id === restoredProjectId);
       const hasExplicitProjectWorkspaceId = newIssueDefaults.projectWorkspaceId !== undefined;
       const hasExplicitExecutionWorkspaceId = newIssueDefaults.executionWorkspaceId !== undefined;
       const hasExplicitExecutionWorkspaceMode = newIssueDefaults.executionWorkspaceMode !== undefined;
-      setIssueText(draft.title, draft.description);
+      setIssueText(draft.title, draft.request);
       setStatus(draft.status || "todo");
       setPriority(draft.priority);
-      setAssigneeValue(
-        newIssueDefaults.assigneeAgentId || newIssueDefaults.assigneeUserId
-          ? assigneeValueFromSelection(newIssueDefaults)
-          : (draft.assigneeValue ?? draft.assigneeId ?? ""),
-      );
+      setOwnerAgentId(newIssueDefaults.ownerAgentId ?? draft.ownerAgentId);
+      setAttentionMask(draft.attentionMask ?? null);
       setReviewerValue(draft.reviewerValue ?? "");
       setApproverValue(draft.approverValue ?? "");
       setShowReviewerRow(!!(draft.reviewerValue));
       setShowApproverRow(!!(draft.approverValue));
-      setWatchdogAgentId(draft.watchdogAgentId ?? "");
-      setWatchdogInstructions(draft.watchdogInstructions ?? "");
-      setShowWatchdogRow(!!(draft.watchdogAgentId));
       setProjectId(restoredProjectId);
       setProjectWorkspaceId(
         hasExplicitProjectWorkspaceId
           ? (newIssueDefaults.projectWorkspaceId ?? "")
           : (draft.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(restoredProject)),
       );
-      setAssigneeModelLane(draft.assigneeModelLane ?? "primary");
-      setAssigneeModelOverride(draft.assigneeModelOverride ?? "");
-      setAssigneeThinkingEffort(draft.assigneeThinkingEffort ?? "");
-      setAssigneeChrome(draft.assigneeChrome ?? false);
       setExecutionWorkspaceMode(
         hasExplicitExecutionWorkspaceId || hasExplicitExecutionWorkspaceMode
           ? defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, restoredProject)
@@ -866,17 +772,12 @@ export function NewIssueDialog() {
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(defaultProject));
-      setAssigneeValue(assigneeValueFromSelection(newIssueDefaults));
+      setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
+      setAttentionMask(null);
       setReviewerValue("");
       setApproverValue("");
       setShowReviewerRow(false);
       setShowApproverRow(false);
-      setWatchdogAgentId("");
-      setWatchdogInstructions("");
-      setShowWatchdogRow(false);
-      setAssigneeModelOverride("");
-      setAssigneeThinkingEffort("");
-      setAssigneeChrome(false);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForIssueDefaults(newIssueDefaults, defaultProject));
       setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
       executionWorkspaceDefaultProjectId.current = hasExplicitProjectWorkspaceId || newIssueDefaults.executionWorkspaceId || defaultProject
@@ -886,33 +787,23 @@ export function NewIssueDialog() {
   }, [newIssueOpen, newIssueDefaults, orderedProjects, selectedCompanyId, setIssueText]);
 
   useEffect(() => {
-    if (!supportsAssigneeOverrides) {
-      setAssigneeOptionsOpen(false);
-      setAssigneeModelLane("primary");
-      setAssigneeModelOverride("");
-      setAssigneeThinkingEffort("");
-      setAssigneeChrome(false);
+    if (
+      !ownerAgentId ||
+      !issueOwnerCatalogQuery.isSuccess
+    ) {
       return;
     }
-    if (!assigneeSupportsCheapLane && assigneeModelLane === "cheap") {
-      setAssigneeModelLane("primary");
-    }
-
-    const validThinkingValues =
-      assigneeAdapterType === "codex_local"
-        ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
-        : assigneeAdapterType === "opencode_local"
-          ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
-          : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
-    if (!validThinkingValues.some((option) => option.value === assigneeThinkingEffort)) {
-      setAssigneeThinkingEffort("");
+    if (
+      !(issueOwnerCatalogQuery.data ?? []).some(
+        (owner) => owner.id === ownerAgentId,
+      )
+    ) {
+      setOwnerAgentId("");
     }
   }, [
-    supportsAssigneeOverrides,
-    assigneeAdapterType,
-    assigneeThinkingEffort,
-    assigneeSupportsCheapLane,
-    assigneeModelLane,
+    issueOwnerCatalogQuery.data,
+    issueOwnerCatalogQuery.isSuccess,
+    ownerAgentId,
   ]);
 
   // Cleanup timer on unmount
@@ -926,21 +817,14 @@ export function NewIssueDialog() {
     setIssueText("", "");
     setStatus("todo");
     setPriority("");
-    setAssigneeValue("");
+    setOwnerAgentId("");
+    setAttentionMask(null);
     setReviewerValue("");
     setApproverValue("");
     setShowReviewerRow(false);
     setShowApproverRow(false);
-    setWatchdogAgentId("");
-    setWatchdogInstructions("");
-    setShowWatchdogRow(false);
     setProjectId("");
     setProjectWorkspaceId("");
-    setAssigneeOptionsOpen(false);
-    setAssigneeModelLane("primary");
-    setAssigneeModelOverride("");
-    setAssigneeThinkingEffort("");
-    setAssigneeChrome(false);
     setExecutionWorkspaceMode("shared_workspace");
     setSelectedExecutionWorkspaceId("");
     setWorkMode("standard");
@@ -951,29 +835,25 @@ export function NewIssueDialog() {
     setCompanyOpen(false);
     executionWorkspaceDefaultProjectId.current = null;
     initializationKeyRef.current = null;
+    createIdempotencyKeyRef.current = null;
   }
 
   function handleCompanyChange(companyId: string) {
     if (isSubIssueMode) return;
     if (companyId === effectiveCompanyId) return;
     setDialogCompanyId(companyId);
-    setAssigneeValue("");
+    setOwnerAgentId("");
+    setAttentionMask(null);
     setReviewerValue("");
     setApproverValue("");
     setShowReviewerRow(false);
     setShowApproverRow(false);
-    setWatchdogAgentId("");
-    setWatchdogInstructions("");
-    setShowWatchdogRow(false);
     setProjectId("");
     setProjectWorkspaceId("");
-    setAssigneeModelLane("primary");
-    setAssigneeModelOverride("");
-    setAssigneeThinkingEffort("");
-    setAssigneeChrome(false);
     setExecutionWorkspaceMode("shared_workspace");
     setSelectedExecutionWorkspaceId("");
     setWorkMode("standard");
+    createIdempotencyKeyRef.current = null;
   }
 
   function discardDraft() {
@@ -984,62 +864,30 @@ export function NewIssueDialog() {
 
   function handleSubmit() {
     const currentTitle = titleRef.current.trim();
-    const currentDescription = descriptionRef.current.trim();
-    if (!effectiveCompanyId || !currentTitle || createIssue.isPending) return;
-    const effectiveLane = assigneeSupportsCheapLane
-      ? assigneeModelLane
-      : assigneeModelLane === "cheap"
-        ? "primary"
-        : assigneeModelLane;
-    const assigneeAdapterOverrides = buildAssigneeAdapterOverrides({
-      adapterType: assigneeAdapterType,
-      lane: effectiveLane,
-      modelOverride: assigneeModelOverride,
-      thinkingEffortOverride: assigneeThinkingEffort,
-      chrome: assigneeChrome,
-    });
-    const selectedProject = orderedProjects.find((project) => project.id === projectId);
-    const executionWorkspacePolicy =
-      experimentalSettings?.enableIsolatedWorkspaces === true
-        ? selectedProject?.executionWorkspacePolicy ?? null
-        : null;
-    const selectedReusableExecutionWorkspace = selectableReusableWorkspaces.find(
-      (workspace) => workspace.id === selectedExecutionWorkspaceId,
-    );
-    const requestedExecutionWorkspaceMode =
-      executionWorkspaceMode === "reuse_existing"
-        ? issueExecutionWorkspaceModeForExistingWorkspace(selectedReusableExecutionWorkspace?.mode)
-        : executionWorkspaceMode;
-    const executionWorkspaceSettings = executionWorkspacePolicy?.enabled
-      ? { mode: requestedExecutionWorkspaceMode }
-      : null;
-    const executionPolicy = buildExecutionPolicy({
-      reviewerValues: reviewerValue ? [reviewerValue] : [],
-      approverValues: approverValue ? [approverValue] : [],
-    });
+    const issueRequest = requestRef.current;
+    if (
+      !effectiveCompanyId ||
+      !issueRequest.trim() ||
+      !selectedOwnerAgentId ||
+      createIssue.isPending
+    ) return;
+    const canonicalAttentionMask =
+      normalizeIssueAttentionMask(attentionMask);
+    createIdempotencyKeyRef.current ??= crypto.randomUUID();
     createIssue.mutate({
       companyId: effectiveCompanyId,
       stagedFiles,
-      title: currentTitle,
-      description: currentDescription || undefined,
-      status,
-      priority: priority || "medium",
-      workMode,
-      ...(selectedAssigneeAgentId ? { assigneeAgentId: selectedAssigneeAgentId } : {}),
-      ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
+      request: issueRequest,
+      ownerAgentId: selectedOwnerAgentId,
+      idempotencyKey: createIdempotencyKeyRef.current,
+      ...(currentTitle ? { title: currentTitle } : {}),
+      priority: (priority || "medium") as NonNullable<CreateIssue["priority"]>,
       ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
       ...(newIssueDefaults.goalId ? { goalId: newIssueDefaults.goalId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
-      ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
-      ...(executionWorkspacePolicy?.enabled ? { executionWorkspacePreference: executionWorkspaceMode } : {}),
-      ...(executionWorkspaceMode === "reuse_existing" && selectedExecutionWorkspaceId
-        ? { executionWorkspaceId: selectedExecutionWorkspaceId }
-        : {}),
-      ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
-      ...(executionPolicy ? { executionPolicy } : {}),
-      ...(taskWatchdogsEnabled && watchdogAgentId
-        ? { watchdog: { agentId: watchdogAgentId, instructions: watchdogInstructions.trim() || null } }
+      ...(canonicalAttentionMask
+        ? { attentionMask: canonicalAttentionMask }
         : {}),
     });
   }
@@ -1122,27 +970,26 @@ export function NewIssueDialog() {
   const hasDraft = draftHasText || stagedFiles.length > 0;
   const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
   const currentPriority = priorities.find((p) => p.value === priority);
-  const currentAssignee = selectedAssigneeAgentId
-    ? (agents ?? []).find((a) => a.id === selectedAssigneeAgentId)
+  const currentOwner = selectedOwnerAgentId
+    ? (agents ?? []).find((agent) => agent.id === selectedOwnerAgentId)
     : null;
-  const currentAssigneeLowTrust = getTrustPreset(currentAssignee?.permissions) === "low_trust_review";
+  const currentOwnerLowTrust = getTrustPreset(currentOwner?.governance) === "low_trust_review";
   const currentProject = orderedProjects.find((project) => project.id === projectId);
   const neededUserSecretKeys = useMemo(
     () => {
-      if (!shouldWarnAboutRunUserSecrets(status, selectedAssigneeAgentId)) return [];
+      if (!shouldWarnAboutRunUserSecrets(status, selectedOwnerAgentId)) return [];
       return uniqueRequiredUserSecretKeys([
-        isRecord(currentAssignee?.adapterConfig) ? currentAssignee.adapterConfig.env as Record<string, unknown> : null,
+        isRecord(currentOwner?.adapterConfig) ? currentOwner.adapterConfig.env as Record<string, unknown> : null,
         currentProject?.env ?? null,
       ]);
     },
-    [currentAssignee?.adapterConfig, currentProject?.env, selectedAssigneeAgentId, status],
+    [currentOwner?.adapterConfig, currentProject?.env, selectedOwnerAgentId, status],
   );
   const currentProjectExecutionWorkspacePolicy =
     experimentalSettings?.enableIsolatedWorkspaces === true
       ? currentProject?.executionWorkspacePolicy ?? null
       : null;
   const currentProjectSupportsExecutionWorkspace = Boolean(currentProjectExecutionWorkspacePolicy?.enabled);
-  const taskWatchdogsEnabled = experimentalSettings?.enableTaskWatchdogs === true;
   const selectableReusableWorkspaces = reusableExecutionWorkspaces ?? [];
   const selectedReusableExecutionWorkspace = selectableReusableWorkspaces.find(
     (workspace) => workspace.id === selectedExecutionWorkspaceId,
@@ -1154,53 +1001,33 @@ export function NewIssueDialog() {
     && currentProjectSupportsExecutionWorkspace
     && Boolean(parentExecutionWorkspaceId)
     && !isUsingParentExecutionWorkspace;
-  const assigneeOptionsTitle =
-    assigneeAdapterType === "claude_local"
-      ? "Claude options"
-      : assigneeAdapterType === "codex_local"
-        ? "Codex options"
-        : assigneeAdapterType === "opencode_local"
-          ? "OpenCode options"
-        : "Agent options";
-  const thinkingEffortOptions =
-    assigneeAdapterType === "codex_local"
-      ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
-      : assigneeAdapterType === "opencode_local"
-        ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
-      : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
-  const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [newIssueOpen]);
-  const recentAssigneeOptionIds = useMemo(
-    () => recentAssigneeIds.map((id) => assigneeValueFromSelection({ assigneeAgentId: id })),
-    [recentAssigneeIds],
-  );
+  const recentOwnerAgentIds = useMemo(() => getRecentAssigneeIds(), [newIssueOpen]);
+  const recentOwnerOptionIds = recentOwnerAgentIds;
   const recentProjectIds = useMemo(() => getRecentProjectIds(), [newIssueOpen]);
-  const assigneeOptions = useMemo<InlineEntityOption[]>(
+  const ownerOptions = useMemo<InlineEntityOption[]>(
     () => [
-      ...currentUserAssigneeOption(currentUserId),
-      ...buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId] }),
       ...sortAgentsByRecency(
-        (agents ?? []).filter(isAgentTaskTarget),
-        recentAssigneeIds,
+        issueOwnerCatalogQuery.data ?? [],
+        recentOwnerAgentIds,
       ).map((agent) => ({
-        id: assigneeValueFromSelection({ assigneeAgentId: agent.id }),
-        label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
-      })),
-    ],
-    [agents, companyMembers?.users, currentUserId, recentAssigneeIds],
-  );
-  const watchdogAgentOptions = useMemo<InlineEntityOption[]>(
-    () =>
-      sortAgentsByRecency((agents ?? []).filter(isAgentTaskTarget), recentAssigneeIds).map((agent) => ({
         id: agent.id,
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
-    [agents, recentAssigneeIds],
+    ],
+    [issueOwnerCatalogQuery.data, recentOwnerAgentIds],
   );
-  const selectedWatchdogAgent = useMemo(
-    () => (watchdogAgentId ? (agents ?? []).find((agent) => agent.id === watchdogAgentId) ?? null : null),
-    [agents, watchdogAgentId],
+  const participantOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      sortAgentsByRecency(
+        (agents ?? []).filter(isAgentTaskTarget),
+        recentOwnerAgentIds,
+      ).map((agent) => ({
+        id: `agent:${agent.id}`,
+        label: agent.name,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
+      })),
+    [agents, recentOwnerAgentIds],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -1212,7 +1039,7 @@ export function NewIssueDialog() {
     [orderedProjects],
   );
   const savedDraft = useMemo(() => newIssueOpen ? loadDraft() : null, [newIssueOpen]);
-  const hasSavedDraft = Boolean(savedDraft?.title.trim() || savedDraft?.description.trim());
+  const hasSavedDraft = Boolean(savedDraft?.title.trim() || savedDraft?.request.trim());
   const canDiscardDraft = hasDraft || hasSavedDraft;
   const createIssueErrorMessage =
     createIssue.error instanceof Error ? createIssue.error.message : "Failed to create task. Try again.";
@@ -1245,24 +1072,6 @@ export function NewIssueDialog() {
     setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForProject(project));
     setSelectedExecutionWorkspaceId("");
   }, [newIssueOpen, orderedProjects, projectId, selectedExecutionWorkspaceId]);
-  const modelOverrideOptions = useMemo<InlineEntityOption[]>(
-    () => {
-      return [...(assigneeAdapterModels ?? [])]
-        .sort((a, b) => {
-          const providerA = extractProviderIdWithFallback(a.id);
-          const providerB = extractProviderIdWithFallback(b.id);
-          const byProvider = providerA.localeCompare(providerB);
-          if (byProvider !== 0) return byProvider;
-          return a.id.localeCompare(b.id);
-        })
-        .map((model) => ({
-          id: model.id,
-          label: model.label,
-          searchText: `${model.id} ${extractProviderIdWithFallback(model.id)}`,
-        }));
-    },
-    [assigneeAdapterModels],
-  );
   const currentWorkMode = workModeMetaFor(workMode);
   const CurrentWorkModeIcon = currentWorkMode.icon;
 
@@ -1403,10 +1212,10 @@ export function NewIssueDialog() {
             <IssueTitleTextarea
               value={title}
               pending={createIssue.isPending}
-              assigneeValue={assigneeValue}
+              ownerAgentId={ownerAgentId}
               projectId={projectId}
-              descriptionEditorRef={descriptionEditorRef}
-              assigneeSelectorRef={assigneeSelectorRef}
+              requestEditorRef={requestEditorRef}
+              ownerSelectorRef={ownerSelectorRef}
               projectSelectorRef={projectSelectorRef}
               onChange={handleTitleChange}
             />
@@ -1428,59 +1237,51 @@ export function NewIssueDialog() {
               <div className="inline-flex items-center gap-2 text-sm text-muted-foreground flex-wrap sm:flex-nowrap sm:min-w-max">
               <span className="w-6 shrink-0 text-center">For</span>
               <InlineEntitySelector
-                ref={assigneeSelectorRef}
-                value={assigneeValue}
-                options={assigneeOptions}
-                recentOptionIds={recentAssigneeOptionIds}
-                placeholder="Assignee"
+                ref={ownerSelectorRef}
+                value={ownerAgentId}
+                options={ownerOptions}
+                recentOptionIds={recentOwnerOptionIds}
+                placeholder="Owner"
+                noneLabel="Choose owner"
                 disablePortal
-                noneLabel="No assignee"
-                searchPlaceholder="Search assignees..."
-                emptyMessage="No assignees found."
+                searchPlaceholder="Search owners..."
+                emptyMessage="No invokable agents found."
                 onChange={(value) => {
-                  const nextAssignee = parseAssigneeValue(value);
-                  if (nextAssignee.assigneeAgentId) {
-                    trackRecentAssignee(nextAssignee.assigneeAgentId);
-                  }
-                  setAssigneeValue(value);
-                  const hasAssignee = Boolean(nextAssignee.assigneeAgentId || nextAssignee.assigneeUserId);
-                  if (hasAssignee && status === "backlog") {
+                  if (value) trackRecentAssignee(value);
+                  setOwnerAgentId(value);
+                  if (value && status === "backlog") {
                     setStatus("todo");
                   }
                 }}
                 onConfirm={() => {
                   if (projectId) {
-                    descriptionEditorRef.current?.focus();
+                    requestEditorRef.current?.focus();
                   } else {
                     projectSelectorRef.current?.focus();
                   }
                 }}
                 renderTriggerValue={(option) =>
                   option ? (
-                    currentAssignee ? (
+                    currentOwner ? (
                       <>
-                        <AgentIcon icon={currentAssignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <AgentIcon icon={currentOwner.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{option.label}</span>
                       </>
                     ) : (
                       <span className="truncate">{option.label}</span>
                     )
                   ) : (
-                    <span className="text-muted-foreground">Assignee</span>
+                    <span className="text-muted-foreground">Owner</span>
                   )
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const assignee = parseAssigneeValue(option.id).assigneeAgentId
-                    ? (agents ?? []).find((agent) => agent.id === parseAssigneeValue(option.id).assigneeAgentId)
-                    : null;
+                  const owner = (issueOwnerCatalogQuery.data ?? [])
+                    .find((agent) => agent.id === option.id) ?? null;
                   return (
                     <>
-                      {assignee ? <AgentIcon icon={assignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
+                      {owner ? <AgentIcon icon={owner.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
                       <span className="truncate">{option.label}</span>
-                      {assignee && getTrustPreset(assignee.permissions) === "low_trust_review" ? (
-                        <ShieldAlert className="ml-auto h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" aria-label="Low-trust review agent" />
-                      ) : null}
                     </>
                   );
                 }}
@@ -1498,7 +1299,7 @@ export function NewIssueDialog() {
                 emptyMessage="No projects found."
                 onChange={handleProjectChange}
                 onConfirm={() => {
-                  descriptionEditorRef.current?.focus();
+                  requestEditorRef.current?.focus();
                 }}
                 renderTriggerValue={(option) =>
                   option && currentProject ? (
@@ -1534,7 +1335,7 @@ export function NewIssueDialog() {
                   <button
                     type="button"
                     className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground hover:bg-accent/50 transition-colors"
-                    title={taskWatchdogsEnabled ? "Add reviewer, approver, or watchdog" : "Add reviewer or approver"}
+                    title="Add reviewer or approver"
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
@@ -1568,29 +1369,6 @@ export function NewIssueDialog() {
                     <ShieldCheck className="h-3 w-3" />
                     Approver
                   </button>
-                  {taskWatchdogsEnabled && (
-                    <button
-                      className={cn(
-                        "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                        showWatchdogRow && "bg-accent",
-                      )}
-                      onClick={() => {
-                        if (showWatchdogRow) {
-                          setShowWatchdogRow(false);
-                          setWatchdogAgentId("");
-                          setWatchdogInstructions("");
-                          setWatchdogEditorOpen(false);
-                        } else {
-                          setShowWatchdogRow(true);
-                          setWatchdogEditorOpen(true);
-                        }
-                        setParticipantMenuOpen(false);
-                      }}
-                    >
-                      <ScanEye className="h-3 w-3" />
-                      Watchdog
-                    </button>
-                  )}
                 </PopoverContent>
               </Popover>
               </div>
@@ -1602,8 +1380,8 @@ export function NewIssueDialog() {
                 <span className="w-6 shrink-0 flex items-center justify-center"><Eye className="h-3.5 w-3.5" /></span>
                 <InlineEntitySelector
                 value={reviewerValue}
-                options={assigneeOptions}
-                recentOptionIds={recentAssigneeOptionIds}
+                options={participantOptions}
+                recentOptionIds={recentOwnerAgentIds.map((id) => `agent:${id}`)}
                 placeholder="Reviewer"
                 disablePortal
                 noneLabel="No reviewer"
@@ -1614,8 +1392,9 @@ export function NewIssueDialog() {
                   option ? (
                     <>
                       {(() => {
-                        const reviewer = parseAssigneeValue(option.id).assigneeAgentId
-                          ? (agents ?? []).find((a) => a.id === parseAssigneeValue(option.id).assigneeAgentId)
+                        const reviewerId = participantAgentId(option.id);
+                        const reviewer = reviewerId
+                          ? (agents ?? []).find((agent) => agent.id === reviewerId)
                           : null;
                         return reviewer ? <AgentIcon icon={reviewer.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
                       })()}
@@ -1627,8 +1406,9 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const reviewer = parseAssigneeValue(option.id).assigneeAgentId
-                    ? (agents ?? []).find((agent) => agent.id === parseAssigneeValue(option.id).assigneeAgentId)
+                  const reviewerId = participantAgentId(option.id);
+                  const reviewer = reviewerId
+                    ? (agents ?? []).find((agent) => agent.id === reviewerId)
                     : null;
                   return (
                     <>
@@ -1647,8 +1427,8 @@ export function NewIssueDialog() {
                 <span className="w-6 shrink-0 flex items-center justify-center"><ShieldCheck className="h-3.5 w-3.5" /></span>
                 <InlineEntitySelector
                 value={approverValue}
-                options={assigneeOptions}
-                recentOptionIds={recentAssigneeOptionIds}
+                options={participantOptions}
+                recentOptionIds={recentOwnerAgentIds.map((id) => `agent:${id}`)}
                 placeholder="Approver"
                 disablePortal
                 noneLabel="No approver"
@@ -1659,8 +1439,9 @@ export function NewIssueDialog() {
                   option ? (
                     <>
                       {(() => {
-                        const approver = parseAssigneeValue(option.id).assigneeAgentId
-                          ? (agents ?? []).find((a) => a.id === parseAssigneeValue(option.id).assigneeAgentId)
+                        const approverId = participantAgentId(option.id);
+                        const approver = approverId
+                          ? (agents ?? []).find((agent) => agent.id === approverId)
                           : null;
                         return approver ? <AgentIcon icon={approver.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null;
                       })()}
@@ -1672,8 +1453,9 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const approver = parseAssigneeValue(option.id).assigneeAgentId
-                    ? (agents ?? []).find((agent) => agent.id === parseAssigneeValue(option.id).assigneeAgentId)
+                  const approverId = participantAgentId(option.id);
+                  const approver = approverId
+                    ? (agents ?? []).find((agent) => agent.id === approverId)
                     : null;
                   return (
                     <>
@@ -1686,96 +1468,16 @@ export function NewIssueDialog() {
               </div>
             )}
 
-            {/* Watchdog row */}
-            {taskWatchdogsEnabled && showWatchdogRow && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                <span className="w-6 shrink-0 flex items-center justify-center"><ScanEye className="h-3.5 w-3.5" /></span>
-                <Popover open={watchdogEditorOpen} onOpenChange={setWatchdogEditorOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors min-w-0"
-                      title="Configure watchdog"
-                    >
-                      {selectedWatchdogAgent ? (
-                        <>
-                          <AgentIcon icon={selectedWatchdogAgent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="truncate text-foreground">{selectedWatchdogAgent.name}</span>
-                          {watchdogInstructions.trim() ? (
-                            <span className="truncate text-muted-foreground">· {watchdogInstructions.trim()}</span>
-                          ) : null}
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">Set watchdog</span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80 p-3 space-y-3" align="start">
-                    <div className="space-y-1.5">
-                      <div className="text-xs font-medium text-foreground">Watchdog agent</div>
-                      <InlineEntitySelector
-                        value={watchdogAgentId}
-                        options={watchdogAgentOptions}
-                        placeholder="Select agent"
-                        noneLabel="No watchdog agent"
-                        searchPlaceholder="Search agents..."
-                        emptyMessage="No agents found."
-                        onChange={setWatchdogAgentId}
-                        renderTriggerValue={(option) =>
-                          option ? (
-                            <>
-                              {selectedWatchdogAgent ? (
-                                <AgentIcon icon={selectedWatchdogAgent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              ) : null}
-                              <span className="truncate">{option.label}</span>
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground">Select agent</span>
-                          )
-                        }
-                        renderOption={(option) => {
-                          const agent = (agents ?? []).find((a) => a.id === option.id);
-                          return (
-                            <>
-                              {agent ? <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : null}
-                              <span className="truncate">{option.label}</span>
-                            </>
-                          );
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="text-xs font-medium text-foreground">Instructions <span className="font-normal text-muted-foreground">(optional)</span></div>
-                      <Textarea
-                        value={watchdogInstructions}
-                        onChange={(event) => setWatchdogInstructions(event.target.value)}
-                        placeholder="What should the watchdog watch for and how should it keep work moving?"
-                        rows={4}
-                        className="text-xs"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <button
-                        type="button"
-                        className="text-xs text-muted-foreground hover:text-destructive transition-colors"
-                        onClick={() => {
-                          setWatchdogAgentId("");
-                          setWatchdogInstructions("");
-                          setShowWatchdogRow(false);
-                          setWatchdogEditorOpen(false);
-                        }}
-                      >
-                        Remove
-                      </button>
-                      <Button type="button" size="sm" className="h-7 text-xs" onClick={() => setWatchdogEditorOpen(false)}>
-                        Done
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            )}
           </div>
+
+          {ownerAgentId ? (
+            <div className="border-t border-border/60 px-4 py-3">
+              <IssueAttentionMaskMatrix
+                value={attentionMask}
+                onChange={setAttentionMask}
+              />
+            </div>
+          ) : null}
 
           {isSubIssueMode ? (
             <div className="px-4 pb-2">
@@ -1841,110 +1543,7 @@ export function NewIssueDialog() {
             </div>
           )}
 
-          {supportsAssigneeOverrides && (
-            <div className="px-4 pb-2">
-            <button
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setAssigneeOptionsOpen((open) => !open)}
-            >
-              {assigneeOptionsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              {assigneeOptionsTitle}
-            </button>
-            {assigneeOptionsOpen && (
-              <div className="mt-2 rounded-md border border-border p-3 bg-muted/20 space-y-3">
-                <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">Model lane</div>
-                  <div
-                    className="flex w-full overflow-hidden rounded-md border border-border"
-                    role="radiogroup"
-                    aria-label="Model lane"
-                  >
-                    {(["primary", ...(assigneeSupportsCheapLane ? (["cheap"] as const) : ([] as const)), "custom"] as const).map((lane) => (
-                      <button
-                        key={lane}
-                        type="button"
-                        role="radio"
-                        aria-checked={assigneeModelLane === lane}
-                        className={cn(
-                          "flex-1 px-2 py-1 text-xs capitalize transition-colors hover:bg-accent/40",
-                          assigneeModelLane === lane && "bg-accent text-foreground",
-                        )}
-                        onClick={() => setAssigneeModelLane(lane)}
-                      >
-                        {lane === "primary"
-                          ? "Primary"
-                          : lane === "cheap"
-                            ? "Cheap"
-                            : "Custom"}
-                      </button>
-                    ))}
-                  </div>
-                  {assigneeModelLane === "cheap" && (
-                    <p className="text-(length:--text-micro) text-muted-foreground">
-                      Sends <code>modelProfile: "cheap"</code>{" "}
-                      {assigneeCheapProfile?.adapterConfig && typeof (assigneeCheapProfile.adapterConfig as Record<string, unknown>).model === "string"
-                        ? <>· adapter default <code>{String((assigneeCheapProfile.adapterConfig as Record<string, unknown>).model)}</code></>
-                        : assigneeCheapProfile
-                          ? <>· uses the agent's configured cheap profile</>
-                          : <>· falls back to the primary model if no cheap profile is configured</>}
-                    </p>
-                  )}
-                  {assigneeModelLane === "primary" && (
-                    <p className="text-(length:--text-micro) text-muted-foreground">Runs on the agent's primary model.</p>
-                  )}
-                  {assigneeModelLane === "custom" && (
-                    <p className="text-(length:--text-micro) text-muted-foreground">Override the model and effort for this task only.</p>
-                  )}
-                </div>
-                {assigneeModelLane === "custom" && (
-                  <div className="space-y-1.5">
-                    <div className="text-xs text-muted-foreground">Model</div>
-                    <InlineEntitySelector
-                      value={assigneeModelOverride}
-                      options={modelOverrideOptions}
-                      placeholder="Default model"
-                      disablePortal
-                      noneLabel="Default model"
-                      searchPlaceholder="Search models..."
-                      emptyMessage="No models found."
-                      onChange={setAssigneeModelOverride}
-                    />
-                  </div>
-                )}
-                {assigneeModelLane === "custom" && (
-                  <div className="space-y-1.5">
-                    <div className="text-xs text-muted-foreground">Thinking effort</div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {thinkingEffortOptions.map((option) => (
-                        <button
-                          key={option.value || "default"}
-                          className={cn(
-                            "px-2 py-1 rounded-md text-xs border border-border hover:bg-accent/50 transition-colors",
-                            assigneeThinkingEffort === option.value && "bg-accent"
-                          )}
-                          onClick={() => setAssigneeThinkingEffort(option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {assigneeAdapterType === "claude_local" && assigneeModelLane === "custom" && (
-                  <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
-                    <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
-                    <ToggleSwitch
-                      checked={assigneeChrome}
-                      onCheckedChange={() => setAssigneeChrome((value) => !value)}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-            </div>
-          )}
-
-          {/* Description */}
+          {/* Immutable request */}
           <div
             className="border-t border-border/60 px-4 pb-2 pt-3"
             onDragEnter={handleFileDragEnter}
@@ -1958,13 +1557,13 @@ export function NewIssueDialog() {
                 isFileDragOver && "bg-accent/20",
               )}
             >
-              <IssueDescriptionEditor
-                value={description}
+              <IssueRequestEditor
+                value={request}
                 expanded={expanded}
                 mentions={mentionOptions}
-                descriptionEditorRef={descriptionEditorRef}
-                imageUploadHandler={uploadDescriptionImageHandler}
-                onChange={handleDescriptionChange}
+                requestEditorRef={requestEditorRef}
+                imageUploadHandler={uploadRequestImageHandler}
+                onChange={handleRequestChange}
               />
             </div>
             {stagedFiles.length > 0 ? (
@@ -2223,21 +1822,21 @@ export function NewIssueDialog() {
           </Popover>
         </div>
 
-        {assigneeValue && status === "backlog" ? (
+        {ownerAgentId && status === "backlog" ? (
           <div
             data-testid="new-issue-assigned-backlog-note"
             className="mx-4 mb-2 flex items-start gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
           >
             <Flag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
             <span className="leading-snug">
-              Assigning implies executable intent - leave status as <span className="font-medium">Backlog</span> only to deliberately park this. The assignee will not be woken until status moves to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
+              Agent ownership implies executable intent - leave status as <span className="font-medium">Backlog</span> only to deliberately park this. The owner will not be dispatched until status moves to <span className="font-medium">Todo</span> or <span className="font-medium">In Progress</span>.
             </span>
           </div>
         ) : null}
 
-        {currentAssigneeLowTrust ? (
+        {currentOwnerLowTrust ? (
           <div
-            data-testid="new-issue-low-trust-assignee-note"
+            data-testid="new-issue-low-trust-owner-note"
             className="mx-4 mb-2 flex items-start gap-2 rounded-md border border-amber-300/70 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
           >
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -2272,7 +1871,12 @@ export function NewIssueDialog() {
             <Button
               size="sm"
               className="min-w-(--sz-8_5rem) disabled:opacity-100"
-              disabled={!titleHasText || createIssue.isPending}
+              disabled={
+                !draftHasText ||
+                !requestHasText ||
+                !selectedOwnerAgentId ||
+                createIssue.isPending
+              }
               onClick={handleSubmit}
               aria-busy={createIssue.isPending}
             >

@@ -4,16 +4,16 @@
  * This module provides Express routes for managing the complete plugin lifecycle:
  * - Listing and filtering plugins by status
  * - Installing plugins from npm or local paths
- * - Uninstalling plugins (soft delete or hard purge)
+ * - Uninstalling plugins while retaining immutable installation tombstones
  * - Enabling/disabling plugins
  * - Running health diagnostics
  * - Upgrading plugins
  * - Retrieving UI slot contributions for frontend rendering
- * - Discovering and executing plugin-contributed agent tools
+ * - Discovering plugin-contributed company tools for board administration
  *
  * Most routes require board-level authentication, and sensitive instance-wide
  * mutations such as install/upgrade require instance-admin privileges.
- * Plugin tool discovery and execution routes allow both board and agent access.
+ * Provider execution is available only through the compiler-owned run interface.
  *
  * @module server/routes/plugins
  * @see doc/plugins/PLUGIN_SPEC.md for the full plugin specification
@@ -28,12 +28,9 @@ import type { Request, Response } from "express";
 import { and, desc, eq, gte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
-  agents,
   companies,
-  heartbeatRuns,
   pluginLogs,
   pluginWebhookDeliveries,
-  projects,
 } from "@paperclipai/db";
 import type {
   PluginApiRouteDeclaration,
@@ -46,7 +43,7 @@ import {
   PLUGIN_STATUSES,
 } from "@paperclipai/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
-import { pluginLifecycleManager } from "../services/plugin-lifecycle.js";
+import type { PluginLifecycleManager } from "../services/plugin-lifecycle.js";
 import {
   getPluginUiContributionMetadata,
   listMissingDeclaredPluginEntrypoints,
@@ -61,17 +58,17 @@ import type { PluginJobStore } from "../services/plugin-job-store.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { PluginStreamBus } from "../services/plugin-stream-bus.js";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
-import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-gateway.js";
-import type { PluginPerformActionActorContext, ToolRunContext } from "@paperclipai/plugin-sdk";
-import { JsonRpcCallError, PLUGIN_RPC_ERROR_CODES } from "@paperclipai/plugin-sdk";
+import {
+  JsonRpcCallError,
+  PLUGIN_RPC_ERROR_CODES,
+  type PluginApiRequestInput,
+} from "@paperclipai/plugin-sdk";
 import {
   assertAuthenticated,
   assertBoard,
-  assertBoardOrAgent,
   assertBoardOrgAccess,
   assertCompanyAccess,
   assertInstanceAdmin,
-  getActorInfo,
 } from "./authz.js";
 import { validateInstanceConfig } from "../services/plugin-config-validator.js";
 import {
@@ -423,42 +420,10 @@ export interface PluginRouteBridgeDeps {
   streamBus?: PluginStreamBus;
 }
 
-export interface PluginRouteToolGatewayDeps {
-  toolGateway: ToolGatewayService;
-}
-
-interface PluginScopedApiRequest {
-  routeKey: string;
-  method: string;
-  path: string;
-  params: Record<string, string>;
-  query: Record<string, string | string[]>;
-  body: unknown;
-  actor: {
-    actorType: "user" | "agent";
-    actorId: string;
-    agentId?: string | null;
-    userId?: string | null;
-    runId?: string | null;
-  };
-  companyId: string;
-  headers: Record<string, string>;
-}
-
 interface PluginScopedApiResponse {
   status?: number;
   headers?: Record<string, string>;
   body?: unknown;
-}
-
-/** Request body for POST /api/plugins/tools/execute */
-interface PluginToolExecuteRequest {
-  /** Fully namespaced tool name (e.g., "acme.linear:search-issues"). */
-  tool: string;
-  /** Parameters matching the tool's declared JSON Schema. */
-  parameters?: unknown;
-  /** Agent run context. */
-  runContext: ToolRunContext;
 }
 
 /**
@@ -483,7 +448,6 @@ interface PluginToolExecuteRequest {
  * | POST | /plugins/:pluginId/webhooks/:endpointKey | Receive inbound webhook |
  * | GET | /plugins/tools | List all available plugin tools |
  * | GET | /plugins/tools?pluginId=... | List tools for a specific plugin |
- * | POST | /plugins/tools/execute | Execute a plugin tool |
  * | GET | /plugins/:pluginId/config | Get current plugin config |
  * | POST | /plugins/:pluginId/config | Save (upsert) plugin config |
  * | POST | /plugins/:pluginId/config/test | Test config via validateConfig RPC |
@@ -499,6 +463,7 @@ interface PluginToolExecuteRequest {
  * matching them as a plugin ID.
  *
  * @param db - Database connection instance
+ * @param lifecycle - The app-owned plugin lifecycle paired with this loader
  * @param jobDeps - Optional job scheduling dependencies
  * @param webhookDeps - Optional webhook ingestion dependencies
  * @param toolDeps - Optional tool dispatcher dependencies
@@ -508,18 +473,14 @@ interface PluginToolExecuteRequest {
 export function pluginRoutes(
   db: Db,
   loader: ReturnType<typeof pluginLoader>,
+  lifecycle: PluginLifecycleManager,
   jobDeps?: PluginRouteJobDeps,
   webhookDeps?: PluginRouteWebhookDeps,
   toolDeps?: PluginRouteToolDeps,
   bridgeDeps?: PluginRouteBridgeDeps,
-  toolGatewayDeps?: PluginRouteToolGatewayDeps,
 ) {
   const router = Router();
   const registry = pluginRegistryService(db);
-  const lifecycle = pluginLifecycleManager(db, {
-    loader,
-    workerManager: bridgeDeps?.workerManager ?? webhookDeps?.workerManager,
-  });
   const issuesSvc = issueService(db);
 
   function matchScopedApiRoute(route: PluginApiRouteDeclaration, method: string, requestPath: string) {
@@ -546,7 +507,6 @@ export function pluginRoutes(
       "accept",
       "content-type",
       "user-agent",
-      "x-paperclip-run-id",
       "x-request-id",
     ]);
     const headers: Record<string, string> = {};
@@ -591,10 +551,7 @@ export function pluginRoutes(
     req: Request,
   ) {
     const resolution = route.companyResolution;
-    if (!resolution) {
-      if (req.actor.type === "agent" && req.actor.companyId) return req.actor.companyId;
-      return null;
-    }
+    if (!resolution) return null;
 
     if (resolution.from === "body") {
       const body = req.body as Record<string, unknown> | undefined;
@@ -618,47 +575,10 @@ export function pluginRoutes(
       assertBoard(req);
       return;
     }
-    if (route.auth === "agent") {
-      assertAuthenticated(req);
-      if (req.actor.type !== "agent") throw forbidden("Agent access required");
-      return;
-    }
     if (route.auth === "webhook") {
       throw unprocessable("Webhook-scoped plugin API routes require a signature verifier and are not enabled");
     }
-    assertAuthenticated(req);
-    if (req.actor.type !== "board" && req.actor.type !== "agent") {
-      throw forbidden("Board or agent access required");
-    }
-  }
-
-  async function enforceScopedApiCheckout(
-    req: Request,
-    route: PluginApiRouteDeclaration,
-    params: Record<string, string>,
-    companyId: string,
-  ) {
-    const policy = route.checkoutPolicy ?? "none";
-    if (policy === "none" || req.actor.type !== "agent") return;
-    const issueId = params.issueId;
-    if (!issueId) {
-      throw unprocessable("Checkout-protected plugin API routes require an issueId route parameter");
-    }
-    const issue = await issuesSvc.getById(issueId);
-    if (!issue || issue.companyId !== companyId) {
-      throw notFound("Issue not found");
-    }
-    if (policy === "required-for-agent-in-progress") {
-      if (issue.status !== "in_progress" || issue.assigneeAgentId !== req.actor.agentId) return;
-    }
-    const runId = req.actor.runId?.trim();
-    if (!runId) {
-      throw unauthorized("Agent run id required");
-    }
-    if (!req.actor.agentId) {
-      throw forbidden("Agent authentication required");
-    }
-    await issuesSvc.assertCheckoutOwner(issueId, req.actor.agentId, runId);
+    route.auth satisfies never;
   }
 
   async function resolvePluginAuditCompanyIds(req: Request): Promise<string[]> {
@@ -667,10 +587,6 @@ export function pluginRoutes(
         .select({ id: companies.id })
         .from(companies);
       return rows.map((row) => row.id);
-    }
-
-    if (req.actor.type === "agent" && req.actor.companyId) {
-      return [req.actor.companyId];
     }
 
     if (req.actor.type === "board") {
@@ -686,18 +602,15 @@ export function pluginRoutes(
     entityId: string,
     details: Record<string, unknown>,
   ): Promise<void> {
+    assertBoard(req);
     const companyIds = await resolvePluginAuditCompanyIds(req);
     if (companyIds.length === 0) return;
 
-    const actor = getActorInfo(req);
     await Promise.all(companyIds.map((companyId) =>
       logActivity(db, {
         companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action,
         entityType: "plugin",
         entityId,
@@ -746,32 +659,12 @@ export function pluginRoutes(
     }
   }
 
-  function performActionActorContext(req: Request, companyId: string | undefined): PluginPerformActionActorContext {
-    const scopedCompanyId = companyId ?? null;
-    if (req.actor.type === "agent") {
-      return {
-        type: "agent",
-        userId: null,
-        agentId: req.actor.agentId ?? null,
-        runId: req.actor.runId ?? null,
-        companyId: scopedCompanyId,
-      };
-    }
-    if (req.actor.type === "board") {
-      return {
-        type: "user",
-        userId: req.actor.userId ?? null,
-        agentId: null,
-        runId: req.actor.runId ?? null,
-        companyId: scopedCompanyId,
-      };
-    }
+  function performActionActorContext(req: Request, companyId: string | undefined) {
+    assertBoard(req);
     return {
-      type: "system",
-      userId: null,
-      agentId: null,
-      runId: req.actor.runId ?? null,
-      companyId: scopedCompanyId,
+      type: "user" as const,
+      userId: req.actor.userId,
+      companyId: companyId ?? null,
     };
   }
 
@@ -781,40 +674,6 @@ export function pluginRoutes(
   ): Record<string, unknown> {
     const base = params ?? {};
     return companyId === undefined ? base : { ...base, companyId };
-  }
-
-  async function validateToolRunContextScope(runContext: ToolRunContext): Promise<string | null> {
-    const [agent] = await db
-      .select({ companyId: agents.companyId })
-      .from(agents)
-      .where(eq(agents.id, runContext.agentId))
-      .limit(1);
-    if (!agent || agent.companyId !== runContext.companyId) {
-      return '"runContext.agentId" does not belong to "runContext.companyId"';
-    }
-
-    const [run] = await db
-      .select({ companyId: heartbeatRuns.companyId, agentId: heartbeatRuns.agentId })
-      .from(heartbeatRuns)
-      .where(eq(heartbeatRuns.id, runContext.runId))
-      .limit(1);
-    if (!run || run.companyId !== runContext.companyId) {
-      return '"runContext.runId" does not belong to "runContext.companyId"';
-    }
-    if (run.agentId !== runContext.agentId) {
-      return '"runContext.runId" does not belong to "runContext.agentId"';
-    }
-
-    const [project] = await db
-      .select({ companyId: projects.companyId })
-      .from(projects)
-      .where(eq(projects.id, runContext.projectId))
-      .limit(1);
-    if (!project || project.companyId !== runContext.companyId) {
-      return '"runContext.projectId" does not belong to "runContext.companyId"';
-    }
-
-    return null;
   }
 
   /**
@@ -934,7 +793,7 @@ export function pluginRoutes(
   /**
    * GET /api/plugins/tools
    *
-   * List all available plugin-contributed tools in an agent-friendly format.
+   * List all available plugin-contributed tools for board configuration.
    *
    * Query params:
    * - `pluginId` (optional): Filter to tools from a specific plugin
@@ -943,7 +802,7 @@ export function pluginRoutes(
    * Errors: 501 if tool dispatcher is not configured
    */
   router.get("/plugins/tools", async (req, res) => {
-    assertBoardOrAgent(req);
+    assertBoardOrgAccess(req);
 
     if (!toolDeps) {
       res.status(501).json({ error: "Plugin tool dispatch is not enabled" });
@@ -951,138 +810,9 @@ export function pluginRoutes(
     }
 
     const pluginId = req.query.pluginId as string | undefined;
-    if (req.actor.type === "agent" && toolGatewayDeps) {
-      if (!req.actor.companyId || !req.actor.agentId) {
-        res.status(401).json({ error: "Agent identity is required" });
-        return;
-      }
-      const tools = await toolGatewayDeps.toolGateway.listPluginToolsForAgent({
-        companyId: req.actor.companyId,
-        agentId: req.actor.agentId,
-      });
-      res.json(pluginId ? tools.filter((tool) => tool.pluginId === pluginId || tool.name.startsWith(`${pluginId}:`)) : tools);
-      return;
-    }
-
     const filter = pluginId ? { pluginId } : undefined;
     const tools = toolDeps.toolDispatcher.listToolsForAgent(filter);
     res.json(tools);
-  });
-
-  /**
-   * POST /api/plugins/tools/execute
-   *
-   * Execute a plugin-contributed tool by its namespaced name.
-   *
-   * This is the primary endpoint used by the agent service to invoke
-   * plugin tools during an agent run.
-   *
-   * Request body:
-   * - `tool`: Fully namespaced tool name (e.g., "acme.linear:search-issues")
-   * - `parameters`: Parameters matching the tool's declared JSON Schema
-   * - `runContext`: Agent run context with agentId, runId, companyId, projectId
-   *
-   * Response: `ToolExecutionResult`
-   * Errors:
-   * - 400 if request validation fails
-   * - 404 if tool is not found
-   * - 501 if tool dispatcher is not configured
-   * - 502 if the plugin worker is unavailable or the RPC call fails
-   */
-  router.post("/plugins/tools/execute", async (req, res) => {
-    assertBoardOrAgent(req);
-
-    if (!toolDeps) {
-      res.status(501).json({ error: "Plugin tool dispatch is not enabled" });
-      return;
-    }
-
-    const body = (req.body as PluginToolExecuteRequest | undefined);
-    if (!body) {
-      res.status(400).json({ error: "Request body is required" });
-      return;
-    }
-
-    const { tool, parameters, runContext } = body;
-
-    // Validate required fields
-    if (!tool || typeof tool !== "string") {
-      res.status(400).json({ error: '"tool" is required and must be a string' });
-      return;
-    }
-
-    if (!runContext || typeof runContext !== "object") {
-      res.status(400).json({ error: '"runContext" is required and must be an object' });
-      return;
-    }
-
-    if (!runContext.agentId || !runContext.runId || !runContext.companyId || !runContext.projectId) {
-      res.status(400).json({
-        error: '"runContext" must include agentId, runId, companyId, and projectId',
-      });
-      return;
-    }
-
-    assertCompanyAccess(req, runContext.companyId);
-    const scopeError = await validateToolRunContextScope(runContext);
-    if (scopeError) {
-      res.status(403).json({ error: scopeError });
-      return;
-    }
-
-    if (req.actor.type === "agent" && toolGatewayDeps) {
-      try {
-        const result = await toolGatewayDeps.toolGateway.executePluginTool({
-          actor: {
-            type: "agent",
-            agentId: req.actor.agentId,
-            companyId: req.actor.companyId,
-            runId: req.actor.runId ?? null,
-          },
-          tool,
-          parameters: parameters ?? {},
-          runContext,
-        });
-        res.json(result);
-      } catch (err) {
-        if (err instanceof ToolGatewayHttpError) {
-          res.status(err.status).json({ error: err.message, reasonCode: err.reasonCode, ...err.details });
-          return;
-        }
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.includes("not running") || message.includes("worker")) {
-          res.status(502).json({ error: message });
-        } else {
-          res.status(500).json({ error: message });
-        }
-      }
-      return;
-    }
-
-    // Verify the tool exists
-    const registeredTool = toolDeps.toolDispatcher.getTool(tool);
-    if (!registeredTool) {
-      res.status(404).json({ error: `Tool "${tool}" not found` });
-      return;
-    }
-
-    try {
-      const result = await toolDeps.toolDispatcher.executeTool(
-        tool,
-        parameters ?? {},
-        runContext,
-      );
-      res.json(result);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-
-      // Distinguish between "worker not running" (502) and other errors (500)
-      if (message.includes("not running") || message.includes("worker")) {
-        res.status(502).json({ error: message });
-      } else {
-        res.status(500).json({ error: message });
-      }
-    }
   });
 
   /**
@@ -1817,7 +1547,6 @@ export function pluginRoutes(
         return;
       }
       assertCompanyAccess(req, companyId);
-      await enforceScopedApiCheckout(req, match.route, match.params, companyId);
       if (req.method !== "GET" && req.headers["content-type"] && !req.is("application/json")) {
         res.status(415).json({ error: "Plugin API routes accept JSON requests only" });
         return;
@@ -1829,8 +1558,7 @@ export function pluginRoutes(
         return;
       }
 
-      const actor = getActorInfo(req);
-      const input: PluginScopedApiRequest = {
+      const input: PluginApiRequestInput = {
         routeKey: match.route.routeKey,
         method: req.method,
         path: requestPath,
@@ -1838,11 +1566,9 @@ export function pluginRoutes(
         query: normalizeQuery(req.query),
         body: requestBody,
         actor: {
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          agentId: actor.agentId,
-          userId: actor.actorType === "user" ? actor.actorId : null,
-          runId: actor.runId,
+          actorType: "user",
+          actorId: req.actor.userId,
+          userId: req.actor.userId,
         },
         companyId,
         headers: sanitizePluginRequestHeaders(req),
@@ -1917,8 +1643,9 @@ export function pluginRoutes(
    * Uninstall a plugin.
    *
    * Query params:
-   * - purge: If "true", permanently delete all plugin data (hard delete)
-   *          Otherwise, soft-delete with 30-day data retention
+   * - purge: If "true", delete operational config, state, jobs, webhooks,
+   *          and the installation-scoped database namespace. The immutable
+   *          installation tombstone and provenance are always retained.
    *
    * Response: PluginRecord (the deleted record)
    * Errors: 404 if plugin not found, 400 for lifecycle errors
@@ -2288,7 +2015,10 @@ export function pluginRoutes(
         companyId,
         { targetType: "plugin", targetId: plugin.id },
         secretRefs,
-        { replaceAll: true },
+        {
+          actor: { type: "user", userId: req.actor.userId },
+          replaceAll: true,
+        },
       );
 
       const result = await registry.upsertConfig(plugin.id, companyId, {

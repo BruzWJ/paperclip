@@ -1,10 +1,12 @@
-import type {
-  Approval,
-  DashboardSummary,
-  HeartbeatRun,
-  InboxDismissal,
-  Issue,
-  JoinRequest,
+import {
+  compareMoneyAmounts,
+  parseMoneyAmount,
+  type Approval,
+  type DashboardSummary,
+  type IssueExecutionRunEnvelopeRecord,
+  type InboxDismissal,
+  type Issue,
+  type JoinRequest,
 } from "@paperclipai/shared";
 import {
   applyIssueFilters,
@@ -13,9 +15,10 @@ import {
   type IssueFilterState,
   type IssueFilterWorkspaceContext,
 } from "./issue-filters";
-import { formatAssigneeUserLabel } from "./assignees";
+import { formatOwnerUserLabel } from "./issue-owners";
 
 export const RECENT_ISSUES_LIMIT = 100;
+const ZERO_AMOUNT = parseMoneyAmount("0");
 export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
 export const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
 export const DISMISSED_KEY = "paperclip:inbox:dismissed";
@@ -35,11 +38,11 @@ export type InboxCategoryFilter =
   | "failed_runs"
   | "alerts";
 export type InboxApprovalFilter = "all" | "actionable" | "resolved";
-export type InboxWorkItemGroupBy = "none" | "type" | "assignee" | "project" | "workspace";
+export type InboxWorkItemGroupBy = "none" | "type" | "owner" | "project" | "workspace";
 export const inboxIssueColumns = [
   "status",
   "id",
-  "assignee",
+  "owner",
   "kickedOffBy",
   "project",
   "workspace",
@@ -68,7 +71,7 @@ export type InboxWorkItem =
   | {
       kind: "failed_run";
       timestamp: number;
-      run: HeartbeatRun;
+      run: IssueExecutionRunEnvelopeRecord;
     }
   | {
       kind: "join_request";
@@ -153,8 +156,7 @@ export interface InboxIssueGroupCreateDefaults {
   projectWorkspaceId?: string;
   executionWorkspaceId?: string;
   executionWorkspaceMode?: string;
-  assigneeAgentId?: string;
-  assigneeUserId?: string;
+  ownerAgentId?: string;
 }
 
 const defaultInboxFilterPreferences: InboxFilterPreferences = {
@@ -360,7 +362,7 @@ export function saveInboxIssueColumns(columns: InboxIssueColumn[]) {
 export function loadInboxWorkItemGroupBy(): InboxWorkItemGroupBy {
   try {
     const raw = localStorage.getItem(INBOX_GROUP_BY_KEY);
-    return raw === "type" || raw === "assignee" || raw === "project" || raw === "workspace" ? raw : "none";
+    return raw === "type" || raw === "owner" || raw === "project" || raw === "workspace" ? raw : "none";
   } catch {
     return "none";
   }
@@ -395,7 +397,7 @@ export function filterInboxIssues(issues: Issue[], hideRoutineExecutions: boolea
 }
 
 export function matchesInboxIssueSearch(
-  issue: Pick<Issue, "title" | "identifier" | "description" | "executionWorkspaceId" | "projectId" | "projectWorkspaceId">,
+  issue: Pick<Issue, "title" | "identifier" | "request" | "currentExecutionWorkspace" | "projectId" | "projectWorkspaceId">,
   query: string,
   {
     isolatedWorkspacesEnabled = false,
@@ -408,9 +410,9 @@ export function matchesInboxIssueSearch(
 ): boolean {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return true;
-  if (issue.title.toLowerCase().includes(normalizedQuery)) return true;
+  if (issue.title?.toLowerCase().includes(normalizedQuery)) return true;
   if (issue.identifier?.toLowerCase().includes(normalizedQuery)) return true;
-  if (issue.description?.toLowerCase().includes(normalizedQuery)) return true;
+  if (issue.request?.toLowerCase().includes(normalizedQuery)) return true;
   if (!isolatedWorkspacesEnabled) return false;
 
   const workspaceName = resolveIssueWorkspaceName(issue, {
@@ -517,19 +519,20 @@ function resolveDefaultProjectWorkspaceInfo(
 }
 
 export function resolveIssueWorkspaceName(
-  issue: Pick<Issue, "executionWorkspaceId" | "projectId" | "projectWorkspaceId">,
+  issue: Pick<Issue, "currentExecutionWorkspace" | "projectId" | "projectWorkspaceId">,
   {
     executionWorkspaceById,
     projectWorkspaceById,
     defaultProjectWorkspaceIdByProjectId,
   }: InboxWorkspaceGroupingOptions,
 ): string | null {
+  const executionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
   const defaultProjectWorkspaceId = issue.projectId
     ? defaultProjectWorkspaceIdByProjectId?.get(issue.projectId) ?? null
     : null;
 
-  if (issue.executionWorkspaceId) {
-    const executionWorkspace = executionWorkspaceById?.get(issue.executionWorkspaceId) ?? null;
+  if (executionWorkspaceId) {
+    const executionWorkspace = executionWorkspaceById?.get(executionWorkspaceId) ?? issue.currentExecutionWorkspace ?? null;
     const linkedProjectWorkspaceId =
       executionWorkspace?.projectWorkspaceId ?? issue.projectWorkspaceId ?? null;
     const isDefaultSharedExecutionWorkspace =
@@ -550,20 +553,21 @@ export function resolveIssueWorkspaceName(
 }
 
 export function resolveIssueWorkspaceGroup(
-  issue: Pick<Issue, "executionWorkspaceId" | "projectId" | "projectWorkspaceId">,
+  issue: Pick<Issue, "currentExecutionWorkspace" | "projectId" | "projectWorkspaceId">,
   {
     executionWorkspaceById,
     projectWorkspaceById,
     defaultProjectWorkspaceIdByProjectId,
   }: InboxWorkspaceGroupingOptions = {},
 ): { key: string; label: string } {
+  const executionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
   const defaultProjectWorkspace = resolveDefaultProjectWorkspaceInfo(issue, {
     projectWorkspaceById,
     defaultProjectWorkspaceIdByProjectId,
   });
 
-  if (issue.executionWorkspaceId) {
-    const executionWorkspace = executionWorkspaceById?.get(issue.executionWorkspaceId) ?? null;
+  if (executionWorkspaceId) {
+    const executionWorkspace = executionWorkspaceById?.get(executionWorkspaceId) ?? issue.currentExecutionWorkspace ?? null;
     const linkedProjectWorkspaceId =
       executionWorkspace?.projectWorkspaceId ?? issue.projectWorkspaceId ?? null;
     const isDefaultSharedExecutionWorkspace =
@@ -581,7 +585,7 @@ export function resolveIssueWorkspaceGroup(
     const workspaceName = executionWorkspace?.name?.trim();
     if (workspaceName) {
       return {
-        key: `workspace:execution:${issue.executionWorkspaceId}`,
+        key: `workspace:execution:${executionWorkspaceId}`,
         label: workspaceName,
       };
     }
@@ -692,15 +696,18 @@ export function getInboxKeyboardSelectionIndex(
     : Math.max(previousIndex - 1, 0);
 }
 
-export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
+export function getLatestFailedRunsByAgent(
+  runs: IssueExecutionRunEnvelopeRecord[],
+): IssueExecutionRunEnvelopeRecord[] {
   const sorted = [...runs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
-  const latestByAgent = new Map<string, HeartbeatRun>();
+  const latestByAgent = new Map<string, IssueExecutionRunEnvelopeRecord>();
 
   for (const run of sorted) {
-    if (!latestByAgent.has(run.agentId)) {
-      latestByAgent.set(run.agentId, run);
+    const agentKey = run.targetAgentId ?? "paperclip-compaction";
+    if (!latestByAgent.has(agentKey)) {
+      latestByAgent.set(agentKey, run);
     }
   }
 
@@ -785,7 +792,7 @@ export function getInboxWorkItems({
 }: {
   issues: Issue[];
   approvals: Approval[];
-  failedRuns?: HeartbeatRun[];
+  failedRuns?: IssueExecutionRunEnvelopeRecord[];
   joinRequests?: JoinRequest[];
 }): InboxWorkItem[] {
   return [
@@ -838,30 +845,30 @@ const inboxWorkItemKindLabels: Record<InboxWorkItem["kind"], string> = {
   join_request: "Join requests",
 };
 
-function resolveIssueAssigneeGroup(
-  issue: Pick<Issue, "assigneeAgentId" | "assigneeUserId">,
+function resolveIssueOwnerGroup(
+  issue: Pick<Issue, "ownerKind" | "ownerAgentId" | "ownerUserId">,
   {
     agentById,
     currentUserId,
     userLabelById,
   }: Pick<InboxWorkspaceGroupingOptions, "agentById" | "currentUserId" | "userLabelById">,
 ): { key: string; label: string } {
-  if (issue.assigneeAgentId) {
-    const agentName = agentById?.get(issue.assigneeAgentId)?.trim();
+  if (issue.ownerAgentId) {
+    const agentName = agentById?.get(issue.ownerAgentId)?.trim();
     return {
-      key: `assignee:agent:${issue.assigneeAgentId}`,
-      label: agentName || issue.assigneeAgentId.slice(0, 8),
+      key: `owner:agent:${issue.ownerAgentId}`,
+      label: agentName || issue.ownerAgentId.slice(0, 8),
     };
   }
 
-  if (issue.assigneeUserId) {
+  if (issue.ownerUserId) {
     return {
-      key: `assignee:user:${issue.assigneeUserId}`,
-      label: formatAssigneeUserLabel(issue.assigneeUserId, currentUserId, userLabelById) ?? "User",
+      key: `owner:user:${issue.ownerUserId}`,
+      label: formatOwnerUserLabel(issue.ownerUserId, currentUserId, userLabelById) ?? "User",
     };
   }
 
-  return { key: "assignee:none", label: "Unassigned" };
+  return { key: "owner:board", label: "Board escalation" };
 }
 
 function resolveIssueProjectGroup(
@@ -931,8 +938,8 @@ export function groupInboxWorkItems(
     return groupInboxWorkItemsByIssueGroup(items, (issue) => resolveIssueWorkspaceGroup(issue, options));
   }
 
-  if (groupBy === "assignee") {
-    return groupInboxWorkItemsByIssueGroup(items, (issue) => resolveIssueAssigneeGroup(issue, options));
+  if (groupBy === "owner") {
+    return groupInboxWorkItemsByIssueGroup(items, (issue) => resolveIssueOwnerGroup(issue, options));
   }
 
   if (groupBy === "project") {
@@ -995,14 +1002,10 @@ export function buildInboxIssueGroupCreateDefaults(
     return projectId && projectId !== "none" ? { projectId } : {};
   }
 
-  if (groupBy === "assignee") {
-    if (key.startsWith("assignee:agent:")) {
-      const assigneeAgentId = key.slice("assignee:agent:".length);
-      return assigneeAgentId ? { assigneeAgentId } : {};
-    }
-    if (key.startsWith("assignee:user:")) {
-      const assigneeUserId = key.slice("assignee:user:".length);
-      return assigneeUserId ? { assigneeUserId } : {};
+  if (groupBy === "owner") {
+    if (key.startsWith("owner:agent:")) {
+      const ownerAgentId = key.slice("owner:agent:".length);
+      return ownerAgentId ? { ownerAgentId } : {};
     }
     return {};
   }
@@ -1013,7 +1016,11 @@ export function buildInboxIssueGroupCreateDefaults(
       if (!executionWorkspaceId) return {};
       const executionWorkspace = options.executionWorkspaceById?.get(executionWorkspaceId) ?? null;
       const projectWorkspaceId = executionWorkspace?.projectWorkspaceId
-        ?? (fallbackIssue.executionWorkspaceId === executionWorkspaceId ? fallbackIssue.projectWorkspaceId : null);
+        ?? (
+          fallbackIssue.currentExecutionWorkspace?.id === executionWorkspaceId
+            ? fallbackIssue.projectWorkspaceId
+            : null
+        );
       const projectId = executionWorkspace?.projectId
         ?? projectIdForProjectWorkspace(projectWorkspaceId, options, fallbackIssue);
       return {
@@ -1226,7 +1233,7 @@ export function computeInboxBadgeData({
   approvals,
   joinRequests,
   dashboard,
-  heartbeatRuns,
+  runs,
   mineIssues,
   dismissedAlerts,
   dismissedAtByKey,
@@ -1235,7 +1242,7 @@ export function computeInboxBadgeData({
   approvals: Approval[];
   joinRequests: JoinRequest[];
   dashboard: DashboardSummary | undefined;
-  heartbeatRuns: HeartbeatRun[];
+  runs: IssueExecutionRunEnvelopeRecord[];
   mineIssues: Issue[];
   dismissedAlerts: Set<string>;
   dismissedAtByKey: ReadonlyMap<string, number>;
@@ -1247,7 +1254,7 @@ export function computeInboxBadgeData({
       ACTIONABLE_APPROVAL_STATUSES.has(approval.status) &&
       !isInboxEntityDismissed(dismissedAtByKey, `approval:${approval.id}`, approval.updatedAt),
   ).length;
-  const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns).filter(
+  const failedRuns = getLatestFailedRunsByAgent(runs).filter(
     (run) => !isInboxEntityDismissed(dismissedAtByKey, `run:${run.id}`, run.createdAt),
   ).length;
   const visibleJoinRequests = joinRequests.filter(
@@ -1255,14 +1262,14 @@ export function computeInboxBadgeData({
   ).length;
   const visibleMineIssues = mineIssues.filter((issue) => issue.isUnreadForMe).length;
   const agentErrorCount = dashboard?.agents.error ?? 0;
-  const monthBudgetCents = dashboard?.costs.monthBudgetCents ?? 0;
+  const monthBudgetAmount = dashboard?.costs.monthBudgetAmount ?? ZERO_AMOUNT;
   const monthUtilizationPercent = dashboard?.costs.monthUtilizationPercent ?? 0;
   const showAggregateAgentError =
     agentErrorCount > 0 &&
     failedRuns === 0 &&
     !dismissedAlerts.has("alert:agent-errors");
   const showBudgetAlert =
-    monthBudgetCents > 0 &&
+    compareMoneyAmounts(monthBudgetAmount, ZERO_AMOUNT) > 0 &&
     monthUtilizationPercent >= 80 &&
     !dismissedAlerts.has("alert:budget");
   const alerts = Number(showAggregateAgentError) + Number(showBudgetAlert);

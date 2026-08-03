@@ -1,8 +1,13 @@
 import type {
-  AcceptedPlanDecompositionSummary,
-  AskUserQuestionsAnswer,
   Approval,
+  BoardIssueComment,
+  BoardIssueCommentGroupPage,
+  BoardIssueCommentThreadPage,
   CompactIssue,
+  CommitIssueCreatorForm,
+  CommitIssueOwnerForm,
+  CreateIssue,
+  CreateIssueUserComment,
   CreateIssueTreeHold,
   DocumentRevision,
   FeedbackTargetType,
@@ -12,29 +17,69 @@ import type {
   IssueAttachment,
   IssueCostSummary,
   IssueComment,
+  IssueExecutionDecision,
+  IssueBoardReopenDispatch,
   IssueDocument,
   IssueLabel,
-  IssueRecoveryAction,
-  IssueRetryNowResponse,
-  IssueThreadInteraction,
   IssueTreeControlPreview,
   IssueTreeHold,
   IssueWatchdog,
   IssueWorkProduct,
   PreviewIssueTreeControl,
+  ReassignIssue,
   ReleaseIssueTreeHold,
+  ReopenIssue,
+  SelfAssignIssueWithdrawal,
+  UpdateIssueExecutionPolicy,
+  DecideIssueExecutionStage,
+  UpdateIssueTitle,
   UpsertIssueWatchdog,
   UpsertIssueDocument,
 } from "@paperclipai/shared";
 import { api, type RequestOptions } from "./client";
 
-export type IssueUpdateResponse = Issue & {
-  comment?: IssueComment | null;
+type IssueExecutionRefSummary = {
+  id: string;
+  [key: string]: unknown;
 };
 
-export type ResolveRecoveryActionResponse = {
+export type IssueReassignmentResponse = {
   issue: Issue;
-  recoveryAction: IssueRecoveryAction;
+  ref: IssueExecutionRefSummary;
+  retried: boolean;
+};
+
+export type IssueFormCommitResponse = {
+  update: Record<string, unknown>;
+  comment: IssueComment;
+  delivery: Record<string, unknown>;
+  ref: IssueExecutionRefSummary | null;
+  retried: boolean;
+};
+
+export type IssueWithdrawalSelfAssignmentResponse = {
+  issue: Issue;
+  auditId: string;
+  retried: boolean;
+};
+
+export type IssueReopenResponse = {
+  issue: Issue;
+  edge: Record<string, unknown>;
+  command: Record<string, unknown>;
+  dispatch: IssueBoardReopenDispatch;
+  retried: boolean;
+};
+
+export type IssueUserCommentResponse = {
+  comment: BoardIssueComment;
+  retried: boolean;
+};
+
+export type IssueExecutionPolicyDecisionResponse = {
+  issue: Issue;
+  decision: IssueExecutionDecision;
+  retried: boolean;
 };
 
 export type IssueListFilters = {
@@ -42,9 +87,9 @@ export type IssueListFilters = {
   status?: string;
   projectId?: string;
   parentId?: string;
-  assigneeAgentId?: string;
+  ownerAgentId?: string;
   participantAgentId?: string;
-  assigneeUserId?: string;
+  ownerUserId?: string;
   touchedByUserId?: string;
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
@@ -73,9 +118,9 @@ function issueListSearchParams(filters?: IssueListFilters) {
   if (filters?.status) params.set("status", filters.status);
   if (filters?.projectId) params.set("projectId", filters.projectId);
   if (filters?.parentId) params.set("parentId", filters.parentId);
-  if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
+  if (filters?.ownerAgentId) params.set("ownerAgentId", filters.ownerAgentId);
   if (filters?.participantAgentId) params.set("participantAgentId", filters.participantAgentId);
-  if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
+  if (filters?.ownerUserId) params.set("ownerUserId", filters.ownerUserId);
   if (filters?.touchedByUserId) params.set("touchedByUserId", filters.touchedByUserId);
   if (filters?.inboxArchivedByUserId) params.set("inboxArchivedByUserId", filters.inboxArchivedByUserId);
   if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
@@ -123,8 +168,8 @@ export const issuesApi = {
     filters: {
       attention: "blocked";
       status?: string;
-      assigneeAgentId?: string;
-      assigneeUserId?: string;
+      ownerAgentId?: string;
+      ownerUserId?: string;
       projectId?: string;
       labelId?: string;
       q?: string;
@@ -133,8 +178,8 @@ export const issuesApi = {
     const params = new URLSearchParams();
     params.set("attention", filters.attention);
     if (filters.status) params.set("status", filters.status);
-    if (filters.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
-    if (filters.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
+    if (filters.ownerAgentId) params.set("ownerAgentId", filters.ownerAgentId);
+    if (filters.ownerUserId) params.set("ownerUserId", filters.ownerUserId);
     if (filters.projectId) params.set("projectId", filters.projectId);
     if (filters.labelId) params.set("labelId", filters.labelId);
     if (filters.q) params.set("q", filters.q);
@@ -157,19 +202,50 @@ export const issuesApi = {
     api.post<{ id: string; archivedAt: Date }>(`/issues/${id}/inbox-archive`, {}),
   unarchiveFromInbox: (id: string) =>
     api.delete<{ id: string; archivedAt: Date } | { ok: true }>(`/issues/${id}/inbox-archive`),
-  create: (companyId: string, data: Record<string, unknown>) =>
+  create: (companyId: string, data: CreateIssue) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),
-  update: (id: string, data: Record<string, unknown>) =>
-    api.patch<IssueUpdateResponse>(`/issues/${id}`, data),
-  resolveRecoveryAction: (
+  updateTitle: (id: string, data: UpdateIssueTitle) =>
+    api.patch<Issue>(`/issues/${id}`, data),
+  updateExecutionPolicy: (
     id: string,
-    data: {
-      actionId?: string;
-      outcome: "restored" | "false_positive" | "blocked" | "cancelled";
-      sourceIssueStatus: "todo" | "done" | "in_review" | "blocked";
-      resolutionNote?: string | null;
-    },
-  ) => api.post<ResolveRecoveryActionResponse>(`/issues/${id}/recovery-actions/resolve`, data),
+    data: UpdateIssueExecutionPolicy,
+  ) =>
+    api.put<Issue>(`/issues/${id}/execution-policy`, data),
+  decideExecutionStage: (
+    id: string,
+    data: DecideIssueExecutionStage,
+  ) =>
+    api.post<IssueExecutionPolicyDecisionResponse>(
+      `/issues/${id}/execution-policy/decisions`,
+      data,
+    ),
+  reassign: (id: string, data: ReassignIssue) =>
+    api.post<IssueReassignmentResponse>(`/issues/${id}/reassign`, data),
+  creatorReassign: (id: string, data: ReassignIssue) =>
+    api.post<IssueReassignmentResponse>(
+      `/issues/${id}/creator-reassign`,
+      data,
+    ),
+  commitCreatorFormUpdate: (data: CommitIssueCreatorForm) =>
+    api.post<IssueFormCommitResponse>(
+      "/issue-creator-form-updates",
+      data,
+    ),
+  commitOwnerFormUpdate: (data: CommitIssueOwnerForm) =>
+    api.post<IssueFormCommitResponse>(
+      "/issue-owner-form-updates",
+      data,
+    ),
+  selfAssignForWithdrawal: (
+    id: string,
+    data: SelfAssignIssueWithdrawal,
+  ) =>
+    api.post<IssueWithdrawalSelfAssignmentResponse>(
+      `/issues/${id}/withdrawal-self-assignment`,
+      data,
+    ),
+  reopen: (id: string, data: ReopenIssue) =>
+    api.post<IssueReopenResponse>(`/issues/${id}/reopen`, data),
   previewTreeControl: (id: string, data: PreviewIssueTreeControl) =>
     api.post<IssueTreeControlPreview>(`/issues/${id}/tree-control/preview`, data),
   createTreeHold: (id: string, data: CreateIssueTreeHold) =>
@@ -206,60 +282,36 @@ export const issuesApi = {
   releaseTreeHold: (id: string, holdId: string, data: ReleaseIssueTreeHold) =>
     api.post<IssueTreeHold>(`/issues/${id}/tree-holds/${holdId}/release`, data),
   checkMonitorNow: (id: string) => api.post<{ ok: true }>(`/issues/${id}/monitor/check-now`, {}),
-  retryScheduledRetryNow: (id: string) =>
-    api.post<IssueRetryNowResponse>(`/issues/${id}/scheduled-retry/retry-now`, {}),
-  remove: (id: string) => api.delete<Issue>(`/issues/${id}`),
-  checkout: (id: string, agentId: string) =>
-    api.post<Issue>(`/issues/${id}/checkout`, {
-      agentId,
-      expectedStatuses: ["todo", "backlog", "blocked", "in_review"],
-    }),
-  release: (id: string) => api.post<Issue>(`/issues/${id}/release`, {}),
   listComments: (
     id: string,
     filters?: {
-      after?: string;
-      order?: "asc" | "desc";
+      cursor?: string;
       limit?: number;
+      entryLimit?: number;
     },
   ) => {
     const params = new URLSearchParams();
-    if (filters?.after) params.set("after", filters.after);
-    if (filters?.order) params.set("order", filters.order);
+    if (filters?.cursor) params.set("cursor", filters.cursor);
+    if (filters?.limit) params.set("limit", String(filters.limit));
+    if (filters?.entryLimit) params.set("entryLimit", String(filters.entryLimit));
+    const qs = params.toString();
+    return api.get<BoardIssueCommentGroupPage>(`/issues/${id}/comments${qs ? `?${qs}` : ""}`);
+  },
+  getComment: (id: string, commentId: string) =>
+    api.get<BoardIssueComment>(`/issues/${id}/comments/${commentId}`),
+  getCommentThread: (
+    id: string,
+    rootCommentId: string,
+    filters?: { cursor?: string; limit?: number },
+  ) => {
+    const params = new URLSearchParams();
+    if (filters?.cursor) params.set("cursor", filters.cursor);
     if (filters?.limit) params.set("limit", String(filters.limit));
     const qs = params.toString();
-    return api.get<IssueComment[]>(`/issues/${id}/comments${qs ? `?${qs}` : ""}`);
+    return api.get<BoardIssueCommentThreadPage>(
+      `/issues/${id}/comments/${rootCommentId}/thread${qs ? `?${qs}` : ""}`,
+    );
   },
-  listInteractions: (id: string) =>
-    api.get<IssueThreadInteraction[]>(`/issues/${id}/interactions`),
-  listAcceptedPlanDecompositions: (id: string) =>
-    api.get<AcceptedPlanDecompositionSummary[]>(`/issues/${id}/accepted-plan-decompositions`),
-  createInteraction: (id: string, data: Record<string, unknown>) =>
-    api.post<IssueThreadInteraction>(`/issues/${id}/interactions`, data),
-  acceptInteraction: (
-    id: string,
-    interactionId: string,
-    data?: { selectedClientKeys?: string[]; selectedOptionIds?: string[] },
-  ) =>
-    api.post<IssueThreadInteraction>(`/issues/${id}/interactions/${interactionId}/accept`, data ?? {}),
-  rejectInteraction: (id: string, interactionId: string, reason?: string) =>
-    api.post<IssueThreadInteraction>(`/issues/${id}/interactions/${interactionId}/reject`, reason ? { reason } : {}),
-  cancelInteraction: (id: string, interactionId: string, reason?: string) =>
-    api.post<IssueThreadInteraction>(`/issues/${id}/interactions/${interactionId}/cancel`, reason ? { reason } : {}),
-  respondToInteraction: (
-    id: string,
-    interactionId: string,
-    data: { answers: AskUserQuestionsAnswer[]; summaryMarkdown?: string | null },
-  ) =>
-    api.post<IssueThreadInteraction>(`/issues/${id}/interactions/${interactionId}/respond`, data),
-  submitInteractionVerdicts: (
-    id: string,
-    interactionId: string,
-    verdicts: { id: string; verdict: "approve" | "reject" | "defer"; reason?: string | null }[],
-  ) =>
-    api.post<IssueThreadInteraction>(`/issues/${id}/interactions/${interactionId}/verdicts`, { verdicts }),
-  getComment: (id: string, commentId: string) =>
-    api.get<IssueComment>(`/issues/${id}/comments/${commentId}`),
   listFeedbackVotes: (id: string) => api.get<FeedbackVote[]>(`/issues/${id}/feedback-votes`),
   getCostSummary: (id: string, options: { excludeRoot?: boolean } = {}) => {
     const qs = options.excludeRoot ? "?excludeRoot=true" : "";
@@ -284,19 +336,8 @@ export const issuesApi = {
       allowSharing?: boolean;
     },
   ) => api.post<FeedbackVote>(`/issues/${id}/feedback-votes`, data),
-  addComment: (id: string, body: string, reopen?: boolean, interrupt?: boolean) =>
-    api.post<IssueComment>(
-      `/issues/${id}/comments`,
-      {
-        body,
-        ...(reopen === undefined ? {} : { reopen }),
-        ...(interrupt === undefined ? {} : { interrupt }),
-      },
-    ),
-  cancelComment: (id: string, commentId: string) =>
-    api.delete<IssueComment>(`/issues/${id}/comments/${commentId}?mode=cancel`),
-  deleteComment: (id: string, commentId: string) =>
-    api.delete<IssueComment>(`/issues/${id}/comments/${commentId}`),
+  addComment: (id: string, data: CreateIssueUserComment) =>
+    api.post<IssueUserCommentResponse>(`/issues/${id}/comments`, data),
   listDocuments: (id: string, options?: { includeSystem?: boolean }) =>
     api.get<IssueDocument[]>(
       `/issues/${id}/documents${options?.includeSystem ? "?includeSystem=true" : ""}`,

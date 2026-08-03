@@ -70,22 +70,16 @@ const GENERATED_RUNTIME_ENV_KEY_RE = /^PAPERCLIP_/;
 const SENSITIVE_CONFIG_KEY_RE =
   /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|cookie|credential|jwt|password|passwd|private[_-]?key|secret|token)$/i;
 const VOLATILE_CONFIG_KEYS = new Set([
-  "checkoutRunId",
-  "executionRunId",
-  "externalRunId",
-  "heartbeatRunId",
+  "runId",
   "invocationId",
   "leaseId",
   "providerLeaseId",
   "requestId",
   "runId",
-  "sessionDisplayId",
-  "sessionId",
   "spanId",
   "traceId",
 ]);
 const HOST_NOISE_KEYS = new Set([
-  "agentHome",
   "homeDir",
   "hostCwd",
   "localHome",
@@ -208,7 +202,7 @@ function omitNullish(record: Record<string, unknown>): EffectiveRunConfigCanonic
 }
 
 function isTimestampNoiseKey(key: string) {
-  return /(created|updated|started|finished|completed|cancelled|resolved|used|heartbeat)At$/i.test(key)
+  return /(created|updated|started|finished|completed|cancelled|resolved|used)At$/i.test(key)
     && !/(revision|version)/i.test(key);
 }
 

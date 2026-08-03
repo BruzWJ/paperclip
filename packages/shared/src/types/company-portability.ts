@@ -1,7 +1,20 @@
 import type { AgentEnvConfig } from "./secrets.js";
 import type { RoutineVariable } from "./routine.js";
 import type { IssueCommentAuthorType, PermissionKey } from "../constants.js";
+import type {
+  AgentContextGrantKey,
+  AgentMentionReachGrantKey,
+  AgentVisibleIssueStatus,
+  IssueAttentionMask,
+  IssueDisposition,
+  PaperclipActionKey,
+} from "../issue-runtime.js";
 import type { IssueCommentMetadata, IssueCommentPresentation } from "./issue.js";
+import type {
+  AgentGovernancePolicy,
+} from "./agent.js";
+import type { CompanySkillChannel } from "../validators/company-skill-pins.js";
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface CompanyPortabilityInclude {
   company: boolean;
@@ -14,7 +27,6 @@ export interface CompanyPortabilityInclude {
 export interface CompanyPortabilityEnvInput {
   key: string;
   description: string | null;
-  agentSlug: string | null;
   projectSlug: string | null;
   kind: "secret" | "plain";
   requirement: "required" | "optional";
@@ -36,6 +48,8 @@ export interface CompanyPortabilityCompanyManifestEntry {
   description: string | null;
   brandColor: string | null;
   logoPath: string | null;
+  budgetCurrency: BudgetCurrency;
+  budgetMonthlyAmount: MoneyAmount;
   attachmentMaxBytes: number | null;
   requireBoardApprovalForNewAgents: boolean;
   feedbackDataSharingEnabled: boolean;
@@ -93,6 +107,7 @@ export interface CompanyPortabilityIssueRoutineTriggerManifestEntry {
 export interface CompanyPortabilityIssueRoutineManifestEntry {
   concurrencyPolicy: string | null;
   catchUpPolicy: string | null;
+  attentionMask: IssueAttentionMask | null;
   variables?: RoutineVariable[] | null;
   triggers: CompanyPortabilityIssueRoutineTriggerManifestEntry[];
 }
@@ -110,21 +125,22 @@ export interface CompanyPortabilityIssueCommentManifestEntry {
 export interface CompanyPortabilityIssueManifestEntry {
   slug: string;
   identifier: string | null;
-  title: string;
+  title: string | null;
   path: string;
   projectSlug: string | null;
   projectWorkspaceKey: string | null;
-  assigneeAgentSlug: string | null;
-  description: string | null;
+  ownerAgentSlug: string;
+  request: string;
   recurring: boolean;
   routine: CompanyPortabilityIssueRoutineManifestEntry | null;
-  legacyRecurrence: Record<string, unknown> | null;
-  status: string | null;
+  lifecycleStatus: AgentVisibleIssueStatus;
+  disposition: IssueDisposition | null;
+  attentionMask: IssueAttentionMask | null;
+  boardPresentationStatus: string;
   priority: string | null;
   labelIds: string[];
   billingCode: string | null;
   executionWorkspaceSettings: Record<string, unknown> | null;
-  assigneeAdapterOverrides: Record<string, unknown> | null;
   comments: CompanyPortabilityIssueCommentManifestEntry[];
   metadata: Record<string, unknown> | null;
 }
@@ -134,22 +150,30 @@ export interface CompanyPortabilityAgentManifestEntry {
   name: string;
   path: string;
   skills: string[];
-  role: string;
   title: string | null;
   icon: string | null;
   capabilities: string | null;
   reportsToSlug: string | null;
   reportsToExistingAgentId: string | null;
   reportsToExistingAgentSlug: string | null;
-  adapterType: string;
-  adapterConfig: Record<string, unknown>;
-  runtimeConfig: Record<string, unknown>;
-  permissions: Record<string, unknown>;
+  adapterRevision: {
+    sourceRevisionId: string;
+    adapterType: string;
+    adapterConfig: Record<string, unknown>;
+    runtimeConfig: Record<string, unknown>;
+    sourceEnvironmentId: string;
+    skillChannel: CompanySkillChannel;
+  };
+  contextGrants: Record<AgentContextGrantKey, boolean>;
+  actionGrants: Record<PaperclipActionKey, boolean>;
+  mentionReachGrants: Record<AgentMentionReachGrantKey, boolean>;
+  companyToolIds: string[];
+  governance: AgentGovernancePolicy;
   permissionGrants: Array<{
     permissionKey: PermissionKey;
     scope: Record<string, unknown> | null;
   }>;
-  budgetMonthlyCents: number;
+  budgetMonthlyAmount: MoneyAmount;
   metadata: Record<string, unknown> | null;
 }
 
@@ -250,6 +274,7 @@ export interface CompanyPortabilityPreviewRequest {
   collisionStrategy?: CompanyPortabilityCollisionStrategy;
   nameOverrides?: Record<string, string>;
   selectedFiles?: string[];
+  adapterOverrides?: Record<string, CompanyPortabilityAdapterOverride>;
 }
 
 export interface CompanyPortabilityPreviewAgentPlan {
@@ -296,11 +321,12 @@ export interface CompanyPortabilityPreviewResult {
 
 export interface CompanyPortabilityAdapterOverride {
   adapterType: string;
-  adapterConfig?: Record<string, unknown>;
+  adapterConfig: Record<string, unknown>;
+  defaultEnvironmentId: string;
+  skillChannel: CompanySkillChannel;
 }
 
 export interface CompanyPortabilityImportRequest extends CompanyPortabilityPreviewRequest {
-  adapterOverrides?: Record<string, CompanyPortabilityAdapterOverride>;
   secretValues?: Record<string, string>;
 }
 

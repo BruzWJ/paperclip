@@ -9,9 +9,9 @@ import {
   updateFolderSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { badRequest, forbidden } from "../errors.js";
+import { badRequest } from "../errors.js";
 import { folderService, logActivity } from "../services/index.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertCompanyAccess } from "./authz.js";
 
 export function folderRoutes(db: Db) {
   const router = Router();
@@ -33,14 +33,10 @@ export function folderRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const created = await svc.create(companyId, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "folder.created",
       entityType: "folder",
       entityId: created.id,
@@ -55,18 +51,11 @@ export function folderRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
-      if (req.actor.type !== "board" || !req.actor.userId) {
-        throw forbidden("A signed-in board user is required to create a personal skill folder");
-      }
       const folder = await svc.ensureMyFolder(companyId, req.actor.userId, req.actor.userName ?? null, req.body.slug);
-      const actor = getActorInfo(req);
       await logActivity(db, {
         companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "folder.personal_ensured",
         entityType: "folder",
         entityId: folder.id,
@@ -85,14 +74,10 @@ export function folderRoutes(db: Db) {
       res.status(404).json({ error: "Folder not found" });
       return;
     }
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "folder.updated",
       entityType: "folder",
       entityId: updated.id,
@@ -105,14 +90,10 @@ export function folderRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const moved = await svc.moveItem(companyId, req.body);
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "folder.item_moved",
       entityType: req.body.kind === "routine" ? "routine" : "company_skill",
       entityId: moved.itemId,
@@ -130,14 +111,10 @@ export function folderRoutes(db: Db) {
       res.status(404).json({ error: "Folder not found" });
       return;
     }
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "folder.moved",
       entityType: "folder",
       entityId: updated.id,
@@ -155,14 +132,10 @@ export function folderRoutes(db: Db) {
       res.status(404).json({ error: "Folder not found" });
       return;
     }
-    const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      agentApiKeyId: actor.agentApiKeyId,
+      actorType: "user",
+      actorId: req.actor.userId,
       action: "folder.deleted",
       entityType: "folder",
       entityId: deleted.id,

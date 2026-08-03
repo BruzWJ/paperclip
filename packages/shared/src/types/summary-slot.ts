@@ -12,6 +12,7 @@ export interface SummarySlot {
   scopeKind: SummarySlotScopeKind;
   scopeId: string | null;
   slotKey: SummarySlotKey;
+  routineId: string | null;
   documentId: string | null;
   status: SummarySlotStatus;
   failureReason: string | null;
@@ -51,15 +52,16 @@ export interface SummarySlotRevision {
   createdByAgentId: string | null;
   createdByUserId: string | null;
   createdByRunId: string | null;
+  sourceIssueCommentId: string | null;
   createdAt: Date | string;
 }
 
 export interface SummarySlotIssueRef {
   id: string;
   identifier: string | null;
-  title: string;
-  status: IssueStatus;
-  assigneeAgentId?: string | null;
+  title: string | null;
+  boardPresentationStatus: IssueStatus;
+  ownerAgentId?: string | null;
 }
 
 export interface SummarySlotScopeSelector {
@@ -79,28 +81,14 @@ export interface ListSummarySlotRevisionsResponse {
   revisions: SummarySlotRevision[];
 }
 
-export interface GenerateSummarySlotRequest {
+export interface RefreshSummarySlotRequest {
   scopeId?: string | null;
+  /** Required only to configure a slot that does not yet have a routine. */
+  ownerAgentId?: string;
 }
 
-export interface GenerateSummarySlotResponse {
+export interface RefreshSummarySlotResponse {
   slot: SummarySlot;
   generatingIssue: SummarySlotIssueRef;
   alreadyGenerating: boolean;
-}
-
-export interface WriteSummarySlotRequest {
-  scopeId?: string | null;
-  markdown: string;
-  title?: string | null;
-  changeSummary?: string | null;
-  baseRevisionId?: string | null;
-  generationIssueId?: string | null;
-  model?: string | null;
-}
-
-export interface WriteSummarySlotResponse {
-  slot: SummarySlot;
-  document: SummarySlotDocument;
-  revision: SummarySlotRevision;
 }

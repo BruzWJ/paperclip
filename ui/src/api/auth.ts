@@ -1,6 +1,5 @@
 import {
   authSessionSchema,
-  currentUserProfileSchema,
   type AuthSession,
   type CurrentUserProfile,
   type UpdateCurrentUserProfile,
@@ -27,15 +26,6 @@ export class AuthApiError extends Error {
     this.code = code;
     this.body = body;
   }
-}
-
-function toSession(value: unknown): AuthSession | null {
-  const direct = authSessionSchema.safeParse(value);
-  if (direct.success) return direct.data;
-
-  if (!value || typeof value !== "object") return null;
-  const nested = authSessionSchema.safeParse((value as Record<string, unknown>).data);
-  return nested.success ? nested.data : null;
 }
 
 function extractAuthError(payload: AuthErrorBody, status: number) {
@@ -126,36 +116,35 @@ async function authPost(path: string, body: Record<string, unknown>) {
   return payload;
 }
 
-async function authPatch<T>(path: string, body: Record<string, unknown>, parse: (value: unknown) => T): Promise<T> {
-  const res = await fetch(`/api/auth${path}`, {
-    method: "PATCH",
+async function fetchSession(): Promise<AuthSession | null> {
+  const res = await fetch("/api/auth/get-session", {
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
+    headers: { Accept: "application/json" },
   });
   const payload = await res.json().catch(() => null);
+  if (res.status === 401 || payload === null) return null;
   if (!res.ok) {
-    throw extractAuthError(payload as AuthErrorBody, res.status);
+    throw new AuthApiError(
+      `Failed to load session (${res.status})`,
+      res.status,
+      payload,
+    );
   }
-  return parse(payload);
+
+  const parsed = authSessionSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new AuthApiError(
+      "Better Auth returned an invalid session payload",
+      502,
+      payload,
+      "INVALID_AUTH_SESSION",
+    );
+  }
+  return parsed.data;
 }
 
 export const authApi = {
-  getSession: async (): Promise<AuthSession | null> => {
-    const res = await fetch("/api/auth/get-session", {
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    });
-    if (res.status === 401) return null;
-    const payload = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new Error(`Failed to load session (${res.status})`);
-    }
-    const direct = toSession(payload);
-    if (direct) return direct;
-    const nested = payload && typeof payload === "object" ? toSession((payload as Record<string, unknown>).data) : null;
-    return nested;
-  },
+  getSession: fetchSession,
 
   signInEmail: async (input: { email: string; password: string }) => {
     await authPost("/sign-in/email", input);
@@ -165,20 +154,19 @@ export const authApi = {
     await authPost("/sign-up/email", input);
   },
 
-  getProfile: async (): Promise<CurrentUserProfile> => {
-    const res = await fetch("/api/auth/profile", {
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    });
-    const payload = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new Error((payload as { error?: string } | null)?.error ?? `Failed to load profile (${res.status})`);
+  updateProfile: async (input: UpdateCurrentUserProfile): Promise<CurrentUserProfile> => {
+    await authPost("/update-user", { ...input });
+    const session = await fetchSession();
+    if (!session) {
+      throw new AuthApiError(
+        "Better Auth session ended while updating the user profile",
+        401,
+        null,
+        "AUTH_SESSION_REQUIRED",
+      );
     }
-    return currentUserProfileSchema.parse(payload);
+    return session.user;
   },
-
-  updateProfile: async (input: UpdateCurrentUserProfile): Promise<CurrentUserProfile> =>
-    authPatch("/profile", input, (payload) => currentUserProfileSchema.parse(payload)),
 
   signOut: async () => {
     await authPost("/sign-out", {});

@@ -1,7 +1,7 @@
 /**
  * Centralized environment run orchestrator.
  *
- * Owns the full environment lifecycle for a heartbeat run:
+ * Owns the full environment lifecycle for an issue-execution run:
  *   1. Resolve selected environment
  *   2. Validate environment is active and allowed
  *   3. Acquire or resume lease
@@ -10,19 +10,24 @@
  *   6. Release / retain / fail lease according to policy
  *   7. Record activity and operator-visible status
  *
- * Heartbeat callers delegate to this service instead of inlining
+ * Issue-execution callers delegate to this service instead of inlining
  * environment resolution, lease management, workspace realization,
  * and transport logic.
  */
 
-import type { Db } from "@paperclipai/db";
+import { randomUUID } from "node:crypto";
+import {
+  issueExecutionWorkspaceBindings,
+  type Db,
+} from "@paperclipai/db";
 import type {
   Environment,
   EnvironmentLease,
-  EnvironmentLeasePolicy,
   EnvironmentLeaseStatus,
   ExecutionWorkspace,
-  ExecutionWorkspaceConfig,
+} from "@paperclipai/shared";
+import {
+  isEnvironmentDriverSupportedForAdapter,
 } from "@paperclipai/shared";
 import { environmentService } from "./environments.js";
 import {
@@ -33,19 +38,20 @@ import {
 } from "./environment-runtime.js";
 import {
   resolveEnvironmentExecutionTarget,
-  resolveEnvironmentExecutionTransport,
 } from "./environment-execution-target.js";
 import {
-  adapterExecutionTargetToRemoteSpec,
   type AdapterExecutionTarget,
-  type AdapterRemoteExecutionSpec,
 } from "@paperclipai/adapter-utils/execution-target";
+import { parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { buildWorkspaceRealizationRequest } from "./workspace-realization.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { logActivity } from "./activity-log.js";
-import { parseObject } from "../adapters/utils.js";
 import type { RealizedExecutionWorkspace } from "./workspace-runtime.js";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
+import {
+  deriveAgentExecutionTargetDigest,
+} from "./agent-adapter-config-revisions.js";
+import { and, eq } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Error types
@@ -98,15 +104,12 @@ export interface EnvironmentAcquisitionResult {
   environment: Environment;
   lease: EnvironmentLease;
   leaseContext: ReturnType<typeof buildEnvironmentLeaseContext>;
-  executionTransport: Record<string, unknown> | null;
 }
 
-export interface EnvironmentRealizationResult {
-  lease: EnvironmentLease;
-  workspaceRealization: Record<string, unknown>;
-  executionTarget: AdapterExecutionTarget | null;
-  remoteExecution: AdapterRemoteExecutionSpec | null;
-  persistedExecutionWorkspace: ExecutionWorkspace | null;
+export interface EnvironmentExecutionTargetAcquisitionResult
+  extends EnvironmentAcquisitionResult {
+  executionTarget: AdapterExecutionTarget;
+  releaseExecutionTarget(failed?: boolean): Promise<void>;
 }
 
 export interface EnvironmentReleaseResult {
@@ -159,25 +162,33 @@ export function environmentRunOrchestrator(
   });
 
   /**
-   * Resolve the selected environment for a run. The caller passes the concrete
-   * selected environment id plus the built-in local fallback id used to lazily
-   * ensure the local environment row exists.
+   * Resolve exactly the environment persisted on the immutable adapter
+   * revision. Execution never substitutes an instance-local environment or
+   * creates environment state while resolving a run.
    */
   async function resolveEnvironment(input: {
-    companyId: string;
-    selectedEnvironmentId: string;
-    localEnvironmentId: string;
+    environmentId: string;
+    executionTargetDriver: string;
+    executionTargetDigest: string;
+    adapterType: string;
   }): Promise<Environment> {
-    const environmentId = input.selectedEnvironmentId || input.localEnvironmentId;
-
-    const environment =
-      environmentId === input.localEnvironmentId
-        ? await environmentsSvc.ensureLocalEnvironment(input.companyId)
-        : await environmentsSvc.getById(environmentId);
+    if (
+      input.environmentId.length === 0 ||
+      input.environmentId !== input.environmentId.trim()
+    ) {
+      throw new EnvironmentRunError(
+        "environment_not_found",
+        "Adapter revision requires an exact persisted environment id.",
+        { environmentId: input.environmentId },
+      );
+    }
+    const environment = await environmentsSvc.getById(
+      input.environmentId,
+    );
 
     if (!environment) {
-      throw new EnvironmentRunError("environment_not_found", `Environment "${environmentId}" not found.`, {
-        environmentId,
+      throw new EnvironmentRunError("environment_not_found", `Environment "${input.environmentId}" not found.`, {
+        environmentId: input.environmentId,
       });
     }
 
@@ -187,12 +198,43 @@ export function environmentRunOrchestrator(
         driver: environment.driver,
       });
     }
+    if (
+      environment.driver !== input.executionTargetDriver ||
+      !isEnvironmentDriverSupportedForAdapter(
+        input.adapterType,
+        environment.driver,
+      )
+    ) {
+      throw new EnvironmentRunError(
+        "unsupported_adapter_environment",
+        `Environment "${environment.name}" does not match the adapter revision execution target.`,
+        {
+          environmentId: environment.id,
+          driver: environment.driver,
+        },
+      );
+    }
+    const digest = deriveAgentExecutionTargetDigest({
+      environmentId: environment.id,
+      driver: environment.driver,
+      config: environment.config,
+    });
+    if (digest !== input.executionTargetDigest) {
+      throw new EnvironmentRunError(
+        "unsupported_environment",
+        `Environment "${environment.name}" no longer matches the immutable adapter revision.`,
+        {
+          environmentId: environment.id,
+          driver: environment.driver,
+        },
+      );
+    }
 
     return environment;
   }
 
   /**
-   * Acquire an environment lease for a heartbeat run.
+   * Acquire an environment lease for an issue-execution run.
    * Wraps the runtime driver's acquire call with standardized error handling.
    */
   async function acquireLease(input: {
@@ -200,7 +242,7 @@ export function environmentRunOrchestrator(
     environment: Environment;
     issueId: string | null;
     agentId: string;
-    heartbeatRunId: string;
+    runId: string;
     persistedExecutionWorkspace: Pick<ExecutionWorkspace, "id" | "mode"> | null;
     adapterType: string | null;
   }): Promise<EnvironmentRuntimeLeaseRecord> {
@@ -219,103 +261,213 @@ export function environmentRunOrchestrator(
     }
   }
 
-  /**
-   * Resolve the execution transport for an adapter based on the acquired lease.
-   */
-  async function resolveTransport(input: {
+  async function resolveExecutionWorkspaceBinding(input: {
     companyId: string;
-    adapterType: string;
-    environment: Environment;
-    leaseMetadata: Record<string, unknown> | null;
-  }): Promise<Record<string, unknown> | null> {
-    try {
-      return await resolveEnvironmentExecutionTransport({
-        db,
-        companyId: input.companyId,
-        adapterType: input.adapterType,
-        environment: input.environment,
-        leaseMetadata: input.leaseMetadata,
-      });
-    } catch (err) {
+    issueId: string;
+    executionWorkspaceBindingId: string;
+  }): Promise<{
+    persistedExecutionWorkspace: ExecutionWorkspace;
+    executionWorkspace: RealizedExecutionWorkspace;
+  }> {
+    const binding = await db
+      .select({
+        executionWorkspaceId:
+          issueExecutionWorkspaceBindings.executionWorkspaceId,
+        absoluteCwd:
+          issueExecutionWorkspaceBindings.absoluteCwd,
+      })
+      .from(issueExecutionWorkspaceBindings)
+      .where(
+        and(
+          eq(
+            issueExecutionWorkspaceBindings.id,
+            input.executionWorkspaceBindingId,
+          ),
+          eq(
+            issueExecutionWorkspaceBindings.companyId,
+            input.companyId,
+          ),
+          eq(
+            issueExecutionWorkspaceBindings.issueId,
+            input.issueId,
+          ),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    const workspace = binding
+      ? await executionWorkspacesSvc.getById(
+          binding.executionWorkspaceId,
+        )
+      : null;
+    if (
+      !binding ||
+      !workspace ||
+      workspace.companyId !== input.companyId ||
+      !binding.absoluteCwd.startsWith("/")
+    ) {
       throw new EnvironmentRunError(
-        "transport_resolution_failed",
-        `Failed to resolve execution transport for "${input.environment.name}": ${err instanceof Error ? err.message : String(err)}`,
-        {
-          environmentId: input.environment.id,
-          driver: input.environment.driver,
-          cause: err,
-        },
+        "workspace_realization_failed",
+        "Provider execution requires its exact persisted issue execution workspace binding.",
       );
     }
+    const strategy =
+      workspace.strategyType === "git_worktree"
+        ? "git_worktree"
+        : "project_primary";
+    return {
+      persistedExecutionWorkspace: workspace,
+      executionWorkspace: {
+        baseCwd: binding.absoluteCwd,
+        source:
+          workspace.mode === "shared_workspace"
+            ? "project_primary"
+            : "issue_execution",
+        projectId: workspace.projectId,
+        workspaceId: workspace.projectWorkspaceId,
+        repoUrl: workspace.repoUrl,
+        repoRef: workspace.baseRef,
+        strategy,
+        cwd: binding.absoluteCwd,
+        branchName: workspace.branchName,
+        worktreePath:
+          strategy === "git_worktree"
+            ? workspace.providerRef ?? binding.absoluteCwd
+            : null,
+        warnings: [],
+        created: false,
+      },
+    };
   }
 
   /**
-   * Full acquisition flow: resolve environment, acquire lease, resolve transport.
-   * This is the primary entry point for heartbeat run setup.
+   * Acquire the exact persisted environment lease and resolve the adapter
+   * execution target used by productive and compaction provider work.
    */
-  async function acquireForRun(input: {
+  async function acquireExecutionTargetForRun(input: {
     companyId: string;
-    selectedEnvironmentId: string;
-    localEnvironmentId: string;
+    environmentId: string;
+    executionTargetDriver: string;
+    executionTargetDigest: string;
     adapterType: string;
-    issueId: string | null;
-    heartbeatRunId: string;
+    issueId: string;
+    runId: string;
     agentId: string;
-    persistedExecutionWorkspace: Pick<ExecutionWorkspace, "id" | "mode"> | null;
-  }): Promise<EnvironmentAcquisitionResult> {
-    // Step 1: Resolve environment
+    executionWorkspaceBindingId: string;
+  }): Promise<EnvironmentExecutionTargetAcquisitionResult> {
     const environment = await resolveEnvironment({
-      companyId: input.companyId,
-      selectedEnvironmentId: input.selectedEnvironmentId,
-      localEnvironmentId: input.localEnvironmentId,
-    });
-
-    // Step 2: Acquire lease
-    const leaseRecord = await acquireLease({
-      companyId: input.companyId,
-      environment,
-      issueId: input.issueId,
-      agentId: input.agentId,
-      heartbeatRunId: input.heartbeatRunId,
-      persistedExecutionWorkspace: input.persistedExecutionWorkspace,
-      adapterType: input.adapterType ?? null,
-    });
-
-    // Step 3: Log lease acquisition activity
-    await logActivity(db, {
-      companyId: input.companyId,
-      actorType: "agent",
-      actorId: input.agentId,
-      agentId: input.agentId,
-      runId: input.heartbeatRunId,
-      action: "environment.lease_acquired",
-      entityType: "environment_lease",
-      entityId: leaseRecord.lease.id,
-      issueId: input.issueId,
-      details: {
-        environmentId: environment.id,
-        driver: environment.driver,
-        leasePolicy: leaseRecord.lease.leasePolicy,
-        provider: leaseRecord.lease.provider,
-        executionWorkspaceId: leaseRecord.leaseContext.executionWorkspaceId,
-        issueId: input.issueId,
-      },
-    });
-
-    // Step 4: Resolve execution transport
-    const executionTransport = await resolveTransport({
-      companyId: input.companyId,
+      environmentId: input.environmentId,
+      executionTargetDriver: input.executionTargetDriver,
+      executionTargetDigest: input.executionTargetDigest,
       adapterType: input.adapterType,
-      environment,
-      leaseMetadata: leaseRecord.lease.metadata,
     });
-
-    return {
+    const workspace = await resolveExecutionWorkspaceBinding({
+      companyId: input.companyId,
+      issueId: input.issueId,
+      executionWorkspaceBindingId:
+        input.executionWorkspaceBindingId,
+    });
+    const acquired = await acquireLease({
+      companyId: input.companyId,
       environment,
-      lease: leaseRecord.lease,
-      leaseContext: leaseRecord.leaseContext,
-      executionTransport,
-    };
+      issueId: input.issueId,
+      agentId: input.agentId,
+      runId: input.runId,
+      persistedExecutionWorkspace:
+        workspace.persistedExecutionWorkspace,
+      adapterType: input.adapterType,
+    });
+    let released = false;
+    try {
+      await logActivity(db, {
+        companyId: input.companyId,
+        actorType: "agent",
+        actorId: input.agentId,
+        agentId: input.agentId,
+        runId: input.runId,
+        action: "environment.lease_acquired",
+        entityType: "environment_lease",
+        entityId: acquired.lease.id,
+        issueId: input.issueId,
+        details: {
+          environmentId: environment.id,
+          driver: environment.driver,
+          leasePolicy: acquired.lease.leasePolicy,
+          provider: acquired.lease.provider,
+          executionWorkspaceId:
+            acquired.leaseContext.executionWorkspaceId,
+          issueId: input.issueId,
+        },
+      });
+      const realized = await realizeForRun({
+        environment,
+        lease: acquired.lease,
+        adapterType: input.adapterType,
+        companyId: input.companyId,
+        issueId: input.issueId,
+        runId: input.runId,
+        executionWorkspace: workspace.executionWorkspace,
+        effectiveExecutionWorkspaceMode:
+          workspace.persistedExecutionWorkspace.mode,
+        persistedExecutionWorkspace:
+          workspace.persistedExecutionWorkspace,
+      });
+      const executionTarget = realized.executionTarget;
+      if (
+        !executionTarget ||
+        executionTarget.environmentId !== input.environmentId ||
+        executionTarget.leaseId !== acquired.lease.id
+      ) {
+        throw new EnvironmentRunError(
+          "transport_resolution_failed",
+          "Configured environment did not resolve its exact persisted execution target.",
+          {
+            environmentId: acquired.environment.id,
+            driver: acquired.environment.driver,
+          },
+        );
+      }
+      return {
+        environment,
+        lease: realized.lease,
+        leaseContext: acquired.leaseContext,
+        executionTarget,
+        async releaseExecutionTarget(failed = false) {
+          if (released) return;
+          released = true;
+          const result = await releaseForRun({
+            runId: input.runId,
+            companyId: input.companyId,
+            agentId: input.agentId,
+            status: failed ? "failed" : "released",
+          });
+          if (result.errors.length > 0) {
+            throw new EnvironmentRunError(
+              "lease_release_failed",
+              `Failed to release execution target lease for environment "${environment.name}".`,
+              {
+                environmentId: environment.id,
+                driver: environment.driver,
+                cause: result.errors[0]?.error,
+              },
+            );
+          }
+        },
+      };
+    } catch (error) {
+      if (!released) {
+        released = true;
+        await releaseForRun({
+          runId: input.runId,
+          companyId: input.companyId,
+          agentId: input.agentId,
+          status: "failed",
+          failureReason:
+            error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
+    }
   }
 
   /**
@@ -325,7 +477,7 @@ export function environmentRunOrchestrator(
    *   1. Builds a workspace realization request
    *   2. Calls the environment runtime driver to realize the workspace
    *   3. Persists realization metadata on the lease and execution workspace
-   *   4. Resolves the adapter execution target (local/ssh/sandbox)
+   *   4. Resolves the adapter execution target
    *
    * Returns the updated lease, realization metadata, and the execution
    * target spec that the adapter needs to run.
@@ -336,17 +488,22 @@ export function environmentRunOrchestrator(
     adapterType: string;
     companyId: string;
     issueId: string | null;
-    heartbeatRunId: string;
+    runId: string;
     executionWorkspace: RealizedExecutionWorkspace;
     effectiveExecutionWorkspaceMode: string | null;
     persistedExecutionWorkspace: ExecutionWorkspace | null;
-  }): Promise<EnvironmentRealizationResult> {
+  }): Promise<{
+    lease: EnvironmentLease;
+    workspaceRealization: Record<string, unknown>;
+    executionTarget: AdapterExecutionTarget | null;
+    persistedExecutionWorkspace: ExecutionWorkspace | null;
+  }> {
     const {
       environment,
       adapterType,
       companyId,
       issueId,
-      heartbeatRunId,
+      runId,
       executionWorkspace,
       effectiveExecutionWorkspaceMode,
     } = input;
@@ -359,7 +516,7 @@ export function environmentRunOrchestrator(
       environmentId: environment.id,
       executionWorkspaceId: persistedExecutionWorkspace?.id ?? null,
       issueId,
-      heartbeatRunId,
+      runId,
       requestedMode: persistedExecutionWorkspace?.mode ?? effectiveExecutionWorkspaceMode,
       workspace: executionWorkspace,
       workspaceConfig: persistedExecutionWorkspace?.config ?? null,
@@ -371,7 +528,8 @@ export function environmentRunOrchestrator(
     if (
       environment.driver === "local" ||
       environment.driver === "ssh" ||
-      environment.driver === "sandbox"
+      environment.driver === "sandbox" ||
+      environment.driver === "plugin"
     ) {
       try {
         const remoteCwd =
@@ -409,6 +567,19 @@ export function environmentRunOrchestrator(
     }
 
     const provisionCommand = workspaceRealizationRequest.runtimeOverlay.provisionCommand?.trim() ?? "";
+    if (
+      environment.driver === "plugin" &&
+      !realizedWorkspaceCwd
+    ) {
+      throw new EnvironmentRunError(
+        "workspace_realization_failed",
+        `Plugin environment "${environment.name}" did not return its exact realized workspace cwd.`,
+        {
+          environmentId: environment.id,
+          driver: environment.driver,
+        },
+      );
+    }
     const realizedCwd =
       realizedWorkspaceCwd ??
       (typeof lease.metadata?.remoteCwd === "string" && lease.metadata.remoteCwd.trim().length > 0
@@ -419,6 +590,7 @@ export function environmentRunOrchestrator(
         const provisionResult = await environmentRuntime.execute({
           environment,
           lease,
+          executionId: randomUUID(),
           command: "bash",
           args: ["-lc", provisionCommand],
           cwd: realizedCwd,
@@ -477,6 +649,7 @@ export function environmentRunOrchestrator(
         environment,
         leaseId: lease.id,
         leaseMetadata: (lease.metadata as Record<string, unknown> | null) ?? null,
+        realizedCwd,
         lease,
         environmentRuntime,
       });
@@ -496,19 +669,18 @@ export function environmentRunOrchestrator(
       lease,
       workspaceRealization,
       executionTarget,
-      remoteExecution: adapterExecutionTargetToRemoteSpec(executionTarget),
       persistedExecutionWorkspace,
     };
   }
 
   /**
-   * Release all active leases for a heartbeat run.
+   * Release all active leases for an issue-execution run.
    * Tracks cleanup status per lease. Errors during individual lease release
    * are captured but do not prevent other leases from being released.
    * The original run failure (if any) is never hidden by cleanup errors.
    */
   async function releaseForRun(input: {
-    heartbeatRunId: string;
+    runId: string;
     companyId: string;
     agentId: string;
     status?: Extract<EnvironmentLeaseStatus, "released" | "expired" | "failed">;
@@ -519,7 +691,7 @@ export function environmentRunOrchestrator(
 
     let releasedLeases: EnvironmentRuntimeLeaseRecord[];
     try {
-      releasedLeases = await environmentRuntime.releaseRunLeases(input.heartbeatRunId, status);
+      releasedLeases = await environmentRuntime.releaseRunLeases(input.runId, status);
     } catch (err) {
       result.errors.push({ leaseId: "*", error: err });
       return result;
@@ -532,7 +704,7 @@ export function environmentRunOrchestrator(
           actorType: "agent",
           actorId: input.agentId,
           agentId: input.agentId,
-          runId: input.heartbeatRunId,
+          runId: input.runId,
           action: "environment.lease_released",
           entityType: "environment_lease",
           entityId: released.lease.id,
@@ -559,15 +731,7 @@ export function environmentRunOrchestrator(
   }
 
   return {
-    resolveEnvironment,
-    acquireLease,
-    resolveTransport,
-    acquireForRun,
-    realizeForRun,
-    releaseForRun,
-
-    // Expose the underlying runtime for cases that need direct driver access
-    runtime: environmentRuntime,
+    acquireExecutionTargetForRun,
   };
 }
 

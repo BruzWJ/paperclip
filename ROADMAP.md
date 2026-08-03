@@ -16,8 +16,6 @@ If you want to extend Paperclip today, the best path is often the [plugin system
 
 Paperclip should keep a thin core and rich edges. Plugins are the path for optional capabilities like knowledge bases, custom tracing, queues, doc editors, and other product-specific surfaces that do not need to live in the control plane itself.
 
-### ✅ Get OpenClaw / claw-style agent employees
-
 Paperclip should be able to hire and manage real claw-style agent workers, not just a narrow built-in runtime. This is part of the larger "bring your own agent" story and keeps the control plane useful across different agent ecosystems.
 
 ### ✅ companies.sh - import and export entire organizations
@@ -34,7 +32,7 @@ Agents need a practical way to discover, install, create, test, and share skills
 
 ### ✅ Scheduled Routines
 
-Recurring work should be native. Routine tasks like reports, reviews, and other periodic work need first-class scheduling so the company keeps operating even when no human is manually kicking work off.
+Recurring work should be native. Routine issues like reports, reviews, and other periodic work need first-class scheduling so the company keeps operating even when no human is manually kicking work off.
 
 ### ✅ Better Budgeting
 
@@ -42,7 +40,7 @@ Budgets are a core control-plane feature, not an afterthought. Better budgeting 
 
 ### ✅ Agent Reviews and Approvals
 
-Paperclip should support explicit review and approval stages as first-class workflow steps, not just ad hoc comments. That means reviewer routing, approval gates, change requests, and durable audit trails that fit the same task model as the rest of the control plane.
+Paperclip should support explicit review and approval stages as first-class workflow steps, not just ad hoc comments. That means reviewer routing, approval gates, change requests, and durable audit trails that fit the same issue model as the rest of the control plane.
 
 ### ✅ Multiple Human Users
 
@@ -54,15 +52,15 @@ We want agents to run in more remote and sandboxed environments while preserving
 
 ### ✅ Artifacts & Work Products
 
-Paperclip should make outputs first-class. That means generated artifacts, previews, deployable outputs, and the handoff from "agent did work" to "here is the result" should become more visible and easier to operate.
+Paperclip should make outputs first-class. That means generated artifacts, previews, deployable outputs, and the transition from "agent did work" to "here is the result" should become more visible and easier to operate.
 
 ### ✅ Deep Planning (planning mode, revisioned plans, plan approvals)
 
-Some work needs more than a task description before execution starts. Deeper planning means a dedicated planning mode, revisioned plans, and explicit plan approvals for strategy-heavy work before agents begin execution.
+Some work needs more than an immutable issue request before execution starts. Deeper planning means a dedicated planning mode, revisioned plans, and explicit plan approvals for strategy-heavy work before agents begin execution.
 
-### ✅ Enforced Outcomes (watchdogs, recovery actions, review gates)
+### ✅ Enforced Outcomes (system safeguards, persisted nudges, review gates)
 
-Paperclip should get stricter about what counts as finished work. Watchdogs, recovery actions, and review gates keep execution moving toward clear outcomes like merged code, published artifacts, shipped docs, or explicit decisions instead of vague status updates.
+Paperclip should get stricter about what counts as finished work. System safeguards, canonical persisted nudges, and review gates keep execution moving toward clear outcomes like merged code, published artifacts, shipped docs, or explicit decisions instead of vague status updates.
 
 ### ✅ MCP Tool Gateway & Apps (governed tool access)
 
@@ -84,9 +82,12 @@ Agent work should recover from routine failures without waiting for a human to n
 
 Agent performance should be measurable over time, not judged only from anecdotes. Evals, saved results, and structured feedback create a loop for improving skills, prompts, models, and employee quality.
 
-### ⚪ Memory / Knowledge
+### ⚪ Knowledge Artifacts
 
-We want a stronger memory and knowledge surface for companies, agents, and projects. That includes durable memory, better recall of prior decisions and context, and a clearer path for knowledge-style capabilities without turning Paperclip into a generic chat app.
+We want stronger durable knowledge artifacts for companies and projects. They
+must remain explicit issue-linked documents, work products, or selected plugin
+tools. They may never become agent-wide conversational memory, automatic
+cross-issue recall, or ambient provider context.
 
 ### ⚪ MAXIMIZER MODE
 
@@ -98,15 +99,18 @@ Paperclip should support queue-style work streams for repeatable inputs like sup
 
 ### ⚪ Self-Organization
 
-As companies grow, agents should be able to propose useful structural changes such as role adjustments, delegation changes, and new recurring routines. The goal is adaptive organizations that still stay within governance and approval boundaries.
+As companies grow, agents should be able to propose useful structural changes such as identity, reporting-edge, grant, delegation, and recurring-routine changes. The goal is adaptive organizations that still stay within governance and approval boundaries.
 
 ### ⚪ Automatic Organizational Learning
 
 Paperclip should get better at turning completed work into reusable organizational knowledge. That includes capturing playbooks, recurring fixes, and decision patterns so future work starts from what the company has already learned.
 
-### ⚪ CEO Chat
+### ✅ Board Chat
 
-We want a lighter-weight way to talk to leadership agents, but those conversations should still resolve to real work objects like plans, issues, approvals, or decisions. This should improve interaction without changing the core task-and-comments model.
+Board Chat is ordinary issue-backed work: the board chooses an explicit agent
+owner and the first message becomes the immutable request. Follow-ups are typed
+creator comments on that issue, with no standing concierge, special title, or
+cross-issue chat session.
 
 ### 🟡 Cloud deployments (multi-tenant isolation & local→cloud sync shipped)
 

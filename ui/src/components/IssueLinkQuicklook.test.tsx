@@ -7,6 +7,7 @@ import type { Issue } from "@paperclipai/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueLinkQuicklook } from "./IssueLinkQuicklook";
+import { createTestIssue } from "../test-utils/issue";
 
 const mockIssuesApiGet = vi.hoisted(() => vi.fn());
 
@@ -20,48 +21,16 @@ vi.mock("@/api/issues", () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
-    identifier: "PAP-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
+  return createTestIssue({
     title: "Quicklook title",
-    description: "Quicklook description",
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
-    issueNumber: 1,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
-    createdAt: new Date("2026-05-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-05-01T00:00:00.000Z"),
+    request: "Quicklook request",
     labels: [],
     labelIds: [],
     myLastTouchAt: null,
     lastExternalCommentAt: null,
     isUnreadForMe: false,
-    workMode: "standard",
     ...overrides,
-  };
+  });
 }
 
 describe("IssueLinkQuicklook", () => {

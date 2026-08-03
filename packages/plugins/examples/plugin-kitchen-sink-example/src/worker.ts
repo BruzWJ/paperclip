@@ -20,7 +20,6 @@ import {
   type PluginStateScopeKind,
   type ScopeKey,
   type ToolResult,
-  type ToolRunContext,
 } from "@paperclipai/plugin-sdk";
 import type { Goal, Issue } from "@paperclipai/shared";
 import {
@@ -38,8 +37,6 @@ type KitchenSinkConfig = {
   showSidebarEntry?: boolean;
   showSidebarPanel?: boolean;
   showProjectSidebarItem?: boolean;
-  showCommentAnnotation?: boolean;
-  showCommentContextMenuItem?: boolean;
   enableWorkspaceDemos?: boolean;
   enableProcessDemos?: boolean;
   secretRefExample?: string | EnvSecretRefBinding;
@@ -350,29 +347,6 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     return await ctx.entities.list(query);
   });
 
-  ctx.data.register("comment-context", async (params) => {
-    const companyId = getCurrentCompanyId(params);
-    const issueId = typeof params.issueId === "string" ? params.issueId : "";
-    const commentId = typeof params.commentId === "string" ? params.commentId : "";
-    if (!issueId || !commentId) return null;
-    const comments = await ctx.issues.listComments(issueId, companyId);
-    const comment = comments.find((entry) => entry.id === commentId) ?? null;
-    if (!comment) return null;
-    return {
-      commentId: comment.id,
-      issueId,
-      preview: comment.body.slice(0, 160),
-      length: comment.body.length,
-      copiedCount: (await ctx.entities.list({
-        entityType: "copied-comment",
-        scopeKind: "issue",
-        scopeId: issueId,
-        limit: 100,
-        offset: 0,
-      })).filter((entry) => entry.externalId === commentId).length,
-    };
-  });
-
   ctx.data.register("entity-context", async (params) => {
     const companyId = typeof params.companyId === "string" ? params.companyId : "";
     const entityId = typeof params.entityId === "string" ? params.entityId : "";
@@ -484,12 +458,24 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
 
   ctx.actions.register("create-issue", async (params) => {
     const companyId = getCurrentCompanyId(params);
+    const ownerAgentId = typeof params.ownerAgentId === "string" ? params.ownerAgentId : "";
     const title = typeof params.title === "string" && params.title.trim().length > 0
       ? params.title.trim()
       : "Kitchen Sink demo issue";
-    const description = typeof params.description === "string" ? params.description : undefined;
+    const request = typeof params.request === "string" && params.request.trim().length > 0
+      ? params.request.trim()
+      : title;
     const projectId = typeof params.projectId === "string" && params.projectId.length > 0 ? params.projectId : undefined;
-    const issue = await ctx.issues.create({ companyId, projectId, title, description });
+    if (!ownerAgentId) throw new Error("ownerAgentId is required");
+    const issue = await ctx.issues.create({
+      companyId,
+      projectId,
+      title,
+      request,
+      ownerAgentId,
+      callbackKey: "kitchen-sink-demo",
+      callbackVersion: "1",
+    });
     pushRecord({
       level: "info",
       source: "issues.create",
@@ -506,18 +492,20 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     return issue;
   });
 
-  ctx.actions.register("advance-issue-status", async (params) => {
+  ctx.actions.register("message-issue", async (params) => {
     const companyId = getCurrentCompanyId(params);
     const issueId = typeof params.issueId === "string" ? params.issueId : "";
-    const status = typeof params.status === "string" ? params.status : "";
-    if (!issueId || !status) {
-      throw new Error("issueId and status are required");
+    const message = typeof params.message === "string" && params.message.trim().length > 0
+      ? params.message.trim()
+      : "";
+    if (!issueId || !message) {
+      throw new Error("issueId and message are required");
     }
-    const issue = await ctx.issues.update(issueId, { status: status as Issue["status"] }, companyId);
+    const issue = await ctx.issues.update(issueId, { kind: "message", message }, companyId);
     pushRecord({
       level: "info",
       source: "issues.update",
-      message: `Updated issue ${issue.id} to ${issue.status}`,
+      message: `Sent a creator update to issue ${issue.id}`,
     });
     return issue;
   });
@@ -721,21 +709,28 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     return { ok: true, channel: STREAM_CHANNELS.progress };
   });
 
-  ctx.actions.register("invoke-agent", async (params) => {
+  ctx.actions.register("delegate-issue", async (params) => {
     const companyId = getCurrentCompanyId(params);
     const agentId = typeof params.agentId === "string" ? params.agentId : "";
     const prompt = typeof params.prompt === "string" && params.prompt.length > 0
       ? params.prompt
-      : "Kitchen Sink test invocation";
+      : "Handle this Kitchen Sink plugin request.";
     if (!agentId) throw new Error("agentId is required");
-    const result = await ctx.agents.invoke(agentId, companyId, { prompt, reason: "Kitchen Sink plugin demo" });
+    const issue = await ctx.issues.create({
+      companyId,
+      request: prompt,
+      ownerAgentId: agentId,
+      callbackKey: "kitchen-sink-delegation",
+      callbackVersion: "1",
+      title: "Kitchen Sink delegated request",
+    });
     pushRecord({
       level: "info",
-      source: "agents.invoke",
-      message: `Invoked agent ${agentId}`,
-      data: result,
+      source: "issues.create",
+      message: `Delegated ordinary issue ${issue.id} to agent ${agentId}`,
+      data: { issueId: issue.id, agentId },
     });
-    return result;
+    return issue;
   });
 
   ctx.actions.register("pause-agent", async (params) => {
@@ -752,77 +747,6 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
     return await ctx.agents.resume(agentId, companyId);
   });
 
-  ctx.actions.register("ask-agent", async (params) => {
-    const companyId = getCurrentCompanyId(params);
-    const agentId = typeof params.agentId === "string" ? params.agentId : "";
-    const prompt = typeof params.prompt === "string" && params.prompt.length > 0
-      ? params.prompt
-      : "Say hello from the Kitchen Sink plugin.";
-    if (!agentId) throw new Error("agentId is required");
-
-    ctx.streams.open(STREAM_CHANNELS.agentChat, companyId);
-    const session = await ctx.agents.sessions.create(agentId, companyId, {
-      reason: "Kitchen Sink plugin chat demo",
-    });
-
-    await ctx.agents.sessions.sendMessage(session.sessionId, companyId, {
-      prompt,
-      reason: "Kitchen Sink demo",
-      onEvent: (event) => {
-        ctx.streams.emit(STREAM_CHANNELS.agentChat, {
-          eventType: event.eventType,
-          stream: event.stream,
-          message: event.message,
-          payload: event.payload,
-        });
-        if (event.eventType === "done" || event.eventType === "error") {
-          ctx.streams.close(STREAM_CHANNELS.agentChat);
-        }
-      },
-    });
-
-    pushRecord({
-      level: "info",
-      source: "agent.sessions",
-      message: `Started agent session ${session.sessionId}`,
-      data: { agentId, sessionId: session.sessionId },
-    });
-    return { channel: STREAM_CHANNELS.agentChat, sessionId: session.sessionId };
-  });
-
-  ctx.actions.register("copy-comment-context", async (params) => {
-    const companyId = getCurrentCompanyId(params);
-    const issueId = typeof params.issueId === "string" ? params.issueId : "";
-    const commentId = typeof params.commentId === "string" ? params.commentId : "";
-    if (!issueId || !commentId) {
-      throw new Error("issueId and commentId are required");
-    }
-    const comments = await ctx.issues.listComments(issueId, companyId);
-    const comment = comments.find((entry) => entry.id === commentId);
-    if (!comment) {
-      throw new Error("Comment not found");
-    }
-    const record = await ctx.entities.upsert({
-      entityType: "copied-comment",
-      scopeKind: "issue",
-      scopeId: issueId,
-      externalId: comment.id,
-      title: `Copied comment ${comment.id.slice(0, 8)}`,
-      status: "captured",
-      data: {
-        commentId: comment.id,
-        issueId,
-        body: comment.body,
-      },
-    });
-    pushRecord({
-      level: "info",
-      source: "comments",
-      message: `Copied comment ${comment.id} into plugin entities`,
-      data: { recordId: record.id },
-    });
-    return record;
-  });
 }
 
 async function registerToolHandlers(ctx: PluginContext): Promise<void> {
@@ -839,12 +763,11 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
         required: ["message"],
       },
     },
-    async (params, runCtx): Promise<ToolResult> => {
+    async (params): Promise<ToolResult> => {
       const payload = params as { message?: string };
       return {
         content: payload.message ?? "No message provided",
         data: {
-          runCtx,
           message: payload.message ?? "",
         },
       };
@@ -858,52 +781,14 @@ async function registerToolHandlers(ctx: PluginContext): Promise<void> {
       description: "Summarizes current company counts from the Paperclip APIs.",
       parametersSchema: { type: "object", properties: {} },
     },
-    async (_params, runCtx): Promise<ToolResult> => {
-      const projects = await ctx.projects.list({ companyId: runCtx.companyId, limit: 50, offset: 0 });
-      const issues = await ctx.issues.list({ companyId: runCtx.companyId, limit: 50, offset: 0 });
-      const goals = await ctx.goals.list({ companyId: runCtx.companyId, limit: 50, offset: 0 });
-      const agents = await ctx.agents.list({ companyId: runCtx.companyId, limit: 50, offset: 0 });
+    async (_params, runContext): Promise<ToolResult> => {
+      const issues = await runContext.issues.listCompanyIssues({ limit: 50 });
       return {
-        content: `Company has ${projects.length} projects, ${issues.length} issues, ${goals.length} goals, and ${agents.length} agents.`,
+        content: `The current run can read ${issues.items.length} top-level company issues.`,
         data: {
-          companyId: runCtx.companyId,
-          projects: projects.length,
-          issues: issues.length,
-          goals: goals.length,
-          agents: agents.length,
+          visibleTopLevelIssues: issues.items.length,
+          nextCursor: issues.nextCursor,
         },
-      };
-    },
-  );
-
-  ctx.tools.register(
-    TOOL_NAMES.createIssue,
-    {
-      displayName: "Kitchen Sink Create Issue",
-      description: "Creates an issue in the current run context.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          description: { type: "string" },
-        },
-        required: ["title"],
-      },
-    },
-    async (params, runCtx): Promise<ToolResult> => {
-      const payload = params as { title?: string; description?: string };
-      if (!payload.title) {
-        return { error: "title is required" };
-      }
-      const issue = await ctx.issues.create({
-        companyId: runCtx.companyId,
-        projectId: runCtx.projectId,
-        title: payload.title,
-        description: payload.description,
-      });
-      return {
-        content: `Created issue ${issue.title}`,
-        data: issue,
       };
     },
   );

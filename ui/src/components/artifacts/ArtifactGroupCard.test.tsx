@@ -33,20 +33,20 @@ function sampleArtifact(overrides: Partial<CompanyArtifact> = {}): CompanyArtifa
 
 function sampleGroup(overrides: Partial<CompanyArtifactGroup> = {}): CompanyArtifactGroup {
   return {
-    id: "task:issue-1",
-    groupBy: "task",
+    id: "issue:issue-1",
+    groupBy: "issue",
     issue: { id: "issue-1", identifier: "PAP-42", title: "Ship launch" },
     title: "Ship launch",
     count: 3,
     mediaKinds: ["image"],
     previewArtifacts: [sampleArtifact()],
     updatedAt: "2026-06-01T00:00:00.000Z",
-    href: "/PAP/artifacts?groupBy=task&groupIssueId=issue-1",
+    href: "/PAP/artifacts?groupBy=issue&groupIssueId=issue-1",
     ...overrides,
   };
 }
 
-function render(group: CompanyArtifactGroup, to = "?groupBy=task&groupIssueId=issue-1") {
+function render(group: CompanyArtifactGroup, to = "?groupBy=issue&groupIssueId=issue-1") {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);

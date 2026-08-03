@@ -1,77 +1,76 @@
 ---
 title: Database
-summary: Embedded PGlite vs Docker Postgres vs hosted
+summary: Connect Paperclip to external PostgreSQL
 ---
 
-Paperclip uses PostgreSQL via Drizzle ORM. There are three ways to run the database.
+Paperclip is a PostgreSQL client. Provide a running PostgreSQL server before
+starting the application; there is no local database fallback.
 
-## 1. Embedded PostgreSQL (Default)
+## Local PostgreSQL with Docker
 
-Zero config. If you don't set `DATABASE_URL`, the server starts an embedded PostgreSQL instance automatically.
+Start the repository's database service:
 
 ```sh
+docker compose -f docker/docker-compose.yml up -d db
+export DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip
+pnpm db:migrate
 pnpm dev
 ```
 
-On first start, the server:
+## Hosted PostgreSQL
 
-1. Creates `~/.paperclip/instances/default/db/` for storage
-2. Ensures the `paperclip` database exists
-3. Runs migrations automatically
-4. Starts serving requests
+Set `DATABASE_URL` to a direct PostgreSQL connection URL supplied by your
+provider. A configuration file may instead contain
+`database.connectionString`; the environment variable takes precedence.
 
-Data persists across restarts. To reset: `rm -rf ~/.paperclip/instances/default/db`.
+Use a direct administrative connection for migrations. If the runtime uses a
+pooled URL, set `DATABASE_MIGRATION_URL` to the provider's direct connection.
+Paperclip validates the protocol and fails before startup when neither target
+is valid.
 
-The Docker quickstart also uses embedded PostgreSQL by default.
+## Complete disaster-recovery backups
 
-## 2. Local PostgreSQL (Docker)
+`paperclipai db:backup` creates two inseparable files: a complete custom-format
+PostgreSQL payload and an external Paperclip manifest. The payload includes the
+canonical schema, migration journal, tables, sequences, constraints, and all
+rows. The manifest records the source physical database identity, complete
+table set, payload checksum, and a salted one-way fingerprint of
+`BETTER_AUTH_SECRET`.
 
-For a full PostgreSQL server locally:
-
-```sh
-docker compose up -d
-```
-
-This starts PostgreSQL 17 on `localhost:5432`. Set the connection string:
-
-```sh
-cp .env.example .env
-# DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip
-```
-
-Push the schema:
+The host running the command must have compatible `pg_dump` and `pg_restore`
+client tools installed. `DATABASE_URL` (or the configured external connection)
+and the deployment's durable `BETTER_AUTH_SECRET` must be present:
 
 ```sh
-DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip \
-  npx drizzle-kit push
+paperclipai db:backup
 ```
 
-## 3. Hosted PostgreSQL (Supabase)
+Restore is a disaster-recovery operation, not initialization, repair, reset,
+reseed, worktree cloning, or selective import. Provision a physically distinct
+empty PostgreSQL database and put the same deployment Better Auth secret in a
+mode-`0600` file, then supply every input explicitly:
 
-For production, use a hosted provider like [Supabase](https://supabase.com/).
-
-1. Create a project at [database.new](https://database.new)
-2. Copy the connection string from Project Settings > Database
-3. Set `DATABASE_URL` in your `.env`
-
-Use the **direct connection** (port 5432) for migrations and the **pooled connection** (port 6543) for the application.
-
-If using connection pooling, disable prepared statements:
-
-```ts
-// packages/db/src/client.ts
-export function createDb(url: string) {
-  const sql = postgres(url, { prepare: false });
-  return drizzlePg(sql, { schema });
-}
+```sh
+paperclipai db:restore \
+  --database-url 'postgresql://operator@new-db.example/paperclip' \
+  --backup-file /secure/backups/paperclip-20260729T120000Z.dump \
+  --manifest-file /secure/backups/paperclip-20260729T120000Z.dump.manifest.json \
+  --better-auth-secret-file /secure/backups/better-auth-secret
 ```
 
-## Switching Between Modes
+Paperclip validates the manifest, payload checksum, archive table set, secret
+fingerprint, target emptiness, and physical source/target inequality before
+mutation. It restores the archive exactly once in a transaction, applies only
+ordinary remaining forward migrations, and returns verified non-secret facts.
+Raw SQL, an inferred sidecar manifest, an initialized target, a different
+deployment secret, and a partial backup are rejected without clearing the
+target.
 
-| `DATABASE_URL` | Mode |
-|----------------|------|
-| Not set | Embedded PostgreSQL |
-| `postgres://...localhost...` | Local Docker PostgreSQL |
-| `postgres://...supabase.com...` | Hosted Supabase |
+## Tests
 
-The Drizzle schema (`packages/db/src/schema/`) is the same regardless of mode.
+Automated tests do not accept a database URL and never start, connect to,
+query, migrate, reset, or drop a database. Database-dependent modules are
+replaced with deterministic test-owned mocks; Drizzle schema,
+migration SQL, metadata, constraints, and trigger bodies are checked as static
+artifacts. The test runner also removes inherited database and libpq variables
+before each Vitest process, protecting a developer's configured runtime target.

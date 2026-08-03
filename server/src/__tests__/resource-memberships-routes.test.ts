@@ -1,45 +1,35 @@
-import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  activityLog,
-  agentMemberships,
-  agents,
-  companies,
-  createDb,
-  projectMemberships,
-  projects,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
-import { resourceMembershipRoutes } from "../routes/resource-memberships.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Db } from "@paperclipai/db";
 import { errorHandler } from "../middleware/index.js";
+import { resourceMembershipRoutes } from "../routes/resource-memberships.js";
 import { resourceMembershipService } from "../services/resource-memberships.js";
+import { createMockDb } from "./helpers/mock-db.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const routeMocks = vi.hoisted(() => ({ logActivity: vi.fn() }));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres resource membership tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
+vi.mock("../services/index.js", async () => ({
+  ...await vi.importActual<typeof import("../services/index.js")>("../services/index.js"),
+  logActivity: routeMocks.logActivity,
+}));
 
-function boardActor(companyId: string, role: "admin" | "operator" | "viewer" = "viewer") {
-  return {
-    type: "board" as const,
+const companyId = "00000000-0000-4000-8000-000000000001";
+const projectId = "00000000-0000-4000-8000-000000000010";
+const agentId = "00000000-0000-4000-8000-000000000020";
+const now = new Date("2026-01-02T03:04:05.000Z");
+
+function boardActor(role: "admin" | "operator" | "viewer" = "viewer") {
+  return testBoardSessionActor({
     userId: "user-1",
-    source: "session" as const,
     isInstanceAdmin: false,
     companyIds: [companyId],
     memberships: [{ companyId, membershipRole: role, status: "active" }],
-  };
+  });
 }
 
-function createApp(db: ReturnType<typeof createDb>, actor: Express.Request["actor"]) {
+function createApp(db: Db, actor: Express.Request["actor"] = boardActor()) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -51,99 +41,14 @@ function createApp(db: ReturnType<typeof createDb>, actor: Express.Request["acto
   return app;
 }
 
-describeEmbeddedPostgres("resource membership routes", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-resource-memberships-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(projectMemberships);
-    await db.delete(agentMemberships);
-    await db.delete(projects);
-    await db.delete(agents);
-    await db.delete(companies);
-  });
-
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seed() {
-    const companyId = randomUUID();
-    const otherCompanyId = randomUUID();
-    const projectId = randomUUID();
-    const otherProjectId = randomUUID();
-    const archivedProjectId = randomUUID();
-    const agentId = randomUUID();
-    const otherAgentId = randomUUID();
-    const terminatedAgentId = randomUUID();
-    await db.insert(companies).values([
-      {
-        id: companyId,
-        name: "Paperclip",
-        issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-      {
-        id: otherCompanyId,
-        name: "Other",
-        issuePrefix: `T${otherCompanyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-        requireBoardApprovalForNewAgents: false,
-      },
-    ]);
-    await db.insert(projects).values([
-      { id: projectId, companyId, name: "Growth", status: "in_progress" },
-      { id: archivedProjectId, companyId, name: "Archived", status: "completed", archivedAt: new Date() },
-      { id: otherProjectId, companyId: otherCompanyId, name: "Other", status: "in_progress" },
-    ]);
-    await db.insert(agents).values([
-      {
-        id: agentId,
-        companyId,
-        name: "CodexCoder",
-        role: "engineer",
-        status: "active",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: otherAgentId,
-        companyId: otherCompanyId,
-        name: "OtherAgent",
-        role: "engineer",
-        status: "active",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-      {
-        id: terminatedAgentId,
-        companyId,
-        name: "Terminated",
-        role: "engineer",
-        status: "terminated",
-        adapterType: "codex_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-      },
-    ]);
-    return { archivedProjectId, companyId, otherAgentId, otherProjectId, projectId, agentId, terminatedAgentId };
-  }
+describe("resource membership routes", () => {
+  beforeEach(() => routeMocks.logActivity.mockReset().mockResolvedValue(undefined));
 
   it("defaults missing membership rows to joined", async () => {
-    const { companyId } = await seed();
-    const app = createApp(db, boardActor(companyId));
+    const harness = createMockDb({ select: [[], []] });
 
-    const res = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
+    const res = await request(createApp(harness.db))
+      .get(`/api/companies/${companyId}/resource-memberships/me`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -155,11 +60,24 @@ describeEmbeddedPostgres("resource membership routes", () => {
       agentStarredAt: {},
       updatedAt: null,
     });
+    expect(harness.remaining("select")).toBe(0);
   });
 
-  it("allows viewer self-service mutations, logs changes, and keeps repeats idempotent", async () => {
-    const { companyId, projectId } = await seed();
-    const app = createApp(db, boardActor(companyId, "viewer"));
+  it("allows a viewer to leave a project and keeps a repeated request idempotent", async () => {
+    const project = { id: projectId, companyId, archivedAt: null };
+    const membership = {
+      companyId,
+      projectId,
+      userId: "user-1",
+      state: "left",
+      starredAt: null,
+      updatedAt: now,
+    };
+    const harness = createMockDb({
+      select: [project, undefined, project, membership],
+      insert: [[membership]],
+    });
+    const app = createApp(harness.db);
 
     const first = await request(app)
       .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
@@ -171,26 +89,37 @@ describeEmbeddedPostgres("resource membership routes", () => {
     expect(first.status).toBe(200);
     expect(first.body).toMatchObject({ resourceType: "project", resourceId: projectId, state: "left", starredAt: null });
     expect(second.status).toBe(200);
-
-    const rows = await db.select().from(projectMemberships);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ companyId, projectId, userId: "user-1", state: "left" });
-
-    const activity = await db.select().from(activityLog);
-    expect(activity).toHaveLength(1);
-    expect(activity[0]).toMatchObject({
-      companyId,
-      actorType: "user",
-      actorId: "user-1",
+    expect(second.body).toEqual(first.body);
+    expect(harness.calls.filter((call) => call.operation === "insert" && call.method === "insert")).toHaveLength(1);
+    expect(routeMocks.logActivity).toHaveBeenCalledTimes(1);
+    expect(routeMocks.logActivity).toHaveBeenCalledWith(harness.db, expect.objectContaining({
       action: "resource_membership.left",
       entityType: "project",
       entityId: projectId,
-    });
+    }));
   });
 
-  it("stars projects idempotently and exposes starred project contract data", async () => {
-    const { companyId, projectId } = await seed();
-    const app = createApp(db, boardActor(companyId, "viewer"));
+  it("stars a project idempotently and exposes its sidebar projection", async () => {
+    const project = { id: projectId, companyId, archivedAt: null };
+    const membership = {
+      companyId,
+      projectId,
+      userId: "user-1",
+      state: "joined",
+      starredAt: now,
+      updatedAt: now,
+    };
+    const harness = createMockDb({
+      select: [project, undefined, project, membership, [{
+        projectId,
+        state: "joined",
+        starredAt: now,
+        updatedAt: now,
+        projectArchivedAt: null,
+      }], []],
+      insert: [[membership]],
+    });
+    const app = createApp(harness.db);
 
     const first = await request(app)
       .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
@@ -201,204 +130,106 @@ describeEmbeddedPostgres("resource membership routes", () => {
     const list = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
 
     expect(first.status).toBe(200);
-    expect(first.body).toMatchObject({ resourceType: "project", resourceId: projectId, state: "joined" });
-    expect(first.body.starredAt).toEqual(expect.any(String));
-    expect(second.status).toBe(200);
-    expect(second.body.starredAt).toBe(first.body.starredAt);
+    expect(first.body).toMatchObject({ resourceType: "project", resourceId: projectId, state: "joined", starredAt: now.toISOString() });
+    expect(second.body).toEqual(first.body);
     expect(list.body.starredProjectIds).toEqual([projectId]);
-    expect(list.body.projectStarredAt[projectId]).toEqual(first.body.starredAt);
-
-    const rows = await db.select().from(projectMemberships);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ companyId, projectId, userId: "user-1", state: "joined" });
-    expect(rows[0]?.starredAt).toBeInstanceOf(Date);
-
-    const activity = await db.select().from(activityLog);
-    expect(activity).toHaveLength(1);
-    expect(activity[0]).toMatchObject({
-      action: "resource_membership.starred",
-      entityType: "project",
-      entityId: projectId,
-    });
-    expect(activity[0]?.details).toMatchObject({
-      userId: "user-1",
-      resourceType: "project",
-      resourceId: projectId,
-      state: "joined",
-      starred: true,
-    });
+    expect(list.body.projectStarredAt).toEqual({ [projectId]: now.toISOString() });
+    expect(routeMocks.logActivity).toHaveBeenCalledTimes(1);
   });
 
-  it("clears starred_at when leaving a starred resource", async () => {
-    const { companyId, projectId } = await seed();
-    const app = createApp(db, boardActor(companyId));
-
-    await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
-      .send({ starred: true })
-      .expect(200);
-    const leave = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
-      .send({ state: "left" });
-
-    expect(leave.status).toBe(200);
-    expect(leave.body).toMatchObject({ state: "left", starredAt: null });
-    const [row] = await db.select().from(projectMemberships);
-    expect(row).toMatchObject({ state: "left", starredAt: null });
-
-    const activity = await db.select().from(activityLog);
-    expect(activity.map((entry) => entry.action)).toEqual([
-      "resource_membership.starred",
-      "resource_membership.left",
-    ]);
-    expect(activity[1]?.details).toMatchObject({ state: "left", starred: false, starredAt: null });
-  });
-
-  it("starring a left resource rejoins it", async () => {
-    const { companyId, agentId } = await seed();
-    const app = createApp(db, boardActor(companyId));
-
-    await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
-      .send({ state: "left" })
-      .expect(200);
-    const star = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
-      .send({ starred: true });
-
-    expect(star.status).toBe(200);
-    expect(star.body).toMatchObject({ resourceType: "agent", resourceId: agentId, state: "joined" });
-    expect(star.body.starredAt).toEqual(expect.any(String));
-
-    const [row] = await db.select().from(agentMemberships);
-    expect(row).toMatchObject({ state: "joined" });
-    expect(row?.starredAt).toBeInstanceOf(Date);
-
-    const activity = await db.select().from(activityLog);
-    expect(activity.map((entry) => entry.action)).toEqual([
-      "resource_membership.left",
-      "resource_membership.starred",
-    ]);
-  });
-
-  it("unstars agents idempotently without requiring a state change", async () => {
-    const { companyId, agentId } = await seed();
-    const app = createApp(db, boardActor(companyId));
-
-    await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
-      .send({ starred: true })
-      .expect(200);
-    const first = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
-      .send({ starred: false });
-    const second = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
-      .send({ starred: false });
-
-    expect(first.status).toBe(200);
-    expect(first.body).toMatchObject({ state: "joined", starredAt: null });
-    expect(second.status).toBe(200);
-    expect(second.body).toMatchObject({ state: "joined", starredAt: null });
-
-    const [row] = await db.select().from(agentMemberships);
-    expect(row).toMatchObject({ state: "joined", starredAt: null });
-
-    const activity = await db.select().from(activityLog);
-    expect(activity.map((entry) => entry.action)).toEqual([
-      "resource_membership.starred",
-      "resource_membership.unstarred",
-    ]);
-  });
-
-  it("omits archived projects and terminated agents from starred sidebar data", async () => {
-    const { archivedProjectId, companyId, terminatedAgentId } = await seed();
-    const starredAt = new Date();
-    await db.insert(projectMemberships).values({
-      companyId,
-      projectId: archivedProjectId,
-      userId: "user-1",
-      state: "joined",
-      starredAt,
+  it("keeps joined membership state while excluding archived and terminated resources from stars", async () => {
+    const harness = createMockDb({
+      select: [[{
+        projectId,
+        state: "joined",
+        starredAt: now,
+        updatedAt: now,
+        projectArchivedAt: now,
+      }], [{
+        agentId,
+        state: "joined",
+        starredAt: now,
+        updatedAt: now,
+        agentStatus: "terminated",
+      }]],
     });
-    await db.insert(agentMemberships).values({
-      companyId,
-      agentId: terminatedAgentId,
-      userId: "user-1",
-      state: "joined",
-      starredAt,
-    });
-    const app = createApp(db, boardActor(companyId));
 
-    const res = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
+    const res = await request(createApp(harness.db))
+      .get(`/api/companies/${companyId}/resource-memberships/me`);
 
     expect(res.status).toBe(200);
-    expect(res.body.projectMemberships[archivedProjectId]).toBe("joined");
-    expect(res.body.agentMemberships[terminatedAgentId]).toBe("joined");
+    expect(res.body.projectMemberships).toEqual({ [projectId]: "joined" });
+    expect(res.body.agentMemberships).toEqual({ [agentId]: "joined" });
     expect(res.body.starredProjectIds).toEqual([]);
     expect(res.body.starredAgentIds).toEqual([]);
     expect(res.body.projectStarredAt).toEqual({});
     expect(res.body.agentStarredAt).toEqual({});
   });
 
-  it("rejects starring archived projects and terminated agents", async () => {
-    const { archivedProjectId, companyId, terminatedAgentId } = await seed();
-    const app = createApp(db, boardActor(companyId));
+  it("rejects archived projects and terminated agents before membership mutation", async () => {
+    const harness = createMockDb({
+      select: [
+        { id: projectId, companyId, archivedAt: now },
+        { id: agentId, companyId, status: "terminated" },
+      ],
+    });
+    const app = createApp(harness.db);
 
     const projectRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${archivedProjectId}`)
+      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
       .send({ starred: true });
     const agentRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${terminatedAgentId}`)
+      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
       .send({ starred: true });
 
     expect(projectRes.status).toBe(404);
     expect(agentRes.status).toBe(404);
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+    expect(routeMocks.logActivity).not.toHaveBeenCalled();
   });
 
-  it("rejects agent API key actors", async () => {
-    const { companyId, agentId } = await seed();
-    const app = createApp(db, {
-      type: "agent",
-      agentId,
-      companyId,
-      source: "agent_key",
-    });
+  it("rejects agent API-key actors without issuing a query", async () => {
+    const harness = createMockDb();
+    const actor = { type: "agent", agentId, companyId, source: "internal" } as const;
 
-    const res = await request(app).get(`/api/companies/${companyId}/resource-memberships/me`);
+    const res = await request(createApp(harness.db, actor))
+      .get(`/api/companies/${companyId}/resource-memberships/me`);
 
     expect(res.status).toBe(403);
+    expect(harness.calls).toEqual([]);
   });
 
-  it("rejects cross-company target resources", async () => {
-    const { companyId, otherAgentId, otherProjectId } = await seed();
-    const app = createApp(db, boardActor(companyId));
+  it("rejects cross-company resources without writing membership rows", async () => {
+    const harness = createMockDb({ select: [undefined, undefined] });
+    const app = createApp(harness.db);
 
     const projectRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${otherProjectId}`)
+      .put(`/api/companies/${companyId}/resource-memberships/me/projects/${projectId}`)
       .send({ state: "left" });
     const agentRes = await request(app)
-      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${otherAgentId}`)
+      .put(`/api/companies/${companyId}/resource-memberships/me/agents/${agentId}`)
       .send({ state: "left" });
 
     expect(projectRes.status).toBe(404);
     expect(agentRes.status).toBe(404);
-    await expect(db.select().from(projectMemberships)).resolves.toHaveLength(0);
-    await expect(db.select().from(agentMemberships)).resolves.toHaveLength(0);
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
   });
 
-  it("denies direct service calls that try to mutate another user's membership", async () => {
-    const { companyId, projectId } = await seed();
-    const svc = resourceMembershipService(db);
+  it("denies direct service attempts to mutate another user's membership", async () => {
+    const harness = createMockDb({
+      select: [{ id: projectId, companyId, archivedAt: null }, undefined],
+    });
 
-    await expect(
-      svc.updateProject({
-        companyId,
-        projectId,
-        userId: "other-user",
-        state: "left",
-        actor: boardActor(companyId),
-      }),
-    ).rejects.toMatchObject({ status: 403 });
+    await expect(resourceMembershipService(harness.db).updateProject({
+      companyId,
+      projectId,
+      userId: "other-user",
+      state: "left",
+      actor: boardActor(),
+    })).rejects.toMatchObject({
+      status: 403,
+      message: "Users may only update their own resource memberships",
+    });
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
   });
 });

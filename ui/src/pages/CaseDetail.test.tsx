@@ -88,12 +88,12 @@ function detail(): CaseDetailData {
     caseNumber: 7,
     identifier: "PAP-C7",
     caseType: "blog_post",
-    key: "v2026.707/hermes-agent-post",
-    title: "Hermes agent launch post",
+    key: "v2026.707/external-agent-post",
+    title: "External agent launch post",
     summary: null,
     status: "in_review",
     fields: {
-      slug: "hermes-agent-post",
+      slug: "external-agent-post",
       body: "Legacy body field",
       runbook: "Legacy runbook field",
       word_count: 1850,
@@ -120,7 +120,7 @@ function detail(): CaseDetailData {
           id: "issue-1",
           identifier: "PAP-12947",
           title: "Case object exploration",
-          status: "in_progress",
+          boardPresentationStatus: "in_progress",
         },
       },
     ],
@@ -249,9 +249,9 @@ describe("CaseDetail", () => {
       // header
       expect(container.textContent).toContain("PAP-C7");
       expect(container.textContent).toContain("blog_post");
-      expect(container.textContent).toContain("Hermes agent launch post");
+      expect(container.textContent).toContain("External agent launch post");
       // upsert key (detail-only)
-      expect(container.textContent).toContain("v2026.707/hermes-agent-post");
+      expect(container.textContent).toContain("v2026.707/external-agent-post");
       // shared document section
       expect(container.textContent).toContain("Documents case-1");
       expect(container.textContent).toContain("Launch narrative");
@@ -289,7 +289,7 @@ describe("CaseDetail", () => {
     const root = renderPage(container);
 
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("v2026.707/hermes-agent-post");
+      expect(container.textContent).toContain("v2026.707/external-agent-post");
     });
 
     const identityGroup = container.querySelector('[data-case-identity-group="true"]');
@@ -297,7 +297,7 @@ describe("CaseDetail", () => {
     expect(identityGroup?.className).toContain("whitespace-nowrap");
 
     const keyButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent === "v2026.707/hermes-agent-post"
+      button.textContent === "v2026.707/external-agent-post"
     );
     expect(keyButton).toBeTruthy();
     act(() => {
@@ -305,7 +305,7 @@ describe("CaseDetail", () => {
     });
 
     await waitForAssertion(() => {
-      expect(mockCopyTextToClipboard).toHaveBeenCalledWith("v2026.707/hermes-agent-post");
+      expect(mockCopyTextToClipboard).toHaveBeenCalledWith("v2026.707/external-agent-post");
       expect(keyButton!.parentElement?.textContent).toContain("Copied");
     });
 
@@ -380,9 +380,9 @@ describe("CaseDetail", () => {
     await waitForAssertion(() => {
       const text = panelContainer.textContent ?? "";
       expect(text).toContain("Fields");
-      expect(text).toContain("v2026.707/hermes-agent-post");
+      expect(text).toContain("v2026.707/external-agent-post");
       expect(text).toContain("title");
-      expect(text).toContain("Hermes agent launch post");
+      expect(text).toContain("External agent launch post");
       expect(text).toContain("description");
       expect(text).toContain("Launch narrative");
       expect(text).toContain("word_count");
@@ -398,7 +398,7 @@ describe("CaseDetail", () => {
     });
 
     const keyValue = Array.from(panelContainer.querySelectorAll("button")).find((button) =>
-      button.textContent === "v2026.707/hermes-agent-post"
+      button.textContent === "v2026.707/external-agent-post"
     );
     expect(keyValue).toBeTruthy();
     act(() => {
@@ -406,12 +406,12 @@ describe("CaseDetail", () => {
     });
 
     await waitForAssertion(() => {
-      expect(mockCopyTextToClipboard).toHaveBeenCalledWith("v2026.707/hermes-agent-post");
+      expect(mockCopyTextToClipboard).toHaveBeenCalledWith("v2026.707/external-agent-post");
       expect(keyValue!.parentElement?.textContent).toContain("Copied");
     });
 
     const titleValue = Array.from(panelContainer.querySelectorAll("button")).find((button) =>
-      button.textContent === "Hermes agent launch post"
+      button.textContent === "External agent launch post"
     );
     expect(titleValue).toBeTruthy();
     act(() => {
@@ -419,7 +419,7 @@ describe("CaseDetail", () => {
     });
 
     await waitForAssertion(() => {
-      expect(mockCopyTextToClipboard).toHaveBeenCalledWith("Hermes agent launch post");
+      expect(mockCopyTextToClipboard).toHaveBeenCalledWith("External agent launch post");
       expect(titleValue!.parentElement?.textContent).toContain("Copied");
     });
 
@@ -447,7 +447,7 @@ describe("CaseDetail", () => {
     await waitForAssertion(() => {
       const text = container.textContent ?? "";
       expect(text).toContain("title");
-      expect(text).toContain("Hermes agent launch post");
+      expect(text).toContain("External agent launch post");
       expect(text).toContain("issue_identifiers");
       expect(container.querySelector('a[data-mention-kind="issue"][href="/issues/PAP-12947"]')).not.toBeNull();
       expect(text).not.toContain("body");

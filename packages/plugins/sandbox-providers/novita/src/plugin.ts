@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import {
+  buildCancelEnvironmentShellCommand,
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+  wrapCancellableEnvironmentShellCommand,
+} from "@paperclipai/plugin-sdk";
 import type {
   PluginEnvironmentAcquireLeaseParams,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
@@ -15,7 +22,9 @@ import type {
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
 } from "@paperclipai/plugin-sdk";
-import { Sandbox } from "novita-sandbox";
+import { Sandbox, type CommandHandle } from "novita-sandbox";
+
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
 export interface NovitaDriverConfig {
   apiKey: string | null;
@@ -122,25 +131,50 @@ export function buildShellCommand(input: {
     }
   }
 
-  const exports = envEntries.map(([key, value]) => `export ${key}=${shellQuote(value)};`);
+  const configuredHome =
+    input.env?.HOME?.trim() ||
+    input.env?.USERPROFILE?.trim() ||
+    null;
+  const effectiveEnv = { ...(input.env ?? {}) };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const envArgs = Object.entries(effectiveEnv)
+    .filter(([key]) => key !== "PATH")
+    .map(([key, value]) => `${key}=${shellQuote(value)}`);
+  const explicitPath = input.env?.PATH
+    ? shellQuote(input.env.PATH)
+    : '"${PATH:-/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin}"';
   const argv = [input.command, ...(input.args ?? [])].map(shellQuote).join(" ");
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const cleanArgv =
+    `env -i PATH=${explicitPath}${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${argv}`;
   const stdinPath = typeof input.stdin === "string" ? buildStdinPath() : null;
   const stdin = stdinPath ? `printf '%s' ${singleQuoteForPrintf(input.stdin ?? "")} > ${shellQuote(stdinPath)}` : "";
   const cwd = input.cwd?.trim() || "/";
-  const commandLines = stdinPath
+  const commandLines = stdinPath || !configuredHome
     ? [
       "set +e",
-      `${argv} < ${shellQuote(stdinPath)}`,
+      `${cleanArgv}${stdinPath ? ` < ${shellQuote(stdinPath)}` : ""}`,
       "status=$?",
-      `rm -f ${shellQuote(stdinPath)}`,
+      ...(stdinPath ? [`rm -f ${shellQuote(stdinPath)}`] : []),
       "exit $status",
     ]
-    : [`exec ${argv}`];
+    : [`exec ${cleanArgv}`];
   return [
     "set -e",
     stdin,
     `cd ${shellQuote(cwd)}`,
-    ...exports,
+    ...(!configuredHome
+      ? [
+          'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+          'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+        ]
+      : []),
     ...commandLines,
   ].filter(Boolean).join("\n");
 }
@@ -237,19 +271,41 @@ async function executeInSandbox(
   sandbox: Sandbox,
   params: PluginEnvironmentExecuteParams,
   config: NovitaDriverConfig,
+  control: {
+    setHandle(handle: CommandHandle): void;
+    isCancellationRequested(): boolean;
+  },
 ): Promise<PluginEnvironmentExecuteResult> {
-  const command = buildShellCommand({
-    command: params.command,
-    args: params.args,
-    cwd: params.cwd,
-    env: params.env,
-    stdin: params.stdin,
-  });
+  const command = wrapCancellableEnvironmentShellCommand(
+    params.executionId,
+    buildShellCommand({
+      command: params.command,
+      args: params.args,
+      cwd: params.cwd,
+      env: params.env,
+      stdin: params.stdin,
+    }),
+  );
   try {
-    const result = await sandbox.commands.run(command, {
+    if (control.isCancellationRequested()) {
+      return {
+        exitCode: 130,
+        signal: null,
+        timedOut: false,
+        stdout: "",
+        stderr: "",
+      };
+    }
+    const handle = await sandbox.commands.run(command, {
+      background: true,
       cwd: "/",
       timeoutMs: params.timeoutMs ?? config.timeoutMs,
     });
+    control.setHandle(handle);
+    if (control.isCancellationRequested()) {
+      await handle.kill();
+    }
+    const result = await handle.wait();
     return {
       exitCode: result.exitCode,
       signal: null,
@@ -460,32 +516,83 @@ const plugin = definePlugin({
   async onEnvironmentExecute(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
-    if (!params.lease.providerLeaseId) {
-      return {
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        stdout: "",
-        stderr: "No provider lease ID available for execution.\n",
-      };
-    }
-    const config = parseNovitaDriverConfig(params.config);
-    const sandbox = await getSandboxOrNull(config, params.lease.providerLeaseId);
-    if (!sandbox) {
-      return {
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        stdout: "",
-        stderr: "Novita sandbox lease is no longer available.\n",
-        metadata: {
-          provider: "novita",
-          sandboxId: params.lease.providerLeaseId,
-          expired: true,
-        },
-      };
-    }
-    return await executeInSandbox(sandbox, params, config);
+    let commandHandle: CommandHandle | null = null;
+    let cancellationRequested = false;
+    return await activeExecutions.execute(params, {
+      cancel: async () => {
+        cancellationRequested = true;
+        await commandHandle?.kill();
+      },
+      execute: async () => {
+        if (!params.lease.providerLeaseId) {
+          return {
+            exitCode: 1,
+            signal: null,
+            timedOut: false,
+            stdout: "",
+            stderr: "No provider lease ID available for execution.\n",
+          };
+        }
+        const config = parseNovitaDriverConfig(params.config);
+        const sandbox = await getSandboxOrNull(config, params.lease.providerLeaseId);
+        if (!sandbox) {
+          return {
+            exitCode: 1,
+            signal: null,
+            timedOut: false,
+            stdout: "",
+            stderr: "Novita sandbox lease is no longer available.\n",
+            metadata: {
+              provider: "novita",
+              sandboxId: params.lease.providerLeaseId,
+              expired: true,
+            },
+          };
+        }
+        return await executeInSandbox(sandbox, params, config, {
+          setHandle: (handle) => {
+            commandHandle = handle;
+          },
+          isCancellationRequested: () => cancellationRequested,
+        });
+      },
+    });
+  },
+
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async () => {
+        if (!params.lease.providerLeaseId) return false;
+        const config =
+          parseNovitaDriverConfig(params.config);
+        const sandbox = await getSandboxOrNull(
+          config,
+          params.lease.providerLeaseId,
+        );
+        if (!sandbox) return false;
+        const result = await sandbox.commands.run(
+          buildCancelEnvironmentShellCommand(
+            params.executionId,
+          ),
+          {
+            cwd: "/",
+            timeoutMs: Math.min(
+              config.requestTimeoutMs,
+              10_000,
+            ),
+          },
+        );
+        if (result.exitCode !== 0) {
+          throw new Error(
+            `Novita exact command cancellation failed with exit code ${result.exitCode}.`,
+          );
+        }
+        return true;
+      },
+    );
   },
 });
 

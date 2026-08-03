@@ -118,8 +118,8 @@ Do not create the child issues yet. Do not push code.
 
 ### 6. Request approval, then decompose
 
-- Open a `request_confirmation` interaction targeting the latest plan revision. Idempotency key `confirmation:{issueId}:plan:{revisionId}`.
-- Wait for board/CTO acceptance. If the user posts a new comment that supersedes the plan, the prior confirmation is invalidated — open a fresh confirmation tied to the new revision ([PAP-2602](/PAP/issues/PAP-2602) cycled three revisions; that is fine).
+- Request a durable board/CTO decision through the formal approval surface, linked to the issue and latest plan revision, or assign the issue to the named human decision owner.
+- Wait for acceptance. If a new comment changes the plan, revise the document and request a new decision against the new revision; the earlier decision does not authorize changed work.
 - Only after acceptance: create the phased child issues with the right assignees and dependencies, then block this parent on the final QA / CTO review issue so the parent only wakes when the chain finishes.
 
 ### 7. Phase 0 hygiene on the named tree
@@ -152,6 +152,6 @@ When the phase chain is complete, post a board-level summary comment on the pare
 - [ ] The proposed rule is stated as a contract, not a patch.
 - [ ] All three invariants are explicitly preserved.
 - [ ] No code change has landed in this heartbeat.
-- [ ] A `request_confirmation` against the latest plan revision is open.
+- [ ] A formal approval or named human decision owner is attached to the latest plan revision.
 - [ ] Phase 0 of the plan addresses the live named tree without destroying evidence.
 - [ ] Implementation phases name specialty-appropriate assignees and `blockedByIssueIds` dependencies.

@@ -53,6 +53,7 @@ function createMockSandbox(overrides: {
     pid: 42,
     stdout: "",
     stderr: "",
+    kill: vi.fn().mockResolvedValue(true),
     wait: vi.fn().mockResolvedValue(overrides.waitResult ?? {
       exitCode: 0,
       stdout: "ok\n",
@@ -107,6 +108,46 @@ describe("E2B sandbox provider plugin", () => {
     });
     expect(plugin.definition.onEnvironmentAcquireLease).toBeTypeOf("function");
     expect(plugin.definition.onEnvironmentExecute).toBeTypeOf("function");
+  });
+
+  it("reconnects and cancels the exact command after worker-local registry loss", async () => {
+    const sandbox = createMockSandbox();
+    mockConnect.mockResolvedValue(sandbox);
+
+    await expect(
+      plugin.definition.onEnvironmentCancelExecution?.({
+        driverKey: "e2b",
+        companyId: "company-1",
+        environmentId: "env-1",
+        issueId: "issue-1",
+        config: {
+          template: "base",
+          apiKey: "resolved-key",
+          timeoutMs: 300000,
+          reuseLease: false,
+        },
+        lease: {
+          providerLeaseId: "sandbox-123",
+          metadata: {},
+        },
+        executionId: "run-immutable",
+        reason: "fresh_session_reset",
+      }),
+    ).resolves.toEqual({
+      executionId: "run-immutable",
+      cancelled: true,
+    });
+    expect(mockConnect).toHaveBeenCalledWith(
+      "sandbox-123",
+      expect.objectContaining({ apiKey: "resolved-key" }),
+    );
+    expect(sandbox.commands.run).toHaveBeenCalledWith(
+      expect.stringContaining(
+        ".paperclip-execution-72756e2d696d6d757461626c65",
+      ),
+      expect.objectContaining({ cwd: "/" }),
+    );
+    expect(sandbox.kill).not.toHaveBeenCalled();
   });
 
   it("normalizes E2B config through the generic provider shape", async () => {
@@ -263,8 +304,13 @@ describe("E2B sandbox provider plugin", () => {
     expect(sandbox.kill).toHaveBeenCalled();
   });
 
-  it("executes commands through a connected sandbox when stdin is provided", async () => {
+  it("executes a cancellable command through a connected sandbox when stdin is provided", async () => {
     const sandbox = createMockSandbox();
+    sandbox.handle.wait.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "stdin\n",
+      stderr: "",
+    });
     sandbox.commands.run.mockImplementation(async (command: string, options?: { background?: boolean }) => {
       if (options?.background) return sandbox.handle;
       if (command === "pwd") {
@@ -293,6 +339,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-stdin",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -306,14 +353,18 @@ describe("E2B sandbox provider plugin", () => {
     const stdinCall = sandbox.commands.run.mock.calls.find(([cmd]: [string]) => cmd.includes("'printf'"));
     expect(stdinCall).toBeDefined();
     if (!stdinCall) throw new Error("stdinCall not found");
-    expect(stdinCall[0]).toMatch(/\.profile/);
-    expect(stdinCall[0]).toMatch(/exec env FOO='bar' 'printf' 'hello' < '\/tmp\/paperclip-stdin-/);
+    expect(stdinCall[0]).not.toMatch(/"\$HOME\/\.(?:profile|bashrc|zprofile)"/);
+    expect(stdinCall[0]).toMatch(/mktemp -d \/tmp\/paperclip-provider-home/);
+    expect(stdinCall[0]).toContain("paperclip_control=");
+    expect(stdinCall[0]).toContain("env -i PATH=");
+    expect(stdinCall[0]).toContain("FOO=");
+    expect(stdinCall[0]).toContain("/tmp/paperclip-stdin-");
     expect(stdinCall[1]).toEqual(expect.objectContaining({ cwd: "/workspace", timeoutMs: 1000 }));
     expect(stdinCall[1]).not.toHaveProperty("envs");
-    expect(stdinCall[1]).not.toHaveProperty("background");
+    expect(stdinCall[1]).toHaveProperty("background", true);
     expect(sandbox.commands.sendStdin).not.toHaveBeenCalled();
     expect(sandbox.commands.closeStdin).not.toHaveBeenCalled();
-    expect(sandbox.handle.wait).not.toHaveBeenCalled();
+    expect(sandbox.handle.wait).toHaveBeenCalledOnce();
     expect(sandbox.files.remove).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/paperclip-stdin-/));
     expect(result).toEqual({
       exitCode: 0,
@@ -323,8 +374,13 @@ describe("E2B sandbox provider plugin", () => {
     });
   });
 
-  it("executes non-stdin commands in foreground mode", async () => {
+  it("executes non-stdin commands with a restart-stable cancellation wrapper", async () => {
     const sandbox = createMockSandbox();
+    sandbox.handle.wait.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "foreground\n",
+      stderr: "",
+    });
     sandbox.commands.run.mockImplementation(async (command: string, options?: { background?: boolean }) => {
       if (options?.background) return sandbox.handle;
       if (command === "pwd") {
@@ -353,6 +409,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-foreground",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -363,14 +420,17 @@ describe("E2B sandbox provider plugin", () => {
     const fgCall = sandbox.commands.run.mock.calls.find(([cmd]: [string]) => cmd.includes("'printf'"));
     expect(fgCall).toBeDefined();
     if (!fgCall) throw new Error("fgCall not found");
-    expect(fgCall[0]).toMatch(/\.profile/);
-    expect(fgCall[0]).toMatch(/exec env FOO='bar' 'printf' 'hello'$/);
+    expect(fgCall[0]).not.toMatch(/"\$HOME\/\.(?:profile|bashrc|zprofile)"/);
+    expect(fgCall[0]).toMatch(/mktemp -d \/tmp\/paperclip-provider-home/);
+    expect(fgCall[0]).toContain("paperclip_control=");
+    expect(fgCall[0]).toContain("env -i PATH=");
+    expect(fgCall[0]).toContain("FOO=");
     expect(fgCall[1]).toEqual(expect.objectContaining({ cwd: "/workspace", timeoutMs: 1000 }));
     expect(fgCall[1]).not.toHaveProperty("envs");
-    expect(fgCall[1]).not.toHaveProperty("background");
+    expect(fgCall[1]).toHaveProperty("background", true);
     expect(sandbox.commands.sendStdin).not.toHaveBeenCalled();
     expect(sandbox.commands.closeStdin).not.toHaveBeenCalled();
-    expect(sandbox.handle.wait).not.toHaveBeenCalled();
+    expect(sandbox.handle.wait).toHaveBeenCalledOnce();
     expect(result).toEqual({
       exitCode: 0,
       timedOut: false,
@@ -394,6 +454,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-refresh",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -420,6 +481,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-refresh-failure",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -449,6 +511,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-stdin-write-failure",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -464,20 +527,12 @@ describe("E2B sandbox provider plugin", () => {
 
   it("preserves partial foreground output when a non-stdin command times out", async () => {
     const sandbox = createMockSandbox();
-    sandbox.commands.run.mockImplementation(async (command: string, options?: { background?: boolean }) => {
-      if (options?.background) return sandbox.handle;
-      if (command === "pwd") {
-        return {
-          exitCode: 0,
-          stdout: "/home/user\n",
-          stderr: "",
-        };
-      }
-      throw new MockTimeoutError("command timed out", {
+    sandbox.handle.wait.mockRejectedValueOnce(
+      new MockTimeoutError("command timed out", {
         stdout: "partial stdout\n",
         stderr: "partial stderr\n",
-      });
-    });
+      }),
+    );
     mockConnect.mockResolvedValue(sandbox);
 
     const result = await plugin.definition.onEnvironmentExecute?.({
@@ -491,6 +546,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-timeout",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",
@@ -508,21 +564,13 @@ describe("E2B sandbox provider plugin", () => {
 
   it("preserves partial foreground output when a stdin command times out", async () => {
     const sandbox = createMockSandbox();
-    sandbox.commands.run.mockImplementation(async (command: string, options?: { background?: boolean }) => {
-      if (options?.background) return sandbox.handle;
-      if (command === "pwd") {
-        return {
-          exitCode: 0,
-          stdout: "/home/user\n",
-          stderr: "",
-        };
-      }
-      throw new MockTimeoutError("command timed out", {
+    sandbox.handle.wait.mockRejectedValueOnce(
+      new MockTimeoutError("command timed out", {
         stdout: "stdin stdout\n",
         stderr: "stdin stderr\n",
         nested: true,
-      });
-    });
+      }),
+    );
     mockConnect.mockResolvedValue(sandbox);
 
     const result = await plugin.definition.onEnvironmentExecute?.({
@@ -536,6 +584,7 @@ describe("E2B sandbox provider plugin", () => {
         reuseLease: false,
       },
       lease: { providerLeaseId: "sandbox-123", metadata: {} },
+      executionId: "execution-stdin-timeout",
       command: "printf",
       args: ["hello"],
       cwd: "/workspace",

@@ -8,13 +8,11 @@
     "tests/e2e/apps-dark-mode-shots.spec.ts": 18000,
     "tests/e2e/apps-prosumer-mcp-flow.spec.ts": 16800,
     "tests/e2e/conference-room-typing-intro.spec.ts": 4900,
-    "tests/e2e/mcp-user-stories.spec.ts": 39000,
     "tests/e2e/nux-phase4-screenshots.spec.ts": 19650,
     "tests/e2e/onboarding.spec.ts": 3200,
     "tests/e2e/pipelines-tutorial-flow.spec.ts": 30198,
     "tests/e2e/planning-mode-visual-verification.spec.ts": 23250,
     "tests/e2e/sidebar-takeover.spec.ts": 16650,
-    "tests/e2e/signoff-policy.spec.ts": 9696,
     "tests/e2e/smoke-lab.spec.ts": 168000
   }
 }

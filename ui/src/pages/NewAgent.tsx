@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
@@ -6,54 +6,31 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { agentsApi } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
 import { issuesApi } from "../api/issues";
-import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { resolveSkillSummaryText } from "../lib/company-skill-summary";
-import { AGENT_ROLES, type AdapterEnvironmentTestResult, type AgentPermissions } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Shield } from "lucide-react";
-import { cn, agentUrl } from "../lib/utils";
-import { roleLabels } from "../components/agent-config-primitives";
-import {
-  AgentConfigForm,
-  AdapterEnvironmentResult,
-  type CreateConfigValues,
-} from "../components/AgentConfigForm";
+import { issueUrl } from "../lib/utils";
+import { AgentConfigForm } from "../components/AgentConfigForm";
+import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import { defaultCreateValues } from "../components/agent-config-defaults";
-import { getUIAdapter, listUIAdapters } from "../adapters";
-import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
+import { getUIAdapter } from "../adapters";
+import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { isValidAdapterType } from "../adapters/metadata";
-import { ReportsToPicker } from "../components/ReportsToPicker";
-import { buildNewAgentHirePayload } from "../lib/new-agent-hire-payload";
-import { TrustPresetSection } from "../components/TrustPresetSection";
-import { buildPermissionsForTrustPreset, getTrustPreset } from "../lib/trust-policy-ui";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@paperclipai/adapter-opencode-local";
+import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plane-payload";
+import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
+import type { CompanySkillChannel } from "@paperclipai/shared";
+import {
+  RuntimeAgentConfigurationFields,
+  createEmptyRuntimeAgentConfigurationValues,
+  type RuntimeAgentConfigurationValues,
+} from "../components/RuntimeAgentConfigurationFields";
 
 function createValuesForAdapterType(
   adapterType: CreateConfigValues["adapterType"],
 ): CreateConfigValues {
   const { adapterType: _discard, ...defaults } = defaultCreateValues;
-  const nextValues: CreateConfigValues = { ...defaults, adapterType };
-  if (adapterType === "codex_local") {
-    nextValues.dangerouslyBypassSandbox =
-      DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
-  } else if (adapterType === "gemini_local") {
-    nextValues.model = DEFAULT_GEMINI_LOCAL_MODEL;
-  } else if (adapterType === "cursor") {
-    nextValues.model = DEFAULT_CURSOR_LOCAL_MODEL;
-  } else if (adapterType === "opencode_local") {
-    nextValues.model = DEFAULT_OPENCODE_LOCAL_MODEL;
-  }
-  return nextValues;
+  return { ...defaults, adapterType };
 }
 
 export function NewAgent() {
@@ -66,55 +43,26 @@ export function NewAgent() {
 
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
-  const [role, setRole] = useState("general");
-  const [reportsTo, setReportsTo] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState("");
+  const [initialIssueTitle, setInitialIssueTitle] = useState("");
+  const [initialRequest, setInitialRequest] = useState("");
+  const [runtimeAccess, setRuntimeAccess] =
+    useState<RuntimeAgentConfigurationValues>(
+      createEmptyRuntimeAgentConfigurationValues,
+    );
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
-  const [permissions, setPermissions] = useState<Partial<AgentPermissions>>(
-    buildPermissionsForTrustPreset(null, "standard"),
-  );
   const [selectedSkillKeys, setSelectedSkillKeys] = useState<string[]>([]);
-  const [roleOpen, setRoleOpen] = useState(false);
+  const [skillChannel, setSkillChannel] =
+    useState<CompanySkillChannel>("isolated_skills_home");
   const [formError, setFormError] = useState<string | null>(null);
-  const [testAgentAction, setTestAgentAction] = useState<(() => void) | null>(null);
-  const [testAgentState, setTestAgentState] = useState({ disabled: true, pending: false });
-  const [testAgentFeedback, setTestAgentFeedback] = useState<{
-    errorMessage: string | null;
-    result: AdapterEnvironmentTestResult | null;
-  }>({
-    errorMessage: null,
-    result: null,
-  });
-
-  const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-  });
+  const createIdempotencyKeyRef = useRef(crypto.randomUUID());
+  const admittedAdapters = useAdapterCatalogSync();
 
   const { data: companySkills } = useQuery({
     queryKey: queryKeys.companySkills.list(selectedCompanyId ?? ""),
     queryFn: () => companySkillsApi.list(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId),
   });
-
-  const lowTrustSelected = getTrustPreset(permissions) === "low_trust_review";
-
-  const { data: boundaryProjects, isLoading: boundaryProjectsLoading } = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.projects.list(selectedCompanyId) : ["projects", "__low-trust-disabled"],
-    queryFn: () => projectsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId && lowTrustSelected),
-  });
-
-  const { data: boundaryIssues, isLoading: boundaryIssuesLoading } = useQuery({
-    queryKey: selectedCompanyId
-      ? [...queryKeys.issues.list(selectedCompanyId), "low-trust-boundary-candidates"]
-      : ["issues", "__low-trust-disabled"],
-    queryFn: () => issuesApi.list(selectedCompanyId!, { limit: 100, sortField: "updated", sortDir: "desc" }),
-    enabled: Boolean(selectedCompanyId && lowTrustSelected),
-  });
-
-  const isFirstAgent = !agents || agents.length === 0;
-  const effectiveRole = isFirstAgent ? "ceo" : role;
 
   useEffect(() => {
     setBreadcrumbs([
@@ -124,13 +72,6 @@ export function NewAgent() {
   }, [setBreadcrumbs]);
 
   useEffect(() => {
-    if (isFirstAgent) {
-      if (!name) setName("CEO");
-      if (!title) setTitle("CEO");
-    }
-  }, [isFirstAgent]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
     const requested = presetAdapterType;
     if (!requested) return;
     if (!isValidAdapterType(requested)) return;
@@ -138,47 +79,106 @@ export function NewAgent() {
       if (prev.adapterType === requested) return prev;
       return createValuesForAdapterType(requested as CreateConfigValues["adapterType"]);
     });
-  }, [presetAdapterType]);
+  }, [admittedAdapters, presetAdapterType]);
+
+  const adapterConfigResolution = useMemo(() => {
+    try {
+      const adapter = getUIAdapter(configValues.adapterType);
+      return {
+        config: adapter.buildAdapterConfig(configValues),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        config: {},
+        error:
+          error instanceof Error
+            ? error.message
+            : "Adapter configuration could not be built.",
+      };
+    }
+  }, [configValues]);
+  const adapterConfiguration = useStructuralAdapterConfiguration({
+    adapterType: configValues.adapterType,
+    adapterConfig: adapterConfigResolution.config,
+    enabled: adapterConfigResolution.error === null,
+  });
 
   const createAgent = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      agentsApi.hire(selectedCompanyId!, data),
+    mutationFn: async (input: {
+      payloads: ReturnType<typeof buildNewAgentControlPlanePayloads>;
+      issueTitle: string | null;
+      issueRequest: string;
+    }) => {
+      const created = await agentsApi.createRuntimeAgent(
+        selectedCompanyId!,
+        input.payloads.runtimeAgent,
+        createIdempotencyKeyRef.current,
+      );
+      await agentsApi.updateOperationalConfiguration(
+        created.agent.id,
+        input.payloads.operational,
+        selectedCompanyId!,
+      );
+      await agentsApi.createAdapterConfigRevision(
+        created.agent.id,
+        input.payloads.adapterRevision,
+        selectedCompanyId!,
+      );
+      const issue = await issuesApi.create(selectedCompanyId!, {
+        request: input.issueRequest,
+        ownerAgentId: created.agent.id,
+        idempotencyKey: `new-agent:${created.agent.id}:initial-issue`,
+        ...(input.issueTitle ? { title: input.issueTitle } : {}),
+      });
+      return { agent: created.agent, issue };
+    },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
-      navigate(agentUrl(result.agent));
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      navigate(issueUrl(result.issue));
     },
     onError: (error) => {
       setFormError(error instanceof Error ? error.message : "Failed to create agent");
     },
   });
 
-  function buildAdapterConfig() {
-    const adapter = getUIAdapter(configValues.adapterType);
-    return adapter.buildAdapterConfig(configValues);
-  }
-
   function handleSubmit() {
-    if (!selectedCompanyId || !name.trim()) return;
+    if (
+      !selectedCompanyId
+      || !name.trim()
+      || !initialRequest.trim()
+      || !configValues.defaultEnvironmentId
+      || !adapterConfiguration.valid
+    ) return;
     setFormError(null);
-    if (configValues.adapterType === "opencode_local") {
-      if (!isValidOpenCodeModelId(configValues.model)) {
-        setFormError("OpenCode requires an explicit model in provider/model format.");
+    const skillByKey = new Map(
+      (companySkills ?? []).map((skill) => [skill.key, skill]),
+    );
+    const companySkillPins: Array<{ key: string; versionId: string }> = [];
+    for (const key of selectedSkillKeys) {
+      const versionId = skillByKey.get(key)?.currentVersionId;
+      if (!versionId) {
+        setFormError(`Company skill ${key} has no immutable version to pin.`);
         return;
       }
+      companySkillPins.push({ key, versionId });
     }
-    createAgent.mutate(
-      buildNewAgentHirePayload({
+    createAgent.mutate({
+      payloads: buildNewAgentControlPlanePayloads({
         name,
-        effectiveRole,
         title,
-        reportsTo,
-        selectedSkillKeys,
+        capabilities,
+        reportsTo: null,
+        runtimeAccess,
         configValues,
-        adapterConfig: buildAdapterConfig(),
-        permissions,
+        adapterConfig: adapterConfigResolution.config,
+        companySkillPins,
+        skillChannel,
       }),
-    );
+      issueTitle: initialIssueTitle.trim() || null,
+      issueRequest: initialRequest.trim(),
+    });
   }
 
   const availableSkills = (companySkills ?? []).filter((skill) => !skill.key.startsWith("paperclipai/paperclip/"));
@@ -191,21 +191,6 @@ export function NewAgent() {
       return prev.filter((value) => value !== key);
     });
   }
-
-  const handleTestAgentActionChange = useCallback((fn: (() => void) | null) => {
-    setTestAgentAction(() => fn);
-  }, []);
-
-  const handleTestAgentStateChange = useCallback((state: { disabled: boolean; pending: boolean }) => {
-    setTestAgentState(state);
-  }, []);
-
-  const handleTestAgentFeedbackChange = useCallback((feedback: {
-    errorMessage: string | null;
-    result: AdapterEnvironmentTestResult | null;
-  }) => {
-    setTestAgentFeedback(feedback);
-  }, []);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -232,66 +217,38 @@ export function NewAgent() {
         <div className="px-4 pb-2">
           <input
             className="w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40"
-            placeholder="Title (e.g. VP of Engineering)"
+            placeholder="Title (display only)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>
 
-        {/* Property chips: Role + Reports To */}
-        <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap">
-          <Popover open={roleOpen} onOpenChange={setRoleOpen}>
-            <PopoverTrigger asChild>
-              <button
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors",
-                  isFirstAgent && "opacity-60 cursor-not-allowed"
-                )}
-                disabled={isFirstAgent}
-              >
-                <Shield className="h-3 w-3 text-muted-foreground" />
-                {roleLabels[effectiveRole] ?? effectiveRole}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
-              {AGENT_ROLES.map((r) => (
-                <button
-                  key={r}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    r === role && "bg-accent"
-                  )}
-                  onClick={() => { setRole(r); setRoleOpen(false); }}
-                >
-                  {roleLabels[r] ?? r}
-                </button>
-              ))}
-            </PopoverContent>
-          </Popover>
-
-          <ReportsToPicker
-            agents={agents ?? []}
-            value={reportsTo}
-            onChange={setReportsTo}
-            disabled={isFirstAgent}
-          />
+        <div className="border-t border-border px-4 py-4">
+          <label className="grid gap-1.5 text-sm">
+            <span className="font-medium">Capabilities</span>
+            <span className="text-xs text-muted-foreground">
+              Verbatim capability description shown only when another agent can
+              choose this agent as a target.
+            </span>
+            <textarea
+              className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+              value={capabilities}
+              onChange={(event) => setCapabilities(event.target.value)}
+              placeholder="What work is this agent equipped to handle?"
+            />
+          </label>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Board-created agents start at the root. Reporting lines can be
+            changed later through runtime-agent configuration.
+          </p>
         </div>
 
         <div className="border-t border-border px-4 py-4">
-          <TrustPresetSection
-            permissions={permissions}
-            onChange={setPermissions}
+          <RuntimeAgentConfigurationFields
+            companyId={selectedCompanyId ?? ""}
+            value={runtimeAccess}
+            onChange={setRuntimeAccess}
             disabled={createAgent.isPending}
-            companyId={selectedCompanyId}
-            projectCandidates={(boundaryProjects ?? []).map((project) => ({
-              id: project.id,
-              label: project.name,
-            }))}
-            issueCandidates={(boundaryIssues ?? []).map((issue) => ({
-              id: issue.id,
-              label: `${issue.identifier ?? issue.id.slice(0, 8)} · ${issue.title}`,
-            }))}
-            candidatesLoading={boundaryProjectsLoading || boundaryIssuesLoading}
           />
         </div>
 
@@ -300,19 +257,77 @@ export function NewAgent() {
           mode="create"
           values={configValues}
           onChange={(patch) => setConfigValues((prev) => ({ ...prev, ...patch }))}
-          onTestActionChange={handleTestAgentActionChange}
-          onTestActionStateChange={handleTestAgentStateChange}
-          onTestFeedbackChange={handleTestAgentFeedbackChange}
+          applyAdapterSchemaDefaults={false}
+          requireExplicitExecutionEnvironment
         />
+
+        <div className="border-t border-border px-4 py-4">
+          <div className="space-y-3">
+            {!configValues.adapterType ? (
+              <p className="text-xs text-muted-foreground">
+                Select an adapter to begin its explicit configuration.
+              </p>
+            ) : adapterConfigResolution.error ? (
+              <p role="alert" className="text-xs text-destructive">
+                {adapterConfigResolution.error}
+              </p>
+            ) : adapterConfiguration.isLoading ? (
+              <p className="text-xs text-muted-foreground">
+                Loading adapter configuration schema…
+              </p>
+            ) : adapterConfiguration.error || !adapterConfiguration.schema ? (
+              <p role="alert" className="text-xs text-destructive">
+                Adapter configuration schema unavailable.{" "}
+                {adapterConfiguration.error ?? "The adapter did not return a schema."}
+              </p>
+            ) : adapterConfiguration.fieldErrors.length > 0 ? (
+              <p role="alert" className="text-xs text-destructive">
+                Adapter configuration is incomplete:{" "}
+                {adapterConfiguration.fieldErrors
+                  .map((error) => error.message)
+                  .join(" ")}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Draft configuration is structurally valid. Runtime readiness
+                is checked only against a persisted execution context.
+              </p>
+            )}
+
+          </div>
+        </div>
 
         <div className="border-t border-border px-4 py-4">
           <div className="space-y-3">
             <div>
               <h2 className="text-sm font-medium">Company skills</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Optional skills from the company library. Built-in Paperclip runtime skills are added automatically.
+                Optional provider-owned skills from the company library.
+                Paperclip does not add a hidden runtime skill bundle.
               </p>
             </div>
+            <label className="grid gap-1.5 text-sm">
+              <span className="font-medium">Skill channel</span>
+              <select
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
+                value={skillChannel}
+                onChange={(event) =>
+                  setSkillChannel(event.target.value as CompanySkillChannel)
+                }
+                disabled={createAgent.isPending}
+              >
+                <option value="isolated_skills_home">
+                  Paperclip-managed isolated skills home
+                </option>
+                <option value="operator_native">
+                  Operator-managed native skills
+                </option>
+              </select>
+              <span className="text-xs text-muted-foreground">
+                Isolated mode materializes the pinned versions read-only.
+                Operator-managed mode performs no Paperclip skill-file access.
+              </span>
+            </label>
             {availableSkills.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 No optional company skills installed yet.
@@ -342,45 +357,53 @@ export function NewAgent() {
           </div>
         </div>
 
+        <div className="border-t border-border px-4 py-4">
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-sm font-medium">Initial issue</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Creating an agent also creates its first ordinary board issue.
+                This immutable request is the only source that starts provider work.
+              </p>
+            </div>
+            <input
+              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+              placeholder="Issue title (optional)"
+              value={initialIssueTitle}
+              onChange={(event) => setInitialIssueTitle(event.target.value)}
+            />
+            <textarea
+              className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+              placeholder="Describe the first concrete assignment"
+              value={initialRequest}
+              onChange={(event) => setInitialRequest(event.target.value)}
+            />
+          </div>
+        </div>
+
         {/* Footer */}
         <div className="border-t border-border px-4 py-3">
-          {isFirstAgent && (
-            <p className="text-xs text-muted-foreground mb-2">This will be the CEO</p>
-          )}
           {formError && (
             <p className="text-xs text-destructive mb-2">{formError}</p>
           )}
           <div className="space-y-3">
-            {testAgentFeedback.errorMessage && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {testAgentFeedback.errorMessage}
-              </div>
-            )}
-            {testAgentFeedback.result && (
-              <AdapterEnvironmentResult result={testAgentFeedback.result} />
-            )}
             <div className="flex items-center justify-between gap-2">
               <Button variant="outline" size="sm" onClick={() => navigate("/agents")}>
                 Cancel
               </Button>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={testAgentState.disabled}
-                  onClick={() => testAgentAction?.()}
-                >
-                  {testAgentState.pending ? "Testing..." : "Test Agent"}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={!name.trim() || createAgent.isPending}
-                  onClick={handleSubmit}
-                >
-                  {createAgent.isPending ? "Creating…" : "Create agent"}
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                disabled={
+                  !name.trim()
+                  || !initialRequest.trim()
+                  || !configValues.defaultEnvironmentId
+                  || !adapterConfiguration.valid
+                  || createAgent.isPending
+                }
+                onClick={handleSubmit}
+              >
+                {createAgent.isPending ? "Creating…" : "Create agent"}
+              </Button>
             </div>
           </div>
         </div>

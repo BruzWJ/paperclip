@@ -1,47 +1,36 @@
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
-  agentTaskSessions as agentTaskSessionsTable,
-  agents as agentsTable,
-  budgetIncidents,
-  costEvents,
-  heartbeatRuns,
+  authUsers,
   invites,
   issues as issuesTable,
   pluginLogs,
   principalPermissionGrants,
   projects as projectsTable,
 } from "@paperclipai/db";
-import { eq, and, like, desc, inArray, sql, isNull, isNotNull, gt, lte } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, isNotNull, gt, lte, or } from "drizzle-orm";
 import type {
   HostServices,
+  WorkerToHostMethods,
   Company,
   Agent,
   Project,
   Issue,
   Goal,
   PluginWorkspace,
-  IssueComment,
-  PluginIssueAssigneeSummary,
-  PluginIssueOrchestrationSummary,
   PluginExecutionWorkspaceMetadata,
 } from "@paperclipai/plugin-sdk";
-import type { CreateIssueThreadInteraction, InviteJoinType, IssueDocumentSummary, PermissionKey, PrincipalType } from "@paperclipai/shared";
-import { pluginOperationIssueOriginKind } from "@paperclipai/shared";
+import { isUuidLike, type InviteJoinType, type PermissionKey, type PrincipalType } from "@paperclipai/shared";
 import { companyService } from "./companies.js";
-import { agentService } from "./agents.js";
+import {
+  agentService,
+  type AgentControlLifecycleService,
+} from "./agents.js";
 import { projectService } from "./projects.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { issueService } from "./issues.js";
-import { issueThreadInteractionService } from "./issue-thread-interactions.js";
 import { goalService } from "./goals.js";
-import { documentService } from "./documents.js";
-import { heartbeatService } from "./heartbeat.js";
-import { budgetService } from "./budgets.js";
-import { issueApprovalService } from "./issue-approvals.js";
-import { subscribeCompanyLiveEvents } from "./live-events.js";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import path from "node:path";
+import { createHash, randomBytes } from "node:crypto";
 import { pluginRegistryService } from "./plugin-registry.js";
 import { pluginStateStore } from "./plugin-state-store.js";
 import { pluginDatabaseService } from "./plugin-database.js";
@@ -75,6 +64,8 @@ import { getTelemetryClient } from "../telemetry.js";
 import { accessService } from "./access.js";
 import { authorizationService, type AuthorizationActor } from "./authorization.js";
 import { sanitizeRecord } from "../redaction.js";
+import { assertPluginInstallationAvailableForCompany } from "./plugin-issue-authorization.js";
+import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 // ---------------------------------------------------------------------------
 // SSRF protection for plugin HTTP fetch
@@ -484,16 +475,75 @@ if (_logFlushInterval.unref) _logFlushInterval.unref();
  * @param eventBus - The system-wide event bus for publishing plugin events.
  * @returns An object implementing the HostServices interface for the plugin SDK.
  */
-/** Maximum time (ms) to keep a session event subscription alive before forcing cleanup. */
-const SESSION_EVENT_SUBSCRIPTION_TIMEOUT_MS = 30 * 60 * 1_000; // 30 minutes
+type PluginIssueInstallationContext = {
+  pluginInstallationId: string;
+  pluginKey: string;
+};
+
+type PluginIssueMutationContext = PluginIssueInstallationContext & {
+  hostRpcOperationId: string;
+};
+
+/**
+ * Canonical installation-bound issue control plane. There is intentionally no
+ * direct issue-service fallback: an unconfigured host fails closed instead of
+ * bypassing issue ownership, creator, Session, or idempotency invariants.
+ */
+export interface PluginIssueControlPlane {
+  list(
+    params: WorkerToHostMethods["issues.list"][0] & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["issues.list"][1]>;
+  get(
+    params: WorkerToHostMethods["issues.get"][0] & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["issues.get"][1]>;
+  create(
+    params: WorkerToHostMethods["issues.create"][0]
+      & PluginIssueMutationContext
+      & { callbackRegistrationActive: true },
+  ): Promise<WorkerToHostMethods["issues.create"][1]>;
+  update(
+    params: WorkerToHostMethods["issues.update"][0] & PluginIssueMutationContext,
+  ): Promise<WorkerToHostMethods["issues.update"][1]>;
+  withdraw(
+    params: WorkerToHostMethods["issues.withdraw"][0] & PluginIssueMutationContext,
+  ): Promise<WorkerToHostMethods["issues.withdraw"][1]>;
+}
+
+export interface PluginRunIssueContextReader {
+  listCompanyIssues(
+    params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["run.issues.listCompanyIssues"][1]>;
+  listSubIssues(
+    params: WorkerToHostMethods["run.issues.listSubIssues"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["run.issues.listSubIssues"][1]>;
+  readIssueComments(
+    params: WorkerToHostMethods["run.issues.readIssueComments"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["run.issues.readIssueComments"][1]>;
+  readIssueAgentRun(
+    params: WorkerToHostMethods["run.issues.readIssueAgentRun"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["run.issues.readIssueAgentRun"][1]>;
+}
+
+export interface PluginHostServicesOptions {
+  pluginWorkerManager?: PluginWorkerManager;
+  manifest?: import("@paperclipai/shared").PaperclipPluginManifestV1;
+  pluginIssueControlPlane: PluginIssueControlPlane;
+  pluginRunIssueContextReader?: PluginRunIssueContextReader;
+  ordinaryIssues: OrdinaryIssueRuntime;
+  issueExecutionCancellation: AgentControlLifecycleService;
+}
 
 export function buildHostServices(
   db: Db,
   pluginId: string,
   pluginKey: string,
   eventBus: PluginEventBus,
-  notifyWorker?: (method: string, params: unknown) => void,
-  options: { pluginWorkerManager?: PluginWorkerManager; manifest?: import("@paperclipai/shared").PaperclipPluginManifestV1 } = {},
+  notifyWorker: ((method: string, params: unknown) => void) | undefined,
+  options: PluginHostServicesOptions,
 ): HostServices & { dispose(): void } {
   const registry = pluginRegistryService(db);
   const stateStore = pluginStateStore(db);
@@ -505,49 +555,29 @@ export function buildHostServices(
     pluginId,
     pluginKey,
     manifest: options.manifest,
-    instructionTemplateVariables: async (companyId) => {
-      const variables: Record<string, string | null | undefined> = {};
-      for (const declaration of options.manifest?.localFolders ?? []) {
-        const status = await inspectPluginLocalFolder({
-          folderKey: declaration.folderKey,
-          declaration,
-          storedConfig: await getStoredLocalFolderConfig(companyId, declaration.folderKey),
-        });
-        const prefix = `localFolders.${declaration.folderKey}`;
-        variables[`${prefix}.path`] = status.realPath ?? status.path ?? null;
-        variables[`${prefix}.agentsPath`] = status.realPath ? path.join(status.realPath, "AGENTS.md") : null;
-      }
-      return variables;
-    },
   });
   const managedRoutines = pluginManagedRoutineService(db, {
     pluginId,
     pluginKey,
     manifest: options.manifest,
     pluginWorkerManager: options.pluginWorkerManager,
+    ordinaryIssues: options.ordinaryIssues,
   });
   const managedSkills = pluginManagedSkillService(db, {
     pluginId,
     pluginKey,
     manifest: options.manifest,
   });
-  const heartbeat = heartbeatService(db, {
-    pluginWorkerManager: options.pluginWorkerManager,
-  });
+  const registeredCreatorCallbacks = new Set<string>();
   const projects = projectService(db);
   const executionWorkspaces = executionWorkspaceService(db);
   const issues = issueService(db);
-  const documents = documentService(db);
   const goals = goalService(db);
   const access = accessService(db);
   const authorization = authorizationService(db);
-  const budgets = budgetService(db);
-  const issueApprovals = issueApprovalService(db);
   const scopedBus = eventBus.forPlugin(pluginKey);
 
-  // Track active session event subscriptions for cleanup
-  const activeSubscriptions = new Set<{ unsubscribe: () => void; timer: ReturnType<typeof setTimeout> }>();
-  let disposed = false;
+  const pluginIssueRuntime = options.pluginIssueControlPlane;
 
   const ensureCompanyId = (companyId?: string) => {
     if (!companyId) throw new Error("companyId is required for this operation");
@@ -585,12 +615,13 @@ export function buildHostServices(
     return sql`(${sql.join(conditions, sql` OR `)})`;
   };
 
-  /**
-   * Plugins are instance-wide in the current runtime. Company IDs are still
-   * required for company-scoped data access, but there is no per-company
-   * availability gate to enforce here.
-   */
-  const ensurePluginAvailableForCompany = async (_companyId: string) => {};
+  const ensurePluginAvailableForCompany = async (companyId: string) => {
+    await assertPluginInstallationAvailableForCompany(db, {
+      companyId,
+      pluginInstallationId: pluginId,
+      pluginKey,
+    });
+  };
 
   const getLocalFolderDeclaration = (folderKey: string) =>
     requireLocalFolderDeclaration(options.manifest?.localFolders, folderKey);
@@ -674,23 +705,6 @@ export function buildHostServices(
     };
   };
 
-  const defaultPluginOriginKind = `plugin:${pluginKey}`;
-  const normalizePluginOriginKind = (originKind: unknown = defaultPluginOriginKind) => {
-    if (originKind == null || originKind === "") return defaultPluginOriginKind;
-    if (typeof originKind !== "string") {
-      throw new Error("Plugin issue originKind must be a string");
-    }
-    if (originKind === defaultPluginOriginKind || originKind.startsWith(`${defaultPluginOriginKind}:`)) {
-      return originKind;
-    }
-    throw new Error(`Plugin may only use originKind values under ${defaultPluginOriginKind}`);
-  };
-
-  const assertReadableOriginFilter = (originKind: unknown) => {
-    if (typeof originKind !== "string" || !originKind.startsWith("plugin:")) return;
-    normalizePluginOriginKind(originKind);
-  };
-
   const logPluginActivity = async (input: {
     companyId: string;
     action: string;
@@ -710,158 +724,6 @@ export function buildHostServices(
       entityId: input.entityId,
       details: pluginActivityDetails(input.details, input.actor),
     });
-  };
-
-  const collectIssueSubtreeIds = async (companyId: string, rootIssueId: string) => {
-    const seen = new Set<string>([rootIssueId]);
-    let frontier = [rootIssueId];
-
-    while (frontier.length > 0) {
-      const children = await db
-        .select({ id: issuesTable.id })
-        .from(issuesTable)
-        .where(and(eq(issuesTable.companyId, companyId), inArray(issuesTable.parentId, frontier)));
-      frontier = children.map((child) => child.id).filter((id) => !seen.has(id));
-      for (const id of frontier) seen.add(id);
-    }
-
-    return [...seen];
-  };
-
-  const getIssueRunSummaries = async (
-    companyId: string,
-    issueIds: string[],
-    options: { activeOnly?: boolean } = {},
-  ) => {
-    if (issueIds.length === 0) return [];
-    const issueIdExpr = sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
-    const statusCondition = options.activeOnly
-      ? inArray(heartbeatRuns.status, ["queued", "running"])
-      : undefined;
-    const rows = await db
-      .select({
-        id: heartbeatRuns.id,
-        issueId: issueIdExpr,
-        agentId: heartbeatRuns.agentId,
-        status: heartbeatRuns.status,
-        invocationSource: heartbeatRuns.invocationSource,
-        triggerDetail: heartbeatRuns.triggerDetail,
-        startedAt: heartbeatRuns.startedAt,
-        finishedAt: heartbeatRuns.finishedAt,
-        error: heartbeatRuns.error,
-        createdAt: heartbeatRuns.createdAt,
-      })
-      .from(heartbeatRuns)
-      .where(and(eq(heartbeatRuns.companyId, companyId), inArray(issueIdExpr, issueIds), statusCondition))
-      .orderBy(desc(heartbeatRuns.createdAt))
-      .limit(100);
-
-    return rows.map((row) => ({
-      ...row,
-      startedAt: row.startedAt?.toISOString() ?? null,
-      finishedAt: row.finishedAt?.toISOString() ?? null,
-      createdAt: row.createdAt.toISOString(),
-    }));
-  };
-
-  const setBlockedByWithActivity = async (params: {
-    issueId: string;
-    companyId: string;
-    blockedByIssueIds: string[];
-    mutation: "set" | "add" | "remove";
-    actorAgentId?: string | null;
-    actorUserId?: string | null;
-    actorRunId?: string | null;
-  }) => {
-    const existing = requireInCompany("Issue", await issues.getById(params.issueId), params.companyId);
-    const previous = await issues.getRelationSummaries(params.issueId);
-    await issues.update(params.issueId, {
-      blockedByIssueIds: params.blockedByIssueIds,
-      actorAgentId: params.actorAgentId ?? null,
-      actorUserId: params.actorUserId ?? null,
-    } as any);
-    const relations = await issues.getRelationSummaries(params.issueId);
-    await logPluginActivity({
-      companyId: params.companyId,
-      action: "issue.relations.updated",
-      entityType: "issue",
-      entityId: params.issueId,
-      actor: {
-        actorAgentId: params.actorAgentId,
-        actorUserId: params.actorUserId,
-        actorRunId: params.actorRunId,
-      },
-      details: {
-        identifier: existing.identifier,
-        mutation: params.mutation,
-        blockedByIssueIds: params.blockedByIssueIds,
-        previousBlockedByIssueIds: previous.blockedBy.map((relation) => relation.id),
-      },
-    });
-    return relations;
-  };
-
-  const getIssueCostSummary = async (
-    companyId: string,
-    issueIds: string[],
-    billingCode?: string | null,
-  ) => {
-    const scopeConditions = [
-      issueIds.length > 0 ? inArray(costEvents.issueId, issueIds) : undefined,
-      billingCode ? eq(costEvents.billingCode, billingCode) : undefined,
-    ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
-    if (scopeConditions.length === 0) {
-      return {
-        costCents: 0,
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        outputTokens: 0,
-        billingCode: billingCode ?? null,
-      };
-    }
-    const scopeCondition = scopeConditions.length === 1 ? scopeConditions[0]! : and(...scopeConditions);
-    const [row] = await db
-      .select({
-        costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::double precision`,
-        inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::double precision`,
-        cachedInputTokens: sql<number>`coalesce(sum(${costEvents.cachedInputTokens}), 0)::double precision`,
-        outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::double precision`,
-      })
-      .from(costEvents)
-      .where(and(eq(costEvents.companyId, companyId), scopeCondition));
-
-    return {
-      costCents: Number(row?.costCents ?? 0),
-      inputTokens: Number(row?.inputTokens ?? 0),
-      cachedInputTokens: Number(row?.cachedInputTokens ?? 0),
-      outputTokens: Number(row?.outputTokens ?? 0),
-      billingCode: billingCode ?? null,
-    };
-  };
-
-  const getOpenBudgetIncidents = async (companyId: string) => {
-    const rows = await db
-      .select({
-        id: budgetIncidents.id,
-        scopeType: budgetIncidents.scopeType,
-        scopeId: budgetIncidents.scopeId,
-        metric: budgetIncidents.metric,
-        windowKind: budgetIncidents.windowKind,
-        thresholdType: budgetIncidents.thresholdType,
-        amountLimit: budgetIncidents.amountLimit,
-        amountObserved: budgetIncidents.amountObserved,
-        status: budgetIncidents.status,
-        approvalId: budgetIncidents.approvalId,
-        createdAt: budgetIncidents.createdAt,
-      })
-      .from(budgetIncidents)
-      .where(and(eq(budgetIncidents.companyId, companyId), eq(budgetIncidents.status, "open")))
-      .orderBy(desc(budgetIncidents.createdAt));
-
-    return rows.map((row) => ({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-    }));
   };
 
   const INVITE_TOKEN_PREFIX = "pcp_invite_";
@@ -949,12 +811,34 @@ export function buildHostServices(
     return sanitizeRecord(defaults);
   };
 
-  const redactGrant = (grant: typeof principalPermissionGrants.$inferSelect) => ({
-    ...grant,
-    principalType: grant.principalType as PrincipalType,
-    permissionKey: grant.permissionKey as PermissionKey,
-    scope: grant.scope && typeof grant.scope === "object" ? sanitizeRecord(grant.scope) : grant.scope ?? null,
-  });
+  type StoredGrant = typeof principalPermissionGrants.$inferSelect;
+  type PublicGrant = Omit<StoredGrant, "principalUserId" | "principalAgentId"> & {
+    principalId: string;
+  };
+  const redactGrant = (grant: StoredGrant | PublicGrant) => {
+    const principalId = "principalId" in grant
+      ? grant.principalId
+      : grant.principalType === "user"
+        ? grant.principalUserId
+        : grant.principalAgentId;
+    if (!principalId) {
+      throw new Error(`Invalid ${grant.principalType} permission grant ${grant.id}`);
+    }
+    const {
+      principalUserId: _principalUserId,
+      principalAgentId: _principalAgentId,
+      ...stored
+    } = grant as StoredGrant & { principalId?: string };
+    return {
+      ...stored,
+      principalId,
+      principalType: grant.principalType as PrincipalType,
+      permissionKey: grant.permissionKey as PermissionKey,
+      scope: grant.scope && typeof grant.scope === "object"
+        ? sanitizeRecord(grant.scope)
+        : grant.scope ?? null,
+    };
+  };
 
   const loadPluginMember = async (companyId: string, memberId: string) => {
     const member = await access.getMemberById(companyId, memberId);
@@ -972,26 +856,34 @@ export function buildHostServices(
     };
   };
 
-  const pluginAssignmentActor = (actor: {
-    type: "agent" | "board";
-    agentId?: string | null;
-    companyId?: string | null;
-    userId?: string | null;
-    companyIds?: string[];
-  }): AuthorizationActor => {
-    if (actor.type === "agent") {
+  const resolvePluginTargetManagementSubject = async (
+    subject:
+      | { type: "user"; userId: string }
+      | { type: "agent"; agentId: string },
+  ): Promise<AuthorizationActor> => {
+    if (subject.type === "agent") {
+      const persistedAgent = await agents.getById(subject.agentId);
+      if (!persistedAgent) {
+        return { type: "none", source: "none" };
+      }
       return {
         type: "agent",
-        agentId: actor.agentId ?? null,
-        companyId: actor.companyId ?? null,
-        source: "agent_key",
+        agentId: persistedAgent.id,
+        companyId: persistedAgent.companyId,
+        source: "internal",
       };
+    }
+    const persistedUser = await db
+      .select({ id: authUsers.id })
+      .from(authUsers)
+      .where(eq(authUsers.id, subject.userId))
+      .then((rows) => rows[0] ?? null);
+    if (!persistedUser) {
+      return { type: "none", source: "none" };
     }
     return {
       type: "board",
-      userId: actor.userId ?? null,
-      companyIds: Array.isArray(actor.companyIds) ? actor.companyIds : [],
-      source: "session",
+      userId: persistedUser.id,
     };
   };
 
@@ -1013,13 +905,16 @@ export function buildHostServices(
     if (pathInfo.table === "agent") {
       const agent = await agents.getById(resourceId);
       if (!inCompany(agent, companyId)) return null;
-      const permissions = agent.permissions && typeof agent.permissions === "object" ? agent.permissions as Record<string, unknown> : {};
+      const governance =
+        agent.governance && typeof agent.governance === "object"
+          ? agent.governance as Record<string, unknown>
+          : {};
       return {
         resourceType,
         resourceId,
         companyId,
-        policy: permissions.authorizationPolicy && typeof permissions.authorizationPolicy === "object"
-          ? sanitizeRecord(permissions.authorizationPolicy as Record<string, unknown>)
+        policy: governance.authorizationPolicy && typeof governance.authorizationPolicy === "object"
+          ? sanitizeRecord(governance.authorizationPolicy as Record<string, unknown>)
           : null,
         updatedAt: agent.updatedAt,
       };
@@ -1533,584 +1428,128 @@ export function buildHostServices(
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        assertReadableOriginFilter(params.originKind);
-        return applyWindow((await issues.list(companyId, params as any)) as Issue[], params);
+        return pluginIssueRuntime.list({
+          ...params,
+          companyId,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const issue = await issues.getById(params.issueId);
-        return (inCompany(issue, companyId) ? issue : null) as Issue | null;
-      },
-      async create(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const { actorAgentId, actorUserId, actorRunId, originKind, surfaceVisibility, ...issueInput } = params;
-        const normalizedOriginKind = normalizePluginOriginKind(
-          surfaceVisibility === "plugin_operation" && !originKind
-            ? pluginOperationIssueOriginKind(pluginKey)
-            : originKind,
-        );
-        const issue = (await issues.create(companyId, {
-          ...(issueInput as any),
-          originKind: normalizedOriginKind,
-          originId: params.originId ?? null,
-          originRunId: params.originRunId ?? actorRunId ?? null,
-          createdByAgentId: actorAgentId ?? null,
-          createdByUserId: actorUserId ?? null,
-          actorResponsibleUserId: actorUserId ?? null,
-          trustExplicitResponsibleUserId: true,
-        })) as Issue;
-        await logPluginActivity({
+        return pluginIssueRuntime.get({
+          ...params,
           companyId,
-          action: "issue.created",
-          entityType: "issue",
-          entityId: issue.id,
-          actor: { actorAgentId, actorUserId, actorRunId },
-          details: {
-            title: issue.title,
-            identifier: issue.identifier,
-            originKind: normalizedOriginKind,
-            originId: issue.originId,
-            billingCode: issue.billingCode,
-            blockedByIssueIds: params.blockedByIssueIds ?? [],
-          },
+          pluginInstallationId: pluginId,
+          pluginKey,
         });
-        return issue;
       },
-      async update(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const existing = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const patch = { ...(params.patch as Record<string, unknown>) };
-        const actorAgentId = typeof patch.actorAgentId === "string" ? patch.actorAgentId : null;
-        const actorUserId = typeof patch.actorUserId === "string" ? patch.actorUserId : null;
-        const actorRunId = typeof patch.actorRunId === "string" ? patch.actorRunId : null;
-        delete patch.actorAgentId;
-        delete patch.actorUserId;
-        delete patch.actorRunId;
-        if (patch.originKind !== undefined) {
-          patch.originKind = normalizePluginOriginKind(patch.originKind);
+      async registerCreatorCallback(params) {
+        const callbackKey = params.callbackKey.trim();
+        const callbackVersion = params.callbackVersion.trim();
+        if (!callbackKey || !callbackVersion) {
+          throw new Error("Creator callback key and version are required");
         }
-        const updated = (await issues.update(params.issueId, {
-          ...(patch as any),
-          actorAgentId,
-          actorUserId,
-        })) as Issue;
-        await logPluginActivity({
-          companyId,
-          action: "issue.updated",
-          entityType: "issue",
-          entityId: updated.id,
-          actor: { actorAgentId, actorUserId, actorRunId },
-          details: {
-            identifier: updated.identifier,
-            patch,
-            _previous: {
-              status: existing.status,
-              assigneeAgentId: existing.assigneeAgentId,
-              assigneeUserId: existing.assigneeUserId,
-            },
-          },
-        });
-        return updated;
-      },
-      async getRelations(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        return await issues.getRelationSummaries(params.issueId);
-      },
-      async setBlockedBy(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        return setBlockedByWithActivity({
-          companyId,
-          issueId: params.issueId,
-          blockedByIssueIds: params.blockedByIssueIds,
-          mutation: "set",
-          actorAgentId: params.actorAgentId,
-          actorUserId: params.actorUserId,
-          actorRunId: params.actorRunId,
-        });
-      },
-      async addBlockers(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const previous = await issues.getRelationSummaries(params.issueId);
-        const nextBlockedByIssueIds = [
-          ...new Set([
-            ...previous.blockedBy.map((relation) => relation.id),
-            ...params.blockerIssueIds,
-          ]),
-        ];
-        return setBlockedByWithActivity({
-          companyId,
-          issueId: params.issueId,
-          blockedByIssueIds: nextBlockedByIssueIds,
-          mutation: "add",
-          actorAgentId: params.actorAgentId,
-          actorUserId: params.actorUserId,
-          actorRunId: params.actorRunId,
-        });
-      },
-      async removeBlockers(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const previous = await issues.getRelationSummaries(params.issueId);
-        const removals = new Set(params.blockerIssueIds);
-        const nextBlockedByIssueIds = previous.blockedBy
-          .map((relation) => relation.id)
-          .filter((issueId) => !removals.has(issueId));
-        return setBlockedByWithActivity({
-          companyId,
-          issueId: params.issueId,
-          blockedByIssueIds: nextBlockedByIssueIds,
-          mutation: "remove",
-          actorAgentId: params.actorAgentId,
-          actorUserId: params.actorUserId,
-          actorRunId: params.actorRunId,
-        });
-      },
-      async assertCheckoutOwner(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const ownership = await issues.assertCheckoutOwner(
-          params.issueId,
-          params.actorAgentId,
-          params.actorRunId,
-        );
-        if (ownership.adoptedFromRunId) {
-          await logPluginActivity({
-            companyId,
-            action: "issue.checkout_lock_adopted",
-            entityType: "issue",
-            entityId: params.issueId,
-            actor: {
-              actorAgentId: params.actorAgentId,
-              actorRunId: params.actorRunId,
-            },
-            details: {
-              previousCheckoutRunId: ownership.adoptedFromRunId,
-              checkoutRunId: params.actorRunId,
-              reason: "stale_checkout_run",
-            },
-          });
-        }
+        registeredCreatorCallbacks.add(`${callbackKey}\u0000${callbackVersion}`);
         return {
-          issueId: ownership.id,
-          status: ownership.status as Issue["status"],
-          assigneeAgentId: ownership.assigneeAgentId,
-          checkoutRunId: ownership.checkoutRunId,
-          adoptedFromRunId: ownership.adoptedFromRunId,
+          callbackKey,
+          callbackVersion,
+          registered: true as const,
         };
       },
-      async getSubtree(params) {
+      async create(params, operation) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const rootIssue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const includeRoot = params.includeRoot !== false;
-        const subtreeIssueIds = await collectIssueSubtreeIds(companyId, rootIssue.id);
-        const issueIds = includeRoot ? subtreeIssueIds : subtreeIssueIds.filter((issueId) => issueId !== rootIssue.id);
-        const issueRows = issueIds.length > 0
-          ? await db
-            .select()
-            .from(issuesTable)
-            .where(and(eq(issuesTable.companyId, companyId), inArray(issuesTable.id, issueIds)))
-          : [];
-        const issuesById = new Map(issueRows.map((issue) => [issue.id, issue as Issue]));
-        const outputIssues = issueIds
-          .map((issueId) => issuesById.get(issueId))
-          .filter((issue): issue is Issue => Boolean(issue));
-
-        const assigneeAgentIds = [
-          ...new Set(outputIssues.map((issue) => issue.assigneeAgentId).filter((id): id is string => Boolean(id))),
-        ];
-
-        const [relationPairs, documentPairs, activeRunRows, assigneeRows] = await Promise.all([
-          params.includeRelations
-            ? Promise.all(issueIds.map(async (issueId) => [issueId, await issues.getRelationSummaries(issueId)] as const))
-            : Promise.resolve(null),
-          params.includeDocuments
-            ? Promise.all(
-              issueIds.map(async (issueId) => {
-                const docs = await documents.listIssueDocuments(issueId);
-                const summaries: IssueDocumentSummary[] = docs.map((document) => {
-                  const { body: _body, ...summary } = document as typeof document & { body?: string };
-                  return { ...summary, format: "markdown" as const };
-                });
-                return [
-                  issueId,
-                  summaries,
-                ] as const;
-              }),
-            )
-            : Promise.resolve(null),
-          params.includeActiveRuns
-            ? getIssueRunSummaries(companyId, issueIds, { activeOnly: true })
-            : Promise.resolve(null),
-          params.includeAssignees && assigneeAgentIds.length > 0
-            ? db
-              .select({
-                id: agentsTable.id,
-                name: agentsTable.name,
-                role: agentsTable.role,
-                title: agentsTable.title,
-                status: agentsTable.status,
-              })
-              .from(agentsTable)
-              .where(and(eq(agentsTable.companyId, companyId), inArray(agentsTable.id, assigneeAgentIds)))
-            : Promise.resolve(params.includeAssignees ? [] : null),
-        ]);
-
-        const activeRuns = activeRunRows
-          ? Object.fromEntries(issueIds.map((issueId) => [
-            issueId,
-            activeRunRows.filter((run) => run.issueId === issueId),
-          ]))
-          : undefined;
-
-        return {
-          rootIssueId: rootIssue.id,
-          companyId,
-          issueIds,
-          issues: outputIssues,
-          ...(relationPairs ? { relations: Object.fromEntries(relationPairs) } : {}),
-          ...(documentPairs ? { documents: Object.fromEntries(documentPairs) } : {}),
-          ...(activeRuns ? { activeRuns } : {}),
-          ...(assigneeRows
-            ? {
-                assignees: Object.fromEntries(assigneeRows.map((agent) => [
-                  agent.id,
-                  { ...agent, status: agent.status as Agent["status"] } as PluginIssueAssigneeSummary,
-                ])),
-              }
-            : {}),
-        };
-      },
-      async requestWakeup(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const issue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        if (!issue.assigneeAgentId) {
-          throw new Error("Issue has no assigned agent to wake");
-        }
-        if (["backlog", "done", "cancelled"].includes(issue.status)) {
-          throw new Error(`Issue is not wakeable in status: ${issue.status}`);
-        }
-        const relations = await issues.getRelationSummaries(issue.id);
-        const unresolvedBlockers = relations.blockedBy.filter((blocker) => blocker.status !== "done");
-        if (unresolvedBlockers.length > 0) {
-          throw new Error("Issue is blocked by unresolved blockers");
-        }
-        const budgetBlock = await budgets.getInvocationBlock(companyId, issue.assigneeAgentId, {
-          issueId: issue.id,
-          projectId: issue.projectId,
-        });
-        if (budgetBlock) {
-          throw new Error(budgetBlock.reason);
-        }
-        const contextSource = params.contextSource ?? "plugin.issue.requestWakeup";
-        const run = await heartbeat.wakeup(issue.assigneeAgentId, {
-          source: "assignment",
-          triggerDetail: "system",
-          reason: params.reason ?? "plugin_issue_wakeup_requested",
-          payload: {
-            issueId: issue.id,
-            mutation: "plugin_wakeup",
-            pluginId,
-            pluginKey,
-            contextSource,
-          },
-          idempotencyKey: params.idempotencyKey ?? null,
-          requestedByActorType: "system",
-          requestedByActorId: pluginId,
-          contextSnapshot: {
-            issueId: issue.id,
-            taskId: issue.id,
-            wakeReason: params.reason ?? "plugin_issue_wakeup_requested",
-            source: contextSource,
-            pluginId,
-            pluginKey,
-          },
-        });
-        await logPluginActivity({
-          companyId,
-          action: "issue.assignment_wakeup_requested",
-          entityType: "issue",
-          entityId: issue.id,
-          actor: {
-            actorAgentId: params.actorAgentId,
-            actorUserId: params.actorUserId,
-            actorRunId: params.actorRunId,
-          },
-          details: {
-            identifier: issue.identifier,
-            assigneeAgentId: issue.assigneeAgentId,
-            runId: run?.id ?? null,
-            reason: params.reason ?? "plugin_issue_wakeup_requested",
-            contextSource,
-          },
-        });
-        return { queued: Boolean(run), runId: run?.id ?? null };
-      },
-      async requestWakeups(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const results = [];
-        for (const issueId of [...new Set(params.issueIds)]) {
-          const issue = requireInCompany("Issue", await issues.getById(issueId), companyId);
-          if (!issue.assigneeAgentId) {
-            throw new Error("Issue has no assigned agent to wake");
-          }
-          if (["backlog", "done", "cancelled"].includes(issue.status)) {
-            throw new Error(`Issue is not wakeable in status: ${issue.status}`);
-          }
-          const relations = await issues.getRelationSummaries(issue.id);
-          const unresolvedBlockers = relations.blockedBy.filter((blocker) => blocker.status !== "done");
-          if (unresolvedBlockers.length > 0) {
-            throw new Error("Issue is blocked by unresolved blockers");
-          }
-          const budgetBlock = await budgets.getInvocationBlock(companyId, issue.assigneeAgentId, {
-            issueId: issue.id,
-            projectId: issue.projectId,
-          });
-          if (budgetBlock) {
-            throw new Error(budgetBlock.reason);
-          }
-          const contextSource = params.contextSource ?? "plugin.issue.requestWakeups";
-          const run = await heartbeat.wakeup(issue.assigneeAgentId, {
-            source: "assignment",
-            triggerDetail: "system",
-            reason: params.reason ?? "plugin_issue_wakeup_requested",
-            payload: {
-              issueId: issue.id,
-              mutation: "plugin_wakeup",
-              pluginId,
-              pluginKey,
-              contextSource,
-            },
-            idempotencyKey: params.idempotencyKeyPrefix ? `${params.idempotencyKeyPrefix}:${issue.id}` : null,
-            requestedByActorType: "system",
-            requestedByActorId: pluginId,
-            contextSnapshot: {
-              issueId: issue.id,
-              taskId: issue.id,
-              wakeReason: params.reason ?? "plugin_issue_wakeup_requested",
-              source: contextSource,
-              pluginId,
-              pluginKey,
-            },
-          });
-          await logPluginActivity({
-            companyId,
-            action: "issue.assignment_wakeup_requested",
-            entityType: "issue",
-            entityId: issue.id,
-            actor: {
-              actorAgentId: params.actorAgentId,
-              actorUserId: params.actorUserId,
-              actorRunId: params.actorRunId,
-            },
-            details: {
-              identifier: issue.identifier,
-              assigneeAgentId: issue.assigneeAgentId,
-              runId: run?.id ?? null,
-              reason: params.reason ?? "plugin_issue_wakeup_requested",
-              contextSource,
-            },
-          });
-          results.push({ issueId: issue.id, queued: Boolean(run), runId: run?.id ?? null });
-        }
-        return results;
-      },
-      async getOrchestrationSummary(params): Promise<PluginIssueOrchestrationSummary> {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const rootIssue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const subtreeIssueIds = params.includeSubtree
-          ? await collectIssueSubtreeIds(companyId, rootIssue.id)
-          : [rootIssue.id];
-        const relationPairs = await Promise.all(
-          subtreeIssueIds.map(async (issueId) => [issueId, await issues.getRelationSummaries(issueId)] as const),
-        );
-        const approvalRows = (
-          await Promise.all(
-            subtreeIssueIds.map(async (issueId) => {
-              const rows = await issueApprovals.listApprovalsForIssue(issueId);
-              return rows.map((approval) => ({
-                issueId,
-                id: approval.id,
-                type: approval.type,
-                status: approval.status,
-                requestedByAgentId: approval.requestedByAgentId,
-                requestedByUserId: approval.requestedByUserId,
-                decidedByUserId: approval.decidedByUserId,
-                decidedAt: approval.decidedAt?.toISOString() ?? null,
-                createdAt: approval.createdAt.toISOString(),
-              }));
-            }),
+        if (
+          !registeredCreatorCallbacks.has(
+            `${params.callbackKey}\u0000${params.callbackVersion}`,
           )
-        ).flat();
-        const [runs, costsSummary, openBudgetIncidents] = await Promise.all([
-          getIssueRunSummaries(companyId, subtreeIssueIds),
-          getIssueCostSummary(companyId, subtreeIssueIds, params.billingCode ?? rootIssue.billingCode ?? null),
-          getOpenBudgetIncidents(companyId),
-        ]);
-        const issueRows = await db
-          .select({
-            id: issuesTable.id,
-            assigneeAgentId: issuesTable.assigneeAgentId,
-            projectId: issuesTable.projectId,
-          })
-          .from(issuesTable)
-          .where(and(eq(issuesTable.companyId, companyId), inArray(issuesTable.id, subtreeIssueIds)));
-        const invocationBlocks = (
-          await Promise.all(
-            issueRows
-              .filter((issueRow) => issueRow.assigneeAgentId)
-              .map(async (issueRow) => {
-                const block = await budgets.getInvocationBlock(companyId, issueRow.assigneeAgentId!, {
-                  issueId: issueRow.id,
-                  projectId: issueRow.projectId,
-                });
-                return block
-                  ? {
-                    issueId: issueRow.id,
-                    agentId: issueRow.assigneeAgentId!,
-                    scopeType: block.scopeType,
-                    scopeId: block.scopeId,
-                    scopeName: block.scopeName,
-                    reason: block.reason,
-                  }
-                  : null;
-              }),
-          )
-        ).filter((block): block is NonNullable<typeof block> => block !== null);
-        return {
-          issueId: rootIssue.id,
+        ) {
+          throw new Error(
+            `Creator callback is not registered: ${params.callbackKey}@${params.callbackVersion}`,
+          );
+        }
+        return pluginIssueRuntime.create({
+          ...params,
           companyId,
-          subtreeIssueIds,
-          relations: Object.fromEntries(relationPairs),
-          approvals: approvalRows,
-          runs,
-          costs: costsSummary,
-          openBudgetIncidents,
-          invocationBlocks,
-        };
+          pluginInstallationId: pluginId,
+          pluginKey,
+          hostRpcOperationId: operation.hostRpcOperationId,
+          callbackRegistrationActive: true,
+        });
       },
-      async listComments(params) {
+      async update(params, operation) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        if (!inCompany(await issues.getById(params.issueId), companyId)) return [];
-        return (await issues.listComments(params.issueId)) as IssueComment[];
+        return pluginIssueRuntime.update({
+          ...params,
+          companyId,
+          pluginInstallationId: pluginId,
+          pluginKey,
+          hostRpcOperationId: operation.hostRpcOperationId,
+        });
       },
-      async createComment(params) {
+      async withdraw(params, operation) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const issue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const comment = (await issues.addComment(
-          params.issueId,
-          params.body,
-          { agentId: params.authorAgentId },
-        )) as IssueComment;
-        await logPluginActivity({
+        return pluginIssueRuntime.withdraw({
+          ...params,
           companyId,
-          action: "issue.comment.created",
-          entityType: "issue",
-          entityId: issue.id,
-          actor: { actorAgentId: params.authorAgentId ?? null },
-          details: {
-            identifier: issue.identifier,
-            commentId: comment.id,
-            bodySnippet: comment.body.slice(0, 120),
-          },
+          pluginInstallationId: pluginId,
+          pluginKey,
+          hostRpcOperationId: operation.hostRpcOperationId,
         });
-        return comment;
-      },
-      async createInteraction(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const issue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const interaction = await issueThreadInteractionService(db).create(issue, params.interaction as CreateIssueThreadInteraction, {
-          agentId: params.authorAgentId ?? null,
-        });
-        await logPluginActivity({
-          companyId,
-          action: "issue.thread_interaction_created",
-          entityType: "issue",
-          entityId: issue.id,
-          actor: { actorAgentId: params.authorAgentId ?? null },
-          details: {
-            identifier: issue.identifier,
-            interactionId: interaction.id,
-            interactionKind: interaction.kind,
-            interactionStatus: interaction.status,
-            continuationPolicy: interaction.continuationPolicy,
-          },
-        });
-        return interaction as any;
       },
     },
 
-    issueDocuments: {
-      async list(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const rows = await documents.listIssueDocuments(params.issueId);
-        return rows as any;
-      },
-      async get(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const doc = await documents.getIssueDocumentByKey(params.issueId, params.key);
-        return (doc ?? null) as any;
-      },
-      async upsert(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const issue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        const result = await documents.upsertIssueDocument({
-          issueId: params.issueId,
-          key: params.key,
-          body: params.body,
-          title: params.title ?? null,
-          format: params.format ?? "markdown",
-          changeSummary: params.changeSummary ?? null,
+    runIssues: {
+      async listCompanyIssues(params) {
+        if (!options.pluginRunIssueContextReader) {
+          throw new Error(
+            "Plugin run-serving issue context is not configured",
+          );
+        }
+        return options.pluginRunIssueContextReader.listCompanyIssues({
+          ...params,
+          pluginInstallationId: pluginId,
+          pluginKey,
         });
-        await logPluginActivity({
-          companyId,
-          action: "issue.document_upserted",
-          entityType: "issue",
-          entityId: issue.id,
-          details: {
-            identifier: issue.identifier,
-            documentKey: params.key,
-            title: params.title ?? null,
-            format: params.format ?? "markdown",
-          },
-        });
-        return result.document as any;
       },
-      async delete(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const issue = requireInCompany("Issue", await issues.getById(params.issueId), companyId);
-        await documents.deleteIssueDocument(params.issueId, params.key);
-        await logPluginActivity({
-          companyId,
-          action: "issue.document_deleted",
-          entityType: "issue",
-          entityId: issue.id,
-          details: {
-            identifier: issue.identifier,
-            documentKey: params.key,
-          },
+      async listSubIssues(params) {
+        if (!options.pluginRunIssueContextReader) {
+          throw new Error(
+            "Plugin run-serving issue context is not configured",
+          );
+        }
+        return options.pluginRunIssueContextReader.listSubIssues({
+          ...params,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
+      },
+      async readIssueComments(params) {
+        if (!options.pluginRunIssueContextReader) {
+          throw new Error(
+            "Plugin run-serving issue context is not configured",
+          );
+        }
+        return options.pluginRunIssueContextReader.readIssueComments({
+          ...params,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
+      },
+      async readIssueAgentRun(params) {
+        if (!options.pluginRunIssueContextReader) {
+          throw new Error(
+            "Plugin run-serving issue context is not configured",
+          );
+        }
+        return options.pluginRunIssueContextReader.readIssueAgentRun({
+          ...params,
+          pluginInstallationId: pluginId,
+          pluginKey,
         });
       },
     },
@@ -2136,30 +1575,20 @@ export function buildHostServices(
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
-        return (await agents.pause(params.agentId)) as Agent;
+        return (await agents.pause(params.agentId, {
+          actor: { kind: "system" },
+          issueExecutionCancellation: options.issueExecutionCancellation,
+        })) as Agent;
       },
       async resume(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const agent = await agents.getById(params.agentId);
         requireInCompany("Agent", agent, companyId);
-        return (await agents.resume(params.agentId)) as Agent;
-      },
-      async invoke(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const agent = await agents.getById(params.agentId);
-        requireInCompany("Agent", agent, companyId);
-        const run = await heartbeat.wakeup(params.agentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: params.reason ?? null,
-          payload: { prompt: params.prompt },
-          requestedByActorType: "system",
-          requestedByActorId: pluginId,
-        });
-        if (!run) throw new Error("Agent wakeup was skipped by heartbeat policy");
-        return { runId: run.id };
+        return (await agents.resume(
+          params.agentId,
+          options.issueExecutionCancellation,
+        )) as Agent;
       },
       async managedGet(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -2229,7 +1658,13 @@ export function buildHostServices(
           .where(eq(principalPermissionGrants.companyId, companyId));
         const grantsByPrincipal = new Map<string, typeof grants>();
         for (const grant of grants) {
-          const key = `${grant.principalType}:${grant.principalId}`;
+          const principalId = grant.principalType === "user"
+            ? grant.principalUserId
+            : grant.principalAgentId;
+          if (!principalId) {
+            throw new Error(`Invalid ${grant.principalType} permission grant ${grant.id}`);
+          }
+          const key = `${grant.principalType}:${principalId}`;
           const existing = grantsByPrincipal.get(key) ?? [];
           existing.push(grant);
           grantsByPrincipal.set(key, existing);
@@ -2295,6 +1730,7 @@ export function buildHostServices(
           allowedJoinTypes,
           defaultsPayload: mergeInviteDefaults(params.defaultsPayload ?? null, normalizedAgentMessage, humanRole),
           expiresAt: new Date(Date.now() + COMPANY_INVITE_TTL_MS),
+          source: "plugin_host" as const,
           invitedByUserId: null,
         };
         let token: string | null = null;
@@ -2361,16 +1797,38 @@ export function buildHostServices(
       async listGrants(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
+        const principalType = params.principalType === "user" || params.principalType === "agent"
+          ? params.principalType
+          : null;
+        if (params.principalType && !principalType) {
+          throw new Error("principalType must be 'agent' or 'user'");
+        }
         const conditions = [
           eq(principalPermissionGrants.companyId, companyId),
-          params.principalType ? eq(principalPermissionGrants.principalType, params.principalType) : undefined,
-          params.principalId ? eq(principalPermissionGrants.principalId, params.principalId) : undefined,
+          principalType ? eq(principalPermissionGrants.principalType, principalType) : undefined,
+          params.principalId
+            ? principalType === "user"
+              ? eq(principalPermissionGrants.principalUserId, params.principalId)
+              : principalType === "agent"
+                ? eq(principalPermissionGrants.principalAgentId, params.principalId)
+                : isUuidLike(params.principalId)
+                  ? or(
+                      eq(principalPermissionGrants.principalUserId, params.principalId),
+                      eq(principalPermissionGrants.principalAgentId, params.principalId),
+                    )
+                  : eq(principalPermissionGrants.principalUserId, params.principalId)
+            : undefined,
         ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
         const rows = await db
           .select()
           .from(principalPermissionGrants)
           .where(and(...conditions))
-          .orderBy(principalPermissionGrants.principalType, principalPermissionGrants.principalId, principalPermissionGrants.permissionKey);
+          .orderBy(
+            principalPermissionGrants.principalType,
+            principalPermissionGrants.principalUserId,
+            principalPermissionGrants.principalAgentId,
+            principalPermissionGrants.permissionKey,
+          );
         return rows.map(redactGrant);
       },
       async setGrants(params) {
@@ -2433,19 +1891,13 @@ export function buildHostServices(
       async updatePolicy(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        const policy = params.policy ? sanitizeRecord(params.policy) : null;
         if (params.resourceType === "agent") {
-          const agent = requireInCompany("Agent", await agents.getById(params.resourceId), companyId);
-          const permissions = agent.permissions && typeof agent.permissions === "object"
-            ? { ...(agent.permissions as Record<string, unknown>) }
-            : {};
-          if (policy) permissions.authorizationPolicy = policy;
-          else delete permissions.authorizationPolicy;
-          await db
-            .update(agentsTable)
-            .set({ permissions, updatedAt: new Date() })
-            .where(eq(agentsTable.id, agent.id));
-        } else if (params.resourceType === "project") {
+          throw new Error(
+            "Plugins cannot overwrite board-owned agent governance or grants.",
+          );
+        }
+        const policy = params.policy ? sanitizeRecord(params.policy) : null;
+        if (params.resourceType === "project") {
           const project = requireInCompany("Project", await projects.getById(params.resourceId), companyId);
           const executionWorkspacePolicy = project.executionWorkspacePolicy && typeof project.executionWorkspacePolicy === "object"
             ? { ...(project.executionWorkspacePolicy as unknown as Record<string, unknown>) }
@@ -2487,15 +1939,12 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         return authorization.decide({
-          actor: pluginAssignmentActor(params.actor),
-          action: "tasks:assign",
-          resource: { type: "issue", companyId, ...params.target },
+          actor: await resolvePluginTargetManagementSubject(params.subject),
+          action: "agent_config:update",
+          resource: { type: "agent", companyId, agentId: params.targetAgentId },
           scope: {
-            issueId: params.target.issueId ?? null,
-            projectId: params.target.projectId ?? null,
-            parentIssueId: params.target.parentIssueId ?? null,
-            assigneeAgentId: params.target.assigneeAgentId ?? null,
-            assigneeUserId: params.target.assigneeUserId ?? null,
+            requiresChangeGrant: true,
+            targetAgentId: params.targetAgentId,
           },
         });
       },
@@ -2503,15 +1952,12 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         return authorization.decide({
-          actor: pluginAssignmentActor(params.actor),
-          action: "tasks:assign",
-          resource: { type: "issue", companyId, ...params.target },
+          actor: await resolvePluginTargetManagementSubject(params.subject),
+          action: "agent_config:update",
+          resource: { type: "agent", companyId, agentId: params.targetAgentId },
           scope: {
-            issueId: params.target.issueId ?? null,
-            projectId: params.target.projectId ?? null,
-            parentIssueId: params.target.parentIssueId ?? null,
-            assigneeAgentId: params.target.assigneeAgentId ?? null,
-            assigneeUserId: params.target.assigneeUserId ?? null,
+            requiresChangeGrant: true,
+            targetAgentId: params.targetAgentId,
           },
         });
       },
@@ -2548,207 +1994,12 @@ export function buildHostServices(
       },
     },
 
-    agentSessions: {
-      async create(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const agent = await agents.getById(params.agentId);
-        requireInCompany("Agent", agent, companyId);
-        const taskKey = params.taskKey ?? `plugin:${pluginKey}:session:${randomUUID()}`;
-
-        const row = await db
-          .insert(agentTaskSessionsTable)
-          .values({
-            companyId,
-            agentId: params.agentId,
-            adapterType: agent!.adapterType,
-            taskKey,
-            sessionParamsJson: null,
-            sessionDisplayId: null,
-            lastRunId: null,
-            lastError: null,
-          })
-          .returning()
-          .then((rows) => rows[0]);
-
-        return {
-          sessionId: row!.id,
-          agentId: params.agentId,
-          companyId,
-          status: "active" as const,
-          createdAt: row!.createdAt.toISOString(),
-        };
-      },
-
-      async list(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const rows = await db
-          .select()
-          .from(agentTaskSessionsTable)
-          .where(
-            and(
-              eq(agentTaskSessionsTable.agentId, params.agentId),
-              eq(agentTaskSessionsTable.companyId, companyId),
-              like(agentTaskSessionsTable.taskKey, `plugin:${pluginKey}:session:%`),
-            ),
-          )
-          .orderBy(desc(agentTaskSessionsTable.createdAt));
-
-        return rows.map((row) => ({
-          sessionId: row.id,
-          agentId: row.agentId,
-          companyId: row.companyId,
-          status: "active" as const,
-          createdAt: row.createdAt.toISOString(),
-        }));
-      },
-
-      async sendMessage(params) {
-        if (disposed) {
-          throw new Error("Host services have been disposed");
-        }
-
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-
-        // Verify session exists and belongs to this plugin
-        const session = await db
-          .select()
-          .from(agentTaskSessionsTable)
-          .where(
-            and(
-              eq(agentTaskSessionsTable.id, params.sessionId),
-              eq(agentTaskSessionsTable.companyId, companyId),
-              like(agentTaskSessionsTable.taskKey, `plugin:${pluginKey}:session:%`),
-            ),
-          )
-          .then((rows) => rows[0] ?? null);
-        if (!session) throw new Error(`Session not found: ${params.sessionId}`);
-
-        const run = await heartbeat.wakeup(session.agentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: params.reason ?? null,
-          payload: { prompt: params.prompt },
-          contextSnapshot: {
-            taskKey: session.taskKey,
-            wakeSource: "automation",
-            wakeTriggerDetail: "system",
-          },
-          requestedByActorType: "system",
-          requestedByActorId: pluginId,
-        });
-        if (!run) throw new Error("Agent wakeup was skipped by heartbeat policy");
-
-        // Subscribe to live events and forward to the plugin worker as notifications.
-        // Track the subscription so it can be cleaned up on dispose() if the run
-        // never reaches a terminal status (hang, crash, network partition).
-        if (notifyWorker) {
-          const TERMINAL_STATUSES = new Set(["succeeded", "interrupted", "failed", "cancelled", "timed_out"]);
-
-          const cleanup = () => {
-            unsubscribe();
-            clearTimeout(timeoutTimer);
-            activeSubscriptions.delete(entry);
-          };
-
-          const unsubscribe = subscribeCompanyLiveEvents(companyId, (event) => {
-            const payload = event.payload as Record<string, unknown> | undefined;
-            if (!payload || payload.runId !== run.id) return;
-
-            if (event.type === "heartbeat.run.log" || event.type === "heartbeat.run.event") {
-              notifyWorker("agents.sessions.event", {
-                sessionId: params.sessionId,
-                runId: run.id,
-                seq: (payload.seq as number) ?? 0,
-                eventType: "chunk",
-                stream: (payload.stream as string) ?? null,
-                message: (payload.chunk as string) ?? (payload.message as string) ?? null,
-                payload: payload,
-              });
-            } else if (event.type === "heartbeat.run.status") {
-              const status = payload.status as string;
-              if (TERMINAL_STATUSES.has(status)) {
-                notifyWorker("agents.sessions.event", {
-                  sessionId: params.sessionId,
-                  runId: run.id,
-                  seq: 0,
-                  eventType: status === "succeeded" ? "done" : "error",
-                  stream: "system",
-                  message: status === "succeeded" ? "Run completed" : `Run ${status}`,
-                  payload: payload,
-                });
-                cleanup();
-              } else {
-                notifyWorker("agents.sessions.event", {
-                  sessionId: params.sessionId,
-                  runId: run.id,
-                  seq: 0,
-                  eventType: "status",
-                  stream: "system",
-                  message: `Run status: ${status}`,
-                  payload: payload,
-                });
-              }
-            }
-          });
-
-          // Safety-net timeout: if the run never reaches a terminal status,
-          // force-cleanup the subscription to prevent unbounded leaks.
-          const timeoutTimer = setTimeout(() => {
-            logger.warn(
-              { pluginId, pluginKey, runId: run.id },
-              "session event subscription timed out — forcing cleanup",
-            );
-            cleanup();
-          }, SESSION_EVENT_SUBSCRIPTION_TIMEOUT_MS);
-
-          const entry = { unsubscribe, timer: timeoutTimer };
-          activeSubscriptions.add(entry);
-        }
-
-        return { runId: run.id };
-      },
-
-      async close(params) {
-        const companyId = ensureCompanyId(params.companyId);
-        await ensurePluginAvailableForCompany(companyId);
-        const deleted = await db
-          .delete(agentTaskSessionsTable)
-          .where(
-            and(
-              eq(agentTaskSessionsTable.id, params.sessionId),
-              eq(agentTaskSessionsTable.companyId, companyId),
-              like(agentTaskSessionsTable.taskKey, `plugin:${pluginKey}:session:%`),
-            ),
-          )
-          .returning()
-          .then((rows) => rows.length);
-        if (deleted === 0) throw new Error(`Session not found: ${params.sessionId}`);
-      },
-    },
-
-    /**
-     * Clean up all active session event subscriptions and flush any buffered
-     * log entries. Must be called when the plugin worker is stopped, crashed,
-     * or unloaded to prevent leaked listeners and lost log entries.
-     */
+    /** Release plugin event subscriptions and flush buffered log entries. */
     dispose() {
-      disposed = true;
-
+      registeredCreatorCallbacks.clear();
       // Clear event bus subscriptions to prevent accumulation on worker restart.
       // Without this, each crash/restart cycle adds duplicate subscriptions.
       scopedBus.clear();
-
-      // Snapshot to avoid iterator invalidation from concurrent sendMessage() calls
-      const snapshot = Array.from(activeSubscriptions);
-      activeSubscriptions.clear();
-
-      for (const entry of snapshot) {
-        clearTimeout(entry.timer);
-        entry.unsubscribe();
-      }
 
       // Flush any buffered log entries synchronously-as-possible on dispose.
       flushPluginLogBuffer().catch((err) => {

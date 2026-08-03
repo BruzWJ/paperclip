@@ -15,7 +15,6 @@ import type { Agent, AttentionDetailImage, AttentionItem } from "@paperclipai/sh
 import { Link } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { approvalsApi } from "../api/approvals";
-import { issuesApi } from "../api/issues";
 import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import {
@@ -30,6 +29,7 @@ import {
 import { isTrainable } from "../lib/decisionTraining";
 import { cn, relativeTime } from "../lib/utils";
 import { Button } from "./ui/button";
+import { JoinRequestApprovalControls } from "./JoinRequestApprovalControls";
 import { Textarea } from "./ui/textarea";
 import {
   DropdownMenu,
@@ -41,7 +41,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { AttentionInteractionResolver } from "./AttentionInteractionResolver";
 import { ProjectTile } from "./ProjectTile";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -75,7 +74,7 @@ interface AttentionQueueRowProps {
   expanded: boolean;
   /** Receives the row's item so the parent can pass one stable callback for every row. */
   onToggleExpand: (item: AttentionItem) => void;
-  onDismiss: (item: AttentionItem) => void;
+  onDismiss?: (item: AttentionItem) => void;
   onSnooze?: (item: AttentionItem, snoozedUntil: string) => void;
   /** Open the decision-training drawer for this row (create or view). */
   onTrain?: (item: AttentionItem) => void;
@@ -112,6 +111,9 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   selected = false,
 }: AttentionQueueRowProps) {
   const meta = sourceMeta(item.sourceKind);
+  const suppressionAllowed = item.sourceKind !== "agent_liveness";
+  const dismissHandler = suppressionAllowed ? onDismiss : undefined;
+  const snoozeHandler = suppressionAllowed ? onSnooze : undefined;
   const tone = attentionToneStyle(item);
   const sevBadge = severityBadge(item.severity);
   const Icon = meta.icon;
@@ -130,7 +132,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   // header/thumbnail click somewhere to go. Non-inline, image-less rows keep the
   // explicit Open button and never toggle on a stray click.
   const expandable = inline || (!isHidden && hasImages);
-  // Any issue-anchored approval or interaction is
+  // Any issue-anchored approval is
   // trainable at any time (pending or resolved). Trained/untrained renders
   // purely from the feed's `trainingExampleId` — no per-row fetch.
   const trainable = !isHidden && !!onTrain && isTrainable(item);
@@ -257,7 +259,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
               ) : (
                 <span className="text-(length:--text-nano) text-muted-foreground">{relativeTime(item.activityAt)}</span>
               )}
-              {!isHidden && (
+              {!isHidden && (dismissHandler || snoozeHandler || href) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -270,14 +272,16 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {onSnooze && <SnoozeSubmenu onSnooze={(iso) => onSnooze(item, iso)} />}
-                    <DropdownMenuItem onClick={() => onDismiss(item)}>
-                      <X className="h-4 w-4" />
-                      Dismiss
-                    </DropdownMenuItem>
+                    {snoozeHandler && <SnoozeSubmenu onSnooze={(iso) => snoozeHandler(item, iso)} />}
+                    {dismissHandler && (
+                      <DropdownMenuItem onClick={() => dismissHandler(item)}>
+                        <X className="h-4 w-4" />
+                        Dismiss
+                      </DropdownMenuItem>
+                    )}
                     {href && (
                       <>
-                        <DropdownMenuSeparator />
+                        {(dismissHandler || snoozeHandler) && <DropdownMenuSeparator />}
                         <DropdownMenuItem asChild>
                           <Link to={href}>Open source</Link>
                         </DropdownMenuItem>
@@ -348,7 +352,6 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                 <CompactDecisionActions
                   item={item}
                   companyId={companyId}
-                  onOpen={() => onToggleExpand(item)}
                 />
               )}
 
@@ -396,20 +399,24 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   );
 });
 
-type CompactDecisionAction = "accept" | "approve" | "reject" | "request_revision";
+type CompactDecisionAction = "approve" | "reject" | "request_revision";
+
+function joinRequestMetadata(item: AttentionItem): {
+  requestType: "human" | "agent";
+  adapterType: string | null;
+} {
+  const metadata = item.subject.metadata;
+  return {
+    requestType: metadata?.requestType === "agent" ? "agent" : "human",
+    adapterType: typeof metadata?.adapterType === "string" ? metadata.adapterType : null,
+  };
+}
 
 function compactDecisionAction(item: AttentionItem, verbId: string): CompactDecisionAction | null {
   if (item.sourceKind === "approval" && (verbId === "approve" || verbId === "reject" || verbId === "request_revision")) {
     return verbId;
   }
   if (item.sourceKind === "join_request" && (verbId === "approve" || verbId === "reject")) {
-    return verbId;
-  }
-  if (
-    item.sourceKind === "issue_thread_interaction"
-    && item.subject.metadata?.kind === "request_confirmation"
-    && (verbId === "accept" || verbId === "reject")
-  ) {
     return verbId;
   }
   return null;
@@ -426,15 +433,30 @@ function collectCompactActions(item: AttentionItem): Array<{ action: CompactDeci
 function CompactDecisionActions({
   item,
   companyId,
-  onOpen,
 }: {
   item: AttentionItem;
   companyId: string;
-  onOpen: () => void;
 }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const actions = collectCompactActions(item);
+  const join = joinRequestMetadata(item);
+  const agentJoinApproval = useMutation({
+    mutationFn: (input: { defaultEnvironmentId?: string }) =>
+      accessApi.approveJoinRequest(companyId, item.subject.id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(companyId) });
+      pushToast({ title: "Join request approved", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Could not approve",
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      });
+    },
+  });
 
   const decision = useMutation<unknown, Error, CompactDecisionAction>({
     mutationFn: (action: CompactDecisionAction) => {
@@ -444,15 +466,12 @@ function CompactDecisionActions({
         return approvalsApi.requestRevision(item.subject.id);
       }
       if (item.sourceKind === "join_request") {
+        if (join.requestType === "agent" && action === "approve") {
+          throw new Error("Agent join approval requires an execution environment.");
+        }
         return action === "approve"
           ? accessApi.approveJoinRequest(companyId, item.subject.id)
           : accessApi.rejectJoinRequest(companyId, item.subject.id);
-      }
-      if (item.sourceKind === "issue_thread_interaction") {
-        const issueId = item.subject.metadata?.issueId;
-        if (typeof issueId !== "string") throw new Error("Missing issue reference for this decision.");
-        if (action === "accept") return issuesApi.acceptInteraction(issueId, item.subject.id);
-        return issuesApi.rejectInteraction(issueId, item.subject.id);
       }
       throw new Error("This decision must be completed from its detail view.");
     },
@@ -479,6 +498,22 @@ function CompactDecisionActions({
 
   if (actions.length === 0) return null;
 
+  if (item.sourceKind === "join_request" && join.requestType === "agent") {
+    return (
+      <JoinRequestApprovalControls
+        companyId={companyId}
+        requestType="agent"
+        adapterType={join.adapterType}
+        onApprove={(input) => agentJoinApproval.mutate(input)}
+        onReject={() => decision.mutate("reject")}
+        isPending={agentJoinApproval.isPending || decision.isPending}
+        className="flex w-full flex-wrap items-end gap-2 @xl:w-auto @xl:justify-end"
+        buttonClassName={ACTION_BTN}
+        onClickCapture={(event) => event.stopPropagation()}
+      />
+    );
+  }
+
   return (
     <div className="flex w-full flex-wrap items-center gap-2 @xl:w-auto @xl:justify-end @xl:gap-1" aria-label="Decision actions">
       {actions.map(({ action, id, label }) => (
@@ -491,10 +526,6 @@ function CompactDecisionActions({
           disabled={decision.isPending}
           onClick={(event) => {
             event.stopPropagation();
-            if (item.sourceKind === "issue_thread_interaction" && action === "reject") {
-              onOpen();
-              return;
-            }
             decision.mutate(action);
           }}
         >
@@ -508,14 +539,14 @@ function CompactDecisionActions({
 
 function decisionLabel(action: CompactDecisionAction): string {
   if (action === "request_revision") return "sent for revision";
-  if (action === "accept" || action === "approve") return "approved";
+  if (action === "approve") return "approved";
   return "rejected";
 }
 
 function compactDecisionSuccessLabel(sourceKind: AttentionItem["sourceKind"], action: CompactDecisionAction): string {
   if (sourceKind === "approval") return `Approval ${decisionLabel(action)}`;
   if (sourceKind === "join_request") return `Join request ${decisionLabel(action)}`;
-  return action === "accept" ? "Confirmation accepted" : "Confirmation declined";
+  return `Decision ${decisionLabel(action)}`;
 }
 
 function decisionVerbVariant(verb: AttentionItem["decisionVerbs"][number]): "default" | "outline" | "destructive" {
@@ -695,23 +726,6 @@ function InlineResolver({
   currentUserId?: string | null;
   userLabelMap?: ReadonlyMap<string, string> | null;
 }) {
-  if (item.sourceKind === "issue_thread_interaction") {
-    const issueId = (item.subject.metadata?.issueId as string | undefined) ?? item.relatedIssue?.id;
-    if (!issueId) {
-      return <p className="text-xs text-muted-foreground">Missing issue reference for this decision.</p>;
-    }
-    return (
-      <AttentionInteractionResolver
-        companyId={companyId}
-        issueId={issueId}
-        interactionId={item.subject.id}
-        agentMap={agentMap}
-        currentUserId={currentUserId}
-        userLabelMap={userLabelMap}
-      />
-    );
-  }
-
   if (item.sourceKind === "approval") {
     return <ApprovalResolver item={item} companyId={companyId} />;
   }
@@ -772,12 +786,14 @@ function ApprovalResolver({ item, companyId }: { item: AttentionItem; companyId:
 
 function JoinRequestResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
   const queryClient = useQueryClient();
+  const join = joinRequestMetadata(item);
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(companyId) });
   };
   const approve = useMutation({
-    mutationFn: () => accessApi.approveJoinRequest(companyId, item.subject.id),
+    mutationFn: (input: { defaultEnvironmentId?: string }) =>
+      accessApi.approveJoinRequest(companyId, item.subject.id, input),
     onSuccess: invalidate,
   });
   const reject = useMutation({
@@ -787,15 +803,13 @@ function JoinRequestResolver({ item, companyId }: { item: AttentionItem; company
   const pending = approve.isPending || reject.isPending;
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button size="sm" onClick={() => approve.mutate()} disabled={pending}>
-        {approve.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        Approve
-      </Button>
-      <Button size="sm" variant="destructive" onClick={() => reject.mutate()} disabled={pending}>
-        {reject.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        Reject
-      </Button>
-    </div>
+    <JoinRequestApprovalControls
+      companyId={companyId}
+      requestType={join.requestType}
+      adapterType={join.adapterType}
+      onApprove={(input) => approve.mutate(input)}
+      onReject={() => reject.mutate()}
+      isPending={pending}
+    />
   );
 }

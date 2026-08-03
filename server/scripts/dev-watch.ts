@@ -11,7 +11,7 @@ const ignoreArgs = resolveServerDevWatchIgnorePaths(serverRoot).flatMap((ignoreP
 
 const child = spawn(
   process.execPath,
-  [tsxCliPath, "watch", ...ignoreArgs, "src/index.ts"],
+  [tsxCliPath, "watch", ...ignoreArgs, "src/runtime-entry.ts"],
   {
     cwd: serverRoot,
     env: process.env,

@@ -116,7 +116,7 @@ Before closing the operation issue:
 - [ ] `wiki/projects/<slug>/standup.md` exists for the represented project and reads as an executive current-state update, not a raw issue dump.
 - [ ] Decisions section names decisions, not issues — every decision has a one-paragraph rationale and a citation.
 - [ ] The page contains exactly one `current_as_of` (in frontmatter), zero `## [YYYY-MM-DD]` headings (those go to the log).
-- [ ] Bundle warnings (clipped, low signal, stale hash) are surfaced; the patch carries `human_review_required: true` when the deployment is authenticated/public.
+- [ ] Bundle warnings (clipped, low signal, stale hash) are surfaced; the patch carries `human_review_required: true` under public exposure.
 - [ ] `wiki/index.md` and `wiki/log.md` are updated.
 - [ ] No file under `raw/` was modified.
 

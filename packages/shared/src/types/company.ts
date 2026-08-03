@@ -1,4 +1,6 @@
 import type { CompanyStatus, PauseReason } from "../constants.js";
+import type { SessionCompactionSettings } from "./session-compaction.js";
+import type { BudgetCurrency, MoneyAmount } from "../money.js";
 
 export interface Company {
   id: string;
@@ -9,8 +11,9 @@ export interface Company {
   pausedAt: Date | null;
   issuePrefix: string;
   issueCounter: number;
-  budgetMonthlyCents: number;
-  spentMonthlyCents: number;
+  budgetCurrency: BudgetCurrency;
+  budgetMonthlyAmount: MoneyAmount;
+  knownSpendAmount: MoneyAmount;
   attachmentMaxBytes: number;
   defaultResponsibleUserId: string | null;
   requireBoardApprovalForNewAgents: boolean;
@@ -18,6 +21,7 @@ export interface Company {
   feedbackDataSharingConsentAt: Date | null;
   feedbackDataSharingConsentByUserId: string | null;
   feedbackDataSharingTermsVersion: string | null;
+  sessionCompaction?: SessionCompactionSettings | null;
   brandColor: string | null;
   logoAssetId: string | null;
   logoUrl: string | null;

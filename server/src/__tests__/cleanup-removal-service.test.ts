@@ -1,282 +1,158 @@
-import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-  activityLog,
-  agents,
-  companies,
-  companySkills,
-  createDb,
-  documents,
-  documentRevisions,
-  heartbeatRunEvents,
-  heartbeatRuns,
-  issueComments,
-  issueDocuments,
-  issueExecutionDecisions,
-  issueReadStates,
-  issues,
-  routines,
-} from "@paperclipai/db";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Db } from "@paperclipai/db";
 import { agentService } from "../services/agents.ts";
 import { companyService } from "../services/companies.ts";
+import { createMockDb } from "./helpers/mock-db.js";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+const lifecycleMocks = vi.hoisted(() => ({
+  beginHardDelete: vi.fn(),
+  purgeGraph: vi.fn(),
+  archiveGraph: vi.fn(),
+  reactivateGraph: vi.fn(),
+}));
 
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping cleanup removal service tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
+vi.mock("../services/issue-session-lifecycle.js", () => ({
+  beginCompanyHardDeleteInTx: lifecycleMocks.beginHardDelete,
+  purgeCompanySessionGraphInTx: lifecycleMocks.purgeGraph,
+  archiveCompanySessionGraphInTx: lifecycleMocks.archiveGraph,
+  reactivateCompanySessionGraphInTx: lifecycleMocks.reactivateGraph,
+}));
+
+vi.mock("../services/budgets.js", () => ({
+  budgetService: () => ({
+    getAgentMonthlyKnownSpend: async (_companyId: string, agentIds: string[]) =>
+      new Map(agentIds.map((id) => [id, "0"])),
+    getCompanyMonthlyKnownSpend: async (companyIds: string[]) =>
+      new Map(companyIds.map((id) => [id, "0"])),
+  }),
+}));
+
+vi.mock("../services/environments.js", () => ({
+  environmentService: () => ({ ensureLocalEnvironment: vi.fn() }),
+}));
+
+vi.mock("../services/activity-log.js", () => ({ logActivity: vi.fn() }));
+
+const companyId = "00000000-0000-4000-8000-000000000001";
+const agentId = "00000000-0000-4000-8000-000000000002";
+
+function callbackTransactionDb() {
+  const transaction = vi.fn(async (callback: (tx: Db) => unknown) =>
+    callback({} as Db));
+  return { db: { transaction } as unknown as Db, transaction };
 }
 
-describeEmbeddedPostgres("cleanup removal services", () => {
-  let db!: ReturnType<typeof createDb>;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-
-  beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-cleanup-removal-");
-    db = createDb(tempDb.connectionString);
-  }, 20_000);
-
-  afterEach(async () => {
-    await db.delete(heartbeatRunEvents);
-    await db.delete(activityLog);
-    await db.delete(issueReadStates);
-    await db.delete(issueComments);
-    await db.delete(issueExecutionDecisions);
-    await db.delete(documentRevisions);
-    await db.delete(documents);
-    await db.delete(companySkills);
-    await db.delete(heartbeatRuns);
-    await db.delete(issues);
-    await db.delete(routines);
-    await db.delete(agents);
-    await db.delete(companies);
+describe("cleanup removal services", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  afterAll(async () => {
-    await tempDb?.cleanup();
-  });
-
-  async function seedFixture() {
-    const companyId = randomUUID();
-    const agentId = randomUUID();
-    const issueId = randomUUID();
-    const runId = randomUUID();
-    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-
-    await db.insert(companies).values({
-      id: companyId,
-      name: "Paperclip",
-      issuePrefix,
-      requireBoardApprovalForNewAgents: false,
-    });
-
-    await db.insert(agents).values({
+  it("returns an agent tombstone without issuing history deletes", async () => {
+    const tombstone = {
       id: agentId,
       companyId,
       name: "CodexCoder",
-      role: "engineer",
-      status: "active",
-      adapterType: "codex_local",
-      adapterConfig: {},
-      runtimeConfig: {},
+      status: "terminated",
+      reportsTo: null,
       permissions: {},
-    });
+    };
+    const harness = createMockDb({ select: [[tombstone], [tombstone]] });
+    const committed = {
+      tombstone,
+      creatorDeliveryIds: [],
+      dispatchRefIds: [],
+      cancellationRequests: null,
+      suspensionRequests: null,
+    };
+    const transaction = vi.fn().mockResolvedValue(committed);
+    (harness.db as unknown as { transaction: typeof transaction }).transaction = transaction;
+    const postCommit = {
+      actor: { kind: "system" },
+      issueExecutionCancellation: {
+        reconcileRequestedAgentCancellations: vi.fn(),
+        reconcileRequestedAgentSuspensions: vi.fn(),
+      },
+      dispatchRef: vi.fn(),
+      notifyCreatorDelivery: vi.fn(),
+    };
 
-    await db.insert(issues).values({
-      id: issueId,
-      companyId,
-      title: "Regression fixture",
-      status: "todo",
-      priority: "medium",
-      assigneeAgentId: agentId,
-      createdByUserId: "user-1",
-    });
-
-    await db.insert(heartbeatRuns).values({
-      id: runId,
-      companyId,
+    const removed = await agentService(harness.db).terminate(
       agentId,
-      invocationSource: "assignment",
+      postCommit as never,
+    );
+
+    expect(removed).toMatchObject({ id: agentId, status: "terminated" });
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(harness.calls.some((call) => call.operation === "delete")).toBe(false);
+    expect(postCommit.dispatchRef).not.toHaveBeenCalled();
+    expect(postCommit.notifyCreatorDelivery).not.toHaveBeenCalled();
+  });
+
+  it("completes a purge-ready company hard delete through the canonical graph owner", async () => {
+    const { db, transaction } = callbackTransactionDb();
+    lifecycleMocks.beginHardDelete.mockResolvedValue({
+      operation: { id: "operation-1", generation: 3, status: "purge_ready" },
+      intents: [],
+    });
+    lifecycleMocks.purgeGraph.mockResolvedValue({
+      companyId,
+      generation: 3,
+      purged: true,
+    });
+
+    await expect(companyService(db).remove(companyId)).resolves.toEqual({
+      companyId,
+      generation: 3,
+      purged: true,
+      lifecycleOperationId: "operation-1",
       status: "completed",
-      contextSnapshot: { issueId },
+      alreadyAbsent: false,
     });
-
-    return { agentId, companyId, issueId, runId };
-  }
-
-  it("removes agent-owned issue comments and run-linked activity before deleting the agent", async () => {
-    const { agentId, companyId, issueId, runId } = await seedFixture();
-
-    await db.insert(issueComments).values({
-      id: randomUUID(),
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(lifecycleMocks.beginHardDelete).toHaveBeenCalledWith(
+      expect.anything(),
       companyId,
-      issueId,
-      authorAgentId: agentId,
-      body: "Agent-authored comment",
-    });
-
-    await db.insert(activityLog).values({
-      id: randomUUID(),
+      expect.any(String),
+      { actor: { requestedByAgentId: null, requestedByUserId: null } },
+    );
+    expect(lifecycleMocks.purgeGraph).toHaveBeenCalledWith(expect.anything(), {
       companyId,
-      actorType: "agent",
-      actorId: agentId,
-      action: "heartbeat.completed",
-      entityType: "issue",
-      entityId: issueId,
-      runId,
-      details: {},
+      lifecycleOperationId: "operation-1",
     });
-
-    await db.insert(issueExecutionDecisions).values({
-      id: randomUUID(),
-      companyId,
-      issueId,
-      stageId: randomUUID(),
-      stageType: "review",
-      actorAgentId: agentId,
-      outcome: "approved",
-      body: "Looks good",
-      createdByRunId: runId,
-    });
-
-    const removed = await agentService(db).remove(agentId);
-
-    expect(removed?.id).toBe(agentId);
-    await expect(db.select().from(agents).where(eq(agents.id, agentId))).resolves.toHaveLength(0);
-    await expect(db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId))).resolves.toHaveLength(0);
-    await expect(db.select().from(issueComments).where(eq(issueComments.issueId, issueId))).resolves.toHaveLength(0);
-    await expect(db.select().from(activityLog).where(eq(activityLog.companyId, companyId))).resolves.toHaveLength(0);
   });
 
-  it("removes issue read states and activity rows before deleting the company", async () => {
-    const { companyId, issueId, runId } = await seedFixture();
-    const documentId = randomUUID();
-    const revisionId = randomUUID();
-
-    await db.insert(issueReadStates).values({
-      id: randomUUID(),
-      companyId,
-      issueId,
-      userId: "user-1",
+  it("returns the cancellation fence without purging while hard delete is waiting", async () => {
+    const { db, transaction } = callbackTransactionDb();
+    lifecycleMocks.beginHardDelete.mockResolvedValue({
+      operation: { id: "operation-1", generation: 4, status: "waiting_for_cancellation" },
+      intents: [{ id: "intent-1" }, { id: "intent-2" }],
     });
 
-    await db.insert(companySkills).values({
-      id: randomUUID(),
+    await expect(companyService(db).remove(companyId)).resolves.toEqual({
       companyId,
-      key: "paperclipai/paperclip/paperclip",
-      slug: "paperclip",
-      name: "Paperclip",
-      markdown: "# Paperclip",
+      lifecycleOperationId: "operation-1",
+      generation: 4,
+      status: "waiting_for_cancellation",
+      cancellationIntentCount: 2,
+      purged: false,
+      alreadyAbsent: false,
     });
-
-    await db.insert(activityLog).values({
-      id: randomUUID(),
-      companyId,
-      actorType: "system",
-      actorId: "system",
-      action: "run.created",
-      entityType: "run",
-      entityId: runId,
-      runId,
-      details: {},
-    });
-
-    await db.insert(documents).values({
-      id: documentId,
-      companyId,
-      title: "Run summary",
-      latestBody: "body",
-      latestRevisionId: revisionId,
-      latestRevisionNumber: 1,
-      createdByAgentId: null,
-      createdByUserId: "user-1",
-      updatedByAgentId: null,
-      updatedByUserId: "user-1",
-    });
-
-    await db.insert(issueDocuments).values({
-      id: randomUUID(),
-      companyId,
-      issueId,
-      documentId,
-      key: "summary",
-    });
-
-    await db.insert(documentRevisions).values({
-      id: revisionId,
-      companyId,
-      documentId,
-      revisionNumber: 1,
-      title: "Run summary",
-      format: "markdown",
-      body: "body",
-      createdByAgentId: null,
-      createdByUserId: "user-1",
-      createdByRunId: runId,
-    });
-
-    const removed = await companyService(db).remove(companyId);
-
-    expect(removed?.id).toBe(companyId);
-    await expect(db.select().from(companies).where(eq(companies.id, companyId))).resolves.toHaveLength(0);
-    await expect(db.select().from(issues).where(eq(issues.id, issueId))).resolves.toHaveLength(0);
-    await expect(db.select().from(documents).where(eq(documents.id, documentId))).resolves.toHaveLength(0);
-    await expect(db.select().from(documentRevisions).where(eq(documentRevisions.id, revisionId))).resolves.toHaveLength(0);
-    await expect(db.select().from(issueReadStates).where(eq(issueReadStates.companyId, companyId))).resolves.toHaveLength(0);
-    await expect(db.select().from(activityLog).where(eq(activityLog.companyId, companyId))).resolves.toHaveLength(0);
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.purgeGraph).not.toHaveBeenCalled();
   });
 
-  it("removes heartbeat events by run id before deleting company-owned runs", async () => {
-    const { agentId, companyId, runId } = await seedFixture();
-    const otherCompanyId = randomUUID();
+  it("treats an already-absent company as an idempotent completed purge", async () => {
+    const { db } = callbackTransactionDb();
+    lifecycleMocks.beginHardDelete.mockResolvedValue(null);
 
-    await db.insert(companies).values({
-      id: otherCompanyId,
-      name: "Other Company",
-      issuePrefix: `O${otherCompanyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-      requireBoardApprovalForNewAgents: false,
-    });
-
-    await db.insert(heartbeatRunEvents).values({
-      companyId: otherCompanyId,
-      runId,
-      agentId,
-      seq: 1,
-      eventType: "output",
-      message: "event with mismatched company scope",
-    });
-
-    const removed = await companyService(db).remove(companyId);
-
-    expect(removed?.id).toBe(companyId);
-    await expect(db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId))).resolves.toHaveLength(0);
-    await expect(db.select().from(heartbeatRunEvents).where(eq(heartbeatRunEvents.runId, runId))).resolves.toHaveLength(0);
-    await expect(db.select().from(companies).where(eq(companies.id, otherCompanyId))).resolves.toHaveLength(1);
-  });
-
-  it("removes routines before deleting company agents", async () => {
-    const { agentId, companyId } = await seedFixture();
-    const routineId = randomUUID();
-
-    await db.insert(routines).values({
-      id: routineId,
+    await expect(companyService(db).remove(companyId)).resolves.toEqual({
       companyId,
-      title: "Daily cleanup",
-      assigneeAgentId: agentId,
+      lifecycleOperationId: null,
+      generation: null,
+      status: "completed",
+      purged: true,
+      alreadyAbsent: true,
     });
-
-    const removed = await companyService(db).remove(companyId);
-
-    expect(removed?.id).toBe(companyId);
-    await expect(db.select().from(routines).where(eq(routines.id, routineId))).resolves.toHaveLength(0);
-    await expect(db.select().from(agents).where(eq(agents.id, agentId))).resolves.toHaveLength(0);
-    await expect(db.select().from(companies).where(eq(companies.id, companyId))).resolves.toHaveLength(0);
+    expect(lifecycleMocks.purgeGraph).not.toHaveBeenCalled();
   });
 });

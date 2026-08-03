@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -17,11 +23,24 @@ import type {
   InstalledCatalogTeam,
   CompanyPortabilityAdapterOverride,
   CompanyPortabilityCollisionStrategy,
+  CompanySkillChannel,
+  Environment,
 } from "@paperclipai/shared";
-import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
+import { supportedEnvironmentDriversForAdapter } from "@paperclipai/shared";
+import type {
+  AdapterConfigSchema,
+  CreateConfigValues,
+} from "@paperclipai/adapter-utils";
 import { teamCatalogApi } from "../api/teamCatalog";
 import { agentsApi } from "../api/agents";
-import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { environmentsApi } from "../api/environments";
+import { listVisibleUIAdapters } from "../adapters/metadata";
+import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
+import {
+  adapterConfigSchemaFieldErrors,
+  SchemaConfigFields,
+  useAdapterConfigSchema,
+} from "../adapters/schema-config-fields";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
@@ -564,7 +583,7 @@ export function EnvInputsList({ inputs }: { inputs: CatalogTeamEnvInputSummary[]
       <ul className="space-y-1">
         {inputs.map((input) => (
           <li
-            key={input.key}
+            key={envInputFormKey(input)}
             className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm"
           >
             <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
@@ -591,7 +610,6 @@ export function EnvInputsList({ inputs }: { inputs: CatalogTeamEnvInputSummary[]
 }
 
 function envInputFormKey(input: CatalogTeamEnvInputSummary) {
-  if (input.agentSlug) return `agent:${input.agentSlug}:${input.key}`;
   if (input.projectSlug) return `project:${input.projectSlug}:${input.key}`;
   return input.key;
 }
@@ -837,14 +855,70 @@ export function TeamDetailPane({
 // Install wizard
 // ---------------------------------------------------------------------------
 
-type WizardStep = "target_manager" | "source_policy" | "skill_plan" | "preview";
+type WizardStep =
+  | "target_manager"
+  | "source_policy"
+  | "skill_plan"
+  | "agent_adapters"
+  | "preview";
 
 const STEP_LABELS: Record<WizardStep, string> = {
   target_manager: "Target manager",
   source_policy: "Source policy",
   skill_plan: "Prerequisite skills",
+  agent_adapters: "Agent adapters",
   preview: "Preview",
 };
+
+function catalogAdapterOptions(): Array<{ type: string; label: string }> {
+  return listVisibleUIAdapters()
+    .map((adapter) => ({ type: adapter.type, label: adapter.label }));
+}
+
+export function materializeCatalogAdapterOverride(
+  adapterType: string,
+  values: CreateConfigValues,
+  skillChannel: CompanySkillChannel,
+): CompanyPortabilityAdapterOverride {
+  return {
+    adapterType,
+    adapterConfig: { ...(values.adapterSchemaValues ?? {}) },
+    defaultEnvironmentId: values.defaultEnvironmentId ?? "",
+    skillChannel,
+  };
+}
+
+function createCatalogConfigValues(
+  adapterType: string,
+  adapterConfig: Record<string, unknown> = {},
+): CreateConfigValues {
+  // The catalog editor consumes only the adapter-owned server schema. Keeping
+  // this intentionally sparse prevents general agent-form defaults from
+  // becoming target configuration.
+  return {
+    adapterType,
+    adapterSchemaValues: { ...adapterConfig },
+  } as CreateConfigValues;
+}
+
+export function catalogAdapterConfigurationIsReady(input: {
+  schema: AdapterConfigSchema | null;
+  isLoading: boolean;
+  schemaError: string | null;
+  adapterConfig: Record<string, unknown>;
+  defaultEnvironmentId: string;
+}): boolean {
+  return Boolean(
+    !input.isLoading
+    && !input.schemaError
+    && input.schema
+    && adapterConfigSchemaFieldErrors(
+      input.schema,
+      input.adapterConfig,
+    ).length === 0
+    && input.defaultEnvironmentId
+  );
+}
 
 // `simplified` is the onboarding seam (design §6): the newly created company is
 // treated as a full-company-equivalent target, so the target-manager step is
@@ -859,6 +933,7 @@ function computeSteps(team: CatalogTeam, simplified = false): WizardStep[] {
     steps.push("source_policy");
   }
   if (team.requiredSkills.length > 0) steps.push("skill_plan");
+  if (team.agentSlugs.length > 0) steps.push("agent_adapters");
   steps.push("preview");
   return steps;
 }
@@ -884,8 +959,8 @@ export interface TeamInstallFormState {
   collisionStrategy: CompanyPortabilityCollisionStrategy;
   /** slug -> renamed entity name */
   nameOverrides: Record<string, string>;
-  /** slug -> adapterType override */
-  adapterOverrides: Record<string, string>;
+  /** slug -> exact adapter type and adapter-owned configuration */
+  adapterOverrides: Record<string, CompanyPortabilityAdapterOverride>;
   /** scoped env input key -> operator-entered value */
   secretValues: Record<string, string>;
 }
@@ -945,32 +1020,48 @@ export function useInstallTeamCatalogEntry({
 
   const steps = useMemo(() => computeSteps(team, simplified), [team, simplified]);
 
-  // Preview body — the preview schema is strict and does NOT accept adapterOverrides.
   const buildPreviewOptions = useCallback(
-    (form: TeamInstallFormState): CatalogTeamImportOptions => ({
-      targetManagerAgentId: simplified || form.fullCompany ? null : form.targetManagerAgentId,
-      collisionStrategy: form.collisionStrategy,
-      nameOverrides:
-        Object.keys(form.nameOverrides).length > 0 ? form.nameOverrides : undefined,
-      sourcePolicy: {
-        allowExternalSources: form.allowExternalSources,
-        allowUnpinnedOptionalSources: form.allowUnpinnedOptionalSources,
-        allowLocalPathSources: form.allowLocalPathSources,
-      },
-    }),
+    (form: TeamInstallFormState): CatalogTeamImportOptions => {
+      const adapterOverrides = Object.fromEntries(
+        Object.entries(form.adapterOverrides)
+          .filter(([, override]) => override.adapterType.trim().length > 0)
+          .map(([slug, override]) => [
+            slug,
+            {
+              adapterType: override.adapterType,
+              adapterConfig: { ...override.adapterConfig },
+              defaultEnvironmentId:
+                override.defaultEnvironmentId,
+              skillChannel: override.skillChannel,
+            },
+          ]),
+      );
+      return {
+        targetManagerAgentId:
+          simplified || form.fullCompany ? null : form.targetManagerAgentId,
+        collisionStrategy: form.collisionStrategy,
+        nameOverrides:
+          Object.keys(form.nameOverrides).length > 0
+            ? form.nameOverrides
+            : undefined,
+        adapterOverrides:
+          Object.keys(adapterOverrides).length > 0
+            ? adapterOverrides
+            : undefined,
+        sourcePolicy: {
+          allowExternalSources: form.allowExternalSources,
+          allowUnpinnedOptionalSources: form.allowUnpinnedOptionalSources,
+          allowLocalPathSources: form.allowLocalPathSources,
+        },
+      };
+    },
     [simplified],
   );
 
-  // Install body extends the preview body with adapterOverrides.
   const buildInstallOptions = useCallback(
     (form: TeamInstallFormState): CatalogTeamInstallOptions => {
-      const overrides: Record<string, CompanyPortabilityAdapterOverride> = {};
-      for (const [slug, adapterType] of Object.entries(form.adapterOverrides)) {
-        if (adapterType) overrides[slug] = { adapterType };
-      }
       return {
         ...buildPreviewOptions(form),
-        adapterOverrides: Object.keys(overrides).length > 0 ? overrides : undefined,
         secretValues: Object.keys(form.secretValues).length > 0 ? form.secretValues : undefined,
       };
     },
@@ -1065,8 +1156,15 @@ function TeamInstallerDialog({
   // Step 4 — preview controls
   const [collisionStrategy, setCollisionStrategy] = useState<CompanyPortabilityCollisionStrategy>("rename");
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({});
-  // slug -> adapterType override (the install schema accepts adapterOverrides).
-  const [adapterOverrides, setAdapterOverrides] = useState<Record<string, string>>({});
+  const [adapterOverrides, setAdapterOverrides] = useState<
+    Record<string, CompanyPortabilityAdapterOverride>
+  >({});
+  const [adapterConfigValues, setAdapterConfigValues] = useState<
+    Record<string, CreateConfigValues>
+  >({});
+  const [adapterConfigurationReady, setAdapterConfigurationReady] = useState<
+    Record<string, boolean>
+  >({});
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const [visibleSecretKeys, setVisibleSecretKeys] = useState<Record<string, boolean>>({});
   const [confirmScripts, setConfirmScripts] = useState(false);
@@ -1089,6 +1187,8 @@ function TeamInstallerDialog({
       setCollisionStrategy("rename");
       setNameOverrides({});
       setAdapterOverrides({});
+      setAdapterConfigValues({});
+      setAdapterConfigurationReady({});
       setSecretValues({});
       setVisibleSecretKeys({});
       setConfirmScripts(false);
@@ -1101,33 +1201,92 @@ function TeamInstallerDialog({
 
   const currentStep = steps[stepIndex];
 
-  // Preview body — the preview schema is strict and does NOT accept adapterOverrides.
-  const buildPreviewOptions = () => ({
-    targetManagerAgentId: fullCompany ? null : targetManagerAgentId,
-    collisionStrategy,
-    nameOverrides: Object.keys(nameOverrides).length > 0 ? nameOverrides : undefined,
-    sourcePolicy: {
-      allowExternalSources,
-      allowUnpinnedOptionalSources,
-      allowLocalPathSources,
-    },
-  });
+  const buildPreviewOptions = () => {
+    return {
+      targetManagerAgentId: fullCompany ? null : targetManagerAgentId,
+      collisionStrategy,
+      nameOverrides: Object.keys(nameOverrides).length > 0 ? nameOverrides : undefined,
+      adapterOverrides:
+        Object.keys(adapterOverrides).length > 0
+          ? adapterOverrides
+          : undefined,
+      sourcePolicy: {
+        allowExternalSources,
+        allowUnpinnedOptionalSources,
+        allowLocalPathSources,
+      },
+    };
+  };
 
-  // Install body extends the preview body with adapterOverrides.
   const buildInstallOptions = () => {
-    const overrides: Record<string, CompanyPortabilityAdapterOverride> = {};
-    for (const [slug, adapterType] of Object.entries(adapterOverrides)) {
-      if (adapterType) overrides[slug] = { adapterType };
-    }
     const enteredSecretValues = Object.fromEntries(
       Object.entries(secretValues).filter(([, value]) => value.trim().length > 0),
     );
     return {
       ...buildPreviewOptions(),
-      adapterOverrides: Object.keys(overrides).length > 0 ? overrides : undefined,
       secretValues: Object.keys(enteredSecretValues).length > 0 ? enteredSecretValues : undefined,
     };
   };
+
+  function handleAdapterChange(slug: string, adapterType: string) {
+    const values = createCatalogConfigValues(adapterType);
+    setAdapterConfigValues((current) => ({
+      ...current,
+      [slug]: values,
+    }));
+    setAdapterOverrides((current) => ({
+      ...current,
+      [slug]: materializeCatalogAdapterOverride(
+        adapterType,
+        values,
+        "operator_native",
+      ),
+    }));
+    setAdapterConfigurationReady((current) => ({
+      ...current,
+      [slug]: false,
+    }));
+  }
+
+  function handleAdapterConfigChange(
+    slug: string,
+    patch: Partial<CreateConfigValues>,
+  ) {
+    const adapterType = adapterOverrides[slug]?.adapterType;
+    if (!adapterType) return;
+    const values: CreateConfigValues = {
+      ...(adapterConfigValues[slug]
+        ?? createCatalogConfigValues(adapterType)),
+      ...patch,
+      adapterType,
+    };
+    setAdapterConfigValues((current) => ({
+      ...current,
+      [slug]: values,
+    }));
+    setAdapterOverrides((current) => ({
+      ...current,
+      [slug]: materializeCatalogAdapterOverride(
+        adapterType,
+        values,
+        adapterOverrides[slug]!.skillChannel,
+      ),
+    }));
+  }
+
+  function handleSkillChannelChange(
+    slug: string,
+    skillChannel: CompanySkillChannel,
+  ) {
+    setAdapterOverrides((current) => {
+      const override = current[slug];
+      if (!override) return current;
+      return {
+        ...current,
+        [slug]: { ...override, skillChannel },
+      };
+    });
+  }
 
   const previewMutation = useMutation({
     mutationFn: () => teamCatalogApi.preview(companyId, team.id, buildPreviewOptions()),
@@ -1177,6 +1336,13 @@ function TeamInstallerDialog({
       const hasUnsupported = team.sourceRefs.some((s) => sourceWarningCode(s) === "unsupported_in_ui");
       if (hasUnsupported && !allowLocalPathSources) return false;
       return true;
+    }
+    if (step === "agent_adapters") {
+      return team.agentSlugs.every(
+        (slug) =>
+          Boolean(adapterOverrides[slug]?.adapterType) &&
+          adapterConfigurationReady[slug] === true,
+      );
     }
     return true;
   }
@@ -1267,6 +1433,25 @@ function TeamInstallerDialog({
               <StepSkillPlan team={team} preparations={previewResult?.skillPreparations ?? null} />
             )}
 
+            {currentStep === "agent_adapters" && (
+              <StepAgentAdapters
+                companyId={companyId}
+                team={team}
+                adapterOverrides={adapterOverrides}
+                configValues={adapterConfigValues}
+                onAdapterChange={handleAdapterChange}
+                onConfigChange={handleAdapterConfigChange}
+                onSkillChannelChange={handleSkillChannelChange}
+                onConfigurationReadyChange={(slug, ready) =>
+                  setAdapterConfigurationReady((current) =>
+                    current[slug] === ready
+                      ? current
+                      : { ...current, [slug]: ready }
+                  )
+                }
+              />
+            )}
+
             {currentStep === "preview" && (
               <StepPreview
                 team={team}
@@ -1277,8 +1462,6 @@ function TeamInstallerDialog({
                 onCollisionStrategyChange={(s) => { setCollisionStrategy(s); previewRequested.current = false; previewMutation.mutate(); }}
                 nameOverrides={nameOverrides}
                 onRename={(slug, name) => setNameOverrides((cur) => ({ ...cur, [slug]: name }))}
-                adapterOverrides={adapterOverrides}
-                onAdapterChange={(slug, adapterType) => setAdapterOverrides((cur) => ({ ...cur, [slug]: adapterType }))}
                 secretValues={secretValues}
                 visibleSecretKeys={visibleSecretKeys}
                 onSecretChange={(key, value) => setSecretValues((cur) => ({ ...cur, [key]: value }))}
@@ -1437,13 +1620,15 @@ export function StepTargetManager({
                 {agents.map((agent) => (
                   <CommandItem
                     key={agent.id}
-                    value={`${agent.name} ${agent.role} ${agent.title ?? ""}`}
+                    value={`${agent.name} ${agent.title ?? ""}`}
                     onSelect={() => onPickManager(agent.id)}
                   >
                     <div className="flex w-full items-center gap-2">
                       <Users2 className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="font-medium">{agent.name}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{agent.role}</span>
+                      {agent.title ? (
+                        <span className="text-xs text-muted-foreground">{agent.title}</span>
+                      ) : null}
                       {targetManagerAgentId === agent.id && <Check className="ml-auto h-4 w-4 text-emerald-500" />}
                     </div>
                   </CommandItem>
@@ -1642,6 +1827,257 @@ function toPreparation(skill: CatalogTeamSkillRequirement): CatalogTeamSkillPrep
   };
 }
 
+export function StepAgentAdapters({
+  companyId,
+  team,
+  adapterOverrides,
+  configValues,
+  onAdapterChange,
+  onConfigChange,
+  onSkillChannelChange,
+  onConfigurationReadyChange,
+}: {
+  companyId: string;
+  team: CatalogTeam;
+  adapterOverrides: Record<string, CompanyPortabilityAdapterOverride>;
+  configValues: Record<string, CreateConfigValues>;
+  onAdapterChange: (slug: string, adapterType: string) => void;
+  onConfigChange: (
+    slug: string,
+    patch: Partial<CreateConfigValues>,
+  ) => void;
+  onSkillChannelChange: (
+    slug: string,
+    skillChannel: CompanySkillChannel,
+  ) => void;
+  onConfigurationReadyChange: (slug: string, ready: boolean) => void;
+}) {
+  const admittedAdapters = useAdapterCatalogSync();
+  const missingCount = team.agentSlugs.filter(
+    (slug) => !adapterOverrides[slug]?.adapterType,
+  ).length;
+  const adapterOptions = useMemo(catalogAdapterOptions, [admittedAdapters]);
+  return (
+    <div className="space-y-4">
+      <div
+        role="alert"
+        className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2.5 text-sm text-blue-700 dark:text-blue-300"
+      >
+        Select an adapter for every imported agent. Catalog entries contain no
+        provider default or inferred target configuration.
+      </div>
+      <ul className="divide-y divide-border rounded-md border border-border">
+        {team.agentSlugs.map((slug) => {
+          const override = adapterOverrides[slug];
+          const adapterType = override?.adapterType ?? "";
+          return (
+            <li key={slug} className="space-y-3 px-3 py-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-mono text-xs">{slug}</span>
+                <Select
+                  value={adapterType}
+                  onValueChange={(value) => onAdapterChange(slug, value)}
+                >
+                  <SelectTrigger
+                    className="ml-auto h-8 w-52"
+                    aria-label={`${slug} adapter`}
+                  >
+                    <SelectValue placeholder="Select adapter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {adapterOptions.map((adapter) => (
+                      <SelectItem key={adapter.type} value={adapter.type}>
+                        {adapter.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {override && (
+                <CatalogAgentAdapterConfiguration
+                  companyId={companyId}
+                  slug={slug}
+                  override={override}
+                  values={
+                    configValues[slug]
+                    ?? createCatalogConfigValues(
+                      adapterType,
+                      override.adapterConfig,
+                    )
+                  }
+                  onConfigChange={onConfigChange}
+                  onSkillChannelChange={onSkillChannelChange}
+                  onConfigurationReadyChange={onConfigurationReadyChange}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        {missingCount > 0
+          ? `${missingCount} adapter selection${missingCount === 1 ? "" : "s"} required.`
+          : "Each adapter's exact configuration will be included in the import preview."}
+      </p>
+    </div>
+  );
+}
+
+function CatalogAgentAdapterConfiguration({
+  companyId,
+  slug,
+  override,
+  values,
+  onConfigChange,
+  onSkillChannelChange,
+  onConfigurationReadyChange,
+}: {
+  companyId: string;
+  slug: string;
+  override: CompanyPortabilityAdapterOverride;
+  values: CreateConfigValues;
+  onConfigChange: (
+    slug: string,
+    patch: Partial<CreateConfigValues>,
+  ) => void;
+  onSkillChannelChange: (
+    slug: string,
+    skillChannel: CompanySkillChannel,
+  ) => void;
+  onConfigurationReadyChange: (slug: string, ready: boolean) => void;
+}) {
+  const { data: environments = [] } = useQuery<Environment[]>({
+    queryKey: queryKeys.environments.list(companyId),
+    queryFn: () => environmentsApi.list(companyId),
+  });
+  const allowedDrivers = useMemo(
+    () =>
+      new Set(
+        supportedEnvironmentDriversForAdapter(override.adapterType),
+      ),
+    [override.adapterType],
+  );
+  const executionEnvironments = useMemo(
+    () =>
+      environments.filter((environment) => {
+        if (environment.status !== "active") return false;
+        if (!allowedDrivers.has(environment.driver)) return false;
+        if (environment.driver !== "sandbox") return true;
+        const provider =
+          typeof environment.config?.provider === "string"
+            ? environment.config.provider
+            : null;
+        return provider !== null && provider !== "fake";
+      }),
+    [allowedDrivers, environments],
+  );
+  const {
+    schema,
+    isLoading,
+    error: schemaError,
+  } = useAdapterConfigSchema(override.adapterType);
+  const configurationErrors = adapterConfigSchemaFieldErrors(
+    schema,
+    override.adapterConfig ?? {},
+  );
+  const ready = catalogAdapterConfigurationIsReady({
+    schema,
+    isLoading,
+    schemaError,
+    adapterConfig: override.adapterConfig,
+    defaultEnvironmentId: override.defaultEnvironmentId,
+  });
+
+  useEffect(() => {
+    onConfigurationReadyChange(slug, ready);
+  }, [onConfigurationReadyChange, ready, slug]);
+
+  return (
+    <div className="space-y-3 rounded-md border border-border bg-accent/10 p-3">
+      <label className="grid gap-1.5 text-xs">
+        <span className="font-medium">Skill channel</span>
+        <Select
+          value={override.skillChannel}
+          onValueChange={(skillChannel) =>
+            onSkillChannelChange(
+              slug,
+              skillChannel as CompanySkillChannel,
+            )
+          }
+        >
+          <SelectTrigger aria-label={`${slug} skill channel`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="isolated_skills_home">
+              Paperclip-managed isolated skills home
+            </SelectItem>
+            <SelectItem value="operator_native">
+              Operator-managed native skills
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </label>
+      <label className="grid gap-1.5 text-xs">
+        <span className="font-medium">Execution environment</span>
+        <Select
+          value={override.defaultEnvironmentId}
+          onValueChange={(defaultEnvironmentId) =>
+            onConfigChange(slug, { defaultEnvironmentId })
+          }
+        >
+          <SelectTrigger aria-label={`${slug} execution environment`}>
+            <SelectValue placeholder="Select an execution environment" />
+          </SelectTrigger>
+          <SelectContent>
+            {executionEnvironments.map((environment) => (
+              <SelectItem key={environment.id} value={environment.id}>
+                {environment.name} · {environment.driver}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+      {schema ? (
+        <SchemaConfigFields
+          mode="create"
+          isCreate
+          adapterType={override.adapterType}
+          values={values}
+          set={(patch) => onConfigChange(slug, patch)}
+          config={{}}
+          eff={(_group, _field, original) => original}
+          mark={() => undefined}
+          models={[]}
+          applySchemaDefaults={false}
+          resolvedSchema={schema}
+        />
+      ) : null}
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">
+          Loading adapter configuration schema…
+        </p>
+      ) : schemaError || !schema ? (
+        <p role="alert" className="text-xs text-destructive">
+          Adapter configuration schema unavailable.{" "}
+          {schemaError ?? "The adapter did not return a schema."}
+        </p>
+      ) : configurationErrors.length > 0 ? (
+        <p role="alert" className="text-xs text-destructive">
+          Adapter configuration is not ready:{" "}
+          {configurationErrors.map((error) => error.message).join(" ")}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Draft configuration is structurally valid. Runtime readiness is
+          checked only against a persisted execution context.
+        </p>
+      )}
+    </div>
+  );
+}
+
 const PLAN_ACTION_TONE: Record<string, string> = {
   create: "text-emerald-600 dark:text-emerald-300 border-emerald-500/30",
   update: "text-amber-600 dark:text-amber-300 border-amber-500/30",
@@ -1695,8 +2131,6 @@ export function StepPreview({
   onCollisionStrategyChange,
   nameOverrides,
   onRename,
-  adapterOverrides,
-  onAdapterChange,
   secretValues = {},
   visibleSecretKeys = {},
   onSecretChange = () => {},
@@ -1711,8 +2145,6 @@ export function StepPreview({
   onCollisionStrategyChange: (s: CompanyPortabilityCollisionStrategy) => void;
   nameOverrides: Record<string, string>;
   onRename: (slug: string, name: string) => void;
-  adapterOverrides: Record<string, string>;
-  onAdapterChange: (slug: string, adapterType: string) => void;
   secretValues?: Record<string, string>;
   visibleSecretKeys?: Record<string, boolean>;
   onSecretChange?: (key: string, value: string) => void;
@@ -1743,7 +2175,6 @@ export function StepPreview({
 
   const plan = result.portabilityPreview.plan;
   const envInputs = result.portabilityPreview.envInputs;
-  const manifestAgents = result.portabilityPreview.manifest.agents;
   const canRename = collisionStrategy === "rename";
 
   return (
@@ -1832,36 +2263,6 @@ export function StepPreview({
           {plan.issuePlans.map((p) => (
             <PlanRow key={p.slug} slug={p.slug} action={p.action} plannedName={p.plannedTitle} reason={p.reason} canRename={false} />
           ))}
-        </PreviewSection>
-      )}
-
-      {/* Adapter selection — install schema accepts adapterOverrides (design §4.4) */}
-      {manifestAgents.length > 0 && (
-        <PreviewSection title={`Adapter selection · ${manifestAgents.length}`}>
-          {manifestAgents.map((agent) => {
-            const selected = adapterOverrides[agent.slug] ?? agent.adapterType;
-            return (
-              <li key={agent.slug} className="flex items-center gap-2 px-3 py-2 text-sm">
-                <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="min-w-0 truncate">{agent.name}</span>
-                <span className="font-mono text-(length:--text-micro) text-muted-foreground">{agent.slug}</span>
-                <Select value={selected} onValueChange={(v) => onAdapterChange(agent.slug, v)}>
-                  <SelectTrigger className="ml-auto h-8 w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AGENT_ADAPTER_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>{getAdapterLabel(type)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </li>
-            );
-          })}
-          <li className="px-3 py-1.5 text-(length:--text-micro) text-muted-foreground">
-            Each imported agent defaults to its package adapter; override here before install.
-            Deeper per-adapter model config is editable on the agent after install.
-          </li>
         </PreviewSection>
       )}
 

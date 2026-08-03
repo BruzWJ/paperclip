@@ -3,6 +3,7 @@ import type { IssueRelationIssueSummary } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 import { StatusIcon } from "./StatusIcon";
+import { issueDisplayTitle, issueReferenceLabel } from "../lib/issue-display";
 
 export function IssueReferencePill({
   issue,
@@ -11,12 +12,13 @@ export function IssueReferencePill({
   children,
 }: {
   issue: Pick<IssueRelationIssueSummary, "id" | "identifier" | "title"> &
-    Partial<Pick<IssueRelationIssueSummary, "status">>;
+    Partial<Pick<IssueRelationIssueSummary, "boardPresentationStatus">>;
   strikethrough?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
-  const issueLabel = issue.identifier ?? issue.title;
+  const issueLabel = issueReferenceLabel(issue);
+  const displayTitle = issueDisplayTitle(issue);
   const classNames = cn(
     "paperclip-mention-chip paperclip-mention-chip--issue",
     "inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs no-underline",
@@ -26,8 +28,10 @@ export function IssueReferencePill({
   );
   const content = (
     <>
-      {issue.status ? <StatusIcon status={issue.status} className="h-3 w-3 shrink-0" /> : null}
-      {children !== undefined ? children : <span>{issue.identifier ?? issue.title}</span>}
+      {issue.boardPresentationStatus ? (
+        <StatusIcon status={issue.boardPresentationStatus} className="h-3 w-3 shrink-0" />
+      ) : null}
+      {children !== undefined ? children : <span>{issue.identifier ?? displayTitle}</span>}
     </>
   );
 
@@ -36,8 +40,8 @@ export function IssueReferencePill({
       <span
         data-mention-kind="issue"
         className={classNames}
-        title={issue.title}
-        aria-label={`Task: ${issue.title}`}
+        title={displayTitle}
+        aria-label={`Task: ${displayTitle}`}
       >
         {content}
       </span>
@@ -49,8 +53,8 @@ export function IssueReferencePill({
       to={`/issues/${issueLabel}`}
       data-mention-kind="issue"
       className={classNames}
-      title={issue.title}
-      aria-label={`Task ${issueLabel}: ${issue.title}`}
+      title={displayTitle}
+      aria-label={`Task ${issueLabel}: ${displayTitle}`}
     >
       {content}
     </Link>

@@ -23,7 +23,7 @@ describe("resolveInlineSourceFromPath", () => {
       {
         "COMPANY.md": "# Company\n",
         ".paperclip.yaml": "schema: paperclip/v1\n",
-        "agents/ceo/AGENT.md": "# CEO\n",
+        "agents/lead/AGENT.md": "# Lead\n",
         "notes/todo.txt": "ignore me\n",
       },
       "paperclip-demo",
@@ -37,7 +37,7 @@ describe("resolveInlineSourceFromPath", () => {
       files: {
         "COMPANY.md": "# Company\n",
         ".paperclip.yaml": "schema: paperclip/v1\n",
-        "agents/ceo/AGENT.md": "# CEO\n",
+        "agents/lead/AGENT.md": "# Lead\n",
       },
     });
   });

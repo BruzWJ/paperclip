@@ -21,7 +21,7 @@ function formatJsonObject(value: unknown): string {
 
 function updateJsonConfig(
   isCreate: boolean,
-  key: "runtimeServicesJson" | "payloadTemplateJson",
+  key: "runtimeServicesJson",
   next: string,
   set: AdapterConfigFieldsProps["set"],
   mark: AdapterConfigFieldsProps["mark"],
@@ -84,38 +84,6 @@ export function RuntimeServicesJsonField({
           updateJsonConfig(isCreate, "runtimeServicesJson", next, set, mark, "workspaceRuntime");
         }}
         placeholder={`{\n  "services": [\n    {\n      "name": "preview",\n      "lifecycle": "ephemeral",\n      "metadata": {\n        "purpose": "remote preview"\n      }\n    }\n  ]\n}`}
-      />
-    </Field>
-  );
-}
-
-export function PayloadTemplateJsonField({
-  isCreate,
-  values,
-  set,
-  config,
-  mark,
-}: JsonFieldProps) {
-  const existing = formatJsonObject(config.payloadTemplate);
-  const [draft, setDraft] = useState(existing);
-
-  useEffect(() => {
-    if (!isCreate) setDraft(existing);
-  }, [existing, isCreate]);
-
-  const value = isCreate ? values?.payloadTemplateJson ?? "" : draft;
-
-  return (
-    <Field label="Payload template JSON" hint={help.payloadTemplateJson}>
-      <textarea
-        className={`${inputClass} min-h-[132px]`}
-        value={value}
-        onChange={(e) => {
-          const next = e.target.value;
-          if (!isCreate) setDraft(next);
-          updateJsonConfig(isCreate, "payloadTemplateJson", next, set, mark, "payloadTemplate");
-        }}
-        placeholder={`{\n  "agentId": "remote-agent-123",\n  "metadata": {\n    "team": "platform"\n  }\n}`}
       />
     </Field>
   );

@@ -1,10 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import { spawn, type ChildProcess } from "node:child_process";
+import {
+  buildCancelEnvironmentShellCommand,
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+  wrapCancellableEnvironmentShellCommand,
+} from "@paperclipai/plugin-sdk";
 import type {
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentCancelInteractiveSetupParams,
   PluginEnvironmentCancelInteractiveSetupResult,
@@ -188,7 +200,9 @@ async function removeLease(providerLeaseId: string | null | undefined): Promise<
 }
 
 function buildCommandLine(command: string, args: string[] | undefined): string {
-  return [command, ...(args ?? [])].join(" ");
+  return [command, ...(args ?? [])]
+    .map((value) => `'${value.replace(/'/g, `'"'"'`)}'`)
+    .join(" ");
 }
 
 function buildCommandEnvironment(explicitEnv: Record<string, string> | undefined): Record<string, string> {
@@ -198,62 +212,60 @@ function buildCommandEnvironment(explicitEnv: Record<string, string> | undefined
   };
 }
 
-async function runCommand(params: PluginEnvironmentExecuteParams, timeoutMs: number): Promise<PluginEnvironmentExecuteResult> {
-  const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : process.cwd();
-  const startedAt = new Date().toISOString();
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
-  return await new Promise((resolve, reject) => {
-    const child = spawn(params.command, params.args ?? [], {
-      cwd,
-      env: buildCommandEnvironment(params.env),
-      shell: false,
-      stdio: [params.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let killTimer: NodeJS.Timeout | null = null;
-    const timer = timeoutMs > 0
-      ? setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGTERM");
-          killTimer = setTimeout(() => {
-            child.kill("SIGKILL");
-          }, FAKE_SANDBOX_SIGKILL_GRACE_MS);
-        }, timeoutMs)
-      : null;
-
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("error", (error) => {
-      if (timer) clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      reject(error);
-    });
-    child.on("close", (code, signal) => {
-      if (timer) clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      resolve({
-        exitCode: timedOut ? null : code,
-        signal,
-        timedOut,
-        stdout,
-        stderr,
-        metadata: {
-          startedAt,
-          commandLine: buildCommandLine(params.command, params.args),
-        },
-      });
-    });
-
-    if (params.stdin != null && child.stdin) {
-      child.stdin.write(params.stdin);
-      child.stdin.end();
+async function cancelChildProcess(child: ChildProcess | null): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      resolve();
+    };
+    const forceTimer = setTimeout(() => {
+      try {
+        if (child.pid && process.platform !== "win32") {
+          process.kill(-child.pid, "SIGKILL");
+        } else {
+          child.kill("SIGKILL");
+        }
+      } catch {
+        // The exact process already exited.
+      }
+      finish();
+    }, FAKE_SANDBOX_SIGKILL_GRACE_MS);
+    child.once("close", finish);
+    try {
+      if (child.pid && process.platform !== "win32") {
+        process.kill(-child.pid, "SIGTERM");
+      } else {
+        child.kill("SIGTERM");
+      }
+    } catch {
+      finish();
     }
+  });
+}
+
+async function runExactCancellation(
+  executionId: string,
+): Promise<boolean> {
+  return await new Promise<boolean>((resolve, reject) => {
+    const child = spawn(
+      "sh",
+      [
+        "-c",
+        buildCancelEnvironmentShellCommand(
+          executionId,
+          FAKE_SANDBOX_SIGKILL_GRACE_MS,
+        ),
+      ],
+      { stdio: "ignore" },
+    );
+    child.once("error", reject);
+    child.once("close", (code) => resolve(code === 0));
   });
 }
 
@@ -378,7 +390,109 @@ const plugin = definePlugin({
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
     const config = parseConfig(params.config);
-    return await runCommand(params, params.timeoutMs ?? config.timeoutMs);
+    let child: ChildProcess | null = null;
+    return await activeExecutions.execute(params, {
+      execute: async () => {
+        const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : process.cwd();
+        const startedAt = new Date().toISOString();
+        const stdinPath =
+          params.stdin == null
+            ? null
+            : path.join(
+                os.tmpdir(),
+                `paperclip-fake-stdin-${randomUUID()}`,
+              );
+        if (stdinPath) {
+          await writeFile(stdinPath, params.stdin!, "utf8");
+        }
+        const commandLine = buildCommandLine(
+          params.command,
+          params.args,
+        );
+        const commandScript = stdinPath
+          ? `${commandLine} < '${stdinPath.replace(/'/g, `'"'"'`)}'`
+          : commandLine;
+        return await new Promise((resolve, reject) => {
+          const spawned = spawn("sh", [
+            "-c",
+            wrapCancellableEnvironmentShellCommand(
+              params.executionId,
+              commandScript,
+            ),
+          ], {
+            cwd,
+            env: buildCommandEnvironment(params.env),
+            detached: process.platform !== "win32",
+            shell: false,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          child = spawned;
+          let stdout = "";
+          let stderr = "";
+          let timedOut = false;
+          const timer = (params.timeoutMs ?? config.timeoutMs) > 0
+            ? setTimeout(() => {
+                timedOut = true;
+                void runExactCancellation(
+                  params.executionId,
+                ).finally(() => {
+                  if (
+                    spawned.exitCode === null &&
+                    spawned.signalCode === null
+                  ) {
+                    spawned.kill("SIGKILL");
+                  }
+                });
+              }, params.timeoutMs ?? config.timeoutMs)
+            : null;
+
+          spawned.stdout?.on("data", (chunk) => {
+            stdout += String(chunk);
+          });
+          spawned.stderr?.on("data", (chunk) => {
+            stderr += String(chunk);
+          });
+          spawned.on("error", (error) => {
+            if (timer) clearTimeout(timer);
+            if (stdinPath) {
+              void rm(stdinPath, { force: true });
+            }
+            reject(error);
+          });
+          spawned.on("close", (code, signal) => {
+            if (timer) clearTimeout(timer);
+            if (stdinPath) {
+              void rm(stdinPath, { force: true });
+            }
+            resolve({
+              exitCode: timedOut ? null : code,
+              signal,
+              timedOut,
+              stdout,
+              stderr,
+              metadata: {
+                startedAt,
+                commandLine,
+              },
+            });
+          });
+        });
+      },
+      cancel: async () => {
+        await runExactCancellation(params.executionId);
+        await cancelChildProcess(child);
+      },
+    });
+  },
+
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async () =>
+        runExactCancellation(params.executionId),
+    );
   },
 
   async onEnvironmentStartInteractiveSetup(

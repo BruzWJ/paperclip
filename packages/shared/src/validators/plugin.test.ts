@@ -1,10 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { PLUGIN_CAPABILITIES } from "../constants.js";
-import { pluginManagedRoutineDeclarationSchema, pluginManifestV1Schema, pluginUiSlotDeclarationSchema } from "./plugin.js";
+import {
+  pluginManagedRoutineDeclarationSchema,
+  pluginManifestV1Schema,
+  pluginUiSlotDeclarationSchema,
+  uninstallPluginSchema,
+} from "./plugin.js";
 
 describe("plugin capability constants", () => {
   it("exposes each capability once", () => {
     expect(new Set(PLUGIN_CAPABILITIES).size).toBe(PLUGIN_CAPABILITIES.length);
+  });
+});
+
+describe("plugin uninstall validator", () => {
+  it("accepts only the purge contract and rejects the retired hard-delete field", () => {
+    expect(uninstallPluginSchema.parse({})).toEqual({ purge: false });
+    expect(uninstallPluginSchema.parse({ purge: true })).toEqual({
+      purge: true,
+    });
+    expect(
+      uninstallPluginSchema.safeParse({ removeData: true }).success,
+    ).toBe(false);
   });
 });
 

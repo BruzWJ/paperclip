@@ -1,3 +1,8 @@
+import type {
+  IssueExecutionRunKind,
+  IssueExecutionRunStatus,
+} from "./issue-execution-run.js";
+
 /**
  * Work Timeline (Gantt) types — shared between the aggregation service
  * (`server/src/services/work-timeline.ts`) and the UI page
@@ -19,8 +24,8 @@ export interface WorkTimelineActor {
 
 export interface WorkTimelineSpan {
   actorId: string;
-  laneHint: string | null;
   runId: string;
+  kind: IssueExecutionRunKind;
   issueId: string;
   issueIdentifier: string | null;
   /** Human-readable issue title, shown truncated in the hover tooltip (bars carry no ID). */
@@ -29,16 +34,8 @@ export interface WorkTimelineSpan {
   start: string;
   /** ISO timestamp of run finish, or null when the run is still in progress. */
   end: string | null;
-  status: string;
-  retryOfRunId?: string | null;
-  continuationAttempt?: number;
-  invocationSource?: string | null;
-  usage?: {
-    inputTokens: number;
-    cachedInputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  } | null;
+  status: IssueExecutionRunStatus;
+  retryOfRunId: string | null;
 }
 
 export interface WorkTimelineEvent {

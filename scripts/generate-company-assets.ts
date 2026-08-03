@@ -14,7 +14,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import { renderOrgChartPng, type OrgNode, type OrgChartOverlay } from "../server/src/routes/org-chart-svg.js";
-import { generateReadme } from "../server/src/services/company-export-readme.js";
+import {
+  generateReadme,
+  type CompanyReadmeAgent,
+  type CompanyReadmeManifest,
+} from "../server/src/services/company-export-readme.js";
 import type { CompanyPortabilityManifest } from "@paperclipai/shared";
 
 // ── YAML frontmatter parser (minimal, no deps) ──────────────────
@@ -93,35 +97,6 @@ function parseFrontmatter(content: string): { data: Record<string, unknown>; bod
   return { data, body };
 }
 
-// ── Slug to role mapping ─────────────────────────────────────────
-
-const SLUG_TO_ROLE: Record<string, string> = {
-  ceo: "ceo",
-  cto: "cto",
-  cmo: "cmo",
-  cfo: "cfo",
-  coo: "coo",
-};
-
-function inferRole(slug: string, title: string | null): string {
-  // Check direct slug match first
-  if (SLUG_TO_ROLE[slug]) return SLUG_TO_ROLE[slug];
-
-  // Check title for C-suite
-  const t = (title || "").toLowerCase();
-  if (t.includes("chief executive")) return "ceo";
-  if (t.includes("chief technology")) return "cto";
-  if (t.includes("chief marketing")) return "cmo";
-  if (t.includes("chief financial")) return "cfo";
-  if (t.includes("chief operating")) return "coo";
-  if (t.includes("vp") || t.includes("vice president")) return "vp";
-  if (t.includes("manager")) return "manager";
-  if (t.includes("qa") || t.includes("quality")) return "engineer";
-
-  // Default to engineer
-  return "engineer";
-}
-
 // ── Parse a company package directory ────────────────────────────
 
 interface CompanyPackage {
@@ -129,7 +104,7 @@ interface CompanyPackage {
   name: string;
   description: string | null;
   slug: string;
-  agents: CompanyPortabilityManifest["agents"];
+  agents: CompanyReadmeAgent[];
   skills: CompanyPortabilityManifest["skills"];
 }
 
@@ -146,14 +121,12 @@ function parseCompanyPackage(companyDir: string): CompanyPackage | null {
 
   // Parse agents
   const agentsDir = path.join(companyDir, "agents");
-  const agents: CompanyPortabilityManifest["agents"] = [];
+  const agents: CompanyReadmeAgent[] = [];
   if (fs.existsSync(agentsDir)) {
     for (const agentSlug of fs.readdirSync(agentsDir)) {
       const agentMdName = fs.existsSync(path.join(agentsDir, agentSlug, "AGENT.md"))
         ? "AGENT.md"
-        : fs.existsSync(path.join(agentsDir, agentSlug, "AGENTS.md"))
-          ? "AGENTS.md"
-          : null;
+        : null;
       if (!agentMdName) continue;
       const agentMdPath = path.join(agentsDir, agentSlug, agentMdName);
 
@@ -163,25 +136,12 @@ function parseCompanyPackage(companyDir: string): CompanyPackage | null {
       const agentName = (agentData.name as string) || agentSlug;
       const title = (agentData.title as string) || null;
       const reportsTo = agentData.reportsTo as string | null;
-      const skills = (agentData.skills as string[]) || [];
-      const role = inferRole(agentSlug, title);
 
       agents.push({
         slug: agentSlug,
         name: agentName,
-        path: `agents/${agentSlug}/${agentMdName}`,
-        skills,
-        role,
         title,
-        icon: null,
-        capabilities: null,
         reportsToSlug: reportsTo || null,
-        adapterType: "claude_local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        permissions: {},
-        budgetMonthlyCents: 0,
-        metadata: null,
       });
     }
   }
@@ -239,19 +199,7 @@ function parseCompanyPackage(companyDir: string): CompanyPackage | null {
 
 // ── Build OrgNode tree from agents ───────────────────────────────
 
-const ROLE_LABELS: Record<string, string> = {
-  ceo: "Chief Executive",
-  cto: "Technology",
-  cmo: "Marketing",
-  cfo: "Finance",
-  coo: "Operations",
-  vp: "VP",
-  manager: "Manager",
-  engineer: "Engineer",
-  agent: "Agent",
-};
-
-function buildOrgTree(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
+function buildOrgTree(agents: CompanyReadmeAgent[]): OrgNode[] {
   const bySlug = new Map(agents.map((a) => [a.slug, a]));
   const childrenOf = new Map<string | null, typeof agents>();
   for (const a of agents) {
@@ -265,7 +213,7 @@ function buildOrgTree(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
     return members.map((m) => ({
       id: m.slug,
       name: m.name,
-      role: ROLE_LABELS[m.role] ?? m.role,
+      subtitle: m.title ?? "",
       status: "active",
       reports: build(m.slug),
     }));
@@ -277,7 +225,7 @@ function buildOrgTree(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
       tree.push({
         id: root.slug,
         name: root.name,
-        role: ROLE_LABELS[root.role] ?? root.role,
+        subtitle: root.title ?? "",
         status: "active",
         reports: build(root.slug),
       });
@@ -331,17 +279,11 @@ async function main() {
     }
 
     // Generate README
-    const manifest: CompanyPortabilityManifest = {
-      schemaVersion: 1,
-      generatedAt: new Date().toISOString(),
-      source: null,
-      includes: { company: true, agents: true, projects: false, issues: false, skills: true },
-      company: null,
+    const manifest: CompanyReadmeManifest = {
       agents: pkg.agents,
       skills: pkg.skills,
       projects: [],
       issues: [],
-      envInputs: [],
     };
 
     const readme = generateReadme(manifest, {

@@ -74,7 +74,7 @@ const LONG_WORKSPACES: ReusableExecutionWorkspaceLike[] = [
   {
     id: "ws-long-cwd",
     name: "adapter-plugin-registry-regression-suite",
-    cwd: "/srv/paperclip/home/paperclipai/paperclip/packages/adapters/external-plugin-fixtures/hermes-droid-regression-workspace-with-long-directory-name",
+    cwd: "/srv/paperclip/home/paperclipai/paperclip/packages/adapters/external-plugin-fixtures/external-agent-regression-workspace-with-long-directory-name",
     branchName: null,
     status: "idle",
     lastUsedAt: new Date(NOW.getTime() - 1 * DAY),

@@ -36,24 +36,37 @@ export interface EnvironmentCapabilities {
   sandboxProviders: Record<SandboxEnvironmentProvider, EnvironmentProviderCapability>;
 }
 
-const REMOTE_MANAGED_ADAPTERS = new Set<AgentAdapterType>([
-  "claude_local",
-  "codex_local",
-  "cursor",
-  "gemini_local",
-  "grok_local",
-  "opencode_local",
-  "pi_local",
-]);
+/**
+ * Closed execution-mechanics capabilities for Paperclip's active transports.
+ * An external module overriding an exact transport type inherits that
+ * transport boundary; a distinct external type remains local-only until the
+ * adapter ABI gains an explicit execution-target capability.
+ */
+export const ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES = {
+  codex: ["local", "ssh", "sandbox", "plugin"],
+} as const satisfies Record<string, readonly EnvironmentDriver[]>;
+
+const LOCAL_ONLY_ENVIRONMENT_DRIVERS = ["local"] as const;
 
 export function adapterSupportsRemoteManagedEnvironments(adapterType: string): boolean {
-  return REMOTE_MANAGED_ADAPTERS.has(adapterType as AgentAdapterType);
+  const drivers = supportedEnvironmentDriversForAdapter(adapterType);
+  return drivers.includes("ssh") && drivers.includes("sandbox");
 }
 
 export function supportedEnvironmentDriversForAdapter(adapterType: string): EnvironmentDriver[] {
-  return adapterSupportsRemoteManagedEnvironments(adapterType)
-    ? ["local", "ssh", "sandbox"]
-    : ["local"];
+  if (
+    Object.hasOwn(
+      ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES,
+      adapterType,
+    )
+  ) {
+    return [
+      ...ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES[
+        adapterType as keyof typeof ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES
+      ],
+    ];
+  }
+  return [...LOCAL_ONLY_ENVIRONMENT_DRIVERS];
 }
 
 export function supportedSandboxProvidersForAdapter(
@@ -158,7 +171,7 @@ export function getEnvironmentCapabilities(
       local: "supported",
       ssh: "supported",
       sandbox: "supported",
-      plugin: "unsupported",
+      plugin: "supported",
     },
     sandboxProviders,
   };

@@ -10,7 +10,6 @@ const ISSUE_ID = "44444444-4444-4444-8444-444444444444";
 const COMMENT_ID = "55555555-5555-4555-8555-555555555555";
 const APPROVAL_ID = "66666666-6666-4666-8666-666666666666";
 const PRODUCT_ID = "77777777-7777-4777-8777-777777777777";
-const INTERACTION_ID = "88888888-8888-4888-8888-888888888888";
 const HOLD_ID = "99999999-9999-4999-8999-999999999999";
 const ATTACHMENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const LABEL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -37,8 +36,8 @@ async function run(args: string[]): Promise<void> {
 describe("issue subresource commands", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
     vi.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -46,30 +45,89 @@ describe("issue subresource commands", () => {
     vi.restoreAllMocks();
   });
 
-  it("wraps core issue get, update, and delete endpoints", async () => {
+  it("wraps canonical issue get, title, reassignment, reopen, and comment endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["issue", "get", ISSUE_ID]);
-    await run(["issue", "update", ISSUE_ID, "--title", "New title"]);
-    await run(["issue", "delete", ISSUE_ID, "--yes"]);
+    await run(["issue", "title", ISSUE_ID, "--title", "New title"]);
+    await run(["issue", "reassign", ISSUE_ID, "--owner-agent-id", COMPANY_ID]);
+    await run(["issue", "reopen", ISSUE_ID, "--reason", "New evidence"]);
+    await run([
+      "issue", "comment", ISSUE_ID,
+      "--message", "Please review",
+      "--mention-target-agent-id", COMPANY_ID,
+      "--mention-ownership-epoch", "3",
+    ]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}`],
       ["PATCH", `http://localhost:3100/api/issues/${ISSUE_ID}`],
-      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/reassign`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/reopen`],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/comments`],
     ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      title: "New title",
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
+      ownerAgentId: COMPANY_ID,
+      idempotencyKey: expect.any(String),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toMatchObject({
+      reason: "New evidence",
+      idempotencyKey: expect.any(String),
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toMatchObject({
+      message: "Please review",
+      idempotencyKey: expect.any(String),
+      mention: {
+        targetAgentId: COMPANY_ID,
+        ownershipEpoch: 3,
+      },
+    });
   });
 
-  it("wraps comments, approvals, markers, and recovery action endpoints", async () => {
+  it("sends a persisted reply target without an agent mention", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run([
+      "issue", "comment", ISSUE_ID,
+      "--message", "Additional context",
+      "--reply-to-comment-id", COMMENT_ID,
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `http://localhost:3100/api/issues/${ISSUE_ID}/comments`,
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      message: "Additional context",
+      idempotencyKey: expect.any(String),
+      mention: null,
+      replyToCommentId: COMMENT_ID,
+    });
+  });
+
+  it("wraps comments, approvals, and marker reads", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
-    await run(["issue", "comments", ISSUE_ID, "--limit", "10"]);
+    await run([
+      "issue",
+      "comments",
+      ISSUE_ID,
+      "--cursor",
+      "root-cursor",
+      "--limit",
+      "10",
+      "--entry-limit",
+      "4",
+    ]);
     await run(["issue", "comment:get", ISSUE_ID, COMMENT_ID]);
-    await run(["issue", "comment:delete", ISSUE_ID, COMMENT_ID]);
     await run(["issue", "approvals", ISSUE_ID]);
     await run(["issue", "approval:link", ISSUE_ID, APPROVAL_ID]);
     await run(["issue", "approval:unlink", ISSUE_ID, APPROVAL_ID]);
@@ -77,18 +135,10 @@ describe("issue subresource commands", () => {
     await run(["issue", "unread", ISSUE_ID]);
     await run(["issue", "archive", ISSUE_ID]);
     await run(["issue", "unarchive", ISSUE_ID]);
-    await run(["issue", "recovery-actions", ISSUE_ID]);
-    await run([
-      "issue", "recovery:resolve", ISSUE_ID,
-      "--outcome", "restored",
-      "--source-issue-status", "todo",
-      "--action-id", APPROVAL_ID,
-    ]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
-      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/comments?limit=10`],
+      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/comments?cursor=root-cursor&limit=10&entryLimit=4`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/comments/${COMMENT_ID}`],
-      ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/comments/${COMMENT_ID}`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/approvals`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/approvals`],
       ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/approvals/${APPROVAL_ID}`],
@@ -96,8 +146,6 @@ describe("issue subresource commands", () => {
       ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/read`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/inbox-archive`],
       ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}/inbox-archive`],
-      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/recovery-actions`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/recovery-actions/resolve`],
     ]);
   });
 
@@ -142,7 +190,7 @@ describe("issue subresource commands", () => {
     ]);
   });
 
-  it("wraps interactions, tree holds, labels, feedback votes, and attachments", async () => {
+  it("wraps tree holds, labels, feedback votes, and attachments", async () => {
     const tmp = await mkdtemp(join(tmpdir(), "paperclip-cli-test-"));
     const filePath = join(tmp, "attachment.txt");
     await writeFile(filePath, "hello", "utf8");
@@ -153,23 +201,6 @@ describe("issue subresource commands", () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     try {
-      await run(["issue", "interactions", ISSUE_ID]);
-      await run([
-        "issue", "interaction:create", ISSUE_ID,
-        "--payload-json", JSON.stringify({
-          kind: "request_confirmation",
-          payload: { version: 1, prompt: "Continue?" },
-        }),
-      ]);
-      await run(["issue", "interaction:accept", ISSUE_ID, INTERACTION_ID]);
-      await run(["issue", "interaction:accept", ISSUE_ID, INTERACTION_ID, "--selected-client-keys", "yes"]);
-      await run(["issue", "interaction:accept", ISSUE_ID, INTERACTION_ID, "--selected-option-ids", "file-a,file-b"]);
-      await run(["issue", "interaction:reject", ISSUE_ID, INTERACTION_ID, "--reason", "no"]);
-      await run(["issue", "interaction:cancel", ISSUE_ID, INTERACTION_ID, "--reason", "stale"]);
-      await run([
-        "issue", "interaction:respond", ISSUE_ID, INTERACTION_ID,
-        "--answers-json", JSON.stringify([{ questionId: "q1", optionIds: ["a1"] }]),
-      ]);
       await run(["issue", "tree-state", ISSUE_ID]);
       await run(["issue", "tree-preview", ISSUE_ID, "--payload-json", JSON.stringify({ mode: "pause" })]);
       await run(["issue", "tree-holds", ISSUE_ID, "--status", "active", "--include-members"]);
@@ -193,14 +224,6 @@ describe("issue subresource commands", () => {
     }
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
-      ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions/${INTERACTION_ID}/accept`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions/${INTERACTION_ID}/accept`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions/${INTERACTION_ID}/accept`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions/${INTERACTION_ID}/reject`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions/${INTERACTION_ID}/cancel`],
-      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/interactions/${INTERACTION_ID}/respond`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/tree-control/state`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/tree-control/preview`],
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/tree-holds?status=active&includeMembers=true`],
@@ -217,16 +240,9 @@ describe("issue subresource commands", () => {
       ["GET", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
       ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/feedback-votes`],
     ]);
-    expect(JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body))).toEqual({
-      selectedOptionIds: ["file-a", "file-b"],
-    });
   });
 
-  it("forwards the agent run-id header and inferred content-type on attachment:upload", async () => {
-    // Regression: the multipart upload uses a hand-rolled fetch (not the JSON
-    // client), so it must forward X-Paperclip-Run-Id itself — otherwise an
-    // agent-authenticated upload is rejected with "401 Agent run id required".
-    const RUN_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  it("forwards board authorization and inferred content-type on attachment:upload", async () => {
     const tmp = await mkdtemp(join(tmpdir(), "paperclip-cli-test-"));
     const filePath = join(tmp, "deliverable.html");
     await writeFile(filePath, "<html><body>hi</body></html>", "utf8");
@@ -239,7 +255,6 @@ describe("issue subresource commands", () => {
         "issue", "attachment:upload", ISSUE_ID,
         "--company-id", COMPANY_ID,
         "--file", filePath,
-        "--run-id", RUN_ID,
       ]);
     } finally {
       await rm(tmp, { recursive: true, force: true });
@@ -250,7 +265,7 @@ describe("issue subresource commands", () => {
     expect(url).toBe(`http://localhost:3100/api/companies/${COMPANY_ID}/issues/${ISSUE_ID}/attachments`);
     expect(init.method).toBe("POST");
     const headers = init.headers as Record<string, string>;
-    expect(headers["x-paperclip-run-id"]).toBe(RUN_ID);
+    expect(headers["x-paperclip-run-id"]).toBeUndefined();
     expect(headers.authorization).toBe("Bearer board-token");
     const file = (init.body as FormData).get("file") as File;
     expect(file.type).toBe("text/html");

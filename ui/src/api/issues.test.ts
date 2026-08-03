@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockApi = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  patch: vi.fn(),
 }));
 
 vi.mock("./client", () => ({
@@ -15,8 +16,10 @@ describe("issuesApi.list", () => {
   beforeEach(() => {
     mockApi.get.mockReset();
     mockApi.post.mockReset();
+    mockApi.patch.mockReset();
     mockApi.get.mockResolvedValue([]);
     mockApi.post.mockResolvedValue({});
+    mockApi.patch.mockResolvedValue({});
   });
 
   it("passes parentId through to the company issues endpoint", async () => {
@@ -93,19 +96,107 @@ describe("issuesApi.list", () => {
     );
   });
 
-  it("posts recovery action resolution to the source issue endpoint", async () => {
-    await issuesApi.resolveRecoveryAction("issue-1", {
-      actionId: "00000000-0000-0000-0000-0000000000aa",
-      outcome: "restored",
-      sourceIssueStatus: "done",
+  it("uses only the canonical board mutation and typed comment endpoints", async () => {
+    await issuesApi.updateTitle("issue-1", { title: "New title" });
+    await issuesApi.reassign("issue-1", {
+      ownerAgentId: "11111111-1111-4111-8111-111111111111",
+      idempotencyKey: "reassign-once",
+    });
+    await issuesApi.reopen("issue-1", {
+      reason: "New evidence changed the outcome.",
+      idempotencyKey: "reopen-once",
+    });
+    await issuesApi.addComment("issue-1", {
+      message: "Please review this.",
+      idempotencyKey: "comment-once",
+      mention: {
+        targetAgentId: "11111111-1111-4111-8111-111111111111",
+        ownershipEpoch: 4,
+      },
     });
 
-    expect(mockApi.post).toHaveBeenCalledWith(
-      "/issues/issue-1/recovery-actions/resolve",
+    expect(mockApi.patch).toHaveBeenCalledWith(
+      "/issues/issue-1",
+      { title: "New title" },
+    );
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      1,
+      "/issues/issue-1/reassign",
       {
-        actionId: "00000000-0000-0000-0000-0000000000aa",
-        outcome: "restored",
-        sourceIssueStatus: "done",
+        ownerAgentId: "11111111-1111-4111-8111-111111111111",
+        idempotencyKey: "reassign-once",
+      },
+    );
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      2,
+      "/issues/issue-1/reopen",
+      {
+        reason: "New evidence changed the outcome.",
+        idempotencyKey: "reopen-once",
+      },
+    );
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      3,
+      "/issues/issue-1/comments",
+      {
+        message: "Please review this.",
+        idempotencyKey: "comment-once",
+        mention: {
+          targetAgentId: "11111111-1111-4111-8111-111111111111",
+          ownershipEpoch: 4,
+        },
+      },
+    );
+  });
+
+  it("uses dedicated creator, owner, and withdrawal form endpoints", async () => {
+    const ownerAgentId =
+      "11111111-1111-4111-8111-111111111111";
+    await issuesApi.creatorReassign("issue-1", {
+      ownerAgentId,
+      idempotencyKey: "creator-reassign-once",
+    });
+    await issuesApi.commitCreatorFormUpdate({
+      issueId: "22222222-2222-4222-8222-222222222222",
+      message: "Creator follow-up",
+    });
+    await issuesApi.selfAssignForWithdrawal("issue-1", {
+      idempotencyKey: "withdraw-once",
+    });
+    await issuesApi.commitOwnerFormUpdate({
+      issueId: "22222222-2222-4222-8222-222222222222",
+      message: "Cancel after withdrawal",
+      status: "cancelled",
+    });
+
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      1,
+      "/issues/issue-1/creator-reassign",
+      {
+        ownerAgentId,
+        idempotencyKey: "creator-reassign-once",
+      },
+    );
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      2,
+      "/issue-creator-form-updates",
+      {
+        issueId: "22222222-2222-4222-8222-222222222222",
+        message: "Creator follow-up",
+      },
+    );
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      3,
+      "/issues/issue-1/withdrawal-self-assignment",
+      { idempotencyKey: "withdraw-once" },
+    );
+    expect(mockApi.post).toHaveBeenNthCalledWith(
+      4,
+      "/issue-owner-form-updates",
+      {
+        issueId: "22222222-2222-4222-8222-222222222222",
+        message: "Cancel after withdrawal",
+        status: "cancelled",
       },
     );
   });

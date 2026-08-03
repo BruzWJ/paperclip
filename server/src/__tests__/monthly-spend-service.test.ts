@@ -1,111 +1,49 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { companyService } from "../services/companies.ts";
-import { agentService } from "../services/agents.ts";
+import { describe, expect, it, vi } from "vitest";
+import { costService } from "../services/costs.js";
 
-function createSelectSequenceDb(results: unknown[]) {
+function sequenceDb(results: readonly unknown[][]) {
   const pending = [...results];
   const chain = {
     from: vi.fn(() => chain),
     where: vi.fn(() => chain),
-    leftJoin: vi.fn(() => chain),
-    groupBy: vi.fn(() => chain),
-    then: vi.fn((resolve: (value: unknown[]) => unknown) => Promise.resolve(resolve(pending.shift() ?? []))),
+    then: vi.fn(
+      (resolve: (value: unknown[]) => unknown) =>
+        Promise.resolve(resolve(pending.shift() ?? [])),
+    ),
   };
-
-  return {
-    db: {
-      select: vi.fn(() => chain),
-    },
-  };
+  return { select: vi.fn(() => chain) };
 }
 
-describe("monthly spend hydration", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("recomputes company spentMonthlyCents from the current utc month instead of returning stale stored values", async () => {
-    const dbStub = createSelectSequenceDb([
-      [{
-        id: "company-1",
-        name: "Paperclip",
-        description: null,
-        status: "active",
-        issuePrefix: "PAP",
-        issueCounter: 1,
-        budgetMonthlyCents: 5000,
-        spentMonthlyCents: 999999,
-        requireBoardApprovalForNewAgents: false,
-        brandColor: null,
-        logoAssetId: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }],
-      [{
-        companyId: "company-1",
-        spentMonthlyCents: 420,
-      }],
+describe("canonical monthly AI spend projection", () => {
+  it("derives exact company spend from known cost deltas without a stored spend field", async () => {
+    const db = sequenceDb([
+      [{ budgetCurrency: "EUR", budgetMonthlyAmount: "1000.25" }],
+      [{ knownAmount: "125.125", pricedPromptCount: 2, unpricedPromptCount: 1 }],
     ]);
 
-    const companies = companyService(dbStub.db as any);
-    const [company] = await companies.list();
-
-    expect(company.spentMonthlyCents).toBe(420);
+    await expect(costService(db as never).summary("company-1")).resolves.toEqual({
+      companyId: "company-1",
+      budgetCurrency: "EUR",
+      knownSpendAmount: "125.125",
+      budgetMonthlyAmount: "1000.25",
+      remainingAmount: "875.125",
+      utilizationPercent: 12.5,
+      pricedPromptCount: 2,
+      unpricedPromptCount: 1,
+    });
   });
 
-  it("recomputes agent spentMonthlyCents from the current utc month instead of returning stale stored values", async () => {
-    const dbStub = createSelectSequenceDb([
-      [{
-        id: "agent-1",
-        companyId: "company-1",
-        name: "Budget Agent",
-        role: "general",
-        title: null,
-        reportsTo: null,
-        capabilities: null,
-        adapterType: "claude-local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        budgetMonthlyCents: 5000,
-        spentMonthlyCents: 999999,
-        metadata: null,
-        permissions: null,
-        status: "idle",
-        pauseReason: null,
-        pausedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }],
-      [{
-        id: "agent-1",
-        companyId: "company-1",
-        name: "Budget Agent",
-        role: "general",
-        title: null,
-        reportsTo: null,
-        capabilities: null,
-        adapterType: "claude-local",
-        adapterConfig: {},
-        runtimeConfig: {},
-        budgetMonthlyCents: 5000,
-        spentMonthlyCents: 999999,
-        metadata: null,
-        permissions: null,
-        status: "idle",
-        pauseReason: null,
-        pausedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }],
-      [{
-        agentId: "agent-1",
-        spentMonthlyCents: 175,
-      }],
+  it("preserves exact known zero and reports unavailable prompts separately", async () => {
+    const db = sequenceDb([
+      [{ budgetCurrency: "USD", budgetMonthlyAmount: "0" }],
+      [{ knownAmount: "0", pricedPromptCount: 1, unpricedPromptCount: 3 }],
     ]);
 
-    const agents = agentService(dbStub.db as any);
-    const agent = await agents.getById("agent-1");
-
-    expect(agent?.spentMonthlyCents).toBe(175);
+    const summary = await costService(db as never).summary("company-2");
+    expect(summary.knownSpendAmount).toBe("0");
+    expect(summary.remainingAmount).toBe("0");
+    expect(summary.utilizationPercent).toBe(0);
+    expect(summary.pricedPromptCount).toBe(1);
+    expect(summary.unpricedPromptCount).toBe(3);
   });
 });

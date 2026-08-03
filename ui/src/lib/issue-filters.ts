@@ -1,4 +1,4 @@
-import type { ExternalObjectSummary, Issue } from "@paperclipai/shared";
+import { deriveOriginatingActor, type ExternalObjectSummary, type Issue } from "@paperclipai/shared";
 
 export type IssueFilterWorkspaceLookup = {
   mode?: string | null;
@@ -15,7 +15,7 @@ export type IssueFilterWorkspaceContext = {
 export type IssueFilterState = {
   statuses: string[];
   priorities: string[];
-  assignees: string[];
+  owners: string[];
   creators: string[];
   labels: string[];
   projects: string[];
@@ -42,7 +42,7 @@ export type IssueFilterState = {
 export const defaultIssueFilterState: IssueFilterState = {
   statuses: [],
   priorities: [],
-  assignees: [],
+  owners: [],
   creators: [],
   labels: [],
   projects: [],
@@ -108,7 +108,7 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
   return {
     statuses: normalizeIssueFilterValueArray(candidate.statuses),
     priorities: normalizeIssueFilterValueArray(candidate.priorities),
-    assignees: normalizeIssueFilterValueArray(candidate.assignees),
+    owners: normalizeIssueFilterValueArray(candidate.owners),
     creators: normalizeIssueFilterValueArray(candidate.creators),
     labels: normalizeIssueFilterValueArray(candidate.labels),
     projects: normalizeIssueFilterValueArray(candidate.projects),
@@ -124,15 +124,16 @@ export function toggleIssueFilterValue(values: string[], value: string): string[
 }
 
 export function resolveIssueFilterWorkspaceId(
-  issue: Pick<Issue, "executionWorkspaceId" | "projectId" | "projectWorkspaceId">,
+  issue: Pick<Issue, "currentExecutionWorkspace" | "projectId" | "projectWorkspaceId">,
   context: IssueFilterWorkspaceContext = {},
 ): string | null {
+  const executionWorkspaceId = issue.currentExecutionWorkspace?.id ?? null;
   const defaultProjectWorkspaceId = issue.projectId
     ? context.defaultProjectWorkspaceIdByProjectId?.get(issue.projectId) ?? null
     : null;
 
-  if (issue.executionWorkspaceId) {
-    const executionWorkspace = context.executionWorkspaceById?.get(issue.executionWorkspaceId) ?? null;
+  if (executionWorkspaceId) {
+    const executionWorkspace = context.executionWorkspaceById?.get(executionWorkspaceId) ?? issue.currentExecutionWorkspace ?? null;
     const linkedProjectWorkspaceId =
       executionWorkspace?.projectWorkspaceId ?? issue.projectWorkspaceId ?? null;
     const isDefaultSharedExecutionWorkspace =
@@ -140,7 +141,7 @@ export function resolveIssueFilterWorkspaceId(
       && linkedProjectWorkspaceId != null
       && linkedProjectWorkspaceId === defaultProjectWorkspaceId;
     if (isDefaultSharedExecutionWorkspace) return null;
-    return issue.executionWorkspaceId;
+    return executionWorkspaceId;
   }
 
   if (issue.projectWorkspaceId) {
@@ -209,23 +210,28 @@ export function applyIssueFilters(
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) {
     result = result.filter((issue) => issue.originKind !== "routine_execution");
   }
-  if (state.statuses.length > 0) result = result.filter((issue) => state.statuses.includes(issue.status));
+  if (state.statuses.length > 0) result = result.filter((issue) => state.statuses.includes(issue.boardPresentationStatus));
   if (state.priorities.length > 0) result = result.filter((issue) => state.priorities.includes(issue.priority));
-  if (state.assignees.length > 0) {
+  if (state.owners.length > 0) {
     result = result.filter((issue) => {
-      for (const assignee of state.assignees) {
-        if (assignee === "__unassigned" && !issue.assigneeAgentId && !issue.assigneeUserId) return true;
-        if (assignee === "__me" && currentUserId && issue.assigneeUserId === currentUserId) return true;
-        if (issue.assigneeAgentId === assignee) return true;
+      for (const owner of state.owners) {
+        if (owner === "__board" && issue.ownerKind === "board") return true;
+        if (owner === "__me" && currentUserId && issue.ownerUserId === currentUserId) return true;
+        if (issue.ownerAgentId === owner) return true;
       }
       return false;
     });
   }
   if (state.creators.length > 0) {
     result = result.filter((issue) => {
+      const creatorActor = deriveOriginatingActor(issue);
       for (const creator of state.creators) {
-        if (creator.startsWith("agent:") && issue.createdByAgentId === creator.slice("agent:".length)) return true;
-        if (creator.startsWith("user:") && issue.createdByUserId === creator.slice("user:".length)) return true;
+        if (creator.startsWith("agent:")
+          && creatorActor?.kind === "agent"
+          && creatorActor.id === creator.slice("agent:".length)) return true;
+        if (creator.startsWith("user:")
+          && creatorActor?.kind === "user"
+          && creatorActor.id === creator.slice("user:".length)) return true;
       }
       return false;
     });
@@ -262,7 +268,7 @@ export function countActiveIssueFilters(
   let count = 0;
   if (state.statuses.length > 0) count += 1;
   if (state.priorities.length > 0) count += 1;
-  if (state.assignees.length > 0) count += 1;
+  if (state.owners.length > 0) count += 1;
   if (state.creators.length > 0) count += 1;
   if (state.labels.length > 0) count += 1;
   if (state.projects.length > 0) count += 1;

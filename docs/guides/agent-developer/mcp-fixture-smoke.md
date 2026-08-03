@@ -9,8 +9,8 @@ Run the local smoke:
 pnpm smoke:mcp-fixtures
 ```
 
-The runner starts one local stdio fixture and one remote-style HTTP fixture,
-checks the local Paperclip `/api/health` endpoint when available, then exercises:
+The runner starts one local stdio fixture and one remote-style HTTP fixture. It
+does not contact a Paperclip instance or database. It then exercises:
 
 - allow and deny decisions
 - approval-gated writes
@@ -21,19 +21,7 @@ checks the local Paperclip `/api/health` endpoint when available, then exercises
 - malicious metadata/result handling
 - approved-write idempotency
 
-Use a specific dev instance URL:
-
-```sh
-pnpm smoke:mcp-fixtures -- --paperclip-url http://127.0.0.1:3100
-```
-
-Require the dev instance health check:
-
-```sh
-pnpm smoke:mcp-fixtures -- --require-paperclip
-```
-
-JSON output for CI or release-smoke ingestion:
+JSON output for local tooling or an isolated CI fixture job:
 
 ```sh
 pnpm smoke:mcp-fixtures -- --json
@@ -60,7 +48,7 @@ The catalog also defines the first profile set:
 
 The first-install demo definitions are:
 
-- `paperclip-self-read`
+- `direct-read-tools`
 - `child-issue-proposal`
 - `github-triage`
 - `update-sender`
@@ -69,29 +57,9 @@ The first-install demo definitions are:
 - `ops-status`
 - `crm-sales-note-draft`
 
-## Phase 5a User-Story Harness
-
-The Phase 5a MCP production harness scripts the accepted user-story catalog
-from PAP-12338 section 5:
-
-```sh
-pnpm test:e2e:mcp-user-stories
-```
-
-By default this runs only the currently runnable stories (US-1..US-5 and
-US-8..US-10) against the Playwright-managed local instance. Each scenario seeds
-a real company, a real Scout agent, and a deterministic MCP fixture connection;
-then it drives the gateway/Test-tab APIs plus the UI pages that provide
-evidence screenshots under `test-results/mcp-user-stories/`.
-
-Run the full catalog, including dependency-gated placeholders for US-6 and
-US-7, with:
-
-```sh
-pnpm test:e2e:mcp-user-stories -- --include-gated
-```
-
-The browser side uses the same `PAPERCLIP_PLAYWRIGHT_CHANNEL` override as the
-rest of `tests/e2e`. In minimal containers, install the Playwright system
-dependencies or point `PAPERCLIP_PLAYWRIGHT_CHANNEL` at the managed branch
-service's known-good Chromium wrapper before running the browser smoke.
+The fixture harness validates provider behavior and policy enforcement in
+process-owned state. Browser coverage uses the Vite-only Playwright fixture in
+`tests/e2e/fixtures.ts`; named-gateway scenarios are defined by
+`tests/e2e/smoke-lab.catalog.ts` and exercised by
+`tests/e2e/smoke-lab.spec.ts`. Agent runs consume only the concrete company
+tools selected into their compiled `paperclip.run-tools/v1` interface.

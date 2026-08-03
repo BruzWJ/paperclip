@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  AGENT_ADAPTER_TYPES,
   HUMAN_COMPANY_MEMBERSHIP_ROLES,
   INVITE_JOIN_TYPES,
   JOIN_REQUEST_STATUSES,
@@ -8,6 +7,7 @@ import {
   PERMISSION_KEYS,
 } from "../constants.js";
 import { optionalAgentAdapterTypeSchema } from "../adapter-type.js";
+import { companySkillChannelSchema } from "./company-skill-pins.js";
 
 export const createCompanyInviteSchema = z.object({
   allowedJoinTypes: z.enum(INVITE_JOIN_TYPES).default("both"),
@@ -18,26 +18,31 @@ export const createCompanyInviteSchema = z.object({
 
 export type CreateCompanyInvite = z.infer<typeof createCompanyInviteSchema>;
 
-export const createOpenClawInvitePromptSchema = z.object({
-  agentMessage: z.string().max(4000).optional().nullable(),
-});
-
-export type CreateOpenClawInvitePrompt = z.infer<
-  typeof createOpenClawInvitePromptSchema
->;
-
 export const acceptInviteSchema = z.object({
   requestType: z.enum(JOIN_REQUEST_TYPES),
   agentName: z.string().min(1).max(120).optional(),
   adapterType: optionalAgentAdapterTypeSchema,
   capabilities: z.string().max(4000).optional().nullable(),
   agentDefaultsPayload: z.record(z.string(), z.unknown()).optional().nullable(),
-  // OpenClaw join compatibility fields accepted at top level.
-  responsesWebhookUrl: z.string().max(4000).optional().nullable(),
-  responsesWebhookMethod: z.string().max(32).optional().nullable(),
-  responsesWebhookHeaders: z.record(z.string(), z.unknown()).optional().nullable(),
-  paperclipApiUrl: z.string().max(4000).optional().nullable(),
-  webhookAuthHeader: z.string().max(4000).optional().nullable(),
+}).superRefine((value, ctx) => {
+  if (value.requestType !== "agent") return;
+  if (!value.adapterType) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Agent onboarding requires an explicit adapter type",
+      path: ["adapterType"],
+    });
+  }
+  if (
+    value.agentDefaultsPayload === undefined ||
+    value.agentDefaultsPayload === null
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Agent onboarding requires explicit adapter configuration",
+      path: ["agentDefaultsPayload"],
+    });
+  }
 });
 
 export type AcceptInvite = z.infer<typeof acceptInviteSchema>;
@@ -49,6 +54,21 @@ export const listJoinRequestsQuerySchema = z.object({
 
 export type ListJoinRequestsQuery = z.infer<typeof listJoinRequestsQuerySchema>;
 
+/**
+ * Board approval of an agent join request must name the execution environment
+ * and company-skill channel for the initial immutable adapter revision. Human
+ * joins do not need either, so those semantic requirements are enforced after
+ * the locked join request has established its request type.
+ */
+export const approveJoinRequestSchema = z
+  .object({
+    defaultEnvironmentId: z.string().uuid().optional().nullable(),
+    skillChannel: companySkillChannelSchema.optional().nullable(),
+  })
+  .strict();
+
+export type ApproveJoinRequest = z.infer<typeof approveJoinRequestSchema>;
+
 export const listCompanyInvitesQuerySchema = z.object({
   state: z.enum(["active", "revoked", "accepted", "expired"]).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -56,12 +76,6 @@ export const listCompanyInvitesQuerySchema = z.object({
 });
 
 export type ListCompanyInvitesQuery = z.infer<typeof listCompanyInvitesQuerySchema>;
-
-export const claimJoinRequestApiKeySchema = z.object({
-  claimSecret: z.string().min(16).max(256),
-});
-
-export type ClaimJoinRequestApiKey = z.infer<typeof claimJoinRequestApiKeySchema>;
 
 export const boardCliAuthAccessLevelSchema = z.enum([
   "board",
@@ -125,23 +139,7 @@ export const updateCompanyMemberWithPermissionsSchema = z.object({
 
 export type UpdateCompanyMemberWithPermissions = z.infer<typeof updateCompanyMemberWithPermissionsSchema>;
 
-export const archiveCompanyMemberSchema = z.object({
-  reassignment: z
-    .object({
-      assigneeAgentId: z.string().uuid().optional().nullable(),
-      assigneeUserId: z.string().uuid().optional().nullable(),
-    })
-    .optional()
-    .nullable(),
-}).superRefine((value, ctx) => {
-  if (value.reassignment?.assigneeAgentId && value.reassignment.assigneeUserId) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Choose either an agent or user reassignment target",
-      path: ["reassignment"],
-    });
-  }
-});
+export const archiveCompanyMemberSchema = z.object({}).strict();
 
 export type ArchiveCompanyMember = z.infer<typeof archiveCompanyMemberSchema>;
 

@@ -2,7 +2,7 @@ export type SmokeRunStepPath = "P1" | "P2" | "P3" | "P4" | "P5" | "P6" | "P7";
 
 export type SmokeLabScenarioStatus = "ci_safe" | "headed_full";
 
-export type SmokeLabTransport = "mcp_remote" | "local_stdio" | "plugin" | "prosumer_import" | "gateway_session" | "governance";
+export type SmokeLabTransport = "mcp_remote" | "local_stdio" | "plugin" | "prosumer_import" | "named_gateway" | "governance";
 
 export interface SmokeLabLifecycleTool {
   name: string;
@@ -13,7 +13,7 @@ export interface SmokeLabScenario {
   path: SmokeRunStepPath;
   title: string;
   transport: SmokeLabTransport;
-  authMode: "oauth" | "api_key" | "none" | "plugin_install" | "config_import" | "run_scoped_token" | "policy";
+  authMode: "oauth" | "api_key" | "none" | "plugin_install" | "config_import" | "named_gateway_bearer" | "policy";
   smokeService: string;
   status: SmokeLabScenarioStatus;
   ciSafe: boolean;
@@ -132,19 +132,19 @@ export const smokeLabScenarios: SmokeLabScenario[] = [
   },
   {
     path: "P6",
-    title: "Token broker / gateway session",
-    transport: "gateway_session",
-    authMode: "run_scoped_token",
-    smokeService: "Tool gateway session over Smoke Lab HTTP fixture",
+    title: "Named external MCP gateway",
+    transport: "named_gateway",
+    authMode: "named_gateway_bearer",
+    smokeService: "Named MCP gateway over Smoke Lab HTTP fixture",
     status: "ci_safe",
     ciSafe: true,
     uiEntryPath: "activity",
     lifecycle: {
-      connect: "Create a run-scoped gateway session for a smoke agent.",
-      discoverCatalog: "List gateway-visible tools through the session token.",
+      connect: "Create an explicitly profiled named gateway and external-client token.",
+      discoverCatalog: "List the named gateway's configured tools through MCP.",
       ...httpLifecycle,
-      revoke: "Revoke the gateway session and verify the token is cut off.",
-      auditEvidence: "Gateway audit rows show session creation, discovery, calls, and revocation.",
+      revoke: "Revoke the named gateway token and verify it is cut off.",
+      auditEvidence: "Gateway audit rows show named-gateway discovery, calls, and token rejection.",
     },
   },
   {

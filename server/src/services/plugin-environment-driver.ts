@@ -28,6 +28,25 @@ export function pluginDriverProviderKey(config: Pick<PluginEnvironmentConfig, "p
   return `${config.pluginKey}:${config.driverKey}`;
 }
 
+const REQUIRED_ENVIRONMENT_EXECUTION_METHODS = [
+  "environmentAcquireLease",
+  "environmentReleaseLease",
+  "environmentRealizeWorkspace",
+  "environmentExecute",
+  "environmentCancelExecution",
+] as const;
+
+export function pluginWorkerSupportsEnvironmentExecutionLifecycle(
+  workerManager: PluginWorkerManager,
+  pluginId: string,
+): boolean {
+  const supportedMethods =
+    workerManager.getWorker?.(pluginId)?.supportedMethods ?? [];
+  return REQUIRED_ENVIRONMENT_EXECUTION_METHODS.every((method) =>
+    supportedMethods.includes(method),
+  );
+}
+
 export async function resolvePluginEnvironmentDriver(input: {
   db: Db;
   workerManager: PluginWorkerManager;
@@ -46,6 +65,11 @@ export async function resolvePluginEnvironmentDriver(input: {
   }
   if (!input.workerManager.isRunning(plugin.id)) {
     throw new Error(`Plugin environment driver "${pluginDriverProviderKey(input.config)}" has no running worker.`);
+  }
+  if (!pluginWorkerSupportsEnvironmentExecutionLifecycle(input.workerManager, plugin.id)) {
+    throw new Error(
+      `Plugin environment driver "${pluginDriverProviderKey(input.config)}" does not advertise the complete acquire/realize/execute/cancel/release lifecycle.`,
+    );
   }
   return { plugin, driver };
 }
@@ -79,6 +103,7 @@ export async function resolvePluginSandboxProviderDriverByKey(input: {
     if (input.requireRunning) {
       if (plugin.status !== "ready") continue;
       if (!input.workerManager?.isRunning(plugin.id)) continue;
+      if (!pluginWorkerSupportsEnvironmentExecutionLifecycle(input.workerManager, plugin.id)) continue;
     }
     return { plugin, driver };
   }
@@ -93,7 +118,11 @@ export async function listReadyPluginEnvironmentDrivers(input: {
   const pluginRegistry = pluginRegistryService(input.db);
   const plugins = await pluginRegistry.list();
   return plugins.flatMap((plugin) => {
-    if (plugin.status !== "ready" || !input.workerManager?.isRunning(plugin.id)) return [];
+    if (
+      plugin.status !== "ready"
+      || !input.workerManager?.isRunning(plugin.id)
+      || !pluginWorkerSupportsEnvironmentExecutionLifecycle(input.workerManager, plugin.id)
+    ) return [];
     return (plugin.manifestJson.environmentDrivers ?? [])
       .filter((driver) => driver.kind === "sandbox_provider")
       .map((driver) => ({

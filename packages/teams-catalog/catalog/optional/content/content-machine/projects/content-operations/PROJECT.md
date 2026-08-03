@@ -5,4 +5,4 @@ description: Rolling content backlog for editorial planning, publication review,
 owner: content-lead
 ---
 
-Use this project for content calendar planning, recurring publication reviews, and follow-up tasks that unblock drafting, editing, or publishing work.
+Use this project for content calendar planning, recurring publication reviews, and follow-up issues that unblock drafting, editing, or publishing work.

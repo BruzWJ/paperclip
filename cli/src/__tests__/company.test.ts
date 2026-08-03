@@ -1,9 +1,15 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanyPortabilityPreviewResult } from "@paperclipai/shared";
+import * as prompts from "@clack/prompts";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+  canonicalizeMoneyAmount,
+  type CompanyPortabilityPreviewResult,
+} from "@paperclipai/shared";
 import {
   buildCompanyDashboardUrl,
-  buildDefaultImportAdapterOverrides,
   buildDefaultImportSelectionState,
   buildImportSelectionCatalog,
   buildSelectedFilesFromImportSelection,
@@ -14,8 +20,25 @@ import {
   resolveCompanyImportApiPath,
 } from "../commands/client/company.js";
 
+vi.mock("@clack/prompts", () => ({
+  cancel: vi.fn(),
+  confirm: vi.fn(),
+  isCancel: vi.fn(() => false),
+  log: {
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
+  multiselect: vi.fn(),
+  note: vi.fn(),
+  select: vi.fn(),
+}));
+
 const ORIGINAL_ENV = { ...process.env };
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
+
+function allFalse<const T extends string>(keys: readonly T[]): Record<T, boolean> {
+  return Object.fromEntries(keys.map((key) => [key, false])) as Record<T, boolean>;
+}
 
 function makeProgram(): Command {
   const program = new Command();
@@ -47,8 +70,9 @@ function company(overrides: Record<string, unknown> = {}) {
     status: "active",
     issuePrefix: "PAP",
     issueCounter: 1,
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
+    budgetCurrency: "USD",
+    budgetMonthlyAmount: "0",
+    knownSpendAmount: "0",
     attachmentMaxBytes: 1073741824,
     requireBoardApprovalForNewAgents: false,
     feedbackDataSharingEnabled: false,
@@ -64,16 +88,130 @@ function company(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function interactiveImportPreview(): CompanyPortabilityPreviewResult {
+  return {
+    include: {
+      company: true,
+      agents: true,
+      projects: true,
+      issues: true,
+      skills: true,
+    },
+    targetCompanyId: COMPANY_ID,
+    targetCompanyName: "Paperclip",
+    collisionStrategy: "rename",
+    selectedAgentSlugs: ["lead"],
+    plan: {
+      companyAction: "update",
+      agentPlans: [
+        {
+          slug: "lead",
+          action: "create",
+          plannedName: "Lead",
+          existingAgentId: null,
+          reason: null,
+        },
+      ],
+      projectPlans: [],
+      issuePlans: [],
+    },
+    manifest: {
+      schemaVersion: 1,
+      generatedAt: "2026-07-26T00:00:00.000Z",
+      source: {
+        companyId: "source-company",
+        companyName: "Source Company",
+      },
+      includes: {
+        company: true,
+        agents: true,
+        projects: true,
+        issues: true,
+        skills: true,
+      },
+      company: {
+        path: "COMPANY.md",
+        name: "Source Company",
+        description: null,
+        budgetCurrency: "USD",
+        budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+        attachmentMaxBytes: null,
+        brandColor: null,
+        logoPath: null,
+        requireBoardApprovalForNewAgents: false,
+        feedbackDataSharingEnabled: false,
+        feedbackDataSharingConsentAt: null,
+        feedbackDataSharingConsentByUserId: null,
+        feedbackDataSharingTermsVersion: null,
+      },
+      sidebar: {
+        agents: ["lead"],
+        projects: [],
+      },
+      agents: [
+        {
+          slug: "lead",
+          name: "Lead",
+          path: "agents/lead/AGENTS.md",
+          skills: [],
+          title: null,
+          icon: null,
+          capabilities: null,
+          reportsToSlug: null,
+          reportsToExistingAgentId: null,
+          reportsToExistingAgentSlug: null,
+          adapterRevision: {
+            sourceRevisionId: "revision-lead",
+            adapterType: "codex",
+            adapterConfig: { model: "gpt-5.6" },
+            runtimeConfig: {},
+            sourceEnvironmentId: "environment-lead",
+            skillChannel: "operator_native",
+          },
+          contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
+          actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
+          mentionReachGrants: allFalse(AGENT_MENTION_REACH_GRANT_KEYS),
+          companyToolIds: [],
+          governance: {},
+          permissionGrants: [],
+          budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+          metadata: null,
+        },
+      ],
+      skills: [],
+      projects: [],
+      issues: [],
+      envInputs: [],
+    },
+    files: {
+      "COMPANY.md": "# Source Company",
+      ".paperclip.yaml": "schema: paperclip/v1\n",
+      "agents/lead/AGENTS.md": "# Lead",
+    },
+    envInputs: [],
+    warnings: [],
+    errors: [],
+  };
+}
+
 describe("company CLI commands", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
+  let originalStdinIsTTY: boolean | undefined;
+  let originalStdoutIsTTY: boolean | undefined;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.PAPERCLIP_API_URL;
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_COMPANY_ID;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_COMPANY_ID;
+    originalStdinIsTTY = process.stdin.isTTY;
+    originalStdoutIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    vi.mocked(prompts.isCancel).mockReturnValue(false);
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -82,6 +220,8 @@ describe("company CLI commands", () => {
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    Object.defineProperty(process.stdin, "isTTY", { value: originalStdinIsTTY, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: originalStdoutIsTTY, configurable: true });
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -109,68 +249,6 @@ describe("company CLI commands", () => {
     expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toMatchObject({ id: COMPANY_ID, name: "Paperclip" });
   });
 
-  it("gets the current company from agent authentication when no company context is set", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ id: "agent-1", companyId: COMPANY_ID }))
-      .mockResolvedValueOnce(jsonResponse(company()));
-
-    await runCommand([
-      "company",
-      "current",
-      "--api-base",
-      "http://paperclip.test",
-      "--api-key",
-      "agent-token",
-      "--json",
-    ]);
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "http://paperclip.test/api/agents/me",
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      `http://paperclip.test/api/companies/${COMPANY_ID}`,
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toMatchObject({ id: COMPANY_ID, name: "Paperclip" });
-  });
-
-  it("lists the scoped agent company when board-wide company listing is denied", async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse({ error: "Board access required" }, 403))
-      .mockResolvedValueOnce(jsonResponse({ id: "agent-1", companyId: COMPANY_ID }))
-      .mockResolvedValueOnce(jsonResponse(company()));
-
-    await runCommand([
-      "company",
-      "list",
-      "--api-base",
-      "http://paperclip.test",
-      "--api-key",
-      "agent-token",
-      "--json",
-    ]);
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "http://paperclip.test/api/companies",
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "http://paperclip.test/api/agents/me",
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
-      `http://paperclip.test/api/companies/${COMPANY_ID}`,
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toMatchObject([{ id: COMPANY_ID, name: "Paperclip" }]);
-  });
-
   it("explains that company creation requires board instance-admin authentication under agent auth", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "Board access required" }, 403));
     vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null) => {
@@ -196,6 +274,90 @@ describe("company CLI commands", () => {
     const rendered = String(errorSpy.mock.calls[0]?.[0]);
     expect(rendered).toContain("Creating companies requires board/instance-admin authentication");
     expect(rendered).toContain("company list --json");
+  });
+
+  it("preserves exact adapter overrides through interactive preview, selected-files preview, and apply", async () => {
+    const preview = interactiveImportPreview();
+    const imported = {
+      company: {
+        id: COMPANY_ID,
+        name: "Paperclip",
+        action: "unchanged",
+      },
+      agents: [
+        {
+          slug: "lead",
+          id: "agent-lead",
+          action: "created",
+          name: "Lead",
+          reason: null,
+        },
+      ],
+      projects: [],
+      envInputs: [],
+      warnings: [],
+    };
+    const expectedAdapterOverrides = {
+      lead: {
+        adapterType: "codex",
+        adapterConfig: { model: "gpt-5.6" },
+        defaultEnvironmentId:
+          "11111111-1111-4111-8111-111111111111",
+        skillChannel: "operator_native",
+      },
+    };
+
+    vi.mocked(prompts.select).mockResolvedValue("confirm");
+    vi.mocked(prompts.confirm).mockResolvedValue(true);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(preview))
+      .mockResolvedValueOnce(jsonResponse(preview))
+      .mockResolvedValueOnce(jsonResponse(imported, 201))
+      .mockResolvedValueOnce(jsonResponse(company({ issuePrefix: "" })));
+
+    await runCommand([
+      "company",
+      "import",
+      "https://github.com/paperclipai/company-fixture",
+      "--target",
+      "existing",
+      "--company-id",
+      COMPANY_ID,
+      "--adapter-override",
+      "lead=codex",
+      "--adapter-config",
+      'lead={"model":"gpt-5.6"}',
+      "--default-environment-id",
+      "lead=11111111-1111-4111-8111-111111111111",
+      "--skill-channel",
+      "lead=operator_native",
+      "--api-base",
+      "http://paperclip.test",
+      "--api-key",
+      "board-token",
+    ]);
+
+    const postCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(postCalls.map(([url]) => String(url))).toEqual([
+      `http://paperclip.test/api/companies/${COMPANY_ID}/imports/preview`,
+      `http://paperclip.test/api/companies/${COMPANY_ID}/imports/preview`,
+      `http://paperclip.test/api/companies/${COMPANY_ID}/imports/apply`,
+    ]);
+
+    const [initialPreviewPayload, selectedFilesPreviewPayload, applyPayload] = postCalls.map(
+      ([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>,
+    );
+    expect(initialPreviewPayload).not.toHaveProperty("selectedFiles");
+    expect(selectedFilesPreviewPayload.selectedFiles).toEqual([
+      ".paperclip.yaml",
+      "agents/lead/AGENTS.md",
+      "COMPANY.md",
+    ]);
+    expect(applyPayload.selectedFiles).toEqual(selectedFilesPreviewPayload.selectedFiles);
+    expect(initialPreviewPayload.adapterOverrides).toEqual(expectedAdapterOverrides);
+    expect(selectedFilesPreviewPayload.adapterOverrides).toEqual(expectedAdapterOverrides);
+    expect(applyPayload.adapterOverrides).toEqual(expectedAdapterOverrides);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -310,12 +472,12 @@ describe("renderCompanyImportPreview", () => {
       targetCompanyId: "company-123",
       targetCompanyName: "Imported Co",
       collisionStrategy: "rename",
-      selectedAgentSlugs: ["ceo", "cto", "eng-1", "eng-2", "eng-3", "eng-4", "eng-5"],
+      selectedAgentSlugs: ["lead", "architect", "eng-1", "eng-2", "eng-3", "eng-4", "eng-5"],
       plan: {
         companyAction: "update",
         agentPlans: [
-          { slug: "ceo", action: "create", plannedName: "CEO", existingAgentId: null, reason: null },
-          { slug: "cto", action: "update", plannedName: "CTO", existingAgentId: "agent-2", reason: "replace strategy" },
+          { slug: "lead", action: "create", plannedName: "Lead", existingAgentId: null, reason: null },
+          { slug: "architect", action: "update", plannedName: "Architect", existingAgentId: "agent-2", reason: "replace strategy" },
           { slug: "eng-1", action: "skip", plannedName: "Engineer 1", existingAgentId: "agent-3", reason: "skip strategy" },
           { slug: "eng-2", action: "create", plannedName: "Engineer 2", existingAgentId: null, reason: null },
           { slug: "eng-3", action: "create", plannedName: "Engineer 3", existingAgentId: null, reason: null },
@@ -347,6 +509,8 @@ describe("renderCompanyImportPreview", () => {
           path: "COMPANY.md",
           name: "Source Co",
           description: null,
+          budgetCurrency: "USD",
+          budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
           attachmentMaxBytes: null,
           brandColor: null,
           logoPath: null,
@@ -357,28 +521,36 @@ describe("renderCompanyImportPreview", () => {
           feedbackDataSharingTermsVersion: null,
         },
         sidebar: {
-          agents: ["ceo"],
+          agents: ["lead"],
           projects: ["alpha"],
         },
         agents: [
           {
-            slug: "ceo",
-            name: "CEO",
-            path: "agents/ceo/AGENT.md",
+            slug: "lead",
+            name: "Lead",
+            path: "agents/lead/AGENT.md",
             skills: [],
-            role: "ceo",
             title: null,
             icon: null,
             capabilities: null,
             reportsToSlug: null,
             reportsToExistingAgentId: null,
             reportsToExistingAgentSlug: null,
-            adapterType: "codex_local",
-            adapterConfig: {},
-            runtimeConfig: {},
-            permissions: {},
+            adapterRevision: {
+              sourceRevisionId: "revision-lead",
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              runtimeConfig: {},
+              sourceEnvironmentId: "environment-lead",
+              skillChannel: "operator_native",
+            },
+            contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
+            actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
+            mentionReachGrants: allFalse(AGENT_MENTION_REACH_GRANT_KEYS),
+            companyToolIds: [],
+            governance: {},
             permissionGrants: [],
-            budgetMonthlyCents: 0,
+            budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
             metadata: null,
           },
         ],
@@ -421,20 +593,21 @@ describe("renderCompanyImportPreview", () => {
             slug: "kickoff",
             identifier: null,
             title: "Kickoff",
-            path: "projects/alpha/issues/kickoff/TASK.md",
+            path: "issues/kickoff/ISSUE.md",
             projectSlug: "alpha",
             projectWorkspaceKey: null,
-            assigneeAgentSlug: "ceo",
-            description: null,
+            ownerAgentSlug: "lead",
+            request: "# Kickoff",
             recurring: false,
             routine: null,
-            legacyRecurrence: null,
-            status: null,
+            lifecycleStatus: "open",
+            disposition: null,
+            attentionMask: null,
+            boardPresentationStatus: "todo",
             priority: null,
             labelIds: [],
             billingCode: null,
             executionWorkspaceSettings: null,
-            assigneeAdapterOverrides: null,
             comments: [],
             metadata: null,
           },
@@ -443,8 +616,7 @@ describe("renderCompanyImportPreview", () => {
           {
             key: "OPENAI_API_KEY",
             description: null,
-            agentSlug: "ceo",
-            projectSlug: null,
+            projectSlug: "alpha",
             kind: "secret",
             requirement: "required",
             defaultValue: null,
@@ -459,8 +631,7 @@ describe("renderCompanyImportPreview", () => {
         {
           key: "OPENAI_API_KEY",
           description: null,
-          agentSlug: "ceo",
-          projectSlug: null,
+          projectSlug: "alpha",
           kind: "secret",
           requirement: "required",
           defaultValue: null,
@@ -474,17 +645,17 @@ describe("renderCompanyImportPreview", () => {
     const rendered = renderCompanyImportPreview(preview, {
       sourceLabel: "GitHub: https://github.com/paperclipai/companies/demo",
       targetLabel: "Imported Co (company-123)",
-      infoMessages: ["Using claude-local adapter"],
+      infoMessages: ["Using external adapter"],
     });
 
     expect(rendered).toContain("Include");
-    expect(rendered).toContain("company, projects, tasks, agents, skills");
+    expect(rendered).toContain("company, projects, issues, agents, skills");
     expect(rendered).toContain("7 agents total");
     expect(rendered).toContain("1 project total");
-    expect(rendered).toContain("1 task total");
+    expect(rendered).toContain("1 issue total");
     expect(rendered).toContain("skills: 1 skill packaged");
     expect(rendered).toContain("+1 more");
-    expect(rendered).toContain("Using claude-local adapter");
+    expect(rendered).toContain("Using external adapter");
     expect(rendered).toContain("Warnings");
     expect(rendered).toContain("Errors");
   });
@@ -500,8 +671,8 @@ describe("renderCompanyImportResult", () => {
           action: "updated",
         },
         agents: [
-          { slug: "ceo", id: "agent-1", action: "created", name: "CEO", reason: null },
-          { slug: "cto", id: "agent-2", action: "updated", name: "CTO", reason: "replace strategy" },
+          { slug: "lead", id: "agent-1", action: "created", name: "Lead", reason: null },
+          { slug: "architect", id: "agent-2", action: "updated", name: "Architect", reason: "replace strategy" },
           { slug: "ops", id: null, action: "skipped", name: "Ops", reason: "skip strategy" },
         ],
         projects: [
@@ -515,7 +686,7 @@ describe("renderCompanyImportResult", () => {
       {
         targetLabel: "Imported Co (company-123)",
         companyUrl: "https://paperclip.example/PAP/dashboard",
-        infoMessages: ["Using claude-local adapter"],
+        infoMessages: ["Using external adapter"],
       },
     );
 
@@ -525,13 +696,13 @@ describe("renderCompanyImportResult", () => {
     expect(rendered).toContain("3 projects total (1 created, 1 updated, 1 skipped)");
     expect(rendered).toContain("Agent results");
     expect(rendered).toContain("Project results");
-    expect(rendered).toContain("Using claude-local adapter");
+    expect(rendered).toContain("Using external adapter");
     expect(rendered).toContain("Review API keys");
   });
 });
 
 describe("import selection catalog", () => {
-  it("defaults to everything and keeps project selection separate from task selection", () => {
+  it("defaults to everything and keeps project selection separate from issue selection", () => {
     const preview: CompanyPortabilityPreviewResult = {
       include: {
         company: true,
@@ -543,7 +714,7 @@ describe("import selection catalog", () => {
       targetCompanyId: "company-123",
       targetCompanyName: "Imported Co",
       collisionStrategy: "rename",
-      selectedAgentSlugs: ["ceo"],
+      selectedAgentSlugs: ["lead"],
       plan: {
         companyAction: "create",
         agentPlans: [],
@@ -568,6 +739,8 @@ describe("import selection catalog", () => {
           path: "COMPANY.md",
           name: "Source Co",
           description: null,
+          budgetCurrency: "USD",
+          budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
           attachmentMaxBytes: null,
           brandColor: null,
           logoPath: "images/company-logo.png",
@@ -578,28 +751,36 @@ describe("import selection catalog", () => {
           feedbackDataSharingTermsVersion: null,
         },
         sidebar: {
-          agents: ["ceo"],
+          agents: ["lead"],
           projects: ["alpha"],
         },
         agents: [
           {
-            slug: "ceo",
-            name: "CEO",
-            path: "agents/ceo/AGENT.md",
+            slug: "lead",
+            name: "Lead",
+            path: "agents/lead/AGENT.md",
             skills: [],
-            role: "ceo",
             title: null,
             icon: null,
             capabilities: null,
             reportsToSlug: null,
             reportsToExistingAgentId: null,
             reportsToExistingAgentSlug: null,
-            adapterType: "codex_local",
-            adapterConfig: {},
-            runtimeConfig: {},
-            permissions: {},
+            adapterRevision: {
+              sourceRevisionId: "revision-lead",
+              adapterType: "codex",
+              adapterConfig: { model: "gpt-5.6" },
+              runtimeConfig: {},
+              sourceEnvironmentId: "environment-lead",
+              skillChannel: "operator_native",
+            },
+            contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
+            actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
+            mentionReachGrants: allFalse(AGENT_MENTION_REACH_GRANT_KEYS),
+            companyToolIds: [],
+            governance: {},
             permissionGrants: [],
-            budgetMonthlyCents: 0,
+            budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
             metadata: null,
           },
         ],
@@ -642,20 +823,21 @@ describe("import selection catalog", () => {
             slug: "kickoff",
             identifier: null,
             title: "Kickoff",
-            path: "projects/alpha/issues/kickoff/TASK.md",
+            path: "issues/kickoff/ISSUE.md",
             projectSlug: "alpha",
             projectWorkspaceKey: null,
-            assigneeAgentSlug: "ceo",
-            description: null,
+            ownerAgentSlug: "lead",
+            request: "# Kickoff",
             recurring: false,
             routine: null,
-            legacyRecurrence: null,
-            status: null,
+            lifecycleStatus: "open",
+            disposition: null,
+            attentionMask: null,
+            boardPresentationStatus: "todo",
             priority: null,
             labelIds: [],
             billingCode: null,
             executionWorkspaceSettings: null,
-            assigneeAdapterOverrides: null,
             comments: [],
             metadata: null,
           },
@@ -673,10 +855,10 @@ describe("import selection catalog", () => {
         },
         "projects/alpha/PROJECT.md": "# Alpha",
         "projects/alpha/notes.md": "project notes",
-        "projects/alpha/issues/kickoff/TASK.md": "# Kickoff",
-        "projects/alpha/issues/kickoff/details.md": "task details",
-        "agents/ceo/AGENT.md": "# CEO",
-        "agents/ceo/prompt.md": "prompt",
+        "issues/kickoff/ISSUE.md": "# Kickoff",
+        "issues/kickoff/details.md": "issue details",
+        "agents/lead/AGENT.md": "# Lead",
+        "agents/lead/prompt.md": "prompt",
         "skills/skill-a/SKILL.md": "# Skill A",
         "skills/skill-a/helper.md": "helper",
       },
@@ -691,7 +873,7 @@ describe("import selection catalog", () => {
     expect(state.company).toBe(true);
     expect(state.projects.has("alpha")).toBe(true);
     expect(state.issues.has("kickoff")).toBe(true);
-    expect(state.agents.has("ceo")).toBe(true);
+    expect(state.agents.has("lead")).toBe(true);
     expect(state.skills.has("skill-a")).toBe(true);
 
     state.company = false;
@@ -704,8 +886,8 @@ describe("import selection catalog", () => {
     expect(selectedFiles).toContain(".paperclip.yaml");
     expect(selectedFiles).toContain("projects/alpha/PROJECT.md");
     expect(selectedFiles).toContain("projects/alpha/notes.md");
-    expect(selectedFiles).not.toContain("projects/alpha/issues/kickoff/TASK.md");
-    expect(selectedFiles).not.toContain("projects/alpha/issues/kickoff/details.md");
+    expect(selectedFiles).not.toContain("issues/kickoff/ISSUE.md");
+    expect(selectedFiles).not.toContain("issues/kickoff/details.md");
   });
 
   it("includes extension file even when all entities are deselected", () => {
@@ -745,6 +927,8 @@ describe("import selection catalog", () => {
           path: "COMPANY.md",
           name: "Source Co",
           description: null,
+          budgetCurrency: "USD",
+          budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
           attachmentMaxBytes: null,
           brandColor: null,
           logoPath: null,
@@ -785,99 +969,5 @@ describe("import selection catalog", () => {
 
     expect(selectedFiles).toContain(".paperclip.yaml");
     expect(selectedFiles).toHaveLength(1);
-  });
-});
-
-describe("default adapter overrides", () => {
-  it("maps process-only imported agents to claude_local", () => {
-    const preview: CompanyPortabilityPreviewResult = {
-      include: {
-        company: false,
-        agents: true,
-        projects: false,
-        issues: false,
-        skills: false,
-      },
-      targetCompanyId: null,
-      targetCompanyName: null,
-      collisionStrategy: "rename",
-      selectedAgentSlugs: ["legacy-agent", "explicit-agent"],
-      plan: {
-        companyAction: "none",
-        agentPlans: [],
-        projectPlans: [],
-        issuePlans: [],
-      },
-      manifest: {
-        schemaVersion: 1,
-        generatedAt: "2026-03-23T18:20:00.000Z",
-        source: null,
-        includes: {
-          company: false,
-          agents: true,
-          projects: false,
-          issues: false,
-          skills: false,
-        },
-        company: null,
-        sidebar: null,
-        agents: [
-          {
-            slug: "legacy-agent",
-            name: "Legacy Agent",
-            path: "agents/legacy-agent/AGENT.md",
-            skills: [],
-            role: "agent",
-            title: null,
-            icon: null,
-            capabilities: null,
-            reportsToSlug: null,
-            reportsToExistingAgentId: null,
-            reportsToExistingAgentSlug: null,
-            adapterType: "process",
-            adapterConfig: {},
-            runtimeConfig: {},
-            permissions: {},
-            permissionGrants: [],
-            budgetMonthlyCents: 0,
-            metadata: null,
-          },
-          {
-            slug: "explicit-agent",
-            name: "Explicit Agent",
-            path: "agents/explicit-agent/AGENT.md",
-            skills: [],
-            role: "agent",
-            title: null,
-            icon: null,
-            capabilities: null,
-            reportsToSlug: null,
-            reportsToExistingAgentId: null,
-            reportsToExistingAgentSlug: null,
-            adapterType: "codex_local",
-            adapterConfig: {},
-            runtimeConfig: {},
-            permissions: {},
-            permissionGrants: [],
-            budgetMonthlyCents: 0,
-            metadata: null,
-          },
-        ],
-        skills: [],
-        projects: [],
-        issues: [],
-        envInputs: [],
-      },
-      files: {},
-      envInputs: [],
-      warnings: [],
-      errors: [],
-    };
-
-    expect(buildDefaultImportAdapterOverrides(preview)).toEqual({
-      "legacy-agent": {
-        adapterType: "claude_local",
-      },
-    });
   });
 });

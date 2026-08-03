@@ -25,17 +25,28 @@ permissions:
   contents: read
 
 jobs:
-  visual:
-    name: Storybook visual regression
+  production_boundaries:
+    name: Production boundaries
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'storybook-visual'))
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 30
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Checkout pinned Session design reference
+        uses: actions/checkout@v7
+        with:
+          repository: anomalyco/opencode
+          ref: 2b2aacc93975330f9fd045d4306f698b0c6a8f8f
+          path: reference/opencode
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -45,7 +56,41 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: "22.13.0"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run canonical production gates and gate self-tests
+        env:
+          OPENCODE_SESSION_DONOR: ${{ github.workspace }}/reference/opencode
+        run: pnpm run check:production-boundaries
+
+  visual:
+    name: Storybook visual regression
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'storybook-visual'))
+    needs: [production_boundaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.13.0"
           cache: pnpm
 
       - name: Install dependencies

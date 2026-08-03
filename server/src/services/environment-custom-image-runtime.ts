@@ -16,7 +16,6 @@ export const ENVIRONMENT_CUSTOM_IMAGE_RUNTIME_CONFIG_BINDING_METADATA_KEY = "run
 export const ENVIRONMENT_CUSTOM_IMAGE_CONFIG_FINGERPRINT_EXCLUDED_PATHS = [
   "timeoutMs",
   "reuseLease",
-  "streamRunLogs",
   "archiveOnRelease",
   "cpu",
   "memory",

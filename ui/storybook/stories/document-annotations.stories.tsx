@@ -18,6 +18,7 @@ import { MarkdownBody } from "@/components/MarkdownBody";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { queryKeys } from "@/lib/queryKeys";
 import type { CompanyUserProfile } from "@/lib/company-members";
+import { createIssue } from "../fixtures/paperclipData";
 
 const sampleMarkdown = `# Plan: Document Highlights And Comment Threads
 
@@ -224,7 +225,7 @@ const integratedDoc: IssueDocument = {
 };
 
 function makeIntegratedIssue(): Issue {
-  return {
+  return createIssue({
     id: integratedIssueId,
     companyId: "co-1",
     projectId: null,
@@ -232,25 +233,16 @@ function makeIntegratedIssue(): Issue {
     goalId: null,
     parentId: null,
     title: "Highlighting and comments on documents",
-    description: null,
-    status: "in_progress",
+    request: "Review document highlights and comments.",
+    boardPresentationStatus: "in_progress",
     workMode: "standard",
     priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
+    owner: { kind: "board" },
     responsibleUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: "user-1",
     issueNumber: 9402,
     identifier: "PAP-9402",
     requestDepth: 0,
     billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
     executionWorkspacePreference: null,
     executionWorkspaceSettings: null,
     startedAt: null,
@@ -278,11 +270,10 @@ function makeIntegratedIssue(): Issue {
         updatedAt: integratedDoc.updatedAt,
       },
     ],
-    legacyPlanDocument: null,
     planDocument: integratedDoc,
     createdAt: new Date("2026-05-10T00:00:00Z"),
     updatedAt: new Date("2026-05-12T10:01:00Z"),
-  };
+  });
 }
 
 /**

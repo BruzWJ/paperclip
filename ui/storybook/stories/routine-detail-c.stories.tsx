@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
-import { Sparkles } from "lucide-react";
+import { Repeat, Sparkles } from "lucide-react";
 import type {
   DocumentAnnotationThreadWithComments,
   RoutineDescriptionDocument,
@@ -10,7 +10,7 @@ import type {
   RoutineVariable,
 } from "@paperclipai/shared";
 import { Badge } from "@/components/ui/badge";
-import { RunButton } from "@/components/AgentActionButtons";
+import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { RoutineSubSidebar, RoutineSectionPicker } from "@/components/RoutineSubSidebar";
 import { RoutineSaveBar } from "@/components/RoutineSaveBar";
@@ -84,6 +84,7 @@ const routine: RoutineDetailType = {
     "Compile last week's shipped work and email a digest to {{customer_name}} by {{deadline}}.\n\nKeep it to five bullets.",
   assigneeAgentId: storybookAgents[0]?.id ?? null,
   priority: "medium",
+  attentionMask: null,
   status: "active",
   concurrencyPolicy: "coalesce_if_active",
   catchUpPolicy: "skip_missed",
@@ -250,6 +251,7 @@ function makeContext(
     priority: routineDetail.priority,
     concurrencyPolicy: routineDetail.concurrencyPolicy,
     catchUpPolicy: routineDetail.catchUpPolicy,
+    attentionMask: routineDetail.attentionMask ?? null,
     variables: routineDetail.variables,
     env: routineDetail.env ?? null,
   };
@@ -392,7 +394,10 @@ function RoutineCShell({
             </Badge>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            <RunButton onClick={() => {}} />
+            <Button size="sm" onClick={() => {}}>
+              <Repeat className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Run routine</span>
+            </Button>
             <div className="flex items-center gap-2">
               <ToggleSwitch size="default" checked onCheckedChange={() => {}} aria-label="Toggle automation" />
               <span className="text-sm font-medium text-emerald-400">Active</span>

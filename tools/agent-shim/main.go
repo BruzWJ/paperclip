@@ -14,7 +14,7 @@ const (
 
 func main() {
 	specPath := flag.String("spec", defaultRuntimeCommandPath, "path to AdapterRuntimeCommandSpec JSON")
-	adapterType := flag.String("adapter", "", "adapter type (informational; e.g. claude_local)")
+	adapterType := flag.String("adapter", "", "adapter type (informational; e.g. external_adapter)")
 	flag.Parse()
 
 	spec, err := loadRuntimeCommandSpec(*specPath)

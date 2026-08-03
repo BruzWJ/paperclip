@@ -1,8 +1,8 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import { validate } from "../middleware/validate.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertCompanyAccess } from "./authz.js";
 import { inboxDismissalService, logActivity } from "../services/index.js";
 
 const ITEM_KEY_RE = /^(approval|join|run|attention):.+$/;
@@ -33,18 +33,6 @@ const inboxDismissalSchema = z.object({
   }
 });
 
-function requireBoardUser(req: Request, res: Response) {
-  if (req.actor.type !== "board") {
-    res.status(403).json({ error: "Board authentication required" });
-    return null;
-  }
-  if (!req.actor.userId) {
-    res.status(403).json({ error: "Board user context required" });
-    return null;
-  }
-  return req.actor.userId;
-}
-
 export function inboxDismissalRoutes(db: Db) {
   const router = Router();
   const svc = inboxDismissalService(db);
@@ -52,8 +40,7 @@ export function inboxDismissalRoutes(db: Db) {
   router.get("/companies/:companyId/inbox-dismissals", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const userId = requireBoardUser(req, res);
-    if (!userId) return;
+    const userId = req.actor.userId;
 
     const dismissals = await svc.list(companyId, userId);
     res.json(dismissals);
@@ -65,20 +52,15 @@ export function inboxDismissalRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
-      const userId = requireBoardUser(req, res);
-      if (!userId) return;
+      const userId = req.actor.userId;
 
       const dismissal = req.body.kind === "snooze"
         ? await svc.snooze(companyId, userId, req.body.itemKey, new Date(req.body.snoozedUntil))
         : await svc.dismiss(companyId, userId, req.body.itemKey, new Date());
-      const actor = getActorInfo(req);
       await logActivity(db, {
         companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: dismissal.kind === "snooze" ? "inbox.snoozed" : "inbox.dismissed",
         entityType: "company",
         entityId: companyId,
@@ -98,8 +80,7 @@ export function inboxDismissalRoutes(db: Db) {
   router.delete("/companies/:companyId/inbox-dismissals/:itemKey", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const userId = requireBoardUser(req, res);
-    if (!userId) return;
+    const userId = req.actor.userId;
 
     const itemKey = req.params.itemKey as string;
     if (!ITEM_KEY_RE.test(itemKey)) {
@@ -109,14 +90,10 @@ export function inboxDismissalRoutes(db: Db) {
 
     const restored = await svc.restore(companyId, userId, itemKey);
     if (restored) {
-      const actor = getActorInfo(req);
       await logActivity(db, {
         companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        agentApiKeyId: actor.agentApiKeyId,
+        actorType: "user",
+        actorId: req.actor.userId,
         action: "inbox.restored",
         entityType: "company",
         entityId: companyId,

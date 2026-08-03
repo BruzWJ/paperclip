@@ -36,16 +36,16 @@ export function shouldRenderSubIssueProgressSummary(enabled: boolean | undefined
 
 export function buildSubIssueProgressSummary(issues: Issue[]): SubIssueProgressSummary {
   const countsByStatus: Partial<Record<IssueStatus, number>> = {};
-  const progressIssues = issues.filter((issue) => issue.status !== "cancelled");
+  const progressIssues = issues.filter((issue) => issue.boardPresentationStatus !== "cancelled");
   for (const issue of progressIssues) {
-    countsByStatus[issue.status] = (countsByStatus[issue.status] ?? 0) + 1;
+    countsByStatus[issue.boardPresentationStatus] = (countsByStatus[issue.boardPresentationStatus] ?? 0) + 1;
   }
 
   const orderedIssues = workflowSort(progressIssues);
-  const nextIssue = orderedIssues.find((issue) => isActionableStatus(issue.status)) ?? null;
-  const remainingIssues = orderedIssues.filter((issue) => !isTerminalStatus(issue.status));
+  const nextIssue = orderedIssues.find((issue) => isActionableStatus(issue.boardPresentationStatus)) ?? null;
+  const remainingIssues = orderedIssues.filter((issue) => !isTerminalStatus(issue.boardPresentationStatus));
   const blockedIssue =
-    nextIssue === null && remainingIssues.length > 0 && remainingIssues.every((issue) => issue.status === "blocked")
+    nextIssue === null && remainingIssues.length > 0 && remainingIssues.every((issue) => issue.boardPresentationStatus === "blocked")
       ? remainingIssues[0]
       : null;
 

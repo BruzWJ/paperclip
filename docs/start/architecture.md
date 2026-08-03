@@ -1,98 +1,106 @@
 ---
 title: Architecture
-summary: Stack overview, request flow, and adapter model
+summary: Stack overview, issue-execution flow, and adapter model
 ---
 
-Paperclip is a monorepo with four main layers.
+Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 
 ## Stack Overview
 
+```text
+┌───────────────────────────────────────────┐
+│ React UI + CLI                            │
+│ Board control, issue/session inspection  │
+├───────────────────────────────────────────┤
+│ Express API + runtime services            │
+│ Auth, issue authority, dispatcher, tools │
+├───────────────────────────────────────────┤
+│ PostgreSQL + Drizzle                      │
+│ Issues, Sessions, refs, runs, audit       │
+├───────────────────────────────────────────┤
+│ Worker-supervised ACP subprocess          │
+│ Official SDK client + approved frontend  │
+└───────────────────────────────────────────┘
 ```
-┌─────────────────────────────────────┐
-│  React UI (Vite)                    │
-│  Dashboard, org management, tasks   │
-├─────────────────────────────────────┤
-│  Express.js REST API (Node.js)      │
-│  Routes, services, auth, adapters   │
-├─────────────────────────────────────┤
-│  PostgreSQL (Drizzle ORM)           │
-│  Schema, migrations, embedded mode  │
-├─────────────────────────────────────┤
-│  Adapters                           │
-│  Claude Code, Codex,                │
-│  Process, HTTP                      │
-└─────────────────────────────────────┘
-```
-
-## Technology Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, Vite 6, React Router 7, Radix UI, Tailwind CSS 4, TanStack Query |
-| Backend | Node.js 20+, Express.js 5, TypeScript |
-| Database | PostgreSQL 17 (or embedded PGlite), Drizzle ORM |
-| Auth | Better Auth (sessions + API keys) |
-| Adapters | Claude Code CLI, Codex CLI, shell process, HTTP webhook |
-| Package manager | pnpm 9 with workspaces |
 
 ## Repository Structure
 
-```
+```text
 paperclip/
-├── ui/                          # React frontend
-│   ├── src/pages/              # Route pages
-│   ├── src/components/         # React components
-│   ├── src/api/                # API client
-│   └── src/context/            # React context providers
-│
-├── server/                      # Express.js API
-│   ├── src/routes/             # REST endpoints
-│   ├── src/services/           # Business logic
-│   ├── src/adapters/           # Agent execution adapters
-│   └── src/middleware/         # Auth, logging
-│
+├── ui/                         # React board interface
+├── server/                     # Express routes and control-plane services
 ├── packages/
-│   ├── db/                      # Drizzle schema + migrations
-│   ├── shared/                  # API types, constants, validators
-│   ├── adapter-utils/           # Adapter interfaces and helpers
-│   └── adapters/
-│       ├── claude-local/        # Claude Code adapter
-│       └── codex-local/         # OpenAI Codex adapter
-│
-├── skills/                      # Agent skills
-│   └── paperclip/               # Core Paperclip skill (heartbeat protocol)
-│
-├── cli/                         # CLI client
-│   └── src/                     # Setup and control-plane commands
-│
-└── doc/                         # Internal documentation
+│   ├── db/                     # Drizzle schema and ordered migrations
+│   ├── shared/                 # Contracts, validators, and constants
+│   ├── adapter-utils/          # Common ACP client and target bridge
+│   ├── adapters/               # Declarative approved ACP backends
+│   └── plugins/                # Plugin SDK, examples, and first-party plugins
+├── cli/                        # Board/control-plane CLI
+└── docs/ and doc/              # User and engineering documentation
 ```
 
-## Request Flow
+## Canonical Issue-Execution Flow
 
-When a heartbeat fires:
+1. An authorized source creates or updates an ordinary issue through a
+   transaction that records the immutable causal input.
+2. The dispatcher admits an `IssueExecutionRef` for the exact issue, ownership
+   epoch, owner, adapter revision, mode, and source.
+3. The context resolver computes effective grants and an immutable composition
+   view. Context that is not granted is absent.
+4. The runtime interface compiler creates the exact Paperclip/company tool
+   schema for that authenticated ref.
+5. Workspace resolution binds the run to the issue/epoch execution-workspace
+   record; projectless work receives an absolute issue-owned cwd.
+6. The worker validates the declarative backend against Paperclip's immutable
+   launch catalog and ACPX's registry, then supervises the approved ACP agent
+   subprocess on the selected execution target.
+7. The common official-SDK client configures the ACP session, supplies the
+   request-scoped MCP server set, sends the exact prompt, and projects
+   structured ACP updates into the issue's Paperclip Session graph.
+   Projectors derive comments, lifecycle outcomes, costs, and audit views.
+8. Process loss or a retryable failure re-leases the existing valid ref. It
+   never fabricates a generic wake, agent-wide session, or singleton run link
+   on the issue.
 
-1. **Trigger** — Scheduler, manual invoke, or event (assignment, mention) triggers a heartbeat
-2. **Adapter invocation** — Server calls the configured adapter's `execute()` function
-3. **Agent process** — Adapter spawns the agent (e.g. Claude Code CLI) with Paperclip env vars and a prompt
-4. **Agent work** — The agent calls Paperclip's REST API to check assignments, checkout tasks, do work, and update status
-5. **Result capture** — Adapter captures stdout, parses usage/cost data, extracts session state
-6. **Run record** — Server records the run result, costs, and any session state for next heartbeat
+Board Chat, routines, plugin work, mentions, creator updates, and system nudges
+all enter this same flow. There is no direct agent invoke/heartbeat endpoint,
+static Paperclip MCP, provider-held Paperclip credential, issue checkout, or
+agent polling loop.
 
-## Adapter Model
+## Session and Continuity Model
 
-Adapters are the bridge between Paperclip and agent runtimes. Each adapter is a package with three modules:
+Each issue has one Session graph. Paperclip may retain a provider's opaque
+native handle only for the same issue, ownership epoch, agent, and immutable
+adapter revision when the effective `carry_context` grant is true. Reassignment,
+revision change, explicit fresh-session action, or a false grant prevents reuse.
 
-- **Server module** — `execute()` function that spawns/calls the agent, plus environment diagnostics
-- **UI module** — stdout parser for the run viewer, config form fields for agent creation
-- **CLI module** — terminal formatter for `paperclipai run --watch`
+Provider-native storage remains opaque and provider-owned. Paperclip stores no
+model-visible agent memory and never selects a handle from another issue.
 
-Built-in adapters: `claude_local`, `codex_local`, `process`, `http`. You can create custom adapters for any runtime.
+## ACP Backend Model
 
-## Key Design Decisions
+Every built-in or external adapter is a data-only `acp-subprocess/v1`
+definition selecting an already approved ACP launch and closed stable session
+configuration. It contains no execution callback, provider client, parser,
+session state, authentication hook, or tool implementation.
 
-- **Control plane, not execution plane** — Paperclip orchestrates agents; it doesn't run them
-- **Company-scoped** — all entities belong to exactly one company; strict data boundaries
-- **Single-assignee tasks** — atomic checkout prevents concurrent work on the same task
-- **Adapter-agnostic** — any runtime that can call an HTTP API works as an agent
-- **Embedded by default** — zero-config local mode with embedded PostgreSQL
+Paperclip uses ACPX only for public agent-name-to-launch registry lookup after
+the submitted name passes its immutable approved catalog. The common worker and
+official TypeScript SDK own the one request/control/event path over supervised
+subprocess stdio. The selected CLI or pinned upstream ACP frontend owns
+provider authentication and its native prompt/model/tool/history harness.
+Local, SSH, sandbox, and plugin are execution-target drivers on this same path,
+not alternate adapters. Generic process, HTTP, gateway, raw-provider, or
+provider-specific execution adapters do not exist.
+
+## Key Invariants
+
+- Every provider attempt belongs to an admitted issue-execution ref.
+- Issue creator and request are immutable; ownership changes advance the epoch.
+- Agent org position, title, or creation order grants no authority.
+- Context and actions default false and are evaluated independently.
+- The provider never receives generic Paperclip API credentials or ambient
+  identity/workspace environment variables.
+- Comments are projected from typed Session events; generic writers are absent.
+- Company archive and hard deletion fence and drain the complete Session/run
+  graph before purge.

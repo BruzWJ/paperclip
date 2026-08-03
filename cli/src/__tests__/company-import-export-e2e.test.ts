@@ -1,622 +1,345 @@
-import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Command } from "commander";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+  canonicalizeMoneyAmount,
+  type CompanyPortabilityExportResult,
+  type CompanyPortabilityImportResult,
+  type CompanyPortabilityManifest,
+  type CompanyPortabilityPreviewResult,
+} from "@paperclipai/shared";
+import { registerCompanyCommands } from "../commands/client/company.js";
 import { createStoredZipArchive } from "./helpers/zip.js";
 
-const execFileAsync = promisify(execFile);
-type ServerProcess = ReturnType<typeof spawn>;
+const ORIGINAL_ENV = { ...process.env };
+const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const IMPORTED_COMPANY_ID = "22222222-2222-4222-8222-222222222222";
+const API_BASE = "http://paperclip.test";
 
-async function getAvailablePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Failed to allocate test port")));
-        return;
-      }
-      const { port } = address;
-      server.close((error) => {
-        if (error) reject(error);
-        else resolve(port);
-      });
-    });
-  });
-}
+const INCLUDE_ALL = {
+  company: true,
+  agents: true,
+  projects: true,
+  issues: true,
+  skills: false,
+} as const;
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres company import/export e2e tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
-}
-
-function writeTestConfig(configPath: string, tempRoot: string, port: number, connectionString: string) {
-  const config = {
-    $meta: {
-      version: 1,
-      updatedAt: new Date().toISOString(),
-      source: "doctor",
+function portabilityManifest(): CompanyPortabilityManifest {
+  return {
+    schemaVersion: 1,
+    generatedAt: "2026-08-02T00:00:00.000Z",
+    source: {
+      companyId: COMPANY_ID,
+      companyName: "Portable Paperclip",
     },
-    database: {
-      mode: "postgres",
-      connectionString,
-      embeddedPostgresDataDir: path.join(tempRoot, "embedded-db"),
-      embeddedPostgresPort: 54329,
-      backup: {
-        enabled: false,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(tempRoot, "backups"),
-      },
+    includes: INCLUDE_ALL,
+    company: {
+      path: "COMPANY.md",
+      name: "Portable Paperclip",
+      description: "Deterministic CLI portability fixture",
+      budgetCurrency: "USD",
+      budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+      attachmentMaxBytes: null,
+      brandColor: null,
+      logoPath: null,
+      requireBoardApprovalForNewAgents: false,
+      feedbackDataSharingEnabled: false,
+      feedbackDataSharingConsentAt: null,
+      feedbackDataSharingConsentByUserId: null,
+      feedbackDataSharingTermsVersion: null,
     },
-    logging: {
-      mode: "file",
-      logDir: path.join(tempRoot, "logs"),
-    },
-    server: {
-      deploymentMode: "local_trusted",
-      exposure: "private",
-      host: "127.0.0.1",
-      port,
-      allowedHostnames: [],
-      serveUi: false,
-    },
-    auth: {
-      baseUrlMode: "auto",
-      disableSignUp: false,
-    },
-    storage: {
-      provider: "local_disk",
-      localDisk: {
-        baseDir: path.join(tempRoot, "storage"),
-      },
-      s3: {
-        bucket: "paperclip",
-        region: "us-east-1",
-        prefix: "",
-        forcePathStyle: false,
-      },
-    },
-    secrets: {
-      provider: "local_encrypted",
-      strictMode: false,
-      localEncrypted: {
-        keyFilePath: path.join(tempRoot, "secrets", "master.key"),
-      },
-    },
+    sidebar: null,
+    agents: [],
+    skills: [],
+    projects: [],
+    issues: [],
+    envInputs: [],
   };
-
-  mkdirSync(path.dirname(configPath), { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
-interface TestPaperclipEnv {
-  configPath: string;
-  paperclipHome: string;
-  instanceId: string;
-  shellHome?: string;
-}
-
-function createBasePaperclipEnv(options: TestPaperclipEnv) {
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("PAPERCLIP_")) {
-      delete env[key];
-    }
-  }
-
-  env.PAPERCLIP_CONFIG = options.configPath;
-  env.PAPERCLIP_HOME = options.paperclipHome;
-  env.PAPERCLIP_INSTANCE_ID = options.instanceId;
-  env.PAPERCLIP_CONTEXT = path.join(options.paperclipHome, "context.json");
-  env.PAPERCLIP_AUTH_STORE = path.join(options.paperclipHome, "auth.json");
-  if (options.shellHome) {
-    env.HOME = options.shellHome;
-  }
-
-  return env;
-}
-
-function createServerEnv(
-  configPath: string,
-  port: number,
-  connectionString: string,
-  options: Omit<TestPaperclipEnv, "configPath">,
-) {
-  const env = createBasePaperclipEnv({
-    configPath,
-    ...options,
-  });
-
-  delete env.DATABASE_URL;
-  delete env.PORT;
-  delete env.HOST;
-  delete env.SERVE_UI;
-  delete env.HEARTBEAT_SCHEDULER_ENABLED;
-
-  env.DATABASE_URL = connectionString;
-  env.HOST = "127.0.0.1";
-  env.PORT = String(port);
-  env.SERVE_UI = "false";
-  env.PAPERCLIP_DB_BACKUP_ENABLED = "false";
-  env.HEARTBEAT_SCHEDULER_ENABLED = "false";
-  env.PAPERCLIP_MIGRATION_AUTO_APPLY = "true";
-  env.PAPERCLIP_UI_DEV_MIDDLEWARE = "false";
-
-  return env;
-}
-
-function createCliEnv(options: TestPaperclipEnv) {
-  const env = createBasePaperclipEnv(options);
-  delete env.DATABASE_URL;
-  delete env.PORT;
-  delete env.HOST;
-  delete env.SERVE_UI;
-  delete env.PAPERCLIP_DB_BACKUP_ENABLED;
-  delete env.HEARTBEAT_SCHEDULER_ENABLED;
-  delete env.PAPERCLIP_MIGRATION_AUTO_APPLY;
-  delete env.PAPERCLIP_UI_DEV_MIDDLEWARE;
-  return env;
-}
-
-function collectTextFiles(root: string, current: string, files: Record<string, string>) {
-  for (const entry of readdirSync(current, { withFileTypes: true })) {
-    const absolutePath = path.join(current, entry.name);
-    if (entry.isDirectory()) {
-      collectTextFiles(root, absolutePath, files);
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    const relativePath = path.relative(root, absolutePath).replace(/\\/g, "/");
-    files[relativePath] = readFileSync(absolutePath, "utf8");
-  }
-}
-
-async function stopServerProcess(child: ServerProcess | null) {
-  if (!child || child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      if (child.exitCode === null) {
-        child.kill("SIGKILL");
-      }
-    }, 5_000);
-  });
-}
-
-async function api<T>(baseUrl: string, pathname: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${baseUrl}${pathname}`, init);
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Request failed ${res.status} ${pathname}: ${text}`);
-  }
-  return text ? JSON.parse(text) as T : (null as T);
-}
-
-function isPortableAgent(agent: { metadata?: Record<string, unknown> | null }) {
-  const marker = agent.metadata?.paperclipBuiltInAgent;
-  return typeof marker !== "object" || marker === null;
-}
-
-async function runCliJson<T>(
-  args: string[],
-  opts: TestPaperclipEnv & { apiBase?: string; includeConfigArg?: boolean },
-) {
-  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-  const cliArgs = ["--silent", "paperclipai", ...args];
-  if (opts.apiBase) {
-    cliArgs.push("--api-base", opts.apiBase);
-  }
-  if (opts.includeConfigArg !== false) {
-    cliArgs.push("--config", opts.configPath);
-  }
-  cliArgs.push("--json");
-  const result = await execFileAsync(
-    "pnpm",
-    cliArgs,
-    {
-      cwd: repoRoot,
-      env: createCliEnv(opts),
-      maxBuffer: 10 * 1024 * 1024,
+function portabilityExport(): CompanyPortabilityExportResult {
+  return {
+    rootPath: "portable-paperclip",
+    manifest: portabilityManifest(),
+    files: {
+      "COMPANY.md": "# Portable Paperclip\n",
+      ".paperclip.yaml": 'schema: "paperclip/v1"\n',
     },
-  );
-  const stdout = result.stdout.trim();
-  const jsonStart = stdout.search(/[\[{]/);
-  if (jsonStart === -1) {
-    throw new Error(`CLI did not emit JSON.\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
-  }
-  return JSON.parse(stdout.slice(jsonStart)) as T;
+    warnings: [],
+    paperclipExtensionPath: ".paperclip.yaml",
+  };
 }
 
-async function waitForServer(
-  apiBase: string,
-  child: ServerProcess,
-  output: { stdout: string[]; stderr: string[] },
-) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 30_000) {
-    if (child.exitCode !== null) {
+function requireTextPortableFiles(
+  files: CompanyPortabilityExportResult["files"],
+): Record<string, string> {
+  const textFiles: Record<string, string> = {};
+  for (const [relativePath, entry] of Object.entries(files)) {
+    if (typeof entry !== "string") {
       throw new Error(
-        `paperclipai run exited before healthcheck succeeded.\nstdout:\n${output.stdout.join("")}\nstderr:\n${output.stderr.join("")}`,
+        `Stored ZIP test fixture requires text content, but ${relativePath} is base64-encoded.`,
       );
     }
-
-    try {
-      const res = await fetch(`${apiBase}/api/health`);
-      if (res.ok) return;
-    } catch {
-      // Server is still starting.
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    textFiles[relativePath] = entry;
   }
-
-  throw new Error(
-    `Timed out waiting for ${apiBase}/api/health.\nstdout:\n${output.stdout.join("")}\nstderr:\n${output.stderr.join("")}`,
-  );
+  return textFiles;
 }
 
-describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
+function portabilityPreview(input: {
+  targetCompanyId: string | null;
+  targetCompanyName: string;
+  companyAction: "none" | "create" | "update";
+}): CompanyPortabilityPreviewResult {
+  const exported = portabilityExport();
+  return {
+    include: INCLUDE_ALL,
+    targetCompanyId: input.targetCompanyId,
+    targetCompanyName: input.targetCompanyName,
+    collisionStrategy: "rename",
+    selectedAgentSlugs: [],
+    plan: {
+      companyAction: input.companyAction,
+      agentPlans: [],
+      projectPlans: [],
+      issuePlans: [],
+    },
+    manifest: exported.manifest,
+    files: exported.files,
+    envInputs: [],
+    warnings: [],
+    errors: [],
+  };
+}
+
+function portabilityImport(): CompanyPortabilityImportResult {
+  return {
+    company: {
+      id: IMPORTED_COMPANY_ID,
+      name: "Imported Portable Paperclip",
+      action: "created",
+    },
+    agents: [],
+    projects: [],
+    envInputs: [],
+    warnings: [],
+  };
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function makeProgram(): Command {
+  const program = new Command();
+  program.exitOverride();
+  program.configureOutput({
+    writeOut: () => undefined,
+    writeErr: () => undefined,
+  });
+  registerCompanyCommands(program);
+  return program;
+}
+
+async function runCommand(args: string[]): Promise<void> {
+  await makeProgram().parseAsync(args, { from: "user" });
+}
+
+function parseRequestBody(call: unknown[]): Record<string, unknown> {
+  const init = call[1] as RequestInit | undefined;
+  return JSON.parse(String(init?.body)) as Record<string, unknown>;
+}
+
+describe("paperclipai company import/export HTTP boundary", () => {
   let tempRoot = "";
-  let configPath = "";
-  let exportDir = "";
-  let apiBase = "";
-  let paperclipHome = "";
-  let cliShellHome = "";
-  let paperclipInstanceId = "";
-  let serverProcess: ServerProcess | null = null;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let originalStdinIsTTY: boolean | undefined;
+  let originalStdoutIsTTY: boolean | undefined;
 
-  beforeAll(async () => {
-    tempRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-company-cli-e2e-"));
-    configPath = path.join(tempRoot, "config", "config.json");
-    exportDir = path.join(tempRoot, "exported-company");
-    paperclipHome = path.join(tempRoot, "paperclip-home");
-    cliShellHome = path.join(tempRoot, "shell-home");
-    paperclipInstanceId = "company-cli-e2e";
-    mkdirSync(paperclipHome, { recursive: true });
-    mkdirSync(cliShellHome, { recursive: true });
-
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-company-cli-db-");
-
-    const port = await getAvailablePort();
-    writeTestConfig(configPath, tempRoot, port, tempDb.connectionString);
-    apiBase = `http://127.0.0.1:${port}`;
-
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-    const output = { stdout: [] as string[], stderr: [] as string[] };
-    const child = spawn(
-      "pnpm",
-      ["paperclipai", "run", "--config", configPath],
-      {
-        cwd: repoRoot,
-        env: createServerEnv(configPath, port, tempDb.connectionString, {
-          paperclipHome,
-          instanceId: paperclipInstanceId,
-          shellHome: cliShellHome,
-        }),
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    serverProcess = child;
-    child.stdout?.on("data", (chunk) => {
-      output.stdout.push(String(chunk));
-    });
-    child.stderr?.on("data", (chunk) => {
-      output.stderr.push(String(chunk));
-    });
-
-    await waitForServer(apiBase, child, output);
-  }, 60_000);
-
-  afterAll(async () => {
-    await stopServerProcess(serverProcess);
-    await tempDb?.cleanup();
-    if (tempRoot) {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...ORIGINAL_ENV };
+    delete process.env.DATABASE_URL;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_COMPANY_ID;
+    tempRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-company-cli-boundary-"));
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    originalStdinIsTTY = process.stdin.isTTY;
+    originalStdoutIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
   });
 
-  it("exports a company package and imports it into new and existing companies", async () => {
-    expect(serverProcess).not.toBeNull();
-
-    const cliContext = await runCliJson<{
-      contextPath: string;
-      profileName: string;
-      profile: { apiBase?: string };
-    }>(
-      ["context", "set", "--profile", "isolation-check", "--api-base", "https://example.test"],
-      {
-        configPath,
-        paperclipHome,
-        instanceId: paperclipInstanceId,
-        shellHome: cliShellHome,
-        includeConfigArg: false,
-      },
-    );
-
-    const expectedContextPath = path.join(paperclipHome, "context.json");
-    const leakedContextPath = path.join(cliShellHome, ".paperclip", "context.json");
-    expect(cliContext.contextPath).toBe(expectedContextPath);
-    expect(cliContext.profileName).toBe("isolation-check");
-    expect(cliContext.profile.apiBase).toBe("https://example.test");
-    expect(existsSync(expectedContextPath)).toBe(true);
-    expect(existsSync(leakedContextPath)).toBe(false);
-    rmSync(expectedContextPath, { force: true });
-    expect(existsSync(expectedContextPath)).toBe(false);
-
-    const sourceCompany = await api<{ id: string; name: string; issuePrefix: string }>(apiBase, "/api/companies", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: `CLI Export Source ${Date.now()}` }),
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: originalStdinIsTTY,
+      configurable: true,
     });
-    await api(apiBase, `/api/companies/${sourceCompany.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ requireBoardApprovalForNewAgents: false }),
+    Object.defineProperty(process.stdout, "isTTY", {
+      value: originalStdoutIsTTY,
+      configurable: true,
     });
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
 
-    const sourceAgent = await api<{ id: string; name: string }>(
-      apiBase,
-      `/api/companies/${sourceCompany.id}/agents`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "Export Engineer",
-          role: "engineer",
-          adapterType: "claude_local",
-          adapterConfig: {},
-          instructionsBundle: {
-            files: {
-              "AGENTS.md": "You verify company portability.",
-            },
-          },
-        }),
+  it("writes an exported package and posts the same local files to a new-company import", async () => {
+    const exportDir = path.join(tempRoot, "exported-company");
+    const exported = portabilityExport();
+    fetchMock.mockResolvedValueOnce(jsonResponse(exported));
+
+    await runCommand([
+      "company",
+      "export",
+      COMPANY_ID,
+      "--out",
+      exportDir,
+      "--include",
+      "company,agents,projects,issues",
+      "--api-base",
+      API_BASE,
+      "--api-key",
+      "board-token",
+      "--json",
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${API_BASE}/api/companies/${COMPANY_ID}/export`,
+    );
+    expect(parseRequestBody(fetchMock.mock.calls[0]!)).toEqual({
+      include: INCLUDE_ALL,
+      skills: [],
+      projects: [],
+      issues: [],
+      projectIssues: [],
+      expandReferencedSkills: false,
+    });
+    expect(readFileSync(path.join(exportDir, "COMPANY.md"), "utf8")).toBe(
+      exported.files["COMPANY.md"],
+    );
+    expect(readFileSync(path.join(exportDir, ".paperclip.yaml"), "utf8")).toBe(
+      exported.files[".paperclip.yaml"],
+    );
+
+    fetchMock.mockClear();
+    logSpy.mockClear();
+    const preview = portabilityPreview({
+      targetCompanyId: null,
+      targetCompanyName: "Imported Portable Paperclip",
+      companyAction: "create",
+    });
+    const imported = portabilityImport();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(preview))
+      .mockResolvedValueOnce(jsonResponse(imported, 201));
+
+    await runCommand([
+      "company",
+      "import",
+      exportDir,
+      "--target",
+      "new",
+      "--new-company-name",
+      "Imported Portable Paperclip",
+      "--include",
+      "company,agents,projects,issues",
+      "--yes",
+      "--api-base",
+      API_BASE,
+      "--api-key",
+      "board-token",
+      "--json",
+    ]);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `${API_BASE}/api/companies/import/preview`,
+      `${API_BASE}/api/companies/import`,
+    ]);
+    const previewPayload = parseRequestBody(fetchMock.mock.calls[0]!);
+    const applyPayload = parseRequestBody(fetchMock.mock.calls[1]!);
+    expect(previewPayload).toMatchObject({
+      source: {
+        type: "inline",
+        rootPath: "exported-company",
+        files: exported.files,
       },
-    );
-
-    const sourceProject = await api<{ id: string; name: string }>(
-      apiBase,
-      `/api/companies/${sourceCompany.id}/projects`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "Portability Verification",
-          status: "in_progress",
-        }),
+      include: INCLUDE_ALL,
+      target: {
+        mode: "new_company",
+        newCompanyName: "Imported Portable Paperclip",
       },
+      agents: "all",
+      collisionStrategy: "rename",
+    });
+    expect(applyPayload).toEqual(previewPayload);
+    expect(JSON.parse(String(logSpy.mock.calls.at(-1)?.[0]))).toEqual(imported);
+  });
+
+  it("reads a stored zip and previews an existing-company import without a server or database", async () => {
+    const exported = portabilityExport();
+    const zipPath = path.join(tempRoot, "portable-company.zip");
+    writeFileSync(
+      zipPath,
+      createStoredZipArchive(requireTextPortableFiles(exported.files), "portable-paperclip"),
     );
+    const preview = portabilityPreview({
+      targetCompanyId: COMPANY_ID,
+      targetCompanyName: "Portable Paperclip",
+      companyAction: "none",
+    });
+    fetchMock.mockResolvedValueOnce(jsonResponse(preview));
 
-    const largeIssueDescription = `Round-trip the company package through the CLI.\n\n${"portable-data ".repeat(12_000)}`;
+    await runCommand([
+      "company",
+      "import",
+      zipPath,
+      "--target",
+      "existing",
+      "--company-id",
+      COMPANY_ID,
+      "--include",
+      "company,agents,projects,issues",
+      "--dry-run",
+      "--api-base",
+      API_BASE,
+      "--api-key",
+      "board-token",
+      "--json",
+    ]);
 
-    const sourceIssue = await api<{ id: string; title: string; identifier: string }>(
-      apiBase,
-      `/api/companies/${sourceCompany.id}/issues`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: "Validate company import/export",
-          description: largeIssueDescription,
-          status: "todo",
-          projectId: sourceProject.id,
-          assigneeAgentId: sourceAgent.id,
-        }),
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${API_BASE}/api/companies/${COMPANY_ID}/imports/preview`,
+    );
+    expect(parseRequestBody(fetchMock.mock.calls[0]!)).toMatchObject({
+      source: {
+        type: "inline",
+        rootPath: "portable-paperclip",
+        files: exported.files,
       },
-    );
-
-    const exportResult = await runCliJson<{
-      ok: boolean;
-      out: string;
-      filesWritten: number;
-    }>(
-      [
-        "company",
-        "export",
-        sourceCompany.id,
-        "--out",
-        exportDir,
-        "--include",
-        "company,agents,projects,issues",
-      ],
-      {
-        apiBase,
-        configPath,
-        paperclipHome,
-        instanceId: paperclipInstanceId,
-        shellHome: cliShellHome,
+      target: {
+        mode: "existing_company",
+        companyId: COMPANY_ID,
       },
-    );
-
-    expect(exportResult.ok).toBe(true);
-    expect(exportResult.filesWritten).toBeGreaterThan(0);
-    expect(readFileSync(path.join(exportDir, "COMPANY.md"), "utf8")).toContain(sourceCompany.name);
-    expect(readFileSync(path.join(exportDir, ".paperclip.yaml"), "utf8")).toContain('schema: "paperclip/v1"');
-
-    const importedNew = await runCliJson<{
-      company: { id: string; name: string; action: string };
-      agents: Array<{ id: string | null; action: string; name: string }>;
-    }>(
-      [
-        "company",
-        "import",
-        exportDir,
-        "--target",
-        "new",
-        "--new-company-name",
-        `Imported ${sourceCompany.name}`,
-        "--include",
-        "company,agents,projects,issues",
-        "--yes",
-      ],
-      {
-        apiBase,
-        configPath,
-        paperclipHome,
-        instanceId: paperclipInstanceId,
-        shellHome: cliShellHome,
-      },
-    );
-
-    expect(importedNew.company.action).toBe("created");
-    expect(importedNew.agents).toHaveLength(1);
-    expect(importedNew.agents[0]?.action).toBe("created");
-
-    const importedAgents = await api<Array<{ id: string; name: string }>>(
-      apiBase,
-      `/api/companies/${importedNew.company.id}/agents`,
-    );
-    const importedProjects = await api<Array<{ id: string; name: string }>>(
-      apiBase,
-      `/api/companies/${importedNew.company.id}/projects`,
-    );
-    const importedIssues = await api<Array<{ id: string; title: string; identifier: string }>>(
-      apiBase,
-      `/api/companies/${importedNew.company.id}/issues`,
-    );
-    const importedMatchingIssues = importedIssues.filter((issue) => issue.title === sourceIssue.title);
-
-    expect(importedAgents.map((agent) => agent.name)).toContain(sourceAgent.name);
-    expect(importedProjects.map((project) => project.name)).toContain(sourceProject.name);
-    expect(importedMatchingIssues).toHaveLength(1);
-
-    const previewExisting = await runCliJson<{
-      errors: string[];
-      plan: {
-        companyAction: string;
-        agentPlans: Array<{ action: string }>;
-        projectPlans: Array<{ action: string }>;
-        issuePlans: Array<{ action: string }>;
-      };
-    }>(
-      [
-        "company",
-        "import",
-        exportDir,
-        "--target",
-        "existing",
-        "--company-id",
-        importedNew.company.id,
-        "--include",
-        "company,agents,projects,issues",
-        "--collision",
-        "rename",
-        "--dry-run",
-      ],
-      {
-        apiBase,
-        configPath,
-        paperclipHome,
-        instanceId: paperclipInstanceId,
-        shellHome: cliShellHome,
-      },
-    );
-
-    expect(previewExisting.errors).toEqual([]);
-    expect(previewExisting.plan.companyAction).toBe("none");
-    expect(previewExisting.plan.agentPlans.some((plan) => plan.action === "create")).toBe(true);
-    expect(previewExisting.plan.projectPlans.some((plan) => plan.action === "create")).toBe(true);
-    expect(previewExisting.plan.issuePlans.some((plan) => plan.action === "create")).toBe(true);
-
-    const importedExisting = await runCliJson<{
-      company: { id: string; action: string };
-      agents: Array<{ id: string | null; action: string; name: string }>;
-    }>(
-      [
-        "company",
-        "import",
-        exportDir,
-        "--target",
-        "existing",
-        "--company-id",
-        importedNew.company.id,
-        "--include",
-        "company,agents,projects,issues",
-        "--collision",
-        "rename",
-        "--yes",
-      ],
-      {
-        apiBase,
-        configPath,
-        paperclipHome,
-        instanceId: paperclipInstanceId,
-        shellHome: cliShellHome,
-      },
-    );
-
-    expect(importedExisting.company.action).toBe("unchanged");
-    expect(importedExisting.agents.some((agent) => agent.action === "created")).toBe(true);
-
-    const twiceImportedAgents = await api<Array<{ id: string; name: string; metadata?: Record<string, unknown> | null }>>(
-      apiBase,
-      `/api/companies/${importedNew.company.id}/agents`,
-    );
-    const twiceImportedProjects = await api<Array<{ id: string; name: string }>>(
-      apiBase,
-      `/api/companies/${importedNew.company.id}/projects`,
-    );
-    const twiceImportedIssues = await api<Array<{ id: string; title: string; identifier: string }>>(
-      apiBase,
-      `/api/companies/${importedNew.company.id}/issues`,
-    );
-    const twiceImportedMatchingIssues = twiceImportedIssues.filter((issue) => issue.title === sourceIssue.title);
-    const twiceImportedPortableAgents = twiceImportedAgents.filter(isPortableAgent);
-
-    expect(twiceImportedPortableAgents).toHaveLength(2);
-    expect(new Set(twiceImportedPortableAgents.map((agent) => agent.name)).size).toBe(2);
-    expect(twiceImportedProjects).toHaveLength(2);
-    expect(twiceImportedMatchingIssues).toHaveLength(2);
-    expect(new Set(twiceImportedMatchingIssues.map((issue) => issue.identifier)).size).toBe(2);
-
-    const zipPath = path.join(tempRoot, "exported-company.zip");
-    const portableFiles: Record<string, string> = {};
-    collectTextFiles(exportDir, exportDir, portableFiles);
-    writeFileSync(zipPath, createStoredZipArchive(portableFiles, "paperclip-demo"));
-
-    const importedFromZip = await runCliJson<{
-      company: { id: string; name: string; action: string };
-      agents: Array<{ id: string | null; action: string; name: string }>;
-    }>(
-      [
-        "company",
-        "import",
-        zipPath,
-        "--target",
-        "new",
-        "--new-company-name",
-        `Zip Imported ${sourceCompany.name}`,
-        "--include",
-        "company,agents,projects,issues",
-        "--yes",
-      ],
-      {
-        apiBase,
-        configPath,
-        paperclipHome,
-        instanceId: paperclipInstanceId,
-        shellHome: cliShellHome,
-      },
-    );
-
-    expect(importedFromZip.company.action).toBe("created");
-    expect(importedFromZip.agents.some((agent) => agent.action === "created")).toBe(true);
-  }, 90_000);
+    });
+    expect(JSON.parse(String(logSpy.mock.calls.at(-1)?.[0]))).toEqual(preview);
+  });
 });

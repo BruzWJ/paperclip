@@ -1,6 +1,11 @@
 import type { Issue, IssueBlockerAttention } from "@paperclipai/shared";
 
-type InboxLiveDescendantIssue = Pick<Issue, "status" | "blockerAttention" | "liveDescendantCount">;
+type InboxLiveDescendantIssue = Pick<
+  Issue,
+  | "boardPresentationStatus"
+  | "blockerAttention"
+  | "liveDescendantCount"
+>;
 
 interface InboxLiveDescendantOptions {
   isLive: boolean;
@@ -33,7 +38,12 @@ export function resolveInboxIssueBlockerAttention(
   options: InboxLiveDescendantOptions,
 ): IssueBlockerAttention | null {
   const blockerAttention = asBlockerAttention(issue.blockerAttention);
-  if (issue.status !== "blocked" || options.isLive) return blockerAttention;
+  if (
+    issue.boardPresentationStatus !== "blocked" ||
+    options.isLive
+  ) {
+    return blockerAttention;
+  }
   if (blockerAttention?.state === "needs_attention" || blockerAttention?.state === "stalled") {
     return blockerAttention;
   }

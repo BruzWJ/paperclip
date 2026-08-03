@@ -1,7 +1,7 @@
 import type { IssueRelationIssueSummary } from "@paperclipai/shared";
 
 export function isAssignedBacklogBlocker(blocker: IssueRelationIssueSummary): boolean {
-  return blocker.status === "backlog" && Boolean(blocker.assigneeAgentId);
+  return blocker.boardPresentationStatus === "backlog" && Boolean(blocker.ownerAgentId);
 }
 
 export function hasAssignedBacklogBlocker(

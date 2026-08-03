@@ -8,7 +8,7 @@ export const companyArtifactSourceSchema = z.enum(["document", "attachment", "wo
 
 export const companyArtifactMediaKindSchema = z.enum(["image", "video", "text", "document", "file", "empty"]);
 
-export const companyArtifactGroupBySchema = z.enum(["none", "task", "parent_task"]);
+export const companyArtifactGroupBySchema = z.enum(["none", "issue", "parent_issue"]);
 
 export const companyArtifactsQuerySchema = z.object({
   kind: z.enum(["image", "video", "text", "document", "file", "all"]).optional().default("all"),
@@ -39,7 +39,7 @@ export const companyArtifactSchema = z.object({
   issue: z.object({
     id: z.string().uuid(),
     identifier: z.string(),
-    title: z.string(),
+    title: z.string().nullable(),
   }),
   project: z.object({
     id: z.string().uuid(),
@@ -59,7 +59,7 @@ export const companyArtifactGroupSchema = z.object({
   issue: z.object({
     id: z.string().uuid(),
     identifier: z.string(),
-    title: z.string(),
+    title: z.string().nullable(),
   }),
   title: z.string(),
   count: z.number().int().min(0),

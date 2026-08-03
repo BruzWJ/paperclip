@@ -1,21 +1,24 @@
 import { useEffect, useState } from "react";
-import type { BudgetPolicySummary } from "@paperclipai/shared";
+import {
+  compareMoneyAmounts,
+  parseMoneyAmount,
+  type BudgetPolicySummary,
+  type MoneyAmount,
+} from "@paperclipai/shared";
 import { AlertTriangle, PauseCircle, ShieldAlert, Wallet } from "lucide-react";
-import { cn, formatCents } from "../lib/utils";
+import { cn, formatMoneyAmount } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-function centsInputValue(value: number) {
-  return (value / 100).toFixed(2);
-}
+const ZERO_AMOUNT = parseMoneyAmount("0");
 
-function parseDollarInput(value: string) {
-  const normalized = value.trim();
-  if (normalized.length === 0) return 0;
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return Math.round(parsed * 100);
+function parseBudgetInput(value: string): MoneyAmount | null {
+  try {
+    return parseMoneyAmount(value);
+  } catch {
+    return null;
+  }
 }
 
 function windowLabel(windowKind: BudgetPolicySummary["windowKind"]) {
@@ -36,20 +39,23 @@ export function BudgetPolicyCard({
   variant = "card",
 }: {
   summary: BudgetPolicySummary;
-  onSave?: (amountCents: number) => void;
+  onSave?: (amount: MoneyAmount) => void;
   isSaving?: boolean;
   compact?: boolean;
   variant?: "card" | "plain";
 }) {
-  const [draftBudget, setDraftBudget] = useState(centsInputValue(summary.amount));
+  const [draftBudget, setDraftBudget] = useState<string>(summary.limitAmount);
 
   useEffect(() => {
-    setDraftBudget(centsInputValue(summary.amount));
-  }, [summary.amount]);
+    setDraftBudget(summary.limitAmount);
+  }, [summary.limitAmount]);
 
-  const parsedDraft = parseDollarInput(draftBudget);
-  const canSave = typeof parsedDraft === "number" && parsedDraft !== summary.amount && Boolean(onSave);
-  const progress = summary.amount > 0 ? Math.min(100, summary.utilizationPercent) : 0;
+  const parsedDraft = parseBudgetInput(draftBudget);
+  const hasLimit = compareMoneyAmounts(summary.limitAmount, ZERO_AMOUNT) > 0;
+  const canSave = parsedDraft !== null
+    && compareMoneyAmounts(parsedDraft, summary.limitAmount) !== 0
+    && Boolean(onSave);
+  const progress = hasLimit ? Math.min(100, summary.utilizationPercent) : 0;
   const StatusIcon = summary.status === "hard_stop" ? ShieldAlert : summary.status === "warning" ? AlertTriangle : Wallet;
   const isPlain = variant === "plain";
 
@@ -57,15 +63,15 @@ export function BudgetPolicyCard({
     <div className="grid gap-6 sm:grid-cols-2">
       <div>
         <div className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Observed</div>
-        <div className="mt-2 text-xl font-semibold tabular-nums">{formatCents(summary.observedAmount)}</div>
+        <div className="mt-2 text-xl font-semibold tabular-nums">{formatMoneyAmount(summary.observedAmount, summary.budgetCurrency)}</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {summary.amount > 0 ? `${summary.utilizationPercent}% of limit` : "No cap configured"}
+          {hasLimit ? `${summary.utilizationPercent}% of limit` : "No cap configured"}
         </div>
       </div>
       <div>
         <div className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Budget</div>
         <div className="mt-2 text-xl font-semibold tabular-nums">
-          {summary.amount > 0 ? formatCents(summary.amount) : "Disabled"}
+          {hasLimit ? formatMoneyAmount(summary.limitAmount, summary.budgetCurrency) : "Disabled"}
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
           Soft alert at {summary.warnPercent}%{summary.paused && summary.pauseReason ? ` · ${summary.pauseReason} pause` : ""}
@@ -76,15 +82,15 @@ export function BudgetPolicyCard({
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="rounded-xl border border-border/70 bg-black/[0.18] px-4 py-3">
         <div className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Observed</div>
-        <div className="mt-2 text-xl font-semibold tabular-nums">{formatCents(summary.observedAmount)}</div>
+        <div className="mt-2 text-xl font-semibold tabular-nums">{formatMoneyAmount(summary.observedAmount, summary.budgetCurrency)}</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          {summary.amount > 0 ? `${summary.utilizationPercent}% of limit` : "No cap configured"}
+          {hasLimit ? `${summary.utilizationPercent}% of limit` : "No cap configured"}
         </div>
       </div>
       <div className="rounded-xl border border-border/70 bg-black/[0.18] px-4 py-3">
         <div className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">Budget</div>
         <div className="mt-2 text-xl font-semibold tabular-nums">
-          {summary.amount > 0 ? formatCents(summary.amount) : "Disabled"}
+          {hasLimit ? formatMoneyAmount(summary.limitAmount, summary.budgetCurrency) : "Disabled"}
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
           Soft alert at {summary.warnPercent}%{summary.paused && summary.pauseReason ? ` · ${summary.pauseReason} pause` : ""}
@@ -97,7 +103,7 @@ export function BudgetPolicyCard({
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>Remaining</span>
-        <span>{summary.amount > 0 ? formatCents(summary.remainingAmount) : "Unlimited"}</span>
+        <span>{hasLimit ? formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency) : "Unlimited"}</span>
       </div>
       <div className={cn("h-2 overflow-hidden rounded-full", isPlain ? "bg-border/70" : "bg-muted/70")}>
         <div
@@ -121,7 +127,7 @@ export function BudgetPolicyCard({
       <div>
         {summary.scopeType === "project"
           ? "Execution is paused for this project until the budget is raised or the incident is dismissed."
-          : "Heartbeats are paused for this scope until the budget is raised or the incident is dismissed."}
+          : "Execution is paused for this scope until the budget is raised or the incident is dismissed."}
       </div>
     </div>
   ) : null;
@@ -130,7 +136,7 @@ export function BudgetPolicyCard({
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-end", isPlain ? "" : "rounded-xl border border-border/70 bg-background/50 p-3")}>
       <div className="min-w-0 flex-1">
         <label className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">
-          Budget (USD)
+          Budget ({summary.budgetCurrency})
         </label>
         <Input
           value={draftBudget}
@@ -142,11 +148,11 @@ export function BudgetPolicyCard({
       </div>
       <Button
         onClick={() => {
-          if (typeof parsedDraft === "number" && onSave) onSave(parsedDraft);
+          if (parsedDraft && onSave) onSave(parsedDraft);
         }}
         disabled={!canSave || isSaving || parsedDraft === null}
       >
-        {isSaving ? "Saving..." : summary.amount > 0 ? "Update budget" : "Set budget"}
+        {isSaving ? "Saving..." : hasLimit ? "Update budget" : "Set budget"}
       </Button>
     </div>
   ) : null;
@@ -182,7 +188,7 @@ export function BudgetPolicyCard({
         {pausedPane}
         {saveSection}
         {parsedDraft === null ? (
-          <p className="text-xs text-destructive">Enter a valid non-negative dollar amount.</p>
+          <p className="text-xs text-destructive">Enter a canonical non-negative decimal amount.</p>
         ) : null}
       </div>
     );
@@ -211,7 +217,7 @@ export function BudgetPolicyCard({
         {pausedPane}
         {saveSection}
         {parsedDraft === null ? (
-          <p className="text-xs text-destructive">Enter a valid non-negative dollar amount.</p>
+          <p className="text-xs text-destructive">Enter a canonical non-negative decimal amount.</p>
         ) : null}
       </CardContent>
     </Card>

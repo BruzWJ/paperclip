@@ -48,8 +48,8 @@ function runPublish(args, env = {}) {
         encoding: "utf8",
         env: {
           ...process.env,
-          PAPERCLIP_PAGE_BUCKET: "paperclip-pages-test",
-          PAPERCLIP_PAGE_BASE_URL: "https://pages.example.test/",
+          STATIC_PAGE_BUCKET: "paperclip-pages-test",
+          STATIC_PAGE_BASE_URL: "https://pages.example.test/",
           ...env,
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -87,7 +87,7 @@ test("dry run validates and prints the planned target without requiring AWS", ()
 test("dry run normalizes a safe default prefix", () => {
   const result = runPublish(
     [createSite(), "--slug", "demo-page", "--dry-run"],
-    { PAPERCLIP_PAGE_DEFAULT_PREFIX: "/reports/launches/" },
+    { STATIC_PAGE_DEFAULT_PREFIX: "/reports/launches/" },
   );
 
   assert.equal(result.status, 0);

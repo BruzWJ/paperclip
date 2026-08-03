@@ -1,105 +1,157 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 
 /**
- * E2E: post-wizard onboarding launch.
+ * E2E: post-wizard dashboard launch.
  *
- * Completing the onboarding wizard now creates the first assigned task and
- * lands the user on the company dashboard. The chat intro still has unit
- * coverage in BoardChat tests; the wizard handoff no longer routes there.
+ * The wizard persists a fully configured ordinary agent before the board
+ * creates its first issue. Only that issue creation may enqueue provider work.
  */
 
-const COMPANY_NAME = `E2E-TypingIntro-${Date.now()}`;
-const MISSION = "Verify the dashboard launch survives the wizard handoff.";
-const FIRST_TASK_TITLE = "Hire your first engineer and create a hiring plan";
+const COMPANY_NAME = `E2E-DashboardLaunch-${Date.now()}`;
+const MISSION = "Verify the dashboard launch survives the wizard transition.";
+const AGENT_NAME = "Operations planner";
+const CODEX_MODEL = "gpt-5.6";
+const ISSUE_REQUEST =
+  "  Create a concrete hiring plan for the first engineering position.\nPreserve these request bytes.  ";
+
+async function configureCodexAgent(page: Page) {
+  await page.getByRole("button", { name: /Codex/ }).first().click();
+  const modelField = page.locator("label").filter({ hasText: /^Model$/ }).locator("../..");
+  await expect(modelField).toBeVisible({ timeout: 15_000 });
+  await modelField.getByRole("button").last().click();
+  await page.getByRole("button", { name: "GPT-5.6", exact: true }).click();
+
+  const environmentSelect = page
+    .locator("select")
+    .filter({ hasText: "Local · local" });
+  await expect(environmentSelect).toBeVisible({ timeout: 15_000 });
+  await environmentSelect.selectOption({ label: "Local · local" });
+}
 
 test.describe("Dashboard launch after onboarding wizard", () => {
-  test("creates the first task and opens the dashboard", async ({
+  test("creates the first ordinary issue and opens the dashboard", async ({
     page,
-    baseURL,
+    request,
   }) => {
-    // Intercept env-test → instant pass (avoid running a real CLI check).
-    await page.route("**/test-environment", (route) =>
-      route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ status: "pass", checks: [] }),
-      }),
+    const flagResponse = await request.patch(
+      "/api/instance/settings/experimental",
+      { data: { enableEnvironments: true } },
     );
-
-    // Intercept hire → perform a REAL hire server-side with an inert http
-    // adapter so no real agent process spawns.
-    await page.route("**/agent-hires", async (route) => {
-      const req = route.request();
-      const body = JSON.parse(req.postData() || "{}");
-      const auth = req.headers().authorization;
-      const real = await fetch(new URL(req.url(), baseURL).toString(), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(auth ? { Authorization: auth } : {}),
-        },
-        body: JSON.stringify({
-          name: body.name,
-          role: body.role,
-          adapterType: "http",
-          adapterConfig: { url: "http://127.0.0.1:1/dead" },
-          runtimeConfig: { heartbeat: { enabled: false } },
-        }),
-      });
-      await route.fulfill({
-        status: real.status,
-        contentType: "application/json",
-        body: await real.text(),
-      });
-    });
+    expect(flagResponse.ok()).toBe(true);
 
     await page.goto("/onboarding");
+    const startButton = page.getByRole("button", {
+      name: /Start Onboarding|New Company|Add Agent/i,
+    });
+    if (await startButton.count()) {
+      await startButton.first().click();
+    }
+    const createCard = page.getByRole("button", {
+      name: /Build a new company/,
+    });
+    if (await createCard.count()) {
+      await createCard.first().click();
+    }
 
-    // Launcher card path (existing companies) — enter the wizard if the
-    // route shows a launcher instead of opening the wizard directly.
-    const startBtn = page.getByRole("button", { name: /Start Onboarding/i });
-    if (await startBtn.count()) await startBtn.first().click();
-
-    // Step 0: front door (skipped when the wizard opens on the create path).
-    const frontDoor = page.getByText("Build a new company");
-    if (await frontDoor.count()) await frontDoor.first().click();
-
-    // Step 1: company name.
     await page.getByPlaceholder("Acme Corp").fill(COMPANY_NAME);
     await page.getByRole("button", { name: /^Next/ }).click();
-
-    // Step 2: mission (direct path default).
     await page
       .getByPlaceholder("What is your team trying to achieve?")
       .fill(MISSION);
     await page.getByRole("button", { name: /Confirm mission/ }).click();
 
-    // Step 3: lead name (prefilled) → Next.
-    await page.waitForSelector('input[placeholder="Chief of staff"]', {
+    await expect(page.getByPlaceholder("Agent name")).toBeVisible({
       timeout: 15_000,
     });
+    await page.getByPlaceholder("Agent name").fill(AGENT_NAME);
+    await page.getByPlaceholder("Optional title").fill("Planning coordinator");
+    await page
+      .getByPlaceholder(
+        "What work can another agent select this agent to handle?",
+      )
+      .fill("Turns board requests into concrete operating plans.");
     await page.getByRole("button", { name: /^Next/ }).click();
 
-    // Step 4: adapter (claude_local default); heartbeat is intercepted.
-    await page.getByRole("button", { name: /Give it a heartbeat/ }).click();
+    await configureCodexAgent(page);
+    const createAgentButton = page.getByRole("button", {
+      name: "Create agent",
+    });
+    await expect(createAgentButton).toBeEnabled({ timeout: 20_000 });
+    await createAgentButton.click();
+    await expect(
+      page.getByRole("heading", { name: "Review" }),
+    ).toBeVisible({ timeout: 30_000 });
 
-    // Step 5: review → Get started creates the first task and opens dashboard.
-    const getStarted = page.getByRole("button", { name: /Get started/ });
-    await getStarted.waitFor({ timeout: 20_000 });
-    await getStarted.click();
+    const companiesResponse = await request.get("/api/companies");
+    expect(companiesResponse.ok()).toBe(true);
+    const company = (
+      (await companiesResponse.json()) as Array<{ id: string; name: string }>
+    ).find((candidate) => candidate.name === COMPANY_NAME);
+    expect(company).toBeTruthy();
+
+    const agentsResponse = await request.get(
+      `/api/companies/${company!.id}/agents`,
+    );
+    expect(agentsResponse.ok()).toBe(true);
+    const agent = (
+      (await agentsResponse.json()) as Array<{
+        id: string;
+        name: string;
+        reportsTo: string | null;
+        adapterType: string | null;
+        adapterConfig: Record<string, unknown> | null;
+      }>
+    ).find((candidate) => candidate.name === AGENT_NAME);
+    expect(agent).toMatchObject({
+      name: AGENT_NAME,
+      reportsTo: null,
+      adapterType: "codex",
+      adapterConfig: {
+        model: CODEX_MODEL,
+      },
+    });
+
+    const runsBeforeIssue = await request.get(
+      `/api/companies/${company!.id}/runs?agentId=${agent!.id}`,
+    );
+    expect(runsBeforeIssue.ok()).toBe(true);
+    expect(await runsBeforeIssue.json()).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+
+    await expect(page.getByPlaceholder("Issue title (optional)")).toHaveValue(
+      "",
+    );
+    await page
+      .getByPlaceholder(/Describe .* first concrete assignment/)
+      .fill(ISSUE_REQUEST);
+    await page.getByRole("button", { name: "Get started" }).click();
 
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
 
-    const companiesRes = await page.request.get("/api/companies");
-    expect(companiesRes.ok()).toBe(true);
-    const companies = await companiesRes.json();
-    const company = companies.find((candidate: { name: string }) => candidate.name === COMPANY_NAME);
-    expect(company).toBeTruthy();
-
-    const issuesRes = await page.request.get(`/api/companies/${company.id}/issues`);
-    expect(issuesRes.ok()).toBe(true);
-    const issues = await issuesRes.json();
-    const firstTask = issues.find((candidate: { title: string }) => candidate.title === FIRST_TASK_TITLE);
-    expect(firstTask).toBeTruthy();
-    await expect(page.getByText(FIRST_TASK_TITLE).first()).toBeVisible({ timeout: 15_000 });
+    const issuesResponse = await request.get(
+      `/api/companies/${company!.id}/issues`,
+    );
+    expect(issuesResponse.ok()).toBe(true);
+    const issue = (
+      (await issuesResponse.json()) as Array<{
+        title: string | null;
+        request: string;
+        ownerAgentId: string | null;
+      }>
+    ).find((candidate) => candidate.request === ISSUE_REQUEST);
+    expect(issue).toEqual(
+      expect.objectContaining({
+        title: null,
+        request: ISSUE_REQUEST,
+        ownerAgentId: agent!.id,
+      }),
+    );
+    await expect(
+      page.getByText(/Create a concrete hiring plan/).first(),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });

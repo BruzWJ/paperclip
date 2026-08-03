@@ -1,16 +1,10 @@
-import type { Agent } from "@paperclipai/shared";
-import type { LiveRunForIssue } from "../api/heartbeats";
-import type {
-  IssueChatComment,
-  IssueChatLinkedRun,
-  IssueChatTranscriptEntry,
-} from "../lib/issue-chat-messages";
+import { canonicalizeMoneyAmount, type Agent } from "@paperclipai/shared";
+import type { IssueChatComment } from "../lib/issue-chat-messages";
 import type { IssueTimelineEvent } from "../lib/issue-timeline-events";
 
 export const LONG_THREAD_COMMENT_COUNT = 469;
 export const LONG_THREAD_MARKDOWN_COMMENT_COUNT = 150;
 export const LONG_THREAD_EVENT_COUNT = 12;
-export const LONG_THREAD_LINKED_RUN_COUNT = 6;
 
 const baseTime = new Date("2026-04-28T14:00:00.000Z").getTime();
 
@@ -25,24 +19,23 @@ function createAgent(id: string, name: string, icon: string, urlKey: string): Ag
     companyId: "company-long-thread",
     name,
     urlKey,
-    role: "engineer",
     title: null,
     icon,
     status: "active",
     reportsTo: null,
     capabilities: null,
-    adapterType: "codex_local",
+    adapterType: "codex",
     adapterConfig: {},
+    currentAdapterConfigRevisionId: null,
     runtimeConfig: {},
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    lastHeartbeatAt: null,
+    budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+    knownSpendAmount: canonicalizeMoneyAmount("0"),
     metadata: null,
     createdAt: now,
     updatedAt: now,
     pauseReason: null,
     pausedAt: null,
-    permissions: { canCreateAgents: false },
+    governance: {},
   };
 }
 
@@ -127,72 +120,23 @@ export const issueChatLongThreadEvents: IssueTimelineEvent[] = Array.from(
     createdAt: atMinute(index * 36 + 18),
     actorType: index % 3 === 0 ? "user" : "agent",
     actorId: index % 3 === 0 ? "user-board" : primaryAgent.id,
-    statusChange: index % 2 === 0
+    lifecycleStatusChange: index % 2 === 0
       ? { from: index === 0 ? "todo" : "in_progress", to: "in_progress" }
       : undefined,
-    assigneeChange: index % 2 === 1
+    ownerChange: index % 2 === 1
       ? {
-          from: { agentId: null, userId: null },
-          to: { agentId: index % 4 === 1 ? primaryAgent.id : reviewerAgent.id, userId: null },
+          from: { ownerKind: "board", ownerAgentId: null, ownerUserId: null },
+          to: { ownerKind: "agent", ownerAgentId: index % 4 === 1 ? primaryAgent.id : reviewerAgent.id, ownerUserId: null },
         }
       : undefined,
   }),
-);
-
-export const issueChatLongThreadLinkedRuns: IssueChatLinkedRun[] = Array.from(
-  { length: LONG_THREAD_LINKED_RUN_COUNT },
-  (_, index) => ({
-    runId: `long-thread-run-${index + 1}`,
-    status: index % 3 === 0 ? "failed" : index % 3 === 1 ? "timed_out" : "succeeded",
-    agentId: index % 2 === 0 ? primaryAgent.id : reviewerAgent.id,
-    agentName: index % 2 === 0 ? primaryAgent.name : reviewerAgent.name,
-    adapterType: "codex_local",
-    createdAt: atMinute(index * 72 + 12),
-    startedAt: atMinute(index * 72 + 12),
-    finishedAt: atMinute(index * 72 + 16),
-    hasStoredOutput: true,
-  }),
-);
-
-export const issueChatLongThreadLiveRuns: LiveRunForIssue[] = [];
-
-export const issueChatLongThreadTranscriptsByRunId = new Map<string, readonly IssueChatTranscriptEntry[]>(
-  issueChatLongThreadLinkedRuns.map((run, index) => [
-    run.runId,
-    [
-      {
-        kind: "thinking",
-        ts: atMinute(index * 72 + 13).toISOString(),
-        text: `Inspecting long-thread segment ${index + 1}.`,
-      },
-      {
-        kind: "tool_call",
-        ts: atMinute(index * 72 + 14).toISOString(),
-        name: "read_file",
-        toolUseId: `long-thread-tool-${index + 1}`,
-        input: { path: "ui/src/components/IssueChatThread.tsx" },
-      },
-      {
-        kind: "tool_result",
-        ts: atMinute(index * 72 + 15).toISOString(),
-        toolUseId: `long-thread-tool-${index + 1}`,
-        content: "Confirmed the direct-render fixture keeps the full message subtree mounted.",
-        isError: run.status !== "succeeded",
-      },
-      {
-        kind: "assistant",
-        ts: atMinute(index * 72 + 16).toISOString(),
-        text: `Run ${index + 1} produced a compact transcript row for adjacent run context.`,
-      },
-    ],
-  ]),
 );
 
 export const issueChatLongThreadFixtureContext = {
   issue: {
     identifier: "PAP-PERF",
     title: "Long-thread rendering baseline fixture",
-    status: "in_progress",
+    boardPresentationStatus: "in_progress",
     priority: "medium",
     projectName: "Paperclip App",
   },
@@ -212,6 +156,6 @@ export const issueChatLongThreadFixtureContext = {
     ["Comments", String(LONG_THREAD_COMMENT_COUNT)],
     ["Markdown bodies", String(LONG_THREAD_MARKDOWN_COMMENT_COUNT)],
     ["Timeline events", String(LONG_THREAD_EVENT_COUNT)],
-    ["Linked runs", String(LONG_THREAD_LINKED_RUN_COUNT)],
+    ["Grouped comments", String(LONG_THREAD_COMMENT_COUNT)],
   ],
 } as const;

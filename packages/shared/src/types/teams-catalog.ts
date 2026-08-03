@@ -21,7 +21,7 @@ export type CatalogTeamFileKind =
   | "team"
   | "agent"
   | "project"
-  | "task"
+  | "issue"
   | "skill"
   | "extension"
   | "readme"
@@ -54,7 +54,6 @@ export interface CatalogTeamSkillRequirement {
 
 export interface CatalogTeamEnvInputSummary {
   key: string;
-  agentSlug: string | null;
   projectSlug: string | null;
   kind: "secret" | "plain";
   requirement: "required" | "optional";
@@ -90,7 +89,7 @@ export interface CatalogTeam {
   counts: {
     agents: number;
     projects: number;
-    tasks: number;
+    issues: number;
     routines: number;
     localSkills: number;
     catalogSkills: number;
@@ -147,11 +146,11 @@ export interface CatalogTeamImportOptions {
   collisionStrategy?: CompanyPortabilityCollisionStrategy;
   nameOverrides?: Record<string, string>;
   selectedFiles?: string[];
+  adapterOverrides?: Record<string, CompanyPortabilityAdapterOverride>;
   sourcePolicy?: CatalogTeamSourcePolicy;
 }
 
 export interface CatalogTeamInstallOptions extends CatalogTeamImportOptions {
-  adapterOverrides?: Record<string, CompanyPortabilityAdapterOverride>;
   secretValues?: Record<string, string>;
 }
 

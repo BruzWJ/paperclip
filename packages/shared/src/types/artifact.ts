@@ -2,12 +2,12 @@ export type CompanyArtifactSource = "document" | "attachment" | "work_product";
 
 export type CompanyArtifactMediaKind = "image" | "video" | "text" | "document" | "file" | "empty";
 
-export type CompanyArtifactGroupBy = "none" | "task" | "parent_task";
+export type CompanyArtifactGroupBy = "none" | "issue" | "parent_issue";
 
 export interface CompanyArtifactIssueSummary {
   id: string;
   identifier: string;
-  title: string;
+  title: string | null;
 }
 
 export interface CompanyArtifactProjectSummary {

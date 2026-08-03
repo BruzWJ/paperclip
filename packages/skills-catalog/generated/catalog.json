@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "packageName": "@paperclipai/skills-catalog",
   "packageVersion": "0.3.1",
-  "generatedAt": "2026-07-15T22:20:53.895Z",
+  "generatedAt": "2026-07-30T04:31:31.851Z",
   "skills": [
     {
       "id": "paperclipai:bundled:docs:doc-maintenance",
@@ -17,11 +17,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "engineer",
-        "product",
-        "devrel"
-      ],
       "requires": [],
       "tags": [
         "docs",
@@ -32,151 +27,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 4478,
-          "sha256": "fb0353386c5e5e5e13bcbb3233f044e3dccecf371f429d6328f26c26d7cb6169"
+          "sizeBytes": 4421,
+          "sha256": "efdebf033675a9dc816a46b5977418e6fb5a0bbe57d14322a281249bbe983bef"
         }
       ],
-      "contentHash": "sha256:2e02299210fd17c1fe1867b4ee8c144a11b6fe1fe481f83b8268cfbaaf10f9aa"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:issue-triage",
-      "key": "paperclipai/bundled/paperclip-operations/issue-triage",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "issue-triage",
-      "name": "issue-triage",
-      "description": "Triage Paperclip inbox issues that are stale, blocked, in-review, or assigned-but-not-progressing, and decide a single next action per issue (resume, reassign, unblock, escalate, or close).",
-      "path": "catalog/bundled/paperclip-operations/issue-triage",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "manager",
-        "ceo",
-        "engineer"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "triage",
-        "inbox",
-        "workflow"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 4042,
-          "sha256": "df5bdc8bf5e017b7ba5f70a4b5323fad51d0c323278f386580f26cf43ad09160"
-        }
-      ],
-      "contentHash": "sha256:88dc13560371fb364963782cb4f6eeb4090fcde92ee3774479428ed6b90e11c1"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:reflection-coach",
-      "key": "paperclipai/bundled/paperclip-operations/reflection-coach",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "reflection-coach",
-      "name": "reflection-coach",
-      "description": "Reflect on another agent's recent execution record and propose the smallest durable instruction, skill, or tool-description change. Use for evidence-backed coaching proposals, never hot-swaps.",
-      "path": "catalog/bundled/paperclip-operations/reflection-coach",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "manager",
-        "general"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "reflection",
-        "coaching",
-        "agents",
-        "skills"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 11837,
-          "sha256": "86d6e382c32c626213b46c010cc7fc1ec460821a8c777cfa5b8e86fa9d6a86b2"
-        }
-      ],
-      "contentHash": "sha256:1c7a82cd9638a1d845b238032da3ff4ad80c5b6a87dca46082f501fa4583db55"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:summarize-status",
-      "key": "paperclipai/bundled/paperclip-operations/summarize-status",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "summarize-status",
-      "name": "summarize-status",
-      "description": "Write a short, colloquial summary for a Paperclip summary slot: open with the one or two decisions the reader must make — or, when nothing needs deciding, what to review — each with a recommendation, close with one or two recent pieces of work and where they stand, streaming status as it works.",
-      "path": "catalog/bundled/paperclip-operations/summarize-status",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "general",
-        "manager"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "summary",
-        "status",
-        "reporting",
-        "operations"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 16744,
-          "sha256": "6bfacf153b602cdbba4c0edef64956adf8d11c1819bf1b9494a67abb6d4705eb"
-        }
-      ],
-      "contentHash": "sha256:d7e2a979d95f99ee9d7a341a860602dcdfb7a2feb4d2390fccbaddc838d2da51"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:task-planning",
-      "key": "paperclipai/bundled/paperclip-operations/task-planning",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "task-planning",
-      "name": "task-planning",
-      "description": "Turn a Paperclip issue or request into a structured implementation plan with child task graph, blockers, owners, and acceptance criteria, then save it as the issue `plan` document.",
-      "path": "catalog/bundled/paperclip-operations/task-planning",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "manager",
-        "engineer",
-        "product"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "planning",
-        "issues",
-        "delegation"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 4938,
-          "sha256": "9c52a44a30ec8d306119da51bf298e9e3e6c382a9a9559ffd3054bf5e0c75f36"
-        }
-      ],
-      "contentHash": "sha256:487c3116eead89fef4f71c984329c41836bd69951b7ef9ed8736c69435e02438"
+      "contentHash": "sha256:4a8f60f7130f8cab7aaf5aa5374e252fab872f6a56d1e4d8c7c24621d195893d"
     },
     {
       "id": "paperclipai:bundled:product:paperclip-capsules",
@@ -191,12 +46,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "designer",
-        "product",
-        "engineer",
-        "marketing"
-      ],
       "requires": [],
       "tags": [
         "paperclip",
@@ -210,8 +59,8 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 5831,
-          "sha256": "dd659ccb46e105336eb00fbe689b1d5531347fc69493c3156390d40ee413c93e"
+          "sizeBytes": 5758,
+          "sha256": "ac741f4e126b79d8128aaacfec1d21c058294a972c187af9fd7c93114d420e3c"
         },
         {
           "path": "references/generator-workflows.md",
@@ -228,8 +77,8 @@
         {
           "path": "references/identicon-prototyper.md",
           "kind": "reference",
-          "sizeBytes": 6669,
-          "sha256": "0b19419efa1396a402097decabe24ea9ae649678569449c8ce855e0678df6bfe"
+          "sizeBytes": 6668,
+          "sha256": "3b0948dcd920707c3d4b318e5774df1907f5cad80172591dd4002185bf4c3442"
         },
         {
           "path": "references/individual-status-capsules.md",
@@ -238,7 +87,7 @@
           "sha256": "be1f2eccf96b4d2deefe45b3bc1dd0a3597278472c2ffedadc43c57161e9103d"
         }
       ],
-      "contentHash": "sha256:a2b26cf6895affeeb70c85567a061094450a59bd3c4fdcf28ee65858599ac12c"
+      "contentHash": "sha256:78108ea55465f1200e9ee1c2e621c624ccc05282b21816e67305f38385879489"
     },
     {
       "id": "paperclipai:bundled:product:wireframe",
@@ -253,11 +102,6 @@
       "trustLevel": "assets",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "designer",
-        "product",
-        "engineer"
-      ],
       "requires": [],
       "tags": [
         "design",
@@ -270,8 +114,8 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 11509,
-          "sha256": "6992047cc97b67211cc8c1183718ab9aa26b8afc34c70d54d20558c215daaf48"
+          "sizeBytes": 11450,
+          "sha256": "ded87aab6baca655663c0e7d57f655ba4982802bdf2f8274fd862571c6f639da"
         },
         {
           "path": "assets/site-template.html",
@@ -310,7 +154,7 @@
           "sha256": "017260d2216859d57e5fa869e0efc6b88c7ed4d8a8a4f5af04fe89a3ef2445bd"
         }
       ],
-      "contentHash": "sha256:7106d84fc9db2053090f692706e41cfc586e7dd85a44f568e3319c4eefbdde46"
+      "contentHash": "sha256:581e82a894b7ff46ab91fd9325f368a54ff0a0165fac7e7d38cde48345683bba"
     },
     {
       "id": "paperclipai:bundled:quality:qa-acceptance",
@@ -325,11 +169,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "qa",
-        "engineer",
-        "product"
-      ],
       "requires": [],
       "tags": [
         "qa",
@@ -341,11 +180,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 3861,
-          "sha256": "c631b437ab26d104af6cdb963d8f679a9341439041b3cb3ec8835f4ff551b378"
+          "sizeBytes": 3815,
+          "sha256": "df7e74695701e6a63c52eed7d216a41242aaa854de6a5129128d0fa28ef4e5e2"
         }
       ],
-      "contentHash": "sha256:32372dacaf62e93454b9855968c4eec96456ba78b509f450b3dfaa48e31ef356"
+      "contentHash": "sha256:32eafb607db349aa58303c58f5c9c3717f926789ab45371e61be6a40a14d18d1"
     },
     {
       "id": "paperclipai:bundled:software-development:github-pr-workflow",
@@ -360,9 +199,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "engineer"
-      ],
       "requires": [],
       "tags": [
         "github",
@@ -374,11 +210,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 3970,
-          "sha256": "f498ec4ebb1779dea37adeb1db8a8b22316282798e35ee02e2fc5ff627d7e261"
+          "sizeBytes": 3936,
+          "sha256": "fca5818c7e714ef3c9f6e5c670851d9a7dfe5eab9e5eb717b82ca406a14da299"
         }
       ],
-      "contentHash": "sha256:90f278c89aa0711be150c1cd2456ca25620d02f36995b113ca9837d756a37f6c"
+      "contentHash": "sha256:17a84bf1fa53d9ac830703e2ea1aaf0435f45e413afd4b0f52c55ed37a9a4a96"
     },
     {
       "id": "paperclipai:optional:browser:agent-browser",
@@ -393,11 +229,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "qa",
-        "engineer",
-        "researcher"
-      ],
       "requires": [],
       "tags": [
         "browser",
@@ -409,11 +240,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 5133,
-          "sha256": "362f7b9d02297782bc6f0c093f495b8a0304a75bcf4b42e5c280a42b1f757b7d"
+          "sizeBytes": 5077,
+          "sha256": "2f845bf05aa7fdcdf899b670c6a4b73f01e27611bad3ce40c70e6f763516994a"
         }
       ],
-      "contentHash": "sha256:eabb2c9f7b5e1a27ebb1e05a711d61433a266478154cd671a685e99e67aadea2"
+      "contentHash": "sha256:c117b97313737b96e14b90e8c22bffa401d218c923b7d389cd169155f0e6a5e6"
     },
     {
       "id": "paperclipai:optional:content:release-announcement",
@@ -428,11 +259,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "devrel",
-        "product",
-        "writer"
-      ],
       "requires": [],
       "tags": [
         "release",
@@ -444,11 +270,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 6945,
-          "sha256": "d745cca96350518fabae14f5c407d779e1df2c5d091b5b4a5c55bb888b569e5f"
+          "sizeBytes": 4361,
+          "sha256": "0da13c41ced34b557bcf0e936b688535495deaf69b7a1a783389c14c700c8d38"
         }
       ],
-      "contentHash": "sha256:efe8ea89b552df95222609867c9c75f1b40e16f457d34e7e4a124f54daa33efa"
+      "contentHash": "sha256:846919787c130ade93b2200b39489c6f77af0907c1d9c5a4dbf777d5c977c505"
     },
     {
       "id": "paperclipai:optional:finance:ramp",
@@ -463,12 +289,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "finance",
-        "operations",
-        "founder",
-        "engineer"
-      ],
       "requires": [],
       "tags": [
         "ramp",
@@ -481,11 +301,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 7016,
-          "sha256": "698cd69ebf2f2481ed83c8e9477b56ae78288cc4c751d7d35f649ff2483802a3"
+          "sizeBytes": 6989,
+          "sha256": "25c2704b41f80e319e78be28e6f798246421be0fad8866ea8875cde38e7d9f79"
         }
       ],
-      "contentHash": "sha256:276d85e98a4732f278204e26438aa95fde158dd2d15c1e427c4c7c7d492e769d"
+      "contentHash": "sha256:1e9710a612f3b03c5230c367c01095d82ce656bac63b9ab07cd348e711ef19b6"
     },
     {
       "id": "paperclipai:optional:product:design-critique",
@@ -500,11 +320,6 @@
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "designer",
-        "product",
-        "engineer"
-      ],
       "requires": [],
       "tags": [
         "design",
@@ -516,11 +331,11 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 4851,
-          "sha256": "022e619baf6cc25725946279cb8052d22af090dd6cd6dc8c20f17867f71a5d8e"
+          "sizeBytes": 4792,
+          "sha256": "3b26d49f5ee9eac102d04a57cf77aa4cc990387473e65ccc537ac3dcfe35cd3d"
         }
       ],
-      "contentHash": "sha256:429f94df398a0697042b5bbe4755b1ff1a230aa5f41d99118ad37493ac65d21c"
+      "contentHash": "sha256:c418e909f87f51c35ddc0ecd285d4c9c129fc25e9c9bd762331a08e70ac40a78"
     },
     {
       "id": "paperclipai:optional:research:last30days",
@@ -535,12 +350,6 @@
       "trustLevel": "scripts_executables",
       "compatibility": "compatible",
       "defaultInstall": false,
-      "recommendedForRoles": [
-        "researcher",
-        "marketer",
-        "product-manager",
-        "analyst"
-      ],
       "requires": [
         "node",
         "python3"

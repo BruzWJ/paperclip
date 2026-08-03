@@ -1,4 +1,9 @@
-import type { Approval, ApprovalComment, Issue } from "@paperclipai/shared";
+import type {
+  Approval,
+  ApprovalComment,
+  HireAgentApprovalResubmission,
+  Issue,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 export const approvalsApi = {
@@ -17,6 +22,8 @@ export const approvalsApi = {
     api.post<Approval>(`/approvals/${id}/request-revision`, { decisionNote }),
   resubmit: (id: string, payload?: Record<string, unknown>) =>
     api.post<Approval>(`/approvals/${id}/resubmit`, { payload }),
+  resubmitHire: (id: string, hireAgent: HireAgentApprovalResubmission) =>
+    api.post<Approval>(`/approvals/${id}/resubmit`, { hireAgent }),
   listComments: (id: string) => api.get<ApprovalComment[]>(`/approvals/${id}/comments`),
   addComment: (id: string, body: string) =>
     api.post<ApprovalComment>(`/approvals/${id}/comments`, { body }),

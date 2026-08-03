@@ -20,18 +20,11 @@ type MonitorPolicy = {
   serviceName?: string | null;
 };
 
-type ScheduledRetry = {
-  status?: "scheduled_retry" | "queued" | "running" | "cancelled" | null;
-  scheduledRetryAt?: MonitorDate | null;
-  scheduledRetryAttempt?: number | null;
-};
-
 export interface MonitorIssueLike {
   executionState?: { monitor?: MonitorDetails | null } | null;
   executionPolicy?: { monitor?: MonitorPolicy | null } | null;
   monitorNextCheckAt?: MonitorDate | null;
   monitorAttemptCount?: number | null;
-  scheduledRetry?: ScheduledRetry | null;
 }
 
 export type MonitorDisplayState =
@@ -44,7 +37,6 @@ export type MonitorDisplayState =
 
 export interface DerivedMonitorState {
   state: MonitorDisplayState;
-  source: "monitor" | "scheduled-retry" | "none";
   nextCheckAt: MonitorDate | null;
   attemptCount: number;
   serviceName: string | null;
@@ -175,47 +167,38 @@ export function formatMonitorAbsoluteFull(
 export function deriveMonitorState(issue: MonitorIssueLike, now: MonitorDate = new Date()): DerivedMonitorState {
   const runtimeMonitor = issue.executionState?.monitor ?? null;
   const policyMonitor = issue.executionPolicy?.monitor ?? null;
-  const scheduledRetry = issue.scheduledRetry ?? null;
-  const retryIsActive =
-    scheduledRetry?.status === "scheduled_retry" ||
-    scheduledRetry?.status === "queued" ||
-    scheduledRetry?.status === "running";
   const nextCheckAt =
     runtimeMonitor?.nextCheckAt ??
     issue.monitorNextCheckAt ??
     policyMonitor?.nextCheckAt ??
-    (retryIsActive ? scheduledRetry?.scheduledRetryAt : null) ??
     null;
   const hasMonitor = runtimeMonitor !== null || policyMonitor !== null || issue.monitorNextCheckAt != null;
-  const source = hasMonitor ? "monitor" : retryIsActive ? "scheduled-retry" : "none";
   const attemptCount =
     runtimeMonitor?.attemptCount ??
     (hasMonitor ? issue.monitorAttemptCount : null) ??
-    (retryIsActive ? scheduledRetry?.scheduledRetryAttempt : null) ??
     0;
   const serviceName = runtimeMonitor?.serviceName ?? policyMonitor?.serviceName ?? null;
 
   if (runtimeMonitor?.status === "cleared") {
-    return { state: "cleared", source, nextCheckAt, attemptCount, serviceName };
+    return { state: "cleared", nextCheckAt, attemptCount, serviceName };
   }
 
-  if (!hasMonitor && !retryIsActive) {
-    return { state: "none", source, nextCheckAt: null, attemptCount: 0, serviceName: null };
+  if (!hasMonitor) {
+    return { state: "none", nextCheckAt: null, attemptCount: 0, serviceName: null };
   }
   if (!nextCheckAt) {
-    return { state: retryIsActive || attemptCount > 1 ? "retrying" : "scheduled", source, nextCheckAt, attemptCount, serviceName };
+    return { state: attemptCount > 1 ? "retrying" : "scheduled", nextCheckAt, attemptCount, serviceName };
   }
 
   const deltaMs = toTimestamp(nextCheckAt) - toTimestamp(now);
   if (deltaMs <= -DUE_NOW_GRACE_MS) {
-    return { state: "overdue", source, nextCheckAt, attemptCount, serviceName };
+    return { state: "overdue", nextCheckAt, attemptCount, serviceName };
   }
   if (deltaMs <= 0) {
-    return { state: "due-now", source, nextCheckAt, attemptCount, serviceName };
+    return { state: "due-now", nextCheckAt, attemptCount, serviceName };
   }
   return {
-    state: retryIsActive || attemptCount > 1 ? "retrying" : "scheduled",
-    source,
+    state: attemptCount > 1 ? "retrying" : "scheduled",
     nextCheckAt,
     attemptCount,
     serviceName,
@@ -253,14 +236,4 @@ export function useMonitorCountdown(nextCheckAt: MonitorDate | null | undefined)
   }, [nextCheckTimestamp]);
 
   return now;
-}
-
-export function formatMonitorOffset(nextCheckAt: MonitorDate): string {
-  const now = new Date(Date.now());
-  const deltaMs = toTimestamp(nextCheckAt) - now.getTime();
-  if (Math.round(Math.abs(deltaMs) / MINUTE_MS) === 0) return "now";
-  const eta = formatMonitorEta(nextCheckAt, now);
-  if (eta === "due now") return "now";
-  if (eta.startsWith("overdue by ")) return `${eta.slice("overdue by ".length)} ago`;
-  return eta;
 }

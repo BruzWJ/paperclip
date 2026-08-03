@@ -86,7 +86,7 @@ describe("sandbox native file sync", () => {
     }
   });
 
-  it("prefers the native path for default-provision asset inbound and workspace outbound", async () => {
+  it("prefers the native path for runtime asset inbound and workspace outbound", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-native-sync-"));
     cleanupDirs.push(rootDir);
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -106,7 +106,7 @@ describe("sandbox native file sync", () => {
       assets: [{ key: "skills", localDir: localAssetsDir }],
     });
 
-    // The default-provision asset was transferred through syncIn as a single
+    // The runtime asset was transferred through syncIn as a single
     // directory mapping with an opaque operationId; the file landed in place.
     const inboundOps = syncInOps.flat();
     expect(inboundOps.length).toBe(1);
@@ -128,38 +128,6 @@ describe("sandbox native file sync", () => {
     expect(outboundOps[0].files[0]).toMatchObject({ sourcePath: remoteWorkspaceDir, kind: "directory" });
     expect(await readFile(path.join(localWorkspaceDir, "README.md"), "utf8")).toBe("remote workspace\n");
     expect(await readFile(path.join(localWorkspaceDir, "new.txt"), "utf8")).toBe("added\n");
-  });
-
-  it("keeps a custom-provision asset on the tar fallback even when native sync is available", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-native-custom-"));
-    cleanupDirs.push(rootDir);
-    const localWorkspaceDir = path.join(rootDir, "local-workspace");
-    const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
-    const localAssetsDir = path.join(rootDir, "local-assets");
-    await mkdir(localWorkspaceDir, { recursive: true });
-    await mkdir(localAssetsDir, { recursive: true });
-    await writeFile(path.join(localWorkspaceDir, "README.md"), "ws\n", "utf8");
-    await writeFile(path.join(localAssetsDir, "cred.txt"), "secret\n", "utf8");
-
-    const { client, syncInOps } = makeNativeClient();
-    const prepared = await prepareSandboxManagedRuntime({
-      spec: { transport: "sandbox", provider: "test", sandboxId: "s1", remoteCwd: remoteWorkspaceDir, timeoutMs: 30_000, apiKey: null },
-      adapterKey: "test-adapter",
-      client,
-      workspaceLocalDir: localWorkspaceDir,
-      assets: [{
-        key: "creds",
-        localDir: localAssetsDir,
-        // A bespoke extract command (e.g. a credential merge) cannot be a generic
-        // file mapping, so the orchestrator keeps it on the tar path.
-        provision: { extractCommand: ({ assetTarPath, assetDir }) =>
-          `rm -rf ${assetDir} && mkdir -p ${assetDir} && tar -xf ${assetTarPath} -C ${assetDir} && rm -f ${assetTarPath}` },
-      }],
-    });
-
-    // No syncIn operation for the custom asset; it still materializes via tar.
-    expect(syncInOps.flat().length).toBe(0);
-    expect(await readFile(path.join(prepared.assetDirs.creds, "cred.txt"), "utf8")).toBe("secret\n");
   });
 
   it("dereferences symlinks only when followSymlinks is true (native honors the flag)", async () => {

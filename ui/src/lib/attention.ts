@@ -3,12 +3,9 @@ import {
   Ban,
   DollarSign,
   Eye,
-  LifeBuoy,
-  MessageSquareQuote,
   RefreshCw,
   ShieldCheck,
   UserPlus,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import type {
@@ -21,16 +18,16 @@ import type {
   AttentionSourceKind,
   AttentionWorkspaceRef,
 } from "@paperclipai/shared";
+import { formatMoneyAmount } from "./utils";
 
 /**
  * Source kinds the queue can fully resolve in-row. Everything else deep-links
  * to its native surface — reviews are *never* inline (converged PAP-12628),
- * and the remaining state-derived sources (recovery, failures, budget) expose
+ * and the remaining state-derived sources (failures and budget) expose
  * verbs too rich to safely inline here, so they open their surface.
  */
 export const INLINE_RESOLVABLE_SOURCE_KINDS: ReadonlySet<AttentionSourceKind> = new Set<AttentionSourceKind>([
   "approval",
-  "issue_thread_interaction",
   "join_request",
 ]);
 
@@ -45,15 +42,13 @@ interface SourceMeta {
 
 const SOURCE_META: Record<AttentionSourceKind, SourceMeta> = {
   approval: { label: "Approval", icon: ShieldCheck },
-  issue_thread_interaction: { label: "Decision requested", icon: MessageSquareQuote },
   join_request: { label: "Join request", icon: UserPlus },
-  recovery_action: { label: "Recovery", icon: LifeBuoy },
-  productivity_review: { label: "Productivity review", icon: Zap },
   blocker_attention: { label: "Blocked dependency", icon: Ban },
   review: { label: "Review", icon: Eye },
   failed_run: { label: "Failed run", icon: RefreshCw },
   budget_alert: { label: "Budget", icon: DollarSign },
   agent_error_alert: { label: "Agent error", icon: AlertTriangle },
+  agent_liveness: { label: "Agent liveness", icon: AlertTriangle },
 };
 
 export function sourceMeta(kind: AttentionSourceKind): SourceMeta {
@@ -82,12 +77,10 @@ export function severityStyle(severity: AttentionSeverity): SeverityStyle {
 // Canonical type → color map (PAP-13409 §4)
 //
 // The row color is driven by the *kind of decision*, never by severity — one
-// map, sourced from `IssueThreadInteractionCard`'s palette so a plan approval or
-// confirmation reads identically in the queue and on the issue thread:
-//   • confirmations / questions / suggested-tasks / verdicts / reviews → sky
-//   • plan approvals                                                   → violet
+// map shared by the attention queue:
+//   • approvals / reviews                                             → sky
 //   • failures (failed run, agent error)                              → rose
-//   • blocked / recovery / budget                                     → amber
+//   • blocked / budget                                                → amber
 //   • join request                                                    → neutral
 // Severity only ever surfaces as a small Critical/High badge (never the accent).
 // ---------------------------------------------------------------------------
@@ -99,7 +92,7 @@ export interface AttentionToneStyle {
   accent: string;
   /** Source-icon tint. */
   icon: string;
-  /** Chip / badge border+bg+text (matches the interaction card badge palette). */
+  /** Chip / badge border+bg+text. */
   chip: string;
 }
 
@@ -132,26 +125,21 @@ const TONE_STYLE: Record<AttentionTone, AttentionToneStyle> = {
 };
 
 /**
- * Resolve the canonical tone for a row. A plan approval is violet regardless of
- * which surface tagged it (approval flow *or* issue-thread confirmation), so we
- * check the T1 detail discriminant first, then fall back to the source kind.
+ * Resolve the canonical tone for a row.
  */
 export function attentionTone(item: AttentionItem): AttentionTone {
-  if (item.detail?.kind === "plan_approval") return "violet";
   switch (item.sourceKind) {
     case "failed_run":
     case "agent_error_alert":
       return "rose";
     case "blocker_attention":
-    case "recovery_action":
     case "budget_alert":
+    case "agent_liveness":
       return "amber";
     case "join_request":
       return "neutral";
     case "approval":
-    case "issue_thread_interaction":
     case "review":
-    case "productivity_review":
     default:
       return "sky";
   }
@@ -187,10 +175,6 @@ function quote(text: string | null | undefined): string | null {
   return `“${trimmed}”`;
 }
 
-function countNoun(count: number, singular: string): string {
-  return `${count} ${count === 1 ? singular : `${singular}s`}`;
-}
-
 /**
  * A concise human-readable detail line for a row, e.g.
  *   "2 questions — “Which auth provider…”"
@@ -202,31 +186,8 @@ export function attentionDetailLine(item: AttentionItem): string | null {
   const detail = item.detail;
   if (!detail) return null;
   switch (detail.kind) {
-    case "plan_approval":
-      return detail.planTitle?.trim() || quote(detail.summaryExcerpt);
     case "approval":
       return quote(detail.summaryExcerpt);
-    case "confirmation":
-      return quote(detail.promptExcerpt);
-    case "checkbox_confirmation": {
-      const q = quote(detail.promptExcerpt);
-      return q ? `${countNoun(detail.optionCount, "option")} — ${q}` : countNoun(detail.optionCount, "option");
-    }
-    case "questions": {
-      const q = quote(detail.firstQuestionText);
-      const label = countNoun(detail.questionCount, "question");
-      return q ? `${label} — ${q}` : label;
-    }
-    case "suggested_tasks": {
-      const q = quote(detail.firstTaskTitle);
-      const label = countNoun(detail.taskCount, "suggested task");
-      return q ? `${label} — ${q}` : label;
-    }
-    case "item_verdicts": {
-      const q = quote(detail.promptExcerpt);
-      const label = `${countNoun(detail.itemCount, "item")} to verdict`;
-      return q ? `${label} — ${q}` : label;
-    }
     case "failed_run":
     case "agent_error": {
       const reason = quote(detail.failureReasonExcerpt);
@@ -240,7 +201,7 @@ export function attentionDetailLine(item: AttentionItem): string | null {
       return b.title ? `Blocked by ${id}${b.title}` : b.identifier ? `Blocked by ${b.identifier}` : null;
     }
     case "budget":
-      return `${Math.round(detail.observedPercent)}% of budget used ($${detail.amountObserved} / $${detail.amountLimit})`;
+      return `${Math.round(detail.observedPercent)}% of budget used (${formatMoneyAmount(detail.observedAmount, detail.budgetCurrency)} / ${formatMoneyAmount(detail.limitAmount, detail.budgetCurrency)})`;
     case "generic":
       return quote(detail.summaryExcerpt);
     default:

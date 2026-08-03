@@ -1,5 +1,7 @@
 # Agent Management Follow-up Plan (CEO Patch + Config Rollback + Issue↔Approval Linking)
 
+> Historical only. CEO-special behavior and provider operational skills described here were retired by the roleless issue-execution cutover and have no runtime reader.
+
 Status: Proposed  
 Date: 2026-02-19  
 Context: Follow-up from run `faeab00e-7857-4acc-b2b2-86f6d078adb4`
@@ -119,7 +121,8 @@ Indexes:
 
 ## 4.1 Agent PATCH authz fix
 
-Update `PATCH /api/agents/:id` authz matrix:
+Replace the retired mixed agent-update authorization matrix with independent
+runtime-agent and operational configuration authorization:
 
 - board: allow
 - agent role `ceo` in same company: allow
@@ -140,7 +143,8 @@ Add:
 
 - `GET /api/agents/:id/config-revisions`
 - `GET /api/agents/:id/config-revisions/:revisionId`
-- `POST /api/agents/:id/config-revisions/:revisionId/rollback`
+- Historical adapter revisions are immutable and cannot be restored or
+  repointed; a change always appends a new revision.
 
 Behavior:
 
@@ -161,7 +165,8 @@ Add:
 Extend create payloads to optionally include issue context:
 
 - `POST /api/companies/:companyId/approvals` supports `issueId` or `issueIds`
-- `POST /api/companies/:companyId/agent-hires` supports `sourceIssueId` or `sourceIssueIds`
+- The retired mixed hire endpoint supported `sourceIssueId` or
+  `sourceIssueIds`; the current control plane does not preserve that contract.
 
 Server behavior:
 

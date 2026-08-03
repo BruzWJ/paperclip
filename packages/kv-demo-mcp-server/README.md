@@ -123,17 +123,16 @@ If a token is set, add the `credentialValues` block:
   the same loopback URL, so the UI always sees the same store the tools
   mutated.
 - **`local_stdio` (not used here)** — runs MCP servers as supervised child
-  processes inside Paperclip's runtime slots. Reserved for *trusted local
-  deployments* (developer laptop, `local_trusted` or
-  `authenticated/private` with `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` set on a
-  single trusted worker). Each runtime slot has its own process, which would
+  processes inside Paperclip's runtime slots. Reserved for explicitly trusted
+  hosts (for example, a developer laptop or a private worker with
+  `PAPERCLIP_TRUSTED_MCP_RUNTIME_HOST` set). Each runtime slot has its own process, which would
   give each slot its own in-memory store — you would lose the shared-state
   property that makes this demo work. Use the approved stdio templates that
   ship in the Paperclip build when you need stdio; do not try to shoehorn
   this server into a local-stdio template.
 
-For the full transport policy across deployment modes, see
-[MCP-ACCESS-GOVERNANCE.md → Local trusted deployment](../../doc/MCP-ACCESS-GOVERNANCE.md#local-trusted-deployment).
+For the full transport policy across environments, see
+[MCP-ACCESS-GOVERNANCE.md → Local process trust](../../doc/MCP-ACCESS-GOVERNANCE.md#local-process-trust).
 
 ## What you should see in Paperclip
 

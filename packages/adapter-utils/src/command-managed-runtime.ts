@@ -21,15 +21,30 @@ export interface CommandManagedRuntimeRunner {
    */
   supportsSingleStreamStdinProgress?: boolean;
   execute(input: {
+    /**
+     * Opaque host-only identity for this exact command. Productive adapter
+     * execution reuses its launcher attempt id; ancillary runtime commands may
+     * omit it and let the host runner allocate one.
+     */
+    executionId?: string;
     command: string;
     args?: string[];
     cwd?: string;
     env?: Record<string, string>;
     stdin?: string;
     timeoutMs?: number;
+    abortSignal?: AbortSignal;
     onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
     onSpawn?: (meta: { pid: number; startedAt: string }) => Promise<void>;
   }): Promise<RunProcessResult>;
+  /**
+   * Stops only the exact command identified by executionId. Implementations
+   * must preserve the provider lease, workspace, worker, and other commands.
+   */
+  cancelExecution?(input: {
+    executionId: string;
+    reason: string;
+  }): Promise<{ executionId: string; cancelled: boolean }>;
   /**
    * Optional native inbound file transfer. Present only when the sandbox
    * provider advertises both `environmentSyncIn` and `environmentSyncOut`; the
@@ -43,6 +58,7 @@ export interface CommandManagedRuntimeRunner {
 }
 
 export interface CommandManagedRuntimeSpec {
+  targetKind?: "sandbox" | "plugin";
   providerKey?: string | null;
   shellCommand?: "bash" | "sh" | null;
   leaseId?: string | null;
@@ -321,6 +337,7 @@ export async function prepareCommandManagedRuntime(input: {
       if (!probe.timedOut && (probe.exitCode ?? 1) === 0) {
         return await prepareSandboxManagedRuntime({
           spec: runtimeSpec,
+          runtimeTarget: input.spec.targetKind,
           client,
           adapterKey: input.adapterKey,
           workspaceLocalDir: input.workspaceLocalDir,
@@ -343,8 +360,7 @@ export async function prepareCommandManagedRuntime(input: {
     // from a previous lease, the template image, or another path entry. Log
     // and continue rather than aborting the agent run; downstream code that
     // exec's the CLI will surface a clear "command not found" if it is in
-    // fact missing. The test path's `maybeRunSandboxInstallCommand` already
-    // honors this contract — keep them consistent.
+    // fact missing.
     if (result.timedOut || (result.exitCode ?? 0) !== 0) {
       const tail = (text: string) =>
         text.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(-3).join(" | ").slice(0, 480);
@@ -357,6 +373,7 @@ export async function prepareCommandManagedRuntime(input: {
 
   return await prepareSandboxManagedRuntime({
     spec: runtimeSpec,
+    runtimeTarget: input.spec.targetKind,
     client,
     adapterKey: input.adapterKey,
     workspaceLocalDir: input.workspaceLocalDir,

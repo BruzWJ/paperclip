@@ -20,9 +20,8 @@ import {
 
 /**
  * Pure logic for the Skill Studio UI (PAP-12962). Kept free of React so the
- * three behavioural contracts the acceptance criteria call out — run-status
- * derivation, the disabled-Run matrix, and interaction inline-vs-fallback
- * routing — are unit-testable in isolation.
+ * behavioural contracts the acceptance criteria call out are unit-testable in
+ * isolation.
  */
 
 export const TERMINAL_RUN_STATUSES: readonly CompanySkillTestRunStatus[] = [
@@ -31,7 +30,6 @@ export const TERMINAL_RUN_STATUSES: readonly CompanySkillTestRunStatus[] = [
   "cancelled",
 ];
 
-export const DEFAULT_TEST_RUN_TEMPLATE_ID = "built-in:default-test-template";
 export const NO_TEST_RUN_TEMPLATE_STORAGE_VALUE = "__paperclip_no_template__";
 
 export function isTerminalRunStatus(status: CompanySkillTestRunStatus): boolean {
@@ -89,11 +87,11 @@ export function showRunErrorCard(status: CompanySkillTestRunStatus): boolean {
  * hard-deleted harness issue leaves the run row intact (self-contained
  * snapshots) but disables the link with a "Test task expired" tooltip.
  */
-export function testTaskLinkState(run: {
-  taskExpired: boolean;
+export function testIssueLinkState(run: {
+  issueExpired: boolean;
   harnessIssue?: { id: string } | null;
 }): { enabled: boolean; reason: string | null } {
-  if (run.taskExpired || !run.harnessIssue) {
+  if (run.issueExpired || !run.harnessIssue) {
     return { enabled: false, reason: "Test task expired" };
   }
   return { enabled: true, reason: null };
@@ -221,31 +219,6 @@ export function savedInputDraftDirty(
 }
 
 // ---------------------------------------------------------------------------
-// Interaction inline-vs-fallback routing (board 12)
-// ---------------------------------------------------------------------------
-
-/**
- * Interaction kinds that render as inline, answerable cards inside the Studio.
- * Answering posts to the real interaction on the hidden harness task; every
- * other kind is shown as a non-dropped summary row that links out to the task.
- */
-export const INLINE_INTERACTION_KINDS: ReadonlySet<string> = new Set([
-  "ask_user_questions",
-  "request_confirmation",
-]);
-
-export type InteractionRendering = "inline" | "fallback";
-
-export function routeInteraction(kind: string): InteractionRendering {
-  return INLINE_INTERACTION_KINDS.has(kind) ? "inline" : "fallback";
-}
-
-/** An interaction is answerable inline only while it is still pending. */
-export function isInteractionAnswerable(interaction: { kind: string; status: string }): boolean {
-  return routeInteraction(interaction.kind) === "inline" && interaction.status === "pending";
-}
-
-// ---------------------------------------------------------------------------
 // Agent picker helpers
 // ---------------------------------------------------------------------------
 
@@ -293,7 +266,7 @@ export function serializeRunTemplateSelection(selection: RunTemplateSelection): 
 
 export function parseRunTemplateSelection(value: string | null): RunTemplateSelection {
   if (value === NO_TEST_RUN_TEMPLATE_STORAGE_VALUE) return null;
-  return value && value.trim() ? value : DEFAULT_TEST_RUN_TEMPLATE_ID;
+  return value && value.trim() ? value : null;
 }
 
 export function resolveRunTemplateSelection(
@@ -309,14 +282,9 @@ export function resolveRunTemplateSelection(
     return { selection, template, recovered: false };
   }
 
-  const fallback =
-    templates.find((candidate) => candidate.id === DEFAULT_TEST_RUN_TEMPLATE_ID)
-    ?? templates[0]
-    ?? null;
-
   return {
-    selection: fallback?.id ?? null,
-    template: fallback,
+    selection: null,
+    template: null,
     recovered: true,
   };
 }

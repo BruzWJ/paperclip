@@ -1,33 +1,20 @@
-import { Router, type Request } from "express";
+import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
-  issueGraphLivenessAutoRecoveryRequestSchema,
   patchInstanceSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   patchInstanceGeneralSettingsSchema,
 } from "@paperclipai/shared";
-import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { heartbeatService, instanceSettingsService, logActivity } from "../services/index.js";
+import { instanceSettingsService, logActivity } from "../services/index.js";
 import { environmentService } from "../services/environments.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
-import { assertBoardOrgAccess, getActorInfo } from "./authz.js";
-
-function assertCanManageInstanceSettings(req: Request) {
-  if (req.actor.type !== "board") {
-    throw forbidden("Board access required");
-  }
-  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
-    return;
-  }
-  throw forbidden("Instance admin access required");
-}
+import { assertBoardOrgAccess, assertInstanceAdmin } from "./authz.js";
 
 export function instanceSettingsRoutes(db: Db) {
   const router = Router();
   const svc = instanceSettingsService(db);
   const environments = environmentService(db);
-  const heartbeat = heartbeatService(db);
 
   router.get("/instance/settings", async (req, res) => {
     assertBoardOrgAccess(req);
@@ -38,7 +25,7 @@ export function instanceSettingsRoutes(db: Db) {
     "/instance/settings",
     validate(patchInstanceSettingsSchema),
     async (req, res) => {
-      assertCanManageInstanceSettings(req);
+      assertInstanceAdmin(req);
       if (Object.prototype.hasOwnProperty.call(req.body, "defaultEnvironmentId")) {
         await assertEnvironmentSelectionForCompany(
           environments,
@@ -47,17 +34,13 @@ export function instanceSettingsRoutes(db: Db) {
         );
       }
       const updated = await svc.update(req.body);
-      const actor = getActorInfo(req);
       const companyIds = await svc.listCompanyIds();
       await Promise.all(
         companyIds.map((companyId) =>
           logActivity(db, {
             companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
-            agentApiKeyId: actor.agentApiKeyId,
+            actorType: "user",
+            actorId: req.actor.userId,
             action: "instance.settings.updated",
             entityType: "instance_settings",
             entityId: updated.id,
@@ -83,19 +66,15 @@ export function instanceSettingsRoutes(db: Db) {
     "/instance/settings/general",
     validate(patchInstanceGeneralSettingsSchema),
     async (req, res) => {
-      assertCanManageInstanceSettings(req);
+      assertInstanceAdmin(req);
       const updated = await svc.updateGeneral(req.body);
-      const actor = getActorInfo(req);
       const companyIds = await svc.listCompanyIds();
       await Promise.all(
         companyIds.map((companyId) =>
           logActivity(db, {
             companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
-            agentApiKeyId: actor.agentApiKeyId,
+            actorType: "user",
+            actorId: req.actor.userId,
             action: "instance.settings.general_updated",
             entityType: "instance_settings",
             entityId: updated.id,
@@ -122,19 +101,15 @@ export function instanceSettingsRoutes(db: Db) {
     "/instance/settings/experimental",
     validate(patchInstanceExperimentalSettingsSchema),
     async (req, res) => {
-      assertCanManageInstanceSettings(req);
+      assertInstanceAdmin(req);
       const updated = await svc.updateExperimental(req.body);
-      const actor = getActorInfo(req);
       const companyIds = await svc.listCompanyIds();
       await Promise.all(
         companyIds.map((companyId) =>
           logActivity(db, {
             companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
-            agentApiKeyId: actor.agentApiKeyId,
+            actorType: "user",
+            actorId: req.actor.userId,
             action: "instance.settings.experimental_updated",
             entityType: "instance_settings",
             entityId: updated.id,
@@ -146,55 +121,6 @@ export function instanceSettingsRoutes(db: Db) {
         ),
       );
       res.json(updated.experimental);
-    },
-  );
-
-  router.post(
-    "/instance/settings/experimental/issue-graph-liveness-auto-recovery/preview",
-    validate(issueGraphLivenessAutoRecoveryRequestSchema),
-    async (req, res) => {
-      assertCanManageInstanceSettings(req);
-      res.json(await heartbeat.buildIssueGraphLivenessAutoRecoveryPreview({
-        lookbackHours: req.body.lookbackHours,
-      }));
-    },
-  );
-
-  router.post(
-    "/instance/settings/experimental/issue-graph-liveness-auto-recovery/run",
-    validate(issueGraphLivenessAutoRecoveryRequestSchema),
-    async (req, res) => {
-      assertCanManageInstanceSettings(req);
-      const actor = getActorInfo(req);
-      const result = await heartbeat.reconcileIssueGraphLiveness({
-        runId: actor.runId,
-        force: true,
-        lookbackHours: req.body.lookbackHours,
-      });
-      const companyIds = await svc.listCompanyIds();
-      await Promise.all(
-        companyIds.map((companyId) =>
-          logActivity(db, {
-            companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
-            agentApiKeyId: actor.agentApiKeyId,
-            action: "instance.settings.issue_graph_liveness_auto_recovery_run",
-            entityType: "instance_settings",
-            entityId: "default",
-            details: {
-              lookbackHours: result.lookbackHours,
-              escalationsCreated: result.escalationsCreated,
-              existingEscalations: result.existingEscalations,
-              skippedOutsideLookback: result.skippedOutsideLookback,
-              escalationIssueIds: result.escalationIssueIds,
-            },
-          }),
-        ),
-      );
-      res.json(result);
     },
   );
 

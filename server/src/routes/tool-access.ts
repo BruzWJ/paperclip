@@ -7,7 +7,6 @@ import {
   DEFAULT_OWNERSHIP_AVAILABILITY,
   TOOL_ACTION_REQUEST_STATUSES,
   type DeploymentExposure,
-  type DeploymentMode,
   type PermissionKey,
   connectToolAppSchema,
   createToolStdioCommandTemplateSchema,
@@ -27,7 +26,6 @@ import {
   createToolTrustRuleFromActionRequestSchema,
   importMcpJsonSchema,
   putToolConnectionInstallsSchema,
-  connectionTokenRequestSchema,
   startConnectionAuthorizationSchema,
   revokeToolTrustRuleSchema,
   reorderToolPoliciesSchema,
@@ -41,7 +39,12 @@ import {
   updateToolProfileWithEntriesSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { getActorInfo, assertBoard, assertCompanyAccess, hasCompanyAccess } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  getBoardUserId,
+  hasCompanyAccess,
+} from "./authz.js";
 import { badRequest, forbidden, notFound, unprocessable } from "../errors.js";
 import { accessService, googleSheetsRobotEmailFromEnv, logActivity, toolAccessPolicyService, toolAccessService } from "../services/index.js";
 import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-gateway.js";
@@ -81,8 +84,8 @@ function classifyConnectionUpdate(
 export function toolAccessRoutes(
   db: Db,
   options: {
-    deploymentMode?: DeploymentMode;
     deploymentExposure?: DeploymentExposure;
+    canonicalPublicUrl?: string;
     trustedLocalStdioRuntimeHost?: string | null;
     toolGateway?: ToolGatewayService;
   } = {},
@@ -92,12 +95,7 @@ export function toolAccessRoutes(
   const policySvc = toolAccessPolicyService(db);
 
   function configuredPublicBaseUrl() {
-    const raw = (
-      process.env.PAPERCLIP_PUBLIC_URL?.trim()
-      || process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL?.trim()
-      || process.env.BETTER_AUTH_URL?.trim()
-      || process.env.BETTER_AUTH_BASE_URL?.trim()
-    );
+    const raw = options.canonicalPublicUrl?.trim();
     if (!raw) return null;
     try {
       return new URL(raw).origin;
@@ -109,17 +107,29 @@ export function toolAccessRoutes(
   function oauthRedirectUri() {
     const configured = configuredPublicBaseUrl();
     if (!configured) {
-      throw unprocessable("OAuth connections require PAPERCLIP_PUBLIC_URL or an auth public base URL");
+      throw unprocessable("OAuth connections require the canonical public URL for public exposure");
     }
     return new URL("/api/tools/oauth/callback", configured).toString();
   }
+
+  function boardToolActor(req: Request) {
+    assertBoard(req);
+    return {
+      actorType: "user" as const,
+      actorId: req.actor.userId,
+      ...(req.actor.source === "session"
+        ? { sessionId: req.actor.sessionId }
+        : {}),
+    };
+  }
+
   const access = accessService(db);
 
   async function assertBoardToolPermission(req: Request, companyId: string, permissionKey: PermissionKey) {
     assertBoard(req);
     assertCompanyAccess(req, companyId);
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
-    const userId = req.actor.userId;
+    if (req.actor.isInstanceAdmin) return;
+    const userId = getBoardUserId(req);
     if (userId && await access.hasPermission(companyId, "user", userId, permissionKey)) return;
     throw forbidden(`Missing permission: ${permissionKey}`);
   }
@@ -127,8 +137,8 @@ export function toolAccessRoutes(
   async function assertBoardAnyToolPermission(req: Request, companyId: string, permissionKeys: PermissionKey[]) {
     assertBoard(req);
     assertCompanyAccess(req, companyId);
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
-    const userId = req.actor.userId;
+    if (req.actor.isInstanceAdmin) return;
+    const userId = getBoardUserId(req);
     if (userId) {
       for (const permissionKey of permissionKeys) {
         if (await access.hasPermission(companyId, "user", userId, permissionKey)) return;
@@ -140,19 +150,15 @@ export function toolAccessRoutes(
   async function assertCanTestAsAgent(req: Request, companyId: string, agentId: string) {
     const decision = await access.decide({
       actor: req.actor,
-      action: "tasks:assign",
+      action: "agent_config:update",
       resource: {
-        type: "issue",
+        type: "agent",
         companyId,
-        issueId: null,
-        projectId: null,
-        parentIssueId: null,
-        assigneeAgentId: agentId,
-        assigneeUserId: null,
+        agentId,
       },
       scope: {
-        assigneeAgentId: agentId,
-        assigneeUserId: null,
+        requiresChangeGrant: true,
+        targetAgentId: agentId,
       },
     });
     if (decision.allowed) return;
@@ -175,52 +181,10 @@ export function toolAccessRoutes(
     await assertBoardToolPermission(req, companyId, "tools:manage_runtime");
   }
 
-  router.post("/agents/me/connections/:connectionId/start-authorization", validate(startConnectionAuthorizationSchema), async (req, res) => {
-    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId || !req.actor.runId) {
-      res.status(401).json({ error: "Active agent run authentication required" });
-      return;
-    }
-    const result = await svc.startAuthorizationForAgent({
-      companyId: req.actor.companyId,
-      connectionId: req.params.connectionId as string,
-      agentId: req.actor.agentId,
-      runId: req.actor.runId,
-      subjectUserId: req.body.subjectUserId,
-      scopes: req.body.scopes,
-      returnTo: req.body.returnTo,
-      redirectUri: oauthRedirectUri(),
-    });
-    res.json({ url: result.authorizationUrl });
-  });
-
-  router.post("/agents/me/connections/:connectionId/token", validate(connectionTokenRequestSchema), async (req, res) => {
-    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
-      res.status(401).json({ error: "Agent authentication required" });
-      return;
-    }
-    if (!req.actor.runId) {
-      res.status(401).json({ error: "Agent run id required", code: "run_id_required" });
-      return;
-    }
-    const headerRunId = req.get("X-Paperclip-Run-Id")?.trim();
-    if (headerRunId && headerRunId !== req.actor.runId) {
-      res.status(403).json({ error: "Run id header does not match agent token", code: "run_id_mismatch" });
-      return;
-    }
-    const result = await svc.mintConnectionTokenForAgent({
-      connectionId: req.params.connectionId as string,
-      companyId: req.actor.companyId,
-      agentId: req.actor.agentId,
-      runId: req.actor.runId,
-      body: req.body,
-    });
-    res.status(result.status === "use_env_lease" ? 409 : 200).json(result);
-  });
-
   function assertToolAppMutationAccess(req: Request, companyId: string) {
     assertBoard(req);
     assertCompanyAccess(req, companyId);
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
+    if (req.actor.isInstanceAdmin) return;
     const membership = Array.isArray(req.actor.memberships)
       ? req.actor.memberships.find((item) => item.companyId === companyId)
       : null;
@@ -256,18 +220,18 @@ export function toolAccessRoutes(
     const companyId = req.params.companyId as string;
     assertToolAppMutationAccess(req, companyId);
     try {
-      const result = await svc.connectGalleryApp(companyId, req.body, getActorInfo(req));
+      const result = await svc.connectGalleryApp(companyId, req.body, boardToolActor(req));
       if (result.auth?.kind === "oauth") {
         const start = await svc.startOAuth(companyId, result.connectionId, {
           redirectUri: oauthRedirectUri(),
-          actor: getActorInfo(req),
+          actor: boardToolActor(req),
         });
         result.auth.startUrl = start.authorizationUrl;
       }
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_app.connected",
         entityType: "tool_connection",
         entityId: result.connectionId,
@@ -292,13 +256,13 @@ export function toolAccessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertToolAppMutationAccess(req, companyId);
-      if (!req.actor.userId || req.actor.userId !== req.body.subjectUserId) {
+      if (!getBoardUserId(req) || getBoardUserId(req) !== req.body.subjectUserId) {
         throw forbidden("Board users may only authorize their own connection subject");
       }
       const existing = await svc.getConnection(req.params.connectionId as string, companyId);
       const result = await svc.startOAuth(companyId, existing.id, {
         redirectUri: oauthRedirectUri(),
-        actor: getActorInfo(req),
+        actor: boardToolActor(req),
         subjectUserId: req.body.subjectUserId,
         scopes: req.body.scopes,
         returnTo: req.body.returnTo,
@@ -312,7 +276,7 @@ export function toolAccessRoutes(
     assertToolAppMutationAccess(req, existing.companyId);
     const result = await svc.startOAuth(existing.companyId, existing.id, {
       redirectUri: oauthRedirectUri(),
-      actor: getActorInfo(req),
+      actor: boardToolActor(req),
     });
     res.json(result);
   });
@@ -334,12 +298,12 @@ export function toolAccessRoutes(
       error,
       errorDescription,
       redirectUri: oauthRedirectUri(),
-      actor: getActorInfo(req),
+      actor: boardToolActor(req),
     });
     await logActivity(db, {
       companyId: result.connection.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_app.oauth_connected",
       entityType: "tool_connection",
       entityId: result.connection.id,
@@ -365,11 +329,16 @@ export function toolAccessRoutes(
     const companyId = req.params.companyId as string;
     assertToolAppMutationAccess(req, companyId);
     const existing = await svc.getConnection(req.params.connectionId as string, companyId);
-    const result = await svc.finishGalleryAppConnection(companyId, existing.id, req.body, getActorInfo(req));
+    const result = await svc.finishGalleryAppConnection(
+      companyId,
+      existing.id,
+      req.body,
+      boardToolActor(req),
+    );
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_app.finished",
       entityType: "tool_connection",
       entityId: result.connection.id,
@@ -412,11 +381,15 @@ export function toolAccessRoutes(
   router.post("/companies/:companyId/tools/examples/:id/install", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertToolAppMutationAccess(req, companyId);
-    const result = await svc.installExample(companyId, req.params.id as string, getActorInfo(req));
+    const result = await svc.installExample(
+      companyId,
+      req.params.id as string,
+      boardToolActor(req),
+    );
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_example.installed",
       entityType: "tool_example",
       entityId: result.example.id,
@@ -435,11 +408,15 @@ export function toolAccessRoutes(
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const result = await svc.smokeExample(companyId, req.params.id as string, getActorInfo(req));
+    const result = await svc.smokeExample(
+      companyId,
+      req.params.id as string,
+      boardToolActor(req),
+    );
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_example.smoke_run",
       entityType: "tool_example",
       entityId: result.exampleId,
@@ -475,7 +452,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_application.created",
         entityType: "tool_application",
         entityId: application.id,
@@ -495,7 +472,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId: application.companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_application.updated",
         entityType: "tool_application",
         entityId: application.id,
@@ -514,7 +491,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId: application.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_application.deleted",
       entityType: "tool_application",
       entityId: application.id,
@@ -534,11 +511,15 @@ export function toolAccessRoutes(
     const companyId = req.params.companyId as string;
     assertToolAppMutationAccess(req, companyId);
     try {
-      const connection = await svc.createConnection(companyId, req.body);
+      const connection = await svc.createConnection(
+        companyId,
+        req.body,
+        boardToolActor(req),
+      );
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_connection.created",
         entityType: "tool_connection",
         entityId: connection.id,
@@ -584,11 +565,11 @@ export function toolAccessRoutes(
       providerTenant,
       credentialSecretRefs,
       isDefault: body.isDefault === true,
-    }, getActorInfo(req));
+    }, boardToolActor(req));
     await logActivity(db, {
       companyId: connection.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_connection.grant_added",
       entityType: "connection_grant",
       entityId: grant.id,
@@ -601,11 +582,15 @@ export function toolAccessRoutes(
     assertBoard(req);
     const connection = await svc.getConnection(req.params.connectionId as string);
     await assertBoardToolPermission(req, connection.companyId, "tools:manage_connections");
-    const grant = await svc.revokeConnectionGrant(connection.id, req.params.grantId as string, getActorInfo(req));
+    const grant = await svc.revokeConnectionGrant(
+      connection.id,
+      req.params.grantId as string,
+      boardToolActor(req),
+    );
     await logActivity(db, {
       companyId: connection.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_connection.grant_revoked",
       entityType: "connection_grant",
       entityId: grant.id,
@@ -639,11 +624,15 @@ export function toolAccessRoutes(
       assertBoard(req);
       const connection = await svc.getConnection(req.params.connectionId as string);
       await assertBoardToolPermission(req, connection.companyId, "tools:manage_connections");
-      const snapshot = await svc.putConnectionInstalls(connection.id, req.body, getActorInfo(req));
+      const snapshot = await svc.putConnectionInstalls(
+        connection.id,
+        req.body,
+        boardToolActor(req),
+      );
       await logActivity(db, {
         companyId: connection.companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_connection.installs_synced",
         entityType: "tool_connection",
         entityId: connection.id,
@@ -667,7 +656,6 @@ export function toolAccessRoutes(
       .select({
         id: agents.id,
         name: agents.name,
-        role: agents.role,
         title: agents.title,
         status: agents.status,
       })
@@ -706,7 +694,7 @@ export function toolAccessRoutes(
         companyId: connection.companyId,
         connectionId: connection.id,
         agentId: req.body.agentId,
-        userId: req.actor.userId ?? "board",
+        userId: getBoardUserId(req),
         toolName: req.body.toolName,
         parameters: req.body.parameters ?? {},
       });
@@ -739,7 +727,11 @@ export function toolAccessRoutes(
   router.patch("/tool-connections/:connectionId", validate(updateToolConnectionSchema), async (req, res) => {
     const existing = await svc.getConnection(req.params.connectionId as string);
     assertToolAppMutationAccess(req, existing.companyId);
-    const connection = await svc.updateConnection(existing.id, req.body);
+    const connection = await svc.updateConnection(
+      existing.id,
+      req.body,
+      boardToolActor(req),
+    );
     const lifecycleChanges = classifyConnectionUpdate(
       { enabled: existing.enabled, config: existing.config },
       { enabled: connection.enabled, config: connection.config },
@@ -747,7 +739,7 @@ export function toolAccessRoutes(
     const baseLog = {
       companyId: connection.companyId,
       actorType: "user" as const,
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_connection.updated",
       entityType: "tool_connection",
       entityId: connection.id,
@@ -788,7 +780,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId: connection.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_connection.archived",
       entityType: "tool_connection",
       entityId: connection.id,
@@ -798,7 +790,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId: applicationAfter.companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_application.archived",
         entityType: "tool_application",
         entityId: applicationAfter.id,
@@ -811,7 +803,7 @@ export function toolAccessRoutes(
   router.post("/tool-connections/:connectionId/health-check", async (req, res) => {
     const existing = await svc.getConnection(req.params.connectionId as string);
     assertToolAppMutationAccess(req, existing.companyId);
-    res.json(await svc.checkHealth(existing.id, getActorInfo(req)));
+    res.json(await svc.checkHealth(existing.id, boardToolActor(req)));
   });
 
   router.post(
@@ -824,12 +816,12 @@ export function toolAccessRoutes(
         existing.id,
         existing.companyId,
         req.body,
-        getActorInfo(req),
+        boardToolActor(req),
       );
       await logActivity(db, {
         companyId: existing.companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_app.reconnected",
         entityType: "tool_connection",
         entityId: existing.id,
@@ -842,7 +834,7 @@ export function toolAccessRoutes(
   router.post("/tool-connections/:connectionId/catalog/refresh", async (req, res) => {
     const existing = await svc.getConnection(req.params.connectionId as string);
     assertToolAppMutationAccess(req, existing.companyId);
-    res.json(await svc.refreshCatalog(existing.id, getActorInfo(req)));
+    res.json(await svc.refreshCatalog(existing.id, boardToolActor(req)));
   });
 
   router.get("/tool-connections/:connectionId/catalog", async (req, res) => {
@@ -886,7 +878,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_profile.created",
         entityType: "tool_profile",
         entityId: profile.id,
@@ -913,7 +905,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId: profile.companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_profile.updated",
         entityType: "tool_profile",
         entityId: profile.id,
@@ -933,7 +925,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId: profile.companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_profile.duplicated",
         entityType: "tool_profile",
         entityId: profile.id,
@@ -957,7 +949,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId: existing.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_profile.deleted",
       entityType: "tool_profile",
       entityId: existing.id,
@@ -974,11 +966,15 @@ export function toolAccessRoutes(
   router.post("/tool-profiles/:profileId/new-tools/review", validate(reviewToolProfileNewToolsSchema), async (req, res) => {
     const existing = await svc.getProfile(req.params.profileId as string);
     assertToolAppMutationAccess(req, existing.companyId);
-    const result = await svc.reviewProfileNewTools(existing.id, req.body, getActorInfo(req));
+    const result = await svc.reviewProfileNewTools(
+      existing.id,
+      req.body,
+      boardToolActor(req),
+    );
     await logActivity(db, {
       companyId: existing.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_profile.new_tools_reviewed",
       entityType: "tool_profile",
       entityId: existing.id,
@@ -998,7 +994,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId: entry.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_profile_entry.created",
       entityType: "tool_profile_entry",
       entityId: entry.id,
@@ -1014,7 +1010,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId: entry.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_profile_entry.updated",
       entityType: "tool_profile_entry",
       entityId: entry.id,
@@ -1030,7 +1026,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId: entry.companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_profile_entry.deleted",
       entityType: "tool_profile_entry",
       entityId: entry.id,
@@ -1047,11 +1043,15 @@ export function toolAccessRoutes(
       assertToolAppMutationAccess(req, companyId);
       const existing = await svc.getProfile(req.params.profileId as string, companyId);
       try {
-        const binding = await svc.bindProfile(existing.id, req.body, getActorInfo(req));
+        const binding = await svc.bindProfile(
+          existing.id,
+          req.body,
+          boardToolActor(req),
+        );
         await logActivity(db, {
           companyId,
           actorType: "user",
-          actorId: req.actor.userId ?? "board",
+          actorId: getBoardUserId(req),
           action: "tool_profile_binding.created",
           entityType: "tool_profile_binding",
           entityId: binding.id,
@@ -1075,7 +1075,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_profile_binding.deleted",
         entityType: "tool_profile",
         entityId: existing.id,
@@ -1094,13 +1094,25 @@ export function toolAccessRoutes(
   router.post("/companies/:companyId/tools/runtime-slots/:id/stop", async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertToolsRuntimeManage(req, companyId);
-    res.json(await svc.stopRuntimeSlot(companyId, req.params.id as string, getActorInfo(req)));
+    res.json(
+      await svc.stopRuntimeSlot(
+        companyId,
+        req.params.id as string,
+        boardToolActor(req),
+      ),
+    );
   });
 
   router.post("/companies/:companyId/tools/runtime-slots/:id/restart", async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertToolsRuntimeManage(req, companyId);
-    res.json(await svc.restartRuntimeSlot(companyId, req.params.id as string, getActorInfo(req)));
+    res.json(
+      await svc.restartRuntimeSlot(
+        companyId,
+        req.params.id as string,
+        boardToolActor(req),
+      ),
+    );
   });
 
   router.get("/companies/:companyId/tools/runtime-health", async (req, res) => {
@@ -1140,7 +1152,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_policy.reordered",
       entityType: "tool_policy",
       entityId: companyId,
@@ -1156,11 +1168,11 @@ export function toolAccessRoutes(
     const companyId = req.params.companyId as string;
     assertToolAppMutationAccess(req, companyId);
     try {
-      const policy = await policySvc.createPolicy(companyId, req.body, { userId: req.actor.userId ?? null });
+      const policy = await policySvc.createPolicy(companyId, req.body, { userId: getBoardUserId(req) });
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_policy.created",
         entityType: "tool_policy",
         entityId: policy.id,
@@ -1180,12 +1192,12 @@ export function toolAccessRoutes(
         companyId,
         policyId: req.params.policyId as string,
         body: req.body,
-        actor: { userId: req.actor.userId ?? null },
+        actor: { userId: getBoardUserId(req) },
       });
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_policy.duplicated",
         entityType: "tool_policy",
         entityId: policy.id,
@@ -1214,7 +1226,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_policy.updated",
         entityType: "tool_policy",
         entityId: policy.id,
@@ -1236,7 +1248,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_policy.deleted",
       entityType: "tool_policy",
       entityId: policy.id,
@@ -1255,12 +1267,12 @@ export function toolAccessRoutes(
         companyId,
         actionRequestId: req.params.actionRequestId as string,
         body: req.body,
-        actor: { userId: req.actor.userId ?? null },
+        actor: { userId: getBoardUserId(req) },
       });
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_trust_rule.created",
         entityType: "tool_policy",
         entityId: policy.id,
@@ -1281,12 +1293,12 @@ export function toolAccessRoutes(
       companyId,
       policyId: req.params.policyId as string,
       body: req.body,
-      actor: { userId: req.actor.userId ?? null },
+      actor: { userId: getBoardUserId(req) },
     });
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_trust_rule.revoked",
       entityType: "tool_policy",
       entityId: policy.id,
@@ -1304,11 +1316,15 @@ export function toolAccessRoutes(
   router.post("/companies/:companyId/tools/stdio-templates", validate(createToolStdioCommandTemplateSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertToolsAdmin(req, companyId);
-    const template = await svc.createStdioCommandTemplate(companyId, req.body, getActorInfo(req));
+    const template = await svc.createStdioCommandTemplate(
+      companyId,
+      req.body,
+      boardToolActor(req),
+    );
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_stdio_command_template.created",
       entityType: "tool_stdio_command_template",
       entityId: template.id ?? template.templateId,
@@ -1333,7 +1349,7 @@ export function toolAccessRoutes(
       await logActivity(db, {
         companyId,
         actorType: "user",
-        actorId: req.actor.userId ?? "board",
+        actorId: getBoardUserId(req),
         action: "tool_stdio_command_template.disabled",
         entityType: "tool_stdio_command_template",
         entityId: template.id ?? template.templateId,
@@ -1351,7 +1367,7 @@ export function toolAccessRoutes(
     await logActivity(db, {
       companyId,
       actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorId: getBoardUserId(req),
       action: "tool_connection.import_mcp_json_previewed",
       entityType: "tool_connection_import",
       entityId: companyId,

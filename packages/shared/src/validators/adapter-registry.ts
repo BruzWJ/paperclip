@@ -1,14 +1,17 @@
 import { z } from "zod";
 
+const exactAdapterTypeSchema = z.string().refine(
+  (value) => value.length > 0 && value === value.trim(),
+  "Adapter type must be an exact non-blank string",
+);
+
 export const adapterRegistryEntrySchema = z
   .object({
-    adapterType: z.string().min(1),
+    adapterType: exactAdapterTypeSchema,
     enabled: z.boolean().default(true),
     runtimeImage: z.string().optional(),
-    envKeys: z.array(z.string()).optional(),
     allowFqdns: z.array(z.string()).optional(),
     probeCommand: z.array(z.string()).optional(),
-    defaultEnv: z.record(z.string()).optional(),
   })
   .strict();
 

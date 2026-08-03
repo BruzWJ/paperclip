@@ -11,21 +11,21 @@ describe("shouldSilenceHttpSuccessLog", () => {
     expect(
       shouldSilenceHttpSuccessLog(
         "GET",
-        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/heartbeat-runs",
+        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/runs",
         200,
       ),
     ).toBe(true);
     expect(
       shouldSilenceHttpSuccessLog(
         "GET",
-        "/api/heartbeat-runs/b7044268-19b6-4b3a-a9f3-9c57dce70253/log?offset=1103894&limitBytes=256000",
+        "/api/runs/b7044268-19b6-4b3a-a9f3-9c57dce70253",
         200,
       ),
     ).toBe(true);
     expect(
       shouldSilenceHttpSuccessLog(
         "GET",
-        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/live-runs?minCount=3",
+        "/api/companies/5cbe79ee-acb3-4597-896e-7662742593cd/runs?status=running",
         200,
       ),
     ).toBe(true);

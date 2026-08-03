@@ -32,6 +32,147 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: vi.fn(),
 }));
 
+vi.mock("../adapters/registry.js", async () => {
+  const { resolveApprovedAcpLaunch } = await import(
+    "@paperclipai/adapter-utils/acp-subprocess",
+  );
+  const launchProfile = resolveApprovedAcpLaunch("codex");
+  const catalogModel = (id: string) => ({
+    id,
+    label: id,
+    value: id,
+    limits: {
+      contextTokenLimit: 200_000,
+      outputTokenLimit: 16_000,
+    },
+  });
+  const externalModels = [catalogModel("operator-selected")];
+  const disabledModels = [catalogModel("model")];
+  const declarativeAdapter = (
+    type: string,
+    models: readonly ReturnType<typeof catalogModel>[],
+  ) => ({
+    type,
+    definition: {
+      version: "acp-subprocess/v1",
+      launchProfile,
+      environment: {
+        cwd: "execution-workspace",
+        additionalDirectories: "authorized-workspace-only",
+        drivers: ["local", "ssh", "sandbox", "plugin"],
+        environmentKeys: [],
+      },
+      readiness: {
+        protocolVersion: 1,
+        resume: true,
+        cancel: true,
+        sessionConfig: true,
+        sessionScopedMcpReplacement: true,
+        cliNativeAuthentication: true,
+      },
+      ui: {
+        label: type,
+        description: `${type} declarative ACP adapter`,
+      },
+      configSchema: {
+        fields: [
+          {
+            key: "model",
+            label: "Model",
+            type: "select",
+            required: true,
+            options: models.map((model) => ({
+              label: model.label,
+              value: model.value,
+            })),
+          },
+        ],
+      },
+      configOptions: [
+        {
+          id: "model",
+          configKey: "model",
+          label: "Model",
+          required: true,
+          values: models.map((model) => ({
+            label: model.label,
+            value: model.value,
+          })),
+        },
+      ],
+      modelConfigOptionId: "model",
+      models,
+      modelProfiles: [],
+      configurationDoc: "Authenticate through the target CLI.",
+    },
+  });
+  const findAdapter = vi.fn((type: string) => {
+    if (type === "external_acp") {
+      return declarativeAdapter(type, externalModels);
+    }
+    if (type === "disabled_external") {
+      return declarativeAdapter(type, disabledModels);
+    }
+    return null;
+  });
+  const implementationIdentity = (type: string) => ({
+    adapterType: type,
+    definitionVersion: "acp-subprocess/v1" as const,
+    protocolVersion: 1 as const,
+    origin: "external" as const,
+    packageName: `@paperclipai/test-${type}`,
+    packageVersion: "1.0.0",
+    buildIdentity: `teams-catalog-test-${type}`,
+    artifactDigest:
+      type === "external_acp" ? "a".repeat(64) : "b".repeat(64),
+  });
+  const implementationIdentityKey = (type: string) =>
+    JSON.stringify([
+      type,
+      "acp-subprocess/v1",
+      1,
+      "external",
+      `@paperclipai/test-${type}`,
+      "1.0.0",
+      `teams-catalog-test-${type}`,
+      type === "external_acp" ? "a".repeat(64) : "b".repeat(64),
+    ]);
+  const findImplementation = vi.fn((type: string) => {
+    if (type === "disabled_external") return null;
+    const adapter = findAdapter(type);
+    if (!adapter) return null;
+    return {
+      identity: implementationIdentity(type),
+      identityKey: implementationIdentityKey(type),
+      adapter,
+    };
+  });
+  return {
+    waitForExternalAdapters: vi.fn(async () => undefined),
+    findActiveServerAdapter: findAdapter,
+    findSelectableServerAdapterImplementation: findImplementation,
+    listAdapterModelsForImplementation: vi.fn(
+      async (
+        type: string,
+        identity: {
+          adapterType?: string;
+          artifactDigest?: string;
+        },
+      ) => {
+        const implementation = findImplementation(type);
+        if (
+          !implementation ||
+          identity.adapterType !== implementation.identity.adapterType ||
+          identity.artifactDigest !== implementation.identity.artifactDigest
+        ) {
+          return [];
+        }
+        return implementation.adapter.definition.models;
+      },
+    ),
+  };
+});
+
 const {
   collectCatalogTeamSkillPreparations,
   readCatalogTeamProvenance,
@@ -39,7 +180,68 @@ const {
 } = await import("../services/teams-catalog.js");
 
 const CORE_EXEC_TEAM_ID = "paperclipai:bundled:company-defaults:core-exec-team";
-const CORE_EXEC_TEAM_HASH = "sha256:0f20e9d56124c1dc90a1e4b128fabd863538bcc935117220f719d9620f7c89f1";
+const CORE_EXEC_TEAM_HASH = "sha256:e335c2456fcdefd5d27e0197c16f5a220bb927fc9ea49c0e4b6cacb805a09fe6";
+const CORE_ADAPTER_OVERRIDES = {
+  "company-lead": {
+    adapterType: "external_acp",
+    adapterConfig: {
+      model: "operator-selected",
+    },
+  },
+  "engineering-lead": {
+    adapterType: "external_acp",
+    adapterConfig: {
+      model: "operator-selected",
+    },
+  },
+  qa: {
+    adapterType: "external_acp",
+    adapterConfig: {
+      model: "operator-selected",
+    },
+  },
+};
+const CORE_STANDALONE_OPTIONS = {
+  targetManagerAgentId: null,
+  adapterOverrides: CORE_ADAPTER_OVERRIDES,
+  actor: { actorType: "system", actorId: "teams-catalog-test" } as const,
+};
+const CONTENT_STANDALONE_OPTIONS = {
+  targetManagerAgentId: null,
+  adapterOverrides: {
+    "content-lead": {
+      adapterType: "external_acp",
+      adapterConfig: {
+        model: "operator-selected",
+      },
+    },
+  },
+  actor: { actorType: "system", actorId: "teams-catalog-test" } as const,
+};
+const ENGINEERING_STANDALONE_OPTIONS = {
+  targetManagerAgentId: null,
+  adapterOverrides: {
+    "engineering-lead": {
+      adapterType: "external_acp",
+      adapterConfig: {
+        model: "operator-selected",
+      },
+    },
+    qa: {
+      adapterType: "external_acp",
+      adapterConfig: {
+        model: "operator-selected",
+      },
+    },
+    "senior-coder": {
+      adapterType: "external_acp",
+      adapterConfig: {
+        model: "operator-selected",
+      },
+    },
+  },
+  actor: { actorType: "system", actorId: "teams-catalog-test" } as const,
+};
 
 function agentWithCatalogTeam(originHash: string | null, extra: Record<string, unknown> = {}) {
   return {
@@ -71,7 +273,7 @@ describe("teamsCatalogService", () => {
       targetCompanyId: "company-1",
       targetCompanyName: "Paperclip",
       collisionStrategy: "rename",
-      selectedAgentSlugs: ["ceo", "cto"],
+      selectedAgentSlugs: ["company-lead", "engineering-lead"],
       plan: { companyAction: "none", agentPlans: [], projectPlans: [], issuePlans: [] },
       manifest: { agents: [], skills: [], projects: [], issues: [], envInputs: [], includes: { company: false, agents: true, projects: true, issues: true, skills: true }, company: null, schemaVersion: 1, generatedAt: new Date().toISOString(), source: null, sidebar: null },
       files: {},
@@ -88,8 +290,8 @@ describe("teamsCatalogService", () => {
     });
     mockCompanySkillService.installFromCatalog.mockResolvedValue({
       action: "created",
-      skill: { key: "paperclipai/bundled/paperclip-operations/task-planning" },
-      catalogSkill: { id: "paperclipai:bundled:paperclip-operations:task-planning" },
+      skill: { key: "paperclipai/bundled/software-development/github-pr-workflow" },
+      catalogSkill: { id: "paperclipai:bundled:software-development:github-pr-workflow" },
       warnings: [],
     });
     mockCompanySkillService.importFromSource.mockResolvedValue({
@@ -98,56 +300,71 @@ describe("teamsCatalogService", () => {
     });
   });
 
-  it("builds an inline portability source with catalog skill keys and target-manager reparenting", async () => {
+  it("builds an identity-only inline source with explicit adapters and target-manager reparenting", async () => {
     const svc = teamsCatalogService({} as any);
 
     const prepared = await svc.prepareCatalogTeamSource("company-1", "core-exec-team", {
       targetManagerAgentId: "manager-1",
+      adapterOverrides: CORE_ADAPTER_OVERRIDES,
     });
 
     expect(prepared.errors).toEqual([]);
-    expect(prepared.source.files["COMPANY.md"]).toEqual(expect.stringContaining("Core Exec Team"));
-    expect(prepared.source.files["agents/ceo/AGENTS.md"]).toEqual(expect.stringContaining("paperclipai/bundled/paperclip-operations/task-planning"));
-    expect(prepared.source.files["agents/cto/AGENTS.md"]).toEqual(expect.stringContaining("paperclipai/bundled/software-development/github-pr-workflow"));
+    expect(prepared.source.files["COMPANY.md"]).toEqual(expect.stringContaining("Core Team"));
+    expect(prepared.source.files["agents/company-lead/AGENTS.md"]).toBe(
+      "---\nname: Company Lead\nslug: company-lead\ntitle: Company Lead\nreportsTo: null\nskills: []\n---\n",
+    );
+    expect(prepared.source.files["agents/engineering-lead/AGENTS.md"]).toEqual(
+      expect.stringContaining("skills: []"),
+    );
+    expect(prepared.source.files[".paperclip.yaml"]).toEqual(
+      expect.stringContaining("adapterRevision:"),
+    );
+    expect(prepared.source.files[".paperclip.yaml"]).toEqual(
+      expect.stringContaining('adapterType: "external_acp"'),
+    );
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentId: \"manager-1\""));
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"engineering-manager\""));
   });
 
   it("resolves target-manager slug against same-company agents before rendering reparent metadata", async () => {
     mockAgentService.list.mockResolvedValue([
-      { id: "manager-1", companyId: "company-1", name: "CEO" },
+      { id: "manager-1", companyId: "company-1", name: "Company Lead" },
     ]);
     const svc = teamsCatalogService({} as any);
 
     const prepared = await svc.prepareCatalogTeamSource("company-1", "core-exec-team", {
-      targetManagerSlug: "ceo",
+      targetManagerSlug: "company-lead",
+      adapterOverrides: CORE_ADAPTER_OVERRIDES,
     });
 
     expect(mockAgentService.list).toHaveBeenCalledWith("company-1");
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentId: \"manager-1\""));
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"ceo\""));
+    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"company-lead\""));
   });
 
-  it("preserves package-declared Paperclip sidecar permissions while adding generated catalog provenance", async () => {
+  it("generates catalog provenance without package-declared authority defaults", async () => {
     const svc = teamsCatalogService({} as any);
 
-    const prepared = await svc.prepareCatalogTeamSource("company-1", "product-engineering");
+    const prepared = await svc.prepareCatalogTeamSource(
+      "company-1",
+      "product-engineering",
+      ENGINEERING_STANDALONE_OPTIONS,
+    );
 
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("permissions:"));
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("canCreateAgents: true"));
+    expect(prepared.source.files[".paperclip.yaml"]).not.toContain("permissions:");
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("catalogTeam:"));
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("catalogSlug: \"product-engineering\""));
   });
 
-  it("preserves package sidecar permissions when generated target-manager metadata is merged onto the same root agent", async () => {
+  it("merges target-manager metadata without package authority defaults", async () => {
     const svc = teamsCatalogService({} as any);
 
     const prepared = await svc.prepareCatalogTeamSource("company-1", "product-engineering", {
       targetManagerAgentId: "manager-1",
+      adapterOverrides: ENGINEERING_STANDALONE_OPTIONS.adapterOverrides,
     });
 
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("permissions:"));
-    expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("canCreateAgents: true"));
+    expect(prepared.source.files[".paperclip.yaml"]).not.toContain("permissions:");
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentId: \"manager-1\""));
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("reportsToExistingAgentSlug: \"engineering-manager\""));
     expect(prepared.source.files[".paperclip.yaml"]).toEqual(expect.stringContaining("catalogSlug: \"product-engineering\""));
@@ -160,6 +377,7 @@ describe("teamsCatalogService", () => {
     await expect(
       svc.prepareCatalogTeamSource("company-1", "core-exec-team", {
         targetManagerSlug: "missing-manager",
+        adapterOverrides: CORE_ADAPTER_OVERRIDES,
       }),
     ).rejects.toMatchObject({ status: 404 });
   });
@@ -167,7 +385,11 @@ describe("teamsCatalogService", () => {
   it("previews through company portability in agent-safe mode", async () => {
     const svc = teamsCatalogService({} as any);
 
-    const preview = await svc.previewCatalogTeamImport("company-1", "content-machine");
+    const preview = await svc.previewCatalogTeamImport(
+      "company-1",
+      "content-machine",
+      CONTENT_STANDALONE_OPTIONS,
+    );
 
     expect(preview.errors).toEqual([]);
     expect(mockCompanyPortabilityService.previewImport).toHaveBeenCalledWith(
@@ -210,17 +432,19 @@ describe("teamsCatalogService", () => {
       targetCompanyId: "company-1",
       targetCompanyName: "Paperclip",
       collisionStrategy: "rename",
-      selectedAgentSlugs: ["ceo"],
+      selectedAgentSlugs: ["company-lead"],
       plan: { companyAction: "none", agentPlans: [], projectPlans: [], issuePlans: [] },
       manifest: { agents: [], skills: [], projects: [], issues: [], envInputs: [], includes: { company: false, agents: true, projects: true, issues: true, skills: true }, company: null, schemaVersion: 1, generatedAt: new Date().toISOString(), source: null, sidebar: null },
       files: {},
       envInputs: [],
       warnings: [],
-      errors: ["Safe import does not allow process adapter type."],
+      errors: ["Canonical adapter preflight failed."],
     });
     const svc = teamsCatalogService({} as any);
 
-    await expect(svc.installCatalogTeam("company-1", "core-exec-team")).rejects.toMatchObject({ status: 422 });
+    await expect(
+      svc.installCatalogTeam("company-1", "core-exec-team", CORE_STANDALONE_OPTIONS),
+    ).rejects.toMatchObject({ status: 422 });
 
     expect(mockCompanySkillService.installFromCatalog).not.toHaveBeenCalled();
     expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
@@ -230,7 +454,9 @@ describe("teamsCatalogService", () => {
     mockCompanyPortabilityService.importBundle.mockRejectedValueOnce(new Error("import failed"));
     const svc = teamsCatalogService({} as any);
 
-    await expect(svc.installCatalogTeam("company-1", "core-exec-team")).rejects.toThrow("import failed");
+    await expect(
+      svc.installCatalogTeam("company-1", "core-exec-team", CORE_STANDALONE_OPTIONS),
+    ).rejects.toThrow("import failed");
 
     expect(mockCompanySkillService.installFromCatalog).not.toHaveBeenCalled();
     expect(mockCompanySkillService.importFromSource).not.toHaveBeenCalled();
@@ -240,7 +466,11 @@ describe("teamsCatalogService", () => {
     mockCompanySkillService.installFromCatalog.mockRejectedValueOnce(new Error("catalog unavailable"));
     const svc = teamsCatalogService({} as any);
 
-    const result = await svc.installCatalogTeam("company-1", "core-exec-team");
+    const result = await svc.installCatalogTeam(
+      "company-1",
+      "core-exec-team",
+      CORE_STANDALONE_OPTIONS,
+    );
 
     expect(mockCompanyPortabilityService.importBundle).toHaveBeenCalled();
     expect(result.warnings).toEqual(
@@ -250,107 +480,281 @@ describe("teamsCatalogService", () => {
     );
   });
 
-  it("injects safe claude_local adapter defaults for every bundled agent when no overrides are supplied", async () => {
+  it("fails visibly when selected catalog agents have no explicit adapter configuration", async () => {
     const svc = teamsCatalogService({} as any);
 
-    await svc.installCatalogTeam("company-1", "core-exec-team");
+    await expect(
+      svc.installCatalogTeam("company-1", "core-exec-team", {
+        targetManagerAgentId: null,
+       actor: { actorType: "system", actorId: "teams-catalog-test" }}),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("Explicit adapter configuration is required"),
+    });
+    expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
+  });
 
-    const [importInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
-    expect(importInput.adapterOverrides).toEqual({
-      ceo: { adapterType: "claude_local" },
-      cto: { adapterType: "claude_local" },
-      qa: { adapterType: "claude_local" },
+  it("rejects a declarative ACP adapter without an explicit model before portability", async () => {
+    const svc = teamsCatalogService({} as any);
+
+    await expect(
+      svc.installCatalogTeam("company-1", "content-machine", {
+        targetManagerAgentId: null,
+        adapterOverrides: {
+          "content-lead": {
+            adapterType: "external_acp",
+            adapterConfig: {},
+          },
+        },
+       actor: { actorType: "system", actorId: "teams-catalog-test" }}),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining(
+        'requires explicit configuration field "model"',
+      ),
+    });
+
+    expect(mockCompanyPortabilityService.previewImport).not.toHaveBeenCalled();
+    expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
+  });
+
+  it("preflights external declarative ACP adapters from registered metadata", async () => {
+    const svc = teamsCatalogService({} as any);
+
+    const prepared = await svc.prepareCatalogTeamSource(
+      "company-1",
+      "content-machine",
+      {
+        targetManagerAgentId: null,
+        adapterOverrides: {
+          "content-lead": {
+            adapterType: "external_acp",
+            adapterConfig: {
+              model: "operator-selected",
+            },
+          },
+        },
+      },
+    );
+
+    expect(prepared.errors).toEqual([]);
+    expect(prepared.source.files[".paperclip.yaml"]).toEqual(
+      expect.stringContaining('adapterType: "external_acp"'),
+    );
+    expect(prepared.source.files[".paperclip.yaml"]).toEqual(
+      expect.stringContaining('model: "operator-selected"'),
+    );
+  });
+
+  it("rejects server-disabled adapters during catalog preflight", async () => {
+    const svc = teamsCatalogService({} as any);
+
+    await expect(
+      svc.installCatalogTeam("company-1", "content-machine", {
+        targetManagerAgentId: null,
+        adapterOverrides: {
+          "content-lead": {
+            adapterType: "disabled_external",
+            adapterConfig: { model: "model" },
+          },
+        },
+       actor: { actorType: "system", actorId: "teams-catalog-test" }}),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining(
+        "not registered with an executable runtime module",
+      ),
+    });
+    expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
+  });
+
+  it("rejects undeclared external ACP model values during catalog preflight", async () => {
+    const svc = teamsCatalogService({} as any);
+
+    await expect(
+      svc.installCatalogTeam("company-1", "content-machine", {
+        targetManagerAgentId: null,
+        adapterOverrides: {
+          "content-lead": {
+            adapterType: "external_acp",
+            adapterConfig: {
+              model: "missing-model",
+            },
+          },
+        },
+       actor: { actorType: "system", actorId: "teams-catalog-test" }}),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining(
+        "must select one of the adapter-owned options",
+      ),
+    });
+    expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
+  });
+
+  it("fails visibly when a root catalog target is omitted", async () => {
+    const svc = teamsCatalogService({} as any);
+
+    await expect(
+      svc.installCatalogTeam("company-1", "core-exec-team", {
+        adapterOverrides: CORE_ADAPTER_OVERRIDES,
+       actor: { actorType: "system", actorId: "teams-catalog-test" }}),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining("Catalog team target is required"),
     });
   });
 
-  it("uses the configured safe adapter default for bundled agents", async () => {
-    const previousDefault = process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
-    process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = "opencode_local";
-    try {
-      const svc = teamsCatalogService({} as any);
-
-      await svc.installCatalogTeam("company-1", "core-exec-team");
-
-      const [importInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
-      expect(importInput.adapterOverrides).toEqual({
-        ceo: { adapterType: "opencode_local" },
-        cto: { adapterType: "opencode_local" },
-        qa: { adapterType: "opencode_local" },
-      });
-    } finally {
-      if (previousDefault === undefined) {
-        delete process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE;
-      } else {
-        process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE = previousDefault;
-      }
-    }
-  });
-
-  it("supplies safe adapter defaults for product-design and product-engineering installs", async () => {
+  it("uses only the operator's explicit adapter configuration", async () => {
     const svc = teamsCatalogService({} as any);
 
-    await svc.installCatalogTeam("company-1", "product-design");
-    const [designInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
-    expect(designInput.adapterOverrides).toEqual({
-      "ux-designer": { adapterType: "claude_local" },
-    });
-
-    await svc.installCatalogTeam("company-1", "product-engineering");
+    await svc.installCatalogTeam(
+      "company-1",
+      "product-engineering",
+      ENGINEERING_STANDALONE_OPTIONS,
+    );
     const [engineeringInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
-    expect(engineeringInput.adapterOverrides).toEqual({
-      cto: { adapterType: "claude_local" },
-      qa: { adapterType: "claude_local" },
-      "senior-coder": { adapterType: "claude_local" },
-    });
+    expect(engineeringInput.adapterOverrides).toEqual(
+      ENGINEERING_STANDALONE_OPTIONS.adapterOverrides,
+    );
+    expect(engineeringInput.source.files[".paperclip.yaml"]).toEqual(
+      expect.stringContaining('model: "operator-selected"'),
+    );
   });
 
-  it("never sends a forbidden process adapter type from the default catalog path", async () => {
+  it("preserves the synthetic override carrier when selected files narrow the import", async () => {
     const svc = teamsCatalogService({} as any);
 
-    await svc.installCatalogTeam("company-1", "core-exec-team");
+    await svc.installCatalogTeam("company-1", "content-machine", {
+      ...CONTENT_STANDALONE_OPTIONS,
+      selectedFiles: ["agents/content-lead/AGENTS.md"],
+     actor: { actorType: "system", actorId: "teams-catalog-test" }});
 
-    const [importInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
-    const adapterTypes = Object.values(importInput.adapterOverrides as Record<string, { adapterType: string }>)
-      .map((override) => override.adapterType);
-    expect(adapterTypes).not.toContain("process");
-    expect(adapterTypes).not.toContain("http");
+    const [importInput] =
+      mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
+    expect(importInput.selectedFiles).toEqual([
+      "agents/content-lead/AGENTS.md",
+      ".paperclip.yaml",
+    ]);
+    expect(importInput.adapterOverrides).toEqual(
+      CONTENT_STANDALONE_OPTIONS.adapterOverrides,
+    );
   });
 
-  it("preserves an explicit caller adapter override for the affected slug", async () => {
+  it("requires overrides only for agents retained by a multi-agent selected-file import", async () => {
+    const svc = teamsCatalogService({} as any);
+    const selectedOverride = {
+      "engineering-lead": {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
+    };
+
+    await svc.installCatalogTeam("company-1", "product-engineering", {
+      targetManagerAgentId: null,
+      selectedFiles: ["agents/engineering-lead/AGENTS.md"],
+      adapterOverrides: selectedOverride,
+     actor: { actorType: "system", actorId: "teams-catalog-test" }});
+
+    const [importInput] =
+      mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
+    expect(importInput.adapterOverrides).toEqual(selectedOverride);
+    expect(importInput.selectedFiles).toEqual([
+      "agents/engineering-lead/AGENTS.md",
+      ".paperclip.yaml",
+    ]);
+  });
+
+  it("preserves explicit per-agent adapter configuration without filling gaps", async () => {
     const svc = teamsCatalogService({} as any);
 
     const callerOverrides = {
-      cto: { adapterType: "opencode_local", adapterConfig: { model: "anthropic/claude-opus-4" } },
+      "company-lead": {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
+      "engineering-lead": {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
+      qa: {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
     };
     await svc.installCatalogTeam("company-1", "core-exec-team", {
+      targetManagerAgentId: null,
       adapterOverrides: callerOverrides,
-    });
+     actor: { actorType: "system", actorId: "teams-catalog-test" }});
 
     const [importInput] = mockCompanyPortabilityService.importBundle.mock.calls.at(-1)!;
-    expect(importInput.adapterOverrides).toEqual({
-      ceo: { adapterType: "claude_local" },
-      cto: { adapterType: "opencode_local", adapterConfig: { model: "anthropic/claude-opus-4" } },
-      qa: { adapterType: "claude_local" },
-    });
+    expect(importInput.adapterOverrides).toEqual(callerOverrides);
+    expect(importInput.source.files[".paperclip.yaml"]).not.toEqual(
+      expect.stringContaining("\n    adapter:"),
+    );
+    expect(importInput.source.files[".paperclip.yaml"]).toEqual(
+      expect.stringContaining("adapterRevision:"),
+    );
     // Caller-supplied object must not be mutated in place.
     expect(callerOverrides).toEqual({
-      cto: { adapterType: "opencode_local", adapterConfig: { model: "anthropic/claude-opus-4" } },
+      "company-lead": {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
+      "engineering-lead": {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
+      qa: {
+        adapterType: "external_acp",
+        adapterConfig: {
+          model: "operator-selected",
+        },
+      },
     });
   });
 
-  it("omits the default-adapter warning when every agent has an explicit override", async () => {
+  it("does not emit an inferred-adapter warning for explicit configuration", async () => {
     const svc = teamsCatalogService({} as any);
 
     const result = await svc.installCatalogTeam("company-1", "core-exec-team", {
       adapterOverrides: {
-        ceo: { adapterType: "opencode_local" },
-        cto: { adapterType: "opencode_local" },
-        qa: { adapterType: "opencode_local" },
+        "company-lead": {
+          adapterType: "external_acp",
+          adapterConfig: {
+            model: "operator-selected",
+          },
+        },
+        "engineering-lead": {
+          adapterType: "external_acp",
+          adapterConfig: {
+            model: "operator-selected",
+          },
+        },
+        qa: {
+          adapterType: "external_acp",
+          adapterConfig: {
+            model: "operator-selected",
+          },
+        },
       },
-    });
+      targetManagerAgentId: null,
+     actor: { actorType: "system", actorId: "teams-catalog-test" }});
 
     expect(result.warnings).not.toEqual(
-      expect.arrayContaining([expect.stringContaining("default to claude_local")]),
+      expect.arrayContaining([expect.stringContaining("default")]),
     );
   });
 
@@ -358,15 +762,25 @@ describe("teamsCatalogService", () => {
     const svc = teamsCatalogService({} as any);
 
     await svc.installCatalogTeam("company-1", "core-exec-team", {
-      secretValues: { "agent:ceo:OPENAI_API_KEY": "sk-imported" },
-    });
+      ...CORE_STANDALONE_OPTIONS,
+      secretValues: {
+        "agent:company-lead:EXTERNAL_AGENT_API_KEY": "test-secret",
+      },
+     actor: { actorType: "system", actorId: "teams-catalog-test" }});
 
     expect(mockCompanyPortabilityService.importBundle).toHaveBeenCalledWith(
       expect.objectContaining({
-        secretValues: { "agent:ceo:OPENAI_API_KEY": "sk-imported" },
+        secretValues: {
+          "agent:company-lead:EXTERNAL_AGENT_API_KEY": "test-secret",
+        },
       }),
       null,
-      { mode: "agent_safe", sourceCompanyId: "company-1" },
+      {
+        authorizationActor: undefined,
+        mode: "agent_safe",
+        secretMutationActor: { type: "system" },
+        sourceCompanyId: "company-1",
+      },
     );
   });
 
@@ -461,7 +875,7 @@ describe("teamsCatalogService", () => {
       defaultInstall: false,
       recommendedForCompanyTypes: [],
       tags: [],
-      counts: { agents: 0, projects: 0, tasks: 0, routines: 0, localSkills: 0, catalogSkills: 0, externalSkillSources: 2 },
+      counts: { agents: 0, projects: 0, issues: 0, routines: 0, localSkills: 0, catalogSkills: 0, externalSkillSources: 2 },
       rootAgentSlugs: [],
       agentSlugs: [],
       projectSlugs: [],

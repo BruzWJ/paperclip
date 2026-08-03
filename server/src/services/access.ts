@@ -1,29 +1,95 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   companyMemberships,
   instanceUserRoles,
-  issues,
   principalPermissionGrants,
 } from "@paperclipai/db";
 import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
 import { conflict } from "../errors.js";
-import { assertAssignableAgent } from "./agent-assignability.js";
 import { authorizationService, type AuthorizationActor, type AuthorizationResource } from "./authorization.js";
-import { ensureHumanRoleDefaultGrants } from "./principal-access-compatibility.js";
+import { stampHumanMemberRoleGrants } from "./human-member-grants.js";
 
-type MembershipRow = typeof companyMemberships.$inferSelect;
+type StoredMembershipRow = typeof companyMemberships.$inferSelect;
+type StoredGrantRow = typeof principalPermissionGrants.$inferSelect;
+type MembershipRow = Omit<
+  StoredMembershipRow,
+  "principalUserId" | "principalAgentId"
+> & {
+  principalId: string;
+};
+type PrincipalGrantRow = Omit<
+  StoredGrantRow,
+  "principalUserId" | "principalAgentId"
+> & {
+  principalId: string;
+};
 type GrantInput = {
   permissionKey: PermissionKey;
   scope?: Record<string, unknown> | null;
 };
 
-type MemberArchiveInput = {
-  reassignment?: {
-    assigneeAgentId?: string | null;
-    assigneeUserId?: string | null;
-  } | null;
-};
+function principalColumns(
+  principalType: PrincipalType,
+  principalId: string,
+) {
+  return principalType === "user"
+    ? { principalUserId: principalId, principalAgentId: null }
+    : { principalUserId: null, principalAgentId: principalId };
+}
+
+function membershipPrincipalCondition(
+  principalType: PrincipalType,
+  principalId: string,
+) {
+  return principalType === "user"
+    ? eq(companyMemberships.principalUserId, principalId)
+    : eq(companyMemberships.principalAgentId, principalId);
+}
+
+function grantPrincipalCondition(
+  principalType: PrincipalType,
+  principalId: string,
+) {
+  return principalType === "user"
+    ? eq(principalPermissionGrants.principalUserId, principalId)
+    : eq(principalPermissionGrants.principalAgentId, principalId);
+}
+
+function storedMembershipPrincipalId(row: StoredMembershipRow): string {
+  const principalId =
+    row.principalType === "user"
+      ? row.principalUserId
+      : row.principalAgentId;
+  if (!principalId) {
+    throw new Error(
+      `Invalid ${row.principalType} company membership ${row.id}: missing typed principal id`,
+    );
+  }
+  return principalId;
+}
+
+function mapMembership(row: StoredMembershipRow): MembershipRow {
+  const { principalUserId: _principalUserId, principalAgentId: _principalAgentId, ...stored } = row;
+  return {
+    ...stored,
+    principalId: storedMembershipPrincipalId(row),
+  };
+}
+
+function mapPrincipalGrant(row: StoredGrantRow): PrincipalGrantRow {
+  const principalId =
+    row.principalType === "user"
+      ? row.principalUserId
+      : row.principalAgentId;
+  if (!principalId) {
+    throw new Error(
+      `Invalid ${row.principalType} permission grant ${row.id}: missing typed principal id`,
+    );
+  }
+  const { principalUserId: _principalUserId, principalAgentId: _principalAgentId, ...stored } = row;
+  return { ...stored, principalId };
+}
 
 export function accessService(db: Db) {
   const authorization = authorizationService(db);
@@ -50,10 +116,10 @@ export function accessService(db: Db) {
         and(
           eq(companyMemberships.companyId, companyId),
           eq(companyMemberships.principalType, principalType),
-          eq(companyMemberships.principalId, principalId),
+          membershipPrincipalCondition(principalType, principalId),
         ),
       )
-      .then((rows) => rows[0] ?? null);
+      .then((rows) => rows[0] ? mapMembership(rows[0]) : null);
   }
 
   async function hasPermission(
@@ -76,6 +142,13 @@ export function accessService(db: Db) {
     userId: string | null | undefined,
     permissionKey: PermissionKey,
   ): Promise<boolean> {
+    if (
+      typeof userId !== "string" ||
+      userId.length === 0 ||
+      userId !== userId.trim()
+    ) {
+      return false;
+    }
     return authorization.decide({
       actor: { type: "board", userId },
       action: permissionKey,
@@ -93,11 +166,12 @@ export function accessService(db: Db) {
   }
 
   async function listMembers(companyId: string) {
-    return db
+    const rows = await db
       .select()
       .from(companyMemberships)
       .where(eq(companyMemberships.companyId, companyId))
       .orderBy(sql`${companyMemberships.createdAt} desc`);
+    return rows.map(mapMembership);
   }
 
   async function getMemberById(companyId: string, memberId: string) {
@@ -105,11 +179,11 @@ export function accessService(db: Db) {
       .select()
       .from(companyMemberships)
       .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, memberId)))
-      .then((rows) => rows[0] ?? null);
+      .then((rows) => rows[0] ? mapMembership(rows[0]) : null);
   }
 
   async function listActiveUserMemberships(companyId: string) {
-    return db
+    const rows = await db
       .select()
       .from(companyMemberships)
       .where(
@@ -120,6 +194,7 @@ export function accessService(db: Db) {
         ),
       )
       .orderBy(sql`${companyMemberships.createdAt} asc`);
+    return rows.map(mapMembership);
   }
 
   async function setMemberPermissions(
@@ -138,7 +213,7 @@ export function accessService(db: Db) {
           and(
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, member.principalType),
-            eq(principalPermissionGrants.principalId, member.principalId),
+            grantPrincipalCondition(member.principalType, member.principalId),
           ),
         );
       if (grants.length > 0) {
@@ -146,7 +221,7 @@ export function accessService(db: Db) {
           grants.map((grant) => ({
             companyId,
             principalType: member.principalType,
-            principalId: member.principalId,
+            ...principalColumns(member.principalType, member.principalId),
             permissionKey: grant.permissionKey,
             scope: grant.scope ?? null,
             grantedByUserId,
@@ -187,6 +262,7 @@ export function accessService(db: Db) {
         .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, memberId)))
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
+      const existingPrincipalId = storedMembershipPrincipalId(existing);
 
       const nextMembershipRole =
         data.membershipRole !== undefined ? data.membershipRole : existing.membershipRole;
@@ -233,7 +309,7 @@ export function accessService(db: Db) {
           and(
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, existing.principalType),
-            eq(principalPermissionGrants.principalId, existing.principalId),
+            grantPrincipalCondition(existing.principalType, existingPrincipalId),
           ),
         );
       if (data.grants.length > 0) {
@@ -241,7 +317,7 @@ export function accessService(db: Db) {
           data.grants.map((grant) => ({
             companyId,
             principalType: existing.principalType,
-            principalId: existing.principalId,
+            ...principalColumns(existing.principalType, existingPrincipalId),
             permissionKey: grant.permissionKey,
             scope: grant.scope ?? null,
             grantedByUserId,
@@ -251,7 +327,7 @@ export function accessService(db: Db) {
         );
       }
 
-      return updated;
+      return mapMembership(updated);
     });
   }
 
@@ -287,38 +363,7 @@ export function accessService(db: Db) {
     }
   }
 
-  async function assertAssignableArchiveTarget(
-    companyId: string,
-    input: MemberArchiveInput["reassignment"],
-    tx: Pick<Db, "select">,
-  ) {
-    if (!input?.assigneeAgentId && !input?.assigneeUserId) return;
-    if (input.assigneeAgentId && input.assigneeUserId) {
-      throw conflict("Choose either an agent or user reassignment target");
-    }
-    if (input.assigneeUserId) {
-      const membership = await tx
-        .select({ id: companyMemberships.id })
-        .from(companyMemberships)
-        .where(
-          and(
-            eq(companyMemberships.companyId, companyId),
-            eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, input.assigneeUserId),
-            eq(companyMemberships.status, "active"),
-          ),
-        )
-        .then((rows) => rows[0] ?? null);
-      if (!membership) {
-        throw conflict("Replacement user must be an active company member");
-      }
-      return;
-    }
-
-    await assertAssignableAgent(tx as Db, companyId, input.assigneeAgentId, { kind: "work" });
-  }
-
-  async function archiveMember(companyId: string, memberId: string, input: MemberArchiveInput = {}) {
+  async function archiveMember(companyId: string, memberId: string) {
     return db.transaction(async (tx) => {
       await tx.execute(sql`
         select ${companyMemberships.id}
@@ -340,10 +385,7 @@ export function accessService(db: Db) {
         throw conflict("Only human company members can be archived");
       }
       if (existing.status === "archived") {
-        return { member: existing, reassignedIssueCount: 0 };
-      }
-      if (input.reassignment?.assigneeUserId === existing.principalId) {
-        throw conflict("Replacement user cannot be the archived member");
+        return { member: mapMembership(existing) };
       }
 
       await assertCanRemoveActiveOwner(
@@ -353,44 +395,17 @@ export function accessService(db: Db) {
         existing.membershipRole,
         tx,
       );
-      await assertAssignableArchiveTarget(companyId, input.reassignment, tx);
-
       const now = new Date();
-      const assignmentPatch = {
-        assigneeAgentId: input.reassignment?.assigneeAgentId ?? null,
-        assigneeUserId: input.reassignment?.assigneeUserId ?? null,
-        updatedAt: now,
-      };
-      const assignedOpenIssueWhere = and(
-        eq(issues.companyId, companyId),
-        eq(issues.assigneeUserId, existing.principalId),
-        sql`${issues.status} not in ('done', 'cancelled')`,
-      );
-      const resetInProgress = await tx
-        .update(issues)
-        .set({
-          ...assignmentPatch,
-          status: "todo",
-          startedAt: null,
-          checkoutRunId: null,
-          executionRunId: null,
-          executionLockedAt: null,
-        })
-        .where(and(assignedOpenIssueWhere, eq(issues.status, "in_progress")))
-        .returning({ id: issues.id });
-      const reassigned = await tx
-        .update(issues)
-        .set(assignmentPatch)
-        .where(and(assignedOpenIssueWhere, ne(issues.status, "in_progress")))
-        .returning({ id: issues.id });
-
       await tx
         .delete(principalPermissionGrants)
         .where(
           and(
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, existing.principalType),
-            eq(principalPermissionGrants.principalId, existing.principalId),
+            grantPrincipalCondition(
+              existing.principalType,
+              storedMembershipPrincipalId(existing),
+            ),
           ),
         );
 
@@ -404,10 +419,7 @@ export function accessService(db: Db) {
         .returning()
         .then((rows) => rows[0] ?? existing);
 
-      return {
-        member: archived,
-        reassignedIssueCount: resetInProgress.length + reassigned.length,
-      };
+      return { member: mapMembership(archived) };
     });
   }
 
@@ -437,11 +449,15 @@ export function accessService(db: Db) {
   }
 
   async function listUserCompanyAccess(userId: string) {
-    return db
+    const rows = await db
       .select()
       .from(companyMemberships)
-      .where(and(eq(companyMemberships.principalType, "user"), eq(companyMemberships.principalId, userId)))
+      .where(and(
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.principalUserId, userId),
+      ))
       .orderBy(sql`${companyMemberships.createdAt} desc`);
+    return rows.map(mapMembership);
   }
 
   async function setUserCompanyAccess(
@@ -498,7 +514,7 @@ export function accessService(db: Db) {
           .where(
             and(
               eq(principalPermissionGrants.principalType, "user"),
-              eq(principalPermissionGrants.principalId, userId),
+              eq(principalPermissionGrants.principalUserId, userId),
               inArray(principalPermissionGrants.companyId, toArchive.map((row) => row.companyId)),
             ),
           );
@@ -522,7 +538,8 @@ export function accessService(db: Db) {
         await tx.insert(companyMemberships).values({
           companyId,
           principalType: "user",
-          principalId: userId,
+          principalUserId: userId,
+          principalAgentId: null,
           status: "active",
           membershipRole: "operator",
         });
@@ -548,7 +565,7 @@ export function accessService(db: Db) {
           .where(eq(companyMemberships.id, existing.id))
           .returning()
           .then((rows) => rows[0] ?? null);
-        return updated ?? existing;
+        return updated ? mapMembership(updated) : existing;
       }
       return existing;
     }
@@ -558,12 +575,12 @@ export function accessService(db: Db) {
       .values({
         companyId,
         principalType,
-        principalId,
+        ...principalColumns(principalType, principalId),
         status,
         membershipRole,
       })
       .returning()
-      .then((rows) => rows[0]);
+      .then((rows) => rows[0] ? mapMembership(rows[0]) : undefined);
   }
 
   async function setPrincipalGrants(
@@ -580,7 +597,7 @@ export function accessService(db: Db) {
           and(
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, principalType),
-            eq(principalPermissionGrants.principalId, principalId),
+            grantPrincipalCondition(principalType, principalId),
           ),
         );
       if (grants.length === 0) return;
@@ -588,7 +605,7 @@ export function accessService(db: Db) {
         grants.map((grant) => ({
           companyId,
           principalType,
-          principalId,
+          ...principalColumns(principalType, principalId),
           permissionKey: grant.permissionKey,
           scope: grant.scope ?? null,
           grantedByUserId,
@@ -609,7 +626,7 @@ export function accessService(db: Db) {
         membership.membershipRole,
         "active",
       );
-      await ensureHumanRoleDefaultGrants(db, {
+      await stampHumanMemberRoleGrants(db, {
         companyId: targetCompanyId,
         principalId: membership.principalId,
         membershipRole: membership.membershipRole,
@@ -619,13 +636,13 @@ export function accessService(db: Db) {
     return sourceMemberships;
   }
 
-  async function ensureRoleDefaultGrants(
+  async function stampRoleGrants(
     companyId: string,
     principalId: string,
     membershipRole: string | null | undefined,
     grantedByUserId: string | null,
   ) {
-    return ensureHumanRoleDefaultGrants(db, {
+    return stampHumanMemberRoleGrants(db, {
       companyId,
       principalId,
       membershipRole,
@@ -638,17 +655,18 @@ export function accessService(db: Db) {
     principalType: PrincipalType,
     principalId: string,
   ) {
-    return db
+    const rows = await db
       .select()
       .from(principalPermissionGrants)
       .where(
         and(
           eq(principalPermissionGrants.companyId, companyId),
           eq(principalPermissionGrants.principalType, principalType),
-          eq(principalPermissionGrants.principalId, principalId),
+          grantPrincipalCondition(principalType, principalId),
         ),
       )
       .orderBy(principalPermissionGrants.permissionKey);
+    return rows.map(mapPrincipalGrant);
   }
 
   async function setPrincipalPermission(
@@ -667,7 +685,7 @@ export function accessService(db: Db) {
           and(
             eq(principalPermissionGrants.companyId, companyId),
             eq(principalPermissionGrants.principalType, principalType),
-            eq(principalPermissionGrants.principalId, principalId),
+            grantPrincipalCondition(principalType, principalId),
             eq(principalPermissionGrants.permissionKey, permissionKey),
           ),
         );
@@ -683,7 +701,7 @@ export function accessService(db: Db) {
         and(
           eq(principalPermissionGrants.companyId, companyId),
           eq(principalPermissionGrants.principalType, principalType),
-          eq(principalPermissionGrants.principalId, principalId),
+          grantPrincipalCondition(principalType, principalId),
           eq(principalPermissionGrants.permissionKey, permissionKey),
         ),
       )
@@ -704,7 +722,7 @@ export function accessService(db: Db) {
     await db.insert(principalPermissionGrants).values({
       companyId,
       principalType,
-      principalId,
+      ...principalColumns(principalType, principalId),
       permissionKey,
       scope,
       grantedByUserId,
@@ -766,7 +784,7 @@ export function accessService(db: Db) {
         }
       }
 
-      return tx
+      const updated = await tx
         .update(companyMemberships)
         .set({
           membershipRole: nextMembershipRole,
@@ -776,6 +794,7 @@ export function accessService(db: Db) {
         .where(eq(companyMemberships.id, existing.id))
         .returning()
         .then((rows) => rows[0] ?? existing);
+      return mapMembership(updated);
     });
   }
 
@@ -790,7 +809,7 @@ export function accessService(db: Db) {
     listMembers,
     listActiveUserMemberships,
     copyActiveUserMemberships,
-    ensureRoleDefaultGrants,
+    stampRoleGrants,
     archiveMember,
     setMemberPermissions,
     updateMemberAndPermissions,

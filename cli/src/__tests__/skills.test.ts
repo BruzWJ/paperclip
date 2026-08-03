@@ -69,31 +69,10 @@ function catalogSkill(overrides: Record<string, unknown> = {}) {
     trustLevel: "markdown_only",
     compatibility: "compatible",
     defaultInstall: false,
-    recommendedForRoles: ["engineer"],
     requires: [],
     tags: ["github", "pull-requests"],
     files: [{ path: "SKILL.md", kind: "skill", sizeBytes: 128, sha256: "sha256:abc" }],
     contentHash: "sha256:catalog",
-    ...overrides,
-  };
-}
-
-function agent(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "agent-1",
-    companyId: "company-1",
-    name: "Coder",
-    role: "engineer",
-    status: "active",
-    reportsTo: null,
-    budgetMonthlyCents: 0,
-    spentMonthlyCents: 0,
-    adapterType: "codex_local",
-    adapterConfig: {},
-    runtimeConfig: {},
-    permissions: {},
-    createdAt: "2026-05-26T00:00:00.000Z",
-    updatedAt: "2026-05-26T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -127,9 +106,9 @@ describe("skills CLI commands", () => {
 
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    delete process.env.PAPERCLIP_API_URL;
-    delete process.env.PAPERCLIP_API_KEY;
-    delete process.env.PAPERCLIP_COMPANY_ID;
+    delete process.env.PAPERCLIP_BOARD_API_URL;
+    delete process.env.PAPERCLIP_BOARD_API_KEY;
+    delete process.env.PAPERCLIP_BOARD_COMPANY_ID;
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -251,7 +230,7 @@ describe("skills CLI commands", () => {
     const rendered = logSpy.mock.calls.map((call: unknown[]) => String(call[0])).join("\n");
     expect(rendered).toContain("id");
     expect(rendered).toContain("paperclipai:bundled:software-development:github-pr-workflow");
-    expect(rendered).toContain("roles");
+    expect(rendered).toContain("trust");
   });
 
   it("searches catalog skills as JSON", async () => {
@@ -446,61 +425,4 @@ describe("skills CLI commands", () => {
     );
   });
 
-  it("syncs desired company skill refs to an agent and returns the runtime snapshot", async () => {
-    const snapshot = {
-      adapterType: "codex_local",
-      supported: true,
-      mode: "persistent",
-      desiredSkills: ["paperclip/review-prs"],
-      entries: [
-        {
-          key: "paperclip/review-prs",
-          runtimeName: "review-prs",
-          desired: true,
-          managed: true,
-          required: false,
-          state: "installed",
-          origin: "company_managed",
-          detail: null,
-        },
-      ],
-      warnings: [],
-    };
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(agent()))
-      .mockResolvedValueOnce(jsonResponse(snapshot));
-
-    await runCommand([
-      "skills",
-      "agent",
-      "sync",
-      "coder",
-      "--skill",
-      "review-prs",
-      "--skill",
-      "paperclip/qa",
-      "--company-id",
-      "company-1",
-      "--api-base",
-      "http://paperclip.test",
-      "--api-key",
-      "token",
-      "--json",
-    ]);
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "http://paperclip.test/api/agents/coder?companyId=company-1",
-      expect.objectContaining({ method: "GET" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "http://paperclip.test/api/agents/agent-1/skills/sync",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ desiredSkills: ["review-prs", "paperclip/qa"] }),
-      }),
-    );
-    expect(JSON.parse(String(logSpy.mock.calls[0]?.[0]))).toEqual(snapshot);
-  });
 });

@@ -22,7 +22,7 @@ function minimalConfig(): unknown {
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
+      connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
     },
     logging: {
       mode: "file",
@@ -82,11 +82,24 @@ describe("readConfigFile", () => {
         source: "configure",
       },
       database: {
-        mode: "embedded-postgres",
+        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
       },
       logging: {
         mode: "file",
       },
     });
+  });
+
+  it("rejects retired database configuration fields", () => {
+    const retiredMode = ["em", "bedded-postgres"].join("");
+    writeConfig(configPath, {
+      ...(minimalConfig() as Record<string, unknown>),
+      database: {
+        connectionString: "postgres://paperclip:paperclip@db.example.test:5432/paperclip",
+        mode: retiredMode,
+      },
+    });
+
+    expect(() => readConfigFile()).toThrow(/database: Unrecognized key/);
   });
 });

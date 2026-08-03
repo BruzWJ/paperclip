@@ -414,6 +414,21 @@ export async function readLocalServicePortOwner(port: number) {
       .find((value) => Number.isInteger(value) && value > 0);
     return firstPid ?? null;
   } catch {
+    // Minimal Linux hosts commonly omit lsof. `ss` exposes the same listener
+    // ownership without requiring the service registry to guess that a port is
+    // available.
+  }
+
+  try {
+    const { stdout } = await execFileAsync("ss", [
+      "-ltnp",
+      `sport = :${port}`,
+    ]);
+    const firstPid = Array.from(stdout.matchAll(/\bpid=(\d+)\b/g))
+      .map((match) => Number.parseInt(match[1]!, 10))
+      .find((value) => Number.isInteger(value) && value > 0);
+    return firstPid ?? null;
+  } catch {
     return null;
   }
 }

@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { API } from "./api.js";
 import {
+  refreshSummarySlotSchema,
   summarySlotScopeSelectorSchema,
-  writeSummarySlotSchema,
 } from "./validators/summary-slot.js";
 
 const scopeId = "11111111-1111-4111-8111-111111111111";
-const revisionId = "22222222-2222-4222-8222-222222222222";
-const issueId = "33333333-3333-4333-8333-333333333333";
+const agentId = "22222222-2222-4222-8222-222222222222";
 
 describe("summary slot shared contract", () => {
   it("defines stable summary slot API path constants", () => {
@@ -15,8 +14,8 @@ describe("summary slot shared contract", () => {
     expect(API.summarySlotRevisions).toBe(
       "/api/companies/:companyId/summary-slots/:scopeKind/:slotKey/revisions",
     );
-    expect(API.summarySlotGenerate).toBe(
-      "/api/companies/:companyId/summary-slots/:scopeKind/:slotKey/generate",
+    expect(API.summarySlotRefresh).toBe(
+      "/api/companies/:companyId/summary-slots/:scopeKind/:slotKey/refresh",
     );
   });
 
@@ -58,25 +57,14 @@ describe("summary slot shared contract", () => {
     })).toThrow("project_workspace summary slots require scopeId");
   });
 
-  it("validates summary write payload revision and generation metadata", () => {
-    expect(writeSummarySlotSchema.parse({
+  it("accepts an explicit owner only for initial routine configuration", () => {
+    expect(refreshSummarySlotSchema.parse({
       scopeId,
-      markdown: "## Needs you\nNothing right now.",
-      title: "Project summary",
-      changeSummary: "Refresh project header summary",
-      baseRevisionId: revisionId,
-      generationIssueId: issueId,
-      model: "cheap-model",
+      ownerAgentId: agentId,
     })).toEqual({
       scopeId,
-      markdown: "## Needs you\nNothing right now.",
-      title: "Project summary",
-      changeSummary: "Refresh project header summary",
-      baseRevisionId: revisionId,
-      generationIssueId: issueId,
-      model: "cheap-model",
+      ownerAgentId: agentId,
     });
-
-    expect(() => writeSummarySlotSchema.parse({ markdown: "   " })).toThrow();
+    expect(refreshSummarySlotSchema.parse({ scopeId })).toEqual({ scopeId });
   });
 });

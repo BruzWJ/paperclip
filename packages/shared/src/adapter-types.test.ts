@@ -1,64 +1,110 @@
-import { describe, expect, it } from "vitest";
-import { AGENT_ROLE_LABELS, acceptInviteSchema, createAgentSchema, updateAgentSchema } from "./index.js";
+import {
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "vitest";
+import {
+  acceptInviteSchema,
+  agentAdapterRevisionConfigurationSchema,
+  runtimeAgentCreateConfigurationSchema,
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  PAPERCLIP_ACTION_KEYS,
+} from "./index.js";
+import type {
+  Agent,
+  AgentAdapterType,
+  CompanyPortabilityAgentManifestEntry,
+} from "./index.js";
+
+function allFalse(keys: readonly string[]) {
+  return Object.fromEntries(keys.map((key) => [key, false]));
+}
 
 describe("dynamic adapter type validation schemas", () => {
-  it("accepts external adapter types in create/update agent schemas", () => {
+  it("accepts external adapter types in the adapter revision contract", () => {
     expect(
-      createAgentSchema.parse({
-        name: "External Agent",
+      agentAdapterRevisionConfigurationSchema.parse({
         adapterType: "external_adapter",
-      }).adapterType,
-    ).toBe("external_adapter");
-
-    expect(
-      updateAgentSchema.parse({
-        adapterType: "external_adapter",
+        adapterConfig: {},
+        defaultEnvironmentId:
+          "11111111-1111-4111-8111-111111111111",
+        runtimeConfig: {},
+        companySkillPins: [],
+        skillChannel: "operator_native",
       }).adapterType,
     ).toBe("external_adapter");
   });
 
-  it("still rejects blank adapter types", () => {
-    expect(() =>
-      createAgentSchema.parse({
-        name: "Blank Adapter",
+  it("rejects blank or implicit adapter configuration revisions", () => {
+    expect(
+      agentAdapterRevisionConfigurationSchema.safeParse({
         adapterType: "   ",
-      }),
-    ).toThrow();
-  });
-
-  it("accepts an explicit managed instructions bundle for new agents", () => {
+        adapterConfig: {},
+        defaultEnvironmentId:
+          "11111111-1111-4111-8111-111111111111",
+        runtimeConfig: {},
+      }).success,
+    ).toBe(false);
     expect(
-      createAgentSchema.parse({
-        name: "Bundle Agent",
-        adapterType: "codex_local",
-        instructionsBundle: {
-          files: {
-            "AGENTS.md": "Use AGENTS.md.",
-          },
-        },
-      }).instructionsBundle?.files["AGENTS.md"],
-    ).toBe("Use AGENTS.md.");
+      agentAdapterRevisionConfigurationSchema.safeParse({
+        adapterType: "external_adapter",
+        defaultEnvironmentId:
+          "11111111-1111-4111-8111-111111111111",
+        runtimeConfig: {},
+      }).success,
+    ).toBe(false);
   });
 
-  it("accepts external adapter types in invite acceptance schema", () => {
+  it("represents an unconfigured API agent with nullable adapter fields", () => {
+    expectTypeOf<Agent["adapterType"]>().toEqualTypeOf<
+      AgentAdapterType | null
+    >();
+    expectTypeOf<Agent["adapterConfig"]>().toEqualTypeOf<
+      Record<string, unknown> | null
+    >();
+    expectTypeOf<
+      CompanyPortabilityAgentManifestEntry["adapterRevision"]["adapterType"]
+    >().toEqualTypeOf<string>();
+    expectTypeOf<
+      CompanyPortabilityAgentManifestEntry["adapterRevision"]["adapterConfig"]
+    >().toEqualTypeOf<Record<string, unknown>>();
+  });
+
+  it("accepts external adapter types only with explicit invite config", () => {
     expect(
       acceptInviteSchema.parse({
         requestType: "agent",
         agentName: "External Joiner",
         adapterType: "external_adapter",
+        agentDefaultsPayload: {},
       }).adapterType,
     ).toBe("external_adapter");
+    expect(
+      acceptInviteSchema.safeParse({
+        requestType: "agent",
+        agentName: "Implicit Joiner",
+        adapterType: "external_adapter",
+      }).success,
+    ).toBe(false);
   });
 
-  it("accepts the security agent role and exposes its UI label", () => {
+  it("rejects the retired role field at the runtime-agent boundary", () => {
     expect(
-      createAgentSchema.parse({
+      runtimeAgentCreateConfigurationSchema.safeParse({
         name: "Security Engineer",
+        title: null,
+        capabilities: null,
+        reportsTo: null,
+        contextGrants: allFalse(AGENT_CONTEXT_GRANT_KEYS),
+        actionGrants: allFalse(PAPERCLIP_ACTION_KEYS),
+        mentionReachGrants: allFalse(
+          AGENT_MENTION_REACH_GRANT_KEYS,
+        ),
+        companyToolIds: [],
         role: "security",
-        adapterType: "codex_local",
-      }).role,
-    ).toBe("security");
-
-    expect(AGENT_ROLE_LABELS.security).toBe("Security");
+      }).success,
+    ).toBe(false);
   });
 });

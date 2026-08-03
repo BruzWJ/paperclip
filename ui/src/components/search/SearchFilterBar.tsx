@@ -13,8 +13,8 @@ import { PriorityIcon } from "@/components/PriorityIcon";
 import { SearchFilterMenu, type FilterMenuOption } from "./SearchFilterMenu";
 import { SearchSortMenu } from "./SearchSortMenu";
 import {
-  applyAssigneeToken,
-  assigneeToken,
+  applyOwnerToken,
+  ownerToken,
   updatedWithinLabel,
   type SearchFilters,
 } from "@/lib/search-filters";
@@ -57,7 +57,7 @@ function count(record: Record<string, number> | undefined, key: string): number 
 export interface SearchFilterOptionGroups {
   status: FilterMenuOption[];
   priority: FilterMenuOption[];
-  assignee: FilterMenuOption[];
+  owner: FilterMenuOption[];
   project: FilterMenuOption[];
   label: FilterMenuOption[];
   updated: FilterMenuOption[];
@@ -85,27 +85,27 @@ export function buildSearchFilterOptions({
     count: count(counts?.priority as Record<string, number> | undefined, value),
   }));
 
-  const assignee: FilterMenuOption[] = [];
+  const owner: FilterMenuOption[] = [];
   if (currentUserId) {
-    assignee.push({
+    owner.push({
       value: "me",
       label: "Me",
       icon: <User className="h-3.5 w-3.5 text-muted-foreground" />,
-      count: count(counts?.assigneeUserId, currentUserId),
+      count: count(counts?.ownerUserId, currentUserId),
       searchText: "me mine",
     });
   }
-  assignee.push({
-    value: "none",
-    label: "Unassigned",
+  owner.push({
+    value: "board",
+    label: "Board",
     icon: <UserX className="h-3.5 w-3.5 text-muted-foreground" />,
-    searchText: "unassigned none nobody",
+    searchText: "board escalation",
   });
   for (const agent of agents) {
-    assignee.push({
+    owner.push({
       value: `agent:${agent.id}`,
       label: agent.name,
-      count: count(counts?.assigneeAgentId, agent.id),
+      count: count(counts?.ownerAgentId, agent.id),
       searchText: agent.name,
     });
   }
@@ -131,7 +131,7 @@ export function buildSearchFilterOptions({
     count: count(counts?.updatedWithin as Record<string, number> | undefined, value),
   }));
 
-  return { status, priority, assignee, project, label, updated };
+  return { status, priority, owner, project, label, updated };
 }
 
 export function SearchFilterBar({
@@ -157,7 +157,7 @@ export function SearchFilterBar({
     onChange({ ...filters, [dimension]: next });
   }
 
-  const selectedAssignee = assigneeToken(filters, data.currentUserId);
+  const selectedOwner = ownerToken(filters, data.currentUserId);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5" data-testid="search-filter-bar">
@@ -171,13 +171,13 @@ export function SearchFilterBar({
         presets={[{ label: "Open items", values: OPEN_STATUS_PRESET }]}
       />
       <SearchFilterMenu
-        label="Assignee"
-        options={options.assignee}
-        selected={selectedAssignee ? [selectedAssignee] : []}
-        onSelect={(value) => onChange(applyAssigneeToken(filters, value, data.currentUserId))}
+        label="Owner"
+        options={options.owner}
+        selected={selectedOwner ? [selectedOwner] : []}
+        onSelect={(value) => onChange(applyOwnerToken(filters, value, data.currentUserId))}
         searchable
-        searchPlaceholder="Search assignees…"
-        emptyMessage="No assignees"
+        searchPlaceholder="Search owners…"
+        emptyMessage="No owners"
       />
       <SearchFilterMenu
         label="Project"

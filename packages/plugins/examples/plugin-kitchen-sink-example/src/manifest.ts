@@ -16,7 +16,7 @@ const manifest: PaperclipPluginManifestV1 = {
   apiVersion: 1,
   version: PLUGIN_VERSION,
   displayName: "Kitchen Sink (Example)",
-  description: "Reference plugin that demonstrates the current Paperclip plugin API surface, UI surfaces, bridge actions, events, jobs, webhooks, tools, local workspace access, and runtime diagnostics in one place.",
+  description: "Reference plugin that demonstrates Paperclip plugin UI surfaces, issue-based delegation, bridge actions, events, jobs, webhooks, tools, local workspace access, and runtime diagnostics in one place.",
   author: "Paperclip",
   categories: ["ui", "automation", "workspace", "connector"],
   capabilities: [
@@ -26,16 +26,9 @@ const manifest: PaperclipPluginManifestV1 = {
     "issues.read",
     "issues.create",
     "issues.update",
-    "issue.comments.read",
-    "issue.comments.create",
     "agents.read",
     "agents.pause",
     "agents.resume",
-    "agents.invoke",
-    "agent.sessions.create",
-    "agent.sessions.list",
-    "agent.sessions.send",
-    "agent.sessions.close",
     "goals.read",
     "goals.create",
     "goals.update",
@@ -56,7 +49,6 @@ const manifest: PaperclipPluginManifestV1 = {
     "ui.page.register",
     "ui.detailTab.register",
     "ui.dashboardWidget.register",
-    "ui.commentAnnotation.register",
     "ui.action.register",
   ],
   entrypoints: {
@@ -80,16 +72,6 @@ const manifest: PaperclipPluginManifestV1 = {
         type: "boolean",
         title: "Show Project Sidebar Item",
         default: DEFAULT_CONFIG.showProjectSidebarItem,
-      },
-      showCommentAnnotation: {
-        type: "boolean",
-        title: "Show Comment Annotation",
-        default: DEFAULT_CONFIG.showCommentAnnotation,
-      },
-      showCommentContextMenuItem: {
-        type: "boolean",
-        title: "Show Comment Action",
-        default: DEFAULT_CONFIG.showCommentContextMenuItem,
       },
       enableWorkspaceDemos: {
         type: "boolean",
@@ -147,7 +129,7 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: TOOL_NAMES.echo,
       displayName: "Kitchen Sink Echo",
-      description: "Returns the provided message and the current run context.",
+      description: "Returns the provided message.",
       parametersSchema: {
         type: "object",
         properties: {
@@ -159,23 +141,10 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       name: TOOL_NAMES.companySummary,
       displayName: "Kitchen Sink Company Summary",
-      description: "Summarizes the current company using the Paperclip domain APIs.",
+      description: "Counts top-level issues visible through the effective run context.",
       parametersSchema: {
         type: "object",
         properties: {},
-      },
-    },
-    {
-      name: TOOL_NAMES.createIssue,
-      displayName: "Kitchen Sink Create Issue",
-      description: "Creates an issue in the current project from an agent tool call.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          description: { type: "string" },
-        },
-        required: ["title"],
       },
     },
   ],
@@ -241,10 +210,10 @@ const manifest: PaperclipPluginManifestV1 = {
         entityTypes: ["issue"],
       },
       {
-        type: "taskDetailView",
-        id: SLOT_IDS.taskDetailView,
+        type: "issueDetailView",
+        id: SLOT_IDS.issueDetailView,
         displayName: "Kitchen Sink Task View",
-        exportName: EXPORT_NAMES.taskDetailView,
+        exportName: EXPORT_NAMES.issueDetailView,
         entityTypes: ["issue"],
       },
       {
@@ -260,20 +229,6 @@ const manifest: PaperclipPluginManifestV1 = {
         displayName: "Kitchen Sink Context",
         exportName: EXPORT_NAMES.contextMenuItem,
         entityTypes: ["project", "issue"],
-      },
-      {
-        type: "commentAnnotation",
-        id: SLOT_IDS.commentAnnotation,
-        displayName: "Kitchen Sink Comment Annotation",
-        exportName: EXPORT_NAMES.commentAnnotation,
-        entityTypes: ["comment"],
-      },
-      {
-        type: "commentContextMenuItem",
-        id: SLOT_IDS.commentContextMenuItem,
-        displayName: "Kitchen Sink Comment Action",
-        exportName: EXPORT_NAMES.commentContextMenuItem,
-        entityTypes: ["comment"],
       },
     ],
     launchers: [

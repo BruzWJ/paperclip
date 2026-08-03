@@ -15,11 +15,6 @@ const catalogSkills = [
     key: "paperclipai/bundled/software-development/github-pr-workflow",
     slug: "github-pr-workflow",
   },
-  {
-    id: "paperclipai:bundled:paperclip-operations:task-planning",
-    key: "paperclipai/bundled/paperclip-operations/task-planning",
-    slug: "task-planning",
-  },
 ];
 
 describe("teams catalog manifest", () => {
@@ -35,37 +30,41 @@ describe("teams catalog manifest", () => {
         "description: Product engineering team for implementation and review work.",
         "schema: agentcompanies/v1",
         "key: paperclipai/bundled/software-development/product-engineering",
-        "manager: agents/cto/AGENTS.md",
+        "manager: agents/engineering-lead/AGENTS.md",
+        "requiredSkills:",
+        "  - github-pr-workflow",
         "recommendedForCompanyTypes:",
         "  - software",
         "tags:",
         "  - engineering",
       ],
       files: {
-        "agents/cto/AGENTS.md": [
+        "agents/engineering-lead/AGENTS.md": [
           "---",
-          "name: CTO",
-          "slug: cto",
-          "skills:",
-          "  - github-pr-workflow",
+          "name: Engineering Lead",
+          "slug: engineering-lead",
           "---",
           "",
-          "Lead engineering.",
         ].join("\n"),
         "projects/app/PROJECT.md": [
           "---",
           "name: App",
           "slug: app",
-          "owner: cto",
+          "owner: engineering-lead",
+          "inputs:",
+          "  env:",
+          "    PROJECT_API_KEY:",
+          "      kind: secret",
+          "      requirement: required",
           "---",
           "",
           "Build the app.",
         ].join("\n"),
-        "projects/app/tasks/review/TASK.md": [
+        "projects/app/issues/review/ISSUE.md": [
           "---",
           "name: Review",
           "slug: review",
-          "assignee: cto",
+          "owner: engineering-lead",
           "project: app",
           "recurring: true",
           "---",
@@ -98,15 +97,23 @@ describe("teams catalog manifest", () => {
       counts: {
         agents: 1,
         projects: 1,
-        tasks: 0,
+        issues: 0,
         routines: 1,
         localSkills: 0,
         catalogSkills: 1,
         externalSkillSources: 0,
       },
-      rootAgentSlugs: ["cto"],
-      agentSlugs: ["cto"],
+      rootAgentSlugs: ["engineering-lead"],
+      agentSlugs: ["engineering-lead"],
       projectSlugs: ["app"],
+      envInputs: [
+        {
+          key: "PROJECT_API_KEY",
+          projectSlug: "app",
+          kind: "secret",
+          requirement: "required",
+        },
+      ],
     });
     expect(result.manifest.teams[0]!.requiredSkills).toEqual([
       expect.objectContaining({
@@ -114,14 +121,14 @@ describe("teams catalog manifest", () => {
         ref: "github-pr-workflow",
         resolved: true,
         catalogSkillKey: "paperclipai/bundled/software-development/github-pr-workflow",
-        agentSlugs: ["cto"],
+        agentSlugs: [],
       }),
     ]);
     expect(result.manifest.teams[0]!.files.map((file) => file.path)).toEqual([
       "TEAM.md",
-      "agents/cto/AGENTS.md",
+      "agents/engineering-lead/AGENTS.md",
+      "projects/app/issues/review/ISSUE.md",
       "projects/app/PROJECT.md",
-      "projects/app/tasks/review/TASK.md",
     ]);
     expect(result.manifest.teams[0]!.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
@@ -144,11 +151,16 @@ describe("teams catalog manifest", () => {
           "reportsTo: missing-manager",
           "skills:",
           "  - missing-skill",
+          "inputs:",
+          "  env:",
+          "    PROVIDER_API_KEY:",
+          "      kind: secret",
+          "      requirement: required",
           "---",
           "",
           "Lead.",
         ].join("\n"),
-        "tasks/bad/TASK.md": [
+        "issues/bad/ISSUE.md": [
           "---",
           "name: Bad",
           "slug: bad",
@@ -156,7 +168,7 @@ describe("teams catalog manifest", () => {
           "project: missing-project",
           "---",
           "",
-          "Bad task.",
+          "Bad issue.",
         ].join("\n"),
       },
     });
@@ -193,8 +205,10 @@ describe("teams catalog manifest", () => {
         expect.stringContaining("field recommendedForCompanyTypes must be an array of strings"),
         expect.stringContaining("manager must resolve to an AGENTS.md file"),
         expect.stringContaining("reportsTo references unknown agent slug"),
-        expect.stringContaining("skill reference \"missing-skill\" does not resolve"),
-        expect.stringContaining("assignee references unknown agent slug"),
+        expect.stringContaining("frontmatter field \"skills\" is not agent identity"),
+        expect.stringContaining("frontmatter field \"inputs\" is not agent identity"),
+        expect.stringContaining("uses retired frontmatter field \"assignee\""),
+        expect.stringContaining("frontmatter must include owner"),
         expect.stringContaining("project references unknown project slug"),
         expect.stringContaining("Duplicate catalog slug \"duplicate\""),
       ]),

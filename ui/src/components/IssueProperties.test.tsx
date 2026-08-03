@@ -15,10 +15,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Issue } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueProperties } from "./IssueProperties";
+import { formatMonitorAbsolute } from "../lib/issue-monitor";
 import { queryKeys } from "../lib/queryKeys";
+import { createTestIssue } from "../test-utils/issue";
 
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
+  listInvokableIssueOwners: vi.fn(),
   adapterModels: vi.fn(),
   adapterModelProfiles: vi.fn(),
 }));
@@ -38,6 +41,7 @@ const mockIssuesApi = vi.hoisted(() => ({
   upsertWatchdog: vi.fn(),
   deleteWatchdog: vi.fn(),
   unarchiveFromInbox: vi.fn(),
+  decideExecutionStage: vi.fn(),
 }));
 
 const mockAuthApi = vi.hoisted(() => ({
@@ -96,16 +100,16 @@ vi.mock("../hooks/useProjectOrder", () => ({
   }),
 }));
 
-vi.mock("../lib/recent-assignees", () => ({
-  getRecentAssigneeIds: () => [],
-  getRecentAssigneeSelectionIds: () => [],
+vi.mock("../lib/recent-owners", () => ({
+  getRecentOwnerIds: () => [],
+  getRecentOwnerSelectionIds: () => [],
   sortAgentsByRecency: (agents: unknown[]) => agents,
-  trackRecentAssignee: vi.fn(),
-  trackRecentAssigneeUser: vi.fn(),
+  trackRecentOwner: vi.fn(),
+  trackRecentOwnerUser: vi.fn(),
 }));
 
-vi.mock("../lib/assignees", () => ({
-  formatAssigneeUserLabel: (userId: string | null | undefined, currentUserId?: string | null, userLabelMap?: Map<string, string>) => {
+vi.mock("../lib/owners", () => ({
+  formatOwnerUserLabel: (userId: string | null | undefined, currentUserId?: string | null, userLabelMap?: Map<string, string>) => {
     if (!userId) return null;
     return userLabelMap?.get(userId) ?? (userId === currentUserId ? "You" : "User");
   },
@@ -193,38 +197,8 @@ async function waitForAssertion(assertion: () => void, attempts = 20) {
 }
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
-    companyId: "company-1",
-    projectId: null,
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
+  return createTestIssue({
     title: "Parent issue",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: null,
-    assigneeUserId: null,
-    responsibleUserId: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    createdByAgentId: null,
-    createdByUserId: "user-1",
-    issueNumber: 1,
-    identifier: "PAP-1",
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     labels: [],
     labelIds: [],
     blockedBy: [],
@@ -232,8 +206,7 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     createdAt: new Date("2026-04-06T12:00:00.000Z"),
     updatedAt: new Date("2026-04-06T12:05:00.000Z"),
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 function createLabel(overrides: Partial<IssueLabel> = {}): IssueLabel {
@@ -391,7 +364,7 @@ function createExecutionState(overrides: Partial<IssueExecutionState> = {}): Iss
     currentStageIndex: 0,
     currentStageType: "review",
     currentParticipant: { type: "agent", agentId: "agent-1", userId: null },
-    returnAssignee: { type: "agent", agentId: "agent-2", userId: null },
+    returnOwner: { type: "agent", agentId: "agent-2", userId: null },
     reviewRequest: null,
     completedStageIds: [],
     lastDecisionId: null,
@@ -429,6 +402,20 @@ describe("IssueProperties", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockAgentsApi.list.mockResolvedValue([]);
+    mockAgentsApi.listInvokableIssueOwners.mockImplementation(async (companyId: string) =>
+      (await mockAgentsApi.list(companyId))
+        .filter((agent: { status?: string }) =>
+          agent.status !== "paused" &&
+          agent.status !== "pending_approval" &&
+          agent.status !== "terminated",
+        )
+        .map((agent: { id: string; name: string; title?: string | null; icon?: string | null }) => ({
+          id: agent.id,
+          name: agent.name,
+          title: agent.title ?? null,
+          icon: agent.icon ?? null,
+        })),
+    );
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
     mockProjectsApi.list.mockResolvedValue([]);
@@ -443,6 +430,7 @@ describe("IssueProperties", () => {
     mockIssuesApi.upsertWatchdog.mockResolvedValue({});
     mockIssuesApi.deleteWatchdog.mockResolvedValue({ ok: true });
     mockIssuesApi.unarchiveFromInbox.mockResolvedValue({ ok: true });
+    mockIssuesApi.decideExecutionStage.mockReset();
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" } });
     mockAccessApi.listUserDirectory.mockResolvedValue({
       users: [
@@ -459,7 +447,7 @@ describe("IssueProperties", () => {
       ],
     });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: false,
+      enableIssueWatchdogs: false,
     });
   });
 
@@ -467,12 +455,12 @@ describe("IssueProperties", () => {
     document.body.innerHTML = "";
   });
 
-  it("shows assignee and originating without responsible wording", async () => {
-    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", name: "CodexCoder", status: "active", adapterType: "codex_local" }]);
+  it("shows owner and originating without responsible wording", async () => {
+    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", name: "CodexCoder", status: "active", adapterType: "codex" }]);
     const root = renderProperties(container, {
       issue: createIssue({
-        assigneeAgentId: "agent-1",
-        createdByUserId: "user-1",
+        ownerAgentId: "agent-1",
+        creatorUserId: "user-1",
         responsibleUserId: "user-2",
       }),
       childIssues: [],
@@ -482,7 +470,7 @@ describe("IssueProperties", () => {
     await flush();
 
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("Assignee");
+      expect(container.textContent).toContain("Owner");
       expect(container.textContent).toContain("CodexCoder");
       expect(container.textContent).toContain("Originating");
       expect(container.textContent).toContain("Riley Board");
@@ -499,7 +487,7 @@ describe("IssueProperties", () => {
   it("shows originating without merged responsible wording when responsible is derived from the creator", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
-        createdByUserId: "user-1",
+        creatorUserId: "user-1",
         responsibleUserId: null,
       }),
       childIssues: [],
@@ -521,11 +509,12 @@ describe("IssueProperties", () => {
   });
 
   it("shows originating agent without responsible wording", async () => {
-    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", name: "CodexCoder", status: "active", adapterType: "codex_local" }]);
+    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", name: "CodexCoder", status: "active", adapterType: "codex" }]);
     const root = renderProperties(container, {
       issue: createIssue({
-        createdByAgentId: "agent-1",
-        createdByUserId: null,
+        creatorKind: "agent-execution",
+        creatorAuthorityId: "agent-1",
+        creatorAdapterConfigRevisionId: "adapter-revision-1",
         responsibleUserId: null,
       }),
       childIssues: [],
@@ -537,8 +526,8 @@ describe("IssueProperties", () => {
     await waitForAssertion(() => {
       expect(container.textContent).toContain("Originating");
       expect(container.textContent).toContain("CodexCoder");
-      expect(container.textContent).toContain("Assignee");
-      expect(container.textContent).toContain("Unassigned");
+      expect(container.textContent).toContain("Owner");
+      expect(container.textContent).toContain("Board escalation");
       expect(container.textContent).not.toContain("Responsible");
       expect(container.textContent).not.toContain("Kicked off by");
       expect(container.querySelector('[data-shape="square"]')?.textContent).toContain("CodexCoder");
@@ -548,11 +537,12 @@ describe("IssueProperties", () => {
   });
 
   it("attributes an agent-created issue to the transitive responsible user with a via affordance", async () => {
-    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", name: "CodexCoder", status: "active", adapterType: "codex_local" }]);
+    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", name: "CodexCoder", status: "active", adapterType: "codex" }]);
     const root = renderProperties(container, {
       issue: createIssue({
-        createdByAgentId: "agent-1",
-        createdByUserId: null,
+        creatorKind: "agent-execution",
+        creatorAuthorityId: "agent-1",
+        creatorAdapterConfigRevisionId: "adapter-revision-1",
         responsibleUserId: "user-2",
       }),
       childIssues: [],
@@ -572,11 +562,12 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("shows originating responsible user for a routine execution with no creator", async () => {
+  it("shows the responsible user as originating context for a routine execution", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
-        createdByAgentId: null,
-        createdByUserId: null,
+        creatorKind: "routine",
+        creatorRoutineId: "routine-1",
+        creatorRoutineDispatchId: "dispatch-1",
         responsibleUserId: "user-2",
       }),
       childIssues: [],
@@ -594,7 +585,7 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("groups the assignee picker and gates a live-run reassign behind an interrupt confirm", async () => {
+  it("lists invokable owner agents and gates a live-run reassign behind an interrupt confirm", async () => {
     const minimalAgent = (id: string, name: string) =>
       ({
         id,
@@ -608,7 +599,7 @@ describe("IssueProperties", () => {
     mockAgentsApi.list.mockResolvedValue([minimalAgent("agent-1", "ClaudeCoder"), minimalAgent("agent-2", "QA")]);
     const onUpdate = vi.fn();
     const root = renderProperties(container, {
-      issue: createIssue({ assigneeAgentId: "agent-1" }),
+      issue: createIssue({ ownerAgentId: "agent-1" }),
       childIssues: [],
       onUpdate,
       inline: true,
@@ -616,7 +607,7 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    // Wait for the agents query to resolve so the current assignee renders.
+    // Wait for the agents query to resolve so the current owner renders.
     let trigger: HTMLButtonElement | undefined;
     await waitForAssertion(() => {
       trigger = Array.from(container.querySelectorAll("button")).find((b) =>
@@ -629,15 +620,20 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    // Live-run banner + grouped section headers are present.
-    expect(container.querySelector("[data-testid='assignee-running-banner']")?.textContent).toContain(
+    // The canonical owner picker contains invokable agents only.
+    expect(container.querySelector("[data-testid='owner-running-banner']")?.textContent).toContain(
       "ClaudeCoder is running",
     );
-    expect(container.textContent).toContain("Agents");
-    expect(container.textContent).toContain("Board users");
+    const ownerSearchInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="Search owners..."]',
+    );
+    const ownerPickerContent = ownerSearchInput?.parentElement;
+    expect(ownerPickerContent?.textContent).toContain("ClaudeCoder");
+    expect(ownerPickerContent?.textContent).toContain("QA");
+    expect(container.textContent).not.toContain("Board users");
 
     // Picking a different agent mid-run stages a confirm rather than applying.
-    const qaOption = Array.from(container.querySelectorAll("button")).find(
+    const qaOption = Array.from(ownerPickerContent?.querySelectorAll("button") ?? []).find(
       (b) => b.textContent?.trim() === "QA",
     );
     expect(qaOption).toBeTruthy();
@@ -645,23 +641,23 @@ describe("IssueProperties", () => {
       qaOption!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
-    expect(container.querySelector("[data-testid='interrupt-assign-confirm']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='interrupt-owner-change-confirm']")).not.toBeNull();
     expect(onUpdate).not.toHaveBeenCalled();
 
     // Confirming applies the reassignment.
     const confirmBtn = container.querySelector<HTMLButtonElement>(
-      "[data-testid='interrupt-assign-confirm-action']",
+      "[data-testid='interrupt-owner-change-confirm-action']",
     )!;
     await act(async () => {
       confirmBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
-    expect(onUpdate).toHaveBeenCalledWith({ assigneeAgentId: "agent-2", assigneeUserId: null });
+    expect(onUpdate).toHaveBeenCalledWith({ ownerAgentId: "agent-2" });
 
     act(() => root.unmount());
   });
 
-  it("filters the no-assignee option with assignee search", async () => {
+  it("shows the canonical empty state when owner search has no invokable agent match", async () => {
     mockAgentsApi.list.mockResolvedValue([
       {
         id: "agent-1",
@@ -681,19 +677,21 @@ describe("IssueProperties", () => {
     await flush();
 
     const searchInput = container.querySelector(
-      'input[placeholder="Search assignees..."]',
+      'input[placeholder="Search owners..."]',
     ) as HTMLInputElement | null;
     expect(searchInput).not.toBeNull();
+    const ownerPickerContent = searchInput!.parentElement;
+    expect(ownerPickerContent).not.toBeNull();
 
     await act(async () => {
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      nativeSetter?.call(searchInput, "no");
+      nativeSetter?.call(searchInput, "claude");
       searchInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await flush();
 
-    expect(container.textContent).toContain("No assignee");
-    expect(container.textContent).not.toContain("No matches.");
+    expect(ownerPickerContent!.textContent).toContain("ClaudeCoder");
+    expect(ownerPickerContent!.textContent).not.toContain("No invokable agent matches.");
 
     await act(async () => {
       const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -702,8 +700,8 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("No assignee");
-    expect(container.textContent).toContain("No matches.");
+    expect(ownerPickerContent!.textContent).not.toContain("ClaudeCoder");
+    expect(ownerPickerContent!.textContent).toContain("No invokable agent matches.");
 
     act(() => root.unmount());
   });
@@ -734,7 +732,7 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("hides watchdog setup controls while the experimental flag is off", async () => {
+  it("hides system safeguard controls while the experimental flag is off", async () => {
     const root = renderProperties(container, {
       issue: createIssue(),
       childIssues: [],
@@ -742,15 +740,14 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).not.toContain("Watchdog");
-    expect(container.textContent).not.toContain("Set watchdog");
+    expect(container.textContent).not.toContain("System safeguard");
 
     act(() => root.unmount());
   });
 
-  it("shows watchdog setup controls when the experimental flag is enabled", async () => {
+  it("shows system safeguard controls when the experimental flag is enabled", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: true,
+      enableIssueWatchdogs: true,
     });
     const root = renderProperties(container, {
       issue: createIssue(),
@@ -761,9 +758,8 @@ describe("IssueProperties", () => {
     await flush();
 
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("Watchdog");
-      // Empty watchdog uses the uniform muted "None" empty state (ux-spec §6).
-      expect(findRowTrigger(container, "Watchdog")?.textContent).toContain("None");
+      expect(container.textContent).toContain("System safeguard");
+      expect(findRowTrigger(container, "System safeguard")?.textContent).toContain("Disabled");
     });
 
     act(() => root.unmount());
@@ -772,7 +768,7 @@ describe("IssueProperties", () => {
   it("passes blocker attention to the sidebar status icon", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
-        status: "blocked",
+        boardPresentationStatus: "blocked",
         blockerAttention: {
           state: "covered",
           reason: "active_child",
@@ -797,7 +793,7 @@ describe("IssueProperties", () => {
   it("renders blocked-by issues as direct chips and edits them from an add action", async () => {
     const onUpdate = vi.fn();
     mockIssuesApi.list.mockResolvedValue([
-      createIssue({ id: "issue-3", identifier: "PAP-3", title: "New blocker", status: "todo" }),
+      createIssue({ id: "issue-3", identifier: "PAP-3", title: "New blocker", boardPresentationStatus: "todo" }),
     ]);
 
     const root = renderProperties(container, {
@@ -807,10 +803,10 @@ describe("IssueProperties", () => {
             id: "issue-2",
             identifier: "PAP-2",
             title: "Existing blocker",
-            status: "in_progress",
+            boardPresentationStatus: "in_progress",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
         ],
       }),
@@ -858,8 +854,8 @@ describe("IssueProperties", () => {
 
   it("searches all company issues when adding a blocker", async () => {
     const onUpdate = vi.fn();
-    const loadedIssue = createIssue({ id: "issue-3", identifier: "PAP-3", title: "Loaded issue", status: "todo" });
-    const remoteIssue = createIssue({ id: "issue-99", identifier: "PAP-99", title: "Remote blocker", status: "in_progress" });
+    const loadedIssue = createIssue({ id: "issue-3", identifier: "PAP-3", title: "Loaded issue", boardPresentationStatus: "todo" });
+    const remoteIssue = createIssue({ id: "issue-99", identifier: "PAP-99", title: "Remote blocker", boardPresentationStatus: "in_progress" });
     mockIssuesApi.list.mockImplementation((_companyId: string, filters?: { q?: string; limit?: number }) => {
       if (filters?.q === "remote") return Promise.resolve([remoteIssue]);
       return Promise.resolve([loadedIssue]);
@@ -919,19 +915,19 @@ describe("IssueProperties", () => {
             id: "issue-2",
             identifier: "PAP-2",
             title: "Existing blocker",
-            status: "in_progress",
+            boardPresentationStatus: "in_progress",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
           {
             id: "issue-4",
             identifier: "PAP-4",
             title: "Keep blocker",
-            status: "todo",
+            boardPresentationStatus: "todo",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
         ],
       }),
@@ -968,10 +964,10 @@ describe("IssueProperties", () => {
       id: `blocker-${index + 1}`,
       identifier: `BLOCK-${index + 1}`,
       title: `Blocker ${index + 1}`,
-      status: "todo",
+      boardPresentationStatus: "todo",
       priority: "medium",
-      assigneeAgentId: null,
-      assigneeUserId: null,
+      ownerAgentId: null,
+      ownerUserId: null,
     })) as NonNullable<Issue["blockedBy"]>;
     const childIssues = Array.from({ length: 7 }, (_, index) => createIssue({
       id: `child-${index + 1}`,
@@ -1050,19 +1046,19 @@ describe("IssueProperties", () => {
       id: `blocking-${index + 1}`,
       identifier: `BLOCKING-${index + 1}`,
       title: `Blocking issue ${index + 1}`,
-      status: "todo",
+      boardPresentationStatus: "todo",
       priority: "medium",
-      assigneeAgentId: null,
-      assigneeUserId: null,
+      ownerAgentId: null,
+      ownerUserId: null,
     })) as NonNullable<Issue["blocks"]>;
     const relatedIssues = Array.from({ length: 7 }, (_, index) => ({
       id: `related-${index + 1}`,
       identifier: `RELATED-${index + 1}`,
       title: `Related issue ${index + 1}`,
-      status: "todo" as const,
+      boardPresentationStatus: "todo" as const,
       priority: "medium" as const,
-      assigneeAgentId: null,
-      assigneeUserId: null,
+      ownerAgentId: null,
+      ownerUserId: null,
     }));
     const root = renderProperties(container, {
       issue: createIssue({
@@ -1071,7 +1067,7 @@ describe("IssueProperties", () => {
           outbound: relatedIssues.map((issue) => ({
             issue,
             mentionCount: 1,
-            sources: [{ kind: "description", sourceRecordId: null, label: "description", matchedText: issue.identifier }],
+            sources: [{ kind: "request", sourceRecordId: null, label: "request", matchedText: issue.identifier }],
           })),
           inbound: [],
         },
@@ -1174,10 +1170,10 @@ describe("IssueProperties", () => {
       id: `blocker-${index + 1}`,
       identifier: `BLOCK-${index + 1}`,
       title: `Blocker ${index + 1}`,
-      status: "todo",
+      boardPresentationStatus: "todo",
       priority: "medium",
-      assigneeAgentId: null,
-      assigneeUserId: null,
+      ownerAgentId: null,
+      ownerUserId: null,
     })) as NonNullable<Issue["blockedBy"]>;
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -1245,7 +1241,6 @@ describe("IssueProperties", () => {
       issue: createIssue({
         projectId: "project-1",
         projectWorkspaceId: "workspace-main",
-        executionWorkspaceId: "workspace-1",
         currentExecutionWorkspace: createExecutionWorkspace({
           mode: "isolated_workspace",
           config: {
@@ -1318,7 +1313,6 @@ describe("IssueProperties", () => {
       issue: createIssue({
         projectId: "project-1",
         projectWorkspaceId: "workspace-main",
-        executionWorkspaceId: "workspace-1",
         currentExecutionWorkspace: createExecutionWorkspace({
           mode: "isolated_workspace",
         }),
@@ -1347,7 +1341,6 @@ describe("IssueProperties", () => {
     });
     const root = renderProperties(container, {
       issue: createIssue({
-        executionWorkspaceId: "workspace-1",
         currentExecutionWorkspace: createExecutionWorkspace({
           branchName: "pap-1-workspace",
           cwd: "/tmp/paperclip/PAP-1",
@@ -1381,7 +1374,6 @@ describe("IssueProperties", () => {
       issue: createIssue({
         projectId: "project-1",
         projectWorkspaceId: "workspace-main",
-        executionWorkspaceId: "workspace-1",
         currentExecutionWorkspace: createExecutionWorkspace({
           mode: "shared_workspace",
           projectWorkspaceId: "workspace-main",
@@ -1412,13 +1404,13 @@ describe("IssueProperties", () => {
                 id: "issue-22",
                 identifier: "PAP-22",
                 title: "Related task",
-                status: "todo",
+                boardPresentationStatus: "todo",
                 priority: "medium",
-                assigneeAgentId: null,
-                assigneeUserId: null,
+                ownerAgentId: null,
+                ownerUserId: null,
               },
               mentionCount: 1,
-              sources: [{ kind: "description", sourceRecordId: null, label: "description", matchedText: "PAP-22" }],
+              sources: [{ kind: "request", sourceRecordId: null, label: "request", matchedText: "PAP-22" }],
             },
           ],
           inbound: [],
@@ -1444,10 +1436,10 @@ describe("IssueProperties", () => {
             id: "issue-22",
             identifier: "PAP-22",
             title: "Blocker",
-            status: "todo",
+            boardPresentationStatus: "todo",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
         ],
         blocks: [
@@ -1455,10 +1447,10 @@ describe("IssueProperties", () => {
             id: "issue-33",
             identifier: "PAP-33",
             title: "Blocked issue",
-            status: "todo",
+            boardPresentationStatus: "todo",
             priority: "medium",
-            assigneeAgentId: null,
-            assigneeUserId: null,
+            ownerAgentId: null,
+            ownerUserId: null,
           },
         ],
         relatedWork: {
@@ -1468,39 +1460,39 @@ describe("IssueProperties", () => {
                 id: "issue-22",
                 identifier: "PAP-22",
                 title: "Blocker",
-                status: "todo",
+                boardPresentationStatus: "todo",
                 priority: "medium",
-                assigneeAgentId: null,
-                assigneeUserId: null,
+                ownerAgentId: null,
+                ownerUserId: null,
               },
               mentionCount: 1,
-              sources: [{ kind: "description", sourceRecordId: null, label: "description", matchedText: "PAP-22" }],
+              sources: [{ kind: "request", sourceRecordId: null, label: "request", matchedText: "PAP-22" }],
             },
             {
               issue: {
                 id: "issue-33",
                 identifier: "PAP-33",
                 title: "Blocked issue",
-                status: "todo",
+                boardPresentationStatus: "todo",
                 priority: "medium",
-                assigneeAgentId: null,
-                assigneeUserId: null,
+                ownerAgentId: null,
+                ownerUserId: null,
               },
               mentionCount: 1,
-              sources: [{ kind: "description", sourceRecordId: null, label: "description", matchedText: "PAP-33" }],
+              sources: [{ kind: "request", sourceRecordId: null, label: "request", matchedText: "PAP-33" }],
             },
             {
               issue: {
                 id: "child-44",
                 identifier: "PAP-44",
                 title: "Child issue",
-                status: "todo",
+                boardPresentationStatus: "todo",
                 priority: "medium",
-                assigneeAgentId: null,
-                assigneeUserId: null,
+                ownerAgentId: null,
+                ownerUserId: null,
               },
               mentionCount: 1,
-              sources: [{ kind: "description", sourceRecordId: null, label: "description", matchedText: "PAP-44" }],
+              sources: [{ kind: "request", sourceRecordId: null, label: "request", matchedText: "PAP-44" }],
             },
           ],
           inbound: [],
@@ -1570,23 +1562,21 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("hides model options when the issue uses the responsible default", async () => {
+  it("does not expose issue-level model options", async () => {
     mockAgentsApi.list.mockResolvedValue([
       {
         id: "agent-1",
         name: "Senior Product Engineer",
-        role: "engineer",
         title: null,
         status: "active",
-        adapterType: "codex_local",
+        adapterType: "codex",
         icon: null,
       },
     ]);
 
     const root = renderProperties(container, {
       issue: createIssue({
-        assigneeAgentId: "agent-1",
-        assigneeAdapterOverrides: null,
+        ownerAgentId: "agent-1",
       }),
       childIssues: [],
       onUpdate: vi.fn(),
@@ -1595,117 +1585,6 @@ describe("IssueProperties", () => {
 
     expect(container.textContent).not.toContain("Model lane");
     expect(container.textContent).not.toContain("Codex options");
-
-    act(() => root.unmount());
-  });
-
-  it("edits existing custom assignee model options from the properties pane", async () => {
-    const onUpdate = vi.fn();
-    mockAgentsApi.list.mockResolvedValue([
-      {
-        id: "agent-1",
-        name: "Senior Product Engineer",
-        role: "engineer",
-        title: null,
-        status: "active",
-        adapterType: "codex_local",
-        icon: null,
-      },
-    ]);
-    mockAgentsApi.adapterModels.mockResolvedValue([
-      { id: "gpt-5.5", label: "GPT-5.5" },
-      { id: "gpt-5.4", label: "GPT-5.4" },
-    ]);
-
-    const root = renderProperties(container, {
-      issue: createIssue({
-        assigneeAgentId: "agent-1",
-        assigneeAdapterOverrides: {
-          adapterConfig: {
-            model: "gpt-5.4",
-            modelReasoningEffort: "high",
-          },
-        },
-      }),
-      childIssues: [],
-      onUpdate,
-    });
-    await flush();
-    await flush();
-
-    expect(container.textContent).toContain("Override · gpt-5.4 · high");
-    expect(container.textContent).toContain("Model lane");
-
-    // Wait for the adapter-models query to resolve so the model options render.
-    let modelButton: HTMLButtonElement | undefined;
-    await waitForAssertion(() => {
-      modelButton = Array.from(container.querySelectorAll("button"))
-        .find((button) => button.textContent?.includes("GPT-5.5"));
-      expect(modelButton).not.toBeUndefined();
-    });
-
-    await act(async () => {
-      modelButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(onUpdate).toHaveBeenCalledWith({
-      assigneeAdapterOverrides: {
-        adapterConfig: {
-          model: "gpt-5.5",
-          modelReasoningEffort: "high",
-        },
-      },
-    });
-
-    act(() => root.unmount());
-  });
-
-  it("clears existing assignee adapter overrides from the properties pane", async () => {
-    const onUpdate = vi.fn();
-    mockAgentsApi.list.mockResolvedValue([
-      {
-        id: "agent-1",
-        name: "Senior Product Engineer",
-        role: "engineer",
-        title: null,
-        status: "active",
-        adapterType: "codex_local",
-        icon: null,
-      },
-    ]);
-
-    const root = renderProperties(container, {
-      issue: createIssue({
-        assigneeAgentId: "agent-1",
-        assigneeAdapterOverrides: {
-          adapterConfig: {
-            model: "gpt-5.4",
-          },
-        },
-      }),
-      childIssues: [],
-      onUpdate,
-    });
-    await flush();
-
-    // The trailing "clear" X was removed (ux-spec: one trailing-action style).
-    // Clearing now happens by selecting the "Primary" model lane inside the picker.
-    const optionsTrigger = findRowTrigger(container, "Model");
-    expect(optionsTrigger).toBeTruthy();
-    await act(async () => {
-      optionsTrigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
-    const primaryLane = Array.from(container.querySelectorAll('button[role="radio"]'))
-      .find((button) => button.textContent?.trim() === "Primary");
-    expect(primaryLane).not.toBeUndefined();
-
-    await act(async () => {
-      primaryLane!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(onUpdate).toHaveBeenCalledWith({ assigneeAdapterOverrides: null });
 
     act(() => root.unmount());
   });
@@ -1747,7 +1626,7 @@ describe("IssueProperties", () => {
   it("allows setting and clearing a parent issue from the properties pane", async () => {
     const onUpdate = vi.fn();
     mockIssuesApi.list.mockResolvedValue([
-      createIssue({ id: "issue-2", identifier: "PAP-2", title: "Candidate parent", status: "in_progress" }),
+      createIssue({ id: "issue-2", identifier: "PAP-2", title: "Candidate parent", boardPresentationStatus: "in_progress" }),
     ]);
 
     const root = renderProperties(container, {
@@ -1785,11 +1664,11 @@ describe("IssueProperties", () => {
           id: "issue-2",
           identifier: "PAP-2",
           title: "Candidate parent",
-          description: null,
-          status: "in_progress",
+          request: "",
+          boardPresentationStatus: "in_progress",
           priority: "medium",
-          assigneeAgentId: null,
-          assigneeUserId: null,
+          ownerAgentId: null,
+          ownerUserId: null,
           projectId: null,
           goalId: null,
           project: null,
@@ -1832,7 +1711,7 @@ describe("IssueProperties", () => {
 
     act(() => rerenderedRoot.unmount());
   });
-  it("shows a run review action after reviewers are configured and starts execution explicitly when clicked", async () => {
+  it("does not let the board start a configured review before the owner submits done", async () => {
     const onUpdate = vi.fn();
     const root = renderProperties(container, {
       issue: createIssue({
@@ -1852,20 +1731,14 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    const runReviewButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Run review now"));
-    expect(runReviewButton).not.toBeUndefined();
-
-    await act(async () => {
-      runReviewButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(onUpdate).toHaveBeenCalledWith({ status: "in_review" });
+    expect(container.textContent).not.toContain("Run review now");
+    expect(container.textContent).not.toContain("Run approval now");
+    expect(onUpdate).not.toHaveBeenCalled();
 
     act(() => root.unmount());
   });
 
-  it("shows a run approval action when approval is the next runnable stage", async () => {
+  it("does not let the board start a configured approval before the owner submits done", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
         executionPolicy: createExecutionPolicy({
@@ -1884,16 +1757,16 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).toContain("Run approval now");
+    expect(container.textContent).not.toContain("Run approval now");
     expect(container.textContent).not.toContain("Run review now");
 
     act(() => root.unmount());
   });
 
-  it("keeps the run review action available after changes are requested", async () => {
+  it("leaves changes-requested resubmission to the canonical owner update", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
-        status: "in_progress",
+        boardPresentationStatus: "in_progress",
         executionPolicy: createExecutionPolicy({
           stages: [
             {
@@ -1911,7 +1784,9 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.textContent).toContain("Run review now");
+    expect(container.textContent).toContain("Review requested changes");
+    expect(container.textContent).not.toContain("Run review now");
+    expect(container.textContent).not.toContain("Run approval now");
 
     act(() => root.unmount());
   });
@@ -1919,7 +1794,7 @@ describe("IssueProperties", () => {
   it("hides the run action while an execution stage is already pending", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
-        status: "in_review",
+        boardPresentationStatus: "in_review",
         executionPolicy: createExecutionPolicy({
           stages: [
             {
@@ -1947,13 +1822,91 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
+  it("offers the active named participant only the narrow audited decision actions", async () => {
+    const issue = createIssue({
+      boardPresentationStatus: "in_review",
+      executionPolicy: createExecutionPolicy({
+        stages: [
+          {
+            id: "review-stage",
+            type: "review",
+            approvalsNeeded: 1,
+            participants: [
+              {
+                id: "participant-1",
+                type: "user",
+                agentId: null,
+                userId: "user-1",
+              },
+            ],
+          },
+        ],
+      }),
+      executionState: createExecutionState({
+        status: "pending",
+        currentStageId: "review-stage",
+        currentStageType: "review",
+        currentParticipant: {
+          type: "user",
+          agentId: null,
+          userId: "user-1",
+        },
+        lastDecisionOutcome: null,
+      }),
+    });
+    mockIssuesApi.decideExecutionStage.mockResolvedValue({
+      issue: {
+        ...issue,
+        status: "done",
+        lifecycleStatus: "done",
+      },
+      decision: { id: "decision-1" },
+      retried: false,
+    });
+    const prompt = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("Reviewed and approved");
+    const root = renderProperties(container, {
+      issue,
+      childIssues: [],
+      onUpdate: vi.fn(),
+    });
+    await flush();
+
+    expect(container.textContent).toContain("Review pending");
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Request changes");
+    });
+    const approve = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Approve",
+    );
+    expect(approve).not.toBeUndefined();
+
+    await act(async () => {
+      approve!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(mockIssuesApi.decideExecutionStage).toHaveBeenCalledWith(
+      issue.id,
+      expect.objectContaining({
+        outcome: "approved",
+        body: "Reviewed and approved",
+        idempotencyKey: expect.any(String),
+      }),
+    );
+
+    prompt.mockRestore();
+    act(() => root.unmount());
+  });
+
   it("renders monitor controls and clears an existing monitor", async () => {
     const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-04-11T10:00:00.000Z").getTime());
     const onUpdate = vi.fn();
     const root = renderProperties(container, {
       issue: createIssue({
-        status: "in_progress",
-        assigneeAgentId: "agent-1",
+        boardPresentationStatus: "in_progress",
+        ownerAgentId: "agent-1",
         executionPolicy: createExecutionPolicy({
           monitor: {
             nextCheckAt: "2026-04-11T12:30:00.000Z",
@@ -1967,7 +1920,7 @@ describe("IssueProperties", () => {
           currentStageIndex: null,
           currentStageType: null,
           currentParticipant: null,
-          returnAssignee: null,
+          returnOwner: null,
           lastDecisionOutcome: null,
           monitor: {
             status: "scheduled",
@@ -2043,6 +1996,8 @@ describe("IssueProperties", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const root = createRoot(container);
     const monitorRowText = () => container.querySelector('[data-testid="monitor-row-trigger"]')?.textContent;
+    const monitorAbsolute = (nextCheckAt: string) =>
+      formatMonitorAbsolute(nextCheckAt, {}, new Date(Date.now()));
     const renderMonitor = (issue: Issue) => {
       act(() => {
         root.render(
@@ -2060,7 +2015,7 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("In 2h 12m");
-    expect(monitorRowText()).toContain("Today, 4:08 PM · Attempt 1");
+    expect(monitorRowText()).toContain(`${monitorAbsolute(baseMonitorState.nextCheckAt)} · Attempt 1`);
 
     renderMonitor(createIssue({
       executionPolicy: createExecutionPolicy({ monitor: { ...baseMonitorState, nextCheckAt: "2026-07-17T18:08:00.000Z" } }),
@@ -2069,7 +2024,7 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("In 2h 12m");
-    expect(monitorRowText()).toContain("Today, 4:08 PM");
+    expect(monitorRowText()).toContain(monitorAbsolute(baseMonitorState.nextCheckAt));
 
     renderMonitor(createIssue({
       executionPolicy: createExecutionPolicy({ monitor: { ...baseMonitorState, serviceName: "vercel-deploy" } }),
@@ -2093,7 +2048,9 @@ describe("IssueProperties", () => {
     }));
     await flush();
     expect(monitorRowText()).toContain("Overdue by 18m");
-    expect(monitorRowText()).toContain("Today, 1:38 PM · fires on next tick");
+    expect(monitorRowText()).toContain(
+      `${monitorAbsolute("2026-07-17T13:38:00.000Z")} · fires on next tick`,
+    );
 
     renderMonitor(createIssue({
       executionPolicy: createExecutionPolicy(),
@@ -2121,29 +2078,14 @@ describe("IssueProperties", () => {
     dateNowSpy.mockRestore();
   });
 
-  const watchdogAgent = {
-    id: "agent-1",
-    name: "ClaudeCoder",
-    role: "",
-    title: null,
-    icon: null,
-    status: "active",
-    orgChainHealth: { status: "ok" },
-  } as unknown as Parameters<typeof mockAgentsApi.list.mockResolvedValue>[0][number];
-
   function createWatchdogSummary(overrides: Record<string, unknown> = {}) {
     return {
       id: "watchdog-1",
       companyId: "company-1",
       issueId: "issue-1",
-      watchdogAgentId: "agent-1",
-      instructions: "Keep the tree moving.",
       status: "active",
-      watchdogIssueId: null,
       lastObservedFingerprint: null,
-      lastReviewedFingerprint: null,
       lastTriggeredAt: null,
-      lastCompletedAt: null,
       triggerCount: 0,
       createdAt: new Date("2026-04-06T12:00:00.000Z"),
       updatedAt: new Date("2026-04-06T12:00:00.000Z"),
@@ -2151,81 +2093,11 @@ describe("IssueProperties", () => {
     } as unknown as NonNullable<Issue["watchdog"]>;
   }
 
-  it("shows the empty watchdog state and saves a new watchdog via the API", async () => {
+  it("enables the system safeguard without an agent or prompt payload", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: true,
+      enableIssueWatchdogs: true,
     });
-    mockAgentsApi.list.mockResolvedValue([watchdogAgent]);
-    const onUpdate = vi.fn();
-    const root = renderProperties(container, {
-      issue: createIssue({ watchdog: null }),
-      childIssues: [],
-      onUpdate,
-      inline: true,
-    });
-    await flush();
-
-    let trigger: HTMLButtonElement | undefined;
-    await waitForAssertion(() => {
-      expect(container.textContent).toContain("Watchdog");
-      trigger = findRowTrigger(container, "Watchdog");
-      expect(trigger).toBeTruthy();
-    });
-
-    await act(async () => {
-      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
-    // Choose the agent through the inline selector, then save.
-    let agentOption: HTMLElement | undefined;
-    await waitForAssertion(() => {
-      agentOption = Array.from(container.querySelectorAll("button, [role='option']"))
-        .find((node) => node.textContent?.includes("ClaudeCoder")) as HTMLElement | undefined;
-      expect(agentOption).toBeTruthy();
-    });
-    // Open the selector if the option is not yet visible, then click it.
-    await act(async () => {
-      agentOption!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
-    const instructions = Array.from(container.querySelectorAll("textarea"))
-      .find((node) => node.getAttribute("placeholder")?.includes("watchdog"));
-    expect(instructions).toBeTruthy();
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!;
-      setter.call(instructions!, "Watch the deploy");
-      instructions!.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await flush();
-
-    const saveButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => /Set watchdog|Update/.test(button.textContent ?? "") && button.closest("[class*='space-y']"));
-    const finalSave = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent === "Set watchdog" && button !== trigger) ?? saveButton;
-    expect(finalSave).toBeTruthy();
-    await act(async () => {
-      finalSave!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
-    expect(mockIssuesApi.upsertWatchdog).toHaveBeenCalledWith(
-      "issue-1",
-      expect.objectContaining({ agentId: "agent-1" }),
-    );
-
-    act(() => root.unmount());
-  });
-
-  it("updates cached issue detail when saving a watchdog", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: true,
-    });
-    mockAgentsApi.list.mockResolvedValue([watchdogAgent]);
-    const savedWatchdog = createWatchdogSummary({
-      instructions: "Watch the deploy",
-    });
+    const savedWatchdog = createWatchdogSummary();
     mockIssuesApi.upsertWatchdog.mockResolvedValueOnce(savedWatchdog);
     const issue = createIssue({ watchdog: null });
     const { root, queryClient } = renderPropertiesWithQueryClient(container, {
@@ -2239,7 +2111,7 @@ describe("IssueProperties", () => {
 
     let trigger: HTMLButtonElement | undefined;
     await waitForAssertion(() => {
-      trigger = findRowTrigger(container, "Watchdog");
+      trigger = findRowTrigger(container, "System safeguard");
       expect(trigger).toBeTruthy();
     });
 
@@ -2248,36 +2120,25 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    let agentOption: HTMLElement | undefined;
-    await waitForAssertion(() => {
-      agentOption = Array.from(container.querySelectorAll("button, [role='option']"))
-        .find((node) => node.textContent?.includes("ClaudeCoder")) as HTMLElement | undefined;
-      expect(agentOption).toBeTruthy();
-    });
+    const enableButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Enable safeguard");
+    expect(enableButton).toBeTruthy();
     await act(async () => {
-      agentOption!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      enableButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
-    const finalSave = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent === "Set watchdog" && button !== trigger);
-    expect(finalSave).toBeTruthy();
-    await act(async () => {
-      finalSave!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await flush();
-
+    expect(mockIssuesApi.upsertWatchdog).toHaveBeenCalledWith("issue-1", {});
     expect(queryClient.getQueryData<Issue>(queryKeys.issues.detail(issue.id))?.watchdog)
       .toEqual(savedWatchdog);
 
     act(() => root.unmount());
   });
 
-  it("renders an existing watchdog and removes it via the API", async () => {
+  it("disables an existing system safeguard via the API", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: true,
+      enableIssueWatchdogs: true,
     });
-    mockAgentsApi.list.mockResolvedValue([watchdogAgent]);
     const onUpdate = vi.fn();
     const issue = createIssue({ watchdog: createWatchdogSummary() });
     const { root, queryClient } = renderPropertiesWithQueryClient(container, {
@@ -2289,99 +2150,27 @@ describe("IssueProperties", () => {
     queryClient.setQueryData(queryKeys.issues.detail(issue.id), issue);
     await flush();
 
+    let trigger: HTMLButtonElement | undefined;
     await waitForAssertion(() => {
-      expect(container.textContent).toContain("ClaudeCoder");
+      trigger = findRowTrigger(container, "System safeguard");
+      expect(trigger?.textContent).toContain("Enabled");
     });
-
-    const trigger = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("ClaudeCoder"));
     await act(async () => {
       trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
-    const removeButton = Array.from(container.querySelectorAll("button"))
-      .find((button) => button.textContent?.includes("Remove"));
-    expect(removeButton).toBeTruthy();
+    const disableButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === "Disable safeguard");
+    expect(disableButton).toBeTruthy();
     await act(async () => {
-      removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      disableButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
     expect(mockIssuesApi.deleteWatchdog).toHaveBeenCalledWith("issue-1");
     expect(queryClient.getQueryData<Issue>(queryKeys.issues.detail(issue.id))?.watchdog)
       .toBeNull();
-
-    act(() => root.unmount());
-  });
-
-  it("truncates the watchdog instructions one-line summary in the properties value column", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: true,
-    });
-    mockAgentsApi.list.mockResolvedValue([watchdogAgent]);
-    const instructions = "get greptile to stop re-reviewing the same task unless a fresh code change lands";
-    const root = renderProperties(container, {
-      issue: createIssue({
-        watchdog: createWatchdogSummary({ instructions }),
-      }),
-      childIssues: [],
-      onUpdate: vi.fn(),
-      inline: true,
-    });
-    await flush();
-
-    // ux-spec: watchdog row shows agent + a truncated one-line summary; the
-    // full instructions live in the popover (surfaced here via the row title).
-    let instructionNode: HTMLSpanElement | undefined;
-    await waitForAssertion(() => {
-      instructionNode = Array.from(container.querySelectorAll("span"))
-        .find((node) =>
-          node.textContent?.includes("get greptile")
-          && node.className.includes("text-muted-foreground")
-          && !node.className.includes("inline-flex")
-        ) as HTMLSpanElement | undefined;
-      expect(instructionNode).toBeTruthy();
-    });
-
-    expect(instructionNode!.className).toContain("truncate");
-    expect(instructionNode!.className).not.toContain("whitespace-normal");
-    expect(instructionNode!.className).not.toContain("break-words");
-
-    const watchdogTrigger = findRowTrigger(container, "Watchdog");
-    expect(watchdogTrigger?.querySelector("[title]")?.getAttribute("title")).toBe(instructions);
-
-    act(() => root.unmount());
-  });
-
-  it("links to the generated watchdog task when one exists", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: true,
-    });
-    mockAgentsApi.list.mockResolvedValue([watchdogAgent]);
-    const root = renderProperties(container, {
-      issue: createIssue({ watchdog: createWatchdogSummary({ watchdogIssueId: "issue-wd" }) }),
-      childIssues: [
-        createIssue({
-          id: "issue-wd",
-          identifier: "PAP-42",
-          title: "Watchdog: Parent issue",
-          originKind: "task_watchdog",
-        }),
-      ],
-      onUpdate: vi.fn(),
-      inline: true,
-    });
-    await flush();
-
-    // The link is now an icon-only "open task" affordance (ux-spec: one
-    // trailing-action style), so we assert on href + accessible label.
-    await waitForAssertion(() => {
-      const link = Array.from(container.querySelectorAll("a"))
-        .find((anchor) => anchor.getAttribute("href") === "/issues/issue-wd");
-      expect(link).toBeTruthy();
-      expect(link!.getAttribute("aria-label")).toBe("Open watchdog task");
-    });
 
     act(() => root.unmount());
   });
@@ -2491,7 +2280,7 @@ describe("IssueProperties", () => {
 
   it("shows agent-archive attribution and unarchive only in the properties pane", async () => {
     mockAgentsApi.list.mockResolvedValue([
-      { id: "agent-9", name: "Gardener", status: "active", adapterType: "codex_local", icon: null },
+      { id: "agent-9", name: "Gardener", status: "active", adapterType: "codex", icon: null },
     ]);
     const root = renderProperties(container, {
       issue: createIssue({
@@ -2536,7 +2325,7 @@ describe("IssueProperties", () => {
 
   it("surfaces unarchive failures inline", async () => {
     mockAgentsApi.list.mockResolvedValue([
-      { id: "agent-9", name: "Gardener", status: "active", adapterType: "codex_local", icon: null },
+      { id: "agent-9", name: "Gardener", status: "active", adapterType: "codex", icon: null },
     ]);
     mockIssuesApi.unarchiveFromInbox.mockRejectedValue(new Error("Archive policy denied"));
     const root = renderProperties(container, {

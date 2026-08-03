@@ -1,6 +1,6 @@
 import type { Sandbox as CloudflareSandbox } from "@cloudflare/sandbox";
 import { isAuthorizedRequest } from "./auth.js";
-import { executeInSandbox } from "./exec.js";
+import { cancelExecutionInSandbox, executeInSandbox } from "./exec.js";
 import { shellQuote } from "./helpers.js";
 import {
   buildLeaseSandboxId,
@@ -45,6 +45,7 @@ interface ReleaseLeaseRequestBody {
 
 interface ExecuteRequestBody {
   providerLeaseId?: string;
+  executionId?: string;
   command?: string;
   args?: string[];
   cwd?: string;
@@ -54,6 +55,12 @@ interface ExecuteRequestBody {
   streamOutput?: boolean;
   sessionStrategy?: SessionStrategy;
   sessionId?: string;
+}
+
+interface CancelExecutionRequestBody {
+  providerLeaseId?: string;
+  executionId?: string;
+  reason?: string;
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -407,10 +414,39 @@ export async function handleBridgeRequest(request: Request, env: BridgeEnv): Pro
     return toJsonResponse({ ok: true });
   }
 
+  if (request.method === "POST" && pathname === "/api/paperclip-sandbox/v1/exec/cancel") {
+    const body = await readJson<CancelExecutionRequestBody>(request);
+    if (!body.providerLeaseId || !body.executionId) {
+      return toErrorResponse(
+        400,
+        "invalid_request",
+        "providerLeaseId and executionId are required.",
+      );
+    }
+    const sandbox = await resolveSandbox(env, body.providerLeaseId, {
+      keepAlive: false,
+      sleepAfter: "10m",
+      normalizeId: true,
+    });
+    const cancelled = await cancelExecutionInSandbox({
+      sandbox,
+      executionId: body.executionId,
+      timeoutMs: 10_000,
+    });
+    return toJsonResponse({
+      executionId: body.executionId,
+      cancelled,
+    });
+  }
+
   if (request.method === "POST" && pathname === "/api/paperclip-sandbox/v1/exec") {
     const body = await readJson<ExecuteRequestBody>(request);
-    if (!body.providerLeaseId || !body.command) {
-      return toErrorResponse(400, "invalid_request", "providerLeaseId and command are required.");
+    if (!body.providerLeaseId || !body.executionId || !body.command) {
+      return toErrorResponse(
+        400,
+        "invalid_request",
+        "providerLeaseId, executionId, and command are required.",
+      );
     }
     const sessionStrategy = readSessionStrategy(body.sessionStrategy);
     const sessionId = readString(body.sessionId, DEFAULT_SESSION_ID);
@@ -437,6 +473,7 @@ export async function handleBridgeRequest(request: Request, env: BridgeEnv): Pro
           try {
             const result = await executeInSandbox({
               sandbox,
+              executionId: body.executionId!,
               command: body.command!,
               args: Array.isArray(body.args) ? body.args.filter((value): value is string => typeof value === "string") : [],
               cwd: typeof body.cwd === "string" ? body.cwd : undefined,
@@ -464,6 +501,7 @@ export async function handleBridgeRequest(request: Request, env: BridgeEnv): Pro
     }
     const result = await executeInSandbox({
       sandbox,
+      executionId: body.executionId,
       command: body.command,
       args: Array.isArray(body.args) ? body.args.filter((value): value is string => typeof value === "string") : [],
       cwd: typeof body.cwd === "string" ? body.cwd : undefined,

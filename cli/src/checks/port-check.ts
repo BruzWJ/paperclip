@@ -18,7 +18,6 @@ export async function portCheck(config: PaperclipConfig): Promise<CheckResult> {
     name: "Server port",
     status: "warn",
     message: result.error ?? `Port ${port} is not available`,
-    canRepair: false,
-    repairHint: `Check what's using port ${port} with: lsof -i :${port}`,
+    guidance: `Check what's using port ${port} with: lsof -i :${port}`,
   };
 }

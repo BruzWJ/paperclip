@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockProjectService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -16,6 +17,7 @@ const mockProjectService = vi.hoisted(() => ({
 }));
 const mockSecretService = vi.hoisted(() => ({
   normalizeEnvBindingsForPersistence: vi.fn(),
+  syncEnvBindingsForTarget: vi.fn(),
 }));
 const mockEnvironmentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -89,13 +91,19 @@ async function createApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
+    (req as any).actor = testBoardSessionActor({
       userId: "board-user",
+      userName: "Board User",
+      userEmail: "board-user@paperclip.test",
+      sessionId: "session-board-user",
       companyIds: ["company-1"],
-      source: "local_implicit",
+      memberships: [{
+        companyId: "company-1",
+        membershipRole: "operator",
+        status: "active",
+      }],
       isInstanceAdmin: false,
-    };
+    });
     next();
   });
   app.use("/api", projectRoutes({} as any));
@@ -163,6 +171,7 @@ describe("project env routes", () => {
     mockProjectService.listWorkspaces.mockResolvedValue([]);
     mockEnvironmentService.getById.mockReset();
     mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);
+    mockSecretService.syncEnvBindingsForTarget.mockResolvedValue([]);
   });
 
   it("normalizes env bindings on create and logs only env keys", async () => {
@@ -194,6 +203,12 @@ describe("project env routes", () => {
       "company-1",
       expect.objectContaining({ env: normalizedEnv }),
     );
+    expect(mockSecretService.syncEnvBindingsForTarget).toHaveBeenCalledWith(
+      "company-1",
+      { targetType: "project", targetId: "project-1" },
+      normalizedEnv,
+      { actor: { type: "user", userId: "board-user" } },
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -220,6 +235,12 @@ describe("project env routes", () => {
       });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockSecretService.syncEnvBindingsForTarget).toHaveBeenCalledWith(
+      "company-1",
+      { targetType: "project", targetId: "project-1" },
+      normalizedEnv,
+      { actor: { type: "user", userId: "board-user" } },
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

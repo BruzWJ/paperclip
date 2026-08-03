@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Clock, FlaskConical, Play, Search } from "lucide-react";
+import { AlertTriangle, FlaskConical, Play } from "lucide-react";
 import type {
   InstanceExperimentalSettings,
-  IssueGraphLivenessAutoRecoveryPreview,
   PatchInstanceExperimentalSettings,
 } from "@paperclipai/shared";
 import { instanceSettingsApi } from "@/api/instanceSettings";
@@ -12,27 +11,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
-function issueHref(identifier: string | null, issueId: string) {
-  if (!identifier) return `/issues/${issueId}`;
-  const prefix = identifier.split("-")[0] || "PAP";
-  return `/${prefix}/issues/${identifier}`;
-}
-
-function formatRecoveryState(state: string) {
-  return state.replace(/_/g, " ");
-}
 
 type WorktreeRunExecutionDisplayState =
   | { kind: "off" }
@@ -74,106 +53,10 @@ function formatActivationTimestamp(iso: string): string {
 // PAP-11233: keep Conference Room code intact, but hide the user-facing opt-in for now.
 const SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING = false;
 
-function RecoveryPreviewDialog({
-  preview,
-  open,
-  onOpenChange,
-  onEnableOnly,
-  onEnableAndRun,
-  isPending,
-}: {
-  preview: IssueGraphLivenessAutoRecoveryPreview | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onEnableOnly: () => void;
-  onEnableAndRun: () => void;
-  isPending: boolean;
-}) {
-  const count = preview?.recoverableFindings ?? 0;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Confirm auto-recovery</DialogTitle>
-          <DialogDescription>
-            {preview
-              ? `${count} recovery ${count === 1 ? "task" : "tasks"} match the last ${preview.lookbackHours} hours.`
-              : "Checking recovery candidates before enabling."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="max-h-(--sz-calc-36) space-y-3 overflow-y-auto pr-1">
-          {preview && preview.items.length === 0 ? (
-            <div className="rounded-md border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
-              No recovery tasks would be created right now. Auto-recovery can still run for future liveness incidents in
-              this window.
-            </div>
-          ) : null}
-
-          {preview?.items.map((item) => (
-            <Card key={item.incidentKey} className="block px-3 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <a
-                  href={issueHref(item.identifier, item.issueId)}
-                  className="text-sm font-medium text-primary underline-offset-2 hover:underline"
-                >
-                  {item.identifier ?? item.issueId}
-                </a>
-                <span className="rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                  {formatRecoveryState(item.state)}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-foreground">{item.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.reason}</p>
-              <div className="mt-2 text-xs text-muted-foreground">
-                Recovery target:{" "}
-                <a
-                  href={issueHref(item.recoveryIdentifier, item.recoveryIssueId)}
-                  className="text-primary underline-offset-2 hover:underline"
-                >
-                  {item.recoveryIdentifier ?? item.recoveryIssueId}
-                </a>
-              </div>
-            </Card>
-          ))}
-        </div>
-
-        {preview && preview.skippedOutsideLookback > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {preview.skippedOutsideLookback} current{" "}
-            {preview.skippedOutsideLookback === 1 ? "finding is" : "findings are"} outside the configured lookback and
-            will not be touched.
-          </p>
-        ) : null}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
-            Cancel
-          </Button>
-          <Button variant="outline" onClick={onEnableOnly} disabled={isPending || !preview}>
-            Enable only
-          </Button>
-          <Button onClick={onEnableAndRun} disabled={isPending || !preview}>
-            {count > 0 ? `Enable and create ${count}` : "Enable"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function InstanceExperimentalSettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [lookbackHoursDraft, setLookbackHoursDraft] = useState("24");
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [pendingPreview, setPendingPreview] = useState<IssueGraphLivenessAutoRecoveryPreview | null>(null);
-
-  function closeRecoveryPreview() {
-    setPreviewDialogOpen(false);
-    setPendingPreview(null);
-  }
 
   useEffect(() => {
     setBreadcrumbs([
@@ -214,7 +97,6 @@ export function InstanceExperimentalSettings() {
       queryClient.setQueryData(queryKeys.instance.experimentalSettings, updatedSettings);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.instance.experimentalSettings }),
-        queryClient.invalidateQueries({ queryKey: ["built-in-agents"] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.health }),
       ]);
     },
@@ -225,42 +107,6 @@ export function InstanceExperimentalSettings() {
       setActionError(error instanceof Error ? error.message : "Failed to update experimental settings.");
     },
   });
-
-  const previewMutation = useMutation({
-    mutationFn: async (lookbackHours: number) =>
-      instanceSettingsApi.previewIssueGraphLivenessAutoRecovery({ lookbackHours }),
-    onSuccess: (preview) => {
-      setActionError(null);
-      setPendingPreview(preview);
-      setPreviewDialogOpen(true);
-    },
-    onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to preview recovery tasks.");
-    },
-  });
-
-  const runRecoveryMutation = useMutation({
-    mutationFn: async (lookbackHours: number) =>
-      instanceSettingsApi.runIssueGraphLivenessAutoRecovery({ lookbackHours }),
-    onSuccess: async () => {
-      setActionError(null);
-      closeRecoveryPreview();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.instance.experimentalSettings }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.health }),
-      ]);
-    },
-    onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to create recovery tasks.");
-    },
-  });
-
-  useEffect(() => {
-    const next = experimentalQuery.data?.issueGraphLivenessAutoRecoveryLookbackHours;
-    if (typeof next === "number") {
-      setLookbackHoursDraft(String(next));
-    }
-  }, [experimentalQuery.data?.issueGraphLivenessAutoRecoveryLookbackHours]);
 
   if (experimentalQuery.isLoading) {
     return <div className="text-sm text-muted-foreground">Loading experimental settings...</div>;
@@ -288,14 +134,11 @@ export function InstanceExperimentalSettings() {
   // Streamlined left navigation is now the standard sidebar (PAP-12472); the
   // experimental opt-out was retired, so it no longer surfaces a toggle here.
   const enableConferenceRoomChat = experimentalQuery.data?.enableConferenceRoomChat === true;
-  const enableIssuePlanDecompositions =
-    experimentalQuery.data?.enableIssuePlanDecompositions === true;
   const enableExperimentalFileViewer =
     experimentalQuery.data?.enableExperimentalFileViewer === true;
-  const enableTaskWatchdogs = experimentalQuery.data?.enableTaskWatchdogs === true;
+  const enableIssueWatchdogs = experimentalQuery.data?.enableIssueWatchdogs === true;
   const enableCloudSync = experimentalQuery.data?.enableCloudSync === true;
   const enableExternalObjects = experimentalQuery.data?.enableExternalObjects === true;
-  const enableBuiltInAgents = experimentalQuery.data?.enableBuiltInAgents === true;
   const enableSummaries = experimentalQuery.data?.enableSummaries === true;
   const enableDecisions = experimentalQuery.data?.enableDecisions === true;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
@@ -303,44 +146,6 @@ export function InstanceExperimentalSettings() {
   const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
   const enableSmokeLab = experimentalQuery.data?.enableSmokeLab === true;
   const autoRestartDevServerWhenIdle = experimentalQuery.data?.autoRestartDevServerWhenIdle === true;
-  const enableIssueGraphLivenessAutoRecovery =
-    experimentalQuery.data?.enableIssueGraphLivenessAutoRecovery === true;
-  const lookbackHours =
-    experimentalQuery.data?.issueGraphLivenessAutoRecoveryLookbackHours ?? 24;
-  const parsedLookbackHours = Number.parseInt(lookbackHoursDraft, 10);
-  const lookbackHoursIsValid =
-    Number.isInteger(parsedLookbackHours) && parsedLookbackHours >= 1 && parsedLookbackHours <= 720;
-  const recoveryActionPending =
-    toggleMutation.isPending || previewMutation.isPending || runRecoveryMutation.isPending;
-
-  function previewForEnable() {
-    if (!lookbackHoursIsValid) {
-      setActionError("Lookback hours must be a whole number from 1 to 720.");
-      return;
-    }
-    closeRecoveryPreview();
-    previewMutation.mutate(parsedLookbackHours);
-  }
-
-  function enableOnly() {
-    if (!lookbackHoursIsValid) return;
-    closeRecoveryPreview();
-    toggleMutation.mutate({
-      enableIssueGraphLivenessAutoRecovery: true,
-      issueGraphLivenessAutoRecoveryLookbackHours: parsedLookbackHours,
-    });
-  }
-
-  function enableAndRun() {
-    if (!lookbackHoursIsValid) return;
-    closeRecoveryPreview();
-    toggleMutation.mutate({
-      enableIssueGraphLivenessAutoRecovery: true,
-      issueGraphLivenessAutoRecoveryLookbackHours: parsedLookbackHours,
-    }, {
-      onSuccess: () => runRecoveryMutation.mutate(parsedLookbackHours),
-    });
-  }
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -494,28 +299,10 @@ export function InstanceExperimentalSettings() {
       <Card className="block p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Built-in Agents</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Show Paperclip-managed built-in agent surfaces, including built-in roster badges, the Built-in agents
-              tab, and built-in agent setup controls.
-            </p>
-          </div>
-          <ToggleSwitch
-            checked={enableBuiltInAgents}
-            onCheckedChange={() => toggleMutation.mutate({ enableBuiltInAgents: !enableBuiltInAgents })}
-            disabled={toggleMutation.isPending}
-            aria-label="Toggle built-in agents experimental setting"
-          />
-        </div>
-      </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
             <h2 className="text-sm font-semibold">Summaries</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Show Summarizer-generated status slots on project and workspace pages, with on-demand refresh and
-              revision history. Existing summary data is kept when this is disabled.
+              Show routine-generated status slots on project and workspace pages, with on-demand refresh,
+              scheduling, and revision history. Existing summary data is kept when this is disabled.
             </p>
           </div>
           <ToggleSwitch
@@ -647,43 +434,21 @@ export function InstanceExperimentalSettings() {
       <Card className="block p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Task Plan Decomposition Panel</h2>
+            <h2 className="text-sm font-semibold">Task Safeguards</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Show accepted-plan decomposition history on task detail pages. Intended for debugging and validating
-              subtask creation behavior while the presentation is still being refined.
+              Show task detail controls for enabling a system safeguard that watches stopped task subtrees and nudges
+              the current owner when runnable work should continue.
             </p>
           </div>
           <ToggleSwitch
-            checked={enableIssuePlanDecompositions}
-            onCheckedChange={() =>
-              toggleMutation.mutate({
-                enableIssuePlanDecompositions: !enableIssuePlanDecompositions,
-              })
-            }
-            disabled={toggleMutation.isPending}
-            aria-label="Toggle task plan decomposition panel experimental setting"
-          />
-        </div>
-      </Card>
-
-      <Card className="block p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h2 className="text-sm font-semibold">Task Watchdogs</h2>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Show task detail controls for configuring watchdog agents that verify stopped task subtrees and restore
-              live paths when work should continue.
-            </p>
-          </div>
-          <ToggleSwitch
-            checked={enableTaskWatchdogs}
+            checked={enableIssueWatchdogs}
             onCheckedChange={(checked) =>
               toggleMutation.mutate({
-                enableTaskWatchdogs: checked,
+                enableIssueWatchdogs: checked,
               })
             }
             disabled={toggleMutation.isPending}
-            aria-label="Toggle task watchdogs experimental setting"
+            aria-label="Toggle task safeguards experimental setting"
           />
         </div>
       </Card>
@@ -764,106 +529,6 @@ export function InstanceExperimentalSettings() {
         </div>
       </Card>
 
-      <Card className="block p-5">
-        <div className="flex flex-col gap-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1.5">
-              <h2 className="text-sm font-semibold">Auto-Create Recovery Tasks</h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Let the heartbeat scheduler create recovery tasks for task dependency chains found inside the
-                configured lookback window.
-              </p>
-            </div>
-            <ToggleSwitch
-              checked={enableIssueGraphLivenessAutoRecovery}
-              onCheckedChange={() => {
-                if (enableIssueGraphLivenessAutoRecovery) {
-                  toggleMutation.mutate({ enableIssueGraphLivenessAutoRecovery: false });
-                  return;
-                }
-                previewForEnable();
-              }}
-              disabled={recoveryActionPending}
-              aria-label="Toggle task graph liveness auto-recovery"
-            />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-(--gtc-35) sm:items-end">
-            <label className="space-y-1.5">
-              <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Clock className="h-3.5 w-3.5" />
-                Lookback hours
-              </span>
-              <Input
-                type="number"
-                min={1}
-                max={720}
-                step={1}
-                value={lookbackHoursDraft}
-                onChange={(event) => setLookbackHoursDraft(event.target.value)}
-                aria-invalid={!lookbackHoursIsValid}
-              />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!lookbackHoursIsValid) {
-                    setActionError("Lookback hours must be a whole number from 1 to 720.");
-                    return;
-                  }
-                  toggleMutation.mutate({
-                    issueGraphLivenessAutoRecoveryLookbackHours: parsedLookbackHours,
-                  });
-                }}
-                disabled={recoveryActionPending || parsedLookbackHours === lookbackHours}
-              >
-                Save hours
-              </Button>
-              <Button
-                variant="outline"
-                onClick={previewForEnable}
-                disabled={recoveryActionPending}
-              >
-                <Search className="h-4 w-4" />
-                Preview
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!lookbackHoursIsValid) {
-                    setActionError("Lookback hours must be a whole number from 1 to 720.");
-                    return;
-                  }
-                  runRecoveryMutation.mutate(parsedLookbackHours);
-                }}
-                disabled={recoveryActionPending || !enableIssueGraphLivenessAutoRecovery}
-              >
-                <Play className="h-4 w-4" />
-                Run now
-              </Button>
-            </div>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            Current window: last {lookbackHours} {lookbackHours === 1 ? "hour" : "hours"}.
-          </p>
-        </div>
-      </Card>
-
-      {previewDialogOpen ? (
-        <RecoveryPreviewDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) {
-              closeRecoveryPreview();
-            }
-          }}
-          preview={pendingPreview}
-          onEnableOnly={enableOnly}
-          onEnableAndRun={enableAndRun}
-          isPending={recoveryActionPending}
-        />
-      ) : null}
     </div>
   );
 }

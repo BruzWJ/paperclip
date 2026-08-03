@@ -11,6 +11,7 @@ import { MarkdownBody } from "@/components/MarkdownBody";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn, relativeTime } from "@/lib/utils";
 import { Diff } from "lucide-react";
+import { issueDisplayTitle } from "@/lib/issue-display";
 
 /** Author + via-issue attribution line for a revision. */
 function RevisionByline({ revision }: { revision: CaseDocumentRevision }) {
@@ -26,7 +27,7 @@ function RevisionByline({ revision }: { revision: CaseDocumentRevision }) {
             to={`/issues/${revision.issue.identifier}`}
             className="font-mono text-foreground/80 hover:underline"
             onClick={(e) => e.stopPropagation()}
-            title={revision.issue.title}
+            title={issueDisplayTitle(revision.issue)}
           >
             {revision.issue.identifier}
           </Link>

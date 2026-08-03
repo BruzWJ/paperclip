@@ -7,6 +7,7 @@ import { Identity } from "@/components/Identity";
 import { IssueRow } from "@/components/IssueRow";
 import { PriorityIcon } from "@/components/PriorityIcon";
 import { StatusBadge } from "@/components/StatusBadge";
+import { formatMoneyAmount } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -75,15 +76,15 @@ function ControlPlaneSurfaces() {
                 desktopTrailing={
                   <span className="hidden items-center gap-2 lg:inline-flex">
                     <PriorityIcon priority={issue.priority} showLabel />
-                    {issue.assigneeAgentId ? (
-                      <Identity name={storybookAgentMap.get(issue.assigneeAgentId)?.name ?? "Unassigned"} size="sm" />
+                    {issue.ownerAgentId ? (
+                      <Identity name={storybookAgentMap.get(issue.ownerAgentId)?.name ?? "Unassigned"} size="sm" />
                     ) : (
                       <span className="text-xs text-muted-foreground">Board</span>
                     )}
                   </span>
                 }
                 trailingMeta={index === 0 ? "3m ago" : index === 1 ? "blocked by budget" : "review requested"}
-                mobileMeta={<StatusBadge status={issue.status} />}
+                mobileMeta={<StatusBadge status={issue.boardPresentationStatus} />}
                 titleSuffix={
                   index === 0 ? (
                     <span className="ml-2 inline-flex align-middle">
@@ -187,11 +188,11 @@ function ControlPlaneSurfaces() {
                 <CardContent className="space-y-3 text-sm">
                   <p className="leading-6 text-muted-foreground">{agent.capabilities}</p>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{agent.role}</Badge>
+                    {agent.title ? <Badge variant="outline">{agent.title}</Badge> : null}
                     <Badge variant="outline">{agent.adapterType}</Badge>
                     <Badge variant="outline" className="gap-1">
                       <WalletCards className="h-3 w-3" />
-                      ${(agent.spentMonthlyCents / 100).toFixed(0)} spent
+                      {formatMoneyAmount(agent.knownSpendAmount, "USD")} spent
                     </Badge>
                   </div>
                 </CardContent>

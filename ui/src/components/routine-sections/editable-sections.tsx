@@ -34,6 +34,7 @@ import { ScheduleEditor, getScheduleCronValidation } from "../ScheduleEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariablesEditor";
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { EnvironmentVariablesEditor } from "../environment-variables-editor";
+import { IssueAttentionMaskMatrix } from "../IssueAttentionMaskMatrix";
 import { createDefaultNewTrigger, useRoutineDetail } from "./context";
 import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@paperclipai/shared";
 
@@ -690,6 +691,17 @@ export function DeliverySection() {
             setEditDraft((current) => ({ ...current, catchUpPolicy }))
           }
           options={catchUpPolicyOptions}
+        />
+      </div>
+      <div className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
+          Created issue attention
+        </p>
+        <IssueAttentionMaskMatrix
+          value={editDraft.attentionMask}
+          onChange={(attentionMask) =>
+            setEditDraft((current) => ({ ...current, attentionMask }))
+          }
         />
       </div>
       <NextFiresPreview

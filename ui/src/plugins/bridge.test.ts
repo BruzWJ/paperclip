@@ -279,7 +279,7 @@ describe("plugin SDK markdown component bridge", () => {
     expect(registry.MarkdownBlock).toBeTypeOf("function");
     expect(registry.MarkdownEditor).toBeTypeOf("function");
     expect(registry.IssuesList).toBeTypeOf("function");
-    expect(registry.AssigneePicker).toBeTypeOf("function");
+    expect(registry.OwnerPicker).toBeTypeOf("function");
     expect(registry.ProjectPicker).toBeTypeOf("function");
     expect(registry.ManagedRoutinesList).toBeTypeOf("function");
   });

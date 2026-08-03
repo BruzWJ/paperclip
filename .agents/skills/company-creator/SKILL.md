@@ -48,7 +48,7 @@ Do not skip this step. Use AskUserQuestion to align with the user before writing
 - Whether this is a full company (needs a CEO) or a team/department (no CEO required)
 - Any specific skills the agents should have
 - How work flows through the organization (see "Workflow" below)
-- Whether they want projects and starter tasks
+- Whether they want projects and starter issues
 
 **For from-repo companies**, present your analysis and ask:
 
@@ -62,7 +62,7 @@ Do not skip this step. Use AskUserQuestion to align with the user before writing
 
 A company is not just a list of agents with skills. It's an organization that takes ideas and turns them into work products. You need to understand the workflow so each agent knows:
 
-- Who gives them work and in what form (a task, a branch, a question, a review request)
+- Who gives them work and in what form (an issue, a branch, a question, a review request)
 - What they do with it
 - Who they hand off to when they're done, and what that handoff looks like
 - What "done" means for their role
@@ -112,8 +112,8 @@ Create the directory structure and all files. Follow the spec's conventions exac
 │   └── <slug>/TEAM.md        (if teams are needed)
 ├── projects/
 │   └── <slug>/PROJECT.md     (if projects are needed)
-├── tasks/
-│   └── <slug>/TASK.md        (if tasks are needed)
+├── issues/
+│   └── <slug>/ISSUE.md       (if issues are needed)
 ├── skills/
 │   └── <slug>/SKILL.md       (if custom skills are needed)
 └── .paperclip.yaml            (Paperclip vendor extension)
@@ -141,7 +141,7 @@ Create the directory structure and all files. Follow the spec's conventions exac
 
 Each AGENTS.md body should include not just what the agent does, but how they fit into the organization's workflow. Include:
 
-1. **Where work comes from** — "You receive feature ideas from the user" or "You pick up tasks assigned to you by the CTO"
+1. **Where work comes from** — "You receive feature ideas from the user" or "You pick up issues assigned to you by the CTO"
 2. **What you produce** — "You produce a technical plan with architecture diagrams" or "You produce a reviewed, approved branch ready for shipping"
 3. **Who you hand off to** — "When your plan is locked, hand off to the Staff Engineer for implementation" or "When review passes, hand off to the Release Engineer to ship"
 4. **What triggers you** — "You are activated when a new feature idea needs product-level thinking" or "You are activated when a branch is ready for pre-landing review"
@@ -184,53 +184,47 @@ Write all files, then give a brief summary:
 - Company name and what it does
 - Agent roster with roles and reporting structure
 - Skills (custom + referenced)
-- Projects and tasks if any
+- Projects and issues if any
 - The output path
 
 ## .paperclip.yaml Guidelines
 
-The `.paperclip.yaml` file is the Paperclip vendor extension. It configures adapters and env inputs per agent.
+The `.paperclip.yaml` file is the Paperclip vendor extension. It carries
+Paperclip-specific non-secret control-plane selections and declared env inputs.
 
-### Adapter Rules
+### ACP Adapter Rules
 
-**Do not specify an adapter unless the repo or user context warrants it.** If you don't know what adapter the user wants, omit the adapter block entirely — Paperclip will use its default. Specifying an unknown adapter type causes an import error.
+Paperclip does not infer or default an AI adapter. Every runnable agent needs an
+explicit immutable adapter revision whose type resolves byte-for-byte through
+the installed, conformance-approved data-only ACP registry. The initial
+built-in registry contains only exact `codex`; every other name is absent until
+its exact frontend revision passes conformance and is approved.
 
-Paperclip's supported adapter types (these are the ONLY valid values):
-- `claude_local` — Claude Code CLI
-- `codex_local` — Codex CLI
-- `opencode_local` — OpenCode CLI
-- `pi_local` — Pi CLI
-- `cursor` — Cursor
-- `gemini_local` — Gemini CLI
-- `openclaw_gateway` — OpenClaw gateway
+Do not hand-author an `adapter` block, launch command, argv, endpoint, provider
+payload, provider credential, native-session selector, or provider-specific
+mapping. When the package originates from a Paperclip instance, preserve its
+complete canonical exported `adapterRevision` rather than reconstructing it.
+A selected agent import also requires an explicit target adapter override,
+closed adapter-config values, target environment UUID, and skill channel; the
+source revision is never treated as an inferred target default.
 
-Only set an adapter when:
-- The repo or its skills clearly target a specific runtime (e.g. gstack is built for Claude Code, so `claude_local` is appropriate)
-- The user explicitly requests a specific adapter
-- The agent's role requires a specific runtime capability
+When building from scratch without a complete canonical source revision, stop
+and surface that missing input instead of claiming the package is directly
+importable or runnable. Have the user supply a revision produced by the current
+Paperclip export/configuration flow. Never fabricate provenance ids or silently
+omit the revision with a promise that Paperclip will choose one later.
+
+Provider authentication is never part of the package. The operator
+authenticates the selected CLI with its native login flow on each execution
+target.
 
 ### Env Inputs Rules
 
-**Do not add boilerplate env variables.** Only add env inputs that the agent actually needs based on its skills or role:
+**Do not add boilerplate env variables.** Only add non-provider env inputs that the agent actually needs based on its skills or role:
 - `GH_TOKEN` for agents that push code, create PRs, or interact with GitHub
 - API keys only when a skill explicitly requires them
-- Never set `ANTHROPIC_API_KEY` as a default empty env variable — the runtime handles this
-
-Example with adapter (only when warranted):
-```yaml
-schema: paperclip/v1
-agents:
-  release-engineer:
-    adapter:
-      type: claude_local
-      config:
-        model: claude-sonnet-4-6
-    inputs:
-      env:
-        GH_TOKEN:
-          kind: secret
-          requirement: optional
-```
+- Never add AI-provider API keys, OAuth tokens, or CLI auth-home variables;
+  those belong to the CLI's native authentication state
 
 Example — only agents with actual overrides appear:
 ```yaml
@@ -244,7 +238,10 @@ agents:
           requirement: optional
 ```
 
-In this example, only `release-engineer` appears because it needs `GH_TOKEN`. The other agents (ceo, cto, etc.) have no overrides, so they are omitted entirely from `.paperclip.yaml`.
+In this example, only `release-engineer` appears because it needs `GH_TOKEN`.
+Agents with no Paperclip-specific override are omitted from this hand-authored
+section. A canonical exported `adapterRevision`, when available, remains a
+separate immutable data-only record and is never replaced by this env map.
 
 ## External Skill References
 

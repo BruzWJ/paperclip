@@ -1,19 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { resolveRuntimeBind, validateConfiguredBindMode } from "@paperclipai/shared";
-import { buildPresetServerConfig } from "../config/server-bind.js";
+import {
+  buildPresetServerConfig,
+  resolveQuickstartServerConfig,
+} from "../config/server-bind.js";
 
 const ORIGINAL_PATH = process.env.PATH;
 
 describe("network bind helpers", () => {
-  it("rejects non-loopback bind modes in local_trusted", () => {
+  it("rejects public exposure on a tailnet-only bind", () => {
     expect(
       validateConfiguredBindMode({
-        deploymentMode: "local_trusted",
-        deploymentExposure: "private",
-        bind: "lan",
-        host: "0.0.0.0",
+        exposure: "public",
+        bind: "tailnet",
+        host: "100.64.0.8",
       }),
-    ).toContain("local_trusted requires server.bind=loopback");
+    ).toContain("server.bind=tailnet is only supported when server.exposure=private");
+
+    expect(() =>
+      resolveQuickstartServerConfig({
+        bind: "tailnet",
+        exposure: "public",
+        port: 3100,
+        allowedHostnames: [],
+        serveUi: true,
+        publicBaseUrl: "https://paperclip.example.com",
+      }),
+    ).toThrow(
+      "server.bind=tailnet is only supported when server.exposure=private",
+    );
   });
 
   it("resolves tailnet bind using the detected tailscale address", () => {
@@ -34,6 +49,33 @@ describe("network bind helpers", () => {
     });
 
     expect(resolved.errors).toContain("server.customBindHost is required when server.bind=custom");
+  });
+
+  it("requires an explicit Better Auth URL for public exposure", () => {
+    expect(() =>
+      resolveQuickstartServerConfig({
+        bind: "lan",
+        exposure: "public",
+        port: 3100,
+        allowedHostnames: [],
+        serveUi: true,
+      }),
+    ).toThrow(
+      "auth.publicBaseUrl is required when server.exposure=public",
+    );
+  });
+
+  it("rejects an HTTP origin for public exposure", () => {
+    expect(() =>
+      resolveQuickstartServerConfig({
+        bind: "lan",
+        exposure: "public",
+        port: 3100,
+        allowedHostnames: [],
+        serveUi: true,
+        publicBaseUrl: "http://paperclip.example.com",
+      }),
+    ).toThrow("Public origin must use https://");
   });
 
   it("stores the detected tailscale address for tailnet presets", () => {

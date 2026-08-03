@@ -45,20 +45,11 @@ export const summarySlotQuerySchema = z
   })
   .strict();
 
-export const generateSummarySlotSchema = summarySlotQuerySchema;
-
-export const writeSummarySlotSchema = z
-  .object({
-    scopeId: optionalScopeIdSchema,
-    markdown: z.string().trim().min(1).max(200_000),
-    title: z.string().trim().min(1).max(200).optional().nullable(),
-    changeSummary: z.string().trim().min(1).max(1_000).optional().nullable(),
-    baseRevisionId: z.string().uuid().optional().nullable(),
-    generationIssueId: z.string().uuid().optional().nullable(),
-    model: z.string().trim().min(1).max(200).optional().nullable(),
-  })
-  .strict();
+export const refreshSummarySlotSchema = summarySlotQuerySchema.extend({
+  // Required only while a board operator creates the slot's stable routine.
+  // Once configured, refreshes use that routine's owner.
+  ownerAgentId: z.string().uuid().optional(),
+});
 
 export type SummarySlotScopeSelectorInput = z.infer<typeof summarySlotScopeSelectorSchema>;
-export type GenerateSummarySlotInput = z.infer<typeof generateSummarySlotSchema>;
-export type WriteSummarySlotInput = z.infer<typeof writeSummarySlotSchema>;
+export type RefreshSummarySlotInput = z.infer<typeof refreshSummarySlotSchema>;

@@ -3,13 +3,12 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as p from "@clack/prompts";
+import { bootstrapDevRunnerWorktreeEnv } from "@paperclipai/server/worktree-bootstrap";
 import pc from "picocolors";
-import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 import { onboard } from "./onboard.js";
 import { doctor } from "./doctor.js";
 import { loadPaperclipEnvFile } from "../config/env.js";
 import { configExists, resolveConfigPath } from "../config/store.js";
-import type { PaperclipConfig } from "../config/schema.js";
 import { readConfig } from "../config/store.js";
 import {
   describeLocalInstancePaths,
@@ -20,19 +19,48 @@ import {
 interface RunOptions {
   config?: string;
   instance?: string;
-  repair?: boolean;
-  yes?: boolean;
   bind?: "loopback" | "lan" | "tailnet";
 }
 
 interface StartedServer {
   apiUrl: string;
-  databaseUrl: string;
   host: string;
   listenPort: number;
 }
 
-export async function runCommand(opts: RunOptions): Promise<void> {
+export type RunCommandDependencies = {
+  bootstrapWorktreeEnv: typeof bootstrapDevRunnerWorktreeEnv;
+};
+
+const productionRunCommandDependencies: RunCommandDependencies = {
+  bootstrapWorktreeEnv: bootstrapDevRunnerWorktreeEnv,
+};
+
+export async function runCommand(
+  opts: RunOptions,
+  dependencies: RunCommandDependencies =
+    productionRunCommandDependencies,
+): Promise<void> {
+  const worktreeBootstrap = await dependencies.bootstrapWorktreeEnv(
+    process.cwd(),
+    process.env,
+  );
+  if (worktreeBootstrap.missingEnv) {
+    throw new Error(
+      "This linked worktree has no immutable creation metadata. Create it with `paperclipai worktree init --database-url <new-empty-database-url>`.",
+    );
+  }
+
+  const isPinnedWorktree = worktreeBootstrap.envPath !== null;
+  if (
+    isPinnedWorktree &&
+    opts.instance?.trim() &&
+    opts.instance.trim() !== process.env.PAPERCLIP_INSTANCE_ID
+  ) {
+    throw new Error(
+      "--instance cannot override an immutable linked-worktree instance id.",
+    );
+  }
   const instanceId = resolvePaperclipInstanceId(opts.instance);
   process.env.PAPERCLIP_INSTANCE_ID = instanceId;
 
@@ -43,8 +71,19 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   fs.mkdirSync(paths.instanceRoot, { recursive: true });
 
   const configPath = resolveConfigPath(opts.config);
+  if (
+    isPinnedWorktree &&
+    path.resolve(configPath) !==
+      path.resolve(process.env.PAPERCLIP_CONFIG!)
+  ) {
+    throw new Error(
+      "--config cannot override an immutable linked-worktree config.",
+    );
+  }
   process.env.PAPERCLIP_CONFIG = configPath;
-  loadPaperclipEnvFile(configPath);
+  if (!isPinnedWorktree) {
+    loadPaperclipEnvFile(configPath);
+  }
 
   p.intro(pc.bgCyan(pc.black(" paperclipai run ")));
   p.log.message(pc.dim(`Home: ${paths.homeDir}`));
@@ -63,11 +102,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   }
 
   p.log.step("Running doctor checks...");
-  const summary = await doctor({
-    config: configPath,
-    repair: opts.repair ?? true,
-    yes: opts.yes ?? true,
-  });
+  const summary = await doctor({ config: configPath });
 
   if (summary.failed > 0) {
     p.log.error("Doctor found blocking issues. Not starting server.");
@@ -81,34 +116,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   }
 
   p.log.step("Starting Paperclip server...");
-  const startedServer = await importServerEntry();
-
-  if (shouldGenerateBootstrapInviteAfterStart(config)) {
-    p.log.step("Generating bootstrap CEO invite");
-    await bootstrapCeoInvite({
-      config: configPath,
-      dbUrl: startedServer.databaseUrl,
-      baseUrl: resolveBootstrapInviteBaseUrl(config, startedServer),
-    });
-  }
-}
-
-function resolveBootstrapInviteBaseUrl(
-  config: PaperclipConfig,
-  startedServer: StartedServer,
-): string {
-  const explicitBaseUrl =
-    process.env.PAPERCLIP_PUBLIC_URL ??
-    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ??
-    process.env.BETTER_AUTH_URL ??
-    process.env.BETTER_AUTH_BASE_URL ??
-    (config.auth.baseUrlMode === "explicit" ? config.auth.publicBaseUrl : undefined);
-
-  if (typeof explicitBaseUrl === "string" && explicitBaseUrl.trim().length > 0) {
-    return explicitBaseUrl.trim().replace(/\/+$/, "");
-  }
-
-  return startedServer.apiUrl.replace(/\/api$/, "");
+  await importServerEntry();
 }
 
 function formatError(err: unknown): string {
@@ -203,12 +211,22 @@ async function importServerEntry(): Promise<StartedServer> {
   }
 }
 
-function shouldGenerateBootstrapInviteAfterStart(config: PaperclipConfig): boolean {
-  return config.server.deploymentMode === "authenticated" && config.database.mode === "embedded-postgres";
-}
-
 async function startServerFromModule(mod: unknown, label: string): Promise<StartedServer> {
-  const startServer = (mod as { startServer?: () => Promise<StartedServer> }).startServer;
+  const serverModule = mod as {
+    loadRuntimeEnvironmentFiles?: (input?: {
+      environment?: NodeJS.ProcessEnv;
+    }) => void;
+    startServer?: () => Promise<StartedServer>;
+  };
+  const loadEnvironmentFiles = serverModule.loadRuntimeEnvironmentFiles;
+  if (typeof loadEnvironmentFiles !== "function") {
+    throw new Error(
+      `Paperclip server entrypoint did not export loadRuntimeEnvironmentFiles(): ${label}`,
+    );
+  }
+  loadEnvironmentFiles({ environment: process.env });
+
+  const startServer = serverModule.startServer;
   if (typeof startServer !== "function") {
     throw new Error(`Paperclip server entrypoint did not export startServer(): ${label}`);
   }

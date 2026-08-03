@@ -1,13 +1,67 @@
+// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: CODEX_HOME, PAPERCLIP_API_KEY, PAPERCLIP_API_URL
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as ssh from "./ssh.js";
 import * as serverUtils from "./server-utils.js";
 import {
-  adapterExecutionTargetUsesManagedHome,
+  ensureAdapterExecutionTargetCommandResolvable,
   ensureAdapterExecutionTargetRuntimeCommandInstalled,
   resolveAdapterExecutionTargetCwd,
+  resolveAdapterExecutionTargetNativeIdentityEnvironment,
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
 } from "./execution-target.js";
+
+describe("target-native identity environment", () => {
+  it("carries only exact local identity roots and never provider state", () => {
+    expect(
+      resolveAdapterExecutionTargetNativeIdentityEnvironment(
+        { kind: "local" },
+        {
+          HOME: "/operator/home",
+          USERPROFILE: "/operator/profile",
+          APPDATA: "/operator/appdata",
+          LOCALAPPDATA: "/operator/local-appdata",
+          XDG_CONFIG_HOME: "/operator/xdg/config",
+          XDG_CACHE_HOME: "/operator/xdg/cache",
+          XDG_DATA_HOME: "/operator/xdg/data",
+          XDG_STATE_HOME: "/operator/xdg/state",
+          CODEX_HOME: "/forbidden/codex-home",
+          CODEX_PATH: "/forbidden/codex",
+          OPENAI_API_KEY: "forbidden-secret",
+          PAPERCLIP_API_URL: "https://forbidden.invalid",
+        },
+      ),
+    ).toEqual({
+      HOME: "/operator/home",
+      USERPROFILE: "/operator/profile",
+      APPDATA: "/operator/appdata",
+      LOCALAPPDATA: "/operator/local-appdata",
+      XDG_CONFIG_HOME: "/operator/xdg/config",
+      XDG_CACHE_HOME: "/operator/xdg/cache",
+      XDG_DATA_HOME: "/operator/xdg/data",
+      XDG_STATE_HOME: "/operator/xdg/state",
+    });
+  });
+
+  it("uses target-native defaults remotely and rejects malformed local roots", () => {
+    expect(
+      resolveAdapterExecutionTargetNativeIdentityEnvironment(
+        {
+          kind: "remote",
+          transport: "sandbox",
+          remoteCwd: "/workspace",
+        },
+        { HOME: "/host/home" },
+      ),
+    ).toEqual({});
+    expect(() =>
+      resolveAdapterExecutionTargetNativeIdentityEnvironment(
+        { kind: "local" },
+        { HOME: " relative/home" },
+      ),
+    ).toThrow(/HOME must be an exact absolute path/);
+  });
+});
 
 describe("runAdapterExecutionTargetShellCommand", () => {
   afterEach(() => {
@@ -152,6 +206,27 @@ describe("runAdapterExecutionTargetShellCommand", () => {
     expect(onLog).toHaveBeenCalledWith("stderr", "partial stderr");
   });
 
+  it("preserves the sanitized local target PATH without login-profile rewriting", async () => {
+    const expectedPath = process.env.PATH;
+    expect(expectedPath).toBeTruthy();
+
+    const result = await runAdapterExecutionTargetShellCommand(
+      "run-local-path",
+      { kind: "local" },
+      'printf %s "$PATH"',
+      {
+        cwd: process.cwd(),
+        env: {},
+      },
+    );
+
+    expect(result).toMatchObject({
+      exitCode: 0,
+      timedOut: false,
+      stdout: expectedPath,
+    });
+  });
+
   it("returns the SSH process exit code for non-zero remote command failures", async () => {
     vi.spyOn(ssh, "runSshCommand").mockRejectedValue(Object.assign(new Error("non-zero exit"), {
       code: 17,
@@ -197,23 +272,61 @@ describe("runAdapterExecutionTargetShellCommand", () => {
     expect(onLog).toHaveBeenCalledWith("stderr", "partial stderr");
   });
 
-  it("keeps managed homes disabled for both local and SSH targets", () => {
-    expect(adapterExecutionTargetUsesManagedHome(null)).toBe(false);
-    expect(adapterExecutionTargetUsesManagedHome({
-      kind: "remote",
-      transport: "ssh",
-      remoteCwd: "/srv/paperclip/workspace",
-      spec: {
+});
+
+describe("ensureAdapterExecutionTargetCommandResolvable", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fails closed when the requested command is missing on the SSH target", async () => {
+    const runSshCommandSpy = vi.spyOn(ssh, "runSshCommand").mockRejectedValue(
+      Object.assign(new Error("remote command exited 127"), {
+        code: 127,
+      }),
+    );
+
+    await expect(
+      ensureAdapterExecutionTargetCommandResolvable(
+        "node",
+        {
+          kind: "remote",
+          transport: "ssh",
+          remoteCwd: "/srv/paperclip/workspace",
+          spec: {
+            host: "ssh.example.test",
+            port: 22,
+            username: "ssh-user",
+            remoteCwd: "/srv/paperclip/workspace",
+            remoteWorkspacePath: "/srv/paperclip/workspace",
+            privateKey: null,
+            knownHosts: null,
+            strictHostKeyChecking: true,
+          },
+        },
+        "/tmp/local",
+        {
+          PATH: "/host/bin:/usr/bin",
+          PAPERCLIP_API_KEY: "must-not-cross",
+        },
+      ),
+    ).rejects.toThrow(
+      'Command "node" is not installed or not on PATH in the ssh environment.',
+    );
+
+    expect(runSshCommandSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
         host: "ssh.example.test",
-        port: 22,
         username: "ssh-user",
-        remoteCwd: "/srv/paperclip/workspace",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
-        privateKey: null,
-        knownHosts: null,
-        strictHostKeyChecking: true,
+      }),
+      "cd '/srv/paperclip/workspace' && command -v 'node' >/dev/null 2>&1",
+      {
+        env: {
+          PATH: "/host/bin:/usr/bin",
+        },
+        timeoutMs: 15_000,
       },
-    })).toBe(false);
+    );
   });
 });
 
@@ -280,6 +393,65 @@ describe("runAdapterExecutionTargetProcess", () => {
       }),
     );
   });
+
+  it("executes plugin targets through their exact command-managed runner", async () => {
+    const execute = vi.fn(async () => ({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stdout: "plugin output",
+      stderr: "",
+      pid: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+    }));
+    const cancelExecution = vi.fn(
+      async (input: { executionId: string }) => ({
+        executionId: input.executionId,
+        cancelled: true,
+      }),
+    );
+    const runChildProcessSpy = vi.spyOn(
+      serverUtils,
+      "runChildProcess",
+    );
+
+    const result = await runAdapterExecutionTargetProcess(
+      "plugin-attempt-1",
+      {
+        kind: "remote",
+        transport: "plugin",
+        pluginKey: "acme.environments",
+        driverKey: "workspace-driver",
+        remoteCwd: "/plugin/workspace",
+        runner: {
+          execute,
+          cancelExecution,
+        },
+      },
+      "provider-cli",
+      ["--stream"],
+      {
+        cwd: "/host/workspace",
+        env: { SAFE_VALUE: "visible" },
+        timeoutSec: 30,
+        graceSec: 5,
+        onLog: async () => {},
+      },
+    );
+
+    expect(result.stdout).toBe("plugin output");
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: "plugin-attempt-1",
+        command: "provider-cli",
+        args: ["--stream"],
+        cwd: "/plugin/workspace",
+        env: { SAFE_VALUE: "visible" },
+        timeoutMs: 30_000,
+      }),
+    );
+    expect(runChildProcessSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
@@ -289,6 +461,10 @@ describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
 
   it("runs install commands for sandbox targets", async () => {
     const runner = {
+      cancelExecution: vi.fn(async (input: { executionId: string }) => ({
+        executionId: input.executionId,
+        cancelled: false,
+      })),
       execute: vi.fn(async () => ({
         exitCode: 0,
         signal: null,
@@ -309,7 +485,7 @@ describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
         remoteCwd: "/remote/workspace",
         runner,
       },
-      installCommand: "npm install -g @google/gemini-cli",
+      installCommand: "npm install -g @fixture/agent-cli",
       cwd: "/local/workspace",
       env: { PATH: "/usr/bin" },
       timeoutSec: 30,
@@ -317,7 +493,7 @@ describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
 
     expect(runner.execute).toHaveBeenCalledWith(expect.objectContaining({
       command: "sh",
-      args: ["-c", "npm install -g @google/gemini-cli"],
+      args: ["-c", "npm install -g @fixture/agent-cli"],
       cwd: "/remote/workspace",
       env: { PATH: "/usr/bin" },
       timeoutMs: 30_000,
@@ -347,7 +523,7 @@ describe("ensureAdapterExecutionTargetRuntimeCommandInstalled", () => {
           strictHostKeyChecking: true,
         },
       },
-      installCommand: "npm install -g @google/gemini-cli",
+      installCommand: "npm install -g @fixture/agent-cli",
       cwd: "/tmp/local",
       env: {},
     });

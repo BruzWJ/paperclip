@@ -1,4 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  issueExecutionDecisions,
+  issueUpdates,
+  issues,
+  type Db,
+} from "@paperclipai/db";
 import type {
   IssueExecutionDecision,
   IssueExecutionMonitorClearReason,
@@ -9,21 +15,25 @@ import type {
   IssueExecutionStagePrincipal,
   IssueExecutionState,
   IssueMonitorScheduledBy,
+  IssueOwnerKind,
 } from "@paperclipai/shared";
 import { issueExecutionPolicySchema, issueExecutionStateSchema } from "@paperclipai/shared";
-import { unprocessable } from "../errors.js";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { conflict, unprocessable } from "../errors.js";
+import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
+import { recordNamedBoardLifecycleCommandInTransaction } from "./issue-board-lifecycle-command.js";
 
-type AssigneeLike = {
-  assigneeAgentId?: string | null;
-  assigneeUserId?: string | null;
+type OwnerLike = {
+  ownerKind?: IssueOwnerKind | null;
+  ownerAgentId?: string | null;
+  ownerUserId?: string | null;
 };
 
-type IssueLike = AssigneeLike & {
-  status: string;
+type IssueLike = OwnerLike & {
+  boardPresentationStatus: string;
   executionPolicy?: IssueExecutionPolicy | Record<string, unknown> | null;
   executionState?: IssueExecutionState | Record<string, unknown> | null;
   monitorNextCheckAt?: Date | null;
-  monitorWakeRequestedAt?: Date | null;
   monitorLastTriggeredAt?: Date | null;
   monitorAttemptCount?: number | null;
   monitorNotes?: string | null;
@@ -35,9 +45,10 @@ type ActorLike = {
   userId?: string | null;
 };
 
-type RequestedAssigneePatch = {
-  assigneeAgentId?: string | null;
-  assigneeUserId?: string | null;
+type RequestedOwnerPatch = {
+  ownerKind?: IssueOwnerKind | null;
+  ownerAgentId?: string | null;
+  ownerUserId?: string | null;
 };
 
 type TransitionInput = {
@@ -45,7 +56,7 @@ type TransitionInput = {
   policy: IssueExecutionPolicy | null;
   previousPolicy?: IssueExecutionPolicy | null;
   requestedStatus?: string;
-  requestedAssigneePatch: RequestedAssigneePatch;
+  requestedOwnerPatch: RequestedOwnerPatch;
   actor: ActorLike;
   commentBody?: string | null;
   reviewRequest?: IssueExecutionState["reviewRequest"] | null;
@@ -55,13 +66,12 @@ type TransitionInput = {
 type TransitionResult = {
   patch: Record<string, unknown>;
   decision?: Pick<IssueExecutionDecision, "stageId" | "stageType" | "outcome" | "body">;
-  workflowControlledAssignment?: boolean;
 };
 
 const COMPLETED_STATUS: IssueExecutionState["status"] = "completed";
 const PENDING_STATUS: IssueExecutionState["status"] = "pending";
 const CHANGES_REQUESTED_STATUS: IssueExecutionState["status"] = "changes_requested";
-const MONITOR_INVALID_MESSAGE = "Monitor can only be scheduled on issues assigned to an agent in in_progress or in_review";
+const MONITOR_INVALID_MESSAGE = "Monitor can only be scheduled on issues owned by an agent in in_progress or in_review";
 const MONITOR_BOUNDS_EXHAUSTED_MESSAGE = "Monitor bounds are already exhausted";
 export const REDACTED_ISSUE_MONITOR_EXTERNAL_REF = "[redacted]";
 
@@ -110,7 +120,7 @@ function blankExecutionState(): IssueExecutionState {
     currentStageIndex: null,
     currentStageType: null,
     currentParticipant: null,
-    returnAssignee: null,
+    returnOwner: null,
     reviewRequest: null,
     completedStageIds: [],
     lastDecisionId: null,
@@ -154,7 +164,7 @@ function derivePersistedMonitorState(input: {
   const notes = scheduledMonitor?.notes ?? normalizeMonitorNotes(input.issue.monitorNotes) ?? fromState?.notes ?? null;
   const scheduledByRaw = input.issue.monitorScheduledBy ?? scheduledMonitor?.scheduledBy ?? fromState?.scheduledBy ?? null;
   const scheduledBy =
-    scheduledByRaw === "assignee" || scheduledByRaw === "board" ? scheduledByRaw : null;
+    scheduledByRaw === "owner" || scheduledByRaw === "board" ? scheduledByRaw : null;
   const metadata = scheduledMonitor ? monitorMetadataFromPolicy(scheduledMonitor) : monitorMetadataFromState(fromState);
 
   if (nextCheckAt) {
@@ -251,19 +261,30 @@ function buildClearedMonitorState(input: {
   };
 }
 
-function issueAllowsMonitor(status: string, assigneeAgentId: string | null, assigneeUserId: string | null) {
-  return Boolean(assigneeAgentId) && !assigneeUserId && (status === "in_progress" || status === "in_review");
+function issueAllowsMonitor(
+  status: string,
+  ownerKind: IssueOwnerKind | null,
+  ownerAgentId: string | null,
+  ownerUserId: string | null,
+) {
+  return (
+    ownerKind === "agent" &&
+    Boolean(ownerAgentId) &&
+    !ownerUserId &&
+    (status === "in_progress" || status === "in_review")
+  );
 }
 
 function monitorClearReasonForIssue(
   status: string,
-  assigneeAgentId: string | null,
-  assigneeUserId: string | null,
+  ownerKind: IssueOwnerKind | null,
+  ownerAgentId: string | null,
+  ownerUserId: string | null,
 ): IssueExecutionMonitorClearReason | null {
   if (status === "done") return "done";
   if (status === "cancelled") return "cancelled";
-  if (!issueAllowsMonitor(status, assigneeAgentId, assigneeUserId)) {
-    if (assigneeUserId || !assigneeAgentId) return "invalid_assignee";
+  if (!issueAllowsMonitor(status, ownerKind, ownerAgentId, ownerUserId)) {
+    if (ownerKind !== "agent" || ownerUserId || !ownerAgentId) return "invalid_owner";
     return "invalid_status";
   }
   return null;
@@ -291,24 +312,22 @@ function exhaustedMonitorClearReason(input: {
   return null;
 }
 
-function nextAssigneeIds(input: {
+function nextOwner(input: {
   issue: IssueLike;
-  requestedAssigneePatch: RequestedAssigneePatch;
-  stagePatch: Record<string, unknown>;
+  requestedOwnerPatch: RequestedOwnerPatch;
 }) {
-  const assigneeAgentId =
-    input.stagePatch.assigneeAgentId !== undefined
-      ? (input.stagePatch.assigneeAgentId as string | null)
-      : input.requestedAssigneePatch.assigneeAgentId !== undefined
-        ? input.requestedAssigneePatch.assigneeAgentId ?? null
-        : input.issue.assigneeAgentId ?? null;
-  const assigneeUserId =
-    input.stagePatch.assigneeUserId !== undefined
-      ? (input.stagePatch.assigneeUserId as string | null)
-      : input.requestedAssigneePatch.assigneeUserId !== undefined
-        ? input.requestedAssigneePatch.assigneeUserId ?? null
-        : input.issue.assigneeUserId ?? null;
-  return { assigneeAgentId, assigneeUserId };
+  const ownerKind = input.requestedOwnerPatch.ownerKind !== undefined
+    ? input.requestedOwnerPatch.ownerKind
+    : input.issue.ownerKind ?? null;
+  const ownerAgentId =
+    input.requestedOwnerPatch.ownerAgentId !== undefined
+      ? input.requestedOwnerPatch.ownerAgentId ?? null
+      : input.issue.ownerAgentId ?? null;
+  const ownerUserId =
+    input.requestedOwnerPatch.ownerUserId !== undefined
+      ? input.requestedOwnerPatch.ownerUserId ?? null
+      : input.issue.ownerUserId ?? null;
+  return { ownerKind, ownerAgentId, ownerUserId };
 }
 
 export function stripMonitorFromExecutionPolicy(policy: IssueExecutionPolicy | null): IssueExecutionPolicy | null {
@@ -409,12 +428,12 @@ export function parseIssueExecutionState(input: unknown): IssueExecutionState | 
   return parsed.data;
 }
 
-export function assigneePrincipal(input: AssigneeLike): IssueExecutionStagePrincipal | null {
-  if (input.assigneeAgentId) {
-    return { type: "agent", agentId: input.assigneeAgentId, userId: null };
+export function ownerPrincipal(input: OwnerLike): IssueExecutionStagePrincipal | null {
+  if (input.ownerKind === "agent" && input.ownerAgentId) {
+    return { type: "agent", agentId: input.ownerAgentId, userId: null };
   }
-  if (input.assigneeUserId) {
-    return { type: "user", userId: input.assigneeUserId, agentId: null };
+  if (input.ownerKind === "user" && input.ownerUserId) {
+    return { type: "user", userId: input.ownerUserId, agentId: null };
   }
   return null;
 }
@@ -473,15 +492,6 @@ function stageHasParticipant(stage: IssueExecutionStage, participant: IssueExecu
   return stage.participants.some((candidate) => principalsEqual(candidate, participant));
 }
 
-function patchForPrincipal(principal: IssueExecutionStagePrincipal | null) {
-  if (!principal) {
-    return { assigneeAgentId: null, assigneeUserId: null };
-  }
-  return principal.type === "agent"
-    ? { assigneeAgentId: principal.agentId ?? null, assigneeUserId: null }
-    : { assigneeAgentId: null, assigneeUserId: principal.userId ?? null };
-}
-
 function buildCompletedState(previous: IssueExecutionState | null, currentStage: IssueExecutionStage): IssueExecutionState {
   const completedStageIds = Array.from(new Set([...(previous?.completedStageIds ?? []), currentStage.id]));
   return {
@@ -490,7 +500,7 @@ function buildCompletedState(previous: IssueExecutionState | null, currentStage:
     currentStageIndex: null,
     currentStageType: null,
     currentParticipant: null,
-    returnAssignee: previous?.returnAssignee ?? null,
+    returnOwner: previous?.returnOwner ?? null,
     reviewRequest: null,
     completedStageIds,
     lastDecisionId: previous?.lastDecisionId ?? null,
@@ -502,7 +512,7 @@ function buildCompletedState(previous: IssueExecutionState | null, currentStage:
 function buildStateWithCompletedStages(input: {
   previous: IssueExecutionState | null;
   completedStageIds: string[];
-  returnAssignee: IssueExecutionStagePrincipal | null;
+  returnOwner: IssueExecutionStagePrincipal | null;
 }): IssueExecutionState {
   return {
     status: input.previous?.status ?? PENDING_STATUS,
@@ -510,7 +520,7 @@ function buildStateWithCompletedStages(input: {
     currentStageIndex: input.previous?.currentStageIndex ?? null,
     currentStageType: input.previous?.currentStageType ?? null,
     currentParticipant: input.previous?.currentParticipant ?? null,
-    returnAssignee: input.previous?.returnAssignee ?? input.returnAssignee,
+    returnOwner: input.previous?.returnOwner ?? input.returnOwner,
     reviewRequest: input.previous?.reviewRequest ?? null,
     completedStageIds: input.completedStageIds,
     lastDecisionId: input.previous?.lastDecisionId ?? null,
@@ -522,7 +532,7 @@ function buildStateWithCompletedStages(input: {
 function buildSkippedStageCompletedState(input: {
   previous: IssueExecutionState | null;
   completedStageIds: string[];
-  returnAssignee: IssueExecutionStagePrincipal | null;
+  returnOwner: IssueExecutionStagePrincipal | null;
 }): IssueExecutionState {
   return {
     status: COMPLETED_STATUS,
@@ -530,7 +540,7 @@ function buildSkippedStageCompletedState(input: {
     currentStageIndex: null,
     currentStageType: null,
     currentParticipant: null,
-    returnAssignee: input.previous?.returnAssignee ?? input.returnAssignee,
+    returnOwner: input.previous?.returnOwner ?? input.returnOwner,
     reviewRequest: null,
     completedStageIds: input.completedStageIds,
     lastDecisionId: input.previous?.lastDecisionId ?? null,
@@ -544,7 +554,7 @@ function buildPendingState(input: {
   stage: IssueExecutionStage;
   stageIndex: number;
   participant: IssueExecutionStagePrincipal;
-  returnAssignee: IssueExecutionStagePrincipal | null;
+  returnOwner: IssueExecutionStagePrincipal | null;
   reviewRequest?: IssueExecutionState["reviewRequest"] | null;
 }): IssueExecutionState {
   return {
@@ -553,7 +563,7 @@ function buildPendingState(input: {
     currentStageIndex: input.stageIndex,
     currentStageType: input.stage.type,
     currentParticipant: input.participant,
-    returnAssignee: input.returnAssignee,
+    returnOwner: input.returnOwner,
     reviewRequest: input.reviewRequest ?? null,
     completedStageIds: input.previous?.completedStageIds ?? [],
     lastDecisionId: input.previous?.lastDecisionId ?? null,
@@ -579,17 +589,16 @@ function buildPendingStagePatch(input: {
   policy: IssueExecutionPolicy;
   stage: IssueExecutionStage;
   participant: IssueExecutionStagePrincipal;
-  returnAssignee: IssueExecutionStagePrincipal | null;
+  returnOwner: IssueExecutionStagePrincipal | null;
   reviewRequest?: IssueExecutionState["reviewRequest"] | null;
 }) {
   input.patch.status = "in_review";
-  Object.assign(input.patch, patchForPrincipal(input.participant));
   input.patch.executionState = buildPendingState({
     previous: input.previous,
     stage: input.stage,
     stageIndex: input.policy.stages.findIndex((candidate) => candidate.id === input.stage.id),
     participant: input.participant,
-    returnAssignee: input.returnAssignee,
+    returnOwner: input.returnOwner,
     reviewRequest: input.reviewRequest,
   });
 }
@@ -598,35 +607,31 @@ function clearExecutionStatePatch(input: {
   patch: Record<string, unknown>;
   issueStatus: string;
   requestedStatus?: string;
-  returnAssignee: IssueExecutionStagePrincipal | null;
+  returnOwner: IssueExecutionStagePrincipal | null;
 }) {
   input.patch.executionState = null;
-  if (input.requestedStatus === undefined && input.issueStatus === "in_review" && input.returnAssignee) {
+  if (input.requestedStatus === undefined && input.issueStatus === "in_review" && input.returnOwner) {
     input.patch.status = "in_progress";
-    Object.assign(input.patch, patchForPrincipal(input.returnAssignee));
   }
 }
 
 function canAutoSkipPendingStage(input: {
   stage: IssueExecutionStage;
-  returnAssignee: IssueExecutionStagePrincipal | null;
+  returnOwner: IssueExecutionStagePrincipal | null;
   requestedStatus?: string;
 }) {
-  if (input.requestedStatus !== "done" || input.stage.type !== "review" || !input.returnAssignee) {
+  if (input.requestedStatus !== "done" || input.stage.type !== "review" || !input.returnOwner) {
     return false;
   }
   return input.stage.participants.length > 0 &&
-    input.stage.participants.every((participant) => principalsEqual(participant, input.returnAssignee));
+    input.stage.participants.every((participant) => principalsEqual(participant, input.returnOwner));
 }
 
 function applyIssueExecutionStageTransition(input: TransitionInput): TransitionResult {
   const patch: Record<string, unknown> = {};
   const existingState = parseIssueExecutionState(input.issue.executionState);
-  const currentAssignee = assigneePrincipal(input.issue);
+  const currentOwner = ownerPrincipal(input.issue);
   const actor = actorPrincipal(input.actor);
-  const requestedAssigneePatchProvided =
-    input.requestedAssigneePatch.assigneeAgentId !== undefined || input.requestedAssigneePatch.assigneeUserId !== undefined;
-  const explicitAssignee = assigneePrincipal(input.requestedAssigneePatch);
   const currentStage = input.policy ? findStageById(input.policy, existingState?.currentStageId) : null;
   const requestedStatus = input.requestedStatus;
   const activeStage = currentStage && existingState?.status === PENDING_STATUS ? currentStage : null;
@@ -637,16 +642,19 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
   if (!input.policy) {
     if (existingState) {
       patch.executionState = null;
-      if (input.issue.status === "in_review" && existingState.returnAssignee) {
+      if (
+        input.issue.boardPresentationStatus === "in_review" &&
+        existingState.returnOwner
+      ) {
         patch.status = "in_progress";
-        Object.assign(patch, patchForPrincipal(existingState.returnAssignee));
       }
     }
     return { patch };
   }
 
   if (
-    (input.issue.status === "done" || input.issue.status === "cancelled") &&
+    (input.issue.boardPresentationStatus === "done" ||
+      input.issue.boardPresentationStatus === "cancelled") &&
     requestedStatus &&
     requestedStatus !== "done" &&
     requestedStatus !== "cancelled"
@@ -658,9 +666,9 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
   if (existingState?.currentStageId && !currentStage) {
     clearExecutionStatePatch({
       patch,
-      issueStatus: input.issue.status,
+      issueStatus: input.issue.boardPresentationStatus,
       requestedStatus,
-      returnAssignee: existingState.returnAssignee,
+      returnOwner: existingState.returnOwner,
     });
     return { patch };
   }
@@ -669,7 +677,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
     const currentParticipant =
       existingState?.currentParticipant ??
       selectStageParticipant(activeStage, {
-        exclude: existingState?.returnAssignee ?? null,
+        exclude: existingState?.returnOwner ?? null,
       });
     if (!currentParticipant) {
       throw unprocessable(`No eligible ${activeStage.type} participant is configured for this issue`);
@@ -677,15 +685,15 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
 
     if (!stageHasParticipant(activeStage, currentParticipant)) {
       const participant = selectStageParticipant(activeStage, {
-        preferred: explicitAssignee ?? existingState?.currentParticipant ?? null,
-        exclude: existingState?.returnAssignee ?? null,
+        preferred: existingState?.currentParticipant ?? null,
+        exclude: existingState?.returnOwner ?? null,
       });
       if (!participant) {
         clearExecutionStatePatch({
           patch,
-          issueStatus: input.issue.status,
+          issueStatus: input.issue.boardPresentationStatus,
           requestedStatus,
-          returnAssignee: existingState?.returnAssignee ?? null,
+          returnOwner: existingState?.returnOwner ?? null,
         });
         return { patch };
       }
@@ -696,13 +704,10 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         policy: input.policy,
         stage: activeStage,
         participant,
-        returnAssignee: existingState?.returnAssignee ?? currentAssignee ?? actor,
+        returnOwner: existingState?.returnOwner ?? currentOwner ?? actor,
         reviewRequest: effectiveReviewRequest,
       });
-      return {
-        patch,
-        workflowControlledAssignment: true,
-      };
+      return { patch };
     }
 
     if (principalsEqual(currentParticipant, actor)) {
@@ -732,8 +737,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         }
 
         const participant = selectStageParticipant(nextStage, {
-          preferred: explicitAssignee,
-          exclude: existingState?.returnAssignee ?? null,
+          exclude: existingState?.returnOwner ?? null,
         });
         if (!participant) {
           throw unprocessable(`No eligible ${nextStage.type} participant is configured for this issue`);
@@ -745,7 +749,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
           policy: input.policy,
           stage: nextStage,
           participant,
-          returnAssignee: existingState?.returnAssignee ?? currentAssignee ?? actor,
+          returnOwner: existingState?.returnOwner ?? currentOwner ?? actor,
           reviewRequest: input.reviewRequest ?? null,
         });
         return {
@@ -756,7 +760,6 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
             outcome: "approved",
             body: input.commentBody.trim(),
           },
-          workflowControlledAssignment: true,
         };
       }
 
@@ -764,11 +767,10 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         if (!input.commentBody?.trim()) {
           throw unprocessable("Requesting changes requires a comment");
         }
-        if (!existingState?.returnAssignee) {
-          throw unprocessable("This execution stage has no return assignee");
+        if (!existingState?.returnOwner) {
+          throw unprocessable("This execution stage has no return owner");
         }
         patch.status = "in_progress";
-        Object.assign(patch, patchForPrincipal(existingState.returnAssignee));
         patch.executionState = buildChangesRequestedState(existingState, activeStage);
         return {
           patch,
@@ -778,17 +780,14 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
             outcome: "changes_requested",
             body: input.commentBody.trim(),
           },
-          workflowControlledAssignment: true,
         };
       }
     }
 
     const attemptedStageAdvance =
-      (requestedStatus !== undefined && requestedStatus !== "in_review") ||
-      (requestedAssigneePatchProvided && !principalsEqual(explicitAssignee, currentParticipant));
+      requestedStatus !== undefined && requestedStatus !== "in_review";
     const stageStateDrifted =
-      input.issue.status !== "in_review" ||
-      !principalsEqual(currentAssignee, currentParticipant) ||
+      input.issue.boardPresentationStatus !== "in_review" ||
       !principalsEqual(existingState?.currentParticipant ?? null, currentParticipant);
 
     if (attemptedStageAdvance && !stageStateDrifted) {
@@ -802,13 +801,10 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         policy: input.policy,
         stage: activeStage,
         participant: currentParticipant,
-        returnAssignee: existingState?.returnAssignee ?? currentAssignee ?? actor,
+        returnOwner: existingState?.returnOwner ?? currentOwner ?? actor,
         reviewRequest: effectiveReviewRequest,
       });
-      return {
-        patch,
-        workflowControlledAssignment: true,
-      };
+      return { patch };
     }
 
     return { patch };
@@ -834,39 +830,39 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       : nextPendingStage(input.policy, existingState);
   if (!pendingStage) return { patch };
 
-  const returnAssignee = existingState?.returnAssignee ?? currentAssignee;
+  const returnOwner = existingState?.returnOwner ?? currentOwner;
   const skippedStageIds = [...(existingState?.completedStageIds ?? [])];
   let participant = selectStageParticipant(pendingStage, {
     preferred:
       existingState?.status === CHANGES_REQUESTED_STATUS
-        ? explicitAssignee ?? existingState.currentParticipant ?? null
-        : explicitAssignee,
-    exclude: returnAssignee,
+        ? existingState.currentParticipant ?? null
+        : null,
+    exclude: returnOwner,
   });
-  while (!participant && canAutoSkipPendingStage({ stage: pendingStage, returnAssignee, requestedStatus })) {
+  while (!participant && canAutoSkipPendingStage({ stage: pendingStage, returnOwner, requestedStatus })) {
     skippedStageIds.push(pendingStage.id);
     pendingStage = nextPendingStage(
       input.policy,
       buildStateWithCompletedStages({
         previous: existingState,
         completedStageIds: skippedStageIds,
-        returnAssignee,
+        returnOwner,
       }),
     );
     if (!pendingStage) {
       patch.executionState = buildSkippedStageCompletedState({
         previous: existingState,
         completedStageIds: skippedStageIds,
-        returnAssignee,
+        returnOwner,
       });
       return { patch };
     }
     participant = selectStageParticipant(pendingStage, {
       preferred:
         existingState?.status === CHANGES_REQUESTED_STATUS
-          ? explicitAssignee ?? existingState.currentParticipant ?? null
-          : explicitAssignee,
-      exclude: returnAssignee,
+          ? existingState.currentParticipant ?? null
+          : null,
+      exclude: returnOwner,
     });
   }
   if (!participant) {
@@ -881,18 +877,15 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         : buildStateWithCompletedStages({
             previous: existingState,
             completedStageIds: skippedStageIds,
-            returnAssignee,
+            returnOwner,
           }),
     policy: input.policy,
     stage: pendingStage,
     participant,
-    returnAssignee,
+    returnOwner,
     reviewRequest: input.reviewRequest ?? null,
   });
-  return {
-    patch,
-    workflowControlledAssignment: true,
-  };
+  return { patch };
 }
 
 function applyMonitorTransition(input: TransitionInput, stagePatch: Record<string, unknown>) {
@@ -907,18 +900,17 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
   const nextStatus =
     typeof stagePatch.status === "string"
       ? (stagePatch.status as string)
-      : input.requestedStatus ?? input.issue.status;
-  const { assigneeAgentId, assigneeUserId } = nextAssigneeIds({
+      : input.requestedStatus ?? input.issue.boardPresentationStatus;
+  const { ownerKind, ownerAgentId, ownerUserId } = nextOwner({
     issue: input.issue,
-    requestedAssigneePatch: input.requestedAssigneePatch,
-    stagePatch,
+    requestedOwnerPatch: input.requestedOwnerPatch,
   });
   const stageState =
     stagePatch.executionState !== undefined
       ? parseIssueExecutionState(stagePatch.executionState)
       : existingState;
   const invalidReason = input.policy?.monitor
-    ? monitorClearReasonForIssue(nextStatus, assigneeAgentId, assigneeUserId)
+    ? monitorClearReasonForIssue(nextStatus, ownerKind, ownerAgentId, ownerUserId)
     : null;
 
   let targetMonitorState = currentMonitorState;
@@ -930,7 +922,6 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
       }
       patch.executionPolicy = stripMonitorFromExecutionPolicy(input.policy);
       patch.monitorNextCheckAt = null;
-      patch.monitorWakeRequestedAt = null;
       targetMonitorState = buildClearedMonitorState({
         previous: currentMonitorState,
         clearReason: invalidReason,
@@ -948,7 +939,6 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
         }
         patch.executionPolicy = stripMonitorFromExecutionPolicy(input.policy);
         patch.monitorNextCheckAt = null;
-        patch.monitorWakeRequestedAt = null;
         targetMonitorState = buildClearedMonitorState({
           previous: currentMonitorState,
           clearReason: exhaustedReason,
@@ -956,7 +946,6 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
         });
       } else {
         patch.monitorNextCheckAt = new Date(input.policy.monitor.nextCheckAt);
-        patch.monitorWakeRequestedAt = null;
         patch.monitorNotes = input.policy.monitor.notes ?? null;
         patch.monitorScheduledBy = input.policy.monitor.scheduledBy;
         targetMonitorState = buildScheduledMonitorState(currentMonitorState, input.policy.monitor);
@@ -964,13 +953,12 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
     }
   } else if (previousPolicy?.monitor) {
     patch.monitorNextCheckAt = null;
-    patch.monitorWakeRequestedAt = null;
     targetMonitorState = buildClearedMonitorState({
       previous: currentMonitorState,
       clearReason:
         input.monitorExplicitlyUpdated
           ? "manual"
-          : monitorClearReasonForIssue(nextStatus, assigneeAgentId, assigneeUserId) ?? "manual",
+          : monitorClearReasonForIssue(nextStatus, ownerKind, ownerAgentId, ownerUserId) ?? "manual",
       clearedAt: new Date(),
     });
   }
@@ -985,11 +973,17 @@ function applyMonitorTransition(input: TransitionInput, stagePatch: Record<strin
 export function buildInitialIssueMonitorFields(input: {
   policy: IssueExecutionPolicy | null;
   status: string;
-  assigneeAgentId?: string | null;
-  assigneeUserId?: string | null;
+  ownerKind: IssueOwnerKind;
+  ownerAgentId?: string | null;
+  ownerUserId?: string | null;
 }) {
   if (!input.policy?.monitor) return {};
-  if (!issueAllowsMonitor(input.status, input.assigneeAgentId ?? null, input.assigneeUserId ?? null)) {
+  if (!issueAllowsMonitor(
+    input.status,
+    input.ownerKind,
+    input.ownerAgentId ?? null,
+    input.ownerUserId ?? null,
+  )) {
     throw unprocessable(MONITOR_INVALID_MESSAGE);
   }
   const exhaustedReason = exhaustedMonitorClearReason({
@@ -1004,7 +998,6 @@ export function buildInitialIssueMonitorFields(input: {
   const monitorState = buildScheduledMonitorState(null, input.policy.monitor);
   return {
     monitorNextCheckAt: new Date(input.policy.monitor.nextCheckAt),
-    monitorWakeRequestedAt: null,
     monitorNotes: input.policy.monitor.notes ?? null,
     monitorScheduledBy: input.policy.monitor.scheduledBy,
     executionState: executionStateWithMonitor(null, monitorState) as Record<string, unknown> | null,
@@ -1031,7 +1024,6 @@ export function buildIssueMonitorTriggeredPatch(input: {
     executionPolicy: stripMonitorFromExecutionPolicy(input.policy) as Record<string, unknown> | null,
     executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
     monitorNextCheckAt: null,
-    monitorWakeRequestedAt: null,
     monitorLastTriggeredAt: input.triggeredAt,
     monitorAttemptCount: nextMonitorState.attemptCount,
     monitorNotes: nextMonitorState.notes,
@@ -1061,7 +1053,6 @@ export function buildIssueMonitorClearedPatch(input: {
     executionPolicy: stripMonitorFromExecutionPolicy(input.policy) as Record<string, unknown> | null,
     executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
     monitorNextCheckAt: null,
-    monitorWakeRequestedAt: null,
   };
 }
 
@@ -1074,4 +1065,486 @@ export function applyIssueExecutionPolicyTransition(input: TransitionInput): Tra
 
 export function applyIssueMonitorPolicyTransition(input: TransitionInput): TransitionResult {
   return { patch: applyMonitorTransition(input, {}) };
+}
+
+type IssueExecutionPolicyActor = {
+  agentId?: string | null;
+  userId?: string | null;
+  runId?: string | null;
+};
+
+type IssueExecutionPolicyControlResult = {
+  issue: typeof issues.$inferSelect;
+  decision: typeof issueExecutionDecisions.$inferSelect;
+  retried: boolean;
+};
+
+function deterministicExecutionPolicyDecisionId(input: {
+  companyId: string;
+  issueId: string;
+  idempotencyKey: string;
+}) {
+  const bytes = Buffer.from(
+    createHash("sha256")
+      .update(`issue-execution-policy-decision\0${input.companyId}\0${input.issueId}\0${input.idempotencyKey}`)
+      .digest("hex")
+      .slice(0, 32),
+    "hex",
+  );
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function assertUnchangedIssueOwnership(patch: Record<string, unknown>) {
+  const forbiddenKeys = [
+    "ownerKind",
+    "ownerAgentId",
+    "ownerUserId",
+    "ownerAssignmentSource",
+    "ownershipEpoch",
+  ];
+  const emitted = forbiddenKeys.filter((key) => Object.prototype.hasOwnProperty.call(patch, key));
+  if (emitted.length > 0) {
+    throw new Error(`Execution-policy transition attempted to mutate canonical ownership: ${emitted.join(", ")}`);
+  }
+}
+
+export function issueExecutionPolicyPersistencePatch(patch: Record<string, unknown>) {
+  assertUnchangedIssueOwnership(patch);
+  return {
+    ...(typeof patch.status === "string"
+      ? {
+          boardPresentationStatus: patch.status as
+            | "backlog"
+            | "todo"
+            | "in_progress"
+            | "in_review"
+            | "done"
+            | "blocked"
+            | "cancelled",
+        }
+      : {}),
+    ...(patch.executionPolicy !== undefined
+      ? {
+          executionPolicy:
+            patch.executionPolicy === null
+              ? null
+              : patch.executionPolicy as Record<string, unknown>,
+        }
+      : {}),
+    ...(patch.executionState !== undefined
+      ? {
+          executionState:
+            patch.executionState === null
+              ? null
+              : patch.executionState as Record<string, unknown>,
+        }
+      : {}),
+    ...(patch.monitorNextCheckAt !== undefined
+      ? { monitorNextCheckAt: patch.monitorNextCheckAt as Date | null }
+      : {}),
+    ...(patch.monitorLastTriggeredAt !== undefined
+      ? { monitorLastTriggeredAt: patch.monitorLastTriggeredAt as Date | null }
+      : {}),
+    ...(patch.monitorAttemptCount !== undefined
+      ? { monitorAttemptCount: patch.monitorAttemptCount as number }
+      : {}),
+    ...(patch.monitorNotes !== undefined
+      ? { monitorNotes: patch.monitorNotes as string | null }
+      : {}),
+    ...(patch.monitorScheduledBy !== undefined
+      ? { monitorScheduledBy: patch.monitorScheduledBy as string | null }
+      : {}),
+  };
+}
+
+function assertExecutionPolicyActor(actor: IssueExecutionPolicyActor) {
+  const hasAgent = Boolean(actor.agentId);
+  const hasUser = Boolean(actor.userId);
+  if (hasAgent === hasUser) {
+    throw unprocessable("An execution-policy decision requires exactly one participant identity");
+  }
+}
+
+function persistedValueEqual(left: unknown, right: unknown): boolean {
+  if (left instanceof Date || right instanceof Date) {
+    return (
+      left instanceof Date &&
+      right instanceof Date &&
+      left.getTime() === right.getTime()
+    );
+  }
+  if (
+    (left !== null && typeof left === "object") ||
+    (right !== null && typeof right === "object")
+  ) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+  return left === right;
+}
+
+function issuePatchChangesPersistedState(
+  issue: typeof issues.$inferSelect,
+  patch: Record<string, unknown>,
+): boolean {
+  const current = issue as unknown as Record<string, unknown>;
+  return Object.entries(patch).some(
+    ([key, value]) => !persistedValueEqual(current[key], value),
+  );
+}
+
+async function lockIssueForExecutionPolicy(
+  tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+  companyId: string,
+  issueId: string,
+) {
+  await tx.execute(
+    sql`select ${issues.id} from ${issues}
+        where ${issues.companyId} = ${companyId}
+          and ${issues.id} = ${issueId}
+        for update`,
+  );
+  const issue = await tx
+    .select()
+    .from(issues)
+    .where(and(eq(issues.companyId, companyId), eq(issues.id, issueId)))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (!issue) {
+    throw conflict("Issue changed or was removed while applying its execution policy");
+  }
+  return issue;
+}
+
+/**
+ * The board execution-policy control plane is intentionally separate from
+ * generic issue metadata mutation. It can configure policy and append stage
+ * decisions, but it never owns an issue, advances its ownership epoch, writes
+ * a provider message, or dispatches an execution.
+ */
+export function issueExecutionPolicyControlService(
+  db: Db,
+  options: { clock?: () => Date } = {},
+) {
+  const clock = options.clock ?? (() => new Date());
+
+  return {
+    async configure(input: {
+      companyId: string;
+      issueId: string;
+      executionPolicy: unknown;
+      actorUserId: string;
+    }) {
+      return db.transaction(async (tx) => {
+        const issue = await lockIssueForExecutionPolicy(
+          tx,
+          input.companyId,
+          input.issueId,
+        );
+        const previousPolicy = normalizeIssueExecutionPolicy(
+          issue.executionPolicy,
+        );
+        const normalizedPolicy = setIssueExecutionPolicyMonitorScheduledBy(
+          normalizeIssueExecutionPolicy(input.executionPolicy),
+          "board",
+        );
+        const monitorChanged =
+          JSON.stringify(previousPolicy?.monitor ?? null) !==
+          JSON.stringify(normalizedPolicy?.monitor ?? null);
+        const transition = applyIssueExecutionPolicyTransition({
+          issue,
+          policy: normalizedPolicy,
+          previousPolicy,
+          requestedOwnerPatch: {},
+          actor: { userId: input.actorUserId },
+          monitorExplicitlyUpdated: monitorChanged,
+        });
+        const transitionPatch = issueExecutionPolicyPersistencePatch(
+          transition.patch,
+        );
+        const persistencePatch = {
+          executionPolicy:
+            normalizedPolicy as Record<string, unknown> | null,
+          ...transitionPatch,
+        };
+        if (!issuePatchChangesPersistedState(issue, persistencePatch)) {
+          return issue;
+        }
+        const now = clock();
+        const sourceCommandId = randomUUID();
+        const updated = await tx
+          .update(issues)
+          .set({
+            ...persistencePatch,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(issues.companyId, input.companyId),
+              eq(issues.id, input.issueId),
+            ),
+          )
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (!updated) {
+          throw conflict("Issue changed while applying its execution policy");
+        }
+        await recordNamedBoardLifecycleCommandInTransaction(tx, {
+          companyId: input.companyId,
+          affectedIssues: [
+            { id: updated.id, ownershipEpoch: updated.ownershipEpoch },
+          ],
+          actorUserId: input.actorUserId,
+          subtype: "execution_policy_configure",
+          sourceCommandId,
+          idempotencyKey: `execution-policy-configure:${sourceCommandId}`,
+          committedAt: now,
+        });
+        return updated;
+      });
+    },
+
+    async decide(input: {
+      companyId: string;
+      issueId: string;
+      outcome: IssueExecutionDecision["outcome"];
+      body: string;
+      reviewRequest?: IssueExecutionState["reviewRequest"] | null;
+      idempotencyKey: string;
+      actor: IssueExecutionPolicyActor;
+    }): Promise<IssueExecutionPolicyControlResult> {
+      assertExecutionPolicyActor(input.actor);
+      const body = input.body.trim();
+      const idempotencyKey = input.idempotencyKey.trim();
+      const decisionId = deterministicExecutionPolicyDecisionId({
+        companyId: input.companyId,
+        issueId: input.issueId,
+        idempotencyKey,
+      });
+
+      return db.transaction(async (tx) => {
+        const issue = await lockIssueForExecutionPolicy(
+          tx,
+          input.companyId,
+          input.issueId,
+        );
+        const existingDecision = await tx
+          .select()
+          .from(issueExecutionDecisions)
+          .where(eq(issueExecutionDecisions.id, decisionId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        if (existingDecision) {
+          if (
+            existingDecision.companyId !== input.companyId ||
+            existingDecision.issueId !== input.issueId ||
+            existingDecision.actorAgentId !== (input.actor.agentId ?? null) ||
+            existingDecision.actorUserId !== (input.actor.userId ?? null) ||
+            existingDecision.createdByRunId !== (input.actor.runId ?? null) ||
+            existingDecision.outcome !== input.outcome ||
+            existingDecision.body !== body
+          ) {
+            throw conflict(
+              "Execution-policy decision idempotency key was retried with different immutable arguments",
+            );
+          }
+          if (input.actor.userId) {
+            await recordNamedBoardLifecycleCommandInTransaction(tx, {
+              companyId: input.companyId,
+              affectedIssues: [
+                { id: issue.id, ownershipEpoch: issue.ownershipEpoch },
+              ],
+              actorUserId: input.actor.userId,
+              subtype: "execution_policy_decision",
+              sourceCommandId: existingDecision.id,
+              idempotencyKey,
+              committedAt: existingDecision.createdAt,
+            });
+          }
+          return {
+            issue,
+            decision: existingDecision,
+            retried: true,
+          };
+        }
+
+        if (
+          issue.lifecycleStatus !== "open" &&
+          issue.lifecycleStatus !== "blocked"
+        ) {
+          throw conflict("A terminal issue rejects execution-policy decisions");
+        }
+        const policy = normalizeIssueExecutionPolicy(issue.executionPolicy);
+        if (!policy) {
+          throw unprocessable("Issue has no execution policy to decide");
+        }
+        const transition = applyIssueExecutionPolicyTransition({
+          issue,
+          policy,
+          requestedStatus:
+            input.outcome === "approved" ? "done" : "in_progress",
+          requestedOwnerPatch: {},
+          actor: input.actor,
+          commentBody: body,
+          reviewRequest: input.reviewRequest,
+        });
+        if (
+          !transition.decision ||
+          transition.decision.outcome !== input.outcome
+        ) {
+          throw unprocessable(
+            "Only the active execution-policy participant can record this decision",
+          );
+        }
+        const nextStateRaw = transition.patch.executionState;
+        if (
+          !nextStateRaw ||
+          typeof nextStateRaw !== "object" ||
+          Array.isArray(nextStateRaw)
+        ) {
+          throw new Error(
+            "Execution-policy decision transition is missing executionState",
+          );
+        }
+        const nextState = parseIssueExecutionState(nextStateRaw);
+        if (!nextState) {
+          throw new Error(
+            "Execution-policy decision transition produced invalid executionState",
+          );
+        }
+        transition.patch.executionState = {
+          ...nextState,
+          lastDecisionId: decisionId,
+        };
+        const finalApproval =
+          input.outcome === "approved" &&
+          nextState.status === COMPLETED_STATUS;
+
+        let terminalUpdate: typeof issueUpdates.$inferSelect | null = null;
+        if (finalApproval) {
+          terminalUpdate = await tx
+            .select()
+            .from(issueUpdates)
+            .where(
+              and(
+                eq(issueUpdates.companyId, input.companyId),
+                eq(issueUpdates.issueId, input.issueId),
+                eq(issueUpdates.ownershipEpoch, issue.ownershipEpoch!),
+                eq(issueUpdates.form, "owner"),
+                eq(issueUpdates.status, "done"),
+              ),
+            )
+            .orderBy(
+              desc(issueUpdates.createdAt),
+              desc(issueUpdates.runSequence),
+              desc(issueUpdates.id),
+            )
+            .limit(1)
+            .then((rows) => rows[0] ?? null);
+          if (
+            !terminalUpdate?.disposition ||
+            !terminalUpdate.runId
+          ) {
+            throw unprocessable(
+              "Final approval requires a canonical current-owner done update",
+            );
+          }
+        }
+
+        const insertedDecision = await tx
+          .insert(issueExecutionDecisions)
+          .values({
+            id: decisionId,
+            companyId: input.companyId,
+            issueId: input.issueId,
+            stageId: transition.decision.stageId,
+            stageType: transition.decision.stageType,
+            actorAgentId: input.actor.agentId ?? null,
+            actorUserId: input.actor.userId ?? null,
+            outcome: transition.decision.outcome,
+            body: transition.decision.body,
+            createdByRunId: input.actor.runId ?? null,
+            createdAt: clock(),
+            updatedAt: clock(),
+          })
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (!insertedDecision) {
+          throw conflict("Execution-policy decision was not persisted");
+        }
+
+        const transitionPatch = issueExecutionPolicyPersistencePatch(
+          transition.patch,
+        );
+        const now = clock();
+        const updated = await tx
+          .update(issues)
+          .set({
+            ...transitionPatch,
+            ...(finalApproval
+              ? {
+                  lifecycleStatus: "done" as const,
+                  boardPresentationStatus: "done",
+                  disposition: terminalUpdate!.disposition,
+                  completedAt: now,
+                  cancelledAt: null,
+                }
+              : {}),
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(issues.companyId, input.companyId),
+              eq(issues.id, input.issueId),
+              eq(issues.ownershipEpoch, issue.ownershipEpoch!),
+              inArray(issues.lifecycleStatus, ["open", "blocked"]),
+            ),
+          )
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (!updated) {
+          throw conflict(
+            "Issue lifecycle or ownership changed during its execution-policy decision",
+          );
+        }
+
+        if (finalApproval) {
+          await finalizeSummarySlotsForTerminalIssue(
+            tx,
+            {
+              ...updated,
+              boardPresentationStatus: "done",
+            },
+            {
+              updateId: terminalUpdate!.id,
+              commentId: terminalUpdate!.commentId,
+              runId: terminalUpdate!.runId!,
+            },
+          );
+        }
+
+        if (input.actor.userId) {
+          await recordNamedBoardLifecycleCommandInTransaction(tx, {
+            companyId: input.companyId,
+            affectedIssues: [
+              { id: updated.id, ownershipEpoch: updated.ownershipEpoch },
+            ],
+            actorUserId: input.actor.userId,
+            subtype: "execution_policy_decision",
+            sourceCommandId: insertedDecision.id,
+            idempotencyKey,
+            committedAt: insertedDecision.createdAt,
+          });
+        }
+
+        return {
+          issue: updated,
+          decision: insertedDecision,
+          retried: false,
+        };
+      });
+    },
+  };
 }

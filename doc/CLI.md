@@ -25,21 +25,18 @@ Choose local instance:
 pnpm paperclipai run --instance dev
 ```
 
-## Deployment Modes
-
-Mode taxonomy and design intent are documented in `doc/DEPLOYMENT-MODES.md`.
+## Reachability and authentication
 
 Current CLI behavior:
 
-- `paperclipai onboard` and `paperclipai configure --section server` set deployment mode in config
-- server onboarding/configure ask for reachability intent and write `server.bind`
+- `paperclipai onboard` and `paperclipai configure --section server` configure
+  bind and exposure
+- every bind and exposure uses the same Better Auth signup/sign-in lifecycle
 - `paperclipai run --bind <loopback|lan|tailnet>` passes a quickstart bind preset into first-run onboarding when config is missing
-- runtime can override mode with `PAPERCLIP_DEPLOYMENT_MODE`
-- `paperclipai run` and `paperclipai doctor` still do not expose a direct low-level `--mode` flag
 
-Canonical behavior is documented in `doc/DEPLOYMENT-MODES.md`.
+Canonical behavior is documented in `doc/DEPLOYMENT.md`.
 
-Allow an authenticated/private hostname (for example custom Tailscale DNS):
+Allow a private hostname (for example custom Tailscale DNS):
 
 ```sh
 pnpm paperclipai allowed-hostname dotta-macbook-pro
@@ -68,7 +65,7 @@ Company-scoped commands also support `--company-id <id>`.
 API base resolution order:
 
 1. `--api-base <url>`
-2. `PAPERCLIP_API_URL`
+2. `PAPERCLIP_BOARD_API_URL`
 3. selected context profile `apiBase`
 4. local Paperclip config server port
 5. `http://localhost:3100`
@@ -81,10 +78,7 @@ Connection failures include the attempted URL and a `GET /api/health` check hint
 pnpm paperclipai connect
 ```
 
-`connect` confirms the resolved API base, verifies `GET /api/health`, authenticates board access when needed, and saves a persona-aware profile:
-
-- `persona=board` for board operator profiles
-- `persona=agent` with `agentId` and `agentName` for agent profiles
+`connect` confirms the resolved API base, verifies `GET /api/health`, authenticates a concrete board user, creates a named board API key, and saves a board profile.
 
 Profiles store token env-var names, not plaintext tokens. The wizard prints shell exports for the newly created token.
 
@@ -101,7 +95,7 @@ Store local defaults in `~/.paperclip/context.json`:
 
 ```sh
 pnpm paperclipai context set --api-base http://localhost:3100 --company-id <company-id>
-pnpm paperclipai context set --persona agent --agent-id <agent-id> --api-key-env-var-name PAPERCLIP_API_KEY
+pnpm paperclipai context set --api-key-env-var-name PAPERCLIP_BOARD_API_KEY
 pnpm paperclipai context show
 pnpm paperclipai context list
 pnpm paperclipai context use default
@@ -110,8 +104,8 @@ pnpm paperclipai context use default
 To avoid storing secrets in context, set `apiKeyEnvVarName` and keep the key in env:
 
 ```sh
-pnpm paperclipai context set --api-key-env-var-name PAPERCLIP_API_KEY
-export PAPERCLIP_API_KEY=...
+pnpm paperclipai context set --api-key-env-var-name PAPERCLIP_BOARD_API_KEY
+export PAPERCLIP_BOARD_API_KEY=...
 ```
 
 ## Company Commands
@@ -143,40 +137,38 @@ pnpm paperclipai company delete 5cbe79ee-acb3-4597-896e-7662742593cd --yes --con
 
 Notes:
 
-- With agent authentication, `company list` and `company current` are
-  agent-safe company selectors. `company list` first tries the board-wide list;
-  if that is forbidden, it uses `--company-id`, `PAPERCLIP_COMPANY_ID`, context,
-  or `/api/agents/me` and then reads only that scoped company.
+- `company list` and `company current` use the authenticated board user's memberships and optional profile company.
 - `company create` requires board/instance-admin authentication because it is
   an instance-wide setup command.
 - Deletion is server-gated by `PAPERCLIP_ENABLE_COMPANY_DELETION`.
-- With agent authentication, company deletion is company-scoped. Use the current company ID/prefix (for example via `--company-id` or `PAPERCLIP_COMPANY_ID`), not another company.
 
 ## Issue Commands
 
 ```sh
-pnpm paperclipai issue list --company-id <company-id> [--status todo,in_progress] [--assignee-agent-id <agent-id>] [--match text]
+pnpm paperclipai issue list --company-id <company-id> [--status open,blocked] [--owner-agent-id <agent-id>] [--match text]
 pnpm paperclipai issue get <issue-id-or-identifier>
-pnpm paperclipai issue create --company-id <company-id> --title "..." [--description "..."] [--status todo] [--priority high]
-pnpm paperclipai issue update <issue-id> [--status in_progress] [--comment "..."]
-pnpm paperclipai issue delete <issue-id> --yes
-pnpm paperclipai issue comment <issue-id> --body "..." [--reopen]
+pnpm paperclipai issue create --company-id <company-id> --request "..." --owner-agent-id <agent-id> [--title "..."] [--priority high]
+pnpm paperclipai issue title <issue-id> --title "..."
+pnpm paperclipai issue reassign <issue-id> --owner-agent-id <agent-id>
+pnpm paperclipai issue reopen <issue-id> --reason "..."
+pnpm paperclipai issue comment <issue-id> --message "..."
 pnpm paperclipai issue comments <issue-id> [--limit 50]
 pnpm paperclipai issue comment:get <issue-id> <comment-id>
-pnpm paperclipai issue comment:delete <issue-id> <comment-id>
 pnpm paperclipai issue runs <issue-id-or-identifier>
 pnpm paperclipai issue live-runs <issue-id-or-identifier>
 pnpm paperclipai issue active-run <issue-id-or-identifier>
-pnpm paperclipai issue heartbeat-context <issue-id>
-pnpm paperclipai issue checkout <issue-id> --agent-id <agent-id> [--expected-statuses todo,backlog,blocked]
-pnpm paperclipai issue release <issue-id>
-pnpm paperclipai issue force-release <issue-id>
 ```
 
-Issue subresources are exposed as Paperclip API wrappers. Commands that map to broad server schemas accept JSON payloads and validate them with shared schemas before sending.
+Issue creation requires an immutable request and an explicit agent owner. Title is
+board-editable display metadata; reassignment and reopen are audited commands.
+Reopen returns `agent_execution` with one ref for an invokable preserved agent,
+or `board_only` with no ref/run for a named-user or collective-board-owned
+system escalation; invalid preserved owners fail without mutation.
+Provider-side issue context and lifecycle actions are available only through the
+run-scoped compiled interface, not these generic CLI routes.
 
 ```sh
-pnpm paperclipai issue child:create <issue-id> --payload-json '{"title":"Child task"}'
+pnpm paperclipai issue child:create <issue-id> --payload-json '{"request":"Child request","ownerAgentId":"<agent-id>","idempotencyKey":"<key>"}'
 pnpm paperclipai issue approvals <issue-id>
 pnpm paperclipai issue approval:link <issue-id> <approval-id>
 pnpm paperclipai issue approval:unlink <issue-id> <approval-id>
@@ -184,8 +176,6 @@ pnpm paperclipai issue read <issue-id>
 pnpm paperclipai issue unread <issue-id>
 pnpm paperclipai issue archive <issue-id>
 pnpm paperclipai issue unarchive <issue-id>
-pnpm paperclipai issue recovery-actions <issue-id>
-pnpm paperclipai issue recovery:resolve <issue-id> --outcome restored --source-issue-status todo
 ```
 
 ```sh
@@ -204,12 +194,6 @@ pnpm paperclipai issue work-products <issue-id>
 pnpm paperclipai issue work-product:create <issue-id> --payload-json '{"type":"pull_request","provider":"github","title":"PR"}'
 pnpm paperclipai issue work-product:update <work-product-id> --payload-json '{"status":"archived"}'
 pnpm paperclipai issue work-product:delete <work-product-id>
-pnpm paperclipai issue interactions <issue-id>
-pnpm paperclipai issue interaction:create <issue-id> --payload-json '{"kind":"request_confirmation","payload":{"version":1,"prompt":"Continue?"}}'
-pnpm paperclipai issue interaction:accept <issue-id> <interaction-id> [--selected-client-keys key1,key2]
-pnpm paperclipai issue interaction:reject <issue-id> <interaction-id> [--reason "..."]
-pnpm paperclipai issue interaction:respond <issue-id> <interaction-id> --answers-json '[{"questionId":"q1","optionIds":["yes"]}]'
-pnpm paperclipai issue interaction:cancel <issue-id> <interaction-id> [--reason "..."]
 ```
 
 ```sh
@@ -262,68 +246,69 @@ pnpm paperclipai goal delete <goal-id> --yes
 ```sh
 pnpm paperclipai agent list --company-id <company-id>
 pnpm paperclipai agent get <agent-id>
-pnpm paperclipai agent create --company-id <company-id> --payload-json '{"name":"Builder","adapterType":"codex_local"}'
-pnpm paperclipai agent hire --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai agent update <agent-id> --payload-json '{"title":"Senior Builder"}'
-pnpm paperclipai agent delete <agent-id> --yes
-pnpm paperclipai agent me
-pnpm paperclipai agent inbox
-pnpm paperclipai agent inbox-mine --user-id <board-user-id>
-pnpm paperclipai agent wake <agent-id-or-shortname> [--company-id <company-id>] [--reason "..."] [--payload '{"issueId":"..."}']
+pnpm paperclipai agent runtime:create --company-id <company-id> --payload-json '{...}' [--idempotency-key <key>]
+pnpm paperclipai agent runtime:get <agent-id>
+pnpm paperclipai agent runtime:update <agent-id> --payload-json '{"title":"Senior Builder"}' [--idempotency-key <key>]
+pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"codex","adapterConfig":{"model":"gpt-5.6"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+pnpm paperclipai agent adapter-revisions <agent-id>
+pnpm paperclipai agent adapter-revision:current <agent-id>
+pnpm paperclipai agent operational:update <agent-id> --payload-json '{"budgetMonthlyAmount":"250"}'
 pnpm paperclipai agent pause <agent-id>
 pnpm paperclipai agent resume <agent-id>
-pnpm paperclipai agent approve <agent-id>
+pnpm paperclipai agent clear-error <agent-id>
 pnpm paperclipai agent terminate <agent-id>
-pnpm paperclipai agent heartbeat:invoke <agent-id>
-pnpm paperclipai agent claude-login <agent-id>
-pnpm paperclipai agent local-cli <agent-id-or-shortname> --company-id <company-id>
 ```
 
-Agent configuration and runtime endpoints:
+`runtime:create` requires every identity field, all nine context cells, all six
+Paperclip action cells, both mention-reach cells, and the exact
+`companyToolIds` selection. Nullable values must be supplied as `null`; omitted
+values are not defaulted. Its payload shape is:
 
-```sh
-pnpm paperclipai agent permissions:update <agent-id> --payload-json '{"canCreateAgents":true,"canCreateSkills":true,"canAssignTasks":true}'
-pnpm paperclipai agent configuration <agent-id>
-pnpm paperclipai agent config-revisions <agent-id>
-pnpm paperclipai agent config-revision:get <agent-id> <revision-id>
-pnpm paperclipai agent config-revision:rollback <agent-id> <revision-id>
-pnpm paperclipai agent runtime-state <agent-id>
-pnpm paperclipai agent runtime-state:reset-session <agent-id> [--task-key <key>]
-pnpm paperclipai agent task-sessions <agent-id>
-pnpm paperclipai agent skills <agent-id>
-pnpm paperclipai agent skills:sync <agent-id> --desired-skills paperclip,github
-pnpm paperclipai agent instructions-path:update <agent-id> --payload-json '{"path":"/path/to/AGENTS.md"}'
-pnpm paperclipai agent instructions-bundle <agent-id>
-pnpm paperclipai agent instructions-bundle:update <agent-id> --payload-json '{"mode":"managed"}'
-pnpm paperclipai agent instructions-file:get <agent-id> --path AGENTS.md
-pnpm paperclipai agent instructions-file:put <agent-id> --path AGENTS.md --content-file ./AGENTS.md
-pnpm paperclipai agent instructions-file:delete <agent-id> --path AGENTS.md
+```json
+{
+  "name": "Builder",
+  "title": null,
+  "capabilities": null,
+  "reportsTo": null,
+  "contextGrants": {
+    "carry_context": false,
+    "read_issue_comments": false,
+    "read_issue_agent_run": false,
+    "list_sub_issues": false,
+    "read_sub_issue_comments": false,
+    "read_sub_issue_agent_run": false,
+    "list_company_issues": false,
+    "read_company_issue_comments": false,
+    "read_company_issue_agent_run": false
+  },
+  "actionGrants": {
+    "issue_create": false,
+    "issue_assign": false,
+    "issue_update": false,
+    "mention_agent": false,
+    "agent_hire": false,
+    "agent_configure": false
+  },
+  "mentionReachGrants": {
+    "mention_any_descendant": false,
+    "mention_any_ancestor": false
+  },
+  "companyToolIds": []
+}
 ```
 
-Agent config, instructions, skills, project env, environment, secret, and workspace edits affect the next run. Active runs finish with the config they started with. When a saved session, reused workspace, or sandbox lease no longer matches the effective next-run config, Paperclip may start fresh execution and records non-sensitive freshness categories in run result JSON and workspace operation logs.
-
-`agent local-cli` is the quickest way to run local Claude/Codex manually as a Paperclip agent:
-
-- creates a new long-lived agent API key
-- installs missing Paperclip skills into `~/.codex/skills` and `~/.claude/skills`
-- prints `export ...` lines for `PAPERCLIP_API_URL`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_AGENT_ID`, and `PAPERCLIP_API_KEY`
-
-Example for shortname-based local setup:
-
-```sh
-pnpm paperclipai agent local-cli codexcoder --company-id <company-id>
-pnpm paperclipai agent local-cli claudecoder --company-id <company-id>
-```
+Runtime identity/grants/tools, immutable adapter/provider revisions, and
+operational display/environment/budget configuration are three non-overlapping
+owners. An agent created through `runtime:create` remains unconfigured and
+cannot dispatch until `adapter-revision:create` succeeds. Adapter revisions
+always state the exact execution environment, sorted immutable company-skill
+pins, and `skillChannel` (`isolated_skills_home` or `operator_native`). Provider
+credentials and CLI-native configuration stay outside Paperclip. Existing runs
+stay pinned to the revision they started with; there is no rollback writer, mixed agent update,
+agent-wide session reset, conversational-session API, managed instruction bundle, generic
+wake command, or local agent API-key bridge.
 
 ## Token Commands
-
-Agent API keys are scoped to one company and one agent. Plaintext tokens are printed once at creation.
-
-```sh
-pnpm paperclipai token agent create --company-id <company-id> --agent <agent-id-or-name> --name external-worker
-pnpm paperclipai token agent list --company-id <company-id> --agent <agent-id-or-name>
-pnpm paperclipai token agent revoke --company-id <company-id> --agent <agent-id-or-name> <key-id>
-```
 
 Named board API keys use the board authorization model, support revocation and expiration metadata, and are audited server-side.
 
@@ -336,7 +321,9 @@ pnpm paperclipai token board revoke <key-id>
 
 ## Run Commands
 
-`paperclipai run` without a subcommand still bootstraps and starts a local Paperclip instance. The subcommands below inspect and control API heartbeat runs.
+`paperclipai run` without a subcommand still bootstraps and starts a local
+Paperclip instance. The subcommands below inspect and control persisted
+issue-execution and compaction runs.
 
 ```sh
 pnpm paperclipai run list --company-id <company-id> [--agent-id <agent-id>] [--limit 50]
@@ -371,18 +358,15 @@ pnpm paperclipai routine trigger:rotate-secret <trigger-id>
 pnpm paperclipai routine trigger:fire <public-id> [--payload-json '{...}']
 ```
 
-## Prompt Handoff
+## Prompt Submission
 
-Prompt handoff creates Paperclip work. It does not create a chat session.
+Prompt submission creates Paperclip work. It does not create a chat session.
 
 ```sh
-pnpm paperclipai agent-prompt <agent-name-or-id> <agent-api-key> "Prompt here"
-pnpm paperclipai agent prompt --agent <agent-name-or-id> --api-key-env PAPERCLIP_API_KEY "Prompt here"
-pnpm paperclipai agent prompt --profile my-agent "Prompt here"
 pnpm paperclipai board prompt --company-id <company-id> --agent <agent-name-or-id> "Prompt here"
 ```
 
-By default the command creates a `todo` issue assigned to the target agent and wakes the agent. Use `--issue <issue-id>` to add a comment to existing work, and `--no-wake` to skip the wakeup.
+By default the command creates an ordinary issue whose immutable request is the submitted text and whose explicit owner is the target agent. `--issue <issue-id>` submits an ordinary board comment; a provider is invoked only when that comment carries a valid typed mention of the current owner.
 
 ## Skills Commands
 
@@ -391,22 +375,18 @@ By default the command creates a `todo` issue assigned to the target agent and w
 1. **Company install** — adds or updates a row in `company_skills` for the
    whole company. This is what `skills install`, `skills import`, `skills create`,
    and `skills scan-projects` do.
-2. **Agent attach** — replaces an agent's *desired* company skill set
-   (`skills agent sync`/`clear`). This is a desired-state operation on the
-   agent's adapter config; it does not change the company library.
-3. **Adapter runtime sync** — the adapter reconciles the desired skill set
-   with files on disk and reports an `AgentSkillSnapshot` (`skills agent list`).
-   `skills agent sync` triggers this automatically after updating desired state.
-
-Required Paperclip runtime skills (heartbeat, etc.) remain server-enforced and
-are added on top of whatever the desired set names.
+2. **Agent selection** — appends an immutable adapter revision containing the
+   exact sorted company-skill version pins and selected skill channel.
+3. **Invocation exposure** — `isolated_skills_home` materializes those exact
+   versions through a read-only skills home; `operator_native` performs no
+   Paperclip skill-file access. Neither channel grants authority or injects
+   skill content into the Paperclip-authored request.
 
 Company skill mutations (`skills install`, `skills import`, `skills create`, and
 `skills scan-projects`) are open to same-company actors by default. Missing
-`skills:create` grants and `canCreateSkills` settings do not deny these commands;
-only an explicit company skill policy restriction does. Core safety and company
-boundary checks still apply, and `agents:create` remains required when a command
-also creates agents.
+platform grants do not deny these commands; only an explicit company skill
+policy restriction does. Core safety and company boundary checks still apply,
+and `agents:create` remains required when a command also creates agents.
 
 ### Catalog (app-shipped skills)
 
@@ -424,10 +404,10 @@ pnpm paperclipai skills install <catalog-id-or-key-or-slug> [--as <slug>] [--for
 Catalog semantics:
 
 - **Bundled** skills live in `packages/skills-catalog/catalog/bundled/<category>/<slug>`
-  and are recommended defaults for most companies. They use canonical key
+  and ship with the application catalog. They use canonical key
   `paperclipai/bundled/<category>/<slug>`.
 - **Optional** skills live in `packages/skills-catalog/catalog/optional/<category>/<slug>`
-  and are role-specific or domain-specific (browser, AWS ops, etc.). Same key
+  and are domain-specific (browser, AWS ops, etc.). Same key
   shape with `optional` in place of `bundled`.
 - `skills install` materializes the catalog files into a company-managed skill
   directory and records provenance (`catalogId`, `catalogKey`, `packageVersion`,
@@ -486,27 +466,14 @@ maintenance loop for catalog-installed skills:
 - `reset` reinstalls a catalog-managed skill from its pinned origin, discarding
   local edits. Prompts in a TTY; requires `--yes` for non-interactive use.
 
-### Agent attach
-
-```sh
-pnpm paperclipai skills agent list <agent-id-or-shortname> --company-id <company-id>
-pnpm paperclipai skills agent sync <agent-id-or-shortname> --skill <skill-id-or-key-or-slug> [--skill <skill-id-or-key-or-slug>...] --company-id <company-id>
-pnpm paperclipai skills agent clear <agent-id-or-shortname> --yes --company-id <company-id>
-```
-
-`skills agent sync` replaces the agent's non-required desired skill set (it is
-not additive) and returns the resulting adapter `AgentSkillSnapshot`.
-`skills agent clear` sends an empty desired list. Required Paperclip skills are
-still enforced by the server in both cases.
-
 ### Notes
 
 - Skill references accept company skill `id`, canonical `key`, or unique
   `slug`; catalog references accept catalog `id`, `key`, or unique `slug`.
 - `skills file` prints raw file content in human mode so it can be piped.
 - `skills create --body-file -` reads the skill markdown body from stdin.
-- `skills remove`, `skills reset`, and `skills agent clear` prompt in a TTY and
-  require `--yes` in non-interactive use.
+- `skills remove` and `skills reset` prompt in a TTY and require `--yes` in
+  non-interactive use.
 - `--json` prints the raw API result for each command.
 
 ## Teams Commands
@@ -526,17 +493,12 @@ pnpm paperclipai teams install <catalog-id-or-key-or-slug> --company-id <company
 
 Preview/install options:
 
-- Under agent authentication, use `paperclipai company list --json`,
-  `paperclipai company current --json`, or `PAPERCLIP_COMPANY_ID` to select the
-  target company. `company list` falls back to the scoped current company when
-  board-wide listing is forbidden. `teams install` creates agents and therefore
-  requires board authentication, an `agents:create` grant, or an agent with
-  explicit `canCreateAgents` permission.
+- Use `paperclipai company list --json`, `paperclipai company current --json`,
+  or `PAPERCLIP_BOARD_COMPANY_ID` to select the target company. `teams install`
+  creates agents and therefore requires board authentication.
 - `--request-approval-on-forbidden` turns a 403 install denial into a linked
   board approval request instead of a raw failed command; use
-  `--approval-issue-id <id>` to attach it to a specific issue. During Paperclip
-  task runs with `PAPERCLIP_TASK_ID` set, this fallback is automatic so
-  agent-run walkthroughs leave a pending approval path instead of a raw 403.
+  `--approval-issue-id <id>` to attach it to a specific issue.
 - `--target-manager-agent-id <id>` or `--target-manager-slug <slug>` reparents
   catalog root agents under an existing manager.
 - `--agent <slug>` and `--selected-file <path>` narrow the import.
@@ -550,7 +512,7 @@ Preview/install options:
 
 ```sh
 pnpm paperclipai secrets list --company-id <company-id>
-pnpm paperclipai secrets declarations --company-id <company-id> [--include agents,projects] [--kind secret]
+pnpm paperclipai secrets declarations --company-id <company-id> [--include company,projects] [--kind secret]
 pnpm paperclipai secrets create --company-id <company-id> --name anthropic-api-key --value-env ANTHROPIC_API_KEY
 pnpm paperclipai secrets link --company-id <company-id> --name prod-stripe-key --provider aws_secrets_manager --external-ref <provider-ref>
 pnpm paperclipai secrets doctor --company-id <company-id>
@@ -564,7 +526,6 @@ pnpm paperclipai secrets provider-config:health <config-id>
 pnpm paperclipai secrets provider-config:delete <config-id>
 pnpm paperclipai secrets remote-import:preview --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai secrets remote-import --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai secrets migrate-inline-env --company-id <company-id> [--apply]
 ```
 
 Secret listing and declarations never print secret values. `create` accepts
@@ -633,9 +594,8 @@ pnpm paperclipai invite show <token>
 pnpm paperclipai invite accept <token> [--payload-json '{...}']
 pnpm paperclipai invite onboarding:text <token>
 pnpm paperclipai join list --company-id <company-id> [--status pending_approval]
-pnpm paperclipai join approve <request-id> --company-id <company-id>
+pnpm paperclipai join approve <request-id> --company-id <company-id> [--environment-id <environment-id>]
 pnpm paperclipai join reject <request-id> --company-id <company-id>
-pnpm paperclipai join claim-key <request-id> --claim-secret <secret>
 pnpm paperclipai member list --company-id <company-id>
 pnpm paperclipai member update <member-id> --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai member role-and-grants <member-id> --company-id <company-id> --payload-json '{...}'
@@ -663,7 +623,6 @@ pnpm paperclipai auth revoke-current
 ## Instance Settings Commands
 
 ```sh
-pnpm paperclipai instance scheduler-heartbeats
 pnpm paperclipai instance settings:general
 pnpm paperclipai instance settings:general:update --payload-json '{...}'
 pnpm paperclipai instance settings:experimental
@@ -681,23 +640,10 @@ pnpm paperclipai sidebar project-preferences:update --company-id <company-id> --
 pnpm paperclipai sidebar badges --company-id <company-id>
 pnpm paperclipai inbox dismissals --company-id <company-id>
 pnpm paperclipai inbox dismiss --company-id <company-id> --payload-json '{"itemKey":"run:<run-id>"}'
-pnpm paperclipai board-claim show <token>
-pnpm paperclipai board-claim claim <token> [--payload-json '{...}']
-pnpm paperclipai openclaw invite-prompt --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai available-skill list
-pnpm paperclipai available-skill index
-pnpm paperclipai available-skill get <skill-name>
 pnpm paperclipai llm agent-configuration
 pnpm paperclipai llm agent-configuration:adapter <adapter-type>
 pnpm paperclipai llm agent-icons
 ```
-
-Hermes gateway uses the generic invite/join commands above rather than
-`openclaw invite-prompt`. Create an agent invite, read
-`invite onboarding:text`, submit a join request with
-`adapterType: "hermes_gateway"` and `agentDefaultsPayload.apiBaseUrl` /
-`agentDefaultsPayload.apiKey`, then approve and claim the key with the `join`
-commands. See [HERMES_GATEWAY_ONBOARDING.md](./HERMES_GATEWAY_ONBOARDING.md).
 
 ## Adapter, Asset, And Skill Commands
 
@@ -711,11 +657,8 @@ pnpm paperclipai adapter reload <adapter-type>
 pnpm paperclipai adapter reinstall <adapter-type>
 pnpm paperclipai adapter delete <adapter-type>
 pnpm paperclipai adapter config-schema <adapter-type>
-pnpm paperclipai adapter ui-parser <adapter-type>
-pnpm paperclipai adapter models <adapter-type> --company-id <company-id> [--refresh] [--environment-id <id>]
+pnpm paperclipai adapter models <adapter-type> --company-id <company-id>
 pnpm paperclipai adapter model-profiles <adapter-type> --company-id <company-id>
-pnpm paperclipai adapter detect-model <adapter-type> --company-id <company-id>
-pnpm paperclipai adapter test-environment <adapter-type> --company-id <company-id> --payload-json '{...}'
 ```
 
 ```sh
@@ -742,12 +685,10 @@ pnpm paperclipai skill delete <skill-id> --company-id <company-id>
 ```sh
 pnpm paperclipai cost summary --company-id <company-id>
 pnpm paperclipai cost by-agent --company-id <company-id>
-pnpm paperclipai cost by-agent-model --company-id <company-id>
-pnpm paperclipai cost by-provider --company-id <company-id>
-pnpm paperclipai cost by-biller --company-id <company-id>
 pnpm paperclipai cost by-project --company-id <company-id>
+pnpm paperclipai cost events --company-id <company-id>
+pnpm paperclipai cost issue <issue-id>
 pnpm paperclipai cost window-spend --company-id <company-id>
-pnpm paperclipai cost quota-windows --company-id <company-id>
 pnpm paperclipai cost issue <issue-id>
 pnpm paperclipai cost event:create --company-id <company-id> --payload-json '{...}'
 ```
@@ -761,7 +702,7 @@ pnpm paperclipai finance by-kind --company-id <company-id>
 pnpm paperclipai budget overview --company-id <company-id>
 pnpm paperclipai budget policy:upsert --company-id <company-id> --payload-json '{...}'
 pnpm paperclipai budget company:update --company-id <company-id> --payload-json '{...}'
-pnpm paperclipai budget agent:update <agent-id> --payload-json '{...}'
+pnpm paperclipai budget agent:update <agent-id> --payload-json '{"budgetMonthlyAmount":"250"}'
 pnpm paperclipai budget incident:resolve <incident-id> --company-id <company-id> [--payload-json '{...}']
 ```
 
@@ -836,14 +777,6 @@ pnpm paperclipai feedback trace <trace-id>
 pnpm paperclipai feedback bundle <trace-id>
 ```
 
-## Heartbeat Command
-
-`heartbeat run` now also supports context/api-key options and uses the shared client stack:
-
-```sh
-pnpm paperclipai heartbeat run --agent-id <agent-id> [--api-base http://localhost:3100] [--api-key <token>]
-```
-
 ## Local Storage Defaults
 
 Local Paperclip data lives under the selected instance root. `PAPERCLIP_HOME` chooses the home directory and `PAPERCLIP_INSTANCE_ID` chooses the instance.
@@ -854,23 +787,19 @@ Local Paperclip data lives under the selected instance root. `PAPERCLIP_HOME` ch
     └── default/                                  # instance root (PAPERCLIP_INSTANCE_ID)
         ├── config.json                           # runtime config
         ├── .env                                  # instance env file
-        ├── db/                                   # embedded PostgreSQL data
         ├── data/
         │   ├── storage/                          # local_disk uploads
         │   └── backups/                          # automatic DB backups
         ├── logs/
         ├── secrets/
         │   └── master.key                        # local_encrypted master key
-        ├── workspaces/                           # default agent workspaces
-        ├── projects/                             # project execution workspaces
-        ├── companies/                            # per-company adapter homes (e.g. codex-home)
-        └── codex-home/                           # per-instance codex home (when not company-scoped)
+        └── projects/                             # managed project and issue-execution workspaces
 ```
 
 Default paths for the canonical install:
 
 - config: `~/.paperclip/instances/default/config.json`
-- embedded db: `~/.paperclip/instances/default/db`
+- database: configured external PostgreSQL URL
 - logs: `~/.paperclip/instances/default/logs`
 - storage: `~/.paperclip/instances/default/data/storage`
 - secrets key: `~/.paperclip/instances/default/secrets/master.key`

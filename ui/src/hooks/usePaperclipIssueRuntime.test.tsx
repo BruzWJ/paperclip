@@ -4,7 +4,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppendMessage, ExternalStoreAdapter, ThreadMessage } from "@assistant-ui/react";
-import { usePaperclipIssueRuntime } from "./usePaperclipIssueRuntime";
+import {
+  usePaperclipIssueRuntime,
+  type PaperclipIssueRuntimeSendOptions,
+} from "./usePaperclipIssueRuntime";
 
 const { useExternalStoreRuntimeMock } = vi.hoisted(() => ({
   useExternalStoreRuntimeMock: vi.fn(() => ({ kind: "runtime" })),
@@ -25,7 +28,7 @@ function HookHarness({
 }: {
   messages: readonly ThreadMessage[];
   isRunning: boolean;
-  onSend: (options: { body: string; reopen?: boolean; reassignment?: { assigneeAgentId: string | null; assigneeUserId: string | null } }) => Promise<void>;
+  onSend: (options: PaperclipIssueRuntimeSendOptions) => Promise<void>;
   onCancel?: (() => Promise<void>) | undefined;
 }) {
   usePaperclipIssueRuntime({
@@ -78,6 +81,7 @@ describe("usePaperclipIssueRuntime", () => {
   });
 
   it("keeps the external-store adapter stable across unrelated rerenders", async () => {
+    const body = " \t前置\r\nactual newline\\n literal\\r tail\t \n";
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -117,14 +121,15 @@ describe("usePaperclipIssueRuntime", () => {
     expect(secondAdapter).toBe(firstAdapter);
 
     await act(async () => {
-      await secondAdapter.onNew?.(createAppendMessage("latest callback"));
+      await secondAdapter.onNew?.(createAppendMessage(body));
     });
 
     expect(firstOnSend).not.toHaveBeenCalled();
     expect(secondOnSend).toHaveBeenCalledWith({
-      body: "latest callback",
-      reopen: undefined,
-      reassignment: undefined,
+      body,
+      ownerChange: undefined,
+      mentionAgentId: undefined,
+      replyToCommentId: undefined,
     });
 
     act(() => {

@@ -16,9 +16,7 @@ function makeConfigPath(root: string, enabled: boolean): string {
       source: "configure",
     },
     database: {
-      mode: "embedded-postgres",
-      embeddedPostgresDataDir: path.join(root, "runtime", "db"),
-      embeddedPostgresPort: 54329,
+      connectionString: "postgresql://operator:secret@database.example.com/paperclip",
       backup: {
         enabled: true,
         intervalMinutes: 60,
@@ -31,7 +29,6 @@ function makeConfigPath(root: string, enabled: boolean): string {
       logDir: path.join(root, "runtime", "logs"),
     },
     server: {
-      deploymentMode: "local_trusted",
       exposure: "private",
       host: "127.0.0.1",
       port: 3100,
@@ -39,7 +36,6 @@ function makeConfigPath(root: string, enabled: boolean): string {
       serveUi: true,
     },
     auth: {
-      baseUrlMode: "auto",
       disableSignUp: false,
     },
     telemetry: {

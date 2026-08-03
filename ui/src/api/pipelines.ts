@@ -3,9 +3,10 @@ import type {
   PipelineAutomationRetryCleanupOptions,
   PipelineAutomationRetryPlan,
   PipelineAutomationRetryScope,
-  PipelineCaseConversationSource,
   PipelineCaseDocumentPayload,
   PipelineCaseDocumentRevision,
+  PipelineCaseGenericIssueLinkRole,
+  PipelineCaseIssueLinkRole,
   PipelineCaseLiveness,
   PipelineCaseOutputsResponse,
   PipelineHealthReport,
@@ -149,7 +150,7 @@ export interface PipelineCase {
 export interface PipelineCaseActiveWork {
   issueId: string;
   issueIdentifier: string | null;
-  issueTitle: string;
+  issueTitle: string | null;
   issueRole?: "work" | "automation";
   agentId: string;
   agentName: string;
@@ -217,7 +218,6 @@ export interface PipelineCaseDetail {
   } | null;
   activeWork?: PipelineCaseActiveWork | null;
   liveness?: PipelineCaseLiveness | null;
-  conversationSource?: PipelineCaseConversationSource | null;
   pendingSuggestion?: PipelineCasePendingSuggestion | null;
 }
 
@@ -226,7 +226,7 @@ export interface PipelineCaseIssueLink {
   companyId: string;
   caseId: string;
   issueId: string;
-  role: "origin" | "conversation" | "work" | "automation";
+  role: PipelineCaseIssueLinkRole;
   createdByRunId?: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -263,7 +263,12 @@ export interface PipelineCaseEvent {
   actorAgent?: { id: string; name: string } | null;
   automation?: {
     routine: { id: string; title: string } | null;
-    issue: { id: string; identifier: string | null; title: string; status: string } | null;
+    issue: {
+      id: string;
+      identifier: string | null;
+      title: string | null;
+      boardPresentationStatus: string;
+    } | null;
     routineRunId?: string | null;
     stage?: { id: string; key: string; name: string; kind: string } | null;
   };
@@ -567,12 +572,20 @@ export const pipelinesApi = {
     api.get<PipelineCaseOutputsResponse>(`/cases/${caseId}/outputs`),
   createIssueLink: (
     caseId: string,
-    data:
-      | { issueId: string; role: PipelineCaseIssueLink["role"] }
-      | { role: "conversation"; issueId?: undefined },
-  ) => data.issueId
-    ? api.post<PipelineCaseIssueLink>(`/cases/${caseId}/issue-links`, data)
-    : api.post<{ issue: Issue; created: boolean }>(`/cases/${caseId}/open-conversation`, {}),
+    data: { issueId: string; role: PipelineCaseGenericIssueLinkRole },
+  ) => api.post<PipelineCaseIssueLink>(`/cases/${caseId}/issue-links`, data),
+  openConversation: (
+    caseId: string,
+    data: {
+      ownerAgentId: string;
+      request: string;
+      attentionMask?: Record<string, false> | null;
+      idempotencyKey?: string;
+    },
+  ) => api.post<{ issue: Issue; created: boolean; refId: string }>(
+    `/cases/${caseId}/open-conversation`,
+    data,
+  ),
   updateCase: (
     caseId: string,
     data: {

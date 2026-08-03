@@ -26,17 +26,20 @@ Before making changes, read in this order:
 - `ui/`: React + Vite board UI
 - `packages/db/`: Drizzle schema, migrations, DB clients
 - `packages/shared/`: shared types, constants, validators, API path constants
-- `packages/adapters/`: agent adapter implementations (Claude, Codex, Cursor, etc.)
-- `packages/adapter-utils/`: shared adapter utilities
+- `packages/adapters/`: declarative, conformance-approved ACP backend definitions
+- `packages/adapter-utils/`: common official-SDK ACP client and execution-target bridge
 - `packages/plugins/`: plugin system packages
 - `doc/`: operational and product docs
 
-## 4. Dev Setup (Auto DB)
+## 4. Dev Setup
 
-Use embedded PGlite in dev by leaving `DATABASE_URL` unset.
+Provide an external PostgreSQL URL before starting the application.
 
 ```sh
+docker compose -f docker/docker-compose.yml up -d db
 pnpm install
+export DATABASE_URL=postgres://paperclip:paperclip@localhost:5432/paperclip
+pnpm db:migrate
 pnpm dev
 ```
 
@@ -52,12 +55,8 @@ curl http://localhost:3100/api/health
 curl http://localhost:3100/api/companies
 ```
 
-Reset local dev DB:
-
-```sh
-rm -rf data/pglite
-pnpm dev
-```
+For a clean local database, reset the Docker Compose PostgreSQL volume and
+reapply migrations.
 
 ## 5. Core Engineering Rules
 
@@ -72,8 +71,8 @@ If you change schema/API behavior, update all impacted layers:
 - `ui` API clients and pages
 
 3. Preserve control-plane invariants.
-- Single-assignee task model
-- Atomic issue checkout semantics
+- Exactly one checked issue owner record
+- Issue-execution refs as the only provider invocation source
 - Approval gates for governed actions
 - Budget hard-stop auto-pause behavior
 - Activity logging for mutating actions
@@ -84,15 +83,19 @@ Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` ali
 5. Keep repo plan docs dated and centralized.
 When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
-6. Attach inspectable generated artifacts.
-When your task produces a user-inspectable deliverable file, follow the Paperclip skill's "Generated Artifacts and Work Products" workflow before final disposition. In this repo, prefer the self-contained skill helper at `skills/paperclip/scripts/paperclip-upload-artifact.sh` so the file is available through the Paperclip API, create/update an artifact work product when the file is the deliverable, link the uploaded artifact in the final issue comment, and then set status. Do not rely on local filesystem paths as the only access path. If an important file intentionally remains workspace-only, create/update a work product with `metadata.resourceRef.kind: "workspace_file"` and a workspace-relative path, then name that work product and path in the final comment. Treat browse/search as a fallback for recovering workspace files, not the preferred deliverable path. See `doc/AGENT-ARTIFACTS.md` for details and `.mp4`/`.webm` examples.
+6. Keep provider output inside the execution boundary.
+Write generated files beneath the current execution workspace, verify them, and
+name workspace-relative paths in the final response. Providers do not receive a
+generic Paperclip API credential and must not upload attachments or create work
+products through REST. Board users decide which workspace files become durable
+artifacts. See `doc/AGENT-ARTIFACTS.md`.
 
 ## 6. Database Change Workflow
 
 When changing data model:
 
-1. Edit `packages/db/src/schema/*.ts`
-2. Ensure new tables are exported from `packages/db/src/schema/index.ts`
+1. Edit `packages/db/schema/*.ts`
+2. Ensure new tables are exported from `packages/db/schema/index.ts`
 3. Generate migration:
 
 ```sh
@@ -106,8 +109,8 @@ pnpm -r typecheck
 ```
 
 Notes:
-- `packages/db/drizzle.config.ts` reads compiled schema from `dist/schema/*.js`
-- `pnpm db:generate` compiles `packages/db` first
+- `packages/db/drizzle.config.ts` reads the root TypeScript `schema.ts` directly.
+- Generated SQL and Drizzle metadata live in `packages/db/migrations/`.
 
 ## 7. Verification Before Hand-off
 
@@ -179,21 +182,20 @@ A change is done when all are true:
 4. Docs updated when behavior or commands change
 5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
 
-## 11. Fork-Specific: HenkDz/paperclip
+## 12. Adapter ownership
 
-This is a fork of `paperclipai/paperclip` with QoL patches and a **built-in** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/paperclip/tree/feat/externalize-hermes-adapter)).
+Paperclip has one AI execution path: the worker-supervised ACP subprocess
+bridge implemented with the official TypeScript SDK. Adapter packages are
+data-only `acp-subprocess/v1` definitions; they cannot implement execution,
+HTTP/provider calls, parsers, session state, authentication, or tools.
 
-### Branch Strategy
-
-- `feat/externalize-hermes-adapter` now ships `hermes_local` and `hermes_gateway` as built-in core adapters.
-- Older fork branches may still document plugin-only Hermes; treat this file as authoritative for the current branch.
-
-### Hermes (built-in)
-
-- `hermes_local` is available without Adapter manager installation and runs the local Hermes CLI.
-- `hermes_gateway` is available without Adapter manager installation and calls an already-running Hermes API server.
-- Operators may still install external Hermes packages through Adapter manager to override/shadow the built-ins.
-- Optional: `file:` entry in `~/.paperclip/adapter-plugins.json` remains useful for local development of override packages.
+An adapter may select only a byte-exact name admitted by both ACPX's public
+agent registry and Paperclip's immutable conformance-approved launch catalog.
+ACPX contributes registry lookup only. The common worker owns launch,
+initialize, new/resume, stable configuration, request-scoped MCP replacement,
+prompt/update/stop, cancellation, projection, and cleanup. The target CLI or
+its pinned upstream ACP frontend owns provider authentication and its native
+harness.
 
 ### Local Dev
 
@@ -211,15 +213,15 @@ These are local modifications in the fork's UI. If re-copying source, these must
 2. **tool_group** — accordion for consecutive non-terminal tools (write, read, search, browser)
 3. **Dashboard excerpt** — `LatestRunCard` strips markdown, shows first 3 lines/280 chars
 
-### Plugin System
+### External adapter packages
 
-PR #2218 (`feat/external-adapter-phase1`) adds external adapter support. See root `AGENTS.md` for full details.
-
-- Adapters can be loaded as external plugins via `~/.paperclip/adapter-plugins.json`
-- The plugin-loader should have ZERO hardcoded adapter imports — pure dynamic loading
-- `createServerAdapter()` must include ALL optional fields (especially `detectModel`)
-- Built-in UI adapters can shadow external plugin parsers; external override pause/resume should restore the built-in parser.
-- Reference external adapters: Droid (npm); Hermes can also be tested as an override package.
+- External packages may contribute only the closed declarative definition.
+- They cannot widen the approved launch catalog or replace its executable,
+  argv, frontend package/version, or digest.
+- `createServerAdapter()` returns exactly `type` and `definition`; unknown or
+  executable fields fail registration.
+- A newly supported frontend requires its own pinned launch entry and common
+  real-frontend ACP conformance suite before any definition can select it.
 
 ## Design system
 

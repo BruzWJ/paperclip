@@ -9,7 +9,8 @@ This is intentionally separate from the normal Paperclip dev image.
 - `codex` auth/session state in a Docker volume, not your host `~/.codex`
 - `claude` auth/session state in a Docker volume, not your host `~/.claude`
 - `gh` auth state in the same container-local home volume
-- review clones, worktrees, dependency installs, and local databases in a writable scratch volume under `/work`
+- review clones, worktrees, and dependency installs in a writable scratch volume under `/work`
+- a separate PostgreSQL service on the Compose network; it is not part of the review container or mounted into the host
 
 By default this workflow does **not** mount your host repo checkout, your host home directory, or your SSH agent.
 
@@ -33,6 +34,11 @@ That opens an interactive shell in the review container with:
 - `claude`
 - `gh`
 - `git`, `rg`, `fd`, `jq`
+- `DATABASE_URL` pointed at the separate `review-db` PostgreSQL service
+
+The database has no host port. It is reachable only by containers on this
+Compose network, so a reviewed Paperclip process connects to it as an external
+database client rather than launching or managing PostgreSQL itself.
 
 ## First-time login inside the container
 
@@ -90,6 +96,8 @@ claude
 ## Preview the Paperclip app from the PR
 
 Only do this when you intentionally want to execute the PR's code inside the container.
+Compose starts the separate `review-db` service before the review shell, and
+the shell already has its external `DATABASE_URL` configured.
 
 Inside the PR checkout:
 
@@ -110,7 +118,7 @@ Notes:
 
 - `pnpm install` can run untrusted lifecycle scripts from the PR. That is why this happens inside the isolated container instead of on your host.
 - If you only want static inspection, do not run install/dev commands.
-- Paperclip's embedded PostgreSQL and local storage stay inside the container home volume via `PAPERCLIP_HOME=/home/reviewer/.paperclip-review`.
+- Paperclip's local storage stays inside the container home volume via `PAPERCLIP_HOME=/home/reviewer/.paperclip-review`; its database is the separate `review-db` service, not an in-container database runtime.
 
 ## Reset state
 
@@ -124,6 +132,7 @@ That deletes:
 
 - Codex/Claude/GitHub login state stored in `review-home`
 - cloned repos, worktrees, installs, and scratch data stored in `review-work`
+- the isolated PostgreSQL data stored in `review-db`
 
 ## Security limits
 

@@ -4,6 +4,7 @@ import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { environmentRoutes } from "../routes/environments.js";
 import { errorHandler } from "../middleware/index.js";
+import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const mockAccessService = vi.hoisted(() => ({
   canUser: vi.fn(),
@@ -91,9 +92,15 @@ vi.mock("../services/environment-probe.js", () => ({
   probeEnvironment: mockProbeEnvironment,
 }));
 
-vi.mock("../services/secrets.js", () => ({
-  secretService: () => mockSecretService,
-}));
+vi.mock("../services/secrets.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../services/secrets.js")
+  >("../services/secrets.js");
+  return {
+    ...actual,
+    secretService: () => mockSecretService,
+  };
+});
 
 vi.mock("../services/environments.js", () => ({
   environmentService: () => mockEnvironmentService,
@@ -173,16 +180,33 @@ function createDeleteBlastRadius(overrides: Partial<{
 }
 
 let server: Server | null = null;
-let currentActor: Record<string, unknown> = {
-  type: "board",
+let currentActor: Record<string, unknown> = testBoardSessionActor({
   userId: "user-1",
-  source: "local_implicit",
-};
+  userName: "User One",
+  userEmail: "user-1@paperclip.test",
+  sessionId: "session-user-1",
+  companyIds: ["company-1"],
+  memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+  isInstanceAdmin: true,
+});
 const routeOptions: Record<string, unknown> = {};
 const originalSecretsProviderEnv = process.env.PAPERCLIP_SECRETS_PROVIDER;
 
 function createApp(actor: Record<string, unknown>, options: Record<string, unknown> = {}) {
-  currentActor = actor;
+  currentActor = actor.type === "board"
+    ? {
+        userName: typeof actor.userId === "string" ? actor.userId : "",
+        userEmail:
+          typeof actor.userId === "string"
+            ? `${actor.userId}@paperclip.test`
+            : "",
+        sessionId:
+          typeof actor.userId === "string"
+            ? `session-${actor.userId}`
+            : "",
+        ...actor,
+      }
+    : actor;
   for (const key of Object.keys(routeOptions)) {
     delete routeOptions[key];
   }
@@ -322,11 +346,12 @@ describe("environment routes", () => {
 
   it("lists instance-scoped environments through the company route alias", async () => {
     mockEnvironmentService.list.mockResolvedValue([createEnvironment()]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).get("/api/companies/company-1/environments?driver=local");
 
@@ -340,14 +365,12 @@ describe("environment routes", () => {
 
   it("redacts environment config for non-admin board readers", async () => {
     mockEnvironmentService.list.mockResolvedValue([createEnvironment()]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-2",
-      source: "session",
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app).get("/api/companies/company-1/environments");
 
@@ -363,14 +386,12 @@ describe("environment routes", () => {
 
   it("redacts environment detail config for non-admin board readers", async () => {
     mockEnvironmentService.getById.mockResolvedValue(createEnvironment());
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-2",
-      source: "session",
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app).get("/api/environments/env-1");
 
@@ -384,14 +405,12 @@ describe("environment routes", () => {
   });
 
   it("rejects non-admin blast-radius reads for instance-scoped environments", async () => {
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-2",
-      source: "session",
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app).get("/api/environments/env-1/delete-blast-radius");
 
@@ -405,13 +424,12 @@ describe("environment routes", () => {
       secretBindingCount: 3,
       activeLeaseCount: 1,
     }));
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "admin-1",
-      source: "session",
       companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
       isInstanceAdmin: true,
-    });
+    }));
 
     const res = await request(app).get("/api/environments/env-1/delete-blast-radius");
 
@@ -442,13 +460,12 @@ describe("environment routes", () => {
 
   it("returns 404 for missing delete blast radius targets", async () => {
     mockEnvironmentService.getDeleteBlastRadius.mockResolvedValue(null);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "admin-1",
-      source: "session",
       companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
       isInstanceAdmin: true,
-    });
+    }));
 
     const res = await request(app).get("/api/environments/missing/delete-blast-radius");
 
@@ -457,11 +474,12 @@ describe("environment routes", () => {
   });
 
   it("returns provider capabilities for the company", async () => {
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).get("/api/companies/company-1/environments/capabilities");
 
@@ -497,11 +515,12 @@ describe("environment routes", () => {
         },
       },
     ]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).get("/api/companies/company-1/environments/capabilities");
 
@@ -531,7 +550,7 @@ describe("environment routes", () => {
         },
       },
     });
-    expect(res.body.adapters.find((row: any) => row.adapterType === "codex_local").sandboxProviders["secure-plugin"])
+    expect(res.body.adapters.find((row: any) => row.adapterType === "codex").sandboxProviders["secure-plugin"])
       .toBe("supported");
   });
 
@@ -540,15 +559,14 @@ describe("environment routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
-      role: "engineer",
-      permissions: { canCreateAgents: false },
+      governance: {},
     });
     mockAccessService.hasPermission.mockResolvedValue(false);
     const app = createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -564,15 +582,14 @@ describe("environment routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
-      role: "cto",
-      permissions: { canCreateAgents: true },
+      governance: {},
     });
     mockAccessService.hasPermission.mockResolvedValue(false);
     const app = createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -585,11 +602,12 @@ describe("environment routes", () => {
   it("creates an environment and logs activity", async () => {
     const environment = createEnvironment();
     mockEnvironmentService.create.mockResolvedValue(environment);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -615,8 +633,6 @@ describe("environment routes", () => {
         companyId: "company-1",
         actorType: "user",
         actorId: "user-1",
-        agentId: null,
-        runId: null,
         action: "environment.created",
         entityType: "environment",
         entityId: environment.id,
@@ -626,11 +642,12 @@ describe("environment routes", () => {
 
   it("returns conflict when creating a second local environment", async () => {
     mockEnvironmentService.list.mockResolvedValue([createEnvironment()]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -649,13 +666,12 @@ describe("environment routes", () => {
     const environment = createEnvironment();
     mockAccessService.canUser.mockResolvedValue(true);
     mockEnvironmentService.create.mockResolvedValue(environment);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -672,13 +688,12 @@ describe("environment routes", () => {
 
   it("rejects non-admin board users without instance admin access", async () => {
     mockAccessService.canUser.mockResolvedValue(false);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
       isInstanceAdmin: false,
-    });
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -698,8 +713,7 @@ describe("environment routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
-      role: "engineer",
-      permissions: { canCreateAgents: false },
+      governance: {},
     });
     mockAccessService.hasPermission.mockResolvedValue(true);
     mockEnvironmentService.create.mockResolvedValue(environment);
@@ -707,7 +721,7 @@ describe("environment routes", () => {
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -730,11 +744,12 @@ describe("environment routes", () => {
     mockEnvironmentService.getDeleteBlastRadius.mockResolvedValue(createDeleteBlastRadius({
       isManagedLocal: true,
     }));
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "admin-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).delete("/api/environments/env-1");
 
@@ -765,11 +780,12 @@ describe("environment routes", () => {
     mockEnvironmentService.getDeleteBlastRadius.mockResolvedValue(createDeleteBlastRadius({
       isInstanceDefault: true,
     }));
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "admin-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).delete("/api/environments/env-1");
 
@@ -806,11 +822,15 @@ describe("environment routes", () => {
     mockEnvironmentService.getDeleteBlastRadius.mockResolvedValue(createDeleteBlastRadius());
     mockEnvironmentService.removeIfDeletable.mockResolvedValue(environment);
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue(["company-1", "company-2"]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "admin-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1", "company-2"],
+      memberships: [
+        { companyId: "company-1", status: "active", membershipRole: "admin" },
+        { companyId: "company-2", status: "active", membershipRole: "admin" },
+      ],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).delete("/api/environments/env-ssh");
 
@@ -827,15 +847,22 @@ describe("environment routes", () => {
         companyId,
         { targetType: "environment", targetId: "env-ssh" },
         {},
+        { actor: { type: "user", userId: "admin-1" } },
       );
       expect(mockSecretService.syncSecretRefsForTarget).toHaveBeenCalledWith(
         companyId,
         { targetType: "environment", targetId: "env-ssh" },
         [],
-        { replaceAll: true },
+        {
+          actor: { type: "user", userId: "admin-1" },
+          replaceAll: true,
+        },
       );
     }
-    expect(mockSecretService.remove).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111");
+    expect(mockSecretService.remove).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      { type: "user", userId: "admin-1" },
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -848,11 +875,12 @@ describe("environment routes", () => {
   });
 
   it("rejects invalid SSH config on create", async () => {
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -893,11 +921,12 @@ describe("environment routes", () => {
     };
     mockEnvironmentService.create.mockResolvedValue(environment);
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -958,11 +987,12 @@ describe("environment routes", () => {
       },
     };
     mockEnvironmentService.create.mockResolvedValue(environment);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -989,11 +1019,12 @@ describe("environment routes", () => {
   });
 
   it("rejects persisted fake sandbox environments", async () => {
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -1026,11 +1057,12 @@ describe("environment routes", () => {
     };
     mockEnvironmentService.create.mockResolvedValue(environment);
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -1111,11 +1143,12 @@ describe("environment routes", () => {
       },
     });
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -1208,11 +1241,12 @@ describe("environment routes", () => {
       },
     });
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -1256,11 +1290,12 @@ describe("environment routes", () => {
     mockValidatePluginEnvironmentDriverConfig.mockResolvedValue(environment.config);
     mockEnvironmentService.create.mockResolvedValue(environment);
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments")
@@ -1298,15 +1333,14 @@ describe("environment routes", () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
-      role: "engineer",
-      permissions: { canCreateAgents: false },
+      governance: {},
     });
     mockAccessService.hasPermission.mockResolvedValue(false);
     const app = createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
-      source: "agent_key",
+      source: "internal",
       runId: "run-1",
     });
 
@@ -1332,7 +1366,7 @@ describe("environment routes", () => {
         environmentId: environment.id,
         executionWorkspaceId: "workspace-1",
         issueId: null,
-        heartbeatRunId: null,
+        runId: null,
         status: "active",
         providerLeaseId: "provider-lease-1",
         acquiredAt: new Date("2026-04-16T05:00:00.000Z"),
@@ -1344,11 +1378,12 @@ describe("environment routes", () => {
         updatedAt: new Date("2026-04-16T05:05:00.000Z"),
       },
     ]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).get(`/api/environments/${environment.id}/leases?status=active`);
 
@@ -1365,7 +1400,7 @@ describe("environment routes", () => {
       environmentId: "env-1",
       executionWorkspaceId: "workspace-1",
       issueId: null,
-      heartbeatRunId: "run-1",
+      runId: "run-1",
       status: "active",
       leasePolicy: "ephemeral",
       provider: "ssh",
@@ -1380,11 +1415,12 @@ describe("environment routes", () => {
       createdAt: new Date("2026-04-16T05:00:00.000Z"),
       updatedAt: new Date("2026-04-16T05:05:00.000Z"),
     });
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app).get("/api/environment-leases/lease-1");
 
@@ -1399,7 +1435,7 @@ describe("environment routes", () => {
       type: "agent",
       agentId: "agent-2",
       companyId: "company-2",
-      source: "agent_key",
+      source: "internal",
       runId: "run-2",
     });
 
@@ -1417,11 +1453,12 @@ describe("environment routes", () => {
       ...environment,
       status: "archived",
     });
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .patch(`/api/environments/${environment.id}?companyId=company-1`)
@@ -1476,11 +1513,12 @@ describe("environment routes", () => {
       driver: "local" as const,
       config: {},
     });
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .patch(`/api/environments/${environment.id}?companyId=company-1`)
@@ -1499,11 +1537,12 @@ describe("environment routes", () => {
 
   it("requires explicit SSH config when switching from local to SSH", async () => {
     mockEnvironmentService.getById.mockResolvedValue(createEnvironment());
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .patch("/api/environments/env-1?companyId=company-1")
@@ -1518,11 +1557,12 @@ describe("environment routes", () => {
 
   it("rejects switching an environment to the built-in fake sandbox provider", async () => {
     mockEnvironmentService.getById.mockResolvedValue(createEnvironment());
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .patch("/api/environments/env-1?companyId=company-1")
@@ -1541,11 +1581,12 @@ describe("environment routes", () => {
 
   it("returns 404 when patching a missing environment", async () => {
     mockEnvironmentService.getById.mockResolvedValue(null);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .patch("/api/environments/missing-env")
@@ -1580,12 +1621,12 @@ describe("environment routes", () => {
         host: "ssh.example.test",
       },
     });
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-      runId: "run-1",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post(`/api/environments/${environment.id}/probe`)
@@ -1594,7 +1635,7 @@ describe("environment routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(mockProbeEnvironment).toHaveBeenCalledWith(expect.anything(), environment, {
-      companyId: null,
+      companyId: "company-1",
       pluginWorkerManager: undefined,
       applyCustomImageTemplate: false,
       acquireSandboxRuntimeLease: false,
@@ -1635,18 +1676,15 @@ describe("environment routes", () => {
     };
     mockEnvironmentService.getById.mockResolvedValue(environment);
     mockSecretService.listBindingCompanyIdsForTarget.mockResolvedValue([]);
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "session",
       companyIds: ["company-1", "company-2"],
       memberships: [
         { companyId: "company-1", status: "active", membershipRole: "member" },
         { companyId: "company-2", status: "active", membershipRole: "member" },
       ],
       isInstanceAdmin: true,
-      runId: "run-1",
-    });
+    }));
 
     const res = await request(app)
       .post(`/api/environments/${environment.id}/probe`)
@@ -1680,12 +1718,12 @@ describe("environment routes", () => {
         reuseLease: true,
       },
     });
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-      runId: "run-1",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post(`/api/environments/${environment.id}/probe`)
@@ -1736,12 +1774,12 @@ describe("environment routes", () => {
         snapshot: "captured-template",
       },
     });
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-      runId: "run-1",
-    });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }));
 
     const res = await request(app)
       .post(`/api/environments/${environment.id}/probe`)
@@ -1765,12 +1803,12 @@ describe("environment routes", () => {
       details: { provider: "fake-plugin" },
     });
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-      runId: "run-1",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments/probe-config")
@@ -1840,12 +1878,12 @@ describe("environment routes", () => {
       details: { provider: "secure-plugin" },
     });
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-1",
-      source: "local_implicit",
-      runId: "run-1",
-    }, { pluginWorkerManager });
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", status: "active", membershipRole: "admin" }],
+      isInstanceAdmin: true,
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments/probe-config")
@@ -1874,8 +1912,8 @@ describe("environment routes", () => {
         configPath: "apiKey",
         actorType: "user",
         actorId: "user-1",
-        actorSource: "local_implicit",
-        heartbeatRunId: "run-1",
+        actorSource: "session",
+        runId: null,
       },
     );
     expect(mockProbeEnvironment).toHaveBeenCalledWith(
@@ -1927,13 +1965,11 @@ describe("environment routes", () => {
       explanation: "Missing permission: secrets:read",
     });
     const pluginWorkerManager = {};
-    const app = createApp({
-      type: "board",
+    const app = createApp(testBoardSessionActor({
       userId: "user-2",
-      source: "session",
       companyIds: ["company-1"],
       memberships: [{ companyId: "company-1", status: "active", membershipRole: "member" }],
-    }, { pluginWorkerManager });
+    }), { pluginWorkerManager });
 
     const res = await request(app)
       .post("/api/companies/company-1/environments/probe-config")

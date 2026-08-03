@@ -1,5 +1,4 @@
 import type { IssueExecutionPolicy, IssueExecutionStageParticipant, IssueExecutionStagePrincipal } from "@paperclipai/shared";
-import { parseAssigneeValue } from "./assignees";
 
 type StageType = "review" | "approval";
 
@@ -36,12 +35,13 @@ function principalKey(principal: IssueExecutionStagePrincipal | IssueExecutionSt
 }
 
 export function principalFromSelectionValue(value: string): IssueExecutionStagePrincipal | null {
-  const selection = parseAssigneeValue(value);
-  if (selection.assigneeAgentId) {
-    return { type: "agent", agentId: selection.assigneeAgentId, userId: null };
+  if (value.startsWith("agent:")) {
+    const agentId = value.slice("agent:".length);
+    return agentId ? { type: "agent", agentId, userId: null } : null;
   }
-  if (selection.assigneeUserId) {
-    return { type: "user", userId: selection.assigneeUserId, agentId: null };
+  if (value.startsWith("user:")) {
+    const userId = value.slice("user:".length);
+    return userId ? { type: "user", userId, agentId: null } : null;
   }
   return null;
 }

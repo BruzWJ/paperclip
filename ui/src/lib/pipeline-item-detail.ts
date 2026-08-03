@@ -1,4 +1,3 @@
-import type { Issue } from "@paperclipai/shared";
 import type {
   PipelineCase,
   PipelineCaseActiveWork,
@@ -7,7 +6,6 @@ import type {
   PipelineCaseIssueLinkWithIssue,
   PipelineStage,
 } from "../api/pipelines";
-import { assigneeValueFromSelection } from "./assignees";
 
 export const INTERNAL_FIELD_KEYS = new Set([
   "nextSuggestedStageId",
@@ -136,42 +134,6 @@ export function splitPipelineItemFields(fields: PipelineItemDisplayField[]) {
     }
   }
   return { shortFields, longFields };
-}
-
-type PipelineConversationAssigneeIssue = Pick<
-  Issue,
-  "id" | "parentId" | "assigneeAgentId" | "assigneeUserId" | "createdByAgentId"
->;
-
-function sourceIssueAssigneeValue(issue: PipelineConversationAssigneeIssue | null | undefined) {
-  if (!issue) return "";
-  return assigneeValueFromSelection(issue) || assigneeValueFromSelection({ assigneeAgentId: issue.createdByAgentId });
-}
-
-export function pipelineConversationStarterAssigneeValue(input: {
-  conversationIssue?: PipelineConversationAssigneeIssue | null;
-  conversationSource?: PipelineCaseDetail["conversationSource"] | null;
-  issueLinks?: PipelineCaseIssueLinkWithIssue[] | null;
-}) {
-  const conversationIssue = input.conversationIssue ?? null;
-  const currentAssigneeValue = assigneeValueFromSelection(conversationIssue ?? {});
-  if (currentAssigneeValue) return currentAssigneeValue;
-
-  const source = input.conversationSource;
-  if (source?.issue && source.kind !== "explicit_conversation") {
-    const sourceAssigneeValue = sourceIssueAssigneeValue(source.issue);
-    if (sourceAssigneeValue) return sourceAssigneeValue;
-  }
-
-  const sourceLinks = (input.issueLinks ?? [])
-    .filter((link) => link.link.role !== "conversation")
-    .slice()
-    .reverse();
-  const parentSource = conversationIssue?.parentId
-    ? sourceLinks.find((link) => link.issue.id === conversationIssue.parentId)
-    : null;
-  const linkedSource = parentSource ?? sourceLinks.find((link) => sourceIssueAssigneeValue(link.issue));
-  return sourceIssueAssigneeValue(linkedSource?.issue);
 }
 
 function treeNodeToChildRow(node: PipelineCaseTreeNode): PipelineChildRow | null {
@@ -384,6 +346,6 @@ export function formatPipelineItemEvent(event: PipelineCaseEvent, stages?: Stage
     return `Automation needs attention${reason ? ` — ${humanizeReason(reason)}` : ""}.`;
   }
   if (kind === "claimed") return "Work started.";
-  if (kind === "lease_released" || kind === "lease_expired") return "Work handoff cleared.";
+  if (kind === "lease_released" || kind === "lease_expired") return "Work lease cleared.";
   return "Activity recorded.";
 }

@@ -160,7 +160,7 @@ export interface PluginSecretsResolveParams {
   actorType?: "agent" | "user" | "system" | "plugin";
   actorId?: string | null;
   issueId?: string | null;
-  heartbeatRunId?: string | null;
+  runId?: string | null;
 }
 
 export interface PluginSecretsHandlerOptions {
@@ -266,7 +266,7 @@ export function createPluginSecretsHandler(
           actorType: params.actorType ?? "plugin",
           actorId: params.actorId ?? pluginId,
           issueId: params.issueId ?? null,
-          heartbeatRunId: params.heartbeatRunId ?? null,
+          runId: params.runId ?? null,
           pluginId,
         },
         accessContext: {
@@ -276,7 +276,7 @@ export function createPluginSecretsHandler(
           actorType: params.actorType ?? "plugin",
           actorId: params.actorId ?? pluginId,
           issueId: params.issueId ?? null,
-          heartbeatRunId: params.heartbeatRunId ?? null,
+          runId: params.runId ?? null,
           pluginId,
         },
       });

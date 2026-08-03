@@ -1,22 +1,14 @@
 // @vitest-environment jsdom
 
-import type { AnchorHTMLAttributes, ReactNode } from "react";
-import { flushSync } from "react-dom";
+import { act, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { FolderListResult, Issue, RoutineListItem } from "@paperclipai/shared";
+import { canonicalizeMoneyAmount, type FolderListResult, type Issue, type RoutineListItem } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routines, buildRoutineGroups, buildRoutineSections, sortRoutines } from "./Routines";
+import { createTestIssue } from "../test-utils/issue";
 
 let currentSearch = "";
-
-async function act(callback: () => void | Promise<void>) {
-  let result: void | Promise<void> = undefined;
-  flushSync(() => {
-    result = callback();
-  });
-  await result;
-}
 
 const navigateMock = vi.fn();
 const routinesListMock = vi.fn<(companyId: string) => Promise<RoutineListItem[]>>();
@@ -83,17 +75,15 @@ vi.mock("../api/agents", () => ({
         id: "agent-1",
         companyId: "company-1",
         name: "Agent One",
-        role: "engineer",
         title: null,
         status: "active",
         reportsTo: null,
         capabilities: null,
-        adapterType: "process",
+        adapterType: "codex",
         adapterConfig: {},
         contextMode: "thin",
-        budgetMonthlyCents: 0,
-        spentMonthlyCents: 0,
-        lastHeartbeatAt: null,
+        budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+        knownSpendAmount: canonicalizeMoneyAmount("0"),
         icon: "code",
         metadata: null,
         createdAt: new Date("2026-04-01T00:00:00.000Z"),
@@ -101,23 +91,21 @@ vi.mock("../api/agents", () => ({
         urlKey: "agent-one",
         pauseReason: null,
         pausedAt: null,
-        permissions: null,
+        governance: {},
       },
       {
         id: "agent-2",
         companyId: "company-1",
         name: "Agent Two",
-        role: "engineer",
         title: null,
         status: "active",
         reportsTo: null,
         capabilities: null,
-        adapterType: "process",
+        adapterType: "codex",
         adapterConfig: {},
         contextMode: "thin",
-        budgetMonthlyCents: 0,
-        spentMonthlyCents: 0,
-        lastHeartbeatAt: null,
+        budgetMonthlyAmount: canonicalizeMoneyAmount("0"),
+        knownSpendAmount: canonicalizeMoneyAmount("0"),
         icon: "code",
         metadata: null,
         createdAt: new Date("2026-04-01T00:00:00.000Z"),
@@ -125,7 +113,7 @@ vi.mock("../api/agents", () => ({
         urlKey: "agent-two",
         pauseReason: null,
         pausedAt: null,
-        permissions: null,
+        governance: {},
       },
     ]),
   },
@@ -208,11 +196,15 @@ vi.mock("../api/instanceSettings", () => ({
   },
 }));
 
-vi.mock("../api/heartbeats", () => ({
-  heartbeatsApi: {
-    liveRunsForCompany: vi.fn(async () => []),
-  },
-}));
+vi.mock("../api/runs", async () => {
+  const actual = await vi.importActual<typeof import("../api/runs")>("../api/runs");
+  return {
+    ...actual,
+    runsApi: {
+      listForCompany: vi.fn(async () => ({ items: [], nextCursor: null })),
+    },
+  };
+});
 
 vi.mock("../components/IssuesList", () => ({
   IssuesList: (props: { issues: Issue[] }) => issuesListRenderMock(props),
@@ -269,6 +261,7 @@ function createRoutine(overrides: Partial<RoutineListItem>): RoutineListItem {
     description: null,
     assigneeAgentId: "agent-1",
     priority: "medium",
+    attentionMask: null,
     status: "active",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
@@ -292,41 +285,18 @@ function createRoutine(overrides: Partial<RoutineListItem>): RoutineListItem {
 }
 
 function createIssue(overrides: Partial<Issue> = {}): Issue {
-  return {
-    id: "issue-1",
+  return createTestIssue({
     identifier: "PAP-1000",
-    companyId: "company-1",
     projectId: "project-1",
-    projectWorkspaceId: null,
-    goalId: null,
-    parentId: null,
     title: "Routine execution issue",
-    description: null,
-    status: "todo",
-    priority: "medium",
-    assigneeAgentId: "agent-1",
-    assigneeUserId: null,
-    responsibleUserId: null,
-    createdByAgentId: null,
-    createdByUserId: null,
+    ownerAgentId: "agent-1",
+    creatorKind: "routine",
+    creatorRoutineId: "routine-1",
+    creatorRoutineDispatchId: "routine-dispatch-1",
     issueNumber: 1000,
     originKind: "routine_execution",
     originId: "routine-1",
     originRunId: null,
-    requestDepth: 0,
-    billingCode: null,
-    assigneeAdapterOverrides: null,
-    executionWorkspaceId: null,
-    executionWorkspacePreference: null,
-    executionWorkspaceSettings: null,
-    checkoutRunId: null,
-    executionRunId: null,
-    executionAgentNameKey: null,
-    executionLockedAt: null,
-    startedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-    hiddenAt: null,
     createdAt: new Date("2026-04-01T00:00:00.000Z"),
     updatedAt: new Date("2026-04-01T00:00:00.000Z"),
     labels: [],
@@ -336,8 +306,7 @@ function createIssue(overrides: Partial<Issue> = {}): Issue {
     lastActivityAt: new Date("2026-04-01T00:00:00.000Z"),
     isUnreadForMe: false,
     ...overrides,
-    workMode: overrides.workMode ?? "standard",
-  };
+  });
 }
 
 async function flush() {
@@ -395,15 +364,13 @@ describe("Routines page", () => {
     expect(groups[1]?.items.map((item) => item.title)).toEqual(["Weekly digest"]);
   });
 
-  it("keeps built-in routines in their own section after configured groups", () => {
+  it("applies configured grouping to routines without a project", () => {
     const groups = buildRoutineSections(
       [
         createRoutine({
           id: "routine-1",
           title: "Reflection review",
-          projectId: "project-1",
-          originKind: "built_in_agent_bundle",
-          originId: "reflection-coach:recent-agent-reflection",
+          projectId: null,
         }),
         createRoutine({ id: "routine-2", title: "Morning sync", projectId: "project-1" }),
       ],
@@ -412,9 +379,9 @@ describe("Routines page", () => {
       new Map([["agent-1", { name: "Agent One" }]]),
     );
 
-    expect(groups.map((group) => group.label)).toEqual(["Project Alpha", "Built-in routines"]);
-    expect(groups[0]?.items.map((item) => item.title)).toEqual(["Morning sync"]);
-    expect(groups[1]?.items.map((item) => item.title)).toEqual(["Reflection review"]);
+    expect(groups.map((group) => group.label)).toEqual(["No project", "Project Alpha"]);
+    expect(groups[0]?.items.map((item) => item.title)).toEqual(["Reflection review"]);
+    expect(groups[1]?.items.map((item) => item.title)).toEqual(["Morning sync"]);
   });
 
   it("uses a flat group when Folder grouping is active", () => {
@@ -563,7 +530,7 @@ describe("Routines page", () => {
     });
   });
 
-  it("renders built-in routines in a dedicated section on the routines tab", async () => {
+  it("renders projectless routines in the ordinary routines list", async () => {
     routinesListMock.mockResolvedValue([
       createRoutine({
         id: "routine-1",
@@ -574,8 +541,6 @@ describe("Routines page", () => {
         id: "routine-2",
         title: "Reflection review",
         projectId: null,
-        originKind: "built_in_agent_bundle",
-        originId: "reflection-coach:recent-agent-reflection",
       }),
     ]);
     issuesListMock.mockResolvedValue([]);
@@ -595,15 +560,16 @@ describe("Routines page", () => {
       await flush();
     });
 
-    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("Built-in routines"); attempts += 1) {
+    for (let attempts = 0; attempts < 5 && !container.textContent?.includes("Reflection review"); attempts += 1) {
       await act(async () => {
         await flush();
       });
     }
 
     const text = container.textContent ?? "";
-    expect(text.indexOf("Morning sync")).toBeLessThan(text.indexOf("Built-in routines"));
-    expect(text.indexOf("Built-in routines")).toBeLessThan(text.indexOf("Reflection review"));
+    expect(text).toContain("Morning sync");
+    expect(text).toContain("Reflection review");
+    expect(text.indexOf("Morning sync")).toBeLessThan(text.indexOf("Reflection review"));
 
     await act(async () => {
       root.unmount();

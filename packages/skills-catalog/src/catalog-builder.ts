@@ -52,7 +52,6 @@ interface ReferencedSkillDescriptor {
   source: ReferencedGitHubSourceDescriptor;
   files?: string[];
   defaultInstall?: boolean;
-  recommendedForRoles?: string[];
   requires?: string[];
   tags?: string[];
 }
@@ -296,7 +295,6 @@ async function buildCatalogSkill(
   }
 
   const defaultInstall = asBoolean(parsed.frontmatter.defaultInstall) ?? false;
-  const recommendedForRoles = readStringArrayField(parsed.frontmatter.recommendedForRoles, "recommendedForRoles", prefix, errors);
   const requires = readStringArrayField(parsed.frontmatter.requires, "requires", prefix, errors);
   const tags = readStringArrayField(parsed.frontmatter.tags, "tags", prefix, errors);
   const files = await collectSkillFiles(packageDir, candidate.absolutePath, prefix, errors);
@@ -316,7 +314,6 @@ async function buildCatalogSkill(
     trustLevel: deriveTrustLevel(files),
     compatibility: "compatible",
     defaultInstall,
-    recommendedForRoles,
     requires,
     tags,
     files,
@@ -388,7 +385,6 @@ async function buildReferencedCatalogSkill(
   }
 
   const defaultInstall = asBoolean(descriptor.defaultInstall) ?? false;
-  const recommendedForRoles = readStringArrayField(descriptor.recommendedForRoles, "recommendedForRoles", prefix, errors);
   const requires = readStringArrayField(descriptor.requires, "requires", prefix, errors);
   const tags = readStringArrayField(descriptor.tags, "tags", prefix, errors);
 
@@ -423,7 +419,6 @@ async function buildReferencedCatalogSkill(
     trustLevel: deriveTrustLevel(files),
     compatibility: "compatible",
     defaultInstall,
-    recommendedForRoles,
     requires,
     tags,
     files,
@@ -521,13 +516,11 @@ async function readReferencedSkillDescriptor(
     },
     defaultInstall: asBoolean(raw.defaultInstall) ?? false,
     files: asStringArray(raw.files ?? undefined) ?? undefined,
-    recommendedForRoles: asStringArray(raw.recommendedForRoles ?? undefined) ?? undefined,
     requires: asStringArray(raw.requires ?? undefined) ?? undefined,
     tags: asStringArray(raw.tags ?? undefined) ?? undefined,
   };
 
   if (raw.files !== undefined && !descriptor.files) errors.push(`${prefix}/${CATALOG_REFERENCE_FILE} files must be an array of strings.`);
-  if (raw.recommendedForRoles !== undefined && !descriptor.recommendedForRoles) errors.push(`${prefix}/${CATALOG_REFERENCE_FILE} recommendedForRoles must be an array of strings.`);
   if (raw.requires !== undefined && !descriptor.requires) errors.push(`${prefix}/${CATALOG_REFERENCE_FILE} requires must be an array of strings.`);
   if (raw.tags !== undefined && !descriptor.tags) errors.push(`${prefix}/${CATALOG_REFERENCE_FILE} tags must be an array of strings.`);
 

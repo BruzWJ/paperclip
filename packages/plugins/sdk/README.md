@@ -102,7 +102,9 @@ runWorker(plugin, import.meta.url);
 
 **Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `launchers`, `http`, `secrets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
 
-**Agents:** `ctx.agents.invoke(agentId, companyId, opts)` for one-shot invocation. `ctx.agents.sessions` for two-way chat: `create`, `list`, `sendMessage` (with streaming `onEvent` callback), `close`. See the [Plugin Authoring Guide](../../doc/plugins/PLUGIN_AUTHORING_GUIDE.md#agent-sessions-two-way-chat) for details.
+**Agent work:** create an ordinary issue through `ctx.issues.create` with an
+explicit eligible owner and a registered creator callback. Plugins cannot
+invoke an agent or open a conversational agent session directly.
 
 **Jobs:** Declare in `manifest.jobs` with `jobKey`, `displayName`, `schedule` (cron). Register handler with `ctx.jobs.register(jobKey, fn)`. **Webhooks:** Declare in `manifest.webhooks` with `endpointKey`; handle in `onWebhook(input)`. **State:** `ctx.state.get/set/delete(scopeKey)`; scope kinds: `instance`, `company`, `project`, `project_workspace`, `agent`, `issue`, `goal`, `run`.
 
@@ -121,7 +123,7 @@ Subscribe in `setup` with `ctx.events.on(name, handler)` or `ctx.events.on(name,
 | `project.workspace_created`, `project.workspace_updated`, `project.workspace_deleted` | project_workspace |
 | `issue.created`, `issue.updated`, `issue.comment.created` | issue |
 | `issue.document.created`, `issue.document.updated`, `issue.document.deleted` | issue |
-| `issue.relations.updated`, `issue.checked_out`, `issue.released`, `issue.assignment_wakeup_requested` | issue |
+| `issue.relations.updated` | issue |
 | `agent.created`, `agent.updated`, `agent.status_changed` | agent |
 | `agent.run.started`, `agent.run.finished`, `agent.run.failed`, `agent.run.cancelled` | run |
 | `goal.created`, `goal.updated` | goal |
@@ -138,7 +140,7 @@ Subscribe in `setup` with `ctx.events.on(name, handler)` or `ctx.events.on(name,
 
 ## Scheduled (recurring) jobs
 
-Plugins can declare **scheduled jobs** that the host runs on a cron schedule. Use this for recurring tasks like syncs, digest reports, or cleanup.
+Plugins can declare **scheduled jobs** that the host runs on a cron schedule. Use this for recurring jobs like syncs, digest reports, or cleanup.
 
 1. **Capability:** Add `jobs.schedule` to `manifest.capabilities`.
 2. **Declare jobs** in `manifest.jobs`: each entry has `jobKey`, `displayName`, optional `description`, and `schedule` (a 5-field cron expression).
@@ -215,7 +217,7 @@ Slot types describe where a component mounts. Most values also exist as launcher
 | `dashboardWidget` | Global | — |
 | `globalToolbarButton` | Global | — |
 | `detailTab` | Entity | `project`, `issue`, `agent`, `goal`, `run` |
-| `taskDetailView` | Entity | (task/issue context) |
+| `issueDetailView` | Entity | (issue context) |
 | `commentAnnotation` | Entity | `comment` |
 | `commentContextMenuItem` | Entity | `comment` |
 | `projectSidebarItem` | Entity | `project` |
@@ -258,9 +260,9 @@ A card or section rendered on the main dashboard. Use this for at-a-glance metri
 
 An additional tab on a project, issue, agent, goal, or run detail page. Rendered when the user navigates to that entity's detail view. Receives `PluginDetailTabProps` with `context.companyId` set to the active company and `context.entityId` / `context.entityType` guaranteed to be non-null, so you can immediately scope data fetches to the relevant entity. Specify which entity types the tab applies to via the `entityTypes` array in the manifest slot declaration. Requires the `ui.detailTab.register` capability.
 
-#### `taskDetailView`
+#### `issueDetailView`
 
-A specialized slot rendered in the context of a task or issue detail view. Similar to `detailTab` but designed for inline content within the task detail layout rather than a separate tab. Receives `context.companyId`, `context.entityId`, and `context.entityType` like `detailTab`. Requires the `ui.detailTab.register` capability.
+A specialized slot rendered in the context of an issue detail view. Similar to `detailTab` but designed for inline content within the issue detail layout rather than a separate tab. Receives `context.companyId`, `context.entityId`, and `context.entityType` like `detailTab`. Requires the `ui.detailTab.register` capability.
 
 #### `projectSidebarItem`
 
@@ -331,8 +333,7 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `database.namespace.read` |
 | | `issues.create` |
 | | `issues.update` |
-| | `issues.checkout` |
-| | `issues.wakeup` |
+| | `issues.withdraw` |
 | | `issue.comments.create` |
 | | `issue.documents.write` |
 | | `issue.relations.write` |
@@ -358,15 +359,10 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `environment.drivers.register` |
 | | `local.folders` |
 | **Agent** | `agent.tools.register` |
-| | `agents.invoke` |
 | | `access.members.write` |
 | | `access.invites.write` |
 | | `authorization.grants.write` |
 | | `authorization.policies.write` |
-| | `agent.sessions.create` |
-| | `agent.sessions.list` |
-| | `agent.sessions.send` |
-| | `agent.sessions.close` |
 | **UI** | `ui.sidebar.register` |
 | | `ui.page.register` |
 | | `ui.detailTab.register` |
@@ -476,15 +472,14 @@ apiRoutes: [
     path: "/issues/:issueId/smoke",
     auth: "board-or-agent",
     capability: "api.routes.register",
-    checkoutPolicy: "required-for-agent-in-progress",
     companyResolution: { from: "issue", param: "issueId" },
   },
 ]
 ```
 
 Implement `onApiRequest(input)` in the worker to handle the route. The host
-performs auth, company access, capability, route matching, and checkout policy
-before dispatch. The worker receives route params, query, parsed JSON body,
+performs auth, company access, capability, and route matching before dispatch.
+The worker receives route params, query, parsed JSON body,
 sanitized headers, actor context, and `companyId`; responses are JSON `{ status?,
 headers?, body? }`.
 
@@ -492,95 +487,68 @@ headers?, body? }`.
 
 Workflow plugins can use `ctx.issues` for orchestration-grade issue operations without importing host server internals.
 
-Expanded create/update fields include blockers, billing code, board or agent assignees, labels, namespaced plugin origins, request depth, and safe execution workspace fields:
+Plugin work enters the same canonical issue runtime as board work. Register a
+versioned creator callback, then create an issue with an immutable request and
+an explicit invokable agent owner:
 
 ```ts
+await ctx.issues.registerCreatorCallback(
+  { key: "mission-updates", version: "1" },
+  async (delivery) => {
+    await persistMissionUpdate(delivery);
+    return { deliveryId: delivery.deliveryId, accepted: true };
+  },
+);
+
 const child = await ctx.issues.create({
   companyId,
+  request: "Implement and verify the approved feature slice.",
+  ownerAgentId: workerAgentId,
+  callbackKey: "mission-updates",
+  callbackVersion: "1",
   parentId: missionIssueId,
-  inheritExecutionWorkspaceFromIssueId: missionIssueId,
   title: "Implement feature slice",
-  status: "todo",
-  assigneeAgentId: workerAgentId,
-  billingCode: "mission:alpha",
-  originKind: "plugin:paperclip.missions:feature",
-  originId: "mission-alpha:feature-1",
-  blockedByIssueIds: [planningIssueId],
+  projectId,
+  priority: "high",
 });
 ```
 
-If `originKind` is omitted, the host stores `plugin:<pluginKey>`. Plugins may use sub-kinds such as `plugin:<pluginKey>:feature`, but the host rejects attempts to set another plugin's namespace.
+The host records the installed plugin and callback as the immutable creator.
+Plugins cannot own issues or supply mutable origin, lifecycle, blocker,
+workspace, or assignee aliases.
 
-Blocker relationships are also exposed as first-class helpers:
-
-```ts
-const relations = await ctx.issues.relations.get(child.id, companyId);
-await ctx.issues.relations.setBlockedBy(child.id, [planningIssueId], companyId);
-await ctx.issues.relations.addBlockers(child.id, [validationIssueId], companyId);
-await ctx.issues.relations.removeBlockers(child.id, [planningIssueId], companyId);
-```
-
-Subtree reads can include just the issue tree, or compact related data for orchestration dashboards:
+Creator updates are message-only or a reassign to another invokable agent:
 
 ```ts
-const subtree = await ctx.issues.getSubtree(missionIssueId, companyId, {
-  includeRoot: true,
-  includeRelations: true,
-  includeDocuments: true,
-  includeActiveRuns: true,
-  includeAssignees: true,
-});
-```
-
-Agent-run actions can assert checkout ownership before mutating in-progress work:
-
-```ts
-await ctx.issues.assertCheckoutOwner({
-  issueId,
+await ctx.issues.update(
+  child.id,
+  { kind: "message", message: "The acceptance criteria changed; include the new edge case." },
   companyId,
-  actorAgentId: runCtx.agentId,
-  actorRunId: runCtx.runId,
-});
-```
+);
 
-Plugins can request assignment wakeups through the host so budget stops, execution locks, blocker checks, and heartbeat policy still apply:
-
-```ts
-await ctx.issues.requestWakeup(child.id, companyId, {
-  reason: "mission_advance",
-  contextSource: "missions.advance",
-});
-
-await ctx.issues.requestWakeups([featureIssueId, validationIssueId], companyId, {
-  reason: "mission_advance",
-  contextSource: "missions.advance",
-  idempotencyKeyPrefix: `mission:${missionIssueId}:advance`,
-});
-```
-
-Use `ctx.issues.summaries.getOrchestration()` when a workflow needs compact reads across a root issue or subtree:
-
-```ts
-const summary = await ctx.issues.summaries.getOrchestration({
-  issueId: missionIssueId,
+await ctx.issues.update(
+  child.id,
+  { kind: "reassign", ownerAgentId: replacementAgentId },
   companyId,
-  includeSubtree: true,
-  billingCode: "mission:alpha",
-});
+);
 ```
+
+Provider work starts by creating an ordinary issue with an immutable request,
+an explicit eligible owner, and a registered creator callback. Subsequent
+creator messages use the narrow issue-update contract; cancellation uses
+`ctx.issues.withdraw`. There is no direct wake operation.
 
 Required capabilities:
 
 | API | Capability |
 |-----|------------|
-| `ctx.issues.relations.get` | `issue.relations.read` |
-| `ctx.issues.relations.setBlockedBy` / `addBlockers` / `removeBlockers` | `issue.relations.write` |
-| `ctx.issues.getSubtree` | `issue.subtree.read` |
-| `ctx.issues.assertCheckoutOwner` | `issues.checkout` |
-| `ctx.issues.requestWakeup` / `requestWakeups` | `issues.wakeup` |
-| `ctx.issues.summaries.getOrchestration` | `issues.orchestration.read` |
+| `ctx.issues.list` / `get` | `issues.read` |
+| `ctx.issues.registerCreatorCallback` / `create` | `issues.create` |
+| `ctx.issues.update` | `issues.update` |
+| `ctx.issues.withdraw` | `issues.withdraw` |
 
-Plugin-originated mutations are logged with `actorType: "plugin"` and details fields `sourcePluginId`, `sourcePluginKey`, `initiatingActorType`, `initiatingActorId`, and `initiatingRunId` when a user or agent run initiated the plugin work.
+Plugin-originated mutations are logged with immutable plugin creator and
+operation provenance.
 
 ## UI quick start
 
@@ -750,7 +718,7 @@ Paperclip surface:
 | `MarkdownEditor` | Editing markdown with the host editor treatment |
 | `FileTree` | Showing serializable workspace/wiki/import paths |
 | `IssuesList` | Embedding a company-scoped native issue list |
-| `AssigneePicker` | Selecting an agent or board user with the same picker as the new issue pane |
+| `OwnerPicker` | Selecting the required agent owner for ordinary plugin-created issues |
 | `ProjectPicker` | Selecting a project with the same picker as the new issue pane |
 | `ManagedRoutinesList` | Showing plugin-managed routines in settings UI |
 
@@ -817,27 +785,28 @@ export function WikiFiles() {
 }
 ```
 
-#### Shared Assignee and Project Pickers
+#### Shared Owner and Project Pickers
 
-Use `AssigneePicker` and `ProjectPicker` when a plugin needs to create, filter,
-or configure work against Paperclip entities. Both are controlled components and
-load their options from the host for the provided company.
+Use `OwnerPicker` and `ProjectPicker` when a plugin needs to create or configure
+ordinary issue work. Both are controlled components and load their options from
+the host for the provided company. `OwnerPicker` emits only the canonical agent
+owner payload; it does not expose user-assignee compatibility.
 
 ```tsx
-import { AssigneePicker, ProjectPicker } from "@paperclipai/plugin-sdk/ui";
+import { OwnerPicker, ProjectPicker } from "@paperclipai/plugin-sdk/ui";
 
 export function AssignmentControls({ companyId }: { companyId: string }) {
-  const [assignee, setAssignee] = useState("");
+  const [ownerAgentId, setOwnerAgentId] = useState("");
   const [projectId, setProjectId] = useState("");
 
   return (
     <>
-      <AssigneePicker
+      <OwnerPicker
         companyId={companyId}
-        value={assignee}
+        value={ownerAgentId}
         onChange={(value, selection) => {
-          setAssignee(value);
-          console.log(selection.assigneeAgentId, selection.assigneeUserId);
+          setOwnerAgentId(value);
+          console.log(selection.ownerAgentId);
         }}
       />
       <ProjectPicker
@@ -1127,104 +1096,10 @@ The host maintains an in-memory `PluginStreamBus` that fans out worker notificat
 
 The bus is keyed by `pluginId:channel:companyId`, so multiple UI clients can subscribe to the same stream independently.
 
-### Streaming agent responses to the UI
-
-`ctx.streams` and `ctx.agents.sessions` are complementary. The worker sits between them, relaying agent events to the browser in real time:
-
-```
-UI ──usePluginAction──▶ Worker ──sessions.sendMessage──▶ Agent
-UI ◀──usePluginStream── Worker ◀──onEvent callback────── Agent
-```
-
-The agent doesn't know about streams — the worker decides what to relay. Encode the agent ID in the channel name to scope streams per agent.
-
-**Worker:**
-
-```ts
-ctx.actions.register("ask-agent", async (params) => {
-  const { agentId, companyId, prompt } = params as {
-    agentId: string; companyId: string; prompt: string;
-  };
-
-  const channel = `agent:${agentId}`;
-  ctx.streams.open(channel, companyId);
-
-  const session = await ctx.agents.sessions.create(agentId, companyId);
-
-  await ctx.agents.sessions.sendMessage(session.sessionId, companyId, {
-    prompt,
-    onEvent: (event) => {
-      ctx.streams.emit(channel, {
-        type: event.eventType,       // "chunk" | "done" | "error"
-        text: event.message ?? "",
-      });
-    },
-  });
-
-  ctx.streams.close(channel);
-  return { sessionId: session.sessionId };
-});
-```
-
-**UI:**
-
-```tsx
-import { useState } from "react";
-import { usePluginAction, usePluginStream } from "@paperclipai/plugin-sdk/ui";
-
-interface AgentEvent {
-  type: "chunk" | "done" | "error";
-  text: string;
-}
-
-export function AgentChat({ agentId, companyId }: { agentId: string; companyId: string }) {
-  const askAgent = usePluginAction("ask-agent");
-  const { events, connected, close } = usePluginStream<AgentEvent>(`agent:${agentId}`, { companyId });
-  const [prompt, setPrompt] = useState("");
-
-  async function send() {
-    setPrompt("");
-    await askAgent({ agentId, companyId, prompt });
-  }
-
-  return (
-    <div>
-      <div>{events.filter(e => e.type === "chunk").map((e, i) => <span key={i}>{e.text}</span>)}</div>
-      <input value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-      <button onClick={send}>Send</button>
-      {connected && <button onClick={close}>Stop</button>}
-    </div>
-  );
-}
-```
-
-## Agent sessions (two-way chat)
-
-Plugins can hold multi-turn conversational sessions with agents:
-
-```ts
-// Create a session
-const session = await ctx.agents.sessions.create(agentId, companyId);
-
-// Send a message and stream the response
-await ctx.agents.sessions.sendMessage(session.sessionId, companyId, {
-  prompt: "Help me triage this issue",
-  onEvent: (event) => {
-    if (event.eventType === "chunk") console.log(event.message);
-    if (event.eventType === "done") console.log("Stream complete");
-  },
-});
-
-// List active sessions
-const sessions = await ctx.agents.sessions.list(agentId, companyId);
-
-// Close when done
-await ctx.agents.sessions.close(session.sessionId, companyId);
-```
-
-Requires capabilities: `agent.sessions.create`, `agent.sessions.list`, `agent.sessions.send`, `agent.sessions.close`.
-
-Exported types: `AgentSession`, `AgentSessionEvent`, `AgentSessionSendResult`, `PluginAgentSessionsClient`.
+Use `ctx.streams` for plugin-owned progress or external integration output.
+Agent results arrive through the durable issue creator-callback outbox and
+canonical issue comments; they are not relayed through a plugin-held chat
+session.
 
 ## Testing utilities
 

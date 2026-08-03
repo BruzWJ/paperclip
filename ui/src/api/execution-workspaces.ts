@@ -6,6 +6,7 @@ import type {
   WorkspaceOverviewResponse,
   WorkspaceOperation,
   WorkspaceRuntimeControlTarget,
+  ReconcileExecutionWorkspaceBranch,
 } from "@paperclipai/shared";
 import { api } from "./client";
 import { sanitizeWorkspaceRuntimeControlTarget } from "./workspace-runtime-control";
@@ -96,6 +97,16 @@ export const executionWorkspacesApi = {
     api.get<ExecutionWorkspaceCloseReadiness>(`/execution-workspaces/${id}/close-readiness`),
   listWorkspaceOperations: (id: string) =>
     api.get<WorkspaceOperation[]>(`/execution-workspaces/${id}/workspace-operations`),
+  getWorkspaceOperationLog: (operationId: string, offset = 0, limitBytes = 256000) =>
+    api.get<{
+      operationId: string;
+      store: string;
+      logRef: string;
+      content: string;
+      nextOffset?: number;
+    }>(
+      `/workspace-operations/${operationId}/log?offset=${encodeURIComponent(String(offset))}&limitBytes=${encodeURIComponent(String(limitBytes))}`,
+    ),
   controlRuntimeServices: (
     id: string,
     action: "start" | "stop" | "restart",
@@ -134,6 +145,6 @@ export const executionWorkspacesApi = {
    */
   reconcile: (
     id: string,
-    body: { mode: "forward" } | { mode: "override"; reason: string } | { mode: "quarantine_restore" },
+    body: ReconcileExecutionWorkspaceBranch,
   ) => api.post<ExecutionWorkspace>(`/execution-workspaces/${id}/reconcile-branch`, body),
 };

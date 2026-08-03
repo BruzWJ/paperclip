@@ -8,9 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewAgentDialog } from "./NewAgentDialog";
 
 const createCompanyInviteMock = vi.hoisted(() => vi.fn());
-const getInviteOnboardingMock = vi.hoisted(() => vi.fn());
 const listAgentsMock = vi.hoisted(() => vi.fn());
-const listAdaptersMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const closeNewAgentMock = vi.hoisted(() => vi.fn());
 const openNewIssueMock = vi.hoisted(() => vi.fn());
@@ -43,7 +41,6 @@ vi.mock("../api/access", () => ({
   accessApi: {
     createCompanyInvite: (companyId: string, input: unknown) =>
       createCompanyInviteMock(companyId, input),
-    getInviteOnboarding: (token: string) => getInviteOnboardingMock(token),
   },
 }));
 
@@ -53,22 +50,16 @@ vi.mock("../api/agents", () => ({
   },
 }));
 
-vi.mock("../api/adapters", () => ({
-  adaptersApi: {
-    list: () => listAdaptersMock(),
-  },
-}));
-
 vi.mock("../adapters", () => ({
-  listUIAdapters: () => [{ type: "claude_local" }, { type: "openclaw_gateway" }],
+  listUIAdapters: () => [{ type: "codex" }],
 }));
 
 vi.mock("../adapters/metadata", () => ({
-  isVisualAdapterChoice: (type: string) => type !== "openclaw_gateway",
+  isVisualAdapterChoice: () => true,
 }));
 
-vi.mock("../adapters/use-disabled-adapters", () => ({
-  useDisabledAdaptersSync: () => new Set<string>(),
+vi.mock("../adapters/use-adapter-catalog", () => ({
+  useAdapterCatalogSync: () => [],
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -96,10 +87,7 @@ describe("NewAgentDialog", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
 
-    listAgentsMock.mockResolvedValue([
-      { id: "agent-ceo", role: "ceo" },
-    ]);
-    listAdaptersMock.mockResolvedValue([]);
+    listAgentsMock.mockResolvedValue([]);
     createCompanyInviteMock.mockResolvedValue({
       id: "invite-1",
       token: "agent-token",
@@ -108,19 +96,7 @@ describe("NewAgentDialog", () => {
       allowedJoinTypes: "agent",
       humanRole: null,
       onboardingTextUrl: "https://paperclip.local/api/invites/agent-token/onboarding.txt",
-      onboardingTextPath: "/api/invites/agent-token/onboarding.txt",
     });
-    getInviteOnboardingMock.mockResolvedValue({
-      onboarding: {
-        connectivity: {
-          connectionCandidates: ["https://paperclip.local"],
-          testResolutionEndpoint: {
-            url: "https://paperclip.local/api/invites/agent-token/test-resolution",
-          },
-        },
-      },
-    });
-
     Object.defineProperty(globalThis.navigator, "clipboard", {
       configurable: true,
       value: { writeText: clipboardWriteTextMock },
@@ -151,6 +127,27 @@ describe("NewAgentDialog", () => {
     expect(container.textContent).toContain("Add a new agent");
     expect(container.textContent).toContain("Invite an external agent");
 
+    const configureButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.startsWith("Configure a runtime manually"),
+    );
+
+    await act(async () => {
+      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Codex");
+    expect(container.textContent).toContain("Codex through the pinned ACP frontend");
+    expect(container.textContent).not.toContain("HTTP Session");
+    expect(container.textContent).not.toContain("Process");
+
+    const runtimeBackButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Back",
+    );
+
+    await act(async () => {
+      runtimeBackButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
     const inviteButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.startsWith("Invite an external agent"),
     );
@@ -159,7 +156,7 @@ describe("NewAgentDialog", () => {
       inviteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("Generate a one-time onboarding prompt");
+    expect(container.textContent).toContain("Generate a one-time prompt");
     expect(container.textContent).not.toContain("Company Invites");
 
     const generateButton = Array.from(container.querySelectorAll("button")).find(
@@ -177,9 +174,13 @@ describe("NewAgentDialog", () => {
       humanRole: null,
       agentMessage: null,
     });
-    expect(getInviteOnboardingMock).toHaveBeenCalledWith("agent-token");
     expect(clipboardWriteTextMock).toHaveBeenCalledWith(
-      expect.stringContaining("You're invited to join a Paperclip company as an agent."),
+      expect.stringContaining("You're invited to propose an agent configuration for a Paperclip company."),
+    );
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://paperclip.local/api/invites/agent-token/onboarding.txt",
+      ),
     );
     expect(container.textContent).toContain("Agent onboarding prompt");
     expect(container.textContent).toContain("Send this prompt to the external agent");

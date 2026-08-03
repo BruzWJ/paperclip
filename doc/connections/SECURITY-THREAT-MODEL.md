@@ -222,7 +222,8 @@ Required controls:
 Cross-company isolation:
 
 - Board user from company A cannot read/update/delete company B's app,
-  connection, catalog entry, profile, policy, action request, or gateway session.
+  connection, catalog entry, profile, policy, action request, named MCP gateway,
+  or gateway token.
 - Agent from company A cannot list or invoke company B tools.
 - Create/update routes reject secret, agent, user, project, routine, issue, app,
   and connection ids from another company.

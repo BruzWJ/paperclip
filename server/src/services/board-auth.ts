@@ -71,7 +71,7 @@ export function boardAuthService(db: Db) {
         .where(
           and(
             eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, userId),
+            eq(companyMemberships.principalUserId, userId),
             eq(companyMemberships.status, "active"),
           ),
         )

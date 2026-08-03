@@ -23,7 +23,6 @@ import {
 } from "./bridge.js";
 import { Component, createElement, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { User } from "lucide-react";
 import {
   FileTree,
   type FileTreeProps as HostFileTreeProps,
@@ -33,30 +32,15 @@ import { InlineEntitySelector, type InlineEntityOption } from "@/components/Inli
 import { IssuesList as HostIssuesList } from "@/components/IssuesList";
 import { ManagedRoutinesList as HostManagedRoutinesList } from "@/components/ManagedRoutinesList";
 import { MarkdownBody } from "@/components/MarkdownBody";
-import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
-import { heartbeatsApi } from "@/api/heartbeats";
+import { ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, runsApi } from "@/api/runs";
 import { issuesApi } from "@/api/issues";
 import { projectsApi } from "@/api/projects";
-import {
-  buildCompanyUserInlineOptions,
-} from "@/lib/company-members";
 import { collectLiveIssueIds } from "@/lib/liveIssueIds";
 import { useProjectOrder } from "@/hooks/useProjectOrder";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
-import {
-  assigneeValueFromSelection,
-  currentUserAssigneeOption,
-  parseAssigneeValue,
-} from "@/lib/assignees";
 import { queryKeys } from "@/lib/queryKeys";
-import {
-  getRecentAssigneeSelectionIds,
-  sortAgentsByRecency,
-  trackRecentAssignee,
-  trackRecentAssigneeUser,
-} from "@/lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "@/lib/recent-projects";
 
 // ---------------------------------------------------------------------------
@@ -146,18 +130,13 @@ type PluginMarkdownEditorProps = {
 };
 
 type PluginIssuesListFilters = {
-  status?: string;
+  status?: "open" | "blocked" | "done" | "cancelled";
   projectId?: string;
   parentId?: string;
-  assigneeAgentId?: string;
+  ownerAgentId?: string;
   participantAgentId?: string;
-  assigneeUserId?: string;
   labelId?: string;
   workspaceId?: string;
-  executionWorkspaceId?: string;
-  originKind?: string;
-  originKindPrefix?: string;
-  originId?: string;
   descendantOf?: string;
   includeRoutineExecutions?: boolean;
 };
@@ -172,20 +151,18 @@ type PluginIssuesListProps = {
   searchWithinLoadedIssues?: boolean;
 };
 
-type PluginAssigneePickerSelection = {
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
+type PluginOwnerPickerSelection = {
+  ownerAgentId: string | null;
 };
 
-type PluginAssigneePickerProps = {
+type PluginOwnerPickerProps = {
   companyId?: string | null;
   value: string;
-  onChange: (value: string, selection: PluginAssigneePickerSelection) => void;
+  onChange: (value: string, selection: PluginOwnerPickerSelection) => void;
   placeholder?: string;
   noneLabel?: string;
   searchPlaceholder?: string;
   emptyMessage?: string;
-  includeUsers?: boolean;
   includeTerminatedAgents?: boolean;
   className?: string;
   onConfirm?: () => void;
@@ -254,7 +231,6 @@ function PluginSdkIssuesList({
     }),
     [filters, projectId],
   );
-  const originKindPrefix = issueFilters.originKindPrefix ?? null;
   const resolvedProjectId = issueFilters.projectId ?? projectId ?? null;
   const issuesQueryKey = useMemo(
     () => ["plugins", "sdk-ui", "issues-list", companyId ?? "__no-company__", issueFilters] as const,
@@ -271,47 +247,29 @@ function PluginSdkIssuesList({
     queryFn: () => projectsApi.list(companyId!),
     enabled: !!companyId,
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(companyId ?? "__no-company__");
-  const sharedLiveRuns = useSharedPollingQuery({
+  const activeRunsQueryKey = queryKeys.runs(companyId ?? "__no-company__", { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES });
+  const sharedActiveRuns = useSharedPollingQuery({
     companyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
+    resourceKey: "active-runs",
+    queryKey: activeRunsQueryKey,
     enabled: !!companyId,
     // Event-sourced via LiveUpdatesProvider (#9627); no interval poll needed.
     refetchInterval: false,
     leaderOnly: true,
   });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId!),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
+  const { data: activeRunPage, dataUpdatedAt: activeRunsUpdatedAt } = useQuery({
+    queryKey: activeRunsQueryKey,
+    queryFn: () => runsApi.listForCompany(companyId!, { status: ACTIVE_ISSUE_EXECUTION_RUN_STATUSES, limit: 200 }),
+    enabled: sharedActiveRuns.enabled,
+    refetchInterval: sharedActiveRuns.refetchInterval,
   });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const liveIssueIds = useMemo(() => collectLiveIssueIds(liveRuns), [liveRuns]);
+  usePublishSharedQueryData(sharedActiveRuns, activeRunPage, activeRunsUpdatedAt);
+  const liveIssueIds = useMemo(() => collectLiveIssueIds(activeRunPage?.items), [activeRunPage]);
 
   const { data: issues, isLoading, error } = useQuery({
     queryKey: issuesQueryKey,
     queryFn: () => issuesApi.list(companyId!, issueFilters),
     enabled: !!companyId,
-  });
-
-  const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      issuesApi.update(id, data),
-    onSuccess: () => {
-      if (!companyId) return;
-      queryClient.invalidateQueries({ queryKey: ["plugins", "sdk-ui", "issues-list", companyId] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-      if (resolvedProjectId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, resolvedProjectId) });
-        if (originKindPrefix) {
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, resolvedProjectId, originKindPrefix),
-          });
-        }
-      }
-    },
   });
 
   if (!companyId) {
@@ -330,78 +288,47 @@ function PluginSdkIssuesList({
     initialSearch,
     createIssueLabel,
     searchWithinLoadedIssues,
-    onUpdateIssue: (id: string, data: Record<string, unknown>) => updateIssue.mutate({ id, data }),
   });
 }
 
-function PluginSdkAssigneePicker({
+function PluginSdkOwnerPicker({
   companyId,
   value,
   onChange,
-  placeholder = "Responsible",
-  noneLabel = "No responsible",
-  searchPlaceholder = "Search responsible...",
-  emptyMessage = "No responsible found.",
-  includeUsers = true,
+  placeholder = "Owner",
+  noneLabel = "Select owner",
+  searchPlaceholder = "Search owners...",
+  emptyMessage = "No eligible owners found.",
   includeTerminatedAgents = false,
   className,
   onConfirm,
-}: PluginAssigneePickerProps) {
+}: PluginOwnerPickerProps) {
   const hostContext = useHostContext();
   const resolvedCompanyId = companyId ?? hostContext.companyId ?? null;
-  const { data: session } = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
-    enabled: includeUsers,
-  });
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(resolvedCompanyId ?? "__no-company__"),
     queryFn: () => agentsApi.list(resolvedCompanyId!),
     enabled: !!resolvedCompanyId,
   });
-  const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyUserDirectory(resolvedCompanyId ?? "__no-company__"),
-    queryFn: () => accessApi.listUserDirectory(resolvedCompanyId!),
-    enabled: !!resolvedCompanyId && includeUsers,
-  });
-  const recentAssigneeSelectionIds = useMemo(() => getRecentAssigneeSelectionIds(), []);
-  const recentAssigneeIds = useMemo(
-    () => recentAssigneeSelectionIds
-      .map((id) => id.startsWith("agent:") ? id.slice("agent:".length) : null)
-      .filter((id): id is string => Boolean(id)),
-    [recentAssigneeSelectionIds],
-  );
-  const sortedAgents = useMemo(
-    () => sortAgentsByRecency(
-      (agents ?? []).filter((agent) => includeTerminatedAgents || agent.status !== "terminated"),
-      recentAssigneeIds,
-    ),
-    [agents, includeTerminatedAgents, recentAssigneeIds],
+  const eligibleAgents = useMemo(
+    () => (agents ?? [])
+      .filter((agent) => includeTerminatedAgents || agent.status !== "terminated")
+      .sort((left, right) => left.name.localeCompare(right.name)),
+    [agents, includeTerminatedAgents],
   );
   const options = useMemo<InlineEntityOption[]>(
-    () => [
-      ...(includeUsers ? currentUserAssigneeOption(currentUserId) : []),
-      ...(includeUsers
-        ? buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId] })
-        : []),
-      ...sortedAgents.map((agent) => ({
-        id: assigneeValueFromSelection({ assigneeAgentId: agent.id }),
+    () => eligibleAgents.map((agent) => ({
+        id: agent.id,
         label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        searchText: `${agent.name} ${agent.title ?? ""}`,
       })),
-    ],
-    [companyMembers?.users, currentUserId, includeUsers, sortedAgents],
+    [eligibleAgents],
   );
-  const selectedAssignee = parseAssigneeValue(value);
-  const selectedAgent = selectedAssignee.assigneeAgentId
-    ? sortedAgents.find((agent) => agent.id === selectedAssignee.assigneeAgentId)
-    : null;
+  const selectedAgent = eligibleAgents.find((agent) => agent.id === value) ?? null;
 
   return createElement(InlineEntitySelector, {
     value,
     options,
-    recentOptionIds: recentAssigneeSelectionIds,
     placeholder,
     noneLabel,
     searchPlaceholder,
@@ -409,10 +336,7 @@ function PluginSdkAssigneePicker({
     className,
     onConfirm,
     onChange: (nextValue: string) => {
-      const selection = parseAssigneeValue(nextValue);
-      if (selection.assigneeAgentId) trackRecentAssignee(selection.assigneeAgentId);
-      if (selection.assigneeUserId) trackRecentAssigneeUser(selection.assigneeUserId);
-      onChange(nextValue, selection);
+      onChange(nextValue, { ownerAgentId: nextValue || null });
     },
     renderTriggerValue: (option: InlineEntityOption | null) => {
       if (!option) return createElement("span", { className: "text-muted-foreground" }, placeholder);
@@ -428,16 +352,11 @@ function PluginSdkAssigneePicker({
     },
     renderOption: (option: InlineEntityOption) => {
       if (!option.id) return createElement("span", { className: "truncate" }, option.label);
-      const selection = parseAssigneeValue(option.id);
-      const agent = selection.assigneeAgentId
-        ? sortedAgents.find((entry) => entry.id === selection.assigneeAgentId)
-        : null;
+      const agent = eligibleAgents.find((entry) => entry.id === option.id) ?? null;
       return createElement(
         FragmentSafe,
         null,
-        agent
-          ? createElement(AgentIcon, { icon: agent.icon, className: "h-3.5 w-3.5 shrink-0 text-muted-foreground" })
-          : createElement(User, { className: "h-3.5 w-3.5 shrink-0 text-muted-foreground" }),
+        createElement(AgentIcon, { icon: agent?.icon, className: "h-3.5 w-3.5 shrink-0 text-muted-foreground" }),
         createElement("span", { className: "truncate" }, option.label),
       );
     },
@@ -707,7 +626,7 @@ export function initPluginBridge(
       MarkdownEditor: PluginSdkMarkdownEditor,
       FileTree: PluginSdkFileTree,
       IssuesList: PluginSdkIssuesList,
-      AssigneePicker: PluginSdkAssigneePicker,
+      OwnerPicker: PluginSdkOwnerPicker,
       ProjectPicker: PluginSdkProjectPicker,
       ManagedRoutinesList: HostManagedRoutinesList,
     },

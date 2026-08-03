@@ -85,31 +85,14 @@ export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
 const DEV_TSX_LOADER_PATH = path.resolve(__dirname, "../../../cli/node_modules/tsx/dist/loader.mjs");
 
 /**
- * Model-provider API keys that sandbox-provider plugins (e.g.
- * `@paperclipai/plugin-kubernetes`) are allowed to read from the
- * server's process environment so they can inject them into per-run
- * pod Secrets. All other host env vars remain stripped from plugin
- * workers (see `PluginWorkerManager.spawnProcess`). The passthrough
- * is gated on the plugin manifest declaring
- * `environment.drivers.register` — non-sandbox plugins never receive
- * these keys.
- */
-const ADAPTER_ENV_PASSTHROUGH = [
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "GOOGLE_API_KEY",
-  "GEMINI_API_KEY",
-  "OPENROUTER_API_KEY",
-];
-
-/**
  * In-cluster Kubernetes service-discovery vars. A sandbox-provider plugin that
  * runs in-cluster (e.g. `@paperclipai/plugin-kubernetes` with inCluster=true)
  * builds its API client via `KubeConfig.loadFromCluster()`, which reads these
  * to construct the apiserver URL. Without them the worker fails with "Invalid
  * URL" at lease acquisition. The CA + token are files under
  * /var/run/secrets/kubernetes.io/serviceaccount and are readable directly.
- * Gated, like ADAPTER_ENV_PASSTHROUGH, on environment-driver registration.
+ * Gated on environment-driver registration. Provider authentication is never
+ * inherited from the Paperclip server process.
  */
 const K8S_IN_CLUSTER_ENV_PASSTHROUGH = [
   "KUBERNETES_SERVICE_HOST",
@@ -119,19 +102,18 @@ const K8S_IN_CLUSTER_ENV_PASSTHROUGH = [
 
 export function buildPluginWorkerEnv(input: {
   manifest: Pick<PaperclipPluginManifestV1, "capabilities">;
-  instanceInfo: { deploymentMode?: string | null; deploymentExposure?: string | null };
+  instanceInfo: { deploymentExposure?: string | null };
   processEnv?: NodeJS.ProcessEnv;
 }): Record<string, string> {
   const processEnv = input.processEnv ?? process.env;
   const env: Record<string, string> = {
-    PAPERCLIP_DEPLOYMENT_MODE: input.instanceInfo.deploymentMode ?? "",
     PAPERCLIP_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
   };
   const canRegisterEnvironmentDrivers = Array.isArray(input.manifest.capabilities)
     && input.manifest.capabilities.includes("environment.drivers.register");
   if (!canRegisterEnvironmentDrivers) return env;
 
-  for (const key of [...ADAPTER_ENV_PASSTHROUGH, ...K8S_IN_CLUSTER_ENV_PASSTHROUGH]) {
+  for (const key of K8S_IN_CLUSTER_ENV_PASSTHROUGH) {
     const value = processEnv[key];
     if (value && value.trim().length > 0) {
       env[key] = value;
@@ -322,7 +304,6 @@ export interface PluginRuntimeServices {
   instanceInfo: {
     instanceId: string;
     hostVersion: string;
-    deploymentMode?: "local_trusted" | "authenticated";
     deploymentExposure?: "private" | "public";
   };
 }
@@ -498,6 +479,16 @@ export interface PluginLoader {
   // -----------------------------------------------------------------------
 
   /**
+   * Bind the complete runtime service graph exactly once.
+   *
+   * The server creates the loader first so the lifecycle manager can own that
+   * exact instance, then completes the lifecycle/dispatcher graph and binds it
+   * here before exposing runtime plugin operations. Discovery-only loaders do
+   * not call this method.
+   */
+  bindRuntimeServices(services: PluginRuntimeServices): void;
+
+  /**
    * Load and activate all plugins that are in `ready` status.
    *
    * This is the main server-startup orchestration method. For each plugin
@@ -512,7 +503,7 @@ export interface PluginLoader {
    * Plugins that fail to activate are marked as `error` in the database.
    * Activation failures are non-fatal — other plugins continue loading.
    *
-   * **Requires** `PluginRuntimeServices` to have been provided at construction.
+   * **Requires** `PluginRuntimeServices` to have been bound.
    * Throws if runtime services are not available.
    *
    * @returns Aggregated results for all attempted plugin loads.
@@ -532,7 +523,7 @@ export interface PluginLoader {
    * If the plugin is in `installed` status, transitions it to `ready`
    * via the lifecycle manager before spawning the worker.
    *
-   * **Requires** `PluginRuntimeServices` to have been provided at construction.
+   * **Requires** `PluginRuntimeServices` to have been bound.
    *
    * @param pluginId - UUID of the plugin to activate
    * @returns The activation result for this plugin
@@ -1017,7 +1008,7 @@ export function getPluginUiContributionMetadata(
  * The loader is responsible for plugin discovery, installation, and runtime
  * activation.  It reads plugin packages from the local filesystem and npm,
  * validates their manifests, registers them in the database, and — when
- * runtime services are provided — initialises worker processes, event
+ * runtime services are bound — initialises worker processes, event
  * subscriptions, job schedules, webhook endpoints, and agent tools.
  *
  * Usage (discovery & install only):
@@ -1039,7 +1030,8 @@ export function getPluginUiContributionMetadata(
  *
  * Usage (full runtime activation at server startup):
  * ```ts
- * const loader = pluginLoader(db, loaderOpts, {
+ * const loader = pluginLoader(db, loaderOpts);
+ * loader.bindRuntimeServices({
  *   workerManager,
  *   eventBus,
  *   jobScheduler,
@@ -1068,7 +1060,6 @@ export function getPluginUiContributionMetadata(
 export function pluginLoader(
   db: Db,
   options: PluginLoaderOptions = {},
-  runtimeServices?: PluginRuntimeServices,
 ): PluginLoader {
   const {
     localPluginDir = DEFAULT_LOCAL_PLUGIN_DIR,
@@ -1081,7 +1072,7 @@ export function pluginLoader(
   const manifestValidator = pluginManifestValidator();
   const capabilityValidator = pluginCapabilityValidator();
   const log = logger.child({ service: "plugin-loader" });
-  const hostVersion = runtimeServices?.instanceInfo.hostVersion;
+  let runtimeServices: PluginRuntimeServices | undefined;
 
   async function assertPageRoutePathsAvailable(manifest: PaperclipPluginManifestV1): Promise<void> {
     const requestedRoutePaths = getDeclaredPageRoutePaths(manifest);
@@ -1240,6 +1231,7 @@ export function pluginLoader(
 
     // Step 6: Reject plugins that require a newer host than the running server
     const minimumHostVersion = getMinimumHostVersion(manifest);
+    const hostVersion = runtimeServices?.instanceInfo.hostVersion;
     if (minimumHostVersion && hostVersion) {
       if (compareSemver(hostVersion, minimumHostVersion) < 0) {
         throw new Error(
@@ -1845,6 +1837,17 @@ export function pluginLoader(
     },
 
     // -----------------------------------------------------------------------
+    // bindRuntimeServices
+    // -----------------------------------------------------------------------
+
+    bindRuntimeServices(services: PluginRuntimeServices): void {
+      if (runtimeServices !== undefined) {
+        throw new Error("Plugin runtime services are already bound");
+      }
+      runtimeServices = services;
+    },
+
+    // -----------------------------------------------------------------------
     // hasRuntimeServices
     // -----------------------------------------------------------------------
 
@@ -1852,7 +1855,6 @@ export function pluginLoader(
       return runtimeServices !== undefined;
     },
 
-    // -----------------------------------------------------------------------
     // -----------------------------------------------------------------------
     // loadAll
     // -----------------------------------------------------------------------
@@ -1869,8 +1871,8 @@ export function pluginLoader(
     async loadAll(): Promise<PluginLoadAllResult> {
       if (!runtimeServices) {
         throw new Error(
-          "Cannot loadAll: no PluginRuntimeServices provided. " +
-            "Pass runtime services as the third argument to pluginLoader().",
+          "Cannot loadAll: PluginRuntimeServices have not been bound. " +
+            "Call bindRuntimeServices() before runtime activation.",
         );
       }
 
@@ -1941,8 +1943,8 @@ export function pluginLoader(
     async loadSingle(pluginId: string): Promise<PluginLoadResult> {
       if (!runtimeServices) {
         throw new Error(
-          "Cannot loadSingle: no PluginRuntimeServices provided. " +
-            "Pass runtime services as the third argument to pluginLoader().",
+          "Cannot loadSingle: PluginRuntimeServices have not been bound. " +
+            "Call bindRuntimeServices() before runtime activation.",
         );
       }
 

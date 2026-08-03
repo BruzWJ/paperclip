@@ -1,15 +1,14 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   activityLog,
   agents,
   approvals,
   authUsers,
-  heartbeatRuns,
   issueApprovals,
   issueComments,
+  issueExecutionAuthorities,
   issues,
-  issueThreadInteractions,
 } from "@paperclipai/db";
 import { visibleIssueCondition } from "./issue-visibility.js";
 
@@ -23,6 +22,12 @@ import type {
   WorkTimelineEdge,
   WorkTimelineResult,
 } from "@paperclipai/shared";
+import {
+  listIssueExecutionRunsForActivity,
+  listIssueExecutionRunsForWorkTimeline,
+  type IssueExecutionRunEnvelope,
+  type IssueExecutionRunListCursor,
+} from "./issue-execution-run-service.js";
 
 export type {
   TimelineActorType,
@@ -53,9 +58,9 @@ export interface WorkTimelineIssueAccessInput {
   companyId: string;
   projectId: string | null;
   parentId: string | null;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
-  status: string;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
+  boardPresentationStatus: string;
 }
 
 type IssueRow = {
@@ -66,15 +71,14 @@ type IssueRow = {
   parentId: string | null;
   identifier: string | null;
   title: string | null;
-  createdByAgentId: string | null;
-  createdByUserId: string | null;
-  assigneeAgentId: string | null;
-  assigneeUserId: string | null;
-  status: string;
+  creatorKind: string | null;
+  creatorAgentId: string | null;
+  creatorUserId: string | null;
+  ownerAgentId: string | null;
+  ownerUserId: string | null;
+  boardPresentationStatus: string;
   createdAt: Date;
 };
-
-type RunUsage = NonNullable<WorkTimelineSpan["usage"]>;
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
@@ -122,53 +126,65 @@ function readString(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function readNumber(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-function readUsageToken(source: Record<string, unknown>, ...keys: string[]) {
-  for (const key of keys) {
-    const value = readNumber(source[key]);
-    if (value != null) return Math.max(0, Math.floor(value));
-  }
-  return 0;
-}
-
-function normalizeRunUsage(usageJson: unknown): RunUsage | null {
-  if (!usageJson || typeof usageJson !== "object" || Array.isArray(usageJson)) return null;
-  const source = usageJson as Record<string, unknown>;
-  const inputTokens = readUsageToken(source, "inputTokens", "input_tokens", "rawInputTokens", "raw_input_tokens");
-  const cachedInputTokens = readUsageToken(
-    source,
-    "cachedInputTokens",
-    "cached_input_tokens",
-    "cacheReadInputTokens",
-    "cache_read_input_tokens",
-  );
-  const outputTokens = readUsageToken(source, "outputTokens", "output_tokens", "rawOutputTokens", "raw_output_tokens");
-  const totalTokens = inputTokens + cachedInputTokens + outputTokens;
-  return totalTokens > 0 ? { inputTokens, cachedInputTokens, outputTokens, totalTokens } : null;
-}
-
 function maybeUuidList(ids: Iterable<string>) {
   return Array.from(new Set(Array.from(ids).filter((id) => id.length > 0)));
 }
 
-function runOverlapsWindow(from: Date, to: Date) {
-  const fromIso = from.toISOString();
-  const toIso = to.toISOString();
-  return and(
-    sql`coalesce(${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt}) <= ${toIso}::timestamptz`,
-    sql`coalesce(${heartbeatRuns.finishedAt}, ${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt}) >= ${fromIso}::timestamptz`,
-  );
+function runOverlapsWindow(
+  run: IssueExecutionRunEnvelope,
+  from: Date,
+  to: Date,
+) {
+  const startedAt = run.startedAt ?? run.createdAt;
+  const finishedAt = run.finishedAt ?? run.startedAt ?? run.createdAt;
+  return startedAt <= to && finishedAt >= from;
 }
 
 export function workTimelineService(db: Db) {
+  async function listCompanyRunsInWindow(
+    companyId: string,
+    from: Date,
+    to: Date,
+    maximum: number,
+  ) {
+    const runs: IssueExecutionRunEnvelope[] = [];
+    let cursor: IssueExecutionRunListCursor | null = null;
+    do {
+      const page = await listIssueExecutionRunsForActivity(db, {
+        companyId,
+        cursor,
+        limit: 200,
+      });
+      for (const run of page.items) {
+        if (runOverlapsWindow(run, from, to)) runs.push(run);
+        if (runs.length === maximum) return runs;
+      }
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    return runs;
+  }
+
+  async function listIssueRunsInWindow(
+    companyId: string,
+    issueId: string,
+    from: Date,
+    to: Date,
+  ) {
+    const runs: IssueExecutionRunEnvelope[] = [];
+    let cursor: IssueExecutionRunListCursor | null = null;
+    do {
+      const page = await listIssueExecutionRunsForWorkTimeline(db, {
+        companyId,
+        issueId,
+        cursor,
+        limit: 200,
+      });
+      runs.push(...page.items.filter((run) => runOverlapsWindow(run, from, to)));
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    return runs;
+  }
+
   async function filterReadableIssues(
     rows: IssueRow[],
     canReadIssue: NonNullable<WorkTimelineQuery["canReadIssue"]> | undefined,
@@ -185,9 +201,9 @@ export function workTimelineService(db: Db) {
           companyId: issue.companyId,
           projectId: issue.projectId,
           parentId: issue.parentId,
-          assigneeAgentId: issue.assigneeAgentId,
-          assigneeUserId: issue.assigneeUserId,
-          status: issue.status,
+          ownerAgentId: issue.ownerAgentId,
+          ownerUserId: issue.ownerUserId,
+          boardPresentationStatus: issue.boardPresentationStatus,
         }),
       })));
       for (const decision of decisions) {
@@ -228,20 +244,14 @@ export function workTimelineService(db: Db) {
       .limit(MAX_SOURCE_ROWS);
     for (const row of recentlyTouched) ids.add(row.id);
 
-    const runContextRows = await db
-      .select({ issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'` })
-      .from(heartbeatRuns)
-      .where(
-        and(
-          eq(heartbeatRuns.companyId, input.companyId),
-          runOverlapsWindow(from, to),
-          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' is not null`,
-        ),
-      )
-      .orderBy(desc(heartbeatRuns.createdAt))
-      .limit(MAX_SOURCE_ROWS);
-    for (const row of runContextRows) {
-      if (row.issueId) ids.add(row.issueId);
+    const runRows = await listCompanyRunsInWindow(
+      input.companyId,
+      from,
+      to,
+      MAX_SOURCE_ROWS,
+    );
+    for (const row of runRows) {
+      ids.add(row.issueId);
     }
 
     const activityIssueRows = await db
@@ -265,7 +275,6 @@ export function workTimelineService(db: Db) {
       .where(
         and(
           eq(issueComments.companyId, input.companyId),
-          isNull(issueComments.deletedAt),
           gte(issueComments.createdAt, from),
           lte(issueComments.createdAt, to),
         ),
@@ -273,22 +282,6 @@ export function workTimelineService(db: Db) {
       .orderBy(desc(issueComments.createdAt))
       .limit(MAX_SOURCE_ROWS);
     for (const row of commentIssueRows) ids.add(row.issueId);
-
-    const interactionIssueRows = await db
-      .select({ issueId: issueThreadInteractions.issueId })
-      .from(issueThreadInteractions)
-      .where(
-        and(
-          eq(issueThreadInteractions.companyId, input.companyId),
-          or(
-            and(gte(issueThreadInteractions.createdAt, from), lte(issueThreadInteractions.createdAt, to)),
-            and(gte(issueThreadInteractions.resolvedAt, from), lte(issueThreadInteractions.resolvedAt, to)),
-          ),
-        ),
-      )
-      .orderBy(desc(issueThreadInteractions.createdAt))
-      .limit(MAX_SOURCE_ROWS);
-    for (const row of interactionIssueRows) ids.add(row.issueId);
 
     const approvalIssueRows = await db
       .select({ issueId: issueApprovals.issueId })
@@ -321,14 +314,19 @@ export function workTimelineService(db: Db) {
         parentId: issues.parentId,
         identifier: issues.identifier,
         title: issues.title,
-        createdByAgentId: issues.createdByAgentId,
-        createdByUserId: issues.createdByUserId,
-        assigneeAgentId: issues.assigneeAgentId,
-        assigneeUserId: issues.assigneeUserId,
-        status: issues.status,
+        creatorKind: issues.creatorKind,
+        creatorAgentId: issueExecutionAuthorities.agentId,
+        creatorUserId: issues.creatorUserId,
+        ownerAgentId: issues.ownerAgentId,
+        ownerUserId: issues.ownerUserId,
+        boardPresentationStatus: issues.boardPresentationStatus,
         createdAt: issues.createdAt,
       })
       .from(issues)
+      .leftJoin(
+        issueExecutionAuthorities,
+        eq(issueExecutionAuthorities.id, issues.creatorAuthorityId),
+      )
       .where(
         and(
           eq(issues.companyId, input.companyId),
@@ -347,10 +345,15 @@ export function workTimelineService(db: Db) {
     const byId = new Map(rows.map((issue) => [issue.id, issue]));
     const selected = new Set<string>();
     for (const issue of rows) {
-      if (issue.createdByUserId === input.userId || issue.assigneeUserId === input.userId) selected.add(issue.id);
+      if (
+        (issue.creatorKind === "user/board" && issue.creatorUserId === input.userId)
+        || issue.ownerUserId === input.userId
+      ) {
+        selected.add(issue.id);
+      }
     }
 
-    const [commentRows, approvalRows, interactionRows, activityRows] = await Promise.all([
+    const [commentRows, approvalRows, activityRows] = await Promise.all([
       db
         .select({ issueId: issueComments.issueId })
         .from(issueComments)
@@ -358,7 +361,6 @@ export function workTimelineService(db: Db) {
           and(
             eq(issueComments.companyId, input.companyId),
             eq(issueComments.authorUserId, input.userId),
-            isNull(issueComments.deletedAt),
             gte(issueComments.createdAt, from),
             lte(issueComments.createdAt, to),
           ),
@@ -376,17 +378,6 @@ export function workTimelineService(db: Db) {
           ),
         ),
       db
-        .select({ issueId: issueThreadInteractions.issueId })
-        .from(issueThreadInteractions)
-        .where(
-          and(
-            eq(issueThreadInteractions.companyId, input.companyId),
-            eq(issueThreadInteractions.resolvedByUserId, input.userId),
-            gte(issueThreadInteractions.resolvedAt, from),
-            lte(issueThreadInteractions.resolvedAt, to),
-          ),
-        ),
-      db
         .select({ issueId: activityLog.entityId })
         .from(activityLog)
         .where(
@@ -401,7 +392,7 @@ export function workTimelineService(db: Db) {
         ),
     ]);
 
-    for (const row of [...commentRows, ...approvalRows, ...interactionRows, ...activityRows]) {
+    for (const row of [...commentRows, ...approvalRows, ...activityRows]) {
       selected.add(row.issueId);
     }
 
@@ -449,14 +440,18 @@ export function workTimelineService(db: Db) {
   }
 
   function actorForIssueCreator(issue: IssueRow) {
-    if (issue.createdByAgentId) return actorId("agent", issue.createdByAgentId);
-    if (issue.createdByUserId) return actorId("user", issue.createdByUserId);
+    if (issue.creatorKind === "agent-execution" && issue.creatorAgentId) {
+      return actorId("agent", issue.creatorAgentId);
+    }
+    if (issue.creatorKind === "user/board" && issue.creatorUserId) {
+      return actorId("user", issue.creatorUserId);
+    }
     return actorId("system", "system");
   }
 
-  function actorForIssueAssignee(issue: IssueRow) {
-    if (issue.assigneeAgentId) return actorId("agent", issue.assigneeAgentId);
-    if (issue.assigneeUserId) return actorId("user", issue.assigneeUserId);
+  function actorForIssueOwner(issue: IssueRow) {
+    if (issue.ownerAgentId) return actorId("agent", issue.ownerAgentId);
+    if (issue.ownerUserId) return actorId("user", issue.ownerUserId);
     return null;
   }
 
@@ -499,12 +494,12 @@ export function workTimelineService(db: Db) {
         at: issue.createdAt.toISOString(),
       });
 
-      const assigneeActorId = actorForIssueAssignee(issue);
-      if (assigneeActorId) {
-        actorIds.add(assigneeActorId);
+      const ownerActorId = actorForIssueOwner(issue);
+      if (ownerActorId) {
+        actorIds.add(ownerActorId);
         edges.push({
           fromActorId: creatorActorId,
-          toActorId: assigneeActorId,
+          toActorId: ownerActorId,
           issueId: issue.id,
           at: issue.createdAt.toISOString(),
           kind: "assignment",
@@ -512,12 +507,12 @@ export function workTimelineService(db: Db) {
       }
 
       const parent = issue.parentId ? issueById.get(issue.parentId) : null;
-      const parentActorId = parent ? actorForIssueAssignee(parent) ?? actorForIssueCreator(parent) : null;
-      if (parentActorId && assigneeActorId && parentActorId !== assigneeActorId) {
+      const parentActorId = parent ? actorForIssueOwner(parent) ?? actorForIssueCreator(parent) : null;
+      if (parentActorId && ownerActorId && parentActorId !== ownerActorId) {
         actorIds.add(parentActorId);
         edges.push({
           fromActorId: parentActorId,
-          toActorId: assigneeActorId,
+          toActorId: ownerActorId,
           issueId: issue.id,
           at: issue.createdAt.toISOString(),
           kind: "delegation",
@@ -531,54 +526,12 @@ export function workTimelineService(db: Db) {
       }
     }
 
-    const [contextRunRows, activityRunRows, commentRows, approvalRows, interactionRows, logRows] = await Promise.all([
-      db
-        .select({
-          runId: heartbeatRuns.id,
-          agentId: heartbeatRuns.agentId,
-          issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`,
-          status: heartbeatRuns.status,
-          startedAt: heartbeatRuns.startedAt,
-          finishedAt: heartbeatRuns.finishedAt,
-          createdAt: heartbeatRuns.createdAt,
-          retryOfRunId: heartbeatRuns.retryOfRunId,
-          continuationAttempt: heartbeatRuns.continuationAttempt,
-          invocationSource: heartbeatRuns.invocationSource,
-          usageJson: heartbeatRuns.usageJson,
-        })
-        .from(heartbeatRuns)
-        .where(
-          and(
-            eq(heartbeatRuns.companyId, input.companyId),
-            runOverlapsWindow(from, to),
-            inArray(sql<string>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`, readableIssueIds),
-          ),
+    const [runRows, commentRows, approvalRows, logRows] = await Promise.all([
+      Promise.all(
+        readableIssueIds.map((issueId) =>
+          listIssueRunsInWindow(input.companyId, issueId, from, to)
         ),
-      db
-        .select({
-          runId: heartbeatRuns.id,
-          agentId: heartbeatRuns.agentId,
-          issueId: activityLog.entityId,
-          status: heartbeatRuns.status,
-          startedAt: heartbeatRuns.startedAt,
-          finishedAt: heartbeatRuns.finishedAt,
-          createdAt: heartbeatRuns.createdAt,
-          retryOfRunId: heartbeatRuns.retryOfRunId,
-          continuationAttempt: heartbeatRuns.continuationAttempt,
-          invocationSource: heartbeatRuns.invocationSource,
-          usageJson: heartbeatRuns.usageJson,
-        })
-        .from(activityLog)
-        .innerJoin(heartbeatRuns, eq(activityLog.runId, heartbeatRuns.id))
-        .where(
-          and(
-            eq(activityLog.companyId, input.companyId),
-            eq(heartbeatRuns.companyId, input.companyId),
-            eq(activityLog.entityType, "issue"),
-            inArray(activityLog.entityId, readableIssueIds),
-            runOverlapsWindow(from, to),
-          ),
-        ),
+      ).then((pages) => pages.flat()),
       db
         .select({
           issueId: issueComments.issueId,
@@ -590,7 +543,6 @@ export function workTimelineService(db: Db) {
         .where(
           and(
             eq(issueComments.companyId, input.companyId),
-            isNull(issueComments.deletedAt),
             inArray(issueComments.issueId, readableIssueIds),
             gte(issueComments.createdAt, from),
             lte(issueComments.createdAt, to),
@@ -619,27 +571,6 @@ export function workTimelineService(db: Db) {
         ),
       db
         .select({
-          issueId: issueThreadInteractions.issueId,
-          resolvedByAgentId: issueThreadInteractions.resolvedByAgentId,
-          resolvedByUserId: issueThreadInteractions.resolvedByUserId,
-          resolvedAt: issueThreadInteractions.resolvedAt,
-          createdByAgentId: issueThreadInteractions.createdByAgentId,
-          createdByUserId: issueThreadInteractions.createdByUserId,
-          createdAt: issueThreadInteractions.createdAt,
-        })
-        .from(issueThreadInteractions)
-        .where(
-          and(
-            eq(issueThreadInteractions.companyId, input.companyId),
-            inArray(issueThreadInteractions.issueId, readableIssueIds),
-            or(
-              and(gte(issueThreadInteractions.createdAt, from), lte(issueThreadInteractions.createdAt, to)),
-              and(gte(issueThreadInteractions.resolvedAt, from), lte(issueThreadInteractions.resolvedAt, to)),
-            ),
-          ),
-        ),
-      db
-        .select({
           issueId: activityLog.entityId,
           actorType: activityLog.actorType,
           actorId: activityLog.actorId,
@@ -660,14 +591,16 @@ export function workTimelineService(db: Db) {
     ]);
 
     const spanByRunId = new Map<string, WorkTimelineSpan>();
-    for (const row of [...contextRunRows, ...activityRunRows]) {
-      if (!row.issueId || !issueById.has(row.issueId) || spanByRunId.has(row.runId)) continue;
-      const runActorId = actorId("agent", row.agentId);
+    for (const row of runRows) {
+      if (!issueById.has(row.issueId) || spanByRunId.has(row.runId)) continue;
+      const runActorId = row.targetAgentId
+        ? actorId("agent", row.targetAgentId)
+        : actorId("system", "compaction");
       actorIds.add(runActorId);
       spanByRunId.set(row.runId, {
         actorId: runActorId,
-        laneHint: row.invocationSource ?? null,
         runId: row.runId,
+        kind: row.kind,
         issueId: row.issueId,
         issueIdentifier: issueById.get(row.issueId)?.identifier ?? null,
         issueTitle: issueById.get(row.issueId)?.title ?? null,
@@ -675,9 +608,6 @@ export function workTimelineService(db: Db) {
         end: dateIso(row.finishedAt),
         status: row.status,
         retryOfRunId: row.retryOfRunId ?? null,
-        continuationAttempt: row.continuationAttempt,
-        invocationSource: row.invocationSource ?? null,
-        usage: normalizeRunUsage(row.usageJson),
       });
     }
 
@@ -708,25 +638,6 @@ export function workTimelineService(db: Db) {
       });
     }
 
-    for (const row of interactionRows) {
-      const interactionActorId = row.resolvedByUserId
-        ? actorId("user", row.resolvedByUserId)
-        : row.resolvedByAgentId
-          ? actorId("agent", row.resolvedByAgentId)
-          : row.createdByAgentId
-            ? actorId("agent", row.createdByAgentId)
-            : row.createdByUserId
-              ? actorId("user", row.createdByUserId)
-              : actorId("system", "system");
-      actorIds.add(interactionActorId);
-      events.push({
-        actorId: interactionActorId,
-        kind: "approved",
-        issueId: row.issueId,
-        at: (row.resolvedAt ?? row.createdAt).toISOString(),
-      });
-    }
-
     for (const row of logRows) {
       const logActorType = row.actorType === "agent" || row.actorType === "user" || row.actorType === "plugin"
         ? row.actorType
@@ -738,8 +649,8 @@ export function workTimelineService(db: Db) {
         const details = row.details && typeof row.details === "object" && !Array.isArray(row.details)
           ? row.details as Record<string, unknown>
           : {};
-        const targetAgentId = readString(details.assigneeAgentId) ?? readString(details.toAgentId);
-        const targetUserId = readString(details.assigneeUserId) ?? readString(details.toUserId);
+        const targetAgentId = readString(details.ownerAgentId);
+        const targetUserId = readString(details.ownerUserId);
         const toActorId = targetAgentId
           ? actorId("agent", targetAgentId)
           : targetUserId

@@ -11,7 +11,6 @@ import type {
 import {
   buildReRunRequest,
   buildCreateRunRequest,
-  DEFAULT_TEST_RUN_TEMPLATE_ID,
   EMPTY_SAVED_INPUT_DRAFT_STATE,
   evaluateRunGate,
   findOutputDocument,
@@ -19,15 +18,12 @@ import {
   getRunAdditionalDocuments,
   getRunMediaGalleryItems,
   getRunRawAttachments,
-  INLINE_INTERACTION_KINDS,
   isAgentSelectable,
-  isInteractionAnswerable,
   isRunActive,
   isTerminalRunStatus,
   orderRecentlyUpdatedSkills,
   orderRecentlyVisitedSkills,
   skillEditorAvatar,
-  routeInteraction,
   runBadgeStatus,
   runOutputMode,
   runHarnessUnavailableCopy,
@@ -40,7 +36,7 @@ import {
   shouldPollRun,
   showRunErrorCard,
   syncSavedInputDraftState,
-  testTaskLinkState,
+  testIssueLinkState,
 } from "./skill-studio";
 
 const ALL_STATUSES: CompanySkillTestRunStatus[] = [
@@ -209,19 +205,19 @@ describe("run-status derivation", () => {
 
   describe("test-task deep link state", () => {
     it("is enabled for a live harness issue", () => {
-      expect(testTaskLinkState({ taskExpired: false, harnessIssue: { id: "i1" } })).toEqual({
+      expect(testIssueLinkState({ issueExpired: false, harnessIssue: { id: "i1" } })).toEqual({
         enabled: true,
         reason: null,
       });
     });
     it("is disabled when the task expired", () => {
-      expect(testTaskLinkState({ taskExpired: true, harnessIssue: { id: "i1" } })).toEqual({
+      expect(testIssueLinkState({ issueExpired: true, harnessIssue: { id: "i1" } })).toEqual({
         enabled: false,
         reason: "Test task expired",
       });
     });
     it("is disabled when the harness issue was deleted", () => {
-      expect(testTaskLinkState({ taskExpired: false, harnessIssue: null })).toEqual({
+      expect(testIssueLinkState({ issueExpired: false, harnessIssue: null })).toEqual({
         enabled: false,
         reason: "Test task expired",
       });
@@ -430,33 +426,6 @@ describe("saved input editor draft state", () => {
   });
 });
 
-describe("interaction inline-vs-fallback routing", () => {
-  it("renders ask_user_questions and request_confirmation inline", () => {
-    expect(routeInteraction("ask_user_questions")).toBe("inline");
-    expect(routeInteraction("request_confirmation")).toBe("inline");
-    expect(INLINE_INTERACTION_KINDS.has("ask_user_questions")).toBe(true);
-  });
-
-  it("routes every other kind to the fallback summary row", () => {
-    for (const kind of [
-      "suggest_tasks",
-      "request_checkbox_confirmation",
-      "request_board_approval",
-      "some_future_kind",
-    ]) {
-      expect(routeInteraction(kind)).toBe("fallback");
-    }
-  });
-
-  it("only answers inline interactions that are still pending", () => {
-    expect(isInteractionAnswerable({ kind: "ask_user_questions", status: "pending" })).toBe(true);
-    expect(isInteractionAnswerable({ kind: "ask_user_questions", status: "answered" })).toBe(false);
-    expect(isInteractionAnswerable({ kind: "request_confirmation", status: "accepted" })).toBe(false);
-    // Fallback kinds are never answerable inline even while pending.
-    expect(isInteractionAnswerable({ kind: "suggest_tasks", status: "pending" })).toBe(false);
-  });
-});
-
 describe("agent picker + run labels", () => {
   it("marks paused agents as unselectable", () => {
     expect(isAgentSelectable({ status: "active" })).toBe(true);
@@ -531,9 +500,9 @@ describe("agent picker + run labels", () => {
         inputId: null,
         inputSnapshot: "x",
         skillVersionId: "v",
-        templateId: "built-in:default-test-template",
-        templateName: "Default test template",
-        templateBody: "Default",
+        templateId: null,
+        templateName: null,
+        templateBody: null,
       });
       expect(req.agentId).toBe("agent-42");
     });
@@ -559,55 +528,46 @@ describe("agent picker + run labels", () => {
 });
 
 describe("advanced run template helpers", () => {
-  const defaultTemplate: CompanySkillTestRunTemplate = {
-    id: DEFAULT_TEST_RUN_TEMPLATE_ID,
+  const customTemplate: CompanySkillTestRunTemplate = {
+    id: "template-1",
     companyId: "company-1",
-    name: "Default test template",
-    description: "Default",
-    body: "Default {{skillName}}",
-    builtIn: true,
+    name: "Focused smoke",
+    description: null,
+    body: "Custom {{skillName}}",
     createdByAgentId: null,
-    createdByUserId: null,
+    createdByUserId: "board-user",
     updatedByAgentId: null,
-    updatedByUserId: null,
+    updatedByUserId: "board-user",
     deletedAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
   };
-  const customTemplate: CompanySkillTestRunTemplate = {
-    ...defaultTemplate,
-    id: "template-1",
-    name: "Focused smoke",
-    description: null,
-    body: "Custom {{skillName}}",
-    builtIn: false,
-  };
 
-  it("serializes the No template selection distinctly from default", () => {
+  it("serializes and parses the explicit No template selection", () => {
     const serialized = serializeRunTemplateSelection(null);
 
     expect(parseRunTemplateSelection(serialized)).toBeNull();
-    expect(parseRunTemplateSelection(null)).toBe(DEFAULT_TEST_RUN_TEMPLATE_ID);
+    expect(parseRunTemplateSelection(null)).toBeNull();
     expect(parseRunTemplateSelection("template-1")).toBe("template-1");
   });
 
   it("keeps valid server-backed selections and the explicit No template choice", () => {
-    expect(resolveRunTemplateSelection(customTemplate.id, [defaultTemplate, customTemplate])).toEqual({
+    expect(resolveRunTemplateSelection(customTemplate.id, [customTemplate])).toEqual({
       selection: "template-1",
       template: customTemplate,
       recovered: false,
     });
-    expect(resolveRunTemplateSelection(null, [defaultTemplate])).toEqual({
+    expect(resolveRunTemplateSelection(null, [customTemplate])).toEqual({
       selection: null,
       template: null,
       recovered: false,
     });
   });
 
-  it("recovers stale local selections to the server-backed default template", () => {
-    expect(resolveRunTemplateSelection("deleted-template", [defaultTemplate, customTemplate])).toEqual({
-      selection: DEFAULT_TEST_RUN_TEMPLATE_ID,
-      template: defaultTemplate,
+  it("recovers stale local selections to No template without selecting another saved template", () => {
+    expect(resolveRunTemplateSelection("deleted-template", [customTemplate])).toEqual({
+      selection: null,
+      template: null,
       recovered: true,
     });
   });

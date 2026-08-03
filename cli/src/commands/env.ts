@@ -1,12 +1,11 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
+import {
+  redactExternalPostgresConnectionString,
+  resolveDatabaseTarget,
+} from "@paperclipai/db";
 import type { PaperclipConfig } from "../config/schema.js";
 import { configExists, readConfig, resolveConfigPath } from "../config/store.js";
-import {
-  readAgentJwtSecretFromEnv,
-  readAgentJwtSecretFromEnvFile,
-  resolveAgentJwtEnvFile,
-} from "../config/env.js";
 import {
   resolveDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir,
@@ -23,10 +22,7 @@ type EnvVarRow = {
   note: string;
 };
 
-const DEFAULT_AGENT_JWT_TTL_SECONDS = "172800";
-const DEFAULT_AGENT_JWT_ISSUER = "paperclip";
-const DEFAULT_AGENT_JWT_AUDIENCE = "paperclip-api";
-const DEFAULT_HEARTBEAT_SCHEDULER_INTERVAL_MS = "30000";
+const DEFAULT_ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS = "30000";
 const DEFAULT_SECRETS_PROVIDER = "local_encrypted";
 const DEFAULT_STORAGE_PROVIDER = "local_disk";
 function defaultSecretsKeyFilePath(): string {
@@ -110,40 +106,40 @@ export async function envCommand(opts: { config?: string }): Promise<void> {
 }
 
 function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: string): EnvVarRow[] {
-  const agentJwtEnvFile = resolveAgentJwtEnvFile(configPath);
-  const jwtEnv = readAgentJwtSecretFromEnv(configPath);
-  const jwtFile = jwtEnv ? null : readAgentJwtSecretFromEnvFile(agentJwtEnvFile);
-  const jwtSource = jwtEnv ? "env" : jwtFile ? "file" : "missing";
-
-  const dbUrl = process.env.DATABASE_URL ?? config?.database?.connectionString ?? "";
-  const databaseMode = config?.database?.mode ?? "embedded-postgres";
-  const dbUrlSource: EnvSource = process.env.DATABASE_URL ? "env" : config?.database?.connectionString ? "config" : "missing";
+  let dbUrl = "";
+  let dbUrlSource: EnvSource = "missing";
+  try {
+    const target = resolveDatabaseTarget({ configPath });
+    dbUrl = redactExternalPostgresConnectionString(target.connectionString);
+    dbUrlSource =
+      target.source === "DATABASE_URL"
+        ? "env"
+        : target.source === "paperclip-env"
+          ? "file"
+          : "config";
+  } catch {
+    // The missing row below is the actionable env output for an absent target.
+  }
   const publicUrl =
     process.env.PAPERCLIP_PUBLIC_URL ??
-    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ??
-    process.env.BETTER_AUTH_URL ??
-    process.env.BETTER_AUTH_BASE_URL ??
     config?.auth?.publicBaseUrl ??
     "";
   const publicUrlSource: EnvSource =
     process.env.PAPERCLIP_PUBLIC_URL
       ? "env"
-      : process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL || process.env.BETTER_AUTH_BASE_URL
-        ? "env"
-        : config?.auth?.publicBaseUrl
-          ? "config"
-          : "missing";
-  let trustedOriginsDefault = "";
-  if (publicUrl) {
-    try {
-      trustedOriginsDefault = new URL(publicUrl).origin;
-    } catch {
-      trustedOriginsDefault = "";
-    }
-  }
+      : config?.auth?.publicBaseUrl
+        ? "config"
+        : "missing";
+  const deploymentExposure =
+    process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE ??
+    config?.server?.exposure ??
+    "private";
 
-  const heartbeatInterval = process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS ?? DEFAULT_HEARTBEAT_SCHEDULER_INTERVAL_MS;
-  const heartbeatEnabled = process.env.HEARTBEAT_SCHEDULER_ENABLED ?? "true";
+  const issueExecutionInterval =
+    process.env.ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS ??
+    DEFAULT_ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS;
+  const issueExecutionEnabled =
+    process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED ?? "true";
   const secretsProvider =
     process.env.PAPERCLIP_SECRETS_PROVIDER ??
     config?.secrets?.provider ??
@@ -185,26 +181,11 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
 
   const rows: EnvVarRow[] = [
     {
-      key: "PAPERCLIP_AGENT_JWT_SECRET",
-      value: jwtEnv ?? jwtFile ?? "",
-      source: jwtSource,
-      required: true,
-      note:
-        jwtSource === "missing"
-          ? "Generate during onboard or set manually (required for local adapter authentication)"
-          : jwtSource === "env"
-            ? "Set in process environment"
-            : `Set in ${agentJwtEnvFile}`,
-    },
-    {
       key: "DATABASE_URL",
       value: dbUrl,
       source: dbUrlSource,
       required: true,
-      note:
-        databaseMode === "postgres"
-          ? "Configured for postgres mode (required)"
-          : "Required for live deployment with managed PostgreSQL",
+      note: "Required external PostgreSQL target (credentials redacted)",
     },
     {
       key: "PORT",
@@ -216,57 +197,38 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
       note: "HTTP listen port",
     },
     {
+      key: "PAPERCLIP_DEPLOYMENT_EXPOSURE",
+      value: deploymentExposure,
+      source: process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE
+        ? "env"
+        : config?.server?.exposure
+          ? "config"
+          : "default",
+      required: false,
+      note: "Exposure policy; public requires the canonical public URL",
+    },
+    {
       key: "PAPERCLIP_PUBLIC_URL",
       value: publicUrl,
       source: publicUrlSource,
-      required: false,
-      note: "Canonical public URL for auth/callback/invite origin wiring",
+      required: deploymentExposure === "public",
+      note: deploymentExposure === "public"
+        ? "Sole external HTTPS origin for public auth/callback/invite wiring"
+        : "Must remain unset; private auth origins are request-derived",
     },
     {
-      key: "BETTER_AUTH_TRUSTED_ORIGINS",
-      value: process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? trustedOriginsDefault,
-      source: process.env.BETTER_AUTH_TRUSTED_ORIGINS
-        ? "env"
-        : trustedOriginsDefault
-          ? "default"
-          : "missing",
+      key: "ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS",
+      value: issueExecutionInterval,
+      source: process.env.ISSUE_EXECUTION_SCHEDULER_INTERVAL_MS ? "env" : "default",
       required: false,
-      note: "Comma-separated auth origin allowlist (auto-derived from PAPERCLIP_PUBLIC_URL when possible)",
+      note: "Issue-execution reconciliation interval in ms",
     },
     {
-      key: "PAPERCLIP_AGENT_JWT_TTL_SECONDS",
-      value: process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS ?? DEFAULT_AGENT_JWT_TTL_SECONDS,
-      source: process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS ? "env" : "default",
+      key: "ISSUE_EXECUTION_SCHEDULER_ENABLED",
+      value: issueExecutionEnabled,
+      source: process.env.ISSUE_EXECUTION_SCHEDULER_ENABLED ? "env" : "default",
       required: false,
-      note: "JWT lifetime in seconds",
-    },
-    {
-      key: "PAPERCLIP_AGENT_JWT_ISSUER",
-      value: process.env.PAPERCLIP_AGENT_JWT_ISSUER ?? DEFAULT_AGENT_JWT_ISSUER,
-      source: process.env.PAPERCLIP_AGENT_JWT_ISSUER ? "env" : "default",
-      required: false,
-      note: "JWT issuer",
-    },
-    {
-      key: "PAPERCLIP_AGENT_JWT_AUDIENCE",
-      value: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ?? DEFAULT_AGENT_JWT_AUDIENCE,
-      source: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ? "env" : "default",
-      required: false,
-      note: "JWT audience",
-    },
-    {
-      key: "HEARTBEAT_SCHEDULER_INTERVAL_MS",
-      value: heartbeatInterval,
-      source: process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS ? "env" : "default",
-      required: false,
-      note: "Heartbeat worker interval in ms",
-    },
-    {
-      key: "HEARTBEAT_SCHEDULER_ENABLED",
-      value: heartbeatEnabled,
-      source: process.env.HEARTBEAT_SCHEDULER_ENABLED ? "env" : "default",
-      required: false,
-      note: "Set to `false` to disable timer scheduling",
+      note: "Set to `false` to disable issue-execution reconciliation",
     },
     {
       key: "PAPERCLIP_SECRETS_PROVIDER",

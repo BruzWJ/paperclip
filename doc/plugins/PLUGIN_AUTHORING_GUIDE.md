@@ -99,8 +99,8 @@ Worker:
 - entities
 - projects, project workspaces, and plugin-managed projects
 - companies
-- issues, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, checkout assertions, assignment wakeups, and orchestration summaries
-- agents, plugin-managed agents, and agent sessions
+- issues, comments, namespaced `plugin:<pluginKey>` origins, blocker relations, and callback-bound ordinary-issue creation
+- agents and plugin-managed agents
 - plugin-managed routines
 - plugin-managed skills
 - goals
@@ -146,7 +146,6 @@ apiRoutes: [
     path: "/issues/:issueId/smoke",
     auth: "board-or-agent",
     capability: "api.routes.register",
-    checkoutPolicy: "required-for-agent-in-progress",
     companyResolution: { from: "issue", param: "issueId" },
   },
 ]
@@ -154,8 +153,8 @@ apiRoutes: [
 
 The host resolves the plugin, checks that it is ready, enforces
 `api.routes.register`, matches the declared method/path, resolves company access,
-and applies checkout policy before dispatching to the worker's `onApiRequest`
-handler. The worker receives sanitized headers, route params, query, parsed JSON
+and dispatches to the worker's `onApiRequest` handler. The worker receives
+sanitized headers, route params, query, parsed JSON
 body, actor context, and company id. Do not use plugin routes to claim core
 paths; they always remain under `/api/plugins/:pluginId/api/*`.
 
@@ -177,9 +176,9 @@ Use these surfaces:
 
 - Managed agents: declare top-level `agents[]` and require
   `agents.managed`. Use this when the plugin provides a named worker the board
-  should see in the org, budget, pause, invoke, and inspect. Managed agents are
-  normal Paperclip agents with plugin ownership metadata, not background plugin
-  workers.
+  should see in the org, budget, pause, configure, assign ordinary issues to,
+  and inspect. Managed agents are normal Paperclip agents with plugin ownership
+  metadata, not background plugin workers or provider-session owners.
 - Managed projects: declare top-level `projects[]` and require
   `projects.managed`. Use this when the plugin needs a stable company-scoped
   project for its issues, routines, or workspace-oriented UI. Keep plugin work
@@ -188,10 +187,10 @@ Use these surfaces:
   `routines.managed`. Use this for scheduled, webhook, or manually triggered
   jobs that should create visible Paperclip issues. Prefer managed routines over
   plugin `jobs[]` for recurring business work; plugin jobs are for plugin
-  runtime maintenance that does not need a board-visible task trail.
+  runtime maintenance that does not need a board-visible issue trail.
 - Managed skills: declare top-level `skills[]` and require `skills.managed`.
   Use this for reusable plugin capabilities that should be surfaced to operators and
-  synced into Paperclip managed agents.
+  selected for ordinary managed agents.
 
 Managed resources are resolved by stable plugin keys, not hardcoded database
 ids. In a worker action or data handler, call `ctx.agents.managed.reconcile()`,
@@ -234,13 +233,8 @@ const manifest: PaperclipPluginManifestV1 = {
     {
       agentKey: "researcher",
       displayName: "Researcher",
-      role: "research",
       title: "Research Agent",
       capabilities: "Runs recurring research briefs for this company.",
-      adapterPreference: ["codex_local", "claude_local", "process"],
-      instructions: {
-        content: "Follow the Paperclip heartbeat and produce concise research briefs.",
-      },
     },
   ],
   projects: [
@@ -320,11 +314,17 @@ Authoring rules:
 - Keep keys stable once published. Renaming `agentKey`, `projectKey`,
   `routineKey`, or `skillKey` creates a new managed resource from the host's
   point of view.
-- Use managed agents for plugin-provided labor. Use `ctx.agents.invoke()` or
-  `ctx.agents.sessions` only after you have a real agent id, either selected by
-  the operator or resolved from `ctx.agents.managed`.
+- Use managed agents for plugin-provided labor. Provider work starts only by
+  creating an ordinary issue with an explicit eligible owner through
+  `ctx.issues.create`; plugins cannot invoke an agent or open an agent session
+  directly.
+- A managed-agent declaration does not choose, infer, or default an AI
+  adapter. The board must attach an explicit immutable revision referencing an
+  installed, conformance-approved data-only ACP adapter before that agent is
+  runnable. Plugins cannot supply a command, HTTP endpoint, provider SDK,
+  credential, native-session selector, or provider-specific response mapping.
 - Use managed routines for recurring or externally triggered work that should
-  produce tasks. Schedule, webhook, and API triggers are visible routine
+  produce issues. Schedule, webhook, and API triggers are visible routine
   triggers, and each run has the normal Paperclip issue/audit trail.
 - Use managed skills for reusable operator-visible capabilities that are shared
   by managed agents. Reconcile skill declarations by `skillKey` and keep the
@@ -354,7 +354,7 @@ Mount surfaces currently wired in the host include:
 - `routeSidebar`
 - `sidebarPanel`
 - `detailTab`
-- `taskDetailView`
+- `issueDetailView`
 - `projectSidebarItem`
 - `globalToolbarButton`
 - `toolbarButton`
@@ -386,7 +386,7 @@ the board's current styling, ordering, recent selections, and dark-mode behavior
 without importing `ui/src` internals.
 
 Prefer shared components for common Paperclip UX patterns to reduce drift and
-deprecation risk, especially for task/assignment flows and routine or sidebar-like
+deprecation risk, especially for issue/assignment flows and routine or sidebar-like
 plugin screens.
 
 Currently exposed components include:
@@ -394,25 +394,26 @@ Currently exposed components include:
 - `MarkdownBlock` and `MarkdownEditor` for rendered and editable markdown.
 - `FileTree` for serializable file and directory trees.
 - `IssuesList` for a native company-scoped issue table.
-- `AssigneePicker` for the same agent/user selector used in the new issue pane.
-  Use the controlled `value` format `agent:<id>`, `user:<id>`, or `""`.
+- `OwnerPicker` for the required agent owner of an ordinary plugin-created
+  issue. Its controlled value is an agent id or `""` before selection, and its
+  payload is `{ ownerAgentId }`; it exposes no user-assignee compatibility.
 - `ProjectPicker` for the same project selector used in the new issue pane.
   Use the controlled project id value, or `""` for no project.
 - `ManagedRoutinesList` for plugin-owned routine settings pages.
 
 ```tsx
-import { AssigneePicker, ProjectPicker } from "@paperclipai/plugin-sdk/ui";
+import { OwnerPicker, ProjectPicker } from "@paperclipai/plugin-sdk/ui";
 
 export function PluginAssignmentControls({ companyId }: { companyId: string }) {
-  const [assignee, setAssignee] = useState("");
+  const [ownerAgentId, setOwnerAgentId] = useState("");
   const [projectId, setProjectId] = useState("");
 
   return (
     <>
-      <AssigneePicker
+      <OwnerPicker
         companyId={companyId}
-        value={assignee}
-        onChange={(value) => setAssignee(value)}
+        value={ownerAgentId}
+        onChange={(value) => setOwnerAgentId(value)}
       />
       <ProjectPicker
         companyId={companyId}
@@ -585,7 +586,7 @@ Rules:
 - Do not rely on host design-system components or undocumented app internals.
 - GitHub repository installs are not a first-class workflow today. For local development, use a checked-out local path. For production, publish to npm or a private npm-compatible registry.
 
-## Verification before handoff
+## Verification before delivery
 
 At minimum:
 

@@ -20,6 +20,11 @@ import {
   type ParsedCustomImageSetupSshCommand,
 } from "../services/environment-custom-image-terminal-sessions.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
+import {
+  RequestAuthorityError,
+  type RequestAuthority,
+  type RequestAuthorityBoundary,
+} from "../http/request-authority.js";
 
 interface TerminalWsSocket {
   readyState: number;
@@ -485,12 +490,13 @@ export function setupEnvironmentCustomImageTerminalWebSocketServer(
   server: HttpServer,
   db: Db,
   opts: {
+    requestAuthorityBoundary: RequestAuthorityBoundary;
     pluginWorkerManager?: PluginWorkerManager;
     customImageService?: CustomImageTerminalService;
     sessionStore?: EnvironmentCustomImageTerminalSessionStore;
     connectionRegistry?: EnvironmentCustomImageTerminalConnectionRegistry;
     sshConnector?: EnvironmentCustomImageSshConnector;
-  } = {},
+  },
 ) {
   const wss = new WebSocketServer({ noServer: true });
   const customImages = opts.customImageService ?? environmentCustomImageService(db, {
@@ -723,8 +729,8 @@ export function setupEnvironmentCustomImageTerminalWebSocketServer(
     const reqWithContext = req as IncomingMessageWithTerminalContext;
     if (!req.url) return;
 
-    const url = new URL(req.url, "http://localhost");
-    const path = parseTerminalPath(url.pathname);
+    const relativeUrl = new URL(req.url, "http://paperclip.invalid");
+    const path = parseTerminalPath(relativeUrl.pathname);
     if (!path) return;
 
     reqWithContext.paperclipWebSocketHandled = true;
@@ -740,6 +746,24 @@ export function setupEnvironmentCustomImageTerminalWebSocketServer(
 
     socket.on("error", onRawSocketError);
     socket.once("close", cleanupRawSocketListeners);
+
+    let authority: RequestAuthority;
+    try {
+      authority = opts.requestAuthorityBoundary.admit(req);
+    } catch (error) {
+      if (error instanceof RequestAuthorityError) {
+        rejectUpgrade(
+          socket,
+          error.status === 403 ? "403 Forbidden" : "400 Bad Request",
+          error.message,
+        );
+        return;
+      }
+      rejectUpgrade(socket, "400 Bad Request", "invalid request authority");
+      return;
+    }
+
+    const url = new URL(req.url, authority.origin);
 
     const terminalSessionId = url.searchParams.get("terminalSessionId")?.trim() ?? "";
     const initialCols = parseTerminalDimension(url.searchParams.get("cols"), 80);

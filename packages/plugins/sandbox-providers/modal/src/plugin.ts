@@ -8,9 +8,16 @@ import {
   type Sandbox,
   type SandboxCreateParams,
 } from "modal";
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import {
+  buildCancelEnvironmentShellCommand,
+  createEnvironmentExecutionCancellationRegistry,
+  definePlugin,
+  wrapCancellableEnvironmentShellCommand,
+} from "@paperclipai/plugin-sdk";
 import type {
   PluginEnvironmentAcquireLeaseParams,
+  PluginEnvironmentCancelExecutionParams,
+  PluginEnvironmentCancelExecutionResult,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentExecuteResult,
@@ -24,6 +31,8 @@ import type {
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
 } from "@paperclipai/plugin-sdk";
+
+const activeExecutions = createEnvironmentExecutionCancellationRegistry();
 
 const DEFAULT_WORKDIR = "/workspace/paperclip";
 const DEFAULT_SANDBOX_TIMEOUT_MS = 3_600_000;
@@ -231,24 +240,38 @@ function buildLoginShellScript(input: {
       throw new Error(`Invalid sandbox environment variable key: ${key}`);
     }
   }
-  const envArgs = Object.entries(env)
+  const configuredHome =
+    env.HOME?.trim() || env.USERPROFILE?.trim() || null;
+  const effectiveEnv = { ...env };
+  if (configuredHome) {
+    effectiveEnv.HOME ??= configuredHome;
+    effectiveEnv.USERPROFILE ??= configuredHome;
+  }
+  const envArgs = Object.entries(effectiveEnv)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string")
     .map(([key, value]) => `${key}=${shellQuote(value)}`);
   const commandParts = [shellQuote(input.command), ...input.args.map(shellQuote)].join(" ");
   const redirected = input.stdinPath
     ? `${commandParts} < ${shellQuote(input.stdinPath)}`
     : commandParts;
-  const finalLine = envArgs.length > 0 ? `exec env ${envArgs.join(" ")} ${redirected}` : `exec ${redirected}`;
+  const privateHomeArgs = configuredHome
+    ? ""
+    : ' HOME="$paperclip_provider_home" USERPROFILE="$paperclip_provider_home"';
+  const execPrefix = configuredHome ? "exec " : "";
+  const finalLine =
+    `${execPrefix}env -i PATH="$PATH"${privateHomeArgs}` +
+    `${envArgs.length > 0 ? ` ${envArgs.join(" ")}` : ""} ${redirected}`;
   const lines = [
     'if [ -f /etc/profile ]; then . /etc/profile >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.profile" ]; then . "$HOME/.profile" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.bash_profile" ]; then . "$HOME/.bash_profile" >/dev/null 2>&1 || true; elif [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc" >/dev/null 2>&1 || true; fi',
-    'if [ -f "$HOME/.zprofile" ]; then . "$HOME/.zprofile" >/dev/null 2>&1 || true; fi',
-    'export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"',
-    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
   ];
   if (input.cwd) {
     lines.push(`cd ${shellQuote(input.cwd)}`);
+  }
+  if (!configuredHome) {
+    lines.push(
+      'paperclip_provider_home="$(mktemp -d /tmp/paperclip-provider-home.XXXXXX)"',
+      'trap \'rm -rf -- "$paperclip_provider_home"\' EXIT',
+    );
   }
   lines.push(finalLine);
   return lines.join(" && ");
@@ -585,75 +608,150 @@ const plugin = definePlugin({
   async onEnvironmentExecute(
     params: PluginEnvironmentExecuteParams,
   ): Promise<PluginEnvironmentExecuteResult> {
-    if (!params.lease.providerLeaseId) {
-      return {
-        exitCode: 1,
-        timedOut: false,
-        stdout: "",
-        stderr: "No provider lease ID available for execution.",
-      };
-    }
     const config = parseDriverConfig(params.config);
-    const client = createModalClient(config);
-    const callerTimeoutMs =
-      params.timeoutMs != null && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
-        ? Math.max(1000, Math.trunc(params.timeoutMs / 1000) * 1000)
-        : config.execTimeoutMs;
-
-    try {
-      const sandbox = await getSandboxOrNull(client, params.lease.providerLeaseId);
-      if (!sandbox) {
-        return {
-          exitCode: 1,
-          timedOut: false,
-          stdout: "",
-          stderr: "Modal sandbox lease is no longer available.\n",
-        };
-      }
-      const stdinPath = params.stdin != null
-        ? `/tmp/paperclip-stdin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-        : null;
-      try {
-        if (stdinPath && params.stdin != null) {
-          await stageStdin(sandbox, params.stdin, stdinPath);
+    return await activeExecutions.execute(params, {
+      cancel: async () => {
+        if (!params.lease.providerLeaseId) return;
+        const client = createModalClient(config);
+        try {
+          const sandbox = await getSandboxOrNull(client, params.lease.providerLeaseId);
+          if (!sandbox) return;
+          const proc = await sandbox.exec(
+            ["sh", "-lc", buildCancelEnvironmentShellCommand(params.executionId)],
+            {
+              timeoutMs: Math.min(config.execTimeoutMs, 10_000),
+              stdout: "pipe",
+              stderr: "pipe",
+            },
+          );
+          const exitCode = await proc.wait();
+          if (exitCode !== 0) {
+            throw new Error(`Modal exact command cancellation failed with exit code ${exitCode}.`);
+          }
+        } finally {
+          client.close();
         }
-        const script = buildLoginShellScript({
-          command: params.command,
-          args: params.args ?? [],
-          cwd: params.cwd ?? config.workdir,
-          env: params.env,
-          stdinPath: stdinPath ?? undefined,
-        });
-        const proc = await sandbox.exec(["sh", "-lc", script], {
-          timeoutMs: callerTimeoutMs,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        const { stdout, stderr, exitCode } = await readProcessStreams(proc);
-        return {
-          exitCode,
-          timedOut: false,
-          stdout,
-          stderr,
-        };
-      } catch (error) {
-        if (error instanceof TimeoutError || error instanceof SandboxTimeoutError) {
+      },
+      execute: async () => {
+        if (!params.lease.providerLeaseId) {
           return {
-            exitCode: null,
-            timedOut: true,
+            exitCode: 1,
+            timedOut: false,
             stdout: "",
-            stderr: `${formatErrorMessage(error)}\n`,
+            stderr: "No provider lease ID available for execution.",
           };
         }
-        throw error;
-      } finally {
-        if (stdinPath) {
-          await deleteStdinPath(sandbox, stdinPath);
+        const client = createModalClient(config);
+        const callerTimeoutMs =
+          params.timeoutMs != null && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
+            ? Math.max(1000, Math.trunc(params.timeoutMs / 1000) * 1000)
+            : config.execTimeoutMs;
+
+      try {
+          const sandbox = await getSandboxOrNull(client, params.lease.providerLeaseId);
+          if (!sandbox) {
+            return {
+              exitCode: 1,
+              timedOut: false,
+              stdout: "",
+              stderr: "Modal sandbox lease is no longer available.\n",
+            };
+          }
+          const stdinPath = params.stdin != null
+            ? `/tmp/paperclip-stdin-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+            : null;
+          try {
+            if (stdinPath && params.stdin != null) {
+              await stageStdin(sandbox, params.stdin, stdinPath);
+            }
+            const script = wrapCancellableEnvironmentShellCommand(
+              params.executionId,
+              buildLoginShellScript({
+                command: params.command,
+                args: params.args ?? [],
+                cwd: params.cwd ?? config.workdir,
+                env: params.env,
+                stdinPath: stdinPath ?? undefined,
+              }),
+            );
+            const proc = await sandbox.exec(["sh", "-lc", script], {
+              timeoutMs: callerTimeoutMs,
+              stdout: "pipe",
+              stderr: "pipe",
+            });
+            const { stdout, stderr, exitCode } = await readProcessStreams(proc);
+            return {
+              exitCode,
+              timedOut: false,
+              stdout,
+              stderr,
+            };
+          } catch (error) {
+            if (error instanceof TimeoutError || error instanceof SandboxTimeoutError) {
+              return {
+                exitCode: null,
+                timedOut: true,
+                stdout: "",
+                stderr: `${formatErrorMessage(error)}\n`,
+              };
+            }
+            throw error;
+          } finally {
+            if (stdinPath) {
+              await deleteStdinPath(sandbox, stdinPath);
+            }
+          }
+        } finally {
+          client.close();
         }
-      }
-    } finally {
-      client.close();
-    }
+      },
+    });
+  },
+
+  async onEnvironmentCancelExecution(
+    params: PluginEnvironmentCancelExecutionParams,
+  ): Promise<PluginEnvironmentCancelExecutionResult> {
+    return await activeExecutions.cancel(
+      params,
+      async () => {
+        if (!params.lease.providerLeaseId) return false;
+        const config = parseDriverConfig(params.config);
+        const client = createModalClient(config);
+        try {
+          const sandbox = await getSandboxOrNull(
+            client,
+            params.lease.providerLeaseId,
+          );
+          if (!sandbox) return false;
+          const proc = await sandbox.exec(
+            [
+              "sh",
+              "-lc",
+              buildCancelEnvironmentShellCommand(
+                params.executionId,
+              ),
+            ],
+            {
+              timeoutMs: Math.min(
+                config.execTimeoutMs,
+                10_000,
+              ),
+              stdout: "pipe",
+              stderr: "pipe",
+            },
+          );
+          const exitCode = await proc.wait();
+          if (exitCode !== 0) {
+            throw new Error(
+              `Modal exact command cancellation failed with exit code ${exitCode}.`,
+            );
+          }
+          return true;
+        } finally {
+          client.close();
+        }
+      },
+    );
   },
 });
 

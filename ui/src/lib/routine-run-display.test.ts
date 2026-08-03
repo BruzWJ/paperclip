@@ -13,7 +13,7 @@ describe("runRowSubtitle", () => {
       {
         status: "succeeded",
         failureReason: null,
-        triggerPayload: { customer: "Acme", retries: 3, PAPERCLIP_RUN_ID: "ignored" },
+        triggerPayload: { customer: "Acme", retries: 3, PROVIDER_RUN_NOISE: "ignored" },
       },
       variables,
     );
@@ -22,7 +22,7 @@ describe("runRowSubtitle", () => {
 
   it("only includes declared routine variables, not builtin payload keys", () => {
     const subtitle = runRowSubtitle(
-      { status: "succeeded", failureReason: null, triggerPayload: { PAPERCLIP_RUN_ID: "x" } },
+      { status: "succeeded", failureReason: null, triggerPayload: { PROVIDER_RUN_NOISE: "x" } },
       variables,
     );
     expect(subtitle).toBe("");

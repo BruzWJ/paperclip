@@ -4,8 +4,8 @@ const manifest: PaperclipPluginManifestV1 = {
   id: "paperclipai.plugin-orchestration-smoke-example",
   apiVersion: 1,
   version: "0.1.0",
-  displayName: "Plugin Orchestration Smoke Example",
-  description: "First-party smoke plugin that exercises Paperclip orchestration-grade plugin APIs.",
+  displayName: "Plugin Issue Runtime Smoke Example",
+  description: "First-party smoke plugin that exercises canonical plugin-created ordinary issues.",
   author: "Paperclip",
   categories: ["automation", "ui"],
   capabilities: [
@@ -15,13 +15,8 @@ const manifest: PaperclipPluginManifestV1 = {
     "database.namespace.write",
     "issues.read",
     "issues.create",
-    "issues.wakeup",
-    "issue.relations.read",
-    "issue.relations.write",
-    "issue.documents.read",
-    "issue.documents.write",
-    "issue.subtree.read",
-    "issues.orchestration.read",
+    "issues.update",
+    "issues.withdraw",
     "ui.dashboardWidget.register",
     "ui.detailTab.register",
     "instance.settings.register"
@@ -40,16 +35,15 @@ const manifest: PaperclipPluginManifestV1 = {
       routeKey: "initialize",
       method: "POST",
       path: "/issues/:issueId/smoke",
-      auth: "board-or-agent",
+      auth: "board",
       capability: "api.routes.register",
-      checkoutPolicy: "required-for-agent-in-progress",
       companyResolution: { from: "issue", param: "issueId" }
     },
     {
       routeKey: "summary",
       method: "GET",
       path: "/issues/:issueId/smoke",
-      auth: "board-or-agent",
+      auth: "board",
       capability: "api.routes.register",
       companyResolution: { from: "issue", param: "issueId" }
     }
@@ -63,7 +57,7 @@ const manifest: PaperclipPluginManifestV1 = {
         exportName: "DashboardWidget"
       },
       {
-        type: "taskDetailView",
+        type: "issueDetailView",
         id: "issue-panel",
         displayName: "Orchestration Smoke",
         exportName: "IssuePanel",

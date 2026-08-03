@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { formatAssigneeUserLabel } from "../lib/assignees";
+import { formatOwnerUserLabel } from "../lib/issue-owners";
 import type { InboxIssueColumn } from "../lib/inbox";
 import { cn } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
@@ -21,12 +21,12 @@ import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
 import { Badge } from "@/components/ui/badge";
 
-export const issueTrailingColumns: InboxIssueColumn[] = ["assignee", "kickedOffBy", "project", "workspace", "parent", "labels", "updated"];
+export const issueTrailingColumns: InboxIssueColumn[] = ["owner", "kickedOffBy", "project", "workspace", "parent", "labels", "updated"];
 
 const issueColumnLabels: Record<InboxIssueColumn, string> = {
   status: "Status",
   id: "ID",
-  assignee: "Responsible",
+  owner: "Owner",
   kickedOffBy: "Kicked off by",
   project: "Project",
   workspace: "Workspace",
@@ -38,7 +38,7 @@ const issueColumnLabels: Record<InboxIssueColumn, string> = {
 const issueColumnDescriptions: Record<InboxIssueColumn, string> = {
   status: "Task state chip on the left edge.",
   id: "Ticket identifier like PAP-1009.",
-  assignee: "Responsible agent or board user.",
+  owner: "Agent owner or exceptional board escalation owner.",
   kickedOffBy: "Board user or agent who created the task.",
   project: "Linked project pill with its color.",
   workspace: "Execution or project workspace used for the task.",
@@ -54,7 +54,7 @@ export function issueActivityText(issue: Issue): string {
 function issueTrailingGridTemplate(columns: InboxIssueColumn[]): string {
   return columns
     .map((column) => {
-      if (column === "assignee") return "minmax(6rem, 8rem)";
+      if (column === "owner") return "minmax(6rem, 8rem)";
       if (column === "kickedOffBy") return "minmax(6rem, 8rem)";
       if (column === "project") return "minmax(4.5rem, 7rem)";
       if (column === "workspace") return "minmax(6rem, 9rem)";
@@ -160,7 +160,7 @@ export function InboxIssueMetaLeading({
     <>
       {showStatus ? (
         <span className="hidden shrink-0 items-center sm:inline-flex">
-          {statusSlot ?? <StatusIcon status={issue.status} blockerAttention={issue.blockerAttention} />}
+          {statusSlot ?? <StatusIcon status={issue.boardPresentationStatus} blockerAttention={issue.blockerAttention} />}
         </span>
       ) : null}
       {checklistStepNumber !== null ? (
@@ -230,17 +230,17 @@ export function InboxIssueTrailingColumns({
   projectColor,
   workspaceId,
   workspaceName,
-  assigneeName,
-  assigneeUserName,
-  assigneeUserAvatarUrl,
-  creatorAgentName,
+  ownerName,
+  ownerUserName,
+  ownerUserAvatarUrl,
+  originatingAgentName,
   creatorUserName,
   creatorUserAvatarUrl,
   viaAgentName,
   currentUserId,
   parentIdentifier,
   parentTitle,
-  assigneeContent,
+  ownerContent,
   onFilterWorkspace,
 }: {
   issue: Issue;
@@ -249,24 +249,24 @@ export function InboxIssueTrailingColumns({
   projectColor: string | null;
   workspaceId?: string | null;
   workspaceName: string | null;
-  assigneeName: string | null;
-  assigneeUserName?: string | null;
-  assigneeUserAvatarUrl?: string | null;
-  creatorAgentName?: string | null;
+  ownerName: string | null;
+  ownerUserName?: string | null;
+  ownerUserAvatarUrl?: string | null;
+  originatingAgentName?: string | null;
   creatorUserName?: string | null;
   creatorUserAvatarUrl?: string | null;
   viaAgentName?: string | null;
   currentUserId: string | null;
   parentIdentifier: string | null;
   parentTitle: string | null;
-  assigneeContent?: ReactNode;
+  ownerContent?: ReactNode;
   onFilterWorkspace?: (workspaceId: string) => void;
 }) {
   const activityText = timeAgo(issue.lastActivityAt ?? issue.lastExternalCommentAt ?? issue.updatedAt);
-  const userLabel = assigneeUserName ?? formatAssigneeUserLabel(issue.assigneeUserId, currentUserId) ?? "User";
+  const userLabel = ownerUserName ?? formatOwnerUserLabel(issue.ownerUserId, currentUserId) ?? "User";
   const originatingActor = deriveOriginatingActor(issue);
   const originatingUserId = originatingActor?.kind === "user" ? originatingActor.id : null;
-  const creatorUserLabel = creatorUserName ?? formatAssigneeUserLabel(originatingUserId, currentUserId) ?? "User";
+  const creatorUserLabel = creatorUserName ?? formatOwnerUserLabel(originatingUserId, currentUserId) ?? "User";
 
   return (
     <span
@@ -274,16 +274,16 @@ export function InboxIssueTrailingColumns({
       style={{ gridTemplateColumns: issueTrailingGridTemplate(columns) }}
     >
       {columns.map((column) => {
-        if (column === "assignee") {
-          if (assigneeContent) {
-            return <span key={column} className="min-w-0">{assigneeContent}</span>;
+        if (column === "owner") {
+          if (ownerContent) {
+            return <span key={column} className="min-w-0">{ownerContent}</span>;
           }
 
-          if (issue.assigneeAgentId) {
+          if (issue.ownerAgentId) {
             return (
               <span key={column} className="min-w-0 text-xs text-foreground">
                 <Identity
-                  name={assigneeName ?? issue.assigneeAgentId.slice(0, 8)}
+                  name={ownerName ?? issue.ownerAgentId.slice(0, 8)}
                   size="sm"
                   shape="square"
                   className="min-w-0"
@@ -292,12 +292,12 @@ export function InboxIssueTrailingColumns({
             );
           }
 
-          if (issue.assigneeUserId) {
+          if (issue.ownerUserId) {
             return (
               <span key={column} className="min-w-0 text-xs text-foreground">
                 <Identity
                   name={userLabel}
-                  avatarUrl={assigneeUserAvatarUrl}
+                  avatarUrl={ownerUserAvatarUrl}
                   size="sm"
                   className="min-w-0"
                 />
@@ -307,14 +307,14 @@ export function InboxIssueTrailingColumns({
 
           return (
             <span key={column} className="min-w-0 truncate text-xs text-muted-foreground">
-              Unassigned
+              Board escalation
             </span>
           );
         }
 
         if (column === "kickedOffBy") {
           if (originatingActor?.kind === "agent") {
-            const name = creatorAgentName ?? originatingActor.id.slice(0, 8);
+            const name = originatingAgentName ?? originatingActor.id.slice(0, 8);
             return (
               <Tooltip key={column}>
                 <TooltipTrigger asChild>

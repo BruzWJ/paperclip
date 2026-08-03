@@ -1,8 +1,15 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { documentRevisions, documents, issueDocuments, issues } from "@paperclipai/db";
+import {
+  documentAnnotationComments,
+  documentRevisions,
+  documents,
+  issueDocuments,
+  issues,
+} from "@paperclipai/db";
 import { isSystemIssueDocumentKey, issueDocumentKeySchema } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { issueReferenceService } from "./issue-references.js";
 
 function normalizeDocumentKey(key: string) {
   const normalized = key.trim().toLowerCase();
@@ -29,14 +36,6 @@ function nextAvailableDocumentKey(sourceKey: string, existingKeys: string[]) {
     }
   }
   throw conflict("Unable to choose a new document key for locked document", { key: sourceKey });
-}
-
-export function extractLegacyPlanBody(description: string | null | undefined) {
-  if (!description) return null;
-  const match = /<plan>\s*([\s\S]*?)\s*<\/plan>/i.exec(description);
-  if (!match) return null;
-  const body = match[1]?.trim();
-  return body ? body : null;
 }
 
 export function mapIssueDocumentRow(
@@ -111,10 +110,11 @@ export const issueDocumentSelect = {
 export function documentService(db: Db) {
   const filterSystemDocuments = <T extends { key: string }>(rows: T[], includeSystem: boolean) =>
     includeSystem ? rows : rows.filter((row) => !isSystemIssueDocumentKey(row.key));
+  const issueReferences = issueReferenceService(db);
 
   return {
     getIssueDocumentPayload: async (
-      issue: { id: string; description: string | null },
+      issue: { id: string },
       options: { includeSystem?: boolean } = {},
     ) => {
       const [planDocument, documentSummaries] = await Promise.all([
@@ -132,19 +132,10 @@ export function documentService(db: Db) {
           .orderBy(asc(issueDocuments.key), desc(documents.updatedAt)),
       ]);
 
-      const legacyPlanBody = planDocument ? null : extractLegacyPlanBody(issue.description);
-
       return {
         planDocument: planDocument ? mapIssueDocumentRow(planDocument, true) : null,
         documentSummaries: filterSystemDocuments(documentSummaries, options.includeSystem ?? false)
           .map((row) => mapIssueDocumentRow(row, false)),
-        legacyPlanDocument: legacyPlanBody
-          ? {
-              key: "plan" as const,
-              body: legacyPlanBody,
-              source: "issue_description" as const,
-            }
-          : null,
       };
     },
 
@@ -309,6 +300,7 @@ export function documentService(db: Db) {
                   createdAt: now,
                   updatedAt: now,
                 });
+                await issueReferences.syncDocument(document.id, tx);
 
                 return {
                   created: true as const,
@@ -395,6 +387,7 @@ export function documentService(db: Db) {
               .update(issueDocuments)
               .set({ updatedAt: now })
               .where(eq(issueDocuments.documentId, existing.id));
+            await issueReferences.syncDocument(existing.id, tx);
 
             return {
               created: false as const,
@@ -472,6 +465,7 @@ export function documentService(db: Db) {
             createdAt: now,
             updatedAt: now,
           });
+          await issueReferences.syncDocument(document.id, tx);
 
           return {
             created: true as const,
@@ -594,6 +588,7 @@ export function documentService(db: Db) {
           .update(issueDocuments)
           .set({ updatedAt: now })
           .where(eq(issueDocuments.documentId, existing.id));
+        await issueReferences.syncDocument(existing.id, tx);
 
         return {
           restoredFromRevisionId: revision.id,
@@ -731,6 +726,14 @@ export function documentService(db: Db) {
           });
         }
 
+        const annotationCommentIds = await tx
+          .select({ id: documentAnnotationComments.id })
+          .from(documentAnnotationComments)
+          .where(eq(documentAnnotationComments.documentId, existing.id));
+        for (const annotationComment of annotationCommentIds) {
+          await issueReferences.deleteCommentSource(annotationComment.id, tx);
+        }
+        await issueReferences.deleteDocumentSource(existing.id, tx);
         await tx.delete(issueDocuments).where(eq(issueDocuments.documentId, existing.id));
         await tx.delete(documents).where(eq(documents.id, existing.id));
 

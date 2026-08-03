@@ -3,50 +3,33 @@ title: How Agents Work
 summary: Agent lifecycle, execution model, and status
 ---
 
-Agents in Paperclip are AI employees that wake up, do work, and go back to sleep. They don't run continuously — they execute in short bursts called heartbeats.
+Agents in Paperclip own issue work through bounded provider executions. They do not poll a general Paperclip API or carry an agent-wide conversation between issues.
 
 ## Execution Model
 
-1. **Trigger** — something wakes the agent (schedule, assignment, mention, manual invoke)
-2. **Adapter invocation** — Paperclip calls the agent's configured adapter
-3. **Agent process** — the adapter spawns the agent runtime (e.g. Claude Code CLI)
-4. **Paperclip API calls** — the agent checks assignments, claims tasks, does work, updates status
-5. **Result capture** — adapter captures output, usage, costs, and session state
-6. **Run record** — Paperclip stores the run result for audit and debugging
+1. **Admission** — creation, assignment, an explicit mention/update, the invokable-agent branch of board reopen, or a typed system event commits an issue-execution reference. The system-escalation board-only reopen branch commits no provider work.
+2. **Lease and compile** — Paperclip leases that exact reference and compiles only the actions and context reads granted to it.
+3. **Adapter invocation** — the adapter launches the provider in the bound execution workspace with the issue-session input.
+4. **Tool use** — the provider may call only the run-scoped compiled interface; generic Paperclip REST routes reject it.
+5. **Projection** — structured turns, tool results, costs, comments, and lifecycle outcomes are projected from the canonical issue-session log.
 
-## Agent Identity
+## Runtime Boundary
 
-Every agent has environment variables injected at runtime:
+Paperclip does not inject the caller's identity or a generic API bridge into the provider. There is no provider-visible agent profile, company identifier, issue identifier, dispatch payload, or long-lived Paperclip credential.
 
-| Variable | Description |
-|----------|-------------|
-| `PAPERCLIP_AGENT_ID` | The agent's unique ID |
-| `PAPERCLIP_COMPANY_ID` | The company the agent belongs to |
-| `PAPERCLIP_API_URL` | Base URL for the Paperclip API |
-| `PAPERCLIP_API_KEY` | Short-lived JWT for API authentication |
-| `PAPERCLIP_RUN_ID` | Current heartbeat run ID |
+The provider receives the new issue message, any explicitly dial-authorized issue-session composition, operator-owned native configuration, and a `paperclip.run-tools/v1` descriptor when at least one compiled surface is available. False grants make surfaces absent and undiscoverable.
 
-Additional context variables are set when the wake has a specific trigger:
+## Issue Sessions
 
-| Variable | Description |
-|----------|-------------|
-| `PAPERCLIP_TASK_ID` | Issue that triggered this wake |
-| `PAPERCLIP_WAKE_REASON` | Why the agent was woken (e.g. `issue_assigned`, `issue_comment_mentioned`) |
-| `PAPERCLIP_WAKE_COMMENT_ID` | Specific comment that triggered this wake |
-| `PAPERCLIP_APPROVAL_ID` | Approval that was resolved |
-| `PAPERCLIP_APPROVAL_STATUS` | Approval decision (`approved`, `rejected`) |
-
-## Session Persistence
-
-Agents maintain conversation context across heartbeats through session persistence. The adapter serializes session state (e.g. Claude Code session ID) after each run and restores it on the next wake. This means agents remember what they were working on without re-reading everything.
+Paperclip records one first-class Session log per issue. Provider-native continuity, when supported, is keyed to the exact issue, ownership epoch, agent, and adapter revision and is retained only when `carry_context` is enabled. Reassignment, adapter revision changes, and an audited board/user fresh-session command prevent reuse. No provider session or model-visible memory crosses issues implicitly.
 
 ## Agent Status
 
 | Status | Meaning |
 |--------|---------|
-| `active` | Ready to receive heartbeats |
-| `idle` | Active but no heartbeat currently running |
-| `running` | Heartbeat in progress |
-| `error` | Last heartbeat failed |
-| `paused` | Manually paused or budget-exceeded |
+| `active` | Eligible to receive issue-execution work |
+| `idle` | Eligible but no run currently executing |
+| `running` | An issue execution is in progress |
+| `error` | The last execution failed |
+| `paused` | Manually paused or currently ineligible |
 | `terminated` | Permanently deactivated |

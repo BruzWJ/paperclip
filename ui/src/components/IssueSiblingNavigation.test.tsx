@@ -42,7 +42,7 @@ function issue(id: string, overrides: Partial<Issue> = {}): Issue {
     id,
     identifier: `PAP-${id}`,
     title: `Sibling ${id}`,
-    status: "todo",
+    boardPresentationStatus: "todo",
     blockerAttention: null,
     createdAt: new Date("2026-05-01T00:00:00.000Z"),
     updatedAt: new Date("2026-05-01T00:00:00.000Z"),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkTimelineResult } from "@paperclipai/shared";
+import type { IssueExecutionRunStatus, WorkTimelineResult } from "@paperclipai/shared";
 import { chooseTickStepMs, computeLayout, issueColor, shortLabel, type LayoutOptions } from "./layout";
 
 const DAY = "2026-07-02";
@@ -10,8 +10,8 @@ const t = (hhmm: string) => `${DAY}T${hhmm}:00.000Z`;
 function sample(): WorkTimelineResult {
   const actors = [
     { id: "user:dotta", type: "user" as const, name: "dotta" },
-    { id: "agent:ceo", type: "agent" as const, name: "CEO" },
-    { id: "agent:cto", type: "agent" as const, name: "CTO Architect" },
+    { id: "agent:lead", type: "agent" as const, name: "Lead" },
+    { id: "agent:architect", type: "agent" as const, name: "Systems Architect" },
     { id: "agent:ux", type: "agent" as const, name: "UXDesigner" },
     { id: "agent:senior", type: "agent" as const, name: "SeniorEngineer" },
     { id: "agent:codex", type: "agent" as const, name: "CodexCoder" },
@@ -25,12 +25,12 @@ function sample(): WorkTimelineResult {
     identifier: string,
     start: string,
     end: string | null,
-    status: string,
+    status: IssueExecutionRunStatus,
     retryOfRunId: string | null = null,
   ): WorkTimelineResult["spans"][number] => ({
     actorId,
-    laneHint: null,
     runId,
+    kind: "productive",
     issueId,
     issueIdentifier: identifier,
     issueTitle: `${identifier} title`,
@@ -40,15 +40,15 @@ function sample(): WorkTimelineResult {
     retryOfRunId,
   });
   const spans = [
-    span("r1", "agent:ceo", "i-405", "PAP-12405", "09:02", "09:10", "completed"),
-    span("r2", "agent:cto", "i-405", "PAP-12405", "09:14", "09:52", "completed"),
-    span("r3", "agent:senior", "i-075", "PAP-12075", "09:58", "10:20", "completed"),
+    span("r1", "agent:lead", "i-405", "PAP-12405", "09:02", "09:10", "succeeded"),
+    span("r2", "agent:architect", "i-405", "PAP-12405", "09:14", "09:52", "succeeded"),
+    span("r3", "agent:senior", "i-075", "PAP-12075", "09:58", "10:20", "succeeded"),
     span("r4", "agent:ux", "i-422", "PAP-12422", "10:10", "11:34", "running"),
-    span("r5", "agent:codex", "i-423", "PAP-12423", "10:10", "10:56", "completed"),
-    span("r6", "agent:codex", "i-075", "PAP-12075", "10:22", "11:08", "completed"), // overlaps r5 → sub-lane
-    span("r7", "agent:qa", "i-423", "PAP-12423", "11:40", "12:12", "completed"),
-    span("r8", "agent:codex", "i-423", "PAP-12423", "12:20", "12:38", "completed", "r5"), // retry
-    span("r9", "system:routine", "i-286", "PAP-12286", "20:00", "20:04", "completed"),
+    span("r5", "agent:codex", "i-423", "PAP-12423", "10:10", "10:56", "succeeded"),
+    span("r6", "agent:codex", "i-075", "PAP-12075", "10:22", "11:08", "succeeded"), // overlaps r5 → sub-lane
+    span("r7", "agent:qa", "i-423", "PAP-12423", "11:40", "12:12", "succeeded"),
+    span("r8", "agent:codex", "i-423", "PAP-12423", "12:20", "12:38", "succeeded", "r5"), // retry
+    span("r9", "system:routine", "i-286", "PAP-12286", "20:00", "20:04", "succeeded"),
   ];
   const edge = (from: string, to: string, issueId: string, at: string): WorkTimelineResult["edges"][number] => ({
     fromActorId: from,
@@ -58,10 +58,10 @@ function sample(): WorkTimelineResult {
     kind: "delegation",
   });
   const edges = [
-    edge("user:dotta", "agent:ceo", "i-405", "09:01"), // human kickoff → chip only, no line
-    edge("agent:ceo", "agent:cto", "i-405", "09:13"),
-    edge("agent:cto", "agent:ux", "i-422", "10:09"),
-    edge("agent:cto", "agent:codex", "i-423", "10:09"),
+    edge("user:dotta", "agent:lead", "i-405", "09:01"), // human kickoff → chip only, no line
+    edge("agent:lead", "agent:architect", "i-405", "09:13"),
+    edge("agent:architect", "agent:ux", "i-422", "10:09"),
+    edge("agent:architect", "agent:codex", "i-423", "10:09"),
     edge("agent:senior", "agent:codex", "i-075", "10:21"),
     edge("agent:codex", "agent:qa", "i-423", "11:39"),
     edge("agent:qa", "agent:codex", "i-423", "12:19"), // → retry r8 (dashed)
@@ -96,7 +96,7 @@ describe("computeLayout", () => {
 
   it("orders rows by first activity", () => {
     const layout = computeLayout(sample(), OPTS);
-    expect(layout.rows[0].actor.id).toBe("agent:ceo");
+    expect(layout.rows[0].actor.id).toBe("agent:lead");
     expect(layout.rows[layout.rows.length - 1].actor.id).toBe("system:routine");
   });
 
@@ -113,30 +113,29 @@ describe("computeLayout", () => {
     const codexApi = layout.rows
       .find((r) => r.actor.id === "agent:codex")!
       .bars.find((b) => b.span.runId === "r5")!;
-    expect(codexApi.kickoff?.id).toBe("agent:cto");
+    expect(codexApi.kickoff?.id).toBe("agent:architect");
 
-    const ceoRun = layout.rows.find((r) => r.actor.id === "agent:ceo")!.bars[0];
+    const ceoRun = layout.rows.find((r) => r.actor.id === "agent:lead")!.bars[0];
     expect(ceoRun.kickoff?.id).toBe("user:dotta"); // human kickoff shown as chip
   });
 
   it("does not reuse a board-created assignment edge on later automation runs", () => {
     const data = sample();
     data.spans.push({
-      actorId: "agent:ceo",
-      laneHint: null,
+      actorId: "agent:lead",
       runId: "r1-later-automation",
+      kind: "productive",
       issueId: "i-405",
       issueIdentifier: "PAP-12405",
       issueTitle: "PAP-12405 title",
       start: t("10:30"),
       end: t("10:36"),
-      status: "completed",
+      status: "succeeded",
       retryOfRunId: null,
-      invocationSource: "automation",
     });
 
     const layout = computeLayout(data, OPTS);
-    const ceoRuns = layout.rows.find((r) => r.actor.id === "agent:ceo")!.bars;
+    const ceoRuns = layout.rows.find((r) => r.actor.id === "agent:lead")!.bars;
     expect(ceoRuns.find((b) => b.span.runId === "r1")?.kickoff?.id).toBe("user:dotta");
     expect(ceoRuns.find((b) => b.span.runId === "r1-later-automation")?.kickoff).toBeNull();
   });
@@ -145,31 +144,31 @@ describe("computeLayout", () => {
     const data = sample();
     data.spans.push({
       actorId: "agent:ux",
-      laneHint: null,
       runId: "late-edge-run",
+      kind: "productive",
       issueId: "i-late",
       issueIdentifier: "PAP-99999",
       issueTitle: "Late kickoff fallback",
       start: t("14:00"),
       end: t("14:10"),
-      status: "completed",
+      status: "succeeded",
       retryOfRunId: null,
     });
     data.edges.push(
       { fromActorId: "agent:qa", toActorId: "agent:ux", issueId: "i-late", at: t("14:30"), kind: "delegation" },
-      { fromActorId: "agent:cto", toActorId: "agent:ux", issueId: "i-late", at: t("14:02"), kind: "delegation" },
+      { fromActorId: "agent:architect", toActorId: "agent:ux", issueId: "i-late", at: t("14:02"), kind: "delegation" },
     );
 
     const layout = computeLayout(data, OPTS);
     const lateRun = layout.rows
       .find((r) => r.actor.id === "agent:ux")!
       .bars.find((b) => b.span.runId === "late-edge-run")!;
-    expect(lateRun.kickoff?.id).toBe("agent:cto");
+    expect(lateRun.kickoff?.id).toBe("agent:architect");
   });
 
   it("draws agent→agent connectors only, dashing retries, never from a human", () => {
     const layout = computeLayout(sample(), OPTS);
-    // 6 agent→agent edges resolve to bars; the dotta→ceo human edge draws no line.
+    // 6 agent→agent edges resolve to bars; the dotta→lead human edge draws no line.
     expect(layout.connectors.length).toBe(6);
     const dashed = layout.connectors.filter((c) => c.dashed);
     expect(dashed).toHaveLength(1); // only the QA→codex retry hop
@@ -216,7 +215,7 @@ describe("human activity markers", () => {
 
   it("keeps human events visual-only as kickoff chips, not connector targets", () => {
     const layout = computeLayout(withUserEvents(), OPTS);
-    // dotta→ceo human kickoff still draws no line; agent→agent count unchanged.
+    // dotta→lead human kickoff still draws no line; agent→agent count unchanged.
     expect(layout.connectors.length).toBe(6);
   });
 
@@ -229,7 +228,7 @@ describe("human activity markers", () => {
 describe("helpers", () => {
   it("shortLabel builds 2-char initials", () => {
     expect(shortLabel("CodexCoder")).toBe("CO");
-    expect(shortLabel("CTO Architect")).toBe("CA");
+    expect(shortLabel("Systems Architect")).toBe("SA");
   });
 
   it("chooseTickStepMs grows the step as the view zooms out", () => {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,6 @@ import type {
   CatalogTeamKind,
   CatalogTeamSkillRequirement,
   CatalogTeamSkillRequirementType,
-  CompanyPortabilityAdapterOverride,
   CompanyPortabilityAgentSelection,
   CompanyPortabilityCollisionStrategy,
   CompanyPortabilityFileEntry,
@@ -20,14 +20,29 @@ import type {
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
 } from "@paperclipai/shared";
-import { normalizeAgentUrlKey } from "@paperclipai/shared";
-import { parseFrontmatterMarkdown } from "@paperclipai/shared/frontmatter";
+import {
+  AGENT_CONTEXT_GRANT_KEYS,
+  AGENT_MENTION_REACH_GRANT_KEYS,
+  normalizeAgentUrlKey,
+  PAPERCLIP_ACTION_KEYS,
+} from "@paperclipai/shared";
+import {
+  parseFrontmatterMarkdown,
+  stringifyFrontmatter,
+} from "@paperclipai/shared/frontmatter";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
 import { companyPortabilityService } from "./company-portability.js";
 import { companySkillService } from "./company-skills.js";
 import { logActivity } from "./activity-log.js";
+import {
+  requireSecretMutationActor,
+  type SecretMutationActor,
+} from "./secrets.js";
 import { normalizePortablePath } from "./portable-path.js";
+import { validateRegisteredAdapterRuntimeConfiguration } from "./agent-adapter-config-revisions.js";
+import type { AuthorizationActor } from "./authorization.js";
+import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 type CatalogManifestFile = CatalogManifest;
 
@@ -62,7 +77,30 @@ export interface CatalogTeamImportOptions {
   adapterOverrides?: CompanyPortabilityImport["adapterOverrides"];
   secretValues?: CompanyPortabilityImport["secretValues"];
   sourcePolicy?: CatalogTeamSourcePolicy;
+}
+
+export interface CatalogTeamPreviewOptions extends CatalogTeamImportOptions {
   actor?: CatalogTeamActorContext | null;
+}
+
+export interface CatalogTeamInstallOptions extends CatalogTeamImportOptions {
+  actor: CatalogTeamActorContext;
+  authorizationActor?: AuthorizationActor;
+}
+
+function catalogTeamSecretMutationActor(
+  actor: CatalogTeamActorContext | null | undefined,
+): SecretMutationActor {
+  const candidate: unknown =
+    actor?.actorType === "user"
+      ? { type: "user", userId: actor.actorId }
+      : actor?.actorType === "agent"
+        ? { type: "agent", agentId: actor.actorId }
+        : actor?.actorType === "system" || actor?.actorType === "plugin"
+          ? { type: "system" }
+          : actor;
+  requireSecretMutationActor(candidate);
+  return candidate as SecretMutationActor;
 }
 
 export type CatalogTeamSkillPreparationAction =
@@ -354,14 +392,6 @@ function yamlScalar(value: string | number | boolean | null) {
   return JSON.stringify(value);
 }
 
-function renderStringArrayYaml(key: string, values: string[]) {
-  if (values.length === 0) return [];
-  return [
-    `${key}:`,
-    ...values.map((value) => `  - ${yamlScalar(value)}`),
-  ];
-}
-
 function renderYamlBlock(value: unknown, indentLevel = 0): string[] {
   const indent = "  ".repeat(indentLevel);
 
@@ -448,20 +478,105 @@ async function catalogProvenance(team: CatalogTeam) {
   };
 }
 
-async function renderCatalogProvenanceYaml(team: CatalogTeam, targetManager: CatalogTargetManagerReference | null) {
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "null";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
+}
+
+function catalogAdapterRevisionId(
+  team: CatalogTeam,
+  slug: string,
+  override: NonNullable<
+    CompanyPortabilityImport["adapterOverrides"]
+  >[string],
+) {
+  const bytes = Buffer.from(
+    createHash("sha256")
+      .update(
+        [
+          "paperclip-catalog-adapter-revision/v1",
+          team.id,
+          slug,
+          override.adapterType,
+          canonicalJson(override.adapterConfig),
+          override.defaultEnvironmentId,
+          override.skillChannel,
+        ].join("\0"),
+      )
+      .digest("hex")
+      .slice(0, 32),
+    "hex",
+  );
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
+}
+
+function explicitFalseMap(keys: readonly string[]) {
+  return Object.fromEntries(keys.map((key) => [key, false]));
+}
+
+async function renderCatalogProvenanceYaml(
+  team: CatalogTeam,
+  targetManager: CatalogTargetManagerReference | null,
+  adapterOverrides: CompanyPortabilityImport["adapterOverrides"],
+) {
   const provenance = await catalogProvenance(team);
   const agentSlugs = Array.from(new Set(team.agentSlugs)).sort();
   const projectSlugs = Array.from(new Set(team.projectSlugs)).sort();
-  const taskSlugs = team.files
-    .filter((file) => file.kind === "task")
+  const issueSlugs = team.files
+    .filter((file) => file.kind === "issue")
     .map((file) => normalizeAgentUrlKey(path.posix.basename(path.posix.dirname(file.path))))
     .filter((slug): slug is string => Boolean(slug));
 
-  const renderEntity = (slug: string, opts?: { reparentRoot?: boolean }) => ({
+  const renderEntity = (slug: string, opts?: {
+    reparentRoot?: boolean;
+    includeAdapterRevision?: boolean;
+  }) => ({
     ...(opts?.reparentRoot && targetManager
       ? {
           reportsToExistingAgentId: targetManager.agentId,
           reportsToExistingAgentSlug: targetManager.slug,
+        }
+      : {}),
+    ...(opts?.includeAdapterRevision && adapterOverrides?.[slug]
+      ? {
+          adapterRevision: {
+            sourceRevisionId: catalogAdapterRevisionId(
+              team,
+              slug,
+              adapterOverrides[slug],
+            ),
+            adapterType: adapterOverrides[slug].adapterType,
+            adapterConfig: adapterOverrides[slug].adapterConfig,
+            runtimeConfig: {},
+            sourceEnvironmentId:
+              adapterOverrides[slug].defaultEnvironmentId,
+            skillChannel: adapterOverrides[slug].skillChannel,
+          },
+          contextGrants: explicitFalseMap(AGENT_CONTEXT_GRANT_KEYS),
+          actionGrants: explicitFalseMap(PAPERCLIP_ACTION_KEYS),
+          mentionReachGrants: explicitFalseMap(
+            AGENT_MENTION_REACH_GRANT_KEYS,
+          ),
+          companyToolIds: [],
         }
       : {}),
     metadata: {
@@ -486,14 +601,25 @@ async function renderCatalogProvenanceYaml(team: CatalogTeam, targetManager: Cat
       slug,
       renderEntity(slug, {
         reparentRoot: Boolean(targetManager && team.rootAgentSlugs.includes(slug)),
+        includeAdapterRevision: true,
       }),
     ])),
   };
   if (projectSlugs.length > 0) {
     extension.projects = Object.fromEntries(projectSlugs.map((slug) => [slug, renderEntity(slug)]));
   }
-  if (taskSlugs.length > 0) {
-    extension.tasks = Object.fromEntries(Array.from(new Set(taskSlugs)).sort().map((slug) => [slug, renderEntity(slug)]));
+  if (issueSlugs.length > 0) {
+    extension.issues = Object.fromEntries(
+      Array.from(new Set(issueSlugs)).sort().map((slug) => [
+        slug,
+        {
+          ...renderEntity(slug),
+          lifecycleStatus: "open",
+          boardPresentationStatus: "backlog",
+          priority: "medium",
+        },
+      ]),
+    );
   }
   return renderYamlFile(extension);
 }
@@ -516,54 +642,6 @@ function mergePlainRecords(
 
 function parseYamlDocument(raw: string): Record<string, unknown> {
   return parseFrontmatterMarkdown(`---\n${raw.trim()}\n---\n`).frontmatter;
-}
-
-function renderSimpleMarkdown(frontmatter: Record<string, unknown>, body: string) {
-  const lines = ["---"];
-  for (const [key, value] of Object.entries(frontmatter)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) {
-      lines.push(...renderStringArrayYaml(key, value.filter((entry): entry is string => typeof entry === "string")));
-      continue;
-    }
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) {
-      lines.push(`${key}: ${yamlScalar(value)}`);
-    }
-  }
-  lines.push("---", "");
-  const cleanBody = body.trim();
-  if (cleanBody) lines.push(cleanBody, "");
-  return lines.join("\n");
-}
-
-function collectCatalogSkillKeyMap(team: CatalogTeam) {
-  const map = new Map<string, string>();
-  for (const requirement of team.requiredSkills) {
-    if (requirement.type !== "catalog" || !requirement.catalogSkillKey) continue;
-    map.set(requirement.ref, requirement.catalogSkillKey);
-    if (requirement.catalogSkillId) map.set(requirement.catalogSkillId, requirement.catalogSkillKey);
-    map.set(requirement.catalogSkillKey, requirement.catalogSkillKey);
-    const slug = requirement.catalogSkillKey.split("/").at(-1);
-    if (slug) map.set(slug, requirement.catalogSkillKey);
-  }
-  return map;
-}
-
-function rewriteAgentCatalogSkillRefs(team: CatalogTeam, files: Record<string, CompanyPortabilityFileEntry>) {
-  const keyMap = collectCatalogSkillKeyMap(team);
-  if (keyMap.size === 0) return;
-  for (const agentPath of Object.keys(files).filter((filePath) => filePath.endsWith("/AGENTS.md") || filePath === "AGENTS.md")) {
-    const content = files[agentPath];
-    if (typeof content !== "string") continue;
-    const parsed = parseFrontmatterMarkdown(content);
-    const skills = Array.isArray(parsed.frontmatter.skills)
-      ? parsed.frontmatter.skills.filter((entry): entry is string => typeof entry === "string")
-      : [];
-    if (skills.length === 0) continue;
-    const rewritten = skills.map((skill) => keyMap.get(skill) ?? skill);
-    if (rewritten.every((skill, index) => skill === skills[index])) continue;
-    files[agentPath] = renderSimpleMarkdown({ ...parsed.frontmatter, skills: rewritten }, parsed.body);
-  }
 }
 
 function preparation(
@@ -673,41 +751,118 @@ async function readCatalogTeamSourceFiles(team: CatalogTeam): Promise<Record<str
       };
       continue;
     }
-    files[normalizedPath] = await fs.readFile(resolved.absolutePath, "utf8");
+    const contents = await fs.readFile(resolved.absolutePath, "utf8");
+    if (file.kind !== "agent") {
+      files[normalizedPath] = contents;
+      continue;
+    }
+    const parsed = parseFrontmatterMarkdown(contents);
+    if (!parsed.hasFrontmatter) {
+      throw unprocessable(
+        `Catalog agent ${normalizedPath} must have frontmatter`,
+      );
+    }
+    const frontmatter = stringifyFrontmatter({
+      ...parsed.frontmatter,
+      skills: [],
+    });
+    files[normalizedPath] = parsed.body
+      ? `---\n${frontmatter}\n---\n\n${parsed.body}\n`
+      : `---\n${frontmatter}\n---\n`;
   }
   return files;
 }
 
-/**
- * Default safe adapter for catalog agents imported through the agent-safe path.
- */
-const FALLBACK_SAFE_CATALOG_ADAPTER_TYPE = "claude_local";
+function selectedCatalogAgentSlugs(
+  team: CatalogTeam,
+  options: CatalogTeamImportOptions,
+) {
+  if (options.include?.agents === false) return [];
+  const requestedSlugs =
+    options.agents && options.agents !== "all"
+      ? Array.from(new Set(options.agents)).filter((slug) =>
+          team.agentSlugs.includes(slug)
+        )
+      : [...team.agentSlugs];
+  if (!options.selectedFiles) return requestedSlugs;
 
-function defaultSafeCatalogAdapterType() {
-  return process.env.PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE?.trim() || FALLBACK_SAFE_CATALOG_ADAPTER_TYPE;
+  const selectedPaths = new Set(
+    options.selectedFiles.map((entry) => normalizePortablePath(entry)),
+  );
+  const selectedFileSlugs = new Set(
+    team.files
+      .filter(
+        (file) =>
+          file.kind === "agent"
+          && selectedPaths.has(normalizePortablePath(file.path)),
+      )
+      .map((file) => {
+        const normalized = normalizePortablePath(file.path);
+        const match = /^agents\/([^/]+)\/AGENTS\.md$/i.exec(normalized);
+        return match?.[1] ?? null;
+      })
+      .filter((slug): slug is string => Boolean(slug)),
+  );
+  return requestedSlugs.filter((slug) => selectedFileSlugs.has(slug));
 }
 
-/**
- * Bundled catalog agents declare no adapter in their `AGENTS.md` frontmatter, so
- * `parsePortableAgentFrontmatter` defaults them to `process` — which the
- * `agent_safe` importer rejects (see `IMPORT_FORBIDDEN_ADAPTER_TYPES` in
- * `company-portability`). Inject a safe per-agent adapter default for every
- * catalog agent the caller did not explicitly override so default-trust teams
- * install without manual adapter flags. Explicit caller overrides win and are
- * left untouched (both `adapterType` and `adapterConfig`). This is scoped to the
- * catalog install path; the generic portability fallback is unchanged.
- */
-function withSafeCatalogAdapterDefaults(
-  agentSlugs: string[],
-  callerOverrides: CompanyPortabilityImport["adapterOverrides"],
-  defaultAdapterType: string,
-): Record<string, CompanyPortabilityAdapterOverride> {
-  const merged: Record<string, CompanyPortabilityAdapterOverride> = { ...(callerOverrides ?? {}) };
-  for (const slug of agentSlugs) {
-    if (merged[slug]) continue;
-    merged[slug] = { adapterType: defaultAdapterType };
+async function collectExplicitCatalogConfigurationErrors(
+  team: CatalogTeam,
+  options: CatalogTeamImportOptions,
+) {
+  const selectedSlugs = selectedCatalogAgentSlugs(team, options);
+  const errors: string[] = [];
+  const overrides = options.adapterOverrides ?? {};
+  for (const slug of selectedSlugs) {
+    const override = overrides[slug];
+    if (!override?.adapterType?.trim()) {
+      errors.push(
+        `Explicit adapter configuration is required for catalog agent ${slug}.`,
+      );
+      continue;
+    }
+    if (
+      !Object.prototype.hasOwnProperty.call(override, "adapterConfig")
+      || typeof override.adapterConfig !== "object"
+      || override.adapterConfig === null
+      || Array.isArray(override.adapterConfig)
+    ) {
+      errors.push(
+        `Explicit adapterConfig is required for catalog agent ${slug}.`,
+      );
+      continue;
+    }
+    try {
+      await validateRegisteredAdapterRuntimeConfiguration({
+        adapterType: override.adapterType,
+        adapterConfig: override.adapterConfig,
+      });
+    } catch (error) {
+      errors.push(
+        `Invalid adapter configuration for catalog agent ${slug}: ${formatError(error)}.`,
+      );
+    }
   }
-  return merged;
+  const unusedOverrides = Object.keys(overrides).filter(
+    (slug) => !selectedSlugs.includes(slug),
+  );
+  if (unusedOverrides.length > 0) {
+    errors.push(
+      `Adapter configuration targets agents not selected from this catalog team: ${unusedOverrides.join(", ")}.`,
+    );
+  }
+  const importsRoot = selectedSlugs.some((slug) =>
+    team.rootAgentSlugs.includes(slug)
+  );
+  const hasExplicitTarget =
+    Object.hasOwn(options, "targetManagerAgentId") ||
+    Object.hasOwn(options, "targetManagerSlug");
+  if (importsRoot && !hasExplicitTarget) {
+    errors.push(
+      "Catalog team target is required: select a target manager or explicitly choose a standalone team.",
+    );
+  }
+  return errors;
 }
 
 function buildPortabilityInput(
@@ -716,6 +871,12 @@ function buildPortabilityInput(
   options: CatalogTeamImportOptions,
 ): CompanyPortabilityPreview {
   const requestedInclude = options.include ?? {};
+  const selectedFiles = options.selectedFiles
+    ? Array.from(new Set([
+        ...options.selectedFiles,
+        ".paperclip.yaml",
+      ]))
+    : undefined;
   return {
     source,
     include: {
@@ -733,12 +894,16 @@ function buildPortabilityInput(
     agents: options.agents,
     collisionStrategy: options.collisionStrategy ?? "rename",
     nameOverrides: options.nameOverrides,
-    selectedFiles: options.selectedFiles,
+    selectedFiles,
+    adapterOverrides: options.adapterOverrides,
   };
 }
 
-export function teamsCatalogService(db: Db) {
-  const portability = companyPortabilityService(db);
+export function teamsCatalogService(
+  db: Db,
+  ordinaryIssues: OrdinaryIssueRuntime,
+) {
+  const portability = companyPortabilityService(db, undefined, ordinaryIssues);
   const companySkills = companySkillService(db);
   const agents = agentService(db);
 
@@ -774,6 +939,7 @@ export function teamsCatalogService(db: Db) {
     const team = await getCatalogTeamOrThrow(catalogRef);
     const warnings: string[] = [];
     const errors: string[] = [];
+    errors.push(...await collectExplicitCatalogConfigurationErrors(team, options));
 
     if (team.compatibility !== "compatible") {
       errors.push(`Catalog team ${team.id} is not compatible.`);
@@ -795,9 +961,14 @@ export function teamsCatalogService(db: Db) {
       typeof files[".paperclip.yaml"] === "string"
         ? parseYamlDocument(files[".paperclip.yaml"])
         : {};
-    const generatedExtension = parseYamlDocument(await renderCatalogProvenanceYaml(team, targetManager));
+    const generatedExtension = parseYamlDocument(
+      await renderCatalogProvenanceYaml(
+        team,
+        targetManager,
+        options.adapterOverrides,
+      ),
+    );
     files[".paperclip.yaml"] = renderYamlFile(mergePlainRecords(existingExtension, generatedExtension));
-    rewriteAgentCatalogSkillRefs(team, files);
 
     return {
       team,
@@ -841,7 +1012,7 @@ export function teamsCatalogService(db: Db) {
   async function previewCatalogTeamImport(
     companyId: string,
     catalogRef: string,
-    options: CatalogTeamImportOptions = {},
+    options: CatalogTeamPreviewOptions = {},
   ): Promise<CatalogTeamImportPreviewResult> {
     const prepared = await prepareCatalogTeamSource(companyId, catalogRef, options);
     const previewInput = buildPortabilityInput(companyId, prepared.source, options);
@@ -902,21 +1073,17 @@ export function teamsCatalogService(db: Db) {
   async function installCatalogTeam(
     companyId: string,
     catalogRef: string,
-    options: CatalogTeamImportOptions = {},
+    options: CatalogTeamInstallOptions,
   ): Promise<CatalogTeamInstallResult> {
+    const secretMutationActor =
+      catalogTeamSecretMutationActor(options.actor);
     const prepared = await prepareCatalogTeamSource(companyId, catalogRef, options);
     if (prepared.errors.length > 0) {
       throw unprocessable(`Catalog team source preparation failed: ${prepared.errors.join("; ")}`);
     }
 
-    const defaultAdapterType = defaultSafeCatalogAdapterType();
     const importInput: CompanyPortabilityImport = {
       ...buildPortabilityInput(companyId, prepared.source, options),
-      adapterOverrides: withSafeCatalogAdapterDefaults(
-        prepared.team.agentSlugs,
-        options.adapterOverrides,
-        defaultAdapterType,
-      ),
       secretValues: options.secretValues,
     };
     const importPreview = await portability.previewImport(importInput, {
@@ -926,17 +1093,9 @@ export function teamsCatalogService(db: Db) {
     if (importPreview.errors.length > 0) {
       throw unprocessable(`Catalog team import preview has errors: ${importPreview.errors.join("; ")}`);
     }
-    const defaultedAdapterSlugs = prepared.team.agentSlugs.filter(
-      (slug) => !options.adapterOverrides?.[slug],
-    );
     const warnings = [
       ...prepared.warnings,
       ...importPreview.warnings,
-      ...(defaultedAdapterSlugs.length > 0
-        ? [
-            `Catalog agents without explicit overrides (${defaultedAdapterSlugs.join(", ")}) default to ${defaultAdapterType}. Pass adapterOverrides or PAPERCLIP_TEAMS_CATALOG_DEFAULT_ADAPTER_TYPE to use a different supported adapter.`,
-          ]
-        : []),
     ];
     const result = await portability.importBundle(
       importInput,
@@ -944,6 +1103,8 @@ export function teamsCatalogService(db: Db) {
       {
         mode: "agent_safe",
         sourceCompanyId: companyId,
+        authorizationActor: options.authorizationActor,
+        secretMutationActor,
       },
     );
     warnings.push(...await prepareSkillInstalls(companyId, prepared));

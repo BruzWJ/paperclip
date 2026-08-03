@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExecutionWorkspace, Issue, Project, ProjectWorkspace, WorkspaceRuntimeService } from "@paperclipai/shared";
 import { buildProjectWorkspaceSummaries } from "./project-workspaces-tab";
+import { createTestIssue } from "../test-utils/issue";
 
 function createProjectWorkspace(overrides: Partial<ProjectWorkspace>): ProjectWorkspace {
   return {
@@ -29,40 +30,13 @@ function createProjectWorkspace(overrides: Partial<ProjectWorkspace>): ProjectWo
 }
 
 function createIssue(overrides: Partial<Issue>): Issue {
-  return {
-    id: overrides.id ?? "issue-1",
-    companyId: overrides.companyId ?? "company-1",
-    projectId: overrides.projectId ?? "project-1",
-    projectWorkspaceId: overrides.projectWorkspaceId ?? null,
-    goalId: overrides.goalId ?? null,
-    parentId: overrides.parentId ?? null,
-    title: overrides.title ?? "Issue",
-    description: overrides.description ?? null,
-    status: overrides.status ?? "todo",
-    priority: overrides.priority ?? "medium",
-    assigneeAgentId: overrides.assigneeAgentId ?? null,
-    assigneeUserId: overrides.assigneeUserId ?? null,
-    checkoutRunId: overrides.checkoutRunId ?? null,
-    executionRunId: overrides.executionRunId ?? null,
-    executionAgentNameKey: overrides.executionAgentNameKey ?? null,
-    executionLockedAt: overrides.executionLockedAt ?? null,
-    createdByAgentId: overrides.createdByAgentId ?? null,
-    createdByUserId: overrides.createdByUserId ?? null,
-    issueNumber: overrides.issueNumber ?? null,
-    identifier: overrides.identifier ?? null,
-    requestDepth: overrides.requestDepth ?? 0,
-    billingCode: overrides.billingCode ?? null,
-    assigneeAdapterOverrides: overrides.assigneeAdapterOverrides ?? null,
-    executionWorkspaceId: overrides.executionWorkspaceId ?? null,
-    executionWorkspacePreference: overrides.executionWorkspacePreference ?? null,
-    executionWorkspaceSettings: overrides.executionWorkspaceSettings ?? null,
-    startedAt: overrides.startedAt ?? null,
-    completedAt: overrides.completedAt ?? null,
-    cancelledAt: overrides.cancelledAt ?? null,
-    hiddenAt: overrides.hiddenAt ?? null,
-    createdAt: overrides.createdAt ?? new Date("2026-03-20T00:00:00Z"),
-    updatedAt: overrides.updatedAt ?? new Date("2026-03-20T00:00:00Z"),
-  } as Issue;
+  return createTestIssue({
+    projectId: "project-1",
+    title: "Issue",
+    issueNumber: null,
+    identifier: null,
+    ...overrides,
+  });
 }
 
 function createExecutionWorkspace(overrides: Partial<ExecutionWorkspace>): ExecutionWorkspace {
@@ -170,7 +144,7 @@ describe("buildProjectWorkspaceSummaries", () => {
         createIssue({
           id: "issue-exec",
           projectWorkspaceId: primaryWorkspace.id,
-          executionWorkspaceId: "exec-1",
+          currentExecutionWorkspace: createExecutionWorkspace({ id: "exec-1" }),
           identifier: "PAP-893",
           updatedAt: new Date("2026-03-26T11:00:00Z"),
         }),
@@ -216,7 +190,7 @@ describe("buildProjectWorkspaceSummaries", () => {
         createIssue({
           id: "issue-exec-derived",
           projectWorkspaceId: featureWorkspace.id,
-          executionWorkspaceId: "exec-2",
+          currentExecutionWorkspace: createExecutionWorkspace({ id: "exec-2" }),
           updatedAt: new Date("2026-03-26T12:00:00Z"),
         }),
       ],
@@ -241,7 +215,11 @@ describe("buildProjectWorkspaceSummaries", () => {
         createIssue({
           id: "issue-default-shared",
           projectWorkspaceId: primaryWorkspace.id,
-          executionWorkspaceId: "exec-shared-default",
+          currentExecutionWorkspace: createExecutionWorkspace({
+            id: "exec-shared-default",
+            mode: "shared_workspace",
+            projectWorkspaceId: primaryWorkspace.id,
+          }),
           updatedAt: new Date("2026-03-26T12:00:00Z"),
         }),
       ],
@@ -268,12 +246,12 @@ describe("buildProjectWorkspaceSummaries", () => {
       issues: [
         createIssue({
           id: "issue-stopped",
-          executionWorkspaceId: "exec-stopped",
+          currentExecutionWorkspace: createExecutionWorkspace({ id: "exec-stopped" }),
           updatedAt: new Date("2026-03-27T12:00:00Z"),
         }),
         createIssue({
           id: "issue-live",
-          executionWorkspaceId: "exec-live",
+          currentExecutionWorkspace: createExecutionWorkspace({ id: "exec-live" }),
           updatedAt: new Date("2026-03-25T12:00:00Z"),
         }),
       ],
