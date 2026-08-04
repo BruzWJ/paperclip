@@ -111,8 +111,8 @@ stored as validated, secret-redacted PostgreSQL events and projected into
 materialized messages. The chronological comment thread is the human-facing
 projection, not a second conversation store.
 
-Provider-native continuity is represented only by a codec-validated
-`issue-execution-native/v1` envelope keyed to:
+Provider-native continuity is represented only by a fixed, encrypted
+`issue-execution-native/v1` correlation envelope keyed to:
 
 `(company, issue, ownership epoch, agent, adapter configuration identity)`
 

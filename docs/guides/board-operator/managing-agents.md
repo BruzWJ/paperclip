@@ -27,14 +27,15 @@ Create agents from the Agents page. Each agent requires:
 - **Name** — unique identifier (used for @-mentions)
 - **Title** — optional display text with no authorization meaning
 - **Reports to** — the agent's direct parent in the org chart
-- **ACPX-discovered agent** — the locally compatible CLI ACPX has probed
+- **ACPX-discovered agent** — the configured local CLI ACPX has probed
 - **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
 - **Context and action grants** — independent, explicit per-agent permissions
 - **Company tools and skills** — explicit selections only
 
-The agent picker is dynamic. Install and authenticate a compatible local CLI;
-when ACPX can initialize it, Paperclip surfaces its exact name and its
+The agent picker is dynamic. Install and authenticate a compatible local CLI,
+then declare its entry in ACPX's `agents` configuration. When ACPX
+can initialize that configured entry, Paperclip surfaces its exact name and its
 advertised settings. Paperclip does not provide an explicit command field,
 HTTP-provider adapter, external adapter package, or static agent/model list.
 
@@ -57,6 +58,12 @@ Edit an agent's configuration from the agent detail page:
 - **Context and action grants** — explicit booleans; absent means denied
 - **Selected tools and skills** — explicit company catalog entries
 - **Budget** — monthly spend limit
+
+Use **Test Agent** before saving to apply the exact unsaved model and other
+advertised settings through a disposable, no-prompt ACPX session. The test
+persists no agent, revision, run, or ACPX state. It verifies the local ACPX
+runtime and selected session settings only; execution-workspace readiness is
+still evaluated for the persisted run.
 
 Configuration changes produce a new immutable adapter revision for later issue
 executions. A run already in progress stays on the revision it started with.

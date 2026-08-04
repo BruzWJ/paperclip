@@ -43,6 +43,9 @@ const mockAdapterConfigurations = vi.hoisted(() => ({
 const mockOperationalConfigurations = vi.hoisted(() => ({
   update: vi.fn(),
 }));
+const mockAdapterConfigurationDraftTest = vi.hoisted(() => ({
+  test: vi.fn(),
+}));
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
@@ -195,6 +198,8 @@ function createApp(actorType: "board" | "agent" = "board") {
     ordinaryIssues: {
       notifyCreatorDelivery: async () => undefined,
     } as never,
+    adapterConfigurationDraftTest:
+      mockAdapterConfigurationDraftTest,
   }));
   app.use(errorHandler);
   return app;
@@ -288,6 +293,15 @@ describe("agent control-plane routes", () => {
     mockOperationalConfigurations.update.mockResolvedValue({
       agent: agent({ budgetMonthlyAmount: "25" }),
     });
+    mockAdapterConfigurationDraftTest.test.mockResolvedValue({
+      status: "ready",
+      adapterType: CANONICAL_TEST_ADAPTER_TYPE,
+      runtimeControls: [
+        "session/status",
+        "session/set_config_option",
+      ],
+      testedAt: "2026-08-04T18:00:00.000Z",
+    });
   });
 
   it("creates only through the explicit runtime-agent contract", async () => {
@@ -323,6 +337,74 @@ describe("agent control-plane routes", () => {
 
     expect(response.status).toBe(400);
     expect(mockRuntimeAgentConfiguration.create).not.toHaveBeenCalled();
+  });
+
+  it("tests an unsaved adapter configuration without creating an agent or revision", async () => {
+    const adapterConfig = {
+      model: "fixture-model",
+      reasoning_effort: "high",
+    };
+    const response = await request(createApp())
+      .post(
+        `/api/companies/company-1/adapters/${CANONICAL_TEST_ADAPTER_TYPE}/test-configuration`,
+      )
+      .send({ adapterConfig });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "ready",
+      adapterType: CANONICAL_TEST_ADAPTER_TYPE,
+      runtimeControls: [
+        "session/status",
+        "session/set_config_option",
+      ],
+      testedAt: "2026-08-04T18:00:00.000Z",
+    });
+    expect(mockAdapterConfigurationDraftTest.test).toHaveBeenCalledWith({
+      adapterType: CANONICAL_TEST_ADAPTER_TYPE,
+      adapterConfig,
+    });
+    expect(mockRuntimeAgentConfiguration.create).not.toHaveBeenCalled();
+    expect(mockAdapterConfigurations.createRevision).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed unsaved adapter tests before opening ACPX", async () => {
+    const response = await request(createApp())
+      .post(
+        `/api/companies/company-1/adapters/${CANONICAL_TEST_ADAPTER_TYPE}/test-configuration`,
+      )
+      .send({ adapterConfig: {}, environmentId });
+
+    expect(response.status).toBe(400);
+    expect(mockAdapterConfigurationDraftTest.test).not.toHaveBeenCalled();
+  });
+
+  it("denies adapter tests to a company viewer without agent-create authority", async () => {
+    mockAccessService.decide.mockResolvedValue({
+      allowed: false,
+      reason: "deny_missing_grant",
+      explanation: "Viewer cannot create agents",
+    });
+
+    const response = await request(createApp())
+      .post(
+        `/api/companies/company-1/adapters/${CANONICAL_TEST_ADAPTER_TYPE}/test-configuration`,
+      )
+      .send({ adapterConfig: { model: "fixture-model" } });
+
+    expect(response.status).toBe(403);
+    expect(mockAdapterConfigurationDraftTest.test).not.toHaveBeenCalled();
+  });
+
+  it("denies adapter tests outside the board actor's company scope", async () => {
+    const response = await request(createApp())
+      .post(
+        `/api/companies/company-2/adapters/${CANONICAL_TEST_ADAPTER_TYPE}/test-configuration`,
+      )
+      .send({ adapterConfig: { model: "fixture-model" } });
+
+    expect(response.status).toBe(403);
+    expect(mockAdapterConfigurationDraftTest.test).not.toHaveBeenCalled();
   });
 
   it("serves disjoint create and exact-agent company-tool option catalogs", async () => {

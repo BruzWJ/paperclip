@@ -328,6 +328,9 @@ export {
   runtimeAgentCompanyToolOptionSchema,
   runtimeAgentCompanyToolOptionsSchema,
   agentAdapterRevisionConfigurationSchema,
+  AGENT_ADAPTER_CONFIGURATION_TEST_FAILURE_REASONS,
+  agentAdapterConfigurationTestInputSchema,
+  agentAdapterConfigurationTestResultSchema,
   agentOperationalConfigurationUpdateSchema,
   type AgentContextGrantMapInput,
   type PaperclipActionGrantMapInput,
@@ -338,6 +341,9 @@ export {
   type RuntimeAgentUpdateConfigurationInput,
   type RuntimeAgentConfigureActionInput,
   type AgentAdapterRevisionConfigurationInput,
+  type AgentAdapterConfigurationTestInput,
+  type AgentAdapterConfigurationTestFailureReason,
+  type AgentAdapterConfigurationTestResult,
   type AgentOperationalConfigurationUpdateInput,
 } from "./runtime-agent-configuration.js";
 

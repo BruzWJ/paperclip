@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   Agent,
+  AgentAdapterConfigurationTestResult,
   Environment,
 } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
+import { adaptersApi } from "../api/adapters";
 import { environmentsApi } from "../api/environments";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { assetsApi } from "../api/assets";
@@ -28,7 +30,6 @@ import { findUIAdapter } from "../adapters";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ReportsToPicker } from "./ReportsToPicker";
 import { listAdapterOptions, listVisibleAdapterTypes } from "../adapters/metadata";
-import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { buildAgentUpdatePatch, omitUndefinedEntries, type AgentConfigOverlay } from "../lib/agent-config-patch";
 import { resolveForcedKubernetesEnvironment } from "../lib/forced-kubernetes-environment";
@@ -94,7 +95,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const showAdapterTypeField = props.showAdapterTypeField ?? true;
   const { selectedCompanyId } = useCompany();
 
-  useAdapterCatalogSync();
+  const admittedAdapters = useAdapterCatalogSync();
 
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -212,6 +213,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const hasAdapterType = adapterType.trim().length > 0;
 
   const uiAdapter = useMemo(() => findUIAdapter(adapterType), [adapterType]);
+  const catalogAdapter = useMemo(
+    () => admittedAdapters.find((adapter) => adapter.type === adapterType) ?? null,
+    [adapterType, admittedAdapters],
+  );
   const requiresExplicitExecutionEnvironment =
     isCreate && (props.requireExplicitExecutionEnvironment ?? true);
   const supportedEnvironmentDrivers = useMemo(
@@ -319,6 +324,129 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   };
 
   const isSavePending = !isCreate && Boolean(props.isSaving);
+  const draftTestConfiguration = useMemo(() => {
+    if (!hasAdapterType || !uiAdapter) {
+      return { adapterConfig: null, error: null };
+    }
+    try {
+      if (isCreate) {
+        return {
+          adapterConfig: uiAdapter.buildAdapterConfig(val!),
+          error: null,
+        };
+      }
+      const patch = buildAgentUpdatePatch(props.agent, overlay);
+      const nextAdapterConfig = patch.adapterConfig;
+      return {
+        adapterConfig:
+          typeof nextAdapterConfig === "object"
+          && nextAdapterConfig !== null
+          && !Array.isArray(nextAdapterConfig)
+            ? nextAdapterConfig as Record<string, unknown>
+            : { ...config },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        adapterConfig: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Adapter configuration could not be built.",
+      };
+    }
+  }, [config, hasAdapterType, isCreate, overlay, props, uiAdapter, val]);
+  const draftTestFingerprint = useMemo(
+    () => draftTestConfiguration.adapterConfig === null
+      ? null
+      : JSON.stringify([
+          selectedCompanyId,
+          isCreate ? "create" : props.agent.id,
+          adapterType,
+          draftTestConfiguration.adapterConfig,
+        ]),
+    [
+      adapterType,
+      draftTestConfiguration.adapterConfig,
+      isCreate,
+      props,
+      selectedCompanyId,
+    ],
+  );
+  const draftTestContextToken = useMemo(
+    () => Object.freeze({ fingerprint: draftTestFingerprint }),
+    [catalogAdapter, draftTestFingerprint, uiAdapter],
+  );
+  const currentDraftTestContextToken = useRef(draftTestContextToken);
+  currentDraftTestContextToken.current = draftTestContextToken;
+  const [draftTestFeedback, setDraftTestFeedback] = useState<{
+    contextToken: object;
+    result: AgentAdapterConfigurationTestResult | null;
+    error: string | null;
+  } | null>(null);
+  useEffect(() => {
+    setDraftTestFeedback(null);
+  }, [draftTestContextToken]);
+  const testDraftConfiguration = useMutation({
+    mutationFn: async (input: {
+      companyId: string;
+      adapterType: string;
+      adapterConfig: Record<string, unknown>;
+      contextToken: object;
+    }) => await adaptersApi.testConfiguration(
+      input.companyId,
+      input.adapterType,
+      { adapterConfig: input.adapterConfig },
+    ),
+    onSuccess: (result, input) => {
+      if (currentDraftTestContextToken.current !== input.contextToken) return;
+      setDraftTestFeedback({
+        contextToken: input.contextToken,
+        result,
+        error: null,
+      });
+    },
+    onError: (error, input) => {
+      if (currentDraftTestContextToken.current !== input.contextToken) return;
+      setDraftTestFeedback({
+        contextToken: input.contextToken,
+        result: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : "ACPX agent configuration test failed.",
+      });
+    },
+  });
+  const visibleDraftTestFeedback =
+    draftTestFeedback?.contextToken === draftTestContextToken
+      ? draftTestFeedback
+      : null;
+  const visibleDraftTestResult = visibleDraftTestFeedback?.result ?? null;
+  const draftTestDisabled =
+    !selectedCompanyId
+    || !hasAdapterType
+    || draftTestConfiguration.adapterConfig === null
+    || draftTestFingerprint === null
+    || testDraftConfiguration.isPending
+    || isSavePending;
+
+  function handleTestAgent() {
+    if (
+      draftTestDisabled
+      || !selectedCompanyId
+      || draftTestConfiguration.adapterConfig === null
+      || draftTestFingerprint === null
+    ) return;
+    setDraftTestFeedback(null);
+    testDraftConfiguration.mutate({
+      companyId: selectedCompanyId,
+      adapterType,
+      adapterConfig: draftTestConfiguration.adapterConfig,
+      contextToken: draftTestContextToken,
+    });
+  }
+
   return (
     <div className={cn("relative", cards && "space-y-6")}>
       {/* ---- Floating Save button (edit mode, when dirty) ---- */}
@@ -523,7 +651,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
           {hasAdapterType && !uiAdapter && (
             <p className="text-xs text-destructive">
-              This adapter is not in the server-admitted ACP catalog.
+              This adapter is not in the server-admitted ACPX catalog.
             </p>
           )}
 
@@ -533,6 +661,47 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 first immutable configuration revision.
             </p>
           )}
+
+          {hasAdapterType && uiAdapter ? (
+            <div className="space-y-2 rounded-md border border-border bg-muted p-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  Test the exact unsaved model and other ACPX settings in a
+                  disposable no-prompt session. This does not save the agent
+                  or prove a future execution workspace is ready.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={draftTestDisabled}
+                  onClick={handleTestAgent}
+                >
+                  {testDraftConfiguration.isPending
+                    ? "Testing…"
+                    : "Test Agent"}
+                </Button>
+              </div>
+              {draftTestConfiguration.error ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {draftTestConfiguration.error}
+                </p>
+              ) : visibleDraftTestFeedback?.error ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {visibleDraftTestFeedback.error}
+                </p>
+              ) : visibleDraftTestResult?.status === "failed" ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {visibleDraftTestResult.message}
+                </p>
+              ) : visibleDraftTestResult?.status === "ready" ? (
+                <p role="status" className="text-xs text-foreground">
+                  ACPX accepted this exact draft configuration.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
         </div>
 
@@ -552,20 +721,16 @@ export function AdapterTypeDropdown({
   onChange: (type: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const selectedDisplay = value ? getAdapterDisplay(value) : null;
   const adapterList = listAdapterOptions();
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
-          <span className="inline-flex min-w-0 items-center gap-1.5">
-            <span className={cn("truncate", !value && "text-muted-foreground")}>
-              {value
-                ? findUIAdapter(value)?.label ?? value
-                : "Select an adapter"}
-            </span>
-            {selectedDisplay?.experimental && <ExperimentalBadge />}
+          <span className={cn("truncate", !value && "text-muted-foreground")}>
+            {value
+              ? findUIAdapter(value)?.label ?? value
+              : "Select an adapter"}
           </span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
@@ -574,39 +739,19 @@ export function AdapterTypeDropdown({
         {adapterList.map((item) => (
           <button
             key={item.value}
-            disabled={item.comingSoon}
             className={cn(
-              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded",
-              item.comingSoon
-                ? "opacity-40 cursor-not-allowed"
-                : "hover:bg-accent/50",
-              item.value === value && !item.comingSoon && "bg-accent",
+              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+              item.value === value && "bg-accent",
             )}
             onClick={() => {
-              if (!item.comingSoon) {
-                onChange(item.value);
-                setOpen(false);
-              }
+              onChange(item.value);
+              setOpen(false);
             }}
           >
-            <span className="inline-flex items-center gap-1.5">
-              <span>{item.label}</span>
-              {item.experimental && <ExperimentalBadge />}
-            </span>
-            {item.comingSoon && (
-              <span className="text-(length:--text-nano) text-muted-foreground">Coming soon</span>
-            )}
+            <span>{item.label}</span>
           </button>
         ))}
       </PopoverContent>
     </Popover>
-  );
-}
-
-function ExperimentalBadge() {
-  return (
-    <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-(length:--text-nano) font-medium leading-none text-amber-700 dark:text-amber-200">
-      Experimental
-    </span>
   );
 }

@@ -92,7 +92,7 @@ export interface AcpxOneShotPromptInput {
    * on one ACPX registry without treating an issue workspace as configuration.
    */
   readonly registryCwd?: string;
-  /** Must be an exact name published by ACPX's resolved registry. */
+  /** Must be an exact name in ACPX's resolved `agents` configuration. */
   readonly agentName: string;
   readonly start: AcpxRuntimeSessionStart;
   readonly message: string;

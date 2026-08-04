@@ -58,6 +58,12 @@ export interface AcpxRuntimeReadinessProbeInput {
   readonly agentName: string;
   /** Immutable generic selections previously supplied by ACPX discovery. */
   readonly configSelections: readonly AcpSessionConfigSelection[];
+  /**
+   * Require ACPX to confirm that the provider backend session was discarded.
+   * The default preserves persisted-run readiness behavior, where a successful
+   * non-discarding close may still release the local ACPX runtime record.
+   */
+  readonly requireBackendSessionDiscard?: boolean;
   readonly timeoutMs?: number;
   readonly dependencies?: AcpxRuntimeReadinessProbeDependencies;
 }
@@ -286,6 +292,7 @@ export async function probeAcpxRuntimeReadiness(
         discardPersistentState: true,
       });
     } catch (discardError) {
+      let nonDiscardingCloseError: unknown;
       try {
         await runtime.close({
           handle,
@@ -293,13 +300,25 @@ export async function probeAcpxRuntimeReadiness(
           discardPersistentState: false,
         });
       } catch (closeError) {
-        // Some ACPX frontends do not implement backend session close. A
-        // successful non-discarding close still releases the disposable
-        // runtime record before the state directory is removed, so only a
-        // failure of both operations is an incomplete cleanup.
+        nonDiscardingCloseError = closeError;
+      }
+      if (
+        input.requireBackendSessionDiscard === true ||
+        nonDiscardingCloseError !== undefined
+      ) {
+        // Some ACPX frontends do not implement backend session close. Ordinary
+        // persisted-run readiness retains the historical fallback: a
+        // successful non-discarding close releases the local runtime record.
+        // Callers making a strictly disposable observation can require proof
+        // that the provider backend itself was discarded.
         cleanupErrors.push(
           new AggregateError(
-            [discardError, closeError],
+            [
+              discardError,
+              ...(nonDiscardingCloseError === undefined
+                ? []
+                : [nonDiscardingCloseError]),
+            ],
             "ACPX readiness session close failed",
           ),
         );

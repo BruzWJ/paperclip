@@ -26,7 +26,6 @@ import { isVisualAdapterChoice } from "../adapters/metadata";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import { useToast } from "../context/ToastContext";
-import { Badge } from "@/components/ui/badge";
 
 type NewAgentDialogMode = "choices" | "runtime" | "invite" | "prompt";
 
@@ -60,13 +59,11 @@ export function NewAgentDialog() {
 
   const inviteHistoryQueryKey = queryKeys.access.invites(selectedCompanyId ?? "", "all", 5);
 
-  // The synchronized UI registry contains only server-admitted declarative
-  // ACP adapters.
+  // The synchronized UI registry contains only server-admitted ACPX agents.
   const adapterGrid = useMemo(() => {
     const registered = listUIAdapters()
       .filter((a) => isVisualAdapterChoice(a.type));
 
-    // Sort: recommended first, then alphabetical
     return registered
       .map((a) => {
         const display = getAdapterDisplay(a.type);
@@ -74,17 +71,9 @@ export function NewAgentDialog() {
           value: a.type,
           label: a.label,
           desc: display.description,
-          icon: display.icon,
-          recommended: display.recommended,
-          comingSoon: display.comingSoon,
-          disabledLabel: display.disabledLabel,
         };
       })
-      .sort((a, b) => {
-        if (a.recommended && !b.recommended) return -1;
-        if (!a.recommended && b.recommended) return 1;
-        return a.label.localeCompare(b.label);
-      });
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [admittedAdapters]);
 
   function handleAskAgent() {
@@ -241,13 +230,13 @@ export function NewAgentDialog() {
                   Back
                 </button>
                 <p className="text-sm text-muted-foreground">
-                  Choose the ACPX-discovered runtime Paperclip should use for this agent.
+                  Choose the ACPX-configured runtime Paperclip should use for this agent.
                 </p>
               </div>
 
               {adapterCatalog.isLoading ? (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Checking locally available ACPX runtimes…
+                  Checking ACPX-configured runtimes…
                 </p>
               ) : adapterCatalog.isError ? (
                 <div
@@ -269,29 +258,16 @@ export function NewAgentDialog() {
                 </div>
               ) : adapterGrid.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No compatible ACPX runtime is currently available. Install or authenticate a compatible local CLI, then retry.
+                  No configured ACPX runtime is currently available. Declare a local runtime in ACPX&apos;s agents configuration, authenticate it, then retry.
                 </p>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {adapterGrid.map((opt) => (
                     <button
                       key={opt.value}
-                      className={cn(
-                        "flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs transition-colors hover:bg-accent/50 relative",
-                        opt.comingSoon && "opacity-40 cursor-not-allowed",
-                      )}
-                      disabled={!!opt.comingSoon}
-                      title={opt.comingSoon ? opt.disabledLabel : undefined}
-                      onClick={() => {
-                        if (!opt.comingSoon) handleAdvancedAdapterPick(opt.value);
-                      }}
+                      className="flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs transition-colors hover:bg-accent/50"
+                      onClick={() => handleAdvancedAdapterPick(opt.value)}
                     >
-                      {opt.recommended && (
-                        <Badge variant="ghost" className="absolute -top-1.5 right-1.5 bg-green-500 text-white text-(length:--text-nano) font-semibold px-1.5 leading-none">
-                          Recommended
-                        </Badge>
-                      )}
-                      <opt.icon className="h-4 w-4" />
                       <span className="font-medium">{opt.label}</span>
                       <span className="text-muted-foreground text-(length:--text-nano)">
                         {opt.desc}

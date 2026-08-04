@@ -5,6 +5,7 @@ import type { AcpAgentRegistry } from "acpx/runtime";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertAcpRegistryAgentName,
+  configuredAcpRegistryView,
   listAcpRegistryAgentNames,
   loadConfiguredAcpRegistry,
   resolveAcpRegistryLaunch,
@@ -22,6 +23,29 @@ function registry(input: {
 }
 
 describe("ACPX launch registry", () => {
+  it("exposes only ACPX-configured names while delegating their resolution", () => {
+    const resolve = vi.fn((name: string) => ["acpx-resolved", name]);
+    const configured = configuredAcpRegistryView(
+      registry({
+        // Mirrors ACPX's public registry behavior: static built-ins are mixed
+        // with configured overrides in its unfiltered list.
+        names: ["codex", "kilocode", "mux", "custom-runner"],
+        resolve,
+      }),
+      ["custom-runner"],
+    );
+
+    expect(listAcpRegistryAgentNames(configured)).toEqual(["custom-runner"]);
+    expect(configured.resolve("custom-runner")).toEqual([
+      "acpx-resolved",
+      "custom-runner",
+    ]);
+    expect(() => configured.resolve("mux")).toThrow(
+      "ACP registry name is not configured by ACPX",
+    );
+    expect(resolve).toHaveBeenCalledExactlyOnceWith("custom-runner");
+  });
+
   it("loads a project-configured custom agent through ACPX's resolved config", async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "paperclip-acpx-config-"));
     try {
@@ -39,6 +63,8 @@ describe("ACPX launch registry", () => {
       const configured = await loadConfiguredAcpRegistry({ cwd });
 
       expect(listAcpRegistryAgentNames(configured)).toContain("custom-runner");
+      expect(listAcpRegistryAgentNames(configured)).not.toContain("kilocode");
+      expect(listAcpRegistryAgentNames(configured)).not.toContain("mux");
       expect(resolveAcpRegistryLaunch("custom-runner", configured)).toEqual({
         registryName: "custom-runner",
         command: "./bin/custom-acp",
@@ -49,7 +75,7 @@ describe("ACPX launch registry", () => {
     }
   });
 
-  it("lists exact ACPX-published names without assigning a Paperclip catalog", () => {
+  it("lists exact ACPX-configured names without assigning a Paperclip catalog", () => {
     expect(
       listAcpRegistryAgentNames(
         registry({

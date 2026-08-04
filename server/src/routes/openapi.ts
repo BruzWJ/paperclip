@@ -5,6 +5,8 @@ import {
   agentCompanySkillPinsResponseSchema,
   agentCompanySkillPinsUpdateSchema,
   agentAdapterAcpConfigurationSchema,
+  agentAdapterConfigurationTestInputSchema,
+  agentAdapterConfigurationTestResultSchema,
   agentAdapterRevisionConfigurationSchema,
   agentOperationalConfigurationUpdateSchema,
   environmentDriverSchema,
@@ -888,6 +890,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/join-requests/{requestId}/reject",
   "GET /api/companies/{companyId}/members",
   "POST /api/companies/{companyId}/runtime-agents",
+  "POST /api/companies/{companyId}/adapters/{type}/test-configuration",
   "GET /api/companies/{companyId}/runtime-agent-tool-options",
   "GET /api/agents/{id}/runtime-configuration",
   "GET /api/agents/{id}/runtime-configuration/tool-options",
@@ -1840,6 +1843,26 @@ registry.registerPath({
   summary: "List models for an adapter type",
   request: { params: z.object({ companyId: z.string(), type: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/adapters/{type}/test-configuration",
+  tags: ["adapters"],
+  summary: "Test an unsaved adapter configuration through a disposable ACPX session",
+  description:
+    "Validates the exact active ACPX adapter and its generic session selections, then opens and removes a no-prompt local test session. This does not claim execution-workspace readiness and persists no agent, revision, or run.",
+  request: {
+    params: z.object({ companyId: z.string(), type: z.string() }),
+    body: jsonBody(agentAdapterConfigurationTestInputSchema),
+  },
+  responses: {
+    200: r.ok(agentAdapterConfigurationTestResultSchema),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    422: r.unprocessable,
+  },
 });
 
 // ─── Issues ──────────────────────────────────────────────────────────────────

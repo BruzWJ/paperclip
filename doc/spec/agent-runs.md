@@ -21,7 +21,7 @@ Every productive attempt has one exact chain:
 3. The internal dispatcher leases that ref.
 4. The attempt resolver revalidates issue, epoch, owner/consult, adapter revision, workspace binding, grants, session view, and lease.
 5. The runtime compiler creates the run-scoped interface.
-6. The adapter executes one provider turn or Session-runner continuation.
+6. ACPX's public runtime executes one bounded provider turn.
 7. Session events project structured messages, costs, comments, and outcome.
 8. Finalization compare-and-clears only control-plane locks still owned by that run.
 
@@ -38,7 +38,9 @@ The run links to:
 - issue-execution ref and current lease generation
 - optional validated native correlation for effective-true-carry owner work
 
-The provider sees none of those correlation fields. It receives only the lowered issue-session messages, provider-owned native configuration, and the compiled run-tools descriptor.
+The provider sees none of those correlation fields. It receives only the exact
+admitted source text, ACPX-applied generic session configuration, and the
+request-scoped compiled run-tools descriptor.
 
 ## Continuity
 
@@ -52,7 +54,8 @@ No agent-wide or issue-key session state exists.
 
 ## Structured output
 
-Adapters publish normalized Paperclip Session events for:
+The ACPX public-runtime bridge publishes normalized Paperclip Session events
+for:
 
 - step boundaries
 - text and reasoning boundaries/deltas
@@ -64,7 +67,11 @@ The durable event stream is append-only and secret-redacted before storage. The 
 
 ## Cancellation and retry
 
-Cancellation invalidates the matching lease/view/input disposition and signals the adapter. Late callbacks must revalidate their generation and cannot append events, comments, checkpoints, or outcomes after authority is lost.
+Cancellation invalidates the matching lease/view/input disposition and requests
+cancellation through ACPX's public runtime. The resulting turn outcome settles
+through the canonical attempt path; late events or callbacks must revalidate
+their generation and cannot append events, comments, checkpoints, or outcomes
+after authority is lost.
 
 Transient/process-loss recovery may re-lease only the original valid ref. It preserves the same admitted source and execution view. An invalid or stale ref terminalizes with audit evidence and does not create replacement work.
 

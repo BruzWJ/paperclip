@@ -153,6 +153,7 @@ canonical issue-execution source.
 
 ```http
 GET /api/companies/{companyId}/adapters/{adapterType}/models
+POST /api/companies/{companyId}/adapters/{adapterType}/test-configuration
 ```
 
 The response is the exact model catalog currently discovered through ACPX for
@@ -161,3 +162,21 @@ ACPX registry membership, execution-target/workspace binding, legal stable
 ACPX configuration selections, selected-tool/skill integrity, and the agent's
 live eligibility/budget state. It uses a disposable no-prompt ACPX probe and
 never sends a model conversation.
+
+The configuration-test endpoint accepts the exact unsaved generic ACPX
+selection object:
+
+```json
+{
+  "adapterConfig": {
+    "<acpx-option-id>": "<selected-advertised-value>"
+  }
+}
+```
+
+It requires board authority with `agents:create`, applies the canonical ACPX
+configuration resolver, and opens a strictly disposable no-prompt ACPX session
+in a fresh temporary workspace. The request cannot select an environment or
+workspace, and the response is only a `ready` or sanitized `failed`
+observation. It creates no agent, revision, run, or durable workspace and does
+not claim that a future execution workspace is ready.

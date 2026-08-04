@@ -4,9 +4,10 @@ import {
 } from "./schema-config-fields";
 
 /**
- * Validate a draft against the adapter-owned form schema. A draft has no
- * persisted revision, run, environment target, or execution workspace, so it
- * cannot make a runtime-readiness claim.
+ * Validate a draft against the adapter-owned form schema without starting a
+ * process. The separate Test Agent action may apply this configuration to a
+ * disposable ACPX session, but a draft still has no persisted run, target, or
+ * workspace from which to make a full execution-readiness claim.
  */
 export function useStructuralAdapterConfiguration(input: {
   adapterType: string;

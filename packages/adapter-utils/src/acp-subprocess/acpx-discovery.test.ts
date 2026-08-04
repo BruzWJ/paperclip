@@ -4,7 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createAcpRuntime,
-  createAgentRegistry,
   createRuntimeStore,
   type AcpRuntimeCapabilities,
   type AcpRuntimeHandle,
@@ -65,9 +64,10 @@ describe("dynamic ACPX discovery", () => {
     const removeTemporaryStateDir = vi.fn(async (directory: string) => {
       await fs.rm(directory, { recursive: true, force: true });
     });
-    const registry = createAgentRegistry({
-      overrides: { fixture: [process.execPath, fixtureEntrypoint] },
-    });
+    const registry = {
+      list: () => ["fixture"],
+      resolve: () => [process.execPath, fixtureEntrypoint],
+    };
 
     const result = await probeAcpxAgent({
       cwd: process.cwd(),

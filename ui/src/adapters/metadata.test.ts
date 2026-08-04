@@ -16,7 +16,7 @@ describe("adapter metadata", () => {
     syncServerAdapters([{ type: "codex", label: "Codex" }]);
   });
 
-  it("exposes only the exact server-admitted ACP catalog", () => {
+  it("exposes only the exact server-admitted ACPX catalog", () => {
     expect(isEnabledAdapterType("codex")).toBe(true);
     expect(isValidAdapterType("codex")).toBe(true);
     expect(isVisualAdapterChoice("codex")).toBe(true);
@@ -27,8 +27,6 @@ describe("adapter metadata", () => {
       {
         value: "codex",
         label: "Codex",
-        comingSoon: false,
-        experimental: false,
       },
     ]);
   });
@@ -40,8 +38,6 @@ describe("adapter metadata", () => {
       {
         value: "codex",
         label: "Pinned Codex Frontend",
-        comingSoon: false,
-        experimental: false,
       },
     ]);
   });

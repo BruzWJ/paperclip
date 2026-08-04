@@ -3,7 +3,11 @@
  */
 
 import { api } from "./client";
-import type { EnvironmentDriver } from "@paperclipai/shared";
+import type {
+  AgentAdapterConfigurationTestInput,
+  AgentAdapterConfigurationTestResult,
+  EnvironmentDriver,
+} from "@paperclipai/shared";
 
 export interface AdapterCapabilities {
   supportsModelProfiles: boolean;
@@ -47,4 +51,17 @@ export type AdapterInfo = ReadyAdapterInfo | UnavailableAdapterInfo;
 export const adaptersApi = {
   /** List the exact ACPX-supplied entries admitted by the server. */
   list: () => api.get<AdapterInfo[]>("/adapters"),
+  /**
+   * Apply one unsaved generic configuration to a disposable, no-prompt ACPX
+   * session. This does not persist an agent or claim workspace readiness.
+   */
+  testConfiguration: (
+    companyId: string,
+    adapterType: string,
+    input: AgentAdapterConfigurationTestInput,
+  ) =>
+    api.post<AgentAdapterConfigurationTestResult>(
+      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(adapterType)}/test-configuration`,
+      input,
+    ),
 };

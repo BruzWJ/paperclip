@@ -1276,8 +1276,8 @@ export function OnboardingWizard() {
                     </label>
                     {availableAdapters.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
-                        No compatible ACPX agent is currently available. Install and
-                        authenticate a compatible local CLI, then retry this step.
+                        No configured ACPX agent is currently available. Declare a local
+                        runtime in ACPX&apos;s agents configuration, authenticate it, then retry.
                       </p>
                     ) : (
                       <div className="grid grid-cols-2 gap-2">
@@ -1294,7 +1294,6 @@ export function OnboardingWizard() {
                               selectAdapterType(opt.type);
                             }}
                           >
-                            <opt.icon className="h-4 w-4" />
                             <span className="font-medium">{opt.label}</span>
                             <span className="text-muted-foreground text-(length:--text-nano)">
                               {opt.description}
@@ -1347,9 +1346,10 @@ export function OnboardingWizard() {
                       </p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        Draft configuration is structurally valid. Runtime
-                        readiness is checked only after the exact execution
-                        context is persisted.
+                        Draft configuration is structurally valid. Test Agent
+                        applies these exact settings through a disposable ACPX
+                        session; full workspace readiness is checked after the
+                        execution context is persisted.
                       </p>
                     )}
 

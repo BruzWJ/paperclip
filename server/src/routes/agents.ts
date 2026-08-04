@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import {
   agentCompanySkillPinsResponseSchema,
   agentCompanySkillPinsUpdateSchema,
+  agentAdapterConfigurationTestInputSchema,
   agentAdapterRevisionConfigurationSchema,
   agentOperationalConfigurationUpdateSchema,
   deriveAgentUrlKey,
@@ -59,6 +60,10 @@ import { createCompanyModelCatalog } from "../services/company-model-catalog.js"
 import type { IssueSessionStore } from "../services/issue-session/store.js";
 import type { IssueExecutionCancellationService } from "../services/issue-execution-cancellation.js";
 import { resolveInvokableIssueOwnerCatalogFromDb } from "../services/agent-invokability.js";
+import {
+  createAdapterConfigurationDraftTestService,
+  type AdapterConfigurationDraftTestService,
+} from "../services/adapter-configuration-draft-test.js";
 
 const WORKSPACE_OPERATION_LOG_DEFAULT_LIMIT_BYTES = 256_000;
 const WORKSPACE_OPERATION_LOG_MAX_LIMIT_BYTES = 1024 * 1024;
@@ -84,6 +89,7 @@ export function agentRoutes(
   options: {
     pluginWorkerManager?: PluginWorkerManager;
     issueSessionStore?: IssueSessionStore;
+    adapterConfigurationDraftTest?: AdapterConfigurationDraftTestService;
     ordinaryIssues: OrdinaryIssueRuntime;
     issueExecutionCancellation: Pick<
       IssueExecutionCancellationService,
@@ -114,6 +120,9 @@ export function agentRoutes(
   const operationalConfigurations =
     createAgentOperationalConfigurationService(db);
   const companyModelCatalog = createCompanyModelCatalog();
+  const adapterConfigurationDraftTest =
+    options.adapterConfigurationDraftTest ??
+    createAdapterConfigurationDraftTestService();
 
   function rethrowRuntimeAgentConfigurationError(error: unknown): never {
     if (error instanceof RuntimeAgentConfigurationInvalid) {
@@ -478,6 +487,21 @@ export function agentRoutes(
     const profiles = await listAdapterModelProfiles(type);
     res.json(profiles);
   });
+
+  router.post(
+    "/companies/:companyId/adapters/:type/test-configuration",
+    validate(agentAdapterConfigurationTestInputSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertCanCreateAgentsForCompany(req, companyId);
+      res.json(
+        await adapterConfigurationDraftTest.test({
+          adapterType: req.params.type as string,
+          adapterConfig: req.body.adapterConfig,
+        }),
+      );
+    },
+  );
 
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;

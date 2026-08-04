@@ -104,10 +104,11 @@ interface RegistryLike {
 }
 
 interface RegistryModule {
-  listAcpRegistryAgentNames(registry?: RegistryLike): readonly string[];
+  loadConfiguredAcpRegistry(input: { cwd: string }): Promise<RegistryLike>;
+  listAcpRegistryAgentNames(registry: RegistryLike): readonly string[];
   assertAcpRegistryAgentName(
     requestedName: string,
-    registry?: RegistryLike,
+    registry: RegistryLike,
   ): string;
 }
 
@@ -740,15 +741,16 @@ export async function listAcpRegistryAdmissionFiles(
 }
 
 /**
- * Test model for the closed dynamic admission rule. ACPX is the only catalog:
- * a submitted name must be byte-exactly present before ACPX's runtime receives it.
+ * Test model for the closed dynamic admission rule. ACPX configuration is the
+ * only catalog: a submitted name must be byte-exactly present before ACPX's
+ * runtime receives it.
  */
 export function assertExactRegistryCandidate(input: {
   readonly submittedName: string;
   readonly registryNames: readonly string[];
 }): string {
   if (!input.registryNames.includes(input.submittedName)) {
-    throw new Error("ACP registry name is not published by ACPX");
+    throw new Error("ACP registry name is not configured by ACPX");
   }
   return input.submittedName;
 }
@@ -814,7 +816,10 @@ async function inspectInstalledRuntime(
       path.resolve(repositoryRoot, REGISTRY_PATH),
     ).href;
     const registryModule = (await import(moduleUrl)) as RegistryModule;
-    const names = registryModule.listAcpRegistryAgentNames();
+    const configuredRegistry = await registryModule.loadConfiguredAcpRegistry({
+      cwd: repositoryRoot,
+    });
+    const names = registryModule.listAcpRegistryAgentNames(configuredRegistry);
     if (
       !Array.isArray(names) ||
       names.some((name) => typeof name !== "string" || name.length === 0 || name !== name.trim())

@@ -17,13 +17,13 @@ export function findUIAdapter(type: string): UIAdapterModule | null {
 export function getUIAdapter(type: string): UIAdapterModule {
   const adapter = adaptersByType.get(type);
   if (!adapter) {
-    throw new Error(`Adapter "${type}" is not in the server-admitted ACP catalog.`);
+    throw new Error(`Adapter "${type}" is not in the server-admitted ACPX catalog.`);
   }
   return adapter;
 }
 
 /**
- * Replace the UI catalog with the server-admitted declarative ACP catalog.
+ * Replace the UI catalog with the server-admitted ACPX catalog.
  * UI entries contain only schema rendering metadata; no executable adapter
  * package, override, or unknown-type fallback exists in the browser.
  */
@@ -54,7 +54,7 @@ export function syncServerAdapters(
       || new Set(declaredDrivers).size !== declaredDrivers.length
       || next.has(adapter.type)
     ) {
-      throw new Error("Server returned an invalid ACP adapter catalog.");
+      throw new Error("Server returned an invalid ACPX agent catalog.");
     }
     const drivers = Object.freeze(
       ENVIRONMENT_DRIVERS.filter((driver) => declaredDrivers.includes(driver)),

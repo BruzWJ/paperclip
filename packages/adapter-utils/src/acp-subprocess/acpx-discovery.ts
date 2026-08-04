@@ -54,7 +54,7 @@ export interface AcpxDiscoveredConfigOption {
 }
 
 export interface AcpxAgentDiscovery {
-  /** Exact, registry-listed ACPX agent name that was probed. */
+  /** Exact, configured ACPX agent name that was probed. */
   readonly agentName: string;
   /** ACPX runtime controls advertised for the temporary session. */
   readonly controls: readonly string[];
@@ -356,8 +356,8 @@ function listedAgentNames(registry: AcpAgentRegistry): readonly string[] {
 }
 
 /**
- * Lists exactly the names ACPX's public registry exposes. Paperclip adds no
- * catalog entries, aliases, launch argv, or model data here.
+ * Lists exactly the names ACPX's resolved `agents` configuration exposes.
+ * Paperclip adds no catalog entries, aliases, launch argv, or model data here.
  */
 export async function listAcpxAgentNames(
   input: ListAcpxAgentsInput = {},
@@ -487,7 +487,7 @@ async function verifyDefaultAcpxRuntimeConfiguration(
 }
 
 /**
- * Creates a disposable, no-prompt ACPX session for one registry-listed agent
+ * Creates a disposable, no-prompt ACPX session for one configured ACPX agent
  * and returns the generic configuration it advertises. It never resolves an
  * arbitrary agent string, so ACPX's raw-command fallback is not reachable.
  *

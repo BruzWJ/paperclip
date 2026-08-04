@@ -324,12 +324,18 @@ non-secret choices through ACPX's generic configuration setter; it neither
 passes an arbitrary provider payload to an adapter nor launches an auth probe.
 
 Every ACPX-discovered agent is represented by a data-only
-`acpx-runtime/v1` definition. Paperclip asks ACPX to probe the locally
-available compatible CLIs and uses the exact registry name ACPX returns;
-Paperclip does not maintain a built-in agent or model catalog. A CLI that fails
-the disposable local ACPX probe is not selectable. ACPX owns the underlying
-launch and runtime state; Paperclip creates no raw command, process/HTTP
-callback, provider SDK, parser, or registry fallback.
+`acpx-runtime/v1` definition. Paperclip reads the exact entries from ACPX's
+resolved `agents` configuration, then asks ACPX to probe them. It does not use
+ACPX's static built-in shortcuts as catalog membership and does not maintain a
+built-in agent or model catalog. An unconfigured entry or a CLI that fails the
+disposable local ACPX probe is not selectable. ACPX owns the underlying launch
+and runtime state; Paperclip creates no raw command, process/HTTP callback,
+provider SDK, parser, or registry fallback.
+
+The pre-save **Test Agent** action reuses the exact same dynamic resolution and
+opens a disposable, no-prompt ACPX session with the draft's generic session
+selections. It persists no agent, revision, run, provider prompt, or ACPX state
+and deliberately makes no execution-workspace readiness claim.
 
 ## Config Freshness
 

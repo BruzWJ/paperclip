@@ -30,7 +30,7 @@ export interface RegisteredServerAdapterImplementation {
 }
 
 /**
- * A registry-listed ACPX agent that was intentionally not admitted as an
+ * An ACPX-configured agent that was intentionally not admitted as an
  * executable Paperclip adapter because its disposable local probe or generic
  * dynamic-contract validation failed. This is observability only: it never
  * participates in selection or launch.
@@ -150,9 +150,9 @@ function acpxCandidateDiagnostic(
 }
 
 /**
- * Re-probes locally available ACPX agents. A short successful-snapshot cache
+ * Re-probes ACPX-configured local agents. A short successful-snapshot cache
  * prevents every board repaint from opening temporary ACPX-resolved sessions
- * while still making newly installed/authenticated CLIs appear automatically.
+ * while still making newly configured/authenticated CLIs appear automatically.
  */
 export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<void> {
   const now = Date.now();
@@ -233,7 +233,7 @@ export function registerServerAdapter(
   _options: RegisterServerAdapterOptions = {},
 ): RegisteredServerAdapterImplementation {
   throw new Error(
-    "Paperclip's agent catalog is supplied exclusively by ACPX; install or configure an ACPX-compatible CLI instead of registering an adapter package",
+    "Paperclip's agent catalog is supplied exclusively by ACPX; declare the local runtime in ACPX's agents configuration instead of registering an adapter package",
   );
 }
 

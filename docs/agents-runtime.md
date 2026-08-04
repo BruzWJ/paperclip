@@ -61,10 +61,12 @@ stable ACPX session configuration. It does not execute a provider request or
 parse provider output.
 
 ACPX is the sole supplier of Paperclip's agent catalog. Paperclip reads the
-locally installed ACPX registry, temporarily probes each exact listed candidate,
-and surfaces only candidates that initialize an ACPX session successfully. ACPX
-supplies the agent name, model choices, configuration choices, and defaults;
-Paperclip owns no parallel list of agents, models, frontends, or provider flags.
+exact entries in ACPX's resolved `agents` configuration, temporarily probes each
+candidate, and surfaces only candidates that initialize an ACPX session
+successfully. Unconfigured ACPX built-in shortcuts are not catalog membership.
+ACPX supplies the agent name, model choices, configuration choices, and
+defaults; Paperclip owns no parallel list of agents, models, frontends, or
+provider flags.
 
 Paperclip checks the unchanged registry name before ACPX resolution, so it
 never accepts an alias or arbitrary command fallback. ACPX owns the provider
@@ -85,6 +87,12 @@ revision. Before every prompt, ACPX validates and applies every saved value
 through its generic configuration setter. There are no model flags, provider
 payload fields, prompt overrides, environment-secret fallbacks, or
 default-adapter inference.
+
+Before saving, **Test Agent** resolves the same dynamic adapter contract and
+applies every unsaved selection through ACPX's generic setter in a disposable,
+no-prompt session. It creates no agent, revision, run, provider prompt, or
+durable ACPX state. A successful result is an observation of local ACPX/session
+configuration only, not a claim that a future execution workspace is ready.
 
 ### 3.3 Runtime policy
 
@@ -229,10 +237,10 @@ directly.
 
 If runs fail repeatedly:
 
-1. Refresh the ACPX-backed agent catalog and confirm the exact compatible CLI
-   is still listed and passes its temporary session probe.
-2. Confirm the exact ACPX candidate remains available on the local Paperclip
-   host.
+1. Run `acpx config show --format json` at the Paperclip service scope and
+   confirm the exact candidate remains in the resolved `agents` map.
+2. Refresh the ACPX-backed catalog and confirm that configured candidate passes
+   its temporary session probe on the local Paperclip host.
 3. Run the selected CLI's native login on that execution target.
 4. Verify every saved stable ACPX configuration value is still advertised by the
    selected CLI; Paperclip does not infer model limits ACPX does not provide.
@@ -251,14 +259,15 @@ attempt and any later retry re-evaluates the current immutable request.
 
 ## 10. Minimal setup checklist
 
-1. Install an ACPX-compatible CLI on the execution target and let the ACPX
-   probe confirm it is selectable.
+1. Install an ACPX-compatible CLI on the execution target.
 2. Authenticate the AI CLI through its native login flow.
-3. Select an exact registered adapter and complete its required stable ACPX
+3. Declare its entry in ACPX's `agents` configuration and confirm
+   it with `acpx config show --format json`.
+4. Select the exact configured adapter and complete its required stable ACPX
    configuration.
-4. Configure an execution-workspace policy.
-5. Set explicit context dials, issue-action grants, and selected company
+5. Configure an execution-workspace policy.
+6. Set explicit context dials, issue-action grants, and selected company
    tools/skills.
-6. Create an issue with an immutable request and eligible owner.
-7. Confirm the Session projection, progress comment, terminal state, and any
+7. Create an issue with an immutable request and eligible owner.
+8. Confirm the Session projection, progress comment, terminal state, and any
    valid accounting were recorded.

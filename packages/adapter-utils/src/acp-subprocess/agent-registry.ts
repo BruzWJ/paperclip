@@ -21,10 +21,10 @@ type CachedConfiguredRegistry = {
 const configuredRegistryCache = new Map<string, CachedConfiguredRegistry>();
 
 /**
- * ACPX's registry is the sole authority for the available agent names and
- * their launch form. Paperclip deliberately persists only the exact registry
- * name; resolving it again at use time keeps ACPX in control of upgrades and
- * local agent installation details.
+ * ACPX's resolved `agents` configuration is the sole authority for enabled
+ * agent names and their launch form. Paperclip deliberately persists only the
+ * exact configured name; resolving it again at use time keeps ACPX in control
+ * of upgrades and local agent installation details.
  */
 export interface AcpRegistryLaunch {
   readonly registryName: string;
@@ -123,6 +123,37 @@ function configShowOverrides(value: unknown): Record<string, AcpxRegistryOverrid
   return overrides;
 }
 
+/**
+ * Restricts ACPX's public resolver to the exact agents explicitly present in
+ * its resolved configuration. ACPX's default `list()` also includes every
+ * built-in, including package-exec entries that may be downloaded on demand;
+ * those are not evidence that an operator enabled a local runtime.
+ *
+ * Resolution remains entirely ACPX-owned. This view only narrows membership
+ * before discovery or execution can reach ACPX's unknown-name fallback.
+ */
+export function configuredAcpRegistryView(
+  resolvedRegistry: AcpAgentRegistry,
+  configuredNames: readonly string[],
+): AcpAgentRegistry {
+  const names = Object.freeze(
+    [...new Set(configuredNames.map((name) => exactName(name)))].sort(),
+  );
+  const allowed = new Set(names);
+  return Object.freeze({
+    list: () => [...names],
+    resolve(agentName: string) {
+      const exactAgentName = exactName(agentName);
+      if (!allowed.has(exactAgentName)) {
+        throw new Error(
+          `ACP registry name is not configured by ACPX: ${exactAgentName}`,
+        );
+      }
+      return resolvedRegistry.resolve(exactAgentName);
+    },
+  });
+}
+
 function resolveConfiguredRegistryCwd(value: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error("ACPX configured registry cwd is required");
@@ -178,8 +209,8 @@ async function resolvedConfigOverrides(input: {
 
 /**
  * Loads the ACPX-resolved global + project configuration through ACPX's own
- * documented CLI, then creates the public runtime registry with those exact
- * overrides. Paperclip neither parses ACPX config files nor persists argv.
+ * documented CLI, then creates a configured-only view of ACPX's public runtime
+ * registry. Paperclip neither parses ACPX config files nor persists argv.
  */
 export async function loadConfiguredAcpRegistry(
   input: LoadConfiguredAcpRegistryInput,
@@ -191,7 +222,10 @@ export async function loadConfiguredAcpRegistry(
   if (cached && cached.expiresAt > now) return cached.registry;
 
   const overrides = await resolvedConfigOverrides({ cwd, timeoutMs });
-  const registry = createAgentRegistry({ overrides });
+  const registry = configuredAcpRegistryView(
+    createAgentRegistry({ overrides }),
+    Object.keys(overrides),
+  );
   configuredRegistryCache.set(cwd, {
     registry,
     expiresAt: now + ACPX_CONFIG_CACHE_MS,
@@ -200,12 +234,12 @@ export async function loadConfiguredAcpRegistry(
 }
 
 /**
- * Enumerates exact names published by the locally installed ACPX registry.
- * This does not claim that a candidate is usable; runtime discovery performs
- * the initialize/session probe before Paperclip presents it to an operator.
+ * Enumerates exact names enabled in ACPX's resolved agent configuration. This
+ * does not claim that a candidate is usable; runtime discovery performs the
+ * initialize/session probe before Paperclip presents it to an operator.
  */
 export function listAcpRegistryAgentNames(
-  candidateRegistry: AcpAgentRegistry = createAgentRegistry(),
+  candidateRegistry: AcpAgentRegistry,
 ): readonly string[] {
   const names = candidateRegistry.list();
   if (
@@ -221,7 +255,7 @@ export function listAcpRegistryAgentNames(
 }
 
 /**
- * Accept only a byte-exact ACPX-published name without resolving its command.
+ * Accept only a byte-exact ACPX-configured name without resolving its command.
  *
  * ACPX intentionally supports a raw-command fallback for unknown input. The
  * public Paperclip bridge must prevent that fallback, while leaving the
@@ -229,11 +263,11 @@ export function listAcpRegistryAgentNames(
  */
 export function assertAcpRegistryAgentName(
   requestedName: string,
-  candidateRegistry: AcpAgentRegistry = createAgentRegistry(),
+  candidateRegistry: AcpAgentRegistry,
 ): string {
   const registryName = exactName(requestedName);
   if (!listAcpRegistryAgentNames(candidateRegistry).includes(registryName)) {
-    throw new Error(`ACP registry name is not published by ACPX: ${registryName}`);
+    throw new Error(`ACP registry name is not configured by ACPX: ${registryName}`);
   }
   return registryName;
 }
@@ -245,7 +279,7 @@ export function assertAcpRegistryAgentName(
  */
 export function resolveAcpRegistryLaunch(
   requestedName: string,
-  candidateRegistry: AcpAgentRegistry = createAgentRegistry(),
+  candidateRegistry: AcpAgentRegistry,
 ): AcpRegistryLaunch {
   const registryName = assertAcpRegistryAgentName(
     requestedName,

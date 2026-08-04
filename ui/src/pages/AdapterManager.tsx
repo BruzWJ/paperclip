@@ -108,7 +108,7 @@ export function AdapterManager() {
       ) : !adapters?.length ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No compatible ACPX agent is currently available on this host.
+            No configured ACPX agent is currently available on this host. Declare a local runtime in ACPX&apos;s agents configuration, then retry.
           </CardContent>
         </Card>
       ) : (

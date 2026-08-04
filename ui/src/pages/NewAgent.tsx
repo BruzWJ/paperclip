@@ -292,8 +292,9 @@ export function NewAgent() {
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Draft configuration is structurally valid. Runtime readiness
-                is checked only against a persisted execution context.
+                Draft configuration is structurally valid. Test Agent applies
+                these exact settings through a disposable ACPX session; full
+                workspace readiness is checked against the persisted run.
               </p>
             )}
 

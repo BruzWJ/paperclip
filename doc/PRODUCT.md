@@ -87,10 +87,11 @@ agent-home, adapter-configured working-directory, process-directory, or prior
 session fallback.
 
 The ACPX public-runtime bridge carries the immutable run interface to one
-locally installed ACPX-compatible CLI. ACPX owns provider launch and session
-lifecycle; Paperclip never exports a generic API credential or identity bridge
-into the provider process. The current public ACPX runtime is local-only, so
-remote target drivers are not advertised for ACPX agents.
+locally installed ACPX-compatible CLI explicitly declared in ACPX's resolved
+`agents` configuration. ACPX owns provider launch and session lifecycle;
+Paperclip never exports a generic API credential or identity bridge into the
+provider process. The current public ACPX runtime is local-only, so remote
+target drivers are not advertised for ACPX agents.
 
 ### Tools and Skills
 

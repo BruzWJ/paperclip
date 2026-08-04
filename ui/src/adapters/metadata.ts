@@ -1,18 +1,15 @@
 /**
  * Adapter metadata utilities — built on top of the display registry and UI adapter list.
  *
- * This module bridges optional presentation metadata with the exact dynamic
- * server catalog. Admission and labels always come from that catalog.
+ * Admission, labels, and selectable membership always come from the exact
+ * dynamic server catalog.
  */
 import type { UIAdapterModule } from "./types";
 import { findUIAdapter, listUIAdapters } from "./registry";
-import { getAdapterDisplay } from "./adapter-display-registry";
 
 export interface AdapterOptionMetadata {
   value: string;
   label: string;
-  comingSoon: boolean;
-  experimental: boolean;
 }
 
 export function listKnownAdapterTypes(): string[] {
@@ -20,13 +17,10 @@ export function listKnownAdapterTypes(): string[] {
 }
 
 /**
- * Check whether an adapter type is enabled (not "coming soon").
  * Only exact entries in the server-admitted UI catalog are enabled.
  */
 export function isEnabledAdapterType(type: string): boolean {
-  if (!findUIAdapter(type)) return false;
-  if (getAdapterDisplay(type).comingSoon) return false;
-  return true;
+  return findUIAdapter(type) !== null;
 }
 
 /**
@@ -38,12 +32,10 @@ export function isValidAdapterType(type: string): boolean {
 }
 
 /**
- * Check whether an adapter should appear in card-style visual pickers.
- * Experimental adapters can remain selectable from explicit configuration
- * dropdowns without being recommended during onboarding or setup flows.
+ * Every server-admitted ACPX adapter appears in card-style visual pickers.
  */
 export function isVisualAdapterChoice(type: string): boolean {
-  return isEnabledAdapterType(type) && !getAdapterDisplay(type).hideFromVisualSelection;
+  return isEnabledAdapterType(type);
 }
 
 /**
@@ -57,8 +49,6 @@ export function listAdapterOptions(
   return adapters.map((adapter) => ({
     value: adapter.type,
     label: labelFor ? labelFor(adapter.type) : adapter.label,
-    comingSoon: !!getAdapterDisplay(adapter.type).comingSoon,
-    experimental: !!getAdapterDisplay(adapter.type).experimental,
   }));
 }
 

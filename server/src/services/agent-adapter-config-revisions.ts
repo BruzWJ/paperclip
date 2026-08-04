@@ -103,7 +103,7 @@ export interface DeriveRegisteredAgentAdapterConfigRevisionInput {
   skillChannel: CompanySkillChannel;
 }
 
-interface ResolvedRegisteredAdapterRuntime {
+export interface ResolvedRegisteredAdapterRuntimeConfiguration {
   canonicalAdapterConfig: JsonRecord;
   runtimeMetadata: AgentAdapterRuntimeMetadata;
   acpConfiguration: AcpAdapterRevisionConfiguration;
@@ -528,10 +528,10 @@ export function deriveAgentAdapterConfigRevision(input: {
   };
 }
 
-async function resolveRegisteredAdapterRuntime(input: {
+export async function resolveRegisteredAdapterRuntimeConfiguration(input: {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
-}): Promise<ResolvedRegisteredAdapterRuntime> {
+}): Promise<ResolvedRegisteredAdapterRuntimeConfiguration> {
   const canonicalAdapterConfig =
     deepFreezeJson(normalizeExplicitAdapterConfig(input.adapterConfig));
   let adapter: ServerAdapterModule | null;
@@ -629,7 +629,7 @@ export async function validateRegisteredAdapterRuntimeConfiguration(input: {
   adapterType: string;
   adapterConfig: Record<string, unknown>;
 }): Promise<void> {
-  await resolveRegisteredAdapterRuntime(input);
+  await resolveRegisteredAdapterRuntimeConfiguration(input);
 }
 
 /**
@@ -641,7 +641,7 @@ export async function validateRegisteredAdapterRuntimeConfiguration(input: {
 export async function deriveRegisteredAgentAdapterConfigRevision(
   input: DeriveRegisteredAgentAdapterConfigRevisionInput,
 ): Promise<DerivedAgentAdapterConfigRevision> {
-  const resolved = await resolveRegisteredAdapterRuntime(input);
+  const resolved = await resolveRegisteredAdapterRuntimeConfiguration(input);
   const derived = deriveAgentAdapterConfigRevision({
     adapterType: input.adapterType,
     adapterConfig: resolved.canonicalAdapterConfig,
@@ -759,7 +759,7 @@ export async function selectAgentAdapterConfigRevision(
   // environment. This replaces the former all-Paperclip-drivers precheck and
   // ensures the exact driver list comes from the same runtime metadata later
   // pinned into the immutable revision.
-  const resolvedRuntime = await resolveRegisteredAdapterRuntime({
+  const resolvedRuntime = await resolveRegisteredAdapterRuntimeConfiguration({
     adapterType: input.adapterType,
     adapterConfig: input.adapterConfig,
   });

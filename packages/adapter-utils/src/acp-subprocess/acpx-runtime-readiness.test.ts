@@ -308,4 +308,55 @@ describe("ACPX runtime readiness probe", () => {
       discardPersistentState: false,
     });
   });
+
+  it("fails a strictly disposable probe when ACPX cannot discard the backend session", async () => {
+    const handle: AcpRuntimeHandle = {
+      sessionKey: "readiness-session",
+      backend: "acpx",
+      runtimeSessionName: "readiness-session",
+      backendSessionId: "provider-session",
+    };
+    const close = vi.fn(async (input: { discardPersistentState?: boolean }) => {
+      if (input.discardPersistentState) {
+        throw new Error("backend close unsupported");
+      }
+    });
+    const removeTemporaryStateDir = vi.fn(async () => {});
+
+    await expect(
+      probeAcpxRuntimeReadiness({
+        cwd: "/workspace",
+        agentName: "fixture",
+        configSelections: [],
+        requireBackendSessionDiscard: true,
+        dependencies: {
+          loadAgentRegistry: async () => registry(),
+          createRuntimeStore: () => store(),
+          createTemporaryStateDir: async () => "/private/readiness-state",
+          removeTemporaryStateDir,
+          createAcpRuntime: () => ({
+            ensureSession: async () => handle,
+            getCapabilities: async () => ({
+              controls: ["session/status", "session/set_config_option"],
+            }),
+            getStatus: async () => ({ backendSessionId: "provider-session" }),
+            close,
+          }),
+        },
+      }),
+    ).rejects.toBeInstanceOf(AcpxRuntimeReadinessCleanupError);
+    expect(close).toHaveBeenNthCalledWith(1, {
+      handle,
+      reason: "temporary ACPX readiness session",
+      discardPersistentState: true,
+    });
+    expect(close).toHaveBeenNthCalledWith(2, {
+      handle,
+      reason: "temporary ACPX readiness session",
+      discardPersistentState: false,
+    });
+    expect(removeTemporaryStateDir).toHaveBeenCalledWith(
+      "/private/readiness-state",
+    );
+  });
 });

@@ -10,6 +10,8 @@ import {
   agentRuntimeConfigSchema,
 } from "./agent.js";
 import {
+  agentAdapterConfigurationTestInputSchema,
+  agentAdapterConfigurationTestResultSchema,
   agentAdapterRevisionConfigurationSchema,
   agentContextGrantMapSchema,
   agentMentionReachGrantMapSchema,
@@ -437,5 +439,48 @@ describe("control-plane ownership walls", () => {
         }).success,
       ).toBe(false);
     }
+  });
+});
+
+describe("unsaved adapter configuration test contract", () => {
+  it("accepts only adapter-owned configuration and an observational result", () => {
+    expect(
+      agentAdapterConfigurationTestInputSchema.parse({
+        adapterConfig: {
+          model: "gpt-5.6",
+          reasoning_effort: "high",
+        },
+      }),
+    ).toEqual({
+      adapterConfig: {
+        model: "gpt-5.6",
+        reasoning_effort: "high",
+      },
+    });
+    expect(
+      agentAdapterConfigurationTestResultSchema.parse({
+        status: "ready",
+        adapterType: "codex",
+        runtimeControls: ["session/status"],
+        testedAt: "2026-08-04T18:00:00.000Z",
+      }),
+    ).toMatchObject({ status: "ready", adapterType: "codex" });
+  });
+
+  it("rejects execution scope and mismatched result variants", () => {
+    expect(
+      agentAdapterConfigurationTestInputSchema.safeParse({
+        adapterConfig: {},
+        environmentId: ENVIRONMENT_ID,
+      }).success,
+    ).toBe(false);
+    expect(
+      agentAdapterConfigurationTestResultSchema.safeParse({
+        status: "failed",
+        adapterType: "codex",
+        runtimeControls: [],
+        testedAt: "2026-08-04T18:00:00.000Z",
+      }).success,
+    ).toBe(false);
   });
 });

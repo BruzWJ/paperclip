@@ -7,10 +7,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalizeMoneyAmount, type Agent, type Environment } from "@paperclipai/shared";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AgentConfigForm } from "./AgentConfigForm";
+import { defaultCreateValues } from "./agent-config-defaults";
 
 const mockAgentsApi = vi.hoisted(() => ({
   adapterModelProfiles: vi.fn(),
   list: vi.fn(),
+}));
+
+const mockAdaptersApi = vi.hoisted(() => ({
+  testConfiguration: vi.fn(),
 }));
 
 const mockEnvironmentsApi = vi.hoisted(() => ({
@@ -32,6 +37,10 @@ const mockAdapterDrivers = vi.hoisted(() => ({
 
 vi.mock("../api/agents", () => ({
   agentsApi: mockAgentsApi,
+}));
+
+vi.mock("../api/adapters", () => ({
+  adaptersApi: mockAdaptersApi,
 }));
 
 vi.mock("../api/environments", () => ({
@@ -200,6 +209,84 @@ async function renderForm(
   return { container, root };
 }
 
+async function renderCreateForm(
+  environments: Environment[],
+  adapterSchemaValues: Record<string, unknown>,
+) {
+  mockEnvironmentsApi.list.mockResolvedValue(environments);
+
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  const rerender = async (
+    nextAdapterSchemaValues: Record<string, unknown>,
+  ) => {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <AgentConfigForm
+              mode="create"
+              values={{
+                ...defaultCreateValues,
+                adapterType: "codex",
+                defaultEnvironmentId: "local-1",
+                adapterSchemaValues: nextAdapterSchemaValues,
+              }}
+              onChange={vi.fn()}
+              showAdapterTypeField={false}
+            />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+  };
+
+  await rerender(adapterSchemaValues);
+  return { container, root, rerender };
+}
+
+async function renderCreateFormWithDeferredTest(
+  environments: Environment[],
+  adapterSchemaValues: Record<string, unknown>,
+) {
+  let resolveTest: ((value: {
+    status: "ready";
+    adapterType: string;
+    runtimeControls: string[];
+    testedAt: string;
+  }) => void) | undefined;
+  mockAdaptersApi.testConfiguration.mockImplementationOnce(
+    async () => await new Promise((resolve) => {
+      resolveTest = resolve;
+    }),
+  );
+  const rendered = await renderCreateForm(
+    environments,
+    adapterSchemaValues,
+  );
+  return {
+    ...rendered,
+    resolveTest: () => {
+      if (!resolveTest) throw new Error("Draft test did not start");
+      resolveTest({
+        status: "ready",
+        adapterType: "codex",
+        runtimeControls: ["session/status", "session/set_config_option"],
+        testedAt: "2026-08-04T00:00:00.000Z",
+      });
+    },
+  };
+}
+
 describe("AgentConfigForm environment selector", () => {
   let roots: Root[] = [];
 
@@ -207,6 +294,12 @@ describe("AgentConfigForm environment selector", () => {
     mockAdapterDrivers.value = ["local", "ssh", "sandbox", "plugin"];
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);
+    mockAdaptersApi.testConfiguration.mockResolvedValue({
+      status: "ready",
+      adapterType: "codex",
+      runtimeControls: ["session/status", "session/set_config_option"],
+      testedAt: "2026-08-04T00:00:00.000Z",
+    });
     mockInstanceSettingsApi.get.mockResolvedValue({ defaultEnvironmentId: null });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableEnvironments: true });
     mockInstanceSettingsApi.getGeneral.mockResolvedValue({ executionMode: "any" });
@@ -311,6 +404,113 @@ describe("AgentConfigForm environment selector", () => {
 
     expect(result.container.querySelector('[data-testid="server-config-fields"]')).toBeTruthy();
     expect(result.container.textContent).toContain("Server schema fields");
+  });
+
+  it("tests the exact unsaved ACPX configuration without saving the agent", async () => {
+    const result = await renderCreateForm(
+      [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })],
+      {
+        model: "gpt-5.6",
+        reasoning_effort: "high",
+      },
+    );
+    roots.push(result.root);
+
+    const testButton = Array.from(
+      result.container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Test Agent");
+    expect(testButton).toBeTruthy();
+
+    await act(async () => {
+      testButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(mockAdaptersApi.testConfiguration).toHaveBeenCalledWith(
+      "company-1",
+      "codex",
+      {
+        adapterConfig: {
+          model: "gpt-5.6",
+          reasoning_effort: "high",
+        },
+      },
+    );
+    expect(result.container.textContent).toContain(
+      "ACPX accepted this exact draft configuration.",
+    );
+  });
+
+  it("does not restore stale success feedback when a draft changes away and back", async () => {
+    const originalConfiguration = {
+      model: "gpt-5.6",
+      reasoning_effort: "high",
+    };
+    const result = await renderCreateForm(
+      [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })],
+      originalConfiguration,
+    );
+    roots.push(result.root);
+
+    const testButton = Array.from(
+      result.container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Test Agent");
+    await act(async () => {
+      testButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(result.container.textContent).toContain(
+      "ACPX accepted this exact draft configuration.",
+    );
+
+    await result.rerender({
+      ...originalConfiguration,
+      reasoning_effort: "low",
+    });
+    expect(result.container.textContent).not.toContain(
+      "ACPX accepted this exact draft configuration.",
+    );
+
+    await result.rerender(originalConfiguration);
+    expect(result.container.textContent).not.toContain(
+      "ACPX accepted this exact draft configuration.",
+    );
+    expect(mockAdaptersApi.testConfiguration).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a pending test response after its draft context changed", async () => {
+    const originalConfiguration = {
+      model: "gpt-5.6",
+      reasoning_effort: "high",
+    };
+    const result = await renderCreateFormWithDeferredTest(
+      [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })],
+      originalConfiguration,
+    );
+    roots.push(result.root);
+
+    const testButton = Array.from(
+      result.container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Test Agent");
+    await act(async () => {
+      testButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    await result.rerender({
+      ...originalConfiguration,
+      reasoning_effort: "low",
+    });
+    await result.rerender(originalConfiguration);
+    await act(async () => {
+      result.resolveTest();
+    });
+    await flushReact();
+
+    expect(result.container.textContent).not.toContain(
+      "ACPX accepted this exact draft configuration.",
+    );
+    expect(mockAdaptersApi.testConfiguration).toHaveBeenCalledTimes(1);
   });
 
 });

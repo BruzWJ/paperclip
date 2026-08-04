@@ -325,7 +325,7 @@ function candidateDiagnostic(
 }
 
 /**
- * Probes every ACPX-published local agent and retains only successful
+ * Probes every explicitly configured ACPX agent and retains only successful
  * ACPX-resolved session initialization. Failed candidates remain diagnostic metadata rather
  * than selectable Paperclip agents.
  */

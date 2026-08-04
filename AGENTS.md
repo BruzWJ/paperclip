@@ -186,8 +186,10 @@ A change is done when all are true:
 Paperclip has one AI execution path: the ACPX public-runtime bounded
 single-prompt bridge.
 ACPX is the sole supplier of exact agent names, local availability, models, and
-stable session settings. Paperclip probes ACPX's configured local registry and
-admits only candidates whose disposable ACPX session succeeds.
+stable session settings. Paperclip reads only the exact entries in ACPX's
+resolved `agents` configuration and admits only candidates whose disposable
+ACPX session succeeds. ACPX built-in shortcuts that are absent from that map
+are not catalog entries and must never be probed or surfaced.
 
 Paperclip must not add an agent/model/configuration catalog, aliases, launch
 argv, provider-specific parser, ACPX runtime/session state, authentication, or
@@ -217,13 +219,18 @@ These are local modifications in the fork's UI. If re-copying source, these must
 ### External adapter packages
 
 External adapter packages cannot add a Paperclip agent. Install and
-authenticate an ACPX-compatible CLI locally instead; ACPX discovery supplies
-its name, models, and settings dynamically. A generic advertised option,
+authenticate an ACPX-compatible CLI locally, then declare its entry in
+ACPX's `agents` configuration; ACPX discovery supplies its name, models, and
+settings dynamically. A generic advertised option,
 including a reasoning setting when the agent exposes one, is persisted as an
 immutable ACPX session configuration selection and applied through ACPX before
 the prompt. The current ACPX public runtime advertises only local execution
 targets and `operator_native` skills; unsupported remote targets and isolated
 skills homes fail closed.
+
+Pre-save agent testing uses the same dynamic contract: Paperclip applies the
+exact unsaved ACPX selections in a disposable no-prompt ACPX session, persists
+nothing, and does not treat that observation as execution-workspace readiness.
 
 ## Design system
 

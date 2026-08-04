@@ -225,6 +225,52 @@ export const agentAdapterRevisionConfigurationSchema = z
   })
   .strict();
 
+/**
+ * Unsaved adapter configuration accepted by the disposable ACPX test. The
+ * adapter identity stays in the route so this body cannot disagree with it.
+ * Execution-environment and workspace claims are deliberately absent: the
+ * test proves only that ACPX can initialize the selected local agent and
+ * apply its generic session configuration.
+ */
+export const agentAdapterConfigurationTestInputSchema = z
+  .object({
+    adapterConfig: adapterConfigSchema,
+  })
+  .strict();
+
+export const AGENT_ADAPTER_CONFIGURATION_TEST_FAILURE_REASONS = [
+  "acp_initialization_failed",
+  "acp_capability_incompatible",
+  "acp_cleanup_failed",
+] as const;
+
+const agentAdapterConfigurationTestReadySchema = z
+  .object({
+    status: z.literal("ready"),
+    adapterType: agentAdapterTypeSchema,
+    runtimeControls: z.array(z.string().min(1)),
+    testedAt: z.string().datetime(),
+  })
+  .strict();
+
+const agentAdapterConfigurationTestFailedSchema = z
+  .object({
+    status: z.literal("failed"),
+    adapterType: agentAdapterTypeSchema,
+    reason: z.enum(
+      AGENT_ADAPTER_CONFIGURATION_TEST_FAILURE_REASONS,
+    ),
+    message: z.string().min(1),
+    testedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const agentAdapterConfigurationTestResultSchema =
+  z.discriminatedUnion("status", [
+    agentAdapterConfigurationTestReadySchema,
+    agentAdapterConfigurationTestFailedSchema,
+  ]);
+
 const agentOperationalConfigurationFieldsSchema = z
   .object({
     icon: z.enum(AGENT_ICON_NAMES).nullable(),
@@ -268,6 +314,14 @@ export type RuntimeAgentConfigureActionInput = z.infer<
 >;
 export type AgentAdapterRevisionConfigurationInput = z.infer<
   typeof agentAdapterRevisionConfigurationSchema
+>;
+export type AgentAdapterConfigurationTestInput = z.infer<
+  typeof agentAdapterConfigurationTestInputSchema
+>;
+export type AgentAdapterConfigurationTestFailureReason =
+  (typeof AGENT_ADAPTER_CONFIGURATION_TEST_FAILURE_REASONS)[number];
+export type AgentAdapterConfigurationTestResult = z.infer<
+  typeof agentAdapterConfigurationTestResultSchema
 >;
 export type AgentOperationalConfigurationUpdateInput = z.infer<
   typeof agentOperationalConfigurationUpdateSchema

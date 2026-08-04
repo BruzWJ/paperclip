@@ -2,7 +2,7 @@
 
 Status: current
 
-The user-facing runtime guide is [docs/agents-runtime.md](../../docs/agents-runtime.md). This file records the protocol boundary expected by adapter and server implementations.
+The user-facing runtime guide is [docs/agents-runtime.md](../../docs/agents-runtime.md). This file records the protocol boundary expected by the ACPX bridge and server implementations.
 
 ## Admission
 
@@ -33,14 +33,17 @@ Provider-native storage is opaque. Paperclip does not read, display, delete, der
 
 The execution workspace is selected only by the persisted issue/epoch binding.
 The ACPX public-runtime bridge uses that absolute workspace for its bounded
-single-prompt local session; ACPX owns the underlying CLI process and no declarative adapter
-receives a process callback or alternate remote transport. No agent-home,
+single-prompt local session; ACPX owns the underlying CLI process, and no
+declarative adapter receives a process callback or alternate remote transport. No agent-home,
 adapter-configured cwd, process cwd, prior conversational session, or workspace
 environment metadata is a fallback.
 
 ## Output
 
-Adapters normalize stream events into the Paperclip Session event/message vocabulary. The projector derives structured run history, chronological comments, telemetry, and lifecycle effects. Provider-hidden state and credentials never enter the log.
+The ACPX public-runtime bridge normalizes its structured events into the
+Paperclip Session event/message vocabulary. The projector derives structured
+run history, chronological comments, telemetry, and lifecycle effects.
+Provider-hidden state and credentials never enter the log.
 
 A productive final always yields the canonical assistant turn. The outcome translator applies any authorized zero-tool completion or counterpart routing and writes at most one comment of record.
 

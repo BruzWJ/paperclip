@@ -12,7 +12,6 @@ import type {
 } from "acpx/runtime";
 import {
   createAcpRuntime,
-  createAgentRegistry,
   createRuntimeStore,
 } from "acpx/runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -87,8 +86,9 @@ describe("ACPX one-shot runtime bridge", () => {
       },
       dependencies: {
         loadAgentRegistry: async () =>
-          createAgentRegistry({
-            overrides: { fixture: [process.execPath, fixtureEntrypoint] },
+          ({
+            list: () => ["fixture"],
+            resolve: () => [process.execPath, fixtureEntrypoint],
           }),
         createAcpRuntime,
         createRuntimeStore,
