@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,8 @@ export function SecretPopoverForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  const nameErrorId = useId();
+  const valueErrorId = useId();
 
   const trimmedName = name.trim();
   const nameError = (() => {
@@ -92,6 +94,7 @@ export function SecretPopoverForm({
           placeholder="secret_name"
           aria-label="Secret name"
           aria-invalid={nameError ? true : undefined}
+          aria-describedby={nameError ? nameErrorId : undefined}
           onChange={(event) => setName(event.target.value)}
           onBlur={() => setTouched(true)}
           onKeyDown={(event) => {
@@ -101,7 +104,11 @@ export function SecretPopoverForm({
             }
           }}
         />
-        {nameError ? <span className="block text-(length:--text-micro) text-destructive">{nameError}</span> : null}
+        {nameError ? (
+          <span id={nameErrorId} className="block text-(length:--text-micro) text-destructive">
+            {nameError}
+          </span>
+        ) : null}
       </label>
 
       <label className="block space-y-1">
@@ -116,6 +123,7 @@ export function SecretPopoverForm({
             placeholder={mode === "create" ? "value" : undefined}
             aria-label="Secret value"
             aria-invalid={valueError ? true : undefined}
+            aria-describedby={valueError ? valueErrorId : undefined}
             onChange={mode === "create" ? (event) => setValue(event.target.value) : undefined}
           />
           <button
@@ -127,7 +135,11 @@ export function SecretPopoverForm({
             {reveal ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </button>
         </div>
-        {valueError ? <span className="block text-(length:--text-micro) text-destructive">{valueError}</span> : null}
+        {valueError ? (
+          <span id={valueErrorId} className="block text-(length:--text-micro) text-destructive">
+            {valueError}
+          </span>
+        ) : null}
       </label>
 
       {error ? <p className="text-(length:--text-micro) text-destructive">{error}</p> : null}

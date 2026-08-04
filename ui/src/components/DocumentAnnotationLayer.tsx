@@ -595,7 +595,7 @@ export function DocumentAnnotationLayer({
                   ? newCommentDisabledReason ?? undefined
                   : "Add comment on selection (⌘⇧M)"}
               >
-                <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
+                <MessageSquarePlus data-icon="inline-start" className="h-3.5 w-3.5" aria-hidden="true" />
                 Comment
               </Button>
             </div>

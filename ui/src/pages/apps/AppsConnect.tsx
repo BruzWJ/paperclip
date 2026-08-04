@@ -124,6 +124,7 @@ export function AppsConnect() {
   const [agentIds, setAgentIds] = useState<Set<string>>(new Set());
   const [installMode, setInstallMode] = useState<InstallMode>("none");
   const [installAgentIds, setInstallAgentIds] = useState<Set<string>>(new Set());
+  const requestInFlightRef = useRef(false);
 
   const openGallery = () => {
     setEntry(null);
@@ -212,6 +213,9 @@ export function AppsConnect() {
         applicationId: prefill.applicationId,
       });
     },
+    onMutate: () => {
+      requestInFlightRef.current = true;
+    },
     onSuccess: (result) => {
       setConnectResult(result);
       const defaults: Record<string, boolean> = {};
@@ -236,6 +240,9 @@ export function AppsConnect() {
             : "Please check your key and try again.",
         tone: "error",
       });
+    },
+    onSettled: () => {
+      requestInFlightRef.current = false;
     },
   });
 
@@ -265,6 +272,9 @@ export function AppsConnect() {
       );
       return result;
     },
+    onMutate: () => {
+      requestInFlightRef.current = true;
+    },
     onSuccess: () => setAppStep("success"),
     onError: (error) => {
       pushToast({
@@ -273,7 +283,31 @@ export function AppsConnect() {
         tone: "error",
       });
     },
+    onSettled: () => {
+      requestInFlightRef.current = false;
+    },
   });
+
+  const isPending = connectMutation.isPending || finishMutation.isPending;
+  const pendingMessage = connectMutation.isPending
+    ? "Checking app connection…"
+    : "Finishing app setup…";
+  const startConnect = () => {
+    if (isPending || requestInFlightRef.current) {
+      return;
+    }
+
+    requestInFlightRef.current = true;
+    connectMutation.mutate();
+  };
+  const finishSetup = () => {
+    if (isPending || requestInFlightRef.current) {
+      return;
+    }
+
+    requestInFlightRef.current = true;
+    finishMutation.mutate();
+  };
 
   if (!selectedCompanyId) {
     return <div className="p-6 text-sm text-muted-foreground">Select a company to connect apps.</div>;
@@ -298,7 +332,17 @@ export function AppsConnect() {
       : STEP_INDEX[step];
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-5xl" aria-busy={isPending}>
+      {isPending ? (
+        <p className="mb-4 text-sm text-muted-foreground" role="status">
+          {pendingMessage} Your setup choices are locked until it completes.
+        </p>
+      ) : null}
+      <fieldset
+        aria-label="App connection setup"
+        className="contents"
+        disabled={isPending}
+      >
       {step !== "success" && (
         <StepHeader
           subtitle={
@@ -387,7 +431,7 @@ export function AppsConnect() {
                 return;
               }
             }
-            connectMutation.mutate();
+            startConnect();
           }}
         />
       )}
@@ -406,7 +450,7 @@ export function AppsConnect() {
           onKeyChange={setLinkKey}
           submitting={connectMutation.isPending}
           onBack={() => setStep("gallery")}
-          onConnect={() => connectMutation.mutate()}
+          onConnect={startConnect}
         />
       )}
 
@@ -416,7 +460,7 @@ export function AppsConnect() {
           onLinkChange={setLinkUrl}
           submitting={connectMutation.isPending}
           onBack={() => navigate("/apps/browse")}
-          onConnect={() => connectMutation.mutate()}
+          onConnect={startConnect}
         />
       )}
 
@@ -463,7 +507,7 @@ export function AppsConnect() {
           setInstallAgentIds={setInstallAgentIds}
           submitting={finishMutation.isPending}
           onBack={() => setAppStep("who")}
-          onFinish={() => finishMutation.mutate()}
+          onFinish={finishSetup}
         />
       )}
 
@@ -478,6 +522,7 @@ export function AppsConnect() {
           onDone={() => navigate("/apps")}
         />
       )}
+      </fieldset>
     </div>
   );
 }
@@ -566,6 +611,7 @@ function ZapierConnectStep({
       <div className="mt-8">
         <label className="text-sm font-medium text-foreground">Zapier MCP URL</label>
         <Input
+          aria-label="Zapier MCP URL"
           value={link}
           onChange={(event) => onLinkChange(event.target.value)}
           onKeyDown={(event) => {
@@ -663,6 +709,7 @@ function GalleryStep({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          aria-label="Search apps"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search apps…"
@@ -769,6 +816,7 @@ function GalleryStep({
         <div className="flex min-w-0 flex-col gap-2 sm:min-w-(--sz-360px)">
           <div className="flex gap-2">
             <Input
+              aria-label="App connection link"
               ref={linkInputRef}
               value={linkInput}
               onChange={(e) => {
@@ -899,6 +947,7 @@ function LinkConnectStep({
         <div>
           <label className="text-sm font-medium text-foreground">Name</label>
           <Input
+            aria-label="App connection name"
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder="My app"
@@ -935,8 +984,9 @@ function LinkConnectStep({
             <div>
               <label className="text-sm font-medium text-foreground">App key</label>
               <Input
+                aria-label="App key"
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 value={keyValue}
                 onChange={(e) => onKeyChange(e.target.value)}
                 placeholder="••••••••••••••••"
@@ -1012,6 +1062,7 @@ function ConnectionNameField({
     <div>
       <label className="text-sm font-medium text-foreground">Name</label>
       <Input
+        aria-label="App connection name"
         value={name}
         onChange={(e) => onNameChange(e.target.value)}
         placeholder="My app"
@@ -1094,7 +1145,7 @@ function KeyStep({
                   className="shrink-0"
                   onClick={() => void navigator.clipboard?.writeText(robotEmail)}
                 >
-                  <Copy className="mr-2 h-4 w-4" />
+                  <Copy data-icon="inline-start" className="mr-2 h-4 w-4" />
                   Copy
                 </Button>
               </div>
@@ -1111,6 +1162,7 @@ function KeyStep({
           <div>
             <label className="text-sm font-medium text-foreground">Paste links to the sheets you shared</label>
             <Textarea
+              aria-label="Google Sheets links"
               value={googleSheetsLinks}
               onChange={(e) => onGoogleSheetsLinksChange(e.target.value)}
               placeholder="https://docs.google.com/spreadsheets/d/..."
@@ -1162,8 +1214,9 @@ function KeyStep({
                 {credentialFieldLabel(entry.name, field.label, fields.length)}
               </label>
               <Input
+                aria-label="Connection credential"
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 value={values[field.configPath] ?? ""}
                 onChange={(e) => onChange({ ...values, [field.configPath]: e.target.value })}
                 placeholder="••••••••••••••••"

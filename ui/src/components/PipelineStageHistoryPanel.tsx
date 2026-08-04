@@ -94,9 +94,9 @@ export function PipelineStageHistoryPanel({
             No history yet. Save the instructions to create the first revision.
           </p>
         ) : revisionsQuery.isLoading ? (
-          <p className="px-4 py-3 text-xs text-muted-foreground">Loading revisions…</p>
+          <p role="status" className="px-4 py-3 text-xs text-muted-foreground">Loading revisions…</p>
         ) : revisionsQuery.error ? (
-          <p className="px-4 py-3 text-xs text-destructive">
+          <p role="alert" className="px-4 py-3 text-xs text-destructive">
             {revisionsQuery.error instanceof Error ? revisionsQuery.error.message : "Could not load revisions."}
           </p>
         ) : revisions.length === 0 ? (
@@ -132,7 +132,7 @@ export function PipelineStageHistoryPanel({
                       disabled={restore.isPending}
                       onClick={() => restore.mutate(revision.id)}
                     >
-                      <RotateCcw className="h-3.5 w-3.5" />
+                      <RotateCcw data-icon="inline-start" className="h-3.5 w-3.5" />
                       Restore
                     </Button>
                   )}
@@ -141,6 +141,9 @@ export function PipelineStageHistoryPanel({
             })}
           </ul>
         )}
+        {restore.isPending ? (
+          <p role="status" className="px-4 py-3 text-xs text-muted-foreground">Restoring revision…</p>
+        ) : null}
       </CollapsibleContent>
     </Collapsible>
   );

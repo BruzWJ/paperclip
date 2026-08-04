@@ -1192,6 +1192,17 @@ export function Cases() {
 
   return (
     <div className="space-y-4">
+      {patchCase.isPending ? (
+        <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+          Updating case status…
+        </p>
+      ) : null}
+      <fieldset
+        aria-busy={patchCase.isPending}
+        aria-label="Case list controls"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={patchCase.isPending}
+      >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-bold">Cases</h1>
@@ -1422,6 +1433,7 @@ export function Cases() {
           )}
         </>
       )}
+      </fieldset>
     </div>
   );
 }

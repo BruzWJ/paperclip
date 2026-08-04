@@ -7,6 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  hasBlockingShortcutDialog,
+  isKeyboardShortcutTextInputTarget,
+} from "@/lib/keyboardShortcuts";
 
 type Theme = "light" | "dark";
 
@@ -20,6 +24,18 @@ const THEME_STORAGE_KEY = "paperclip.theme";
 const DARK_THEME_COLOR = "#18181b";
 const LIGHT_THEME_COLOR = "#ffffff";
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+
+function isThemeShortcutTextInputTarget(target: EventTarget | null): boolean {
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return isKeyboardShortcutTextInputTarget(target);
+}
 
 function resolveThemeFromDocument(): Theme {
   if (typeof document === "undefined") return "dark";
@@ -64,6 +80,35 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setHasExplicitChoice(true);
     setThemeState((current) => (current === "dark" ? "light" : "dark"));
   }, []);
+
+  // Keep the shortcut narrow enough that it does not interfere with ordinary
+  // typing or form controls. Cmd/Ctrl+Shift+D works consistently alongside the
+  // app's single-key navigation shortcuts and is discoverable on ThemeToggle.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const isThemeShortcut =
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "d";
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        !isThemeShortcut ||
+        isThemeShortcutTextInputTarget(event.target) ||
+        hasBlockingShortcutDialog()
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setTheme(theme === "dark" ? "light" : "dark");
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setTheme, theme]);
 
   useEffect(() => {
     applyTheme(theme);

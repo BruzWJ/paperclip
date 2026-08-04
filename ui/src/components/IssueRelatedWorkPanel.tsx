@@ -118,7 +118,7 @@ function ExternalObjectsSection({
       </div>
 
       {isError ? (
-        <p className="text-xs text-muted-foreground">
+        <p role="alert" className="text-xs text-muted-foreground">
           Couldn't load external objects.{" "}
           {onRetry ? (
             <button
@@ -131,7 +131,7 @@ function ExternalObjectsSection({
           ) : null}
         </p>
       ) : isLoading ? (
-        <p className="text-xs text-muted-foreground">Loading external objects…</p>
+        <p role="status" className="text-xs text-muted-foreground">Loading external objects…</p>
       ) : sorted.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           This issue does not reference any external objects yet.

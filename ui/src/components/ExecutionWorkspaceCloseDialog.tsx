@@ -99,12 +99,12 @@ export function ExecutionWorkspaceCloseDialog({
         </DialogHeader>
 
         {readinessQuery.isLoading ? (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+          <div role="status" className="flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Checking whether this workspace is safe to close...
           </div>
         ) : readinessQuery.error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {readinessQuery.error instanceof Error ? readinessQuery.error.message : "Failed to inspect workspace close readiness."}
           </div>
         ) : readiness ? (
@@ -292,6 +292,11 @@ export function ExecutionWorkspaceCloseDialog({
           </div>
         ) : null}
 
+        {closeWorkspace.isPending ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Closing workspace…
+          </p>
+        ) : null}
         <DialogFooter>
           <Button
             variant="outline"

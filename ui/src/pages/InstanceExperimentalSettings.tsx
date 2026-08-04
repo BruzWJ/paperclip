@@ -148,7 +148,7 @@ export function InstanceExperimentalSettings() {
   const autoRestartDevServerWhenIdle = experimentalQuery.data?.autoRestartDevServerWhenIdle === true;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl space-y-6" aria-busy={toggleMutation.isPending}>
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <FlaskConical className="h-5 w-5 text-muted-foreground" />
@@ -157,6 +157,11 @@ export function InstanceExperimentalSettings() {
         <p className="text-sm text-muted-foreground">
           Opt into features that are still being evaluated before they become default behavior.
         </p>
+        {toggleMutation.isPending ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Saving experimental setting…
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -176,7 +181,7 @@ export function InstanceExperimentalSettings() {
       </div>
 
       {actionError && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
           {actionError}
         </div>
       )}

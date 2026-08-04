@@ -36,7 +36,7 @@ import type {
   Issue,
   IssueAttentionMask,
 } from "@paperclipai/shared";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
 import { flattenBoardIssueCommentGroupPages } from "../lib/optimistic-issue-comments";
 
@@ -193,6 +193,7 @@ export function BoardChat() {
   const loadedDraftCompanyRef = useRef<string | null>(null);
   const [sending, setSending] = useState(false);
   const [closing, setClosing] = useState(false);
+  const isPending = sending || closing;
   const [errorText, setErrorText] = useState("");
   const [boardIssueId, setBoardIssueId] = useState<string | null>(null);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
@@ -838,6 +839,7 @@ export function BoardChat() {
                     disabled={!boardIssue}
                   >
                     <a
+                      aria-label="Open chat history"
                       href={
                         boardIssue
                           ? `/issues/${boardIssue.identifier ?? boardIssue.id}`
@@ -1022,7 +1024,7 @@ export function BoardChat() {
               )}
 
               {/* Admission status only. Provider drafts are never rendered. */}
-              {(sending || closing) && (
+              {isPending ? (
                 <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
                   <img src="/paperclip-thinking.svg" alt="" className="inline-block shrink-0" style={{ width: 14, height: 14 }} />
                   <span>
@@ -1031,7 +1033,7 @@ export function BoardChat() {
                       : "Adding this message to the issue…"}
                   </span>
                 </div>
-              )}
+              ) : null}
 
               {/* Error notice — surfaced when the stream endpoint fails so
                   the message doesn't silently sit with no response. */}
@@ -1094,9 +1096,9 @@ export function BoardChat() {
               }
               submitKey="enter"
               surface="translucent"
-              submitting={sending}
+              submitting={isPending}
               disabled={
-                sending || closing || !selectedAgent || boardIssueTerminal
+                isPending || !selectedAgent || boardIssueTerminal
               }
               sendLabel="Send message"
               className="pointer-events-auto"
@@ -1139,6 +1141,7 @@ export function BoardChat() {
             </Button>
           </SheetTrigger>
           <SheetContent side="bottom" className="h-(--sz-70vh) p-0 rounded-t-xl">
+            <SheetTitle className="sr-only">Agent feed</SheetTitle>
             <ActivityFeed />
           </SheetContent>
         </Sheet>

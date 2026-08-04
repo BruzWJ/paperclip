@@ -222,11 +222,23 @@ export function ApprovalDetail() {
             label: "Back to approvals",
             to: "/approvals",
           };
+  const pendingActionStatus = approveMutation.isPending
+    ? "Approving request…"
+    : rejectMutation.isPending
+      ? "Rejecting request…"
+      : revisionMutation.isPending
+        ? "Requesting revision…"
+        : resubmitMutation.isPending
+          ? "Marking request resubmitted…"
+          : addCommentMutation.isPending
+            ? "Posting comment…"
+            : null;
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {pendingActionStatus ? <p role="status" className="sr-only">{pendingActionStatus}</p> : null}
       {showApprovedBanner && (
-        <div className="border border-green-300 dark:border-green-700/40 bg-green-50 dark:bg-green-900/20 rounded-lg px-4 py-3 animate-in fade-in zoom-in-95 duration-300">
+        <div role="status" className="border border-green-300 dark:border-green-700/40 bg-green-50 dark:bg-green-900/20 rounded-lg px-4 py-3 animate-in fade-in zoom-in-95 duration-300">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2">
               <div className="relative mt-0.5">
@@ -290,7 +302,7 @@ export function ApprovalDetail() {
             <p className="text-xs text-muted-foreground">Decision note: {approval.decisionNote}</p>
           )}
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         {linkedIssues && linkedIssues.length > 0 && (
           <div className="pt-2 border-t border-border/60">
             <p className="text-xs text-muted-foreground mb-1.5">Linked Tasks</p>
@@ -374,6 +386,7 @@ export function ApprovalDetail() {
                       name={agentNameById.get(comment.authorAgentId) ?? comment.authorAgentId.slice(0, 8)}
                       size="sm"
                     />
+                    <span className="sr-only">View agent profile</span>
                   </Link>
                 ) : (
                   <Identity name="Board" size="sm" />
@@ -387,6 +400,7 @@ export function ApprovalDetail() {
           ))}
         </div>
         <Textarea
+          aria-label="Approval comment"
           value={commentBody}
           onChange={(e) => setCommentBody(e.target.value)}
           placeholder="Add a comment..."

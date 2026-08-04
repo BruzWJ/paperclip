@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CompanySecret } from "@paperclipai/shared";
 import { AlertCircle, KeyRound, Trash2, UserRound } from "lucide-react";
@@ -27,6 +27,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [dialogFor, setDialogFor] = useState<MyUserSecretEntry | null>(null);
+  const clearInFlightRef = useRef(false);
 
   const mySecretsQuery = useQuery({
     queryKey: queryKeys.secrets.myUserSecrets(companyId),
@@ -36,6 +37,9 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
 
   const clear = useMutation({
     mutationFn: (secret: CompanySecret) => secretsApi.removeMyUserSecret(companyId, secret.id),
+    onMutate: () => {
+      clearInFlightRef.current = true;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.myUserSecrets(companyId) });
       pushToast({ title: "Value cleared", tone: "info" });
@@ -46,14 +50,33 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
         body: err instanceof Error ? err.message : undefined,
         tone: "error",
       }),
+    onSettled: () => {
+      clearInFlightRef.current = false;
+    },
   });
+  const isPending = clear.isPending;
+  const handleClear = (secret: CompanySecret) => {
+    if (isPending || clearInFlightRef.current) {
+      return;
+    }
+
+    clearInFlightRef.current = true;
+    clear.mutate(secret);
+  };
 
   const missingCount = entries.filter(
     (entry) => entry.definition.status === "active" && !entry.secret,
   ).length;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden" aria-busy={isPending}>
+      {mySecretsQuery.isPending || isPending ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          {isPending
+            ? "Clearing your secret value. Other secret actions are temporarily locked."
+            : "Loading your secret values."}
+        </p>
+      ) : null}
       <div className="flex items-start gap-2 rounded-md border border-violet-500/30 bg-violet-500/5 px-4 py-3 text-xs text-violet-800 dark:text-violet-200">
         <UserRound className="h-4 w-4 mt-0.5 shrink-0" />
         <p>
@@ -71,7 +94,7 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {mySecretsQuery.isError ? (
-          <div className="flex items-center gap-2 py-4 text-sm text-destructive">
+          <div className="flex items-center gap-2 py-4 text-sm text-destructive" role="alert">
             <AlertCircle className="h-4 w-4" /> Failed to load your secrets:{" "}
             {(mySecretsQuery.error as Error).message}
             <Button variant="ghost" size="sm" onClick={() => mySecretsQuery.refetch()}>
@@ -84,17 +107,27 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
             message="No user secrets are defined for this company yet. An admin defines which credentials each member supplies."
           />
         ) : (
-          <ul className="space-y-2">
-            {entries.map((entry) => (
-              <MyUserSecretRow
-                key={entry.definition.id}
-                entry={entry}
-                onSet={() => setDialogFor(entry)}
-                onClear={() => entry.secret && clear.mutate(entry.secret)}
-                clearing={clear.isPending}
-              />
-            ))}
-          </ul>
+          <fieldset
+            aria-label="Your secret values"
+            className="contents"
+            disabled={isPending}
+          >
+            <ul className="space-y-2">
+              {entries.map((entry) => (
+                <MyUserSecretRow
+                  key={entry.definition.id}
+                  entry={entry}
+                  onSet={() => setDialogFor(entry)}
+                  onClear={() => {
+                    if (entry.secret) {
+                      handleClear(entry.secret);
+                    }
+                  }}
+                  clearing={isPending}
+                />
+              ))}
+            </ul>
+          </fieldset>
         )}
       </div>
 

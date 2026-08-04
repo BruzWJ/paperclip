@@ -30,6 +30,7 @@ import { formatDateTime, formatMoneyAmount, formatNumber } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const NO_COMPANY = "__none__";
@@ -287,8 +288,24 @@ export function Costs() {
         ))}
         {preset === "custom" ? (
           <div className="ml-auto flex items-center gap-2">
-            <Input type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
-            <Input type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+            <Label className="sr-only" htmlFor="costs-custom-from">
+              Start date
+            </Label>
+            <Input
+              id="costs-custom-from"
+              type="date"
+              value={customFrom}
+              onChange={(event) => setCustomFrom(event.target.value)}
+            />
+            <Label className="sr-only" htmlFor="costs-custom-to">
+              End date
+            </Label>
+            <Input
+              id="costs-custom-to"
+              type="date"
+              value={customTo}
+              onChange={(event) => setCustomTo(event.target.value)}
+            />
           </div>
         ) : null}
       </div>

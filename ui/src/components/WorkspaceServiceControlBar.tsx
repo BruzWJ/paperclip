@@ -169,22 +169,29 @@ function UrlSegment({ entry, compact }: { entry: WorkspaceServiceControlEntry; c
       )}
       <span className={cn("flex items-center", live ? null : "invisible")} aria-hidden={live ? undefined : true}>
         <CopyUrlButton url={entry.url ?? ""} disabled={!live} />
-        <Button
-          asChild={live}
-          variant="ghost"
-          size="icon-xs"
-          disabled={!live}
-          className="text-muted-foreground hover:text-foreground"
-          title="Open in new tab"
-        >
-          {live ? (
+        {live ? (
+          <Button
+            asChild
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
+            title="Open in new tab"
+          >
             <a href={entry.url ?? undefined} target="_blank" rel="noreferrer" aria-label="Open in new tab">
               <ExternalLink className="size-3" />
             </a>
-          ) : (
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            disabled
+            className="text-muted-foreground hover:text-foreground"
+            title="Open in new tab"
+          >
             <ExternalLink className="size-3" />
-          )}
-        </Button>
+          </Button>
+        )}
       </span>
     </>
   );
@@ -211,7 +218,7 @@ function ActionSlots({
         aria-label="Start"
         title="Start"
       >
-        <Play className="size-3" />
+        <Play data-icon="inline-start" className="size-3" />
         Start
       </Button>
     );

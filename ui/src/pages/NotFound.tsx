@@ -53,7 +53,7 @@ export function NotFoundPage({ scope = "global", requestedPrefix }: NotFoundPage
         <div className="mt-5 flex flex-wrap gap-2">
           <Button asChild>
             <Link to={dashboardHref}>
-              <Compass className="mr-1.5 h-4 w-4" />
+              <Compass data-icon="inline-start" className="mr-1.5 h-4 w-4" />
               Open dashboard
             </Link>
           </Button>

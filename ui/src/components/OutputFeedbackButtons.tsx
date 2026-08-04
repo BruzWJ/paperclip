@@ -123,7 +123,7 @@ export function OutputFeedbackButtons({
           className={cn(visibleVote === "up" && "border-green-600/50 bg-green-500/10 text-green-700")}
           onClick={() => handleVote("up")}
         >
-          <ThumbsUp className="mr-1.5 h-3.5 w-3.5" />
+          <ThumbsUp data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Helpful
         </Button>
         <Button
@@ -134,7 +134,7 @@ export function OutputFeedbackButtons({
           className={cn(visibleVote === "down" && "border-amber-600/50 bg-amber-500/10 text-amber-800")}
           onClick={() => handleVote("down")}
         >
-          <ThumbsDown className="mr-1.5 h-3.5 w-3.5" />
+          <ThumbsDown data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Needs work
         </Button>
         {rightSlot ? <div className="ml-auto">{rightSlot}</div> : null}
@@ -143,6 +143,7 @@ export function OutputFeedbackButtons({
         <div className="mt-2 rounded-md border border-border/60 bg-accent/20 p-3">
           <div className="mb-2 text-sm font-medium">What could have been better?</div>
           <Textarea
+            aria-label="What could have been better?"
             value={downvoteReason}
             onChange={(event) => setDownvoteReason(event.target.value)}
             placeholder="Add a short note"

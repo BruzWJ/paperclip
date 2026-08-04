@@ -46,11 +46,11 @@ function hasBlockedData(value: string, englishValue: string) {
   return blocked;
 }
 
-function validateString(path: string[], candidateValue: string, englishValue: string, errors: string[]) {
+function validateString(path: string[], candidateValue: string, englishValue: string, issues: string[]) {
   const candidatePlaceholders = interpolationPlaceholders(candidateValue);
   const englishPlaceholders = interpolationPlaceholders(englishValue);
   if (candidatePlaceholders.join("\u0000") !== englishPlaceholders.join("\u0000")) {
-    errors.push(
+    issues.push(
       `${formatPath(path)} interpolation placeholders must match English exactly: expected ${JSON.stringify(
         englishPlaceholders,
       )}, received ${JSON.stringify(candidatePlaceholders)}`,
@@ -58,33 +58,33 @@ function validateString(path: string[], candidateValue: string, englishValue: st
   }
 
   for (const blockedPayload of hasBlockedData(candidateValue, englishValue)) {
-    errors.push(`${formatPath(path)} contains disallowed ${blockedPayload}`);
+    issues.push(`${formatPath(path)} contains disallowed ${blockedPayload}`);
   }
 
   const relativeLimit = Math.max(englishValue.length * 4 + 64, englishValue.length + 128);
   const lengthLimit = Math.min(MAX_STRING_LENGTH, relativeLimit);
   if (candidateValue.length > lengthLimit) {
-    errors.push(`${formatPath(path)} is too long: ${candidateValue.length} characters exceeds ${lengthLimit}`);
+    issues.push(`${formatPath(path)} is too long: ${candidateValue.length} characters exceeds ${lengthLimit}`);
   }
 }
 
-function validateNode(path: string[], candidate: unknown, englishReference: unknown, errors: string[]) {
+function validateNode(path: string[], candidate: unknown, englishReference: unknown, issues: string[]) {
   if (typeof englishReference === "string") {
     if (typeof candidate !== "string") {
-      errors.push(`${formatPath(path)} must be a string`);
+      issues.push(`${formatPath(path)} must be a string`);
       return;
     }
-    validateString(path, candidate, englishReference, errors);
+    validateString(path, candidate, englishReference, issues);
     return;
   }
 
   if (!isPlainObject(englishReference)) {
-    errors.push(`${formatPath(path)} has unsupported English reference type`);
+    issues.push(`${formatPath(path)} has unsupported English reference type`);
     return;
   }
 
   if (!isPlainObject(candidate)) {
-    errors.push(`${formatPath(path)} must be an object`);
+    issues.push(`${formatPath(path)} must be an object`);
     return;
   }
 
@@ -94,28 +94,28 @@ function validateNode(path: string[], candidate: unknown, englishReference: unkn
   const extraKeys = candidateKeys.filter((key) => !englishKeys.includes(key));
 
   for (const key of missingKeys) {
-    errors.push(`${formatPath([...path, key])} is missing`);
+    issues.push(`${formatPath([...path, key])} is missing`);
   }
   for (const key of extraKeys) {
-    errors.push(`${formatPath([...path, key])} is not defined in English`);
+    issues.push(`${formatPath([...path, key])} is not defined in English`);
   }
 
   for (const key of englishKeys) {
     if (key in candidate) {
-      validateNode([...path, key], candidate[key], englishReference[key], errors);
+      validateNode([...path, key], candidate[key], englishReference[key], issues);
     }
   }
 }
 
 export function validateLocaleMessages(candidate: unknown, englishReference: unknown = en) {
-  const errors: string[] = [];
-  validateNode([], candidate, englishReference, errors);
-  return errors;
+  const issues: string[] = [];
+  validateNode([], candidate, englishReference, issues);
+  return issues;
 }
 
 export function assertValidLocaleMessages(candidate: unknown, englishReference: unknown = en) {
-  const errors = validateLocaleMessages(candidate, englishReference);
-  if (errors.length > 0) {
-    throw new Error(`Invalid locale messages:\n${errors.join("\n")}`);
+  const issues = validateLocaleMessages(candidate, englishReference);
+  if (issues.length > 0) {
+    throw new Error(`Invalid locale messages:\n${issues.join("\n")}`);
   }
 }

@@ -165,7 +165,7 @@ function CloudUpstreamRender({ fixture }: { fixture: Fixture }) {
         {connection?.target.origin ? (
           <Button variant="outline" size="sm" asChild>
             <a href={connection.target.origin} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4" />
+              <ExternalLink data-icon="inline-start" className="h-4 w-4" />
               Open cloud
             </a>
           </Button>
@@ -202,7 +202,7 @@ function CloudUpstreamRender({ fixture }: { fixture: Fixture }) {
                 </div>
               </div>
               <Button variant="outline" size="sm">
-                <RefreshCcw className="h-4 w-4" />
+                <RefreshCcw data-icon="inline-start" className="h-4 w-4" />
                 Preview push
               </Button>
             </div>
@@ -215,7 +215,7 @@ function CloudUpstreamRender({ fixture }: { fixture: Fixture }) {
                 autoFocus
               />
               <Button disabled>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 data-icon="inline-start" className="h-4 w-4 animate-spin" />
                 Discovering
               </Button>
             </div>
@@ -228,7 +228,7 @@ function CloudUpstreamRender({ fixture }: { fixture: Fixture }) {
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Preview</div>
             <Button disabled={!preview.schemaCompatible}>
-              <CloudUpload className="h-4 w-4" />
+              <CloudUpload data-icon="inline-start" className="h-4 w-4" />
               Push to cloud
             </Button>
           </div>
@@ -244,17 +244,17 @@ function CloudUpstreamRender({ fixture }: { fixture: Fixture }) {
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Progress and finish</div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm">
-                <FileJson className="h-4 w-4" />
+                <FileJson data-icon="inline-start" className="h-4 w-4" />
                 Download report
               </Button>
               {latestRun.status === "failed" || latestRun.status === "cancelled" ? (
                 <Button variant="outline" size="sm">
-                  <RefreshCcw className="h-4 w-4" />
+                  <RefreshCcw data-icon="inline-start" className="h-4 w-4" />
                   Retry
                 </Button>
               ) : latestRun.status === "succeeded" ? (
                 <Button variant="outline" size="sm">
-                  <RefreshCcw className="h-4 w-4" />
+                  <RefreshCcw data-icon="inline-start" className="h-4 w-4" />
                   Re-run
                 </Button>
               ) : null}

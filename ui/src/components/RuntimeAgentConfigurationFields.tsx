@@ -251,7 +251,7 @@ export function RuntimeAgentConfigurationFields({
           </div>
           <select
             aria-label="Attention preset"
-            className="rounded-md border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
+            className="rounded-md border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={activePreset}
             disabled={disabled}
             onChange={(event) => {

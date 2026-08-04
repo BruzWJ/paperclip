@@ -225,7 +225,7 @@ export function SidebarShell({
             aria-valuenow={width}
             tabIndex={0}
             className={cn(
-              "absolute inset-y-0 right-0 z-20 w-3 cursor-col-resize touch-none outline-none",
+              "absolute inset-y-0 right-0 z-20 w-3 cursor-col-resize touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
               "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors",
               "hover:before:bg-border focus-visible:before:bg-ring",
               isResizing && "before:bg-ring",

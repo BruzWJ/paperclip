@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -135,6 +135,11 @@ export function labelFromKey(key: string, schema: JsonSchemaNode): string {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Stable, HTML-safe identifier for a field path in a rendered schema. */
+function schemaFieldId(path: string): string {
+  return `schema-field-${path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
 /**
@@ -342,9 +347,11 @@ export function getDefaultValues(schema: JsonSchemaNode): Record<string, unknown
 
 interface FieldWrapperProps {
   label: string;
+  fieldId?: string;
   description?: string;
   required?: boolean;
   error?: string;
+  errorId?: string;
   disabled?: boolean;
   children: React.ReactNode;
 }
@@ -354,9 +361,11 @@ interface FieldWrapperProps {
  */
 const FieldWrapper = React.memo(({
   label,
+  fieldId,
   description,
   required,
   error,
+  errorId,
   disabled,
   children,
 }: FieldWrapperProps) => {
@@ -364,7 +373,7 @@ const FieldWrapper = React.memo(({
     <div className={cn("space-y-2", disabled && "opacity-60")}>
       <div className="flex items-center justify-between">
         {label && (
-          <Label className="text-sm font-medium">
+          <Label htmlFor={fieldId} className="text-sm font-medium">
             {label}
             {required && <span className="ml-1 text-destructive">*</span>}
           </Label>
@@ -377,7 +386,9 @@ const FieldWrapper = React.memo(({
         </p>
       )}
       {error && (
-        <p className="text-xs font-medium text-destructive">{error}</p>
+        <p id={errorId} className="text-xs font-medium text-destructive">
+          {error}
+        </p>
       )}
     </div>
   );
@@ -524,7 +535,7 @@ const EnumField = React.memo(({
         onValueChange={handleChange}
         disabled={disabled}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="w-full" aria-label={label}>
           <SelectValue placeholder="Select an option" />
         </SelectTrigger>
         <SelectContent>
@@ -574,6 +585,7 @@ const SecretField = React.memo(({
   maxLength?: number;
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const errorId = useId();
   const isTextArea = maxLength != null && maxLength > TEXTAREA_THRESHOLD;
 
   const secretRefValue = isSecretRefBinding(value) ? value : null;
@@ -623,9 +635,11 @@ const SecretField = React.memo(({
           value={stringValue}
           onChange={(e) => onChange(e.target.value)}
           placeholder={String(defaultValue ?? "")}
+          aria-label={label ? `Raw value for ${label}` : "Raw secret value"}
           disabled={disabled}
           className="min-h-(--sz-140px) pr-10 font-mono text-xs"
           aria-invalid={!!error}
+          aria-describedby={error ? errorId : undefined}
         />
       ) : (
         <Textarea
@@ -640,9 +654,11 @@ const SecretField = React.memo(({
           }
           readOnly
           placeholder={String(defaultValue ?? "")}
+          aria-label={label ? `Raw value for ${label}` : "Raw secret value"}
           disabled={disabled}
           className="min-h-(--sz-140px) pr-10 font-mono text-xs italic text-muted-foreground"
           aria-invalid={!!error}
+          aria-describedby={error ? errorId : undefined}
         />
       )}
       <Button
@@ -670,9 +686,11 @@ const SecretField = React.memo(({
         value={stringValue}
         onChange={(e) => onChange(e.target.value)}
         placeholder={String(defaultValue ?? "")}
+        aria-label={label ? `Raw value for ${label}` : "Raw secret value"}
         disabled={disabled}
         className="pr-10"
         aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
       />
       <Button
         type="button"
@@ -703,6 +721,7 @@ const SecretField = React.memo(({
       }
       required={isRequired}
       error={error}
+      errorId={errorId}
       disabled={disabled}
     >
       <div className="space-y-2">
@@ -783,18 +802,23 @@ const NumberField = React.memo(({
   maximum?: number;
   suggestions?: unknown[];
 }) => {
+  const errorId = useId();
+  const fieldId = schemaFieldId(id);
   const hasSuggestions = Array.isArray(suggestions) && suggestions.length > 0;
   // Sanitize the path-based id so it is a valid CSS/HTML identifier (paths can contain "/").
   const listId = hasSuggestions ? `${id.replace(/[^a-zA-Z0-9_-]/g, "-")}-suggestions` : undefined;
   return (
     <FieldWrapper
       label={label}
+      fieldId={fieldId}
       description={description}
       required={isRequired}
       error={error}
+      errorId={errorId}
       disabled={disabled}
     >
       <Input
+        id={fieldId}
         type="number"
         step={type === "integer" ? "1" : "any"}
         min={minimum}
@@ -808,7 +832,9 @@ const NumberField = React.memo(({
         }}
         placeholder={String(defaultValue ?? "")}
         disabled={disabled}
+        aria-label={label}
         aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
       />
       {listId ? (
         <datalist id={listId}>
@@ -827,6 +853,7 @@ NumberField.displayName = "NumberField";
  * Specialized field for string values, rendering either an Input or Textarea based on length or format.
  */
 const StringField = React.memo(({
+  id,
   value,
   onChange,
   disabled,
@@ -838,6 +865,7 @@ const StringField = React.memo(({
   format,
   maxLength,
 }: {
+  id: string;
   value: unknown;
   onChange: (val: unknown) => void;
   disabled: boolean;
@@ -849,32 +877,42 @@ const StringField = React.memo(({
   format?: string;
   maxLength?: number;
 }) => {
+  const errorId = useId();
+  const fieldId = schemaFieldId(id);
   const isTextArea = format === "textarea" || (maxLength && maxLength > TEXTAREA_THRESHOLD);
   return (
     <FieldWrapper
       label={label}
+      fieldId={fieldId}
       description={description}
       required={isRequired}
       error={error}
+      errorId={errorId}
       disabled={disabled}
     >
       {isTextArea ? (
         <Textarea
+          id={fieldId}
           value={String(value ?? "")}
           onChange={(e) => onChange(e.target.value)}
           placeholder={String(defaultValue ?? "")}
           disabled={disabled}
           className="min-h-(--sz-100px)"
+          aria-label={label}
           aria-invalid={!!error}
+          aria-describedby={error ? errorId : undefined}
         />
       ) : (
         <Input
+          id={fieldId}
           type="text"
           value={String(value ?? "")}
           onChange={(e) => onChange(e.target.value)}
           placeholder={String(defaultValue ?? "")}
           disabled={disabled}
+          aria-label={label}
           aria-invalid={!!error}
+          aria-describedby={error ? errorId : undefined}
         />
       )}
     </FieldWrapper>
@@ -1180,6 +1218,7 @@ const FormField = React.memo(({
     default: // string
       return (
         <StringField
+          id={path}
           value={value}
           onChange={onChange}
           disabled={isReadOnly}

@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import type { ToolMcpGatewayWithTokens } from "@paperclipai/shared";
-import { useNavigate } from "@/lib/router";
+import { Link, useNavigate } from "@/lib/router";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useToast } from "@/context/ToastContext";
@@ -133,6 +133,11 @@ export function GatewaysList() {
 
   return (
     <div className="max-w-5xl space-y-5">
+      {toggleMutation.isPending ? (
+        <p className="sr-only" role="status">
+          Updating gateway availability.
+        </p>
+      ) : null}
       <header className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight">Apps</h1>
         <p className="text-sm text-muted-foreground">
@@ -144,7 +149,8 @@ export function GatewaysList() {
       <AppsSubNav active="gateways" />
 
       {gatewaysQuery.isLoading ? (
-        <div className="space-y-3 pt-2">
+        <div className="space-y-3 pt-2" role="status">
+          <span className="sr-only">Loading gateways.</span>
           <Skeleton className="h-9 w-full max-w-sm" />
           <Skeleton className="h-52 w-full" />
         </div>
@@ -166,7 +172,7 @@ export function GatewaysList() {
               />
             </div>
             <Button onClick={() => setCreating(true)}>
-              <Plus className="mr-1.5 h-4 w-4" />
+              <Plus data-icon="inline-start" className="mr-1.5 h-4 w-4" />
               New gateway
             </Button>
           </div>
@@ -259,32 +265,34 @@ export function GatewaysList() {
                 {/* Mobile: stacked cards so the On toggle stays reachable and thumb-sized. */}
                 <div className="space-y-3 sm:hidden">
                   {rows.map(({ gateway, scope, appsLabel, active, expiring, lastUsed, href }) => (
-                    <div
-                      key={gateway.id}
-                      onClick={() => navigate(href)}
-                      className="cursor-pointer rounded-lg border border-border p-4 transition-colors hover:bg-muted/30"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-medium text-foreground">{gateway.name}</div>
-                          <div className="truncate font-mono text-xs text-muted-foreground">
-                            {endpointHost(gateway.endpointPath, gateway.displaySlug)}
+                    <div key={gateway.id} className="relative">
+                      <Link
+                        to={href}
+                        aria-label={`Open gateway ${gateway.name}`}
+                        className="block rounded-lg border border-border p-4 text-inherit no-underline transition-colors hover:bg-muted/30"
+                      >
+                        <div className="flex items-start gap-3 pr-10">
+                          <div className="min-w-0">
+                            <div className="font-medium text-foreground">{gateway.name}</div>
+                            <div className="truncate font-mono text-xs text-muted-foreground">
+                              {endpointHost(gateway.endpointPath, gateway.displaySlug)}
+                            </div>
                           </div>
                         </div>
-                        <div className="shrink-0">{toggle(gateway)}</div>
-                      </div>
-                      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                        <MobileField label="Scope" value={scope} />
-                        <MobileField label="Apps" value={appsLabel} />
-                        <MobileField
-                          label="Tokens"
-                          value={`${active} active${expiring > 0 ? ` · ${expiring} expiring` : ""}`}
-                        />
-                        <MobileField
-                          label="Last used"
-                          value={lastUsed ? <RelativeTime value={lastUsed} /> : "—"}
-                        />
-                      </dl>
+                        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                          <MobileField label="Scope" value={scope} />
+                          <MobileField label="Apps" value={appsLabel} />
+                          <MobileField
+                            label="Tokens"
+                            value={`${active} active${expiring > 0 ? ` · ${expiring} expiring` : ""}`}
+                          />
+                          <MobileField
+                            label="Last used"
+                            value={lastUsed ? <RelativeTime value={lastUsed} /> : "—"}
+                          />
+                        </dl>
+                      </Link>
+                      <div className="absolute right-4 top-4">{toggle(gateway)}</div>
                     </div>
                   ))}
                   {rows.length === 0 ? (
@@ -347,7 +355,7 @@ function EmptyGateways({ onCreate }: { onCreate: () => void }) {
         move.
       </p>
       <Button className="mt-5" onClick={onCreate}>
-        <Plus className="mr-1.5 h-4 w-4" />
+        <Plus data-icon="inline-start" className="mr-1.5 h-4 w-4" />
         New gateway
       </Button>
     </div>

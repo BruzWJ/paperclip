@@ -26,7 +26,11 @@ describe("FileTree", () => {
   });
 
   function row(path: string) {
-    return container.querySelector(`[data-file-tree-path="${path}"]`) as HTMLDivElement | null;
+    return container.querySelector(`[data-file-tree-path="${path}"]`) as HTMLButtonElement | null;
+  }
+
+  function checkbox(path: string) {
+    return container.querySelector(`[data-file-tree-checkbox="${path}"]`) as HTMLInputElement | null;
   }
 
   it("selects file rows and expands directory rows", () => {
@@ -82,7 +86,7 @@ describe("FileTree", () => {
       );
     });
 
-    const input = row("docs")?.querySelector("input[type='checkbox']") as HTMLInputElement | null;
+    const input = checkbox("docs");
     expect(input?.checked).toBe(false);
     expect(input?.indeterminate).toBe(true);
     expect(row("docs")?.getAttribute("aria-checked")).toBe("mixed");

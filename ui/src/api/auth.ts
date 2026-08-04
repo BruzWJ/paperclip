@@ -74,7 +74,8 @@ function logAuthNetworkFailure(method: string, path: string, error: unknown) {
     credentials: "include",
     online: typeof navigator !== "undefined" ? navigator.onLine : "(no navigator)",
     errorName: error instanceof Error ? error.name : typeof error,
-    errorMessage: error instanceof Error ? error.message : String(error),
+    // Diagnostic detail for developers, not a user-facing status message.
+    errorDetail: error instanceof Error ? error.message : String(error),
     error,
     hint:
       "This means the browser never got a response from the server. Common causes: " +

@@ -91,6 +91,11 @@ export function NewGatewayDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
+        {profilesLoading || createMutation.isPending ? (
+          <p className="sr-only" role="status">
+            {createMutation.isPending ? "Creating gateway." : "Loading access profiles."}
+          </p>
+        ) : null}
         <DialogHeader>
           <DialogTitle>New gateway</DialogTitle>
           <DialogDescription>
@@ -105,7 +110,9 @@ export function NewGatewayDialog({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Engineering agents"
-              required
+              required={true}
+              minLength={1}
+              maxLength={160}
               autoFocus
             />
           </label>
@@ -115,7 +122,7 @@ export function NewGatewayDialog({
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={profileId}
               onChange={(event) => setProfileId(event.target.value)}
-              required
+              required={true}
               disabled={noProfiles}
             >
               <option value="" disabled>
@@ -138,10 +145,11 @@ export function NewGatewayDialog({
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Who this endpoint is for and when it should be rotated."
+              maxLength={4000}
             />
           </label>
           {noProfiles ? (
-            <p className="text-xs text-destructive">
+            <p className="text-xs text-destructive" role="alert">
               Create an access profile under Advanced before adding a gateway.
             </p>
           ) : null}

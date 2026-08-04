@@ -276,13 +276,13 @@ export const IssueLinkQuicklook = React.forwardRef<
         {data ? (
           <IssueQuicklookCard issue={data} linkTo={detailPath} linkState={prefetchedState} compact />
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2" aria-busy={isLoading}>
             <div className="h-4 w-24 rounded bg-accent/50" />
             <div className="h-4 w-full rounded bg-accent/40" />
             <div className="h-4 w-3/4 rounded bg-accent/30" />
-            {!isLoading ? (
-              <p className="text-xs text-muted-foreground">Unable to load task preview.</p>
-            ) : null}
+            {isLoading ? <p role="status" className="sr-only">Loading task preview…</p> : (
+              <p role="alert" className="text-xs text-muted-foreground">Unable to load task preview.</p>
+            )}
           </div>
         )}
       </PopoverContent>

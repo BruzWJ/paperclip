@@ -179,6 +179,9 @@ export function SummarySlotCard({
 
   return (
     <section className={cn("space-y-4", className)}>
+      {refreshMutation.isPending ? (
+        <p role="status" className="sr-only">Requesting summary generation…</p>
+      ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -244,23 +247,27 @@ export function SummarySlotCard({
       )}
 
       {actionError ? (
-        <InlineBanner tone="warning" title="Summary request failed">
-          {actionError}
-        </InlineBanner>
+        <div role="alert">
+          <InlineBanner tone="warning" title="Summary request failed">
+            {actionError}
+          </InlineBanner>
+        </div>
       ) : null}
 
       {slotQuery.isError ? (
-        <InlineBanner
-          tone="warning"
-          title="Summary could not be loaded"
-          actions={
-            <Button type="button" size="sm" variant="outline" onClick={() => void slotQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        >
-          {slotQuery.error instanceof Error ? slotQuery.error.message : "Try loading the summary again."}
-        </InlineBanner>
+        <div role="alert">
+          <InlineBanner
+            tone="warning"
+            title="Summary could not be loaded"
+            actions={
+              <Button type="button" size="sm" variant="outline" onClick={() => void slotQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {slotQuery.error instanceof Error ? slotQuery.error.message : "Try loading the summary again."}
+          </InlineBanner>
+        </div>
       ) : null}
 
       {!slotQuery.isError && generationFailed ? (

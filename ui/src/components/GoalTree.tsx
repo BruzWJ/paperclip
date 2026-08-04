@@ -25,53 +25,65 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
   const hasChildren = children.length > 0;
   const link = goalLink?.(goal);
 
-  const inner = (
+  const treeToggle = hasChildren ? (
+    <button
+      type="button"
+      className="shrink-0 rounded-sm p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => setExpanded((current) => !current)}
+      aria-label={`${expanded ? "Collapse" : "Expand"} ${goal.title} subtree`}
+      aria-expanded={expanded}
+    >
+      <ChevronRight
+        className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
+      />
+    </button>
+  ) : (
+    <span className="w-4 shrink-0" />
+  );
+
+  const goalContent = (
     <>
-      {hasChildren ? (
-        <button
-          className="p-0.5"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setExpanded(!expanded);
-          }}
-          aria-label={`${goal.title} subtree`}
-          aria-expanded={expanded}
-        >
-          <ChevronRight
-            className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
-          />
-        </button>
-      ) : (
-        <span className="w-4" />
-      )}
       <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
-      <span className="flex-1 truncate">{goal.title}</span>
+      <span className="min-w-0 flex-1 truncate">{goal.title}</span>
       <StatusBadge status={goal.status} />
     </>
   );
 
-  const classes = cn(
-    "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer hover:bg-accent/50",
-  );
+  const rowClasses = "flex items-center gap-2 px-3 py-1.5 text-sm";
+  const interactiveContentClasses =
+    "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
   return (
     <div>
       {link ? (
-        <Link
-          to={link}
-          className={cn(classes, "no-underline text-inherit")}
-          style={{ paddingLeft: `${depth * 16 + 12}px` }}
-        >
-          {inner}
-        </Link>
-      ) : (
         <div
-          className={classes}
+          className={rowClasses}
           style={{ paddingLeft: `${depth * 16 + 12}px` }}
-          onClick={() => onSelect?.(goal)}
         >
-          {inner}
+          {treeToggle}
+          <Link
+            to={link}
+            className={cn(interactiveContentClasses, "no-underline text-inherit")}
+          >
+            {goalContent}
+          </Link>
+        </div>
+      ) : (
+        <div className={rowClasses} style={{ paddingLeft: `${depth * 16 + 12}px` }}>
+          {treeToggle}
+          {onSelect ? (
+            <button
+              type="button"
+              className={cn(interactiveContentClasses, "border-0 bg-transparent p-0")}
+              onClick={() => onSelect(goal)}
+            >
+              {goalContent}
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {goalContent}
+            </div>
+          )}
         </div>
       )}
       {hasChildren && expanded && (

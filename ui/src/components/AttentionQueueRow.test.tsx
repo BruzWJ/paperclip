@@ -372,7 +372,9 @@ describe("AttentionQueueRow", () => {
       />,
     );
 
-    const image = container?.querySelector('img[alt="Screenshot"]');
+    const image = container?.querySelector(
+      'img[alt="Visual evidence attachment"][aria-label="Screenshot"]',
+    );
     expect(image?.getAttribute("src")).toBe("/api/assets/asset-1/content");
 
     const thumbnailStack = image?.parentElement?.parentElement;

@@ -100,6 +100,7 @@ export function AppNotConnected() {
       });
     },
   });
+  const isPending = remove.isPending;
 
   if (!selectedCompanyId) {
     return <div className="p-6 text-sm text-muted-foreground">Select a company to manage apps.</div>;
@@ -199,13 +200,28 @@ export function AppNotConnected() {
         )
       )}
       {activeTab === "advanced" && (
-        <AdvancedTab
-          appName={application.name}
-          previousConnection={previousConnection}
-          previousAddress={previousAddress}
-          removing={remove.isPending}
-          onRemove={() => remove.mutate()}
-        />
+        <fieldset
+          aria-label="Advanced app connection settings"
+          className="contents"
+          disabled={isPending}
+        >
+          {isPending ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              Removing app…
+            </p>
+          ) : null}
+          <AdvancedTab
+            appName={application.name}
+            previousConnection={previousConnection}
+            previousAddress={previousAddress}
+            removing={isPending}
+            onRemove={() => {
+              if (!isPending) {
+                remove.mutate();
+              }
+            }}
+          />
+        </fieldset>
       )}
     </div>
   );

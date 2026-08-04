@@ -1409,6 +1409,11 @@ export function Secrets() {
     setSelectedSecretId(null);
   }
 
+  function openSecretRow(row: UnifiedSecretRow) {
+    if (row.kind === "company") openCompanySecret(row.secret);
+    else openUserDefinition(row.definition);
+  }
+
   function openRotateSecret(secret: CompanySecret) {
     openCompanySecret(secret);
     setRotateOpen(true);
@@ -1441,17 +1446,13 @@ export function Secrets() {
             variant="ghost"
             size="icon-sm"
             aria-label={`Actions for ${name}`}
-            onClick={(event) => event.stopPropagation()}
           >
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem
-            onSelect={() => {
-              if (row.kind === "company") openCompanySecret(row.secret);
-              else openUserDefinition(row.definition);
-            }}
+            onSelect={() => openSecretRow(row)}
           >
             <KeyRound className="h-4 w-4" /> View details
           </DropdownMenuItem>
@@ -1811,11 +1812,11 @@ export function Secrets() {
                   setNewFolderError(null);
                 }}
               >
-                <Folder className="mr-1 h-3.5 w-3.5" /> New folder
+                <Folder data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> New folder
               </Button>
             ) : null}
             <Button onClick={openCreateSecret} size="sm">
-              <Plus className="h-3.5 w-3.5 mr-1" /> New secret
+              <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1" /> New secret
             </Button>
           </div>
           {newFolderOpen && showFolderView ? (
@@ -1834,10 +1835,11 @@ export function Secrets() {
                   placeholder="Folder name"
                   aria-label="Folder name"
                   aria-invalid={Boolean(newFolderError)}
+                  aria-describedby={newFolderError ? "new-folder-name-error" : undefined}
                   autoFocus
                 />
                 {newFolderError ? (
-                  <p className="mt-1 text-xs text-destructive" role="alert">
+                  <p id="new-folder-name-error" className="mt-1 text-xs text-destructive" role="alert">
                     {newFolderError}
                   </p>
                 ) : null}
@@ -1938,6 +1940,7 @@ export function Secrets() {
                     {folderRows.map(renderFolderTableRow)}
                     {secretRows.map((row) => {
                       const status = row.kind === "company" ? row.secret.status : row.definition.status;
+                      const name = row.kind === "company" ? row.secret.name : row.definition.name;
                       const updatedAt = row.kind === "company" ? row.secret.updatedAt : row.definition.updatedAt;
                       const updatedTooltip =
                         row.kind === "company"
@@ -1952,50 +1955,53 @@ export function Secrets() {
                           key={row.id}
                           role="row"
                           className={cn(
-                            "grid cursor-pointer grid-cols-(--gtc-54) items-center gap-3 border-b border-border/60 px-3 py-3 hover:bg-accent/40",
+                            "grid grid-cols-(--gtc-54) items-center gap-3 border-b border-border/60 px-3 py-3 hover:bg-accent/40",
                             row.kind === "company" && selectedSecretId === row.secret.id && "bg-accent/60",
                             row.kind === "user" && selectedDefinitionId === row.definition.id && "bg-accent/60",
                           )}
-                          onClick={() => {
-                            if (row.kind === "company") openCompanySecret(row.secret);
-                            else openUserDefinition(row.definition);
-                          }}
                         >
                           <div role="cell" className="min-w-0">
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              {renderSecretName(row.kind === "company" ? row.secret.name : row.definition.name)}
-                              {row.kind === "company" ? (
-                                <SecretProviderIndicator
-                                  secret={row.secret}
-                                  providers={providers}
-                                  providerConfigs={providerConfigs}
-                                />
-                              ) : (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span
-                                      aria-label="Each user provides and owns their own value"
-                                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-violet-500/30 bg-violet-500/5 text-violet-700 dark:text-violet-200"
-                                    >
-                                      <UserRound className="h-3 w-3" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Each user provides and owns their own value</TooltipContent>
-                                </Tooltip>
-                              )}
-                            </div>
-                            <code className="mt-0.5 block truncate text-(length:--text-micro) text-muted-foreground">
-                              {row.kind === "company" ? row.secret.key : row.definition.key}
-                            </code>
-                            <div className="mt-1">
-                              {row.kind === "company" ? (
-                                <MetaChip>
-                                  <ShieldCheck className="h-3 w-3" /> Company
-                                </MetaChip>
-                              ) : (
-                                <UserSecretChip label="Each user" />
-                              )}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openSecretRow(row)}
+                              aria-label={`Open secret ${name}`}
+                              className="block min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                {renderSecretName(name)}
+                                {row.kind === "company" ? (
+                                  <SecretProviderIndicator
+                                    secret={row.secret}
+                                    providers={providers}
+                                    providerConfigs={providerConfigs}
+                                  />
+                                ) : (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span
+                                        aria-label="Each user provides and owns their own value"
+                                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-violet-500/30 bg-violet-500/5 text-violet-700 dark:text-violet-200"
+                                      >
+                                        <UserRound className="h-3 w-3" />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Each user provides and owns their own value</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
+                              <code className="mt-0.5 block truncate text-(length:--text-micro) text-muted-foreground">
+                                {row.kind === "company" ? row.secret.key : row.definition.key}
+                              </code>
+                              <div className="mt-1">
+                                {row.kind === "company" ? (
+                                  <MetaChip>
+                                    <ShieldCheck className="h-3 w-3" /> Company
+                                  </MetaChip>
+                                ) : (
+                                  <UserSecretChip label="Each user" />
+                                )}
+                              </div>
+                            </button>
                           </div>
                           <div role="cell">
                             <StatusBadge status={status} />
@@ -2013,7 +2019,7 @@ export function Secrets() {
                           <div role="cell">
                             <UpdatedWithTooltip updatedAt={updatedAt} tooltip={updatedTooltip} />
                           </div>
-                          <div role="cell" className="text-right" onClick={(event) => event.stopPropagation()}>
+                          <div role="cell" className="text-right">
                             {renderRowActions(row)}
                           </div>
                         </div>
@@ -2027,31 +2033,31 @@ export function Secrets() {
                   {folderRows.map(renderFolderCard)}
                   {secretRows.map((row) => {
                     const status = row.kind === "company" ? row.secret.status : row.definition.status;
+                    const name = row.kind === "company" ? row.secret.name : row.definition.name;
                     return (
                       <div
                         key={row.id}
                         className={cn(
-                          "cursor-pointer rounded-md border border-border bg-background p-3 hover:bg-accent/30",
+                          "relative rounded-md border border-border bg-background p-3 hover:bg-accent/30",
                           row.kind === "company" && selectedSecretId === row.secret.id && "bg-accent/60",
                           row.kind === "user" && selectedDefinitionId === row.definition.id && "bg-accent/60",
                         )}
-                        onClick={() => {
-                          if (row.kind === "company") openCompanySecret(row.secret);
-                          else openUserDefinition(row.definition);
-                        }}
                       >
-                        <div className="flex min-w-0 items-start justify-between gap-2">
-                          <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => openSecretRow(row)}
+                          aria-label={`Open secret ${name}`}
+                          className="block w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <div className="min-w-0 pr-10">
                             <div className="min-w-0 truncate">
-                              {renderSecretName(row.kind === "company" ? row.secret.name : row.definition.name)}
+                              {renderSecretName(name)}
                             </div>
                             <code className="mt-0.5 block truncate text-(length:--text-micro) text-muted-foreground">
                               {row.kind === "company" ? row.secret.key : row.definition.key}
                             </code>
                           </div>
-                          <div onClick={(event) => event.stopPropagation()}>{renderRowActions(row)}</div>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
                           {row.kind === "company" ? (
                             <>
                               <MetaChip>
@@ -2071,8 +2077,8 @@ export function Secrets() {
                               <CoverageInline companyId={selectedCompanyId} definitionId={row.definition.id} compact />
                             </>
                           )}
-                        </div>
-                        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          </div>
+                          <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                           <span className="min-w-0 truncate">
                             {row.kind === "company" ? (
                               <>
@@ -2084,7 +2090,9 @@ export function Secrets() {
                             )}
                           </span>
                           <span>Updated {formatRelative(row.kind === "company" ? row.secret.updatedAt : row.definition.updatedAt)}</span>
-                        </div>
+                          </div>
+                        </button>
+                        <div className="absolute right-3 top-3">{renderRowActions(row)}</div>
                       </div>
                     );
                   })}
@@ -2160,7 +2168,7 @@ export function Secrets() {
                     className="h-7 shrink-0 px-2 text-xs"
                     onClick={() => copySecretKey(selectedSecret.key)}
                   >
-                    <Copy className="mr-1 h-3.5 w-3.5" /> Copy
+                    <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> Copy
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -2177,13 +2185,13 @@ export function Secrets() {
                   size="sm"
                   onClick={() => openRotateSecret(selectedSecret)}
                 >
-                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  <RefreshCw data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
                   {selectedSecret.managedMode === "external_reference" ? "Update reference" : "Update value"}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" aria-label={`More actions for ${selectedSecret.name}`}>
-                      <MoreHorizontal className="mr-1 h-3.5 w-3.5" /> More
+                      <MoreHorizontal data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> More
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
@@ -2287,7 +2295,7 @@ export function Secrets() {
                     className="h-7 shrink-0 px-2 text-xs"
                     onClick={() => copySecretKey(selectedDefinition.key)}
                   >
-                    <Copy className="mr-1 h-3.5 w-3.5" /> Copy
+                    <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> Copy
                   </Button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -2307,13 +2315,13 @@ export function Secrets() {
                   }
                   disabled={selectedDefinition.status !== "active"}
                 >
-                  <KeyRound className="h-3.5 w-3.5 mr-1" />
+                  <KeyRound data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
                   {selectedDefinitionMyEntry?.secret ? "Update my value" : "Set my value"}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" aria-label={`More actions for ${selectedDefinition.name}`}>
-                      <MoreHorizontal className="mr-1 h-3.5 w-3.5" /> More
+                      <MoreHorizontal data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> More
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
@@ -2521,7 +2529,7 @@ export function Secrets() {
                   </span>
                   <input
                     id="new-secret-name"
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground"
                     value={createForm.name.slice(createNamePrefix.length)}
                     onChange={(event) => {
                       const name = createNamePrefix + event.target.value;
@@ -2633,7 +2641,7 @@ export function Secrets() {
                     className="h-5 px-1.5 text-(length:--text-micro) text-muted-foreground"
                     onClick={() => setCreateKeyEditable(true)}
                   >
-                    <Pencil className="mr-1 h-3 w-3" /> Edit
+                    <Pencil data-icon="inline-start" className="mr-1 h-3 w-3" /> Edit
                   </Button>
                 ) : null}
               </div>
@@ -2686,7 +2694,7 @@ export function Secrets() {
                   <label className="text-xs font-medium" htmlFor="new-secret-provider">Provider</label>
                   <select
                     id="new-secret-provider"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={createForm.provider}
                     onChange={(event) =>
                       setCreateForm((current) => {
@@ -2735,7 +2743,7 @@ export function Secrets() {
                   <label className="text-xs font-medium" htmlFor="new-secret-vault">Provider vault</label>
                   <select
                     id="new-secret-vault"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={createForm.providerConfigId}
                     onChange={(event) =>
                       setCreateForm((current) => ({ ...current, providerConfigId: event.target.value }))
@@ -2827,7 +2835,7 @@ export function Secrets() {
                 <label className="text-xs font-medium" htmlFor="vault-provider">Provider</label>
                 <select
                   id="vault-provider"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none disabled:opacity-60"
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
                   value={vaultForm.provider}
                   disabled={Boolean(editingVault)}
                   onChange={(event) => {
@@ -2859,7 +2867,7 @@ export function Secrets() {
                 <label className="text-xs font-medium" htmlFor="vault-status">Status</label>
                 <select
                   id="vault-status"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
+                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={vaultForm.status}
                   onChange={(event) => {
                     const status = event.target.value as SecretProviderConfigStatus;
@@ -2958,7 +2966,7 @@ export function Secrets() {
             <label className="text-xs font-medium" htmlFor="rotate-secret-vault">Provider vault</label>
             <select
               id="rotate-secret-vault"
-              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={rotateProviderConfigId}
               onChange={(event) => setRotateProviderConfigId(event.target.value)}
             >
@@ -3355,7 +3363,7 @@ function ImportFromVaultButton({
         className={cn("text-xs text-muted-foreground", className)}
         title="Configure an AWS provider vault to enable remote import"
       >
-        <Cloud className="h-3.5 w-3.5 mr-1" /> AWS vault disabled — manage
+        <Cloud data-icon="inline-start" className="h-3.5 w-3.5 mr-1" /> AWS vault disabled — manage
       </Button>
     );
   }
@@ -3368,7 +3376,7 @@ function ImportFromVaultButton({
       className={className}
       data-testid="import-from-vault-button"
     >
-      <Cloud className="h-3.5 w-3.5 mr-1" /> Import from vault
+      <Cloud data-icon="inline-start" className="h-3.5 w-3.5 mr-1" /> Import from vault
     </Button>
   );
 }
@@ -3458,7 +3466,7 @@ export function ProviderVaultsTab({
                 <span className="ml-auto text-xs text-muted-foreground">Coming soon</span>
               ) : (
                 <Button variant="outline" size="sm" className="ml-auto" onClick={() => onCreate(id)}>
-                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
                   Add vault
                 </Button>
               )}
@@ -3540,7 +3548,12 @@ function ProviderVaultCard({
             )}
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onEdit}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onEdit}
+          aria-label="Edit secret provider configuration"
+        >
           <Edit3 className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -3574,7 +3587,7 @@ function ProviderVaultCard({
             }
             data-testid={`provider-vault-refresh-secrets-${config.id}`}
           >
-            <Cloud className="h-3.5 w-3.5 mr-1" />
+            <Cloud data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
             Refresh secrets
           </Button>
         ) : null}
@@ -3584,7 +3597,7 @@ function ProviderVaultCard({
           onClick={onSetDefault}
           disabled={pending || Boolean(blockReason) || config.isDefault}
         >
-          <Star className="h-3.5 w-3.5 mr-1" />
+          <Star data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
           Make default
         </Button>
         <Button
@@ -3594,7 +3607,7 @@ function ProviderVaultCard({
           onClick={onDisable}
           disabled={pending || config.status === "disabled"}
         >
-          <Ban className="h-3.5 w-3.5 mr-1" />
+          <Ban data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
           Disable
         </Button>
         <Button
@@ -3604,7 +3617,7 @@ function ProviderVaultCard({
           onClick={onRemove}
           disabled={pending}
         >
-          <Trash2 className="h-3.5 w-3.5 mr-1" />
+          <Trash2 data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
           Remove
         </Button>
       </div>

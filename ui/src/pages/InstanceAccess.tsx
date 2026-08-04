@@ -85,8 +85,14 @@ export function InstanceAccess() {
     },
   });
 
+  const pendingAccessStatus = updateCompanyAccessMutation.isPending
+    ? "Saving company access…"
+    : setAdminMutation.isPending
+      ? "Updating instance administrator access…"
+      : null;
+
   if (usersQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading instance users…</div>;
+    return <div className="text-sm text-muted-foreground" role="status">Loading instance users…</div>;
   }
 
   if (usersQuery.error) {
@@ -96,11 +102,12 @@ export function InstanceAccess() {
         : usersQuery.error instanceof Error
           ? usersQuery.error.message
           : "Failed to load users.";
-    return <div className="text-sm text-destructive">{message}</div>;
+    return <div className="text-sm text-destructive" role="alert">{message}</div>;
   }
 
   return (
     <div className="max-w-6xl space-y-6">
+      {pendingAccessStatus ? <p className="sr-only" role="status">{pendingAccessStatus}</p> : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-muted-foreground" />
@@ -155,9 +162,9 @@ export function InstanceAccess() {
           {!selectedUserId ? (
             <div className="text-sm text-muted-foreground">Select a user to inspect instance access.</div>
           ) : userAccessQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading user access…</div>
+            <div className="text-sm text-muted-foreground" role="status">Loading user access…</div>
           ) : userAccessQuery.error ? (
-            <div className="text-sm text-destructive">
+            <div className="text-sm text-destructive" role="alert">
               {userAccessQuery.error instanceof Error ? userAccessQuery.error.message : "Failed to load user access."}
             </div>
           ) : (

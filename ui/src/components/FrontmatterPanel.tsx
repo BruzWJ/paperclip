@@ -386,7 +386,7 @@ export function FrontmatterPanel({
             </Tabs>
           ) : !readOnly ? (
             <Button variant="ghost" size="sm" onClick={addFrontmatter} data-testid="add-frontmatter">
-              <Plus className="mr-1 h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
               Add frontmatter
             </Button>
           ) : null}
@@ -446,9 +446,9 @@ function fieldWarning(validation: ValidationIssue[], field: string): string | nu
   return validation.find((issue) => issue.field === field)?.message ?? null;
 }
 
-function FieldWarning({ message }: { message: string }) {
+function FieldWarning({ message, id }: { message: string; id?: string }) {
   return (
-    <p className="mt-1 flex items-center gap-1 text-xs text-amber-500">
+    <p id={id} className="mt-1 flex items-center gap-1 text-xs text-amber-500">
       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
       {message}
     </p>
@@ -469,6 +469,8 @@ function FieldsForm({
   const nameWarning = fieldWarning(validation, "name");
   const descriptionWarning = fieldWarning(validation, "description");
   const toolsWarning = fieldWarning(validation, "allowed-tools");
+  const nameWarningId = "fm-name-warning";
+  const descriptionWarningId = "fm-description-warning";
 
   return (
     <div className="space-y-3 pt-1">
@@ -482,10 +484,11 @@ function FieldsForm({
             value={form.name}
             readOnly={readOnly}
             aria-invalid={Boolean(nameWarning)}
+            aria-describedby={nameWarning ? nameWarningId : undefined}
             onChange={(event) => onCommit({ ...form, name: event.target.value })}
             className="mt-1"
           />
-          {nameWarning ? <FieldWarning message={nameWarning} /> : null}
+          {nameWarning ? <FieldWarning id={nameWarningId} message={nameWarning} /> : null}
         </div>
       ) : null}
 
@@ -499,10 +502,12 @@ function FieldsForm({
             value={form.description}
             readOnly={readOnly}
             rows={3}
+            aria-invalid={Boolean(descriptionWarning)}
+            aria-describedby={descriptionWarning ? descriptionWarningId : undefined}
             onChange={(event) => onCommit({ ...form, description: event.target.value })}
             className="mt-1"
           />
-          {descriptionWarning ? <FieldWarning message={descriptionWarning} /> : null}
+          {descriptionWarning ? <FieldWarning id={descriptionWarningId} message={descriptionWarning} /> : null}
         </div>
       ) : null}
 
@@ -627,7 +632,7 @@ function MetadataRows({
       ))}
       {!readOnly ? (
         <Button variant="ghost" size="sm" onClick={add} className="text-xs">
-          <Plus className="mr-1 h-3.5 w-3.5" />
+          <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
           add field
         </Button>
       ) : null}
@@ -687,7 +692,7 @@ function ChipInput({
           }}
           onBlur={commit}
           aria-label="Add tool"
-          className="min-w-24 flex-1 bg-transparent text-xs outline-none"
+          className="min-w-24 flex-1 bg-transparent text-xs outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
         />
       ) : null}
     </div>

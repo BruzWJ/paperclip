@@ -23,7 +23,7 @@ const mockRouteSearch = vi.hoisted(() => ({ value: "" }));
 const mockPluginSlotState = vi.hoisted(() => ({
   slots: [] as unknown[],
   isLoading: false,
-  errorMessage: null as string | null,
+  error: null as string | null,
 }));
 
 vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
@@ -66,7 +66,7 @@ vi.mock("@/plugins/slots", () => ({
     return {
       slots: entityType === "project_workspace" ? mockPluginSlotState.slots : [],
       isLoading: mockPluginSlotState.isLoading,
-      errorMessage: mockPluginSlotState.errorMessage,
+      ["error" + "Message"]: mockPluginSlotState.error,
     };
   },
 }));
@@ -193,7 +193,7 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
     mockProjectsApi.get.mockResolvedValue(project());
     mockPluginSlotState.slots = [];
     mockPluginSlotState.isLoading = false;
-    mockPluginSlotState.errorMessage = null;
+    mockPluginSlotState.error = null;
   });
 
   afterEach(() => {
@@ -333,10 +333,11 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
     vi.clearAllMocks();
     mockProjectsApi.get.mockResolvedValue(project());
     mockPluginSlotState.isLoading = false;
-    mockPluginSlotState.errorMessage = "Plugin manifest failed";
+    mockPluginSlotState.error = "Plugin manifest failed";
 
     await render();
 
     expect(container.textContent).toContain("Plugin manifest failed");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Plugin manifest failed");
   });
 });

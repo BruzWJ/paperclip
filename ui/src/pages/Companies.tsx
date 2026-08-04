@@ -72,6 +72,11 @@ export function Companies() {
       setConfirmDeleteId(null);
     },
   });
+  const companyMutationStatus = editMutation.isPending
+    ? "Saving company name…"
+    : deleteMutation.isPending
+      ? "Deleting company…"
+      : null;
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Companies" }]);
@@ -94,16 +99,17 @@ export function Companies() {
 
   return (
     <div className="space-y-6">
+      {companyMutationStatus ? <p className="sr-only" role="status">{companyMutationStatus}</p> : null}
       <div className="flex items-center justify-end">
         <Button size="sm" onClick={() => openOnboarding()}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1.5" />
           New Company
         </Button>
       </div>
 
       <div className="h-6">
-        {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}
-        {error && <p className="text-sm text-destructive">{error.message}</p>}
+        {loading && <p className="text-sm text-muted-foreground" role="status">Loading companies...</p>}
+        {error && <p className="text-sm text-destructive" role="alert">{error.message}</p>}
       </div>
 
       <div className="grid gap-4">
@@ -124,8 +130,17 @@ export function Companies() {
               key={company.id}
               role="button"
               tabIndex={0}
-              onClick={() => setSelectedCompanyId(company.id)}
+              onClick={(event) => {
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest("button, input, textarea, select, a, [role='menuitem'], [role='combobox']")
+                ) {
+                  return;
+                }
+                setSelectedCompanyId(company.id);
+              }}
               onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   setSelectedCompanyId(company.id);
@@ -140,11 +155,9 @@ export function Companies() {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   {isEditing ? (
-                    <div
-                      className="flex items-center gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <div className="flex items-center gap-2">
                       <Input
+                        aria-label="Company name"
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
                         className="h-7 text-sm"
@@ -159,10 +172,16 @@ export function Companies() {
                         size="icon-xs"
                         onClick={saveEdit}
                         disabled={editMutation.isPending}
+                        aria-label="Save company name"
                       >
                         <Check className="h-3.5 w-3.5 text-green-500" />
                       </Button>
-                      <Button variant="ghost" size="icon-xs" onClick={cancelEdit}>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={cancelEdit}
+                        aria-label="Cancel company rename"
+                      >
                         <X className="h-3.5 w-3.5 text-muted-foreground" />
                       </Button>
                     </div>
@@ -188,6 +207,7 @@ export function Companies() {
                           e.stopPropagation();
                           startEdit(company.id, company.name);
                         }}
+                        aria-label="Rename company"
                       >
                         <Pencil className="h-3 w-3" />
                       </Button>
@@ -201,13 +221,14 @@ export function Companies() {
                 </div>
 
                 {/* Three-dot menu */}
-                <div onClick={(e) => e.stopPropagation()}>
+                <div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon-xs"
                         className="text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                        aria-label="Company actions"
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
@@ -263,10 +284,7 @@ export function Companies() {
 
               {/* Delete confirmation */}
               {isConfirmingDelete && (
-                <div
-                  className="mt-4 flex items-center justify-between bg-destructive/5 border border-destructive/20 rounded-md px-4 py-3"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="mt-4 flex items-center justify-between bg-destructive/5 border border-destructive/20 rounded-md px-4 py-3">
                   <p className="text-sm text-destructive font-medium">
                     Delete this company and all its data? This cannot be undone.
                   </p>

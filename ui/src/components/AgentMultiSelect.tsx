@@ -75,6 +75,7 @@ export function AgentSelect({
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Filter agents"
+            aria-label="Filter agents"
             className="h-8"
             autoFocus
           />
@@ -225,6 +226,7 @@ export function AgentMultiSelect({
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Filter agents"
+            aria-label="Filter agents"
             className="h-8"
             autoFocus
           />

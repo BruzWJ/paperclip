@@ -449,12 +449,12 @@ describe("Inbox toolbar", () => {
 
     const rows = container.querySelectorAll("[data-inbox-item]");
 
-    const linkOf = (row: Element): HTMLAnchorElement | null =>
-      row.querySelector("a[data-inbox-issue-link]");
+    const rowSurface = (row: Element): HTMLElement | null =>
+      row.querySelector("a[data-inbox-issue-link]")?.parentElement;
 
     // Nothing selected before hover — both rows show the hover-accent class.
-    expect(linkOf(rows[0]!)?.className).toContain("hover:bg-accent/50");
-    expect(linkOf(rows[1]!)?.className).toContain("hover:bg-accent/50");
+    expect(rowSurface(rows[0]!)?.className).toContain("hover:bg-accent/50");
+    expect(rowSurface(rows[1]!)?.className).toContain("hover:bg-accent/50");
 
     // Hovering paints via CSS `:hover` only — it must NOT flip a row into the
     // state-selected band (which would swap to hover:bg-transparent). Coupling
@@ -466,9 +466,9 @@ describe("Inbox toolbar", () => {
       rows[1]!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
       rows[1]!.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false }));
     });
-    expect(linkOf(rows[0]!)?.className).toContain("hover:bg-accent/50");
-    expect(linkOf(rows[1]!)?.className).toContain("hover:bg-accent/50");
-    expect(linkOf(rows[1]!)?.className).not.toContain("hover:bg-transparent");
+    expect(rowSurface(rows[0]!)?.className).toContain("hover:bg-accent/50");
+    expect(rowSurface(rows[1]!)?.className).toContain("hover:bg-accent/50");
+    expect(rowSurface(rows[1]!)?.className).not.toContain("hover:bg-transparent");
 
     act(() => {
       root.unmount();
@@ -513,20 +513,20 @@ describe("Inbox toolbar", () => {
     const rows = Array.from(container.querySelectorAll("[data-inbox-item]"));
     const rowFor = (text: string) =>
       rows.find((row) => row.textContent?.includes(text));
-    const linkOf = (row: Element) =>
-      row.querySelector<HTMLAnchorElement>("a[data-inbox-issue-link]");
+    const rowSurface = (row: Element) =>
+      row.querySelector<HTMLAnchorElement>("a[data-inbox-issue-link]")?.parentElement;
     const markReadButton = (row: Element) =>
       row.querySelector('button[aria-label="Mark as read"]');
     // The empty spacer that reserves the chevron column on every leaf row.
     // Excludes the tree-guide span (`.self-stretch`), which only renders on
     // nested rows.
     const hasLeadingSpacer = (row: Element) =>
-      !!linkOf(row)?.querySelector(
+      !!rowSurface(row)?.querySelector(
         "span.hidden.w-4.shrink-0.sm\\:block:not(.self-stretch)",
       );
     // The reserved leading dot slot, present on read AND unread rows.
     const dotSlot = (row: Element) =>
-      linkOf(row)?.querySelector('[data-testid="issue-row-unread-slot"]') ??
+      rowSurface(row)?.querySelector('[data-testid="issue-row-unread-slot"]') ??
       null;
 
     const unreadRow = rowFor("Unread inbox row")!;
@@ -583,12 +583,12 @@ describe("Inbox toolbar", () => {
     });
     const root = createRoot(container);
 
-    const linkOf = (row: Element): HTMLAnchorElement | null =>
-      row.querySelector("a[data-inbox-issue-link]");
+    const rowSurface = (row: Element): HTMLElement | null =>
+      row.querySelector("a[data-inbox-issue-link]")?.parentElement;
     // The keyboard-selected row swaps to `hover:bg-transparent`; find its index.
     const selectedRowIndex = () =>
       [...container.querySelectorAll("[data-inbox-item]")].findIndex((row) =>
-        linkOf(row)?.className.includes("hover:bg-transparent"),
+        rowSurface(row)?.className.includes("hover:bg-transparent"),
       );
 
     try {
@@ -609,8 +609,9 @@ describe("Inbox toolbar", () => {
       await act(async () => {
         window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
         const rows = container.querySelectorAll("[data-inbox-item]");
-        rows[1]!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-        rows[1]!.dispatchEvent(
+        const rowLink = rows[1]?.querySelector("a[data-inbox-issue-link]");
+        rowLink?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+        rowLink?.dispatchEvent(
           new MouseEvent("mouseenter", { bubbles: false }),
         );
       });

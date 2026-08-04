@@ -98,6 +98,11 @@ export function SetMyUserSecretDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
+        {save.isPending ? (
+          <p className="sr-only" role="status">
+            Saving your secret value.
+          </p>
+        ) : null}
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {existingSecret ? "Update your value" : "Set your value"}
@@ -129,6 +134,7 @@ export function SetMyUserSecretDialog({
               <div className="space-y-1">
                 <label className="text-xs font-medium text-foreground">External reference</label>
                 <Input
+                  aria-label="External secret reference"
                   value={externalRef}
                   onChange={(event) => setExternalRef(event.target.value)}
                   placeholder="provider reference or ARN"
@@ -144,6 +150,7 @@ export function SetMyUserSecretDialog({
               <div className="space-y-1">
                 <label className="text-xs font-medium text-foreground">Your value</label>
                 <Textarea
+                  aria-label="Secret value"
                   value={value}
                   onChange={(event) => setValue(event.target.value)}
                   placeholder="Paste your token or credential"
@@ -156,7 +163,7 @@ export function SetMyUserSecretDialog({
               </div>
             )}
 
-            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+            {error ? <p className="text-xs text-destructive" role="alert">{error}</p> : null}
           </div>
         ) : null}
 

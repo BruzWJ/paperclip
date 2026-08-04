@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { humanizeConnectionDisplayName } from "@paperclipai/shared";
 import type { ToolApplication, ToolConnection } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
+import { ApiError } from "@/api/client";
 import { toolsApi } from "@/api/tools";
 import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
@@ -67,6 +68,12 @@ export function AppDetailSidebar(props: AppDetailSidebarProps) {
     : [];
   const previousConnection = latestArchivedConnection(appConnections);
   const appName = connection ? humanizeConnectionDisplayName(connection) : application?.name ?? "App";
+  const isResourceUnavailable = props.kind === "connection"
+    ? connectionQuery.error instanceof ApiError && connectionQuery.error.status === 404
+    : applicationsQuery.isSuccess && !application;
+  const unavailableResourceMessage = props.kind === "connection"
+    ? "No connection found."
+    : "No application found.";
   const logoEntry = galleryEntryFor(
     (galleryQuery.data?.apps ?? []) as AppGalleryDisplayEntry[],
     connection,
@@ -92,10 +99,19 @@ export function AppDetailSidebar(props: AppDetailSidebarProps) {
           <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">All apps</span>
         </Link>
-        <div className="flex min-w-0 items-center gap-2 px-2 py-1">
-          <AppLogo name={appName} logoUrl={appDefinitionLogoUrl(logoEntry)} size={28} />
-          <span className="flex-1 truncate text-sm font-bold text-foreground">{appName}</span>
-        </div>
+        {isResourceUnavailable ? (
+          <div className="px-2 py-1">
+            <p className="text-sm font-bold text-foreground">{unavailableResourceMessage}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              No records are available for this app. Choose another app from the list.
+            </p>
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2 px-2 py-1">
+            <AppLogo name={appName} logoUrl={appDefinitionLogoUrl(logoEntry)} size={28} />
+            <span className="flex-1 truncate text-sm font-bold text-foreground">{appName}</span>
+          </div>
+        )}
       </div>
 
       <nav className="scrollbar-auto-hide min-h-0 flex-1 overflow-y-auto px-3 py-2">

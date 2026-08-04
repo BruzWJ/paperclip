@@ -12,6 +12,7 @@ import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -214,6 +215,7 @@ export function NewProjectDialog() {
         className={cn("p-0 gap-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
         onKeyDown={handleKeyDown}
       >
+        <DialogTitle className="sr-only">New project</DialogTitle>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -231,6 +233,7 @@ export function NewProjectDialog() {
               size="icon-xs"
               className="text-muted-foreground"
               onClick={() => setExpanded(!expanded)}
+              aria-label="Toggle expanded layout"
             >
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
@@ -239,6 +242,7 @@ export function NewProjectDialog() {
               size="icon-xs"
               className="text-muted-foreground"
               onClick={() => { reset(); closeNewProject(); }}
+              aria-label="Close new project dialog"
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
@@ -248,8 +252,9 @@ export function NewProjectDialog() {
         {/* Name */}
         <div className="px-4 pt-4 pb-2 shrink-0">
           <input
-            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
+            className="w-full rounded-sm bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
             placeholder="Project name"
+            aria-label="Project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
@@ -282,7 +287,7 @@ export function NewProjectDialog() {
         <div className="px-4 pt-3 pb-3 space-y-3 border-t border-border">
           <div>
             <div className="mb-1 flex items-center gap-1.5">
-              <label className="block text-xs text-muted-foreground">Repo URL</label>
+              <label htmlFor="new-project-repo-url" className="block text-xs text-muted-foreground">Repo URL</label>
               <span className="text-xs text-muted-foreground/50">optional</span>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
@@ -294,7 +299,8 @@ export function NewProjectDialog() {
               </Tooltip>
             </div>
             <input
-              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+              id="new-project-repo-url"
+              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={workspaceRepoUrl}
               onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
               placeholder="https://github.com/org/repo"
@@ -303,7 +309,7 @@ export function NewProjectDialog() {
 
           <div>
             <div className="mb-1 flex items-center gap-1.5">
-              <label className="block text-xs text-muted-foreground">Local folder</label>
+              <label htmlFor="new-project-local-folder" className="block text-xs text-muted-foreground">Local folder</label>
               <span className="text-xs text-muted-foreground/50">optional</span>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
@@ -316,7 +322,8 @@ export function NewProjectDialog() {
             </div>
             <div className="flex items-center gap-2">
               <input
-                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                id="new-project-local-folder"
+                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={workspaceLocalPath}
                 onChange={(e) => { setWorkspaceLocalPath(e.target.value); setWorkspaceError(null); }}
                 placeholder="/absolute/path/to/workspace"
@@ -335,7 +342,11 @@ export function NewProjectDialog() {
           {/* Status */}
           <Popover open={statusOpen} onOpenChange={setStatusOpen}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
+                aria-label="Set project status"
+              >
                 <StatusBadge status={status} />
               </button>
             </PopoverTrigger>
@@ -417,7 +428,8 @@ export function NewProjectDialog() {
             <Calendar className="h-3 w-3 text-muted-foreground" />
             <input
               type="date"
-              className="bg-transparent outline-none text-xs w-24"
+              className="w-24 rounded-sm bg-transparent text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Target date"
               value={targetDate}
               onChange={(e) => setTargetDate(e.target.value)}
               placeholder="Target date"
@@ -427,8 +439,10 @@ export function NewProjectDialog() {
 
         {/* Footer */}
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
-          {createProject.isError ? (
-            <p className="text-xs text-destructive">Failed to create project.</p>
+          {createProject.isPending ? (
+            <p role="status" className="text-xs text-muted-foreground">Creating project…</p>
+          ) : createProject.isError ? (
+            <p role="alert" className="text-xs text-destructive">Failed to create project.</p>
           ) : (
             <span />
           )}

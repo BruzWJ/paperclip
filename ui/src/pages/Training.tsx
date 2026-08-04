@@ -164,7 +164,7 @@ export function TrainingLibrary() {
           onClick={() => selectedCompanyId && downloadExport(selectedCompanyId)}
           disabled={!selectedCompanyId}
         >
-          <Download className="size-4" /> Export JSONL
+          <Download data-icon="inline-start" className="size-4" /> Export JSONL
         </Button>
       </header>
 
@@ -220,12 +220,12 @@ export function TrainingLibrary() {
       </div>
 
       {recordsQuery.isLoading ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground" role="status">
           Loading training examples…
         </p>
       ) : null}
       {recordsQuery.isError ? (
-        <p className="text-sm text-destructive">
+        <p className="text-sm text-destructive" role="alert">
           Could not load training examples.
         </p>
       ) : null}
@@ -406,6 +406,7 @@ export function TrainingInspector() {
       });
     },
   });
+  const isPending = saveMutation.isPending;
 
   if (recordQuery.isLoading)
     return (
@@ -442,7 +443,7 @@ export function TrainingInspector() {
             className="mb-2 -ml-2"
             onClick={() => navigate("/training")}
           >
-            <ArrowLeft className="size-4" /> Training
+            <ArrowLeft data-icon="inline-start" className="size-4" /> Training
           </Button>
           <h1 className="truncate text-xl font-bold">
             {decisionTitle(example)}
@@ -456,11 +457,11 @@ export function TrainingInspector() {
           variant="outline"
           onClick={() => downloadExport(example.companyId)}
         >
-          <Download className="size-4" /> Export JSONL
+          <Download data-icon="inline-start" className="size-4" /> Export JSONL
         </Button>
       </header>
       <div className="grid gap-8 lg:grid-cols-2">
-        <section>
+        <section aria-busy={isPending}>
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold">Training notes</h2>
@@ -481,30 +482,36 @@ export function TrainingInspector() {
           </div>
           {editing ? (
             <div className="space-y-3">
-              <Textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                className="min-h-72"
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setNotes(example.notes);
-                    setEditing(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => saveMutation.mutate()}
-                  disabled={
-                    saveMutation.isPending || notes.trim() === example.notes
-                  }
-                >
-                  Save notes
-                </Button>
-              </div>
+              <fieldset
+                aria-label="Training notes editing"
+                className="contents"
+                disabled={isPending}
+              >
+                <Textarea
+                  aria-label="Training notes"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  className="min-h-72"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setNotes(example.notes);
+                      setEditing(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => saveMutation.mutate()}
+                    disabled={isPending || notes.trim() === example.notes}
+                  >
+                    {isPending ? "Saving…" : "Save notes"}
+                  </Button>
+                </div>
+              </fieldset>
+              {isPending ? <p className="text-sm text-muted-foreground" role="status">Saving training notes…</p> : null}
             </div>
           ) : (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">

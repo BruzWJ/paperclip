@@ -10,6 +10,7 @@ import {
 } from "@paperclipai/shared";
 import { agentsApi } from "../api/agents";
 import { InlineBanner } from "./InlineBanner";
+import { Button } from "./ui/button";
 import {
   RuntimeAgentConfigurationFields,
   type RuntimeAgentConfigurationValues,
@@ -99,6 +100,11 @@ export function AgentRuntimeGrantsSection({
           {update.error instanceof Error ? update.error.message : "Unknown error"}
         </InlineBanner>
       ) : null}
+      {update.isPending ? (
+        <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
+          Saving runtime access…
+        </p>
+      ) : null}
       {value ? (
         <RuntimeAgentConfigurationFields
           companyId={companyId ?? ""}
@@ -111,6 +117,21 @@ export function AgentRuntimeGrantsSection({
         <p className="text-xs text-muted-foreground">
           Loading explicit grants…
         </p>
+      ) : !configuration.isError ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            No data is available for this agent&apos;s runtime access.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void configuration.refetch()}
+            disabled={configuration.isFetching}
+          >
+            {configuration.isFetching ? "Refreshing runtime access…" : "Refresh runtime access"}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

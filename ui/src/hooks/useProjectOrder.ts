@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@paperclipai/shared";
 import { sidebarPreferencesApi } from "../api/sidebarPreferences";
 import { sortProjectsByStoredOrder } from "../lib/project-order";
@@ -45,13 +45,6 @@ export function useProjectOrder({ projects, companyId, userId }: UseProjectOrder
     setOrderedIds((current) => (areEqual(current, nextIds) ? current : nextIds));
   }, [data?.orderedIds, projects]);
 
-  const mutation = useMutation({
-    mutationFn: (nextIds: string[]) => sidebarPreferencesApi.updateProjectOrder(companyId!, { orderedIds: nextIds }),
-    onSuccess: (preference) => {
-      queryClient.setQueryData(queryKey, preference);
-    },
-  });
-
   const orderedProjects = useMemo(
     () => sortProjectsByStoredOrder(projects, orderedIds),
     [projects, orderedIds],
@@ -72,9 +65,15 @@ export function useProjectOrder({ projects, companyId, userId }: UseProjectOrder
         orderedIds: filtered,
         updatedAt: current?.updatedAt ?? null,
       }));
-      mutation.mutate(filtered);
+      void sidebarPreferencesApi.updateProjectOrder(companyId, { orderedIds: filtered })
+        .then((preference) => {
+          queryClient.setQueryData(queryKey, preference);
+        })
+        // Keep the reordering optimistic when a background preference sync
+        // fails; callers should not receive an unhandled promise rejection.
+        .catch(() => undefined);
     },
-    [companyId, mutation, projects, queryClient, queryKey, userId],
+    [companyId, projects, queryClient, queryKey, userId],
   );
 
   return {

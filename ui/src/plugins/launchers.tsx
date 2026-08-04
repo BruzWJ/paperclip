@@ -26,6 +26,7 @@ import type {
 import { pluginsApi, type PluginUiContribution } from "@/api/plugins";
 import { authApi } from "@/api/auth";
 import { Button } from "@/components/ui/button";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { useNavigate, useLocation } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -290,11 +291,23 @@ export function usePluginLaunchers(
   filters: UsePluginLaunchersFilters,
 ): UsePluginLaunchersResult {
   const queryEnabled = filters.enabled ?? true;
+  const toast = useOptionalToastActions();
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.plugins.uiContributions,
     queryFn: () => pluginsApi.listUiContributions(),
     enabled: queryEnabled,
   });
+  const pluginError = error ? getErrorMessage(error) : null;
+
+  useEffect(() => {
+    if (!toast || !pluginError) return;
+    toast.pushToast({
+      dedupeKey: "plugin-ui-contributions-error",
+      title: "Plugin launchers unavailable",
+      body: pluginError,
+      tone: "error",
+    });
+  }, [pluginError, toast]);
 
   const placementZonesKey = useMemo(
     () => [...filters.placementZones].sort().join("|"),
@@ -348,7 +361,7 @@ export function usePluginLaunchers(
     launchers,
     contributionsByPluginId,
     isLoading: queryEnabled && isLoading,
-    errorMessage: error ? getErrorMessage(error) : null,
+    errorMessage: pluginError,
   };
 }
 
@@ -448,7 +461,8 @@ function LauncherRenderContent({
       return (
         <iframe
           src={`/_plugins/${encodeURIComponent(instance.launcher.pluginId)}/ui/${instance.launcher.action.target}`}
-          title={`${instance.launcher.pluginDisplayName} ${instance.launcher.displayName}`}
+          title="Embedded plugin launcher"
+          aria-label={`${instance.launcher.displayName} from ${instance.launcher.pluginDisplayName}`}
           className="h-full min-h-[24rem] w-full rounded-md border border-border bg-background"
         />
       );
@@ -801,7 +815,7 @@ export function PluginLauncherOutlet({
 
   if (errorMessage) {
     return (
-      <div className={cn("rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive", errorClassName)}>
+      <div className={cn("rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive", errorClassName)} role="alert">
         Plugin launchers unavailable: {errorMessage}
       </div>
     );

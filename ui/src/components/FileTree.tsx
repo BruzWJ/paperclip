@@ -283,7 +283,7 @@ export function FileTree({
     [expandedDirs, nodes],
   );
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
-  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
 
   function focusPath(path: string) {
     setFocusedPath(path);
@@ -297,7 +297,7 @@ export function FileTree({
     else onSelectFile(node.path);
   }
 
-  function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>, index: number, node: FileTreeNode) {
+  function handleRowKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number, node: FileTreeNode) {
     switch (event.key) {
       case "ArrowDown": {
         event.preventDefault();
@@ -328,9 +328,11 @@ export function FileTree({
         toggleNode(node);
         break;
       case " ":
+        event.preventDefault();
         if (showCheckboxes && onToggleCheck) {
-          event.preventDefault();
           onToggleCheck(node.path, node.kind);
+        } else {
+          toggleNode(node);
         }
         break;
     }
@@ -405,16 +407,7 @@ export function FileTree({
         return (
           <div
             key={node.path}
-            ref={(element) => {
-              if (element) rowRefs.current.set(node.path, element);
-              else rowRefs.current.delete(node.path);
-            }}
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-expanded={node.kind === "dir" ? expanded : undefined}
-            aria-selected={node.kind === "file" ? isSelected : undefined}
-            aria-checked={showCheckboxes ? (someChecked ? "mixed" : allChecked) : undefined}
-            tabIndex={(focusedPath ?? visibleNodes[0]?.node.path) === node.path ? 0 : -1}
+            role="none"
             className={cn(
               node.kind === "dir"
                 ? showCheckboxes
@@ -425,20 +418,17 @@ export function FileTree({
               isSelected && "text-foreground bg-accent/20",
               fileTreeToneClass[tone],
               extraClassName,
-              "outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset",
             )}
             style={{
               paddingInlineStart: `${TREE_BASE_INDENT + depth * TREE_STEP_INDENT - 8}px`,
             }}
-            onFocus={() => setFocusedPath(node.path)}
-            onClick={() => toggleNode(node)}
-            onKeyDown={(event) => handleRowKeyDown(event, index, node)}
-            data-file-tree-path={node.path}
           >
             {showCheckboxes && (
-              <label className="flex items-center pl-2" onClick={(event) => event.stopPropagation()}>
+              <label className="flex items-center pl-2">
                 <input
                   type="checkbox"
+                  aria-label={`Select ${node.name}`}
+                  data-file-tree-checkbox={node.path}
                   checked={allChecked}
                   ref={(element) => {
                     if (element) element.indeterminate = someChecked;
@@ -448,7 +438,24 @@ export function FileTree({
                 />
               </label>
             )}
-            <span className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left">
+            <button
+              type="button"
+              ref={(element) => {
+                if (element) rowRefs.current.set(node.path, element);
+                else rowRefs.current.delete(node.path);
+              }}
+              role="treeitem"
+              aria-level={depth + 1}
+              aria-expanded={node.kind === "dir" ? expanded : undefined}
+              aria-selected={node.kind === "file" ? isSelected : undefined}
+              aria-checked={showCheckboxes ? (someChecked ? "mixed" : allChecked) : undefined}
+              tabIndex={(focusedPath ?? visibleNodes[0]?.node.path) === node.path ? 0 : -1}
+              className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+              onFocus={() => setFocusedPath(node.path)}
+              onClick={() => toggleNode(node)}
+              onKeyDown={(event) => handleRowKeyDown(event, index, node)}
+              data-file-tree-path={node.path}
+            >
               <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                 {node.kind === "dir" ? (
                   expanded ? (
@@ -463,7 +470,7 @@ export function FileTree({
               <span className={cn("min-w-0", wrapLabels ? "break-all leading-4" : "truncate")}>
                 {node.name}
               </span>
-            </span>
+            </button>
             {badge && (
               <Badge variant="ghost"
                 className={cn(
@@ -477,21 +484,16 @@ export function FileTree({
             )}
             {node.kind === "file" && renderFileExtra?.(node, allChecked)}
             {node.kind === "dir" && (
-              <button
-                type="button"
-                className="flex h-9 w-9 items-center justify-center self-center rounded-sm text-muted-foreground opacity-70 transition-(--tp-background-color-color-opacity) hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 max-[480px]:hidden"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onToggleDir(node.path);
-                }}
-                aria-label={expanded ? `Collapse ${node.name}` : `Expand ${node.name}`}
+              <span
+                aria-hidden="true"
+                className="flex h-9 w-9 items-center justify-center self-center rounded-sm text-muted-foreground opacity-70 max-[480px]:hidden"
               >
                 {expanded ? (
                   <ChevronDown className="h-3.5 w-3.5" />
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5" />
                 )}
-              </button>
+              </span>
             )}
           </div>
         );

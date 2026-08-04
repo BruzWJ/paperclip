@@ -96,6 +96,7 @@ vi.mock("@/components/ui/sheet", () => ({
   Sheet: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SheetTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   SheetContent: () => null,
+  SheetTitle: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -847,28 +847,44 @@ function NewPipelineDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!pending) onOpenChange(nextOpen);
+    }}>
+      <DialogContent showCloseButton={!pending}>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>New pipeline</DialogTitle>
             <DialogDescription>Name the pipeline and add a short description.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <label className="block space-y-1.5 text-sm font-medium">
-              <span>Name</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-            </label>
-            <label className="block space-y-1.5 text-sm font-medium">
-              <span>Description</span>
-              <Textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={3}
-              />
-            </label>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          </div>
+          <fieldset
+            aria-label="Pipeline details"
+            className="contents"
+            disabled={pending}
+          >
+            <div className="space-y-3">
+              <label className="block space-y-1.5 text-sm font-medium">
+                <span>Name</span>
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  pattern=".*\S.*"
+                  aria-describedby={error ? "new-pipeline-error" : undefined}
+                  autoFocus
+                />
+              </label>
+              <label className="block space-y-1.5 text-sm font-medium">
+                <span>Description</span>
+                <Textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  rows={3}
+                />
+              </label>
+              {error ? <p id="new-pipeline-error" role="alert" className="text-sm text-destructive">{error}</p> : null}
+            </div>
+          </fieldset>
+          {pending ? <p className="text-sm text-muted-foreground" role="status">Creating pipeline…</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
               Cancel
@@ -930,8 +946,8 @@ function PipelinesIndex() {
         throw error;
       }
     },
-    onSuccess: async (pipeline) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.list(selectedCompanyId!) });
+    onSuccess: (pipeline) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.list(selectedCompanyId!) });
       setNewPipelineOpen(false);
       navigate(`/pipelines/${pipeline.id}/settings`);
     },
@@ -944,9 +960,10 @@ function PipelinesIndex() {
 
   const pipelines = pipelinesQuery.data ?? [];
   const connectionsAvailable = pipelinesHaveConnectionData(pipelines);
+  const isPending = createPipeline.isPending;
 
   return (
-    <div className="w-full max-w-6xl px-6 py-8">
+    <div className="w-full max-w-6xl px-6 py-8" aria-busy={isPending}>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Work</p>
@@ -955,11 +972,12 @@ function PipelinesIndex() {
             {formatNumber(pipelines.length)} pipeline{pipelines.length === 1 ? "" : "s"}. Connected ones are grouped from upstream work into downstream work.
           </p>
         </div>
-        <Button onClick={() => setNewPipelineOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New pipeline
+        <Button onClick={() => setNewPipelineOpen(true)} disabled={isPending}>
+          <Plus data-icon="inline-start" className="mr-2 h-4 w-4" />
+          {isPending ? "Creating pipeline…" : "New pipeline"}
         </Button>
       </div>
+      {isPending ? <p className="mb-4 text-sm text-muted-foreground" role="status">Creating pipeline…</p> : null}
 
       {pipelinesQuery.error ? (
         <p className="mb-4 text-sm text-destructive">Could not load pipelines.</p>
@@ -990,7 +1008,7 @@ function PipelinesIndex() {
           if (!open) createPipeline.reset();
         }}
         onSubmit={(data) => createPipeline.mutate(data)}
-        pending={createPipeline.isPending}
+        pending={isPending}
         error={createPipeline.error ? "Could not create the pipeline. Try a different name." : null}
       />
     </div>
@@ -1638,10 +1656,12 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.cases(pipelineId) });
     },
   });
+  const isPending = transitionCase.isPending;
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function handleDragStart(event: DragStartEvent) {
+    if (isPending) return;
     setActiveCaseId(event.active.id as string);
     setActiveOverId(null);
   }
@@ -1653,6 +1673,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   function handleDragEnd(event: DragEndEvent) {
     setActiveCaseId(null);
     setActiveOverId(null);
+    if (isPending) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -1723,7 +1744,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const activeCase = activeCaseId ? boardColumns.caseById.get(activeCaseId) ?? null : null;
 
   return (
-    <div className="w-full space-y-4 px-6 py-8">
+    <div className="w-full space-y-4 px-6 py-8" aria-busy={isPending}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Pipeline</p>
@@ -1759,17 +1780,18 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           </Select>
           <Button asChild>
             <Link to={`/pipelines/${pipelineId}/add`}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Plus data-icon="inline-start" className="mr-2 h-4 w-4" />
               Add items
             </Link>
           </Button>
-          <Button variant="outline" size="icon" asChild>
+          <Button variant="outline" size="icon" asChild aria-label="Pipeline settings">
             <Link to={`/pipelines/${pipelineId}/settings`} aria-label="Pipeline settings" title="Pipeline settings">
               <Settings className="h-4 w-4" />
             </Link>
           </Button>
         </div>
       </div>
+      {isPending ? <p className="text-sm text-muted-foreground" role="status">Moving pipeline item…</p> : null}
 
       <PipelineHealthBar
         warnings={healthQuery.data?.warnings ?? []}
@@ -1837,13 +1859,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
       <Dialog
         open={Boolean(pendingMove)}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !isPending) {
             setPendingMove(null);
             setOverrideReason("");
           }
         }}
       >
-        <DialogContent>
+        <DialogContent showCloseButton={!isPending}>
           <DialogHeader>
             <DialogTitle>
               {pendingMove?.allowed ? `Move ${pendingMove.itemTitle}?` : "This skips the normal flow"}
@@ -1856,23 +1878,29 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
                   : "Review this move before continuing."}
             </DialogDescription>
           </DialogHeader>
-          {pendingMove && !pendingMove.allowed ? (
-            <label className="block space-y-1.5 text-sm font-medium">
-              <span>Reason</span>
-              <Textarea
-                value={overrideReason}
-                onChange={(event) => setOverrideReason(event.target.value)}
-                rows={3}
-                placeholder="Explain why this item should skip the normal flow."
-                autoFocus
-              />
-            </label>
-          ) : null}
+          <fieldset
+            aria-label="Pipeline move details"
+            className="contents"
+            disabled={isPending}
+          >
+            {pendingMove && !pendingMove.allowed ? (
+              <label className="block space-y-1.5 text-sm font-medium">
+                <span>Reason</span>
+                <Textarea
+                  value={overrideReason}
+                  onChange={(event) => setOverrideReason(event.target.value)}
+                  rows={3}
+                  placeholder="Explain why this item should skip the normal flow."
+                  autoFocus
+                />
+              </label>
+            ) : null}
+          </fieldset>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              disabled={transitionCase.isPending}
+              disabled={isPending}
               onClick={() => {
                 setPendingMove(null);
                 setOverrideReason("");
@@ -1883,7 +1911,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
             {pendingMove?.allowed ? (
               <Button
                 type="button"
-                disabled={transitionCase.isPending}
+                disabled={isPending}
                 onClick={() =>
                   transitionCase.mutate({
                     caseId: pendingMove.caseId,
@@ -1898,7 +1926,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <Button
                 type="button"
                 variant="destructive"
-                disabled={transitionCase.isPending || !overrideReason.trim()}
+                disabled={isPending || !overrideReason.trim()}
                 onClick={() =>
                   transitionCase.mutate({
                     caseId: pendingMove.caseId,
@@ -2635,14 +2663,14 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     ? (
         <Button asChild>
           <Link to={conversationIssuePath!} state={conversationIssueState} issuePrefetch={conversationIssueDetail.data ?? null}>
-            <MessageSquare className="mr-2 h-4 w-4" />
+            <MessageSquare data-icon="inline-start" className="mr-2 h-4 w-4" />
             Open conversation
           </Link>
         </Button>
       )
     : (
         <Button onClick={() => setConversationCreateOpen(true)}>
-          <MessageSquare className="mr-2 h-4 w-4" />
+          <MessageSquare data-icon="inline-start" className="mr-2 h-4 w-4" />
           Start a conversation
         </Button>
       );
@@ -3139,7 +3167,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 onClick={() => resolveSuggestion.mutate({ resolution: "accept", suggestionId: banner.suggestionId! })}
                 disabled={resolveSuggestion.isPending}
               >
-                <Check className="mr-2 h-4 w-4" />
+                <Check data-icon="inline-start" className="mr-2 h-4 w-4" />
                 Approve
               </Button>
               <Button
@@ -3148,7 +3176,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 onClick={() => resolveSuggestion.mutate({ resolution: "dismiss", suggestionId: banner.suggestionId! })}
                 disabled={resolveSuggestion.isPending}
               >
-                <X className="mr-2 h-4 w-4" />
+                <X data-icon="inline-start" className="mr-2 h-4 w-4" />
                 Not yet
               </Button>
             </div>
@@ -3278,7 +3306,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               <div className="flex flex-col items-start gap-3 py-3 text-sm text-muted-foreground">
                 <p>No active conversation yet.</p>
                 <Button size="sm" variant="outline" onClick={() => setConversationCreateOpen(true)}>
-                  <MessageSquare className="mr-2 h-4 w-4" />
+                  <MessageSquare data-icon="inline-start" className="mr-2 h-4 w-4" />
                   Start a conversation
                 </Button>
               </div>
@@ -3413,7 +3441,7 @@ function ActivePipelineWorkBanner({ activeWork }: { activeWork: PipelineCaseActi
         className="border-blue-300 bg-transparent hover:bg-blue-100 dark:border-blue-900/70 dark:hover:bg-blue-950/40"
       >
         <Link to={issuePath}>
-          <ExternalLink className="mr-2 h-4 w-4" />
+          <ExternalLink data-icon="inline-start" className="mr-2 h-4 w-4" />
           Open task
         </Link>
       </Button>
@@ -4162,7 +4190,14 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
     },
   });
 
-  if (pipeline.isLoading || intake.isLoading) return <PageSkeleton />;
+  if (pipeline.isLoading || intake.isLoading) {
+    return (
+      <div role="status">
+        <span className="sr-only">Loading pipeline intake form.</span>
+        <PageSkeleton />
+      </div>
+    );
+  }
   if (!pipeline.data || !intake.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }
@@ -4171,6 +4206,11 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
+      {submit.isPending ? (
+        <p className="sr-only" role="status">
+          Submitting pipeline items.
+        </p>
+      ) : null}
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
           Add to {pipeline.data.name}
@@ -4324,15 +4364,23 @@ export function GeneratedField({
   onChange: (value: string) => void;
 }) {
   const inputId = `pipeline-intake-${field.key}`;
+  const labelId = `${inputId}-label`;
+  const errorId = `${inputId}-error`;
   return (
-    <label className={cn("block space-y-1", field.type === "multiline" && "md:col-span-2")}>
-      <span className="text-sm font-medium text-foreground">
+    <div className={cn("block space-y-1", field.type === "multiline" && "md:col-span-2")}>
+      <label htmlFor={inputId} id={labelId} className="block text-sm font-medium text-foreground">
         {field.label}
         {field.required ? <span className="ml-1 font-normal text-destructive">required</span> : null}
-      </span>
+      </label>
       {field.type === "select" ? (
         <Select value={value} onValueChange={onChange}>
-          <SelectTrigger id={inputId} aria-invalid={Boolean(error)} className="w-full">
+          <SelectTrigger
+            id={inputId}
+            aria-labelledby={labelId}
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={Boolean(error)}
+            className="w-full"
+          >
             <SelectValue placeholder="Choose..." />
           </SelectTrigger>
           <SelectContent>
@@ -4342,12 +4390,24 @@ export function GeneratedField({
           </SelectContent>
         </Select>
       ) : field.type === "multiline" ? (
-        <Textarea id={inputId} value={value} aria-invalid={Boolean(error)} onChange={(event) => onChange(event.target.value)} />
+        <Textarea
+          id={inputId}
+          value={value}
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={Boolean(error)}
+          onChange={(event) => onChange(event.target.value)}
+        />
       ) : (
-        <Input id={inputId} value={value} aria-invalid={Boolean(error)} onChange={(event) => onChange(event.target.value)} />
+        <Input
+          id={inputId}
+          value={value}
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={Boolean(error)}
+          onChange={(event) => onChange(event.target.value)}
+        />
       )}
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
-    </label>
+      {error ? <span id={errorId} role="alert" className="text-xs text-destructive">{error}</span> : null}
+    </div>
   );
 }
 
@@ -4682,7 +4742,7 @@ function ReviewQueueSection({
               tabIndex={0}
               aria-current={active ? "true" : undefined}
               className={cn(
-                "grid min-h-10 grid-cols-(--gtc-13) items-center gap-3 px-2 py-2 text-sm outline-none transition-colors",
+                "grid min-h-10 grid-cols-(--gtc-13) items-center gap-3 px-2 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                 active ? "bg-accent/60" : "hover:bg-accent/40",
               )}
               onMouseEnter={() => onActivate(row.id)}
@@ -4953,6 +5013,10 @@ export function ReviewQueue() {
         event.ctrlKey ||
         event.altKey ||
         hasBlockingShortcutDialog() ||
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLSelectElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable) ||
         isKeyboardShortcutTextInputTarget(event.target) ||
         visibleRows.length === 0
       ) {
@@ -4994,13 +5058,23 @@ export function ReviewQueue() {
   }
 
   if (attentionQuery.isLoading || reviewCasesQuery.isLoading) {
-    return <PageSkeleton variant="list" />;
+    return (
+      <div role="status">
+        <span className="sr-only">Loading review queue.</span>
+        <PageSkeleton variant="list" />
+      </div>
+    );
   }
 
   const selectedCount = selectedRows.length;
 
   return (
     <div className="space-y-6">
+      {bulkApprove.isPending || decideRow.isPending ? (
+        <p className="sr-only" role="status">
+          Submitting review decision.
+        </p>
+      ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-normal text-foreground">Review queue</h1>
@@ -5019,7 +5093,7 @@ export function ReviewQueue() {
       </div>
 
       {attentionQuery.error || reviewCasesQuery.error ? (
-        <p className="text-sm text-amber-700 dark:text-amber-300">Some items need attention. Try again in a moment.</p>
+        <p className="text-sm text-amber-700 dark:text-amber-300" role="alert">Some items need attention. Try again in a moment.</p>
       ) : null}
 
       {visibleRows.length === 0 ? (

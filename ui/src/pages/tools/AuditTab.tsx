@@ -337,7 +337,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={app} onValueChange={setApp}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger aria-label="Filter activity by application" className="w-40">
             <SelectValue placeholder="App" />
           </SelectTrigger>
           <SelectContent>
@@ -350,7 +350,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
           </SelectContent>
         </Select>
         <Select value={agent} onValueChange={setAgent}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger aria-label="Filter activity by agent" className="w-40">
             <SelectValue placeholder="Agent" />
           </SelectTrigger>
           <SelectContent>
@@ -363,7 +363,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
           </SelectContent>
         </Select>
         <Select value={outcome} onValueChange={setOutcome}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger aria-label="Filter activity by outcome" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -375,7 +375,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
           </SelectContent>
         </Select>
         <Select value={windowKey} onValueChange={(v) => setWindowKey(v as ToolAuditWindow)}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger aria-label="Activity time window" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -387,6 +387,7 @@ export function AuditTab({ companyId }: { companyId: string }) {
           </SelectContent>
         </Select>
         <Input
+          aria-label="Search activity"
           placeholder="Search activity…"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -400,7 +401,10 @@ export function AuditTab({ companyId }: { companyId: string }) {
       </div>
 
       {activity.isLoading ? (
-        <LoadingState />
+        <div role="status">
+          <span className="sr-only">Loading activity.</span>
+          <LoadingState />
+        </div>
       ) : activity.error ? (
         <ErrorState error={activity.error} onRetry={() => activity.refetch()} />
       ) : events.length === 0 ? (

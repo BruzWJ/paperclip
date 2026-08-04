@@ -40,6 +40,7 @@ import { useToastActions } from "../context/ToastContext";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -304,7 +305,8 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
 
   return (
     <textarea
-      className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
+      aria-label="Issue title"
+      className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
       placeholder="Optional task title"
       rows={1}
       value={draftValue}
@@ -1124,6 +1126,7 @@ export function NewIssueDialog() {
           }
         }}
       >
+        <DialogTitle className="sr-only">Create a task</DialogTitle>
         {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1499,12 +1502,18 @@ export function NewIssueDialog() {
           {currentProject && currentProjectSupportsExecutionWorkspace && (
             <div className="px-4 py-3 space-y-2">
             <div className="space-y-1.5">
-              <div className="text-xs font-medium">Execution workspace</div>
+              <label
+                htmlFor="new-issue-execution-workspace-mode"
+                className="text-xs font-medium"
+              >
+                Execution workspace
+              </label>
               <div className="text-(length:--text-micro) text-muted-foreground">
                 Control whether this task runs in the shared workspace, a new isolated workspace, or an existing one.
               </div>
               <select
-                className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
+                id="new-issue-execution-workspace-mode"
+                className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={executionWorkspaceMode}
                 onChange={(e) => {
                   setExecutionWorkspaceMode(e.target.value);
@@ -1718,6 +1727,7 @@ export function NewIssueDialog() {
           <input
             ref={stageFileInputRef}
             type="file"
+            aria-label="Upload issue attachments"
             accept={STAGED_FILE_ACCEPT}
             className="hidden"
             onChange={handleStageFilesPicked}
@@ -1780,6 +1790,7 @@ export function NewIssueDialog() {
               <button
                 type="button"
                 data-testid="new-issue-more-menu-trigger"
+                aria-label="More issue options"
                 className="inline-flex items-center justify-center rounded-md border border-border p-1 text-xs text-muted-foreground transition-colors hover:bg-accent/50"
               >
                 <MoreHorizontal className="h-3 w-3" />
@@ -1860,12 +1871,12 @@ export function NewIssueDialog() {
           <div className="flex items-center gap-3">
             <div className="min-h-5 text-right">
               {createIssue.isPending ? (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <span role="status" className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Creating issue...
                 </span>
               ) : createIssue.isError ? (
-                <span className="text-xs text-destructive">{createIssueErrorMessage}</span>
+                <span role="alert" className="text-xs text-destructive">{createIssueErrorMessage}</span>
               ) : null}
             </div>
             <Button

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { accessApi } from "../api/access";
 import { ApiError } from "../api/client";
 import { inboxDismissalsApi } from "../api/inboxDismissals";
@@ -66,37 +66,6 @@ export function useInboxDismissals(companyId: string | null | undefined) {
     enabled: !!companyId,
   });
 
-  const dismissMutation = useMutation({
-    mutationFn: ({ itemKey }: { itemKey: string }) => inboxDismissalsApi.dismiss(companyId!, itemKey),
-    onMutate: async ({ itemKey }) => {
-      if (!companyId) return { previous: [] as typeof dismissals };
-      await queryClient.cancelQueries({ queryKey });
-      const previous = queryClient.getQueryData<typeof dismissals>(queryKey) ?? [];
-      const now = new Date();
-      queryClient.setQueryData(queryKey, [
-        {
-          id: `optimistic:${itemKey}`,
-          companyId,
-          userId: "me",
-          itemKey,
-          dismissedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        },
-        ...previous.filter((dismissal) => dismissal.itemKey !== itemKey),
-      ]);
-      return { previous };
-    },
-    onError: (_error, _variables, context) => {
-      if (!context) return;
-      queryClient.setQueryData(queryKey, context.previous);
-    },
-    onSettled: () => {
-      if (!companyId) return;
-      invalidateDismissalConsumers();
-    },
-  });
-
   function invalidateDismissalConsumers() {
     if (!companyId) return;
     queryClient.invalidateQueries({ queryKey });
@@ -106,33 +75,61 @@ export function useInboxDismissals(companyId: string | null | undefined) {
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
   }
 
-  const snoozeMutation = useMutation({
-    mutationFn: ({ itemKey, snoozedUntil }: { itemKey: string; snoozedUntil: string }) =>
-      inboxDismissalsApi.snooze(companyId!, itemKey, snoozedUntil),
-    onSettled: invalidateDismissalConsumers,
-  });
-
-  const restoreMutation = useMutation({
-    mutationFn: ({ itemKey }: { itemKey: string }) => inboxDismissalsApi.restore(companyId!, itemKey),
-    onSettled: invalidateDismissalConsumers,
-  });
-
   const dismissedAtByKey = useMemo(
     () => buildInboxDismissedAtByKey(dismissals),
     [dismissals],
   );
 
-  // Stable identities (react-query keeps `mutate` referentially stable) so
-  // consumers can hand these to memoized rows without breaking memoization.
-  const dismissMutate = dismissMutation.mutate;
-  const snoozeMutate = snoozeMutation.mutate;
-  const restoreMutate = restoreMutation.mutate;
-  const dismiss = useCallback((itemKey: string) => dismissMutate({ itemKey }), [dismissMutate]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const dismiss = useCallback((itemKey: string) => {
+    if (!companyId) return;
+    const previous = queryClient.getQueryData<typeof dismissals>(queryKey) ?? [];
+    const now = new Date();
+    queryClient.setQueryData(queryKey, [
+      {
+        id: `optimistic:${itemKey}`,
+        companyId,
+        userId: "me",
+        itemKey,
+        dismissedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...previous.filter((dismissal) => dismissal.itemKey !== itemKey),
+    ]);
+    setPendingCount((count) => count + 1);
+    void inboxDismissalsApi.dismiss(companyId, itemKey)
+      .catch(() => {
+        queryClient.setQueryData(queryKey, previous);
+      })
+      .finally(() => {
+        setPendingCount((count) => Math.max(0, count - 1));
+        invalidateDismissalConsumers();
+      });
+  }, [companyId, dismissals, queryClient, queryKey]);
   const snooze = useCallback(
-    (itemKey: string, snoozedUntil: string) => snoozeMutate({ itemKey, snoozedUntil }),
-    [snoozeMutate],
+    (itemKey: string, snoozedUntil: string) => {
+      if (!companyId) return;
+      setPendingCount((count) => count + 1);
+      void inboxDismissalsApi.snooze(companyId, itemKey, snoozedUntil)
+        .catch(() => undefined)
+        .finally(() => {
+          setPendingCount((count) => Math.max(0, count - 1));
+          invalidateDismissalConsumers();
+        });
+    },
+    [companyId, queryClient, queryKey],
   );
-  const restore = useCallback((itemKey: string) => restoreMutate({ itemKey }), [restoreMutate]);
+  const restore = useCallback((itemKey: string) => {
+    if (!companyId) return;
+    setPendingCount((count) => count + 1);
+    void inboxDismissalsApi.restore(companyId, itemKey)
+      .catch(() => undefined)
+      .finally(() => {
+        setPendingCount((count) => Math.max(0, count - 1));
+        invalidateDismissalConsumers();
+      });
+  }, [companyId, queryClient, queryKey]);
 
   return {
     dismissals,
@@ -140,7 +137,7 @@ export function useInboxDismissals(companyId: string | null | undefined) {
     dismiss,
     snooze,
     restore,
-    isPending: dismissMutation.isPending || snoozeMutation.isPending || restoreMutation.isPending,
+    isPending: pendingCount > 0,
   };
 }
 

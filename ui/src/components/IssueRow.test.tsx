@@ -91,9 +91,10 @@ describe("IssueRow", () => {
     });
 
     const link = container.querySelector("[data-inbox-issue-link]") as HTMLAnchorElement | null;
+    const row = link?.parentElement;
     expect(link).not.toBeNull();
-    expect(link?.className).toContain("hover:bg-transparent");
-    expect(link?.className).not.toContain("hover:bg-accent/50");
+    expect(row?.className).toContain("hover:bg-transparent");
+    expect(row?.className).not.toContain("hover:bg-accent/50");
 
     act(() => {
       root.unmount();
@@ -264,8 +265,7 @@ describe("IssueRow", () => {
       );
     });
 
-    const link = container.querySelector("[data-inbox-issue-link]") as HTMLAnchorElement | null;
-    const metaRow = Array.from(link?.querySelectorAll("span.flex.items-center.gap-2") ?? [])
+    const metaRow = Array.from(container.querySelectorAll("span.flex.items-center.gap-2"))
       .find((element) => element.textContent?.includes("PAP-42"));
 
     expect(metaRow).not.toBeUndefined();
@@ -290,11 +290,12 @@ describe("IssueRow", () => {
     });
 
     const link = container.querySelector("[data-inbox-issue-link]") as HTMLAnchorElement | null;
+    const row = link?.parentElement;
 
     expect(link).not.toBeNull();
     expect(link?.getAttribute("aria-current")).toBe("step");
-    expect(link?.className).toContain("bg-primary/5");
-    expect(link?.className).not.toContain("border-l-");
+    expect(row?.className).toContain("bg-primary/5");
+    expect(row?.className).not.toContain("border-l-");
 
     act(() => {
       root.unmount();
@@ -382,6 +383,36 @@ describe("IssueRow", () => {
     });
 
     expect(container.querySelector('[data-testid="issue-row-parked-blocker"]')).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("keeps row controls outside the issue navigation link", () => {
+    const root = createRoot(container);
+    const onArchive = vi.fn();
+
+    act(() => {
+      root.render(
+        <IssueRow
+          issue={createIssue()}
+          unreadState="visible"
+          onArchive={onArchive}
+          mobileLeading={<button type="button">Collapse</button>}
+          checklistDependencyChips={<button type="button">View blocker</button>}
+        />,
+      );
+    });
+
+    const link = container.querySelector("[data-inbox-issue-link]");
+    expect(link).not.toBeNull();
+    expect(link?.querySelectorAll("button, a, input, select, textarea")).toHaveLength(0);
+
+    const archiveButton = container.querySelector<HTMLButtonElement>('button[aria-label="Archive"]');
+    expect(archiveButton).not.toBeNull();
+    act(() => archiveButton?.click());
+    expect(onArchive).toHaveBeenCalledTimes(1);
 
     act(() => {
       root.unmount();

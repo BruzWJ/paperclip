@@ -448,74 +448,83 @@ export function RoutineRunVariablesDialog({
             </div>
           </div>
 
-          {variables.map((variable) => (
-            <div key={variable.name} className="space-y-1.5">
-              <Label className="text-xs">
-                {variable.label || variable.name}
-                {variable.required ? " *" : ""}
-              </Label>
-              {isAutoWorkspaceBranchVariable(variable) ? (
-                <Input
-                  readOnly
-                  disabled
-                  value={workspaceBranchAutoValue ?? ""}
-                />
-              ) : variable.type === "textarea" ? (
-                <Textarea
-                  rows={4}
-                  value={typeof values[variable.name] === "string" ? values[variable.name] as string : ""}
-                  onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
-                />
-              ) : variable.type === "boolean" ? (
-                <Select
-                  value={values[variable.name] === true ? "true" : values[variable.name] === false ? "false" : "__unset__"}
-                  onValueChange={(next) => setValues((current) => ({
-                    ...current,
-                    [variable.name]: next === "__unset__" ? "" : next === "true",
-                  }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__unset__">No value</SelectItem>
-                    <SelectItem value="true">True</SelectItem>
-                    <SelectItem value="false">False</SelectItem>
-                  </SelectContent>
-                </Select>
-              ) : variable.type === "select" ? (
-                <Select
-                  value={typeof values[variable.name] === "string" && values[variable.name] ? values[variable.name] as string : "__unset__"}
-                  onValueChange={(next) => setValues((current) => ({
-                    ...current,
-                    [variable.name]: next === "__unset__" ? "" : next,
-                  }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a value" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__unset__">No value</SelectItem>
-                    {variable.options.map((option) => (
-                      <SelectItem key={option} value={option}>{option}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : shouldUseDateInput(variable) ? (
-                <Input
-                  type="date"
-                  value={values[variable.name] == null ? "" : String(values[variable.name])}
-                  onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
-                />
-              ) : (
-                <Input
-                  type={variable.type === "number" ? "number" : "text"}
-                  value={values[variable.name] == null ? "" : String(values[variable.name])}
-                  onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
-                />
-              )}
-            </div>
-          ))}
+          {variables.map((variable) => {
+            const fieldLabel = variable.label || variable.name;
+            const fieldId = `routine-variable-${variable.name.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
+            return (
+              <div key={variable.name} className="space-y-1.5">
+                <Label className="text-xs" htmlFor={fieldId}>
+                  {fieldLabel}
+                  {variable.required ? " *" : ""}
+                </Label>
+                {isAutoWorkspaceBranchVariable(variable) ? (
+                  <Input
+                    id={fieldId}
+                    readOnly
+                    disabled
+                    value={workspaceBranchAutoValue ?? ""}
+                  />
+                ) : variable.type === "textarea" ? (
+                  <Textarea
+                    id={fieldId}
+                    rows={4}
+                    value={typeof values[variable.name] === "string" ? values[variable.name] as string : ""}
+                    onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
+                  />
+                ) : variable.type === "boolean" ? (
+                  <Select
+                    value={values[variable.name] === true ? "true" : values[variable.name] === false ? "false" : "__unset__"}
+                    onValueChange={(next) => setValues((current) => ({
+                      ...current,
+                      [variable.name]: next === "__unset__" ? "" : next === "true",
+                    }))}
+                  >
+                    <SelectTrigger id={fieldId} aria-label={fieldLabel}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__unset__">No value</SelectItem>
+                      <SelectItem value="true">True</SelectItem>
+                      <SelectItem value="false">False</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : variable.type === "select" ? (
+                  <Select
+                    value={typeof values[variable.name] === "string" && values[variable.name] ? values[variable.name] as string : "__unset__"}
+                    onValueChange={(next) => setValues((current) => ({
+                      ...current,
+                      [variable.name]: next === "__unset__" ? "" : next,
+                    }))}
+                  >
+                    <SelectTrigger id={fieldId} aria-label={fieldLabel}>
+                      <SelectValue placeholder="Choose a value" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__unset__">No value</SelectItem>
+                      {variable.options.map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : shouldUseDateInput(variable) ? (
+                  <Input
+                    id={fieldId}
+                    type="date"
+                    value={values[variable.name] == null ? "" : String(values[variable.name])}
+                    onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
+                  />
+                ) : (
+                  <Input
+                    id={fieldId}
+                    type={variable.type === "number" ? "number" : "text"}
+                    value={values[variable.name] == null ? "" : String(values[variable.name])}
+                    onChange={(event) => setValues((current) => ({ ...current, [variable.name]: event.target.value }))}
+                  />
+                )}
+              </div>
+            );
+          })}
 
           {workspaceSelectionEnabled && selectedProject && companyId ? (
             <IssueWorkspaceCard
@@ -534,7 +543,9 @@ export function RoutineRunVariablesDialog({
           showCloseButton={false}
           className="shrink-0 border-t border-border/60 bg-background px-6 pb-(--sz-calc-19) pt-4"
         >
-          {!selection.assigneeAgentId ? (
+          {isPending ? (
+            <p role="status" className="mr-auto text-xs text-muted-foreground">Starting routine run…</p>
+          ) : !selection.assigneeAgentId ? (
             <p className="mr-auto text-xs text-amber-600">Default agent required for this run.</p>
           ) : missingRequired.length > 0 ? (
             <p className="mr-auto text-xs text-amber-600">

@@ -9,6 +9,7 @@ import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -128,7 +129,9 @@ export function NewGoalDialog() {
               </span>
             )}
             <span className="text-muted-foreground/60">&rsaquo;</span>
-            <span>{newGoalDefaults.parentId ? "New sub-goal" : "New goal"}</span>
+            <DialogTitle className="text-sm font-normal text-muted-foreground">
+              {newGoalDefaults.parentId ? "New sub-goal" : "New goal"}
+            </DialogTitle>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -136,6 +139,7 @@ export function NewGoalDialog() {
               size="icon-xs"
               className="text-muted-foreground"
               onClick={() => setExpanded(!expanded)}
+              aria-label="Toggle expanded layout"
             >
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
@@ -144,6 +148,7 @@ export function NewGoalDialog() {
               size="icon-xs"
               className="text-muted-foreground"
               onClick={() => { reset(); closeNewGoal(); }}
+              aria-label="Close new goal dialog"
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
@@ -153,8 +158,9 @@ export function NewGoalDialog() {
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
           <input
-            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
+            className="w-full rounded-sm bg-transparent text-lg font-semibold outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
             placeholder="Goal title"
+            aria-label="Goal title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {
@@ -188,7 +194,11 @@ export function NewGoalDialog() {
           {/* Status */}
           <Popover open={statusOpen} onOpenChange={setStatusOpen}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
+                aria-label="Set goal status"
+              >
                 <StatusBadge status={status} />
               </button>
             </PopoverTrigger>
@@ -211,7 +221,11 @@ export function NewGoalDialog() {
           {/* Level */}
           <Popover open={levelOpen} onOpenChange={setLevelOpen}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
+                aria-label="Set goal level"
+              >
                 <Layers className="h-3 w-3 text-muted-foreground" />
                 {levelLabels[level] ?? level}
               </button>
@@ -235,7 +249,11 @@ export function NewGoalDialog() {
           {/* Parent goal */}
           <Popover open={parentOpen} onOpenChange={setParentOpen}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors"
+                aria-label="Set parent goal"
+              >
                 <Target className="h-3 w-3 text-muted-foreground" />
                 {currentParent ? currentParent.title : "Parent goal"}
               </button>
@@ -268,6 +286,13 @@ export function NewGoalDialog() {
 
         {/* Footer */}
         <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
+          <div className="mr-auto">
+            {createGoal.isPending ? (
+              <p role="status" className="text-xs text-muted-foreground">Creating goal…</p>
+            ) : createGoal.isError ? (
+              <p role="alert" className="text-xs text-destructive">Couldn't create goal. Try again.</p>
+            ) : null}
+          </div>
           <Button
             size="sm"
             disabled={!title.trim() || createGoal.isPending}

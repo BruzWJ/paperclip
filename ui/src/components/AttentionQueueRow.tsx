@@ -28,9 +28,19 @@ import {
 } from "../lib/attention";
 import { isTrainable } from "../lib/decisionTraining";
 import { cn, relativeTime } from "../lib/utils";
-import { Button } from "./ui/button";
+import { Button, buttonVariants } from "./ui/button";
 import { JoinRequestApprovalControls } from "./JoinRequestApprovalControls";
 import { Textarea } from "./ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -359,7 +369,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                 <Button asChild variant="outline" size="xs" className={cn(ACTION_BTN, "w-full @xl:w-auto")}>
                   <Link to={href!}>
                     Open
-                    <ExternalLink className="h-3 w-3" />
+                    <ExternalLink className="h-3 w-3" data-icon="inline-end" />
                   </Link>
                 </Button>
               )}
@@ -372,7 +382,7 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                   className={cn(ACTION_BTN, "w-full @xl:w-auto")}
                   onClick={() => onRestore(item)}
                 >
-                  <RotateCcw className="h-3 w-3" />
+                  <RotateCcw className="h-3 w-3" data-icon="inline-start" />
                   Restore
                 </Button>
               )}
@@ -581,7 +591,8 @@ function ThumbnailStack({ images }: { images: AttentionDetailImage[] }) {
           <img
             key={`${img.assetId}-${index}`}
             src={attentionImageUrl(img.assetId)}
-            alt={img.alt ?? ""}
+            alt="Visual evidence attachment"
+            aria-label={img.alt?.trim() || "Visual evidence attachment"}
             loading="lazy"
             style={{ zIndex: visible.length - index }}
             className="h-11 w-11 rounded-md border border-border bg-muted object-cover shadow-sm"
@@ -613,7 +624,8 @@ function ExpandedImages({ images, issueHref }: { images: AttentionDetailImage[];
         const image = (
           <img
             src={src}
-            alt={img.alt ?? ""}
+            alt="Visual evidence attachment"
+            aria-label={img.alt?.trim() || "Visual evidence attachment"}
             loading="lazy"
             className="h-32 w-44 rounded-md border border-border bg-muted object-cover shadow-sm"
           />
@@ -678,21 +690,29 @@ function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) => void 
         <DropdownMenuSeparator />
         {/* Custom picker: a non-menu-item region so interacting with the input
             doesn't close the menu (guard keydown/select against Radix typeahead). */}
-        <div
-          className="flex flex-col gap-1.5 px-2 py-1.5"
-          onKeyDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span className="text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-            Custom
-          </span>
-          <input
-            type="datetime-local"
-            value={customValue}
-            onChange={(e) => setCustomValue(e.target.value)}
-            className="w-full rounded-sm border border-border bg-background px-2 py-1 text-xs"
-          />
-          <Button type="button" size="xs" disabled={!customValue} onClick={applyCustom}>
+        <div className="flex flex-col gap-1.5 px-2 py-1.5">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+              Custom
+            </span>
+            <input
+              type="datetime-local"
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full rounded-sm border border-border bg-background px-2 py-1 text-xs"
+            />
+          </label>
+          <Button
+            type="button"
+            size="xs"
+            disabled={!customValue}
+            onClick={(event) => {
+              event.stopPropagation();
+              applyCustom();
+            }}
+          >
             Snooze until…
           </Button>
         </div>
@@ -740,6 +760,7 @@ function InlineResolver({
 function ApprovalResolver({ item, companyId }: { item: AttentionItem; companyId: string }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
+  const [rejectConfirmationOpen, setRejectConfirmationOpen] = useState(false);
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.attention(companyId) });
     queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(companyId) });
@@ -761,6 +782,7 @@ function ApprovalResolver({ item, companyId }: { item: AttentionItem; companyId:
   return (
     <div className="space-y-3">
       <Textarea
+        aria-label="Optional decision note"
         value={note}
         onChange={(e) => setNote(e.target.value)}
         placeholder="Optional decision note…"
@@ -775,11 +797,45 @@ function ApprovalResolver({ item, companyId }: { item: AttentionItem; companyId:
           {revise.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Request revision
         </Button>
-        <Button size="sm" variant="destructive" onClick={() => reject.mutate()} disabled={pending}>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => setRejectConfirmationOpen(true)}
+          disabled={pending}
+        >
           {reject.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Reject
         </Button>
       </div>
+      {pending ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {approve.isPending
+            ? "Approving request…"
+            : revise.isPending
+              ? "Requesting revision…"
+              : "Rejecting request…"}
+        </p>
+      ) : null}
+      <AlertDialog open={rejectConfirmationOpen} onOpenChange={setRejectConfirmationOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject this approval?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This records a rejection for this request. Review the approval details before continuing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() => reject.mutate()}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {reject.isPending ? "Rejecting…" : "Reject approval"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -803,13 +859,28 @@ function JoinRequestResolver({ item, companyId }: { item: AttentionItem; company
   const pending = approve.isPending || reject.isPending;
 
   return (
-    <JoinRequestApprovalControls
-      companyId={companyId}
-      requestType={join.requestType}
-      adapterType={join.adapterType}
-      onApprove={(input) => approve.mutate(input)}
-      onReject={() => reject.mutate()}
-      isPending={pending}
-    />
+    <>
+      <div aria-busy={pending}>
+        <fieldset
+          disabled={pending}
+          aria-label="Join request actions"
+          className="m-0 min-w-0 border-0 p-0"
+        >
+          <JoinRequestApprovalControls
+            companyId={companyId}
+            requestType={join.requestType}
+            adapterType={join.adapterType}
+            onApprove={(input) => approve.mutate(input)}
+            onReject={() => reject.mutate()}
+            isPending={pending}
+          />
+        </fieldset>
+      </div>
+      {pending ? (
+        <p role="status" className="mt-2 text-xs text-muted-foreground">
+          Updating join request…
+        </p>
+      ) : null}
+    </>
   );
 }

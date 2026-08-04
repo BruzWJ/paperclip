@@ -176,7 +176,7 @@ const EMPTY_RUN_TEMPLATES: CompanySkillTestRunTemplate[] = [];
  * failures through here so server rejections (409 agent_not_assignable, 422
  * read-only, …) never get silently swallowed (PAP-13001).
  */
-function useMutationErrorToast() {
+function useSkillStudioErrorToast() {
   const toast = useOptionalToastActions();
   return useCallback(
     (title: string) => (error: unknown) => {
@@ -520,7 +520,7 @@ function StudioNewSkillPanel({
           Forking {draft.forkedFromName}
         </div>
       ) : forkError ? (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
           <AlertTriangle className="h-4 w-4" />
           Fork source not found. You can still create a blank skill.
         </div>
@@ -669,6 +669,7 @@ function StudioNewSkillPanel({
       <details className="rounded-md border border-border px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium text-foreground">Starter content</summary>
         <Textarea
+          aria-label="Skill starter content"
           value={draft.markdown}
           onChange={(event) => patchDraft({ markdown: event.target.value })}
           className="mt-3 min-h-(--sz-22rem) resize-y font-mono text-xs"
@@ -676,6 +677,7 @@ function StudioNewSkillPanel({
       </details>
 
       <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+        {createSkill.isPending ? <span className="sr-only" role="status">Creating skill…</span> : null}
         <Button variant="ghost" onClick={() => navigate("/skills/studio")} disabled={createSkill.isPending}>
           Cancel
         </Button>
@@ -792,7 +794,7 @@ function StudioLanding({
             emptyLabel="Select skill"
           />
           <Button variant="ghost" size="sm" className="ml-auto" onClick={onCreateNew}>
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             New skill
           </Button>
         </header>
@@ -1160,7 +1162,7 @@ function StudioHeader({
       <AgentsUsingSkillBadge companyId={companyId} skill={skill} />
       <div className="ml-auto flex items-center gap-1">
         <Button variant="ghost" size="sm" onClick={onOpenVersions}>
-          <History className="mr-1.5 h-3.5 w-3.5" />
+          <History data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Version history
         </Button>
         <DropdownMenu>
@@ -1262,7 +1264,7 @@ function SkillPane({
 }) {
   const skillId = skill.id;
   const queryClient = useQueryClient();
-  const onError = useMutationErrorToast();
+  const onError = useSkillStudioErrorToast();
   const paths = useMemo(
     () => skill.fileInventory.map((f) => f.path),
     [skill.fileInventory],
@@ -1380,6 +1382,13 @@ function SkillPane({
     },
     onError: onError("Couldn't delete file"),
   });
+  const fileActionStatus = saveMutation.isPending
+    ? "Saving skill file…"
+    : createMutation.isPending
+      ? "Creating skill file…"
+      : deleteMutation.isPending
+        ? "Deleting skill file…"
+        : null;
 
   // Read-only skills (bundled Paperclip, remote GitHub, URL, skills.sh) reject
   // file writes server-side; reflect that up-front instead of letting the user
@@ -1404,6 +1413,7 @@ function SkillPane({
           />
         }
       >
+        {fileActionStatus ? <p className="sr-only" role="status">{fileActionStatus}</p> : null}
         <EmptyState icon={FileCode} message="This skill has no files yet." />
         <SkillPathDialog
           mode={createDialog}
@@ -1441,6 +1451,7 @@ function SkillPane({
       }
     >
       <div className="flex min-h-0 flex-1 flex-col">
+        {fileActionStatus ? <p className="sr-only" role="status">{fileActionStatus}</p> : null}
         {dirty && !readOnly ? (
           <div className="flex items-start gap-2 border-b border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
@@ -1479,7 +1490,7 @@ function SkillPane({
                 className="mt-2"
                 onClick={onEditACopy}
               >
-                <GitFork className="mr-1.5 h-3.5 w-3.5" />
+                <GitFork data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                 Edit a copy
               </Button>
             </div>
@@ -1553,6 +1564,7 @@ function SkillPane({
             />
           ) : (
             <Textarea
+              aria-label="Skill file content"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               readOnly={readOnly}
@@ -1896,7 +1908,7 @@ function InputPane({
   onSelectAdHoc: () => void;
 }) {
   const queryClient = useQueryClient();
-  const onError = useMutationErrorToast();
+  const onError = useSkillStudioErrorToast();
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [savedInputDraft, setSavedInputDraft] = useState<SavedInputDraftState>(
     EMPTY_SAVED_INPUT_DRAFT_STATE,
@@ -1993,6 +2005,11 @@ function InputPane({
     },
     onError: onError("Couldn't delete input"),
   });
+  const inputActionStatus = updateMutation.isPending
+    ? "Saving test input…"
+    : deleteMutation.isPending
+      ? "Deleting test input…"
+      : null;
 
   return (
     <PaneScaffold
@@ -2032,6 +2049,7 @@ function InputPane({
         </div>
       }
     >
+      {inputActionStatus ? <p className="sr-only" role="status">{inputActionStatus}</p> : null}
       {collapsed ? (
         <button
           type="button"
@@ -2046,7 +2064,7 @@ function InputPane({
           {loading || inputs.length > 0 ? (
             <div className="max-h-(--sz-11_75rem) overflow-auto border-b border-border p-1">
               {loading ? (
-                <div className="p-3 text-xs text-muted-foreground">Loading inputs…</div>
+                <div className="p-3 text-xs text-muted-foreground" role="status">Loading inputs…</div>
               ) : (
                 <>
                   {adHocMode && (
@@ -2220,46 +2238,56 @@ function SaveInputDialog({
       onSaved(input);
     },
   });
+  const isPending = createMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!isPending) onOpenChange(nextOpen);
+    }}>
+      <DialogContent showCloseButton={!isPending}>
         <DialogHeader>
           <DialogTitle>Save test input</DialogTitle>
           <DialogDescription>
             Runs snapshot input at run time — editing later won't change past runs.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="input-name">Name</Label>
-            <Input
-              id="input-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="onboarding/happy-path"
-            />
-            <p className="text-xs text-muted-foreground">Use “/” for folders, e.g. onboarding/happy-path</p>
+        <fieldset
+          aria-label="Test input details"
+          className="contents"
+          disabled={isPending}
+        >
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="input-name">Name</Label>
+              <Input
+                id="input-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="onboarding/happy-path"
+              />
+              <p className="text-xs text-muted-foreground">Use “/” for folders, e.g. onboarding/happy-path</p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="input-content">Content</Label>
+              <Textarea
+                id="input-content"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                className="min-h-(--sz-160px)"
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="input-content">Content</Label>
-            <Textarea
-              id="input-content"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="min-h-(--sz-160px)"
-            />
-          </div>
-        </div>
+        </fieldset>
+        {isPending ? <p className="text-sm text-muted-foreground" role="status">Saving test input…</p> : null}
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
           <Button
-            disabled={!name.trim() || !content.trim() || createMutation.isPending}
+            disabled={!name.trim() || !content.trim() || isPending}
             onClick={() => createMutation.mutate()}
           >
-            Save
+            {isPending ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2307,7 +2335,7 @@ function RunsPane({
 }) {
   const skillId = skill.id;
   const queryClient = useQueryClient();
-  const onError = useMutationErrorToast();
+  const onError = useSkillStudioErrorToast();
   const toast = useOptionalToastActions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<RunTemplateSelection>(
@@ -2475,6 +2503,17 @@ function RunsPane({
     },
     onError: onError("Couldn't start run"),
   });
+  const runStatus = createRunMutation.isPending
+    ? "Starting skill test run…"
+    : createTemplateMutation.isPending || updateTemplateMutation.isPending
+      ? "Saving request template…"
+      : deleteTemplateMutation.isPending
+        ? "Deleting request template…"
+        : templatesQuery.isLoading
+          ? "Loading request templates…"
+          : runsQuery.isLoading
+            ? "Loading test runs…"
+            : null;
 
   if (selectedRunId) {
     return (
@@ -2508,7 +2547,7 @@ function RunsPane({
                   disabled={gate.disabled || Boolean(templateGateReason) || createRunMutation.isPending}
                   onClick={() => createRunMutation.mutate()}
                 >
-                  <Play className="mr-1.5 h-3.5 w-3.5" /> Run
+                  <Play data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> Run
                 </Button>
               </span>
             </TooltipTrigger>
@@ -2518,6 +2557,7 @@ function RunsPane({
       }
     >
       <div className="flex min-h-0 flex-1 flex-col">
+        {runStatus ? <p className="sr-only" role="status">{runStatus}</p> : null}
         <RunTemplateAdvancedPanel
           open={advancedOpen}
           onOpenChange={setAdvancedOpen}
@@ -2558,7 +2598,7 @@ function RunsPane({
         )}
         <div className="min-h-0 flex-1 overflow-auto p-3">
           {runsQuery.isLoading ? (
-            <div className="text-xs text-muted-foreground">Loading runs…</div>
+            <div className="text-xs text-muted-foreground" role="status">Loading runs…</div>
           ) : runs.length === 0 ? (
             <EmptyState icon={FlaskConical} message="No test runs yet. Pick an agent and Run." />
           ) : (
@@ -3008,7 +3048,7 @@ function RunDetailView({
 }) {
   const skillId = skill.id;
   const queryClient = useQueryClient();
-  const onError = useMutationErrorToast();
+  const onError = useSkillStudioErrorToast();
   const detailQuery = useQuery({
     queryKey: queryKeys.companySkills.testRunDetail(companyId, skillId, runId),
     queryFn: () => companySkillsApi.testRunDetail(companyId, skillId, runId),
@@ -3057,6 +3097,14 @@ function RunDetailView({
     },
     onError: onError("Couldn't delete run"),
   });
+  const isPending = cancelMutation.isPending || reRunMutation.isPending || deleteMutation.isPending;
+  const actionStatus = reRunMutation.isPending
+    ? "Starting a new skill test run…"
+    : cancelMutation.isPending
+      ? "Cancelling skill test run…"
+      : deleteMutation.isPending
+        ? "Deleting skill test run…"
+        : null;
 
   const detail = detailQuery.data ?? null;
   const additionalDocuments = useMemo(() => detail ? getRunAdditionalDocuments(detail) : [], [detail]);
@@ -3094,7 +3142,7 @@ function RunDetailView({
 
   return (
     <PaneScaffold title="Run" action={<BackButton onBack={onBack} />}>
-      <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3" aria-busy={isPending}>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={runBadgeStatus(detail.status)} />
           <Identity name={agentName} size="xs" />
@@ -3181,32 +3229,33 @@ function RunDetailView({
 
         {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          {isPending ? <p className="w-full text-xs text-muted-foreground" role="status">{actionStatus}</p> : null}
           <Button
             variant="outline"
             size="sm"
-            disabled={reRunMutation.isPending}
+            disabled={isPending}
             onClick={() => reRunMutation.mutate()}
           >
-            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Re-run
+            <RotateCcw data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> {reRunMutation.isPending ? "Starting…" : "Re-run"}
           </Button>
           {nonTerminal ? (
             <Button
               variant="ghost"
               size="sm"
-              disabled={cancelMutation.isPending}
+              disabled={isPending}
               onClick={() => cancelMutation.mutate()}
             >
-              Cancel
+              {cancelMutation.isPending ? "Cancelling…" : "Cancel"}
             </Button>
           ) : (
             <Button
               variant="ghost"
               size="sm"
               className="text-destructive hover:text-destructive"
-              disabled={deleteMutation.isPending}
+              disabled={isPending}
               onClick={() => deleteMutation.mutate()}
             >
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+              <Trash2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> {deleteMutation.isPending ? "Deleting…" : "Delete"}
             </Button>
           )}
           {taskLink.enabled && detail.harnessIssue ? (
@@ -3336,12 +3385,17 @@ function VersionHistorySheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-full sm:max-w-(--sz-560px)">
+        {versionsQuery.isLoading || restore.isPending ? (
+          <p className="sr-only" role="status">
+            {restore.isPending ? "Restoring skill version…" : "Loading skill versions…"}
+          </p>
+        ) : null}
         <SheetHeader>
           <SheetTitle>Version history</SheetTitle>
         </SheetHeader>
         <div className="mt-3 space-y-2 overflow-auto">
           {versionsQuery.isLoading ? (
-            <div className="text-xs text-muted-foreground">Loading versions…</div>
+            <div className="text-xs text-muted-foreground" role="status">Loading versions…</div>
           ) : versions.length === 0 ? (
             <EmptyState icon={History} message="No versions yet. Save changes to create the first." />
           ) : (
@@ -3445,7 +3499,7 @@ function PropRow({ label, value }: { label: string; value: string }) {
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
     <Button variant="ghost" size="sm" onClick={onBack}>
-      <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back
+      <ArrowLeft data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> Back
     </Button>
   );
 }

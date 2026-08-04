@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BudgetCurrency, Company, MoneyAmount } from "@paperclipai/shared";
 import { companiesApi } from "../api/companies";
 import { companiesListQueryOptions, type CompanyListResult } from "../api/companies-query";
@@ -113,20 +113,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
   }, [queryClient]);
 
-  const createMutation = useMutation({
-    mutationFn: (data: {
-      name: string;
-      description?: string | null;
-      budgetCurrency?: BudgetCurrency;
-      budgetMonthlyAmount?: MoneyAmount;
-    }) =>
-      companiesApi.create(data),
-    onSuccess: (company) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-      setSelectedCompanyId(company.id);
-    },
-  });
-
   const createCompany = useCallback(
     async (data: {
       name: string;
@@ -134,9 +120,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       budgetCurrency?: BudgetCurrency;
       budgetMonthlyAmount?: MoneyAmount;
     }) => {
-      return createMutation.mutateAsync(data);
+      const company = await companiesApi.create(data);
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      setSelectedCompanyId(company.id);
+      return company;
     },
-    [createMutation],
+    [queryClient, setSelectedCompanyId],
   );
 
   const selectedCompany = useMemo(

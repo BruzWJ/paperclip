@@ -176,4 +176,45 @@ describe("ThemeContext", () => {
       root.unmount();
     });
   });
+
+  it("toggles from Cmd/Ctrl+Shift+D outside editable controls only", () => {
+    document.documentElement.classList.add("dark");
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <Probe />
+        </ThemeProvider>,
+      );
+    });
+
+    const input = document.createElement("input");
+    container.appendChild(input);
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        shiftKey: true,
+        key: "d",
+      }));
+    });
+    expect(observedTheme).toBe("dark");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", {
+        cancelable: true,
+        ctrlKey: true,
+        shiftKey: true,
+        key: "d",
+      }));
+    });
+    expect(observedTheme).toBe("light");
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

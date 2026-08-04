@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -373,6 +374,9 @@ export function IssueDocumentsSection({
       throw new Error("IssueDocumentsSection requires either issue or subject");
     return makeIssueDocumentSubject(issue);
   }, [issue, subject]);
+  const newDocumentKeyInputId = useId();
+  const newDocumentKeyErrorId = useId();
+  const newDocumentTitleInputId = useId();
   const annotationTargetForKey = useCallback(
     (documentKey: string) => {
       const configured = documentSubject.annotations?.target;
@@ -1161,7 +1165,7 @@ export function IssueDocumentsSection({
             onClick={beginNewDocument}
             className="shrink-0"
           >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             <span className="hidden sm:inline">New document</span>
             <span className="sm:hidden">New</span>
           </Button>
@@ -1179,7 +1183,7 @@ export function IssueDocumentsSection({
               onClick={beginNewDocument}
               className="shrink-0"
             >
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
               <span className="hidden sm:inline">New document</span>
               <span className="sm:hidden">New</span>
             </Button>
@@ -1195,7 +1199,11 @@ export function IssueDocumentsSection({
           onBlurCapture={handleDraftBlur}
           onKeyDown={handleDraftKeyDown}
         >
+          <label className="sr-only" htmlFor={newDocumentKeyInputId}>
+            Document key
+          </label>
           <Input
+            id={newDocumentKeyInputId}
             autoFocus
             value={draft.key}
             onChange={(event) =>
@@ -1206,20 +1214,30 @@ export function IssueDocumentsSection({
               )
             }
             placeholder="Document key"
+            aria-invalid={newDocumentKeyError ? true : undefined}
+            aria-describedby={newDocumentKeyError ? newDocumentKeyErrorId : undefined}
           />
           {newDocumentKeyError && (
-            <p className="text-xs text-destructive">{newDocumentKeyError}</p>
+            <p id={newDocumentKeyErrorId} className="text-xs text-destructive" role="alert">
+              {newDocumentKeyError}
+            </p>
           )}
           {!isPlanKey(draft.key) && (
-            <Input
-              value={draft.title}
-              onChange={(event) =>
-                setDraft((current) =>
-                  current ? { ...current, title: event.target.value } : current,
-                )
-              }
-              placeholder="Optional title"
-            />
+            <>
+              <label className="sr-only" htmlFor={newDocumentTitleInputId}>
+                Document title
+              </label>
+              <Input
+                id={newDocumentTitleInputId}
+                value={draft.title}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current ? { ...current, title: event.target.value } : current,
+                  )
+                }
+                placeholder="Optional title"
+              />
+            </>
           )}
           <MarkdownEditor
             value={draft.body}
@@ -1241,7 +1259,7 @@ export function IssueDocumentsSection({
           />
           <div className="flex items-center justify-end gap-2">
             <Button variant="outline" size="sm" onClick={cancelDraft}>
-              <X className="mr-1.5 h-3.5 w-3.5" />
+              <X data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
               Cancel
             </Button>
             <Button
@@ -1643,6 +1661,7 @@ export function IssueDocumentsSection({
                     !isPlanKey(doc.key) &&
                     !isHistoricalPreview && (
                       <Input
+                        aria-label="Document title"
                         value={activeDraft.title}
                         onChange={(event) => {
                           markDocumentDirty(doc.key);

@@ -74,13 +74,23 @@ export function Approvals() {
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
   ).length;
+  const pendingActionStatus = approveMutation.isPending
+    ? "Approving request…"
+    : rejectMutation.isPending
+      ? "Rejecting request…"
+      : null;
 
   if (!selectedCompanyId) {
     return <p className="text-sm text-muted-foreground">Select a company first.</p>;
   }
 
   if (isLoading) {
-    return <PageSkeleton variant="approvals" />;
+    return (
+      <div role="status">
+        <span className="sr-only">Loading approvals…</span>
+        <PageSkeleton variant="approvals" />
+      </div>
+    );
   }
 
   return (
@@ -101,8 +111,9 @@ export function Approvals() {
         </Tabs>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {pendingActionStatus ? <p role="status" className="sr-only">{pendingActionStatus}</p> : null}
+      {error && <p role="alert" className="text-sm text-destructive">{error.message}</p>}
+      {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
 
       {filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">

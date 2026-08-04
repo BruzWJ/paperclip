@@ -653,6 +653,8 @@ describe("IssueDocumentAnnotations", () => {
 
     const cta = container.querySelector('[data-testid="document-annotation-new-comment-cta"]');
     expect(cta).toBeNull();
+    expect(container.textContent).toContain("No annotations yet.");
+    expect(container.textContent).toContain("Select text in the document to add a comment.");
     expect(container.textContent).not.toMatch(/New comment on selection/i);
     expect(container.textContent).not.toMatch(/⌘⇧M/);
   });
@@ -699,6 +701,44 @@ describe("IssueDocumentAnnotations", () => {
     ) as HTMLTextAreaElement | null;
     expect(composer).not.toBeNull();
     expect(container.textContent).toContain(mockPendingAnchor.selectedText);
+  });
+
+  it("does not hijack the global comment shortcut while focus is in an input", async () => {
+    mockAnnotationsApi.list.mockResolvedValue([]);
+    const root = createRoot(container);
+    const queryClient = makeQueryClient();
+    const doc = makeDoc();
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness doc={doc} initialPanelOpen />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+
+    const selectOnlyButton = container.querySelector(
+      '[data-testid="mock-annotation-selection-only"]',
+    ) as HTMLButtonElement | null;
+    await act(async () => selectOnlyButton!.click());
+    await flush();
+
+    const input = document.createElement("input");
+    container.appendChild(input);
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "m",
+        metaKey: true,
+        shiftKey: true,
+      }));
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="document-annotation-composer"]')).toBeNull();
   });
 
   it("creates a thread from a captured selection and refreshes the shared annotations query", async () => {

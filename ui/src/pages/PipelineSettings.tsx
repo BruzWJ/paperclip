@@ -1325,6 +1325,7 @@ export function PipelineSettings() {
   const [deleteStageDialogOpen, setDeleteStageDialogOpen] = useState(false);
   const [deleteMoveTargetStageId, setDeleteMoveTargetStageId] = useState("");
   const [pipelineName, setPipelineName] = useState("");
+  const [pipelineNameError, setPipelineNameError] = useState<string | null>(null);
   const [pipelineDescription, setPipelineDescription] = useState("");
   const [strictTransitionsEnabled, setStrictTransitionsEnabled] = useState(false);
   const [archiveConfirmation, setArchiveConfirmation] = useState("");
@@ -1755,6 +1756,7 @@ export function PipelineSettings() {
   useEffect(() => {
     if (!pipeline) return;
     setPipelineName(pipeline.name);
+    setPipelineNameError(null);
     setPipelineDescription(pipeline.description ?? "");
     setStrictTransitionsEnabled(pipeline.enforceTransitions);
   }, [pipeline]);
@@ -2557,6 +2559,11 @@ export function PipelineSettings() {
         className="border-b border-border pb-5"
         onSubmit={(event) => {
           event.preventDefault();
+          if (!pipelineName.trim()) {
+            setPipelineNameError("Enter a pipeline name before saving.");
+            return;
+          }
+          setPipelineNameError(null);
           savePipelineDetails.mutate();
         }}
       >
@@ -2591,12 +2598,22 @@ export function PipelineSettings() {
               <span className="sr-only">Pipeline name</span>
               <Input
                 aria-label="Pipeline name"
+                aria-describedby={pipelineNameError ? "pipeline-name-error" : undefined}
+                aria-invalid={Boolean(pipelineNameError)}
                 value={pipelineName}
-                onChange={(event) => setPipelineName(event.target.value)}
-                required
+                onChange={(event) => {
+                  setPipelineName(event.target.value);
+                  if (pipelineNameError) setPipelineNameError(null);
+                }}
+                required={true}
                 className="h-auto border-0 bg-transparent px-0 py-0 text-2xl font-semibold tracking-normal shadow-none focus-visible:ring-0"
               />
             </label>
+            {pipelineNameError ? (
+              <p id="pipeline-name-error" role="alert" className="text-sm text-destructive">
+                {pipelineNameError}
+              </p>
+            ) : null}
             <label className="block space-y-1.5 text-sm font-medium">
               <span className="sr-only">Pipeline description</span>
               <Textarea
@@ -2761,7 +2778,12 @@ export function PipelineSettings() {
                     <div className="w-full max-w-3xl">
                       <div className="divide-y divide-border border-b border-border">
                         <FieldRow label="Name">
-                          <Input value={stageName} onChange={(event) => setStageName(event.target.value)} required />
+                          <Input
+                            aria-label="Stage name"
+                            value={stageName}
+                            onChange={(event) => setStageName(event.target.value)}
+                            required
+                          />
                         </FieldRow>
                         <FieldRow label="Step type">
                           <div className="max-w-xl space-y-2">

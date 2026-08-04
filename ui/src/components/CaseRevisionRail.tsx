@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@/lib/router";
 import { casesApi, type CaseDocumentRevision } from "@/api/cases";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MarkdownBody } from "@/components/MarkdownBody";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn, relativeTime } from "@/lib/utils";
 import { Diff } from "lucide-react";
 import { issueDisplayTitle } from "@/lib/issue-display";
@@ -57,6 +57,8 @@ function CaseDocumentDiffModal({
 }) {
   const [leftRevisionId, setLeftRevisionId] = useState<string | null>(null);
   const [rightRevisionId, setRightRevisionId] = useState<string | null>(null);
+  const leftRevisionLabelId = useId();
+  const rightRevisionLabelId = useId();
 
   const effectiveLeftId = leftRevisionId ?? revisions.find(
     (revision) => revision.revisionNumber === latestRevisionNumber - 1,
@@ -88,33 +90,61 @@ function CaseDocumentDiffModal({
             </DialogTitle>
           </DialogHeader>
           <div className="flex shrink-0 items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-(--tracking-caps) text-red-400">Old</span>
+            <div
+              role="group"
+              aria-labelledby={leftRevisionLabelId}
+              className="flex items-center gap-2"
+            >
+              <span
+                id={leftRevisionLabelId}
+                className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-(--tracking-caps) text-red-400"
+              >
+                Old
+              </span>
               <Select value={effectiveLeftId ?? ""} onValueChange={setLeftRevisionId}>
-                <SelectTrigger className="h-7 w-60 border-border/60 text-xs">
+                <SelectTrigger
+                  aria-labelledby={leftRevisionLabelId}
+                  className="h-7 w-60 border-border/60 text-xs"
+                >
                   <SelectValue placeholder="Select revision" />
                 </SelectTrigger>
                 <SelectContent>
-                  {revisions.map((revision) => (
-                    <SelectItem key={revision.id} value={revision.id} className="text-xs">
-                      {getRevisionLabel(revision)}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {revisions.map((revision) => (
+                      <SelectItem key={revision.id} value={revision.id} className="text-xs">
+                        {getRevisionLabel(revision)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-(--tracking-caps) text-green-400">New</span>
+            <div
+              role="group"
+              aria-labelledby={rightRevisionLabelId}
+              className="flex items-center gap-2"
+            >
+              <span
+                id={rightRevisionLabelId}
+                className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-(--tracking-caps) text-green-400"
+              >
+                New
+              </span>
               <Select value={effectiveRightId ?? ""} onValueChange={setRightRevisionId}>
-                <SelectTrigger className="h-7 w-60 border-border/60 text-xs">
+                <SelectTrigger
+                  aria-labelledby={rightRevisionLabelId}
+                  className="h-7 w-60 border-border/60 text-xs"
+                >
                   <SelectValue placeholder="Select revision" />
                 </SelectTrigger>
                 <SelectContent>
-                  {revisions.map((revision) => (
-                    <SelectItem key={revision.id} value={revision.id} className="text-xs">
-                      {getRevisionLabel(revision)}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {revisions.map((revision) => (
+                      <SelectItem key={revision.id} value={revision.id} className="text-xs">
+                        {getRevisionLabel(revision)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
@@ -197,7 +227,7 @@ export function CaseRevisionRail({
     return <p className="py-6 text-center text-sm text-muted-foreground">Could not load revisions.</p>;
   }
   if (revisions.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">No revisions yet.</p>;
+    return <CaseRevisionEmptyState />;
   }
 
   const selected = revisions.find((r) => r.id === selectedId) ?? revisions[0]!;
@@ -218,7 +248,7 @@ export function CaseRevisionRail({
               className="h-7 gap-1 px-2 text-xs"
               onClick={() => setDiffOpen(true)}
             >
-              <Diff className="h-3.5 w-3.5" />
+              <Diff data-icon="inline-start" className="h-3.5 w-3.5" />
               Diff
             </Button>
           ) : null}
@@ -283,5 +313,13 @@ export function CaseRevisionRail({
         />
       ) : null}
     </div>
+  );
+}
+
+function CaseRevisionEmptyState() {
+  return (
+    <p className="py-6 text-center text-sm text-muted-foreground">
+      No revisions yet.
+    </p>
   );
 }

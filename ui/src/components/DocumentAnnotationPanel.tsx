@@ -142,6 +142,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
           || (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())),
     [props.threads],
   );
+  const hasOrphanedThreads = props.threads.some((thread) => thread.anchorState === "orphaned");
 
   const annotationsQueryKey = useMemo(
     () => annotationTarget.kind === "routine"
@@ -330,6 +331,14 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
     }
   }, [props.focusedThreadId, visibleThreads]);
 
+  const mutationStatusMessage = createThread.isPending
+    ? "Posting annotation comment…"
+    : addReply.isPending
+      ? "Posting annotation reply…"
+      : updateStatus.isPending
+        ? "Updating annotation status…"
+        : null;
+
   return (
     <>
       <div
@@ -363,14 +372,18 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
       ) : null}
       {mutationError ? (
         <p
+          role="alert"
           data-testid="document-annotation-error"
           className="border-b border-border bg-destructive/10 px-3 py-1.5 text-(length:--text-micro) text-destructive"
         >
           {mutationError}
         </p>
       ) : null}
+      {mutationStatusMessage ? <p role="status" className="sr-only">{mutationStatusMessage}</p> : null}
       <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto bg-popover px-3 py-2">
-        {visibleThreads.length === 0 ? null : (
+        {visibleThreads.length === 0 ? (
+          <DocumentAnnotationsEmptyState hasOrphanedThreads={hasOrphanedThreads} />
+        ) : (
           <ul className="space-y-2">
             {visibleThreads.map((thread) => (
               <ThreadCard
@@ -420,6 +433,7 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
           </div>
           <Textarea
             ref={composerRef}
+            aria-label="Write annotation comment"
             data-testid="document-annotation-composer"
             rows={3}
             value={composerValue}
@@ -471,6 +485,19 @@ function AnnotationPanelBody(props: AnnotationPanelProps) {
         </div>
       ) : null}
     </>
+  );
+}
+
+function DocumentAnnotationsEmptyState({ hasOrphanedThreads }: { hasOrphanedThreads: boolean }) {
+  return (
+    <div className="flex min-h-full flex-col items-center justify-center px-4 py-8 text-center">
+      <p className="text-sm font-medium text-foreground">
+        {hasOrphanedThreads ? "No annotations are anchored in this revision." : "No annotations yet."}
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Select text in the document to add a comment.
+      </p>
+    </div>
   );
 }
 
@@ -530,6 +557,7 @@ function ThreadCard(props: {
               />
             ))}
             <Textarea
+              aria-label="Reply to annotation"
               data-testid={`document-annotation-reply-${thread.id}`}
               rows={2}
               value={props.replyDraft}

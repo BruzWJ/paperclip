@@ -302,31 +302,34 @@ export function FolderRailItem({
       )}
     >
       <span className="h-4 w-4" />
-      <button
-        type="button"
-        className="flex min-w-0 items-center gap-2 text-left"
-        aria-current={active ? "page" : undefined}
-        onClick={onSelect}
-        onDoubleClick={onStartRename}
-      >
-        <FolderSwatch color={folder.color} />
-        {renaming ? (
+      {renaming ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <FolderSwatch color={folder.color} />
           <input
             value={renameDraft}
             onChange={(event) => onRenameDraftChange(event.target.value)}
-            onClick={(event) => event.stopPropagation()}
+            aria-label={`Rename ${folder.name}`}
             onKeyDown={(event) => {
               if (event.key === "Enter") onRenameCommit();
               if (event.key === "Escape") onRenameCancel();
             }}
             onBlur={onRenameCommit}
-            className="h-6 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 text-sm outline-none"
+            className="h-6 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             autoFocus
           />
-        ) : (
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 text-left"
+          aria-current={active ? "page" : undefined}
+          onClick={onSelect}
+          onDoubleClick={onStartRename}
+        >
+          <FolderSwatch color={folder.color} />
           <span className="truncate">{folder.name}</span>
-        )}
-      </button>
+        </button>
+      )}
       <span className="text-xs text-muted-foreground">{folder.itemCount}</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -485,7 +488,7 @@ export function MobileFolderSheet({
         </div>
         <div className="border-t border-border px-4 pt-3">
           <Button size="sm" variant="outline" className="w-full" onClick={onCreate}>
-            <Plus className="mr-2 h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" className="mr-2 h-3.5 w-3.5" />
             New folder
           </Button>
         </div>
@@ -574,11 +577,12 @@ function MoveToMenuItems({
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
+            aria-label="Search folders"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => event.stopPropagation()}
             placeholder="Search folders"
-            className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <DropdownMenuSeparator />

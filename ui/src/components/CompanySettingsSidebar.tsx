@@ -76,6 +76,7 @@ export function CompanySettingsSidebar() {
   });
   const showCloudUpstream = experimentalSettings?.enableCloudSync === true;
   const sidebarPlugins = (plugins ?? []).filter((plugin) => !isSandboxProviderOnly(plugin));
+  const hasSelectedCompany = !!selectedCompanyId;
 
   return (
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -102,37 +103,45 @@ export function CompanySettingsSidebar() {
         <div className="px-3 pb-1 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
           Company settings
         </div>
-        <div className="flex flex-col gap-0.5">
-          <SidebarNavItem to="/company/settings" label="General" icon={SlidersHorizontal} end />
-          {showCloudUpstream ? (
-            <SidebarNavItem
-              to="/company/settings/cloud-upstream"
-              label="Cloud upstream"
-              icon={CloudUpload}
-              end
-            />
-          ) : null}
-          <SidebarNavItem
-            to="/company/settings/members"
-            label="Members"
-            icon={Users}
-            badge={badges?.joinRequests ?? 0}
-            end
-          />
-          {companySettingsPluginSlots
-            .filter((slot) => slot.routePath)
-            .map((slot) => (
+        {hasSelectedCompany ? (
+          <div className="flex flex-col gap-0.5">
+            <SidebarNavItem to="/company/settings" label="General" icon={SlidersHorizontal} end />
+            {showCloudUpstream ? (
               <SidebarNavItem
-                key={`${slot.pluginKey}:${slot.id}`}
-                to={`/company/settings/${slot.routePath}`}
-                label={slot.displayName}
-                icon={Puzzle}
+                to="/company/settings/cloud-upstream"
+                label="Cloud upstream"
+                icon={CloudUpload}
                 end
               />
-            ))}
-          <SidebarNavItem to="/company/settings/invites" label="Invites" icon={MailPlus} end />
-          <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
-        </div>
+            ) : null}
+            <SidebarNavItem
+              to="/company/settings/members"
+              label="Members"
+              icon={Users}
+              badge={badges?.joinRequests ?? 0}
+              end
+            />
+            {companySettingsPluginSlots
+              .filter((slot) => slot.routePath)
+              .map((slot) => (
+                <SidebarNavItem
+                  key={`${slot.pluginKey}:${slot.id}`}
+                  to={`/company/settings/${slot.routePath}`}
+                  label={slot.displayName}
+                  icon={Puzzle}
+                  end
+                />
+              ))}
+            <SidebarNavItem to="/company/settings/invites" label="Invites" icon={MailPlus} end />
+            <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
+          </div>
+        ) : (
+          <CompanyUnavailableEmptyState
+            onNavigate={() => {
+              if (isMobile) setSidebarOpen(false);
+            }}
+          />
+        )}
         <div className="mt-5 px-3 pb-1 text-(length:--text-micro) font-semibold uppercase tracking-wide text-muted-foreground">
           Instance settings
         </div>
@@ -200,5 +209,23 @@ export function CompanySettingsSidebar() {
         </div>
       </nav>
     </aside>
+  );
+}
+
+function CompanyUnavailableEmptyState({ onNavigate }: { onNavigate: () => void }) {
+  return (
+    <div className="mx-2 mt-2 rounded-md border border-dashed border-border px-3 py-2 text-(length:--text-micro)">
+      <p className="font-medium text-foreground">No company selected.</p>
+      <p className="mt-0.5 leading-snug text-muted-foreground">
+        Select a company from the dashboard to manage its settings.
+      </p>
+      <Link
+        to="/dashboard"
+        onClick={onNavigate}
+        className="mt-1 inline-flex text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+      >
+        Go to dashboard
+      </Link>
+    </div>
   );
 }

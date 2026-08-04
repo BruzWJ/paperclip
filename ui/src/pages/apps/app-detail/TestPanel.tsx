@@ -410,7 +410,7 @@ function AgentPicker({
         <button
           type="button"
           className={cn(
-            "items-center gap-1.5 text-foreground outline-none hover:text-primary focus-visible:text-primary",
+            "items-center gap-1.5 text-foreground outline-none hover:text-primary focus-visible:text-primary focus-visible:ring-2 focus-visible:ring-ring",
             inline ? "inline-flex font-semibold underline-offset-2 hover:underline" : "mt-0.5 flex text-lg font-bold",
           )}
           aria-label="Choose which agent to test as"
@@ -586,7 +586,7 @@ function ActionRow({
       <CollapsibleTrigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none hover:bg-accent/40 focus-visible:bg-accent/40"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronDown
             className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
@@ -708,6 +708,7 @@ function ActionTester({
   const [elapsedMs, setElapsedMs] = useState(0);
   const startedAtRef = useRef(0);
   const cancelledRef = useRef(false);
+  const runPendingRef = useRef(false);
 
   const isOff = decision === "off";
 
@@ -727,12 +728,19 @@ function ActionTester({
       return result;
     },
     onSuccess: (result) => {
-      if (cancelledRef.current) return;
+      if (cancelledRef.current) {
+        runPendingRef.current = false;
+        return;
+      }
       const durationMs = Date.now() - startedAtRef.current;
       const finish = () => {
-        if (cancelledRef.current) return;
+        if (cancelledRef.current) {
+          runPendingRef.current = false;
+          return;
+        }
         const nextOutcome = { result, agentName: agent.name, durationMs, ranAt: new Date() };
         setRunning(false);
+        runPendingRef.current = false;
         setOutcome(nextOutcome);
         storeAskFirstOutcome(connectionId, entry, agent.id, nextOutcome);
         queryClient.invalidateQueries({ queryKey: queryKeys.tools.connectionActivity(connectionId) });
@@ -746,17 +754,25 @@ function ActionTester({
       else finish();
     },
     onError: () => {
+      runPendingRef.current = false;
       if (cancelledRef.current) return;
       setRunning(false);
     },
   });
 
+  // Keep the controls locked for both the request and the intentional minimum
+  // running-card duration. The ref closes the brief pre-render gap between a
+  // click and React Query publishing its pending state.
+  const isPending = running || run.isPending;
+
   const onRun = () => {
+    if (isPending || runPendingRef.current) return;
     const validationErrors = validateJsonSchemaForm(rawSchema, values);
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
     onInteract();
     cancelledRef.current = false;
+    runPendingRef.current = true;
     startedAtRef.current = Date.now();
     setElapsedMs(0);
     setOutcome(null);
@@ -794,14 +810,14 @@ function ActionTester({
   const hasFields = Object.keys(rawSchema.properties ?? {}).length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-busy={isPending}>
       {hasFields ? (
         <JsonSchemaForm
           schema={formSchema}
           values={values}
           onChange={setValues}
           errors={errors}
-          disabled={running}
+          disabled={isPending}
           advancedLabel="More options"
         />
       ) : (
@@ -811,8 +827,8 @@ function ActionTester({
       <p className="text-xs text-muted-foreground">{GUT_CHECK[decision](appName, agent.name)}</p>
 
       <div className="flex items-center gap-2">
-        <Button onClick={onRun} disabled={running} size="sm">
-          {running ? (
+        <Button onClick={onRun} disabled={isPending} size="sm">
+          {isPending ? (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Running…
             </>
@@ -822,10 +838,16 @@ function ActionTester({
             </>
           )}
         </Button>
-        <Button onClick={onReset} disabled={running} size="sm" variant="ghost">
+        <Button onClick={onReset} disabled={isPending} size="sm" variant="ghost">
           Reset
         </Button>
       </div>
+
+      {isPending ? (
+        <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+          {running ? "Running the test call…" : "Finishing the test request…"}
+        </p>
+      ) : null}
 
       {running && (
         <RunningCard entry={entry} appName={appName} agentName={agent.name} elapsedMs={elapsedMs} onCancel={onCancelRunning} />
@@ -1276,7 +1298,11 @@ function AskFirstResult({
         )}
         <div className="flex gap-3">
           <dt className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</dt>
-          <dd className={cn("flex items-center gap-1.5 text-foreground", settled && "text-muted-foreground")}>
+          <dd
+            className={cn("flex items-center gap-1.5 text-foreground", settled && "text-muted-foreground")}
+            aria-live="polite"
+            aria-atomic="true"
+          >
             {phase === "running" && <Loader2 className="h-3 w-3 animate-spin" />}
             {statusLabel}
           </dd>

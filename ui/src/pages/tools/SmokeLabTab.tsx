@@ -160,12 +160,23 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
     onError: (e: Error) => pushToast({ title: "Couldn't start a run", body: e.message, tone: "error" }),
   });
 
-  const anyMutating =
+  const isPending =
     startMutation.isPending ||
     stopMutation.isPending ||
     installMutation.isPending ||
     resetMutation.isPending ||
     runSmokeMutation.isPending;
+  const smokeLabActionStatus = startMutation.isPending
+    ? "Starting Smoke Lab services."
+    : stopMutation.isPending
+      ? "Stopping Smoke Lab services."
+      : installMutation.isPending
+        ? "Installing Smoke Lab fixtures."
+        : resetMutation.isPending
+          ? "Resetting Smoke Lab."
+          : runSmokeMutation.isPending
+            ? "Starting browser smoke run."
+            : null;
 
   // Flag off — hidden. The server is authoritative; this is the friendly UX gate.
   if (loaded && !enabled) {
@@ -185,7 +196,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
   }
 
   if (!loaded) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading Smoke Lab…</div>;
+    return <div className="p-6 text-sm text-muted-foreground" role="status">Loading Smoke Lab…</div>;
   }
 
   const services = servicesQuery.data?.services ?? [];
@@ -193,7 +204,12 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
   const failing = failingPaths(steps);
 
   return (
-    <div className="flex flex-col gap-6" data-testid="smoke-lab-tab">
+    <div className="flex flex-col gap-6" data-testid="smoke-lab-tab" aria-busy={isPending}>
+      {isPending ? (
+        <p className="text-xs text-muted-foreground" role="status">
+          {smokeLabActionStatus} Other Smoke Lab actions are temporarily locked.
+        </p>
+      ) : null}
       <header>
         <div className="flex flex-wrap items-center gap-2">
           <FlaskConical className="h-5 w-5 text-muted-foreground" />
@@ -236,15 +252,15 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
             <Button
               size="sm"
               onClick={() => startMutation.mutate()}
-              disabled={anyMutating}
+              disabled={isPending}
             >
-              <Power className="h-4 w-4" /> Start services
+              <Power data-icon="inline-start" className="h-4 w-4" /> Start services
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => stopMutation.mutate()}
-              disabled={anyMutating}
+              disabled={isPending}
             >
               Stop
             </Button>
@@ -252,7 +268,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
               size="sm"
               variant="outline"
               onClick={() => installMutation.mutate()}
-              disabled={anyMutating}
+              disabled={isPending}
             >
               Install fixture apps
             </Button>
@@ -260,9 +276,9 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
               size="sm"
               variant="ghost"
               onClick={() => resetMutation.mutate()}
-              disabled={anyMutating}
+              disabled={isPending}
             >
-              <RotateCcw className="h-4 w-4" /> Reset
+              <RotateCcw data-icon="inline-start" className="h-4 w-4" /> Reset
             </Button>
           </div>
         </div>
@@ -390,7 +406,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
               {failing.length > 0 && ` · failing: ${failing.join(", ")}`}
             </span>
           </div>
-          <Button size="sm" onClick={() => runSmokeMutation.mutate()} disabled={anyMutating}>
+          <Button size="sm" onClick={() => runSmokeMutation.mutate()} disabled={isPending}>
             {runSmokeMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (

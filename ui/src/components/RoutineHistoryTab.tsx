@@ -230,7 +230,14 @@ export function RoutineHistoryTab({
   const onlyBootstrapRevision = revisions.length <= 1;
 
   return (
-    <div className="grid gap-5 md:grid-cols-(--gtc-9)">
+    <>
+      <fieldset
+        aria-busy={restoreMutation.isPending}
+        aria-label="Routine revision history controls"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={restoreMutation.isPending}
+      >
+        <div className="grid gap-5 md:grid-cols-(--gtc-9)">
       <RevisionList
         revisions={visibleRevisions}
         latestRevisionId={routine.latestRevisionId}
@@ -328,7 +335,14 @@ export function RoutineHistoryTab({
           }}
         />
       )}
-    </div>
+        </div>
+      </fieldset>
+      {restoreMutation.isPending ? (
+        <p aria-live="polite" role="status">
+          Restoring routine revision…
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -362,7 +376,7 @@ function HistoricalPreviewBanner({
             Return to current
           </Button>
           <Button size="sm" onClick={onRestore} disabled={pending}>
-            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+            <RotateCcw data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             Restore as new revision
           </Button>
         </div>
@@ -609,7 +623,7 @@ function RevisionPreview({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={onCompare}>
-              <Search className="mr-1.5 h-3.5 w-3.5" />
+              <Search data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
               Compare with current
             </Button>
             <Button
@@ -946,7 +960,7 @@ function RevisionPicker({
     ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
     : "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300";
   return (
-    <div className="flex items-center gap-2">
+    <label className="flex items-center gap-2">
       <Badge variant="outline"
         className={`text-(length:--text-nano) uppercase tracking-wider ${toneClass}`}
       >
@@ -964,7 +978,7 @@ function RevisionPicker({
           </option>
         ))}
       </select>
-    </div>
+    </label>
   );
 }
 

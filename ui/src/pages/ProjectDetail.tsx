@@ -169,6 +169,7 @@ function ProjectTilePicker({
         {/* Icon search + grid */}
         <p className="text-xs font-medium text-muted-foreground mb-2">Icon</p>
         <Input
+          aria-label="Search project icons"
           placeholder="Search icons..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}

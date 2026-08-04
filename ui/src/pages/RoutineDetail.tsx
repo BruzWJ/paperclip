@@ -793,6 +793,11 @@ export function RoutineDetail() {
 
   return (
     <RoutineDetailContext.Provider value={contextValue}>
+      {runRoutine.isPending ? (
+        <p className="sr-only" role="status">
+          Starting routine run.
+        </p>
+      ) : null}
       <a
         href="#routine-section"
         className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-20 focus:rounded focus:bg-background focus:px-3 focus:py-1.5 focus:text-sm"
@@ -808,9 +813,10 @@ export function RoutineDetail() {
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <textarea
+              aria-label="Routine title"
               ref={titleInputRef}
               data-autosize-title
-              className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-base font-semibold leading-7 outline-none placeholder:text-muted-foreground/50"
+              className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-base font-semibold leading-7 outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground/50"
               placeholder="Routine title"
               rows={1}
               value={editDraft.title}

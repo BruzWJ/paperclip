@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Clock3, RefreshCw, Save, Trash2, Webhook, Zap } from "lucide-react";
 import type { RoutineTrigger } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScheduleEditor } from "./ScheduleEditor";
+import { getScheduleCronValidation, ScheduleEditor } from "./ScheduleEditor";
 import { buildRoutineTriggerPatch } from "../lib/routine-trigger-patch";
 import { describeCron } from "../lib/cron-readable";
 
@@ -36,13 +36,13 @@ export function RoutineTriggerCard({
   onSave,
   onRotate,
   onDelete,
-  disabled,
+  isPending = false,
 }: {
   trigger: RoutineTrigger;
   onSave: (id: string, patch: Record<string, unknown>) => void;
   onRotate: (id: string) => void;
   onDelete: (id: string) => void;
-  disabled?: boolean;
+  isPending?: boolean;
 }) {
   const [draft, setDraft] = useState({
     label: trigger.label ?? "",
@@ -50,6 +50,11 @@ export function RoutineTriggerCard({
     signingMode: trigger.signingMode ?? "bearer",
     replayWindowSec: String(trigger.replayWindowSec ?? 300),
   });
+  const [scheduleIsValid, setScheduleIsValid] = useState(
+    () =>
+      trigger.kind !== "schedule"
+      || getScheduleCronValidation(trigger.cronExpression ?? "").valid,
+  );
 
   useEffect(() => {
     setDraft({
@@ -58,6 +63,10 @@ export function RoutineTriggerCard({
       signingMode: trigger.signingMode ?? "bearer",
       replayWindowSec: String(trigger.replayWindowSec ?? 300),
     });
+    setScheduleIsValid(
+      trigger.kind !== "schedule"
+      || getScheduleCronValidation(trigger.cronExpression ?? "").valid,
+    );
   }, [trigger]);
 
   const KindIcon =
@@ -67,12 +76,24 @@ export function RoutineTriggerCard({
     trigger.lastResult != null &&
     /succeed|success|ok|200|delivered/i.test(String(trigger.lastResult));
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isPending || !scheduleIsValid) return;
+    onSave(trigger.id, buildRoutineTriggerPatch(trigger, draft, getLocalTimezone()));
+  }
+
   return (
     <form
+      aria-busy={isPending}
       aria-label={`Trigger: ${trigger.label ?? trigger.kind}`}
       className="space-y-4 rounded-lg border border-border p-4"
-      onSubmit={(event) => event.preventDefault()}
+      onSubmit={handleSubmit}
     >
+      <fieldset
+        aria-label="Trigger settings"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={isPending}
+      >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -103,10 +124,11 @@ export function RoutineTriggerCard({
 
       <div className="grid gap-3 md:grid-cols-2">
         <div className="space-y-1.5">
-          <Label className="text-xs">Label</Label>
+          <Label htmlFor={`routine-trigger-${trigger.id}-label`} className="text-xs">Label</Label>
           <Input
+            id={`routine-trigger-${trigger.id}-label`}
             value={draft.label}
-            disabled={disabled}
+            disabled={isPending}
             onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))}
           />
         </div>
@@ -118,6 +140,7 @@ export function RoutineTriggerCard({
               onChange={(cronExpression) =>
                 setDraft((current) => ({ ...current, cronExpression }))
               }
+              onValidityChange={setScheduleIsValid}
             />
           </div>
         )}
@@ -130,9 +153,9 @@ export function RoutineTriggerCard({
                 onValueChange={(signingMode) =>
                   setDraft((current) => ({ ...current, signingMode }))
                 }
-                disabled={disabled}
+                disabled={isPending}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label="Signing mode">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -146,10 +169,16 @@ export function RoutineTriggerCard({
             </div>
             {!SIGNING_MODES_WITHOUT_REPLAY_WINDOW.has(draft.signingMode) && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Replay window (seconds)</Label>
+                <Label htmlFor={`routine-trigger-${trigger.id}-replay-window`} className="text-xs">
+                  Replay window (seconds)
+                </Label>
                 <Input
+                  id={`routine-trigger-${trigger.id}-replay-window`}
+                  type="number"
+                  min="0"
+                  step="1"
                   value={draft.replayWindowSec}
-                  disabled={disabled}
+                  disabled={isPending}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, replayWindowSec: event.target.value }))
                   }
@@ -160,35 +189,40 @@ export function RoutineTriggerCard({
         )}
       </div>
 
-      {!disabled && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             className="mr-auto text-muted-foreground hover:text-destructive"
+            disabled={isPending}
             onClick={() => onDelete(trigger.id)}
           >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            <Trash2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             Delete
           </Button>
           {trigger.kind === "webhook" && (
-            <Button variant="outline" size="sm" onClick={() => onRotate(trigger.id)}>
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            <Button type="button" variant="outline" size="sm" disabled={isPending} onClick={() => onRotate(trigger.id)}>
+              <RefreshCw data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
               Rotate secret
             </Button>
           )}
           <Button
+            type="submit"
             variant="outline"
             size="sm"
-            onClick={() =>
-              onSave(trigger.id, buildRoutineTriggerPatch(trigger, draft, getLocalTimezone()))
-            }
+            disabled={isPending || !scheduleIsValid}
           >
-            <Save className="mr-1.5 h-3.5 w-3.5" />
+            <Save data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             Save trigger
           </Button>
-        </div>
-      )}
+      </div>
+      </fieldset>
+      {isPending ? (
+        <p aria-live="polite" role="status" className="mt-2 text-xs text-muted-foreground">
+          Saving trigger…
+        </p>
+      ) : null}
     </form>
   );
 }

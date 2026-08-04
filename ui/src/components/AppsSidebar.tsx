@@ -44,8 +44,10 @@ export function AppsSidebar() {
     enabled: !!selectedCompanyId,
     refetchInterval: 15_000,
   });
-  const runtimeActiveCount = (runtimeSlots.data?.runtimeSlots ?? [])
+  const runtimeSlotList = runtimeSlots.data?.runtimeSlots ?? [];
+  const runtimeActiveCount = runtimeSlotList
     .filter((slot) => slot.status === "running").length;
+  const hasNoRuntimeSlots = runtimeSlots.isSuccess && runtimeSlotList.length === 0;
 
   return (
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -88,6 +90,13 @@ export function AppsSidebar() {
         <p className="px-3 pb-1.5 text-(length:--text-micro) leading-snug text-muted-foreground/70">
           Advanced setup for developers. Most teams never open this.
         </p>
+        {hasNoRuntimeSlots ? (
+          <RuntimeEmptyState
+            onBrowse={() => {
+              if (isMobile) setSidebarOpen(false);
+            }}
+          />
+        ) : null}
         <div className="flex flex-col gap-0.5">
           {developerTabs.map((tab) => (
             <SidebarNavItem
@@ -102,5 +111,23 @@ export function AppsSidebar() {
         </div>
       </nav>
     </aside>
+  );
+}
+
+function RuntimeEmptyState({ onBrowse }: { onBrowse: () => void }) {
+  return (
+    <div className="mx-2 mt-2 rounded-md border border-dashed border-border px-3 py-2 text-(length:--text-micro)">
+      <p className="font-medium text-foreground">No runtime activity yet.</p>
+      <p className="mt-0.5 leading-snug text-muted-foreground">
+        Runtime activity appears after you use a connected app.
+      </p>
+      <Link
+        to="/apps/browse"
+        onClick={onBrowse}
+        className="mt-1 inline-flex text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
+      >
+        Browse apps
+      </Link>
+    </div>
   );
 }

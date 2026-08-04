@@ -162,6 +162,7 @@ function GoogleSheetsAllowlistSection({
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <Input
+          aria-label="Google Sheets link"
           value={draft}
           onChange={(event) => {
             setDraft(event.target.value);

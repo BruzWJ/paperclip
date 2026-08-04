@@ -2054,6 +2054,7 @@ function IssueChatFeedbackButtons({
     useState<FeedbackVoteValue | null>(null);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [downvoteReason, setDownvoteReason] = useState("");
+  const feedbackReasonInputId = useId();
   const [pendingSharingDialog, setPendingSharingDialog] = useState<{
     vote: FeedbackVoteValue;
     reason?: string;
@@ -2155,10 +2156,11 @@ function IssueChatFeedbackButtons({
           </button>
         </PopoverTrigger>
         <PopoverContent side="top" align="start" className="w-80 p-3">
-          <div className="mb-2 text-sm font-medium">
+          <label htmlFor={feedbackReasonInputId} className="mb-2 block text-sm font-medium">
             What could have been better?
-          </div>
+          </label>
           <Textarea
+            id={feedbackReasonInputId}
             value={downvoteReason}
             onChange={(event) => setDownvoteReason(event.target.value)}
             placeholder="Add a short note"
@@ -3456,7 +3458,7 @@ const IssueChatComposer = forwardRef<
 ) {
   const api = useAui();
   const [body, setBody] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerAttachments, setComposerAttachments] = useState<
@@ -3475,6 +3477,7 @@ const IssueChatComposer = forwardRef<
   const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
   const canToggleWorkMode = typeof onWorkModeChange === "function";
   const attachInputRef = useRef<HTMLInputElement | null>(null);
+  const attachInputId = useId();
   const ownerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const editorRef = useRef<MarkdownEditorRef>(null);
   const composerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -3551,7 +3554,7 @@ const IssueChatComposer = forwardRef<
   );
 
   async function handleSubmit() {
-    if (!body.trim() || submitting) return;
+    if (!body.trim() || isSubmitting) return;
 
     const composerHasOwnerPicker = enableOwnerChange && ownerOptions.length > 0;
     if (composerHasOwnerPicker && !parseOwnerChange(ownerTarget)) {
@@ -3563,7 +3566,7 @@ const IssueChatComposer = forwardRef<
   }
 
   async function submitComment() {
-    if (!body.trim() || submitting) return;
+    if (!body.trim() || isSubmitting) return;
 
     const hasOwnerChange =
       enableOwnerChange && ownerTarget !== currentOwnerValue;
@@ -3581,7 +3584,7 @@ const IssueChatComposer = forwardRef<
     );
 
     const workModeChanged = pendingWorkMode !== resolvedIssueWorkMode;
-    setSubmitting(true);
+    setIsSubmitting(true);
     onReplyPendingChange?.(true);
     setBody("");
     try {
@@ -3617,7 +3620,7 @@ const IssueChatComposer = forwardRef<
         }),
       );
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
       onReplyPendingChange?.(false);
       queueViewportRestore(viewportSnapshot);
     }
@@ -3751,8 +3754,6 @@ const IssueChatComposer = forwardRef<
     resetDragState();
     void handleDroppedFiles(evt.dataTransfer?.files);
   }
-
-  const canSubmit = !submitting && !!body.trim();
 
   // Interrupt-owner clarity (PAP-10669): preview what this comment will durably
   // do, and coach plain agent names toward real mentions.
@@ -3913,7 +3914,7 @@ const IssueChatComposer = forwardRef<
             type="button"
             variant="ghost"
             size="icon-xs"
-            disabled={submitting}
+            disabled={isSubmitting}
             onClick={onClearReply}
             aria-label="Cancel reply"
             title="Cancel reply"
@@ -3930,6 +3931,7 @@ const IssueChatComposer = forwardRef<
         placeholder="Reply"
         mentions={replyTarget ? [] : mentions}
         onSubmit={handleSubmit}
+        readOnly={isSubmitting}
         imageUploadHandler={onImageUpload}
         fileDropTarget="parent"
         bordered={false}
@@ -4017,17 +4019,23 @@ const IssueChatComposer = forwardRef<
         <div className="mr-auto flex items-center gap-2">
           {onImageUpload || onAttachImage ? (
             <>
+              <label className="sr-only" htmlFor={attachInputId}>
+                Attach file
+              </label>
               <input
+                id={attachInputId}
                 ref={attachInputRef}
                 type="file"
                 className="hidden"
                 onChange={handleAttachFile}
               />
               <Button
+                type="button"
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => attachInputRef.current?.click()}
                 disabled={attaching}
+                aria-label="Attach file"
                 title="Attach file"
               >
                 <Paperclip className="h-4 w-4" />
@@ -4153,10 +4161,10 @@ const IssueChatComposer = forwardRef<
 
         <Button
           size="sm"
-          disabled={!canSubmit}
+          disabled={isSubmitting || !body.trim()}
           onClick={() => void handleSubmit()}
         >
-          {submitting ? "Posting..." : "Send"}
+          {isSubmitting ? "Posting..." : "Send"}
         </Button>
       </div>
     </div>

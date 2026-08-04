@@ -38,7 +38,7 @@ import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -755,7 +755,7 @@ export function Routines() {
           </p>
         </div>
         <Button onClick={openCreateRoutine}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus data-icon="inline-start" className="mr-2 h-4 w-4" />
           Create routine
         </Button>
       </div>
@@ -779,7 +779,7 @@ export function Routines() {
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className="text-xs" title="Sort">
-                    <ArrowUpDown className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                    <ArrowUpDown data-icon="inline-start" className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
                     <span className="hidden sm:inline">Sort</span>
                   </Button>
                 </PopoverTrigger>
@@ -820,7 +820,7 @@ export function Routines() {
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className="text-xs" title="Group">
-                    <Layers className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                    <Layers data-icon="inline-start" className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
                     <span className="hidden sm:inline">Group</span>
                   </Button>
                 </PopoverTrigger>
@@ -850,7 +850,7 @@ export function Routines() {
               </Popover>
               {routineViewState.groupBy === "folder" && !hasRoutineFolders ? (
                 <Button variant="outline" size="sm" onClick={() => openCreateFolder()}>
-                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  <Plus data-icon="inline-start" className="mr-2 h-3.5 w-3.5" />
                   New folder
                 </Button>
               ) : null}
@@ -898,6 +898,7 @@ export function Routines() {
           showCloseButton={false}
           className="flex max-h-(--sz-calc-18) max-w-3xl flex-col gap-0 overflow-hidden p-0"
         >
+          <DialogTitle className="sr-only">Create routine</DialogTitle>
           <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3">
             <div>
               <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">New routine</p>
@@ -921,8 +922,9 @@ export function Routines() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="px-5 pt-5 pb-3">
               <textarea
+                aria-label="Routine title"
                 ref={titleInputRef}
-                className="w-full resize-none overflow-hidden bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground/50"
+                className="w-full resize-none overflow-hidden bg-transparent text-xl font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground/50"
                 placeholder="Routine title"
                 rows={1}
                 value={draft.title}
@@ -1052,7 +1054,7 @@ export function Routines() {
                       folderId: value === "__unfiled" ? null : value,
                     }))}
                   >
-                    <SelectTrigger className="h-8 w-auto min-w-32 border-0 bg-muted/50 px-2 shadow-none">
+                    <SelectTrigger aria-label="Routine folder" className="h-8 w-auto min-w-32 border-0 bg-muted/50 px-2 shadow-none">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1102,7 +1104,7 @@ export function Routines() {
                         value={draft.concurrencyPolicy}
                         onValueChange={(concurrencyPolicy) => setDraft((current) => ({ ...current, concurrencyPolicy }))}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="Concurrency policy">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1119,7 +1121,7 @@ export function Routines() {
                         value={draft.catchUpPolicy}
                         onValueChange={(catchUpPolicy) => setDraft((current) => ({ ...current, catchUpPolicy }))}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="Catch-up policy">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1151,6 +1153,11 @@ export function Routines() {
           </div>
 
           <div className="shrink-0 flex flex-col gap-3 border-t border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            {createRoutine.isPending ? (
+              <p className="sr-only" role="status">
+                Creating routine.
+              </p>
+            ) : null}
             <div className="text-sm text-muted-foreground">
               After creation, Paperclip takes you straight to trigger setup. Draft routines stay paused until you add a default agent.
             </div>
@@ -1166,7 +1173,7 @@ export function Routines() {
                 {createRoutine.isPending ? "Creating..." : "Create routine"}
               </Button>
               {createRoutine.isError ? (
-                <p className="text-sm text-destructive">
+                <p className="text-sm text-destructive" role="alert">
                   {createRoutine.error instanceof Error ? createRoutine.error.message : "Failed to create routine"}
                 </p>
               ) : null}
@@ -1250,7 +1257,7 @@ export function Routines() {
               {folderSelection !== "all" ? (
                 <div className="mt-3 flex justify-center">
                   <Button size="sm" onClick={openCreateRoutine}>
-                    <Plus className="mr-2 h-3.5 w-3.5" />
+                    <Plus data-icon="inline-start" className="mr-2 h-3.5 w-3.5" />
                     New routine in this folder
                   </Button>
                 </div>

@@ -145,10 +145,6 @@ export function ManagedRoutinesList({
             {hasRepairActions ? (
               <div
                 className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 pb-3 text-xs text-muted-foreground last:border-b-0"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                }}
               >
                 <span>
                   {missingRefs.length

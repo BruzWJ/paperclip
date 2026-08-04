@@ -80,7 +80,7 @@ export function InstanceGeneralSettings() {
 
   if (generalQuery.isLoading) {
     return (
-      <div className="text-sm text-muted-foreground">
+      <div className="text-sm text-muted-foreground" role="status">
         Loading general settings...
       </div>
     );
@@ -88,7 +88,7 @@ export function InstanceGeneralSettings() {
 
   if (generalQuery.error) {
     return (
-      <div className="text-sm text-destructive">
+      <div className="text-sm text-destructive" role="alert">
         {generalQuery.error instanceof Error
           ? generalQuery.error.message
           : "Failed to load general settings."}
@@ -102,9 +102,15 @@ export function InstanceGeneralSettings() {
     generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
   const backupRetention: BackupRetentionPolicy =
     generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
+  const pendingSettingsStatus = updateGeneralMutation.isPending
+    ? "Saving instance settings…"
+    : signOutMutation.isPending
+      ? "Signing out…"
+      : null;
 
   return (
     <div className="max-w-4xl space-y-6">
+      {pendingSettingsStatus ? <p className="sr-only" role="status">{pendingSettingsStatus}</p> : null}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
@@ -117,7 +123,7 @@ export function InstanceGeneralSettings() {
       </div>
 
       {actionError && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
           {actionError}
         </div>
       )}

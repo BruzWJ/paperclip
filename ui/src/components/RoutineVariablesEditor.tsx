@@ -106,6 +106,7 @@ export function RoutineVariablesEditor({
               <div className="space-y-1.5">
                 <Label className="text-xs">Label</Label>
                 <Input
+                  aria-label={`${variable.label ?? variable.name} label`}
                   value={variable.label ?? ""}
                   onChange={(event) => onChange(updateVariableList(syncedVariables, variable.name, (current) => ({
                     ...current,
@@ -126,7 +127,7 @@ export function RoutineVariablesEditor({
                     options: type === "select" ? current.options : [],
                   })))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label={`${variable.label ?? variable.name} type`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -155,6 +156,7 @@ export function RoutineVariablesEditor({
 
                 {variable.type === "textarea" ? (
                   <Textarea
+                    aria-label={`${variable.label ?? variable.name} default value`}
                     rows={3}
                     value={variable.defaultValue == null ? "" : String(variable.defaultValue)}
                     onChange={(event) => onChange(updateVariableList(syncedVariables, variable.name, (current) => ({
@@ -170,7 +172,7 @@ export function RoutineVariablesEditor({
                       defaultValue: next === "__unset__" ? null : next === "true",
                     })))}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger aria-label={`${variable.label ?? variable.name} default value`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -184,6 +186,7 @@ export function RoutineVariablesEditor({
                     <div className="space-y-1.5">
                       <Label className="text-xs">Options</Label>
                       <Input
+                        aria-label={`${variable.label ?? variable.name} options`}
                         value={variable.options.join(", ")}
                         onChange={(event) => {
                           const options = parseSelectOptions(event.target.value);
@@ -208,7 +211,7 @@ export function RoutineVariablesEditor({
                           defaultValue: next === "__unset__" ? null : next,
                         })))}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label={`${variable.label ?? variable.name} default option`}>
                           <SelectValue placeholder="No default" />
                         </SelectTrigger>
                         <SelectContent>
@@ -222,6 +225,7 @@ export function RoutineVariablesEditor({
                   </div>
                 ) : variable.type === "date" ? (
                   <Input
+                    aria-label={`${variable.label ?? variable.name} default value`}
                     type="date"
                     value={typeof variable.defaultValue === "string" ? variable.defaultValue : ""}
                     onChange={(event) => onChange(updateVariableList(syncedVariables, variable.name, (current) => ({
@@ -231,6 +235,7 @@ export function RoutineVariablesEditor({
                   />
                 ) : (
                   <Input
+                    aria-label={`${variable.label ?? variable.name} default value`}
                     type={variable.type === "number" ? "number" : "text"}
                     value={variable.defaultValue == null ? "" : String(variable.defaultValue)}
                     onChange={(event) => onChange(updateVariableList(syncedVariables, variable.name, (current) => ({

@@ -93,6 +93,11 @@ export function RunYourOwnTab({ companyId }: { companyId: string }) {
 
   return (
     <div className="space-y-6">
+      {createMutation.isPending ? (
+        <p className="sr-only" role="status">
+          Adding tool configuration.
+        </p>
+      ) : null}
       <p className="max-w-2xl text-sm text-muted-foreground">
         For a tool that runs from a command. Paperclip runs it in your company's own isolated workspace.
         Administrators only.
@@ -138,6 +143,7 @@ export function RunYourOwnTab({ companyId }: { companyId: string }) {
                   <div key={row.id} className="space-y-1">
                     <div className="flex items-center gap-2">
                       <Input
+                        aria-label="Environment variable name"
                         value={row.value}
                         onChange={(event) =>
                           setKeyRows((rows) =>
@@ -169,7 +175,7 @@ export function RunYourOwnTab({ companyId }: { companyId: string }) {
             </div>
           ) : null}
           <Button type="button" variant="outline" size="sm" onClick={addKeyRow} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" className="h-3.5 w-3.5" />
             Add a key
           </Button>
         </div>
@@ -202,7 +208,10 @@ export function RunYourOwnTab({ companyId }: { companyId: string }) {
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-foreground">Your own tools</h3>
         {templates.isLoading ? (
-          <LoadingState />
+          <div role="status">
+            <span className="sr-only">Loading tool templates.</span>
+            <LoadingState />
+          </div>
         ) : templates.isError ? (
           <ErrorState error={templates.error} onRetry={() => templates.refetch()} />
         ) : adminTemplates.length === 0 ? (
@@ -256,10 +265,11 @@ function RunYourOwnRow({
     },
   });
   const disabled = template.status === "disabled";
+  const isPending = disableMutation.isPending;
   const fullCommand = [template.command ?? "", ...(template.args ?? [])].join(" ").trim();
 
   return (
-    <tr className="border-b border-border last:border-0">
+    <tr aria-busy={isPending} className="border-b border-border last:border-0">
       <td className="px-4 py-3">
         <div className="font-medium text-foreground">{template.name}</div>
         {disabled ? <Badge variant="outline">off</Badge> : null}
@@ -275,14 +285,21 @@ function RunYourOwnRow({
       </td>
       <td className="px-4 py-3 text-right">
         {disabled ? null : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => disableMutation.mutate()}
-            disabled={disableMutation.isPending}
-          >
-            Turn off
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => disableMutation.mutate()}
+              disabled={isPending}
+            >
+              {isPending ? "Turning off…" : "Turn off"}
+            </Button>
+            {isPending ? (
+              <p role="status" className="text-xs text-muted-foreground">
+                Turning off this tool…
+              </p>
+            ) : null}
+          </div>
         )}
       </td>
     </tr>

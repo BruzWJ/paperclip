@@ -237,8 +237,12 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
 
   function submitCreateGateway(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!createDraft.profileId) {
-      pushToast({ title: "Pick a profile", body: "A gateway needs an access profile before it can be created.", tone: "warn" });
+    if (!createDraft.name.trim() || !createDraft.profileId) {
+      pushToast({
+        title: "Complete gateway details",
+        body: "A gateway needs a name and an access profile before it can be created.",
+        tone: "warn",
+      });
       return;
     }
     createGatewayMutation.mutate();
@@ -247,6 +251,14 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
   function submitCreateToken(event: FormEvent<HTMLFormElement>, gatewayId: string) {
     event.preventDefault();
     const draft = tokenDrafts[gatewayId] ?? defaultTokenDraft();
+    if (!draft.name.trim() || !draft.clientLabel.trim() || !draft.ownerNote.trim() || !draft.expiresAt) {
+      pushToast({
+        title: "Complete token details",
+        body: "Give the token a name, client label, owner note, and expiration date.",
+        tone: "warn",
+      });
+      return;
+    }
     if (draft.allowedActions.length === 0) {
       pushToast({ title: "Pick token actions", body: "Gateway tokens need at least one allowed MCP action.", tone: "warn" });
       return;
@@ -254,15 +266,30 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
     createTokenMutation.mutate(gatewayId);
   }
 
-  if (gatewaysQuery.isLoading) return <LoadingState label="Loading gateways..." />;
+  if (gatewaysQuery.isLoading) {
+    return (
+      <div role="status">
+        <span className="sr-only">Loading gateways.</span>
+        <LoadingState label="Loading gateways..." />
+      </div>
+    );
+  }
   if (gatewaysQuery.isError) return <ErrorState error={gatewaysQuery.error} />;
 
   const gateways = gatewaysQuery.data?.gateways ?? [];
   const profileLoading = profilesQuery.isLoading;
   const createDisabled = profileLoading || activeProfiles.length === 0 || createGatewayMutation.isPending;
+  const gatewayActionStatus = createGatewayMutation.isPending
+    ? "Creating gateway."
+    : createTokenMutation.isPending
+      ? "Issuing gateway token."
+      : revokeTokenMutation.isPending
+        ? "Revoking gateway token."
+        : null;
 
   return (
     <div className="space-y-5">
+      {gatewayActionStatus ? <p className="sr-only" role="status">{gatewayActionStatus}</p> : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <ToolsPageHeader
           title="Named MCP gateways"
@@ -277,7 +304,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
           }}
           disabled={profileLoading}
         >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Create gateway
         </Button>
       </div>
@@ -292,7 +319,9 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                 value={createDraft.name}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Engineering laptops"
-                required
+                required={true}
+                minLength={1}
+                maxLength={160}
               />
             </label>
             <label className="space-y-1.5 text-sm">
@@ -301,7 +330,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={createDraft.profileId}
                 onChange={(event) => setCreateDraft((current) => ({ ...current, profileId: event.target.value }))}
-                required
+                required={true}
                 disabled={activeProfiles.length === 0}
               >
                 <option value="" disabled>
@@ -322,6 +351,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
               value={createDraft.description}
               onChange={(event) => setCreateDraft((current) => ({ ...current, description: event.target.value }))}
               placeholder="Who this endpoint is for and when it should be rotated."
+              maxLength={4000}
             />
           </label>
           {activeProfiles.length === 0 && !profileLoading ? (
@@ -366,11 +396,11 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" onClick={() => void copyText(endpoint, "Gateway endpoint")}>
-                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      <Copy data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                       Copy endpoint
                     </Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => startIssuing(gateway.id)}>
-                      <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                      <KeyRound data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                       Issue token
                     </Button>
                   </div>
@@ -415,10 +445,12 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                             setTokenDrafts((current) => ({
                               ...current,
                               [gateway.id]: { ...tokenDraft, name: event.target.value },
-                            }))
-                          }
-                          placeholder="Dotta's MacBook"
-                          required
+                          }))
+                        }
+                        placeholder="Dotta's MacBook"
+                        required={true}
+                        minLength={1}
+                        maxLength={160}
                         />
                       </label>
                       <label className="space-y-1.5 text-sm">
@@ -430,10 +462,12 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                             setTokenDrafts((current) => ({
                               ...current,
                               [gateway.id]: { ...tokenDraft, clientLabel: event.target.value },
-                            }))
-                          }
-                          placeholder="Cursor on work laptop"
-                          required
+                          }))
+                        }
+                        placeholder="Cursor on work laptop"
+                        required={true}
+                        minLength={1}
+                        maxLength={160}
                         />
                       </label>
                     </div>
@@ -447,10 +481,12 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                             setTokenDrafts((current) => ({
                               ...current,
                               [gateway.id]: { ...tokenDraft, ownerNote: event.target.value },
-                            }))
-                          }
-                          placeholder="Who owns this token and why it exists"
-                          required
+                          }))
+                        }
+                        placeholder="Who owns this token and why it exists"
+                        required={true}
+                        minLength={1}
+                        maxLength={1000}
                         />
                       </label>
                       <label className="space-y-1.5 text-sm">
@@ -463,9 +499,10 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                             setTokenDrafts((current) => ({
                               ...current,
                               [gateway.id]: { ...tokenDraft, expiresAt: event.target.value },
-                            }))
-                          }
-                          required
+                          }))
+                        }
+                        required={true}
+                        min={toDateInputValue(new Date())}
                         />
                       </label>
                     </div>
@@ -512,7 +549,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="font-medium text-foreground">New token for {createdToken.name}</div>
                       <Button type="button" variant="outline" size="sm" onClick={() => void copyText(createdToken.token, "Gateway bearer token")}>
-                        <Copy className="mr-1.5 h-3.5 w-3.5" />
+                        <Copy data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                         Copy token
                       </Button>
                     </div>
@@ -567,7 +604,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                                       onClick={() => setConfirmingRevokeTokenId(token.id)}
                                       aria-label={`Revoke ${token.name}`}
                                     >
-                                      <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                      <RotateCcw data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                                       Revoke
                                     </Button>
                                   ) : null}
@@ -583,7 +620,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                                     className="h-7 px-2"
                                     onClick={() => setConfirmingRevokeTokenId(null)}
                                   >
-                                    <X className="mr-1 h-3.5 w-3.5" />
+                                    <X data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                                     Cancel
                                   </Button>
                                   <Button
@@ -594,7 +631,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                                     onClick={() => revokeTokenMutation.mutate(token.id)}
                                     disabled={revokeTokenMutation.isPending}
                                   >
-                                    <Check className="mr-1 h-3.5 w-3.5" />
+                                    <Check data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                                     Confirm
                                   </Button>
                                 </div>
@@ -629,7 +666,7 @@ export function GatewaysTab({ companyId }: { companyId: string }) {
                                   void copyText(formatSnippetConfig(snippet.config), `${snippet.label} snippet`);
                                 }}
                               >
-                                <Copy className="mr-1 h-3.5 w-3.5" />
+                                <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                                 Copy
                               </Button>
                             </summary>

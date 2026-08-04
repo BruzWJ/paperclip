@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Company } from "@paperclipai/shared";
 import { sidebarPreferencesApi } from "../api/sidebarPreferences";
 import { queryKeys } from "../lib/queryKeys";
@@ -60,13 +60,6 @@ export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
     setOrderedIds((current) => (areEqual(current, nextIds) ? current : nextIds));
   }, [companies, data?.orderedIds]);
 
-  const mutation = useMutation({
-    mutationFn: (nextIds: string[]) => sidebarPreferencesApi.updateCompanyOrder({ orderedIds: nextIds }),
-    onSuccess: (preference) => {
-      queryClient.setQueryData(queryKey, preference);
-    },
-  });
-
   const orderedCompanies = useMemo(
     () => sortCompaniesByOrder(companies, orderedIds),
     [companies, orderedIds],
@@ -87,9 +80,16 @@ export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
         orderedIds: filtered,
         updatedAt: current?.updatedAt ?? null,
       }));
-      mutation.mutate(filtered);
+      void sidebarPreferencesApi.updateCompanyOrder({ orderedIds: filtered })
+        .then((preference) => {
+          queryClient.setQueryData(queryKey, preference);
+        })
+        // Reordering stays optimistic. Preserve that preference locally if the
+        // background sync cannot reach the server, matching the prior mutation
+        // behavior without surfacing an unhandled rejection from a sidebar drag.
+        .catch(() => undefined);
     },
-    [companies, mutation, queryClient, queryKey, userId],
+    [companies, queryClient, queryKey, userId],
   );
 
   return {

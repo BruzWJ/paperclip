@@ -312,12 +312,13 @@ export function SidebarAccountMenu({
                 )}
                 onClick={() => signOutMutation.mutate()}
                 disabled={signOutMutation.isPending}
+                aria-busy={signOutMutation.isPending}
               >
                 <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
                   <LogOut className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-foreground">
+                  <span aria-live="polite" className="block text-sm font-medium text-foreground">
                     {signOutMutation.isPending ? "Signing out..." : "Sign out"}
                   </span>
                   <span className="block text-xs text-muted-foreground">

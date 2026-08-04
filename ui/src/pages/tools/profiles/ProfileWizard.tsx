@@ -78,6 +78,7 @@ export function ProfileWizard({
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<Set<string>>(new Set());
   const [companyDefault, setCompanyDefault] = useState(false);
+  const submissionInFlightRef = useRef(false);
 
   const toggleIn = (setter: typeof setSelectedAgentIds) => (id: string) =>
     setter((prev) => {
@@ -171,6 +172,9 @@ export function ProfileWizard({
       });
       return { created: updated, goToStep: input.goToStep, seed: input.seed };
     },
+    onMutate: () => {
+      submissionInFlightRef.current = true;
+    },
     onSuccess: ({ created, goToStep, seed }) => {
       setDraftId(created.id);
       if (seed) setSelections(seed);
@@ -179,6 +183,9 @@ export function ProfileWizard({
     },
     onError: (error: unknown) =>
       pushToast({ title: "Could not save", body: String((error as Error)?.message ?? error), tone: "error" }),
+    onSettled: () => {
+      submissionInFlightRef.current = false;
+    },
   });
 
   const finish = useMutation({
@@ -198,6 +205,9 @@ export function ProfileWizard({
       });
       return toolsApi.updateProfile(draftId, { status: "active" });
     },
+    onMutate: () => {
+      submissionInFlightRef.current = true;
+    },
     onSuccess: (profile) => {
       pushToast({ title: "Profile saved", tone: "success" });
       invalidate();
@@ -205,9 +215,26 @@ export function ProfileWizard({
     },
     onError: (error: unknown) =>
       pushToast({ title: "Could not save profile", body: String((error as Error)?.message ?? error), tone: "error" }),
+    onSettled: () => {
+      submissionInFlightRef.current = false;
+    },
   });
 
+  const isPending = saveDraft.isPending || finish.isPending;
+  const saveStep = (input: { goToStep: WizardStep; completedStep: WizardStep; seed?: WizardSelections }) => {
+    if (isPending || submissionInFlightRef.current) {
+      return;
+    }
+
+    submissionInFlightRef.current = true;
+    saveDraft.mutate(input);
+  };
   const saveAndExit = () => {
+    if (isPending || submissionInFlightRef.current) {
+      return;
+    }
+
+    submissionInFlightRef.current = true;
     const completed: WizardStep = step;
     saveDraft.mutate(
       { goToStep: step, completedStep: completed },
@@ -219,66 +246,83 @@ export function ProfileWizard({
       },
     );
   };
+  const finishProfile = () => {
+    if (isPending || submissionInFlightRef.current) {
+      return;
+    }
 
-  const busy = saveDraft.isPending || finish.isPending;
+    submissionInFlightRef.current = true;
+    finish.mutate();
+  };
   const step1Valid = name.trim().length > 0 && (template !== "copy" || Boolean(copyFromId));
 
   if (profileId && profiles.isLoading) return <LoadingState label="Loading draft…" />;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-24">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-24" aria-busy={isPending}>
+      {isPending ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          {finish.isPending ? "Saving and activating profile…" : "Saving profile draft…"} Your choices are temporarily locked.
+        </p>
+      ) : null}
       <Stepper current={step} />
 
-      <div className="min-h-(--sz-320px)">
-        {step === 1 ? (
-          <StepName
-            template={template}
-            onTemplate={setTemplate}
-            copyFromId={copyFromId}
-            onCopyFrom={setCopyFromId}
-            copyOptions={allProfiles.filter((p) => p.status !== "archived" && p.id !== profileId)}
-            name={name}
-            onName={setName}
-            description={description}
-            onDescription={setDescription}
-            profileKey={profileKey}
-            onProfileKey={(v) => {
-              setKeyEdited(true);
-              setProfileKey(v);
-            }}
-          />
-        ) : null}
+      <fieldset
+        aria-label="Access profile setup"
+        className="contents"
+        disabled={isPending}
+      >
+        <div className="min-h-(--sz-320px)">
+          {step === 1 ? (
+            <StepName
+              template={template}
+              onTemplate={setTemplate}
+              copyFromId={copyFromId}
+              onCopyFrom={setCopyFromId}
+              copyOptions={allProfiles.filter((p) => p.status !== "archived" && p.id !== profileId)}
+              name={name}
+              onName={setName}
+              description={description}
+              onDescription={setDescription}
+              profileKey={profileKey}
+              onProfileKey={(v) => {
+                setKeyEdited(true);
+                setProfileKey(v);
+              }}
+            />
+          ) : null}
 
-        {step === 2 ? (
-          <WizardToolsStep
-            appGroups={appGroups}
-            catalogLoading={data.catalogLoading}
-            selections={selections}
-            onSelectionsChange={setSelections}
-            advancedRules={advancedRules}
-            onAdvancedRulesChange={setAdvancedRules}
-            newToolsAction={newToolsAction}
-            onNewToolsActionChange={setNewToolsAction}
-          />
-        ) : null}
+          {step === 2 ? (
+            <WizardToolsStep
+              appGroups={appGroups}
+              catalogLoading={data.catalogLoading}
+              selections={selections}
+              onSelectionsChange={setSelections}
+              advancedRules={advancedRules}
+              onAdvancedRulesChange={setAdvancedRules}
+              newToolsAction={newToolsAction}
+              onNewToolsActionChange={setNewToolsAction}
+            />
+          ) : null}
 
-        {step === 3 ? (
-          <StepAssign
-            agents={(agents.data ?? []).map((a) => ({ id: a.id, name: a.name, title: a.title, icon: a.icon }))}
-            projects={(data.projects.data ?? []).map((p) => ({ id: p.id, name: p.name }))}
-            routines={(data.routines.data ?? []).map((r) => ({ id: r.id, name: r.title }))}
-            profiles={allProfiles}
-            selectedAgentIds={selectedAgentIds}
-            onToggleAgent={toggleIn(setSelectedAgentIds)}
-            selectedProjectIds={selectedProjectIds}
-            onToggleProject={toggleIn(setSelectedProjectIds)}
-            selectedRoutineIds={selectedRoutineIds}
-            onToggleRoutine={toggleIn(setSelectedRoutineIds)}
-            companyDefault={companyDefault}
-            onCompanyDefault={setCompanyDefault}
-          />
-        ) : null}
-      </div>
+          {step === 3 ? (
+            <StepAssign
+              agents={(agents.data ?? []).map((a) => ({ id: a.id, name: a.name, title: a.title, icon: a.icon }))}
+              projects={(data.projects.data ?? []).map((p) => ({ id: p.id, name: p.name }))}
+              routines={(data.routines.data ?? []).map((r) => ({ id: r.id, name: r.title }))}
+              profiles={allProfiles}
+              selectedAgentIds={selectedAgentIds}
+              onToggleAgent={toggleIn(setSelectedAgentIds)}
+              selectedProjectIds={selectedProjectIds}
+              onToggleProject={toggleIn(setSelectedProjectIds)}
+              selectedRoutineIds={selectedRoutineIds}
+              onToggleRoutine={toggleIn(setSelectedRoutineIds)}
+              companyDefault={companyDefault}
+              onCompanyDefault={setCompanyDefault}
+            />
+          ) : null}
+        </div>
+      </fieldset>
 
       {/* Sticky footer: live count + navigation. */}
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur">
@@ -294,51 +338,49 @@ export function ProfileWizard({
               <button
                 type="button"
                 onClick={saveAndExit}
-                disabled={busy}
+                disabled={isPending}
                 className="font-medium text-primary hover:underline disabled:opacity-50"
               >
-                Save &amp; finish later
+                {isPending ? "Saving…" : "Save & finish later"}
               </button>
             ) : null}
           </div>
 
           <div className="flex items-center gap-2">
             {step > 1 ? (
-              <Button variant="outline" disabled={busy} onClick={() => setStep((s) => (s - 1) as WizardStep)}>
+              <Button variant="outline" disabled={isPending} onClick={() => setStep((s) => (s - 1) as WizardStep)}>
                 Back
               </Button>
             ) : (
-              <Button variant="ghost" disabled={busy} onClick={() => navigate("/apps/advanced/profiles")}>
+              <Button variant="ghost" disabled={isPending} onClick={() => navigate("/apps/advanced/profiles")}>
                 Cancel
               </Button>
             )}
 
             {step === 1 ? (
               <Button
-                disabled={!step1Valid || busy}
-                onClick={() =>
-                  saveDraft.mutate({ goToStep: 2, completedStep: 1, seed: seedSelections() })
-                }
+                disabled={!step1Valid || isPending}
+                onClick={() => saveStep({ goToStep: 2, completedStep: 1, seed: seedSelections() })}
               >
-                {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                Continue
+                {isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                {isPending ? "Saving…" : "Continue"}
               </Button>
             ) : null}
 
             {step === 2 ? (
               <Button
-                disabled={busy}
-                onClick={() => saveDraft.mutate({ goToStep: 3, completedStep: 2 })}
+                disabled={isPending}
+                onClick={() => saveStep({ goToStep: 3, completedStep: 2 })}
               >
-                {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                Continue
+                {isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                {isPending ? "Saving…" : "Continue"}
               </Button>
             ) : null}
 
             {step === 3 ? (
-              <Button disabled={busy} onClick={() => finish.mutate()}>
-                {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                Save profile
+              <Button disabled={isPending} onClick={finishProfile}>
+                {isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                {isPending ? "Saving profile…" : "Save profile"}
               </Button>
             ) : null}
           </div>

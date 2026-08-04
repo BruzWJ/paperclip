@@ -15,7 +15,7 @@ import {
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, relativeTime } from "../lib/utils";
-import { ExternalLink } from "lucide-react";
+import { Bot, ExternalLink } from "lucide-react";
 import { Identity } from "./Identity";
 import { StatusBadge } from "./StatusBadge";
 import {
@@ -37,6 +37,22 @@ interface ActiveAgentsPanelProps {
   emptyMessage?: string;
   queryScope?: string;
   showMoreLink?: boolean;
+}
+
+function ActiveAgentsEmptyState({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-border p-4" role="status">
+      <div className="flex items-start gap-2.5">
+        <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-foreground">{message}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Agent activity will appear here when a task run starts.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ActiveAgentsPanel({
@@ -111,9 +127,7 @@ export function ActiveAgentsPanel({
         {title}
       </h3>
       {runs.length === 0 ? (
-        <div className="rounded-xl border border-border p-4">
-          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-        </div>
+        <ActiveAgentsEmptyState message={emptyMessage} />
       ) : (
         <div className={cn(
           "grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4",
@@ -178,8 +192,9 @@ const AgentRunCard = memo(function AgentRunCard({
             <Link
               to={"/agents/" + agentRef + "/runs/" + run.id}
               className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-(length:--text-nano) text-muted-foreground transition-colors hover:text-foreground"
+              aria-label={`Open ${agentName}'s ${run.kind} run`}
             >
-              <ExternalLink className="h-2.5 w-2.5" />
+              <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" />
             </Link>
           ) : null}
         </div>

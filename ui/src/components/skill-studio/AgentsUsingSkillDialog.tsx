@@ -233,6 +233,11 @@ export function AgentsUsingSkillDialog({
 
   const rows = skill.usedByAgents;
   const count = rows.length;
+  const assignmentStatus = syncMutation.isPending
+    ? "Updating agent skill assignment…"
+    : agentsQuery.isLoading
+      ? "Loading available agents…"
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -245,6 +250,7 @@ export function AgentsUsingSkillDialog({
               : `${count} ${count === 1 ? "agent has" : "agents have"} this skill selected.`}
           </DialogDescription>
         </DialogHeader>
+        {assignmentStatus ? <p role="status" className="sr-only">{assignmentStatus}</p> : null}
 
         <div className="max-h-80 overflow-y-auto">
           {count === 0 ? (

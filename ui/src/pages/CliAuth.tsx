@@ -50,7 +50,7 @@ export function CliAuthPage() {
   }
 
   if (sessionQuery.isLoading || challengeQuery.isLoading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading CLI auth challenge...</div>;
+    return <div role="status" className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading CLI auth challenge...</div>;
   }
 
   if (challengeQuery.error) {
@@ -58,7 +58,7 @@ export function CliAuthPage() {
       <div className="mx-auto max-w-xl py-10">
         <Card className="block p-6">
           <h1 className="text-lg font-semibold">CLI auth challenge unavailable</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p role="alert" className="mt-2 text-sm text-muted-foreground">
             {challengeQuery.error instanceof Error ? challengeQuery.error.message : "Challenge is invalid or expired."}
           </p>
         </Card>
@@ -149,8 +149,12 @@ export function CliAuthPage() {
           )}
         </div>
 
+        {approveMutation.isPending ? <p role="status" className="mt-4 text-sm text-muted-foreground">Approving CLI access…</p> : cancelMutation.isPending ? (
+          <p role="status" className="mt-4 text-sm text-muted-foreground">Cancelling CLI access request…</p>
+        ) : null}
+
         {(approveMutation.error || cancelMutation.error) && (
-          <p className="mt-4 text-sm text-destructive">
+          <p role="alert" className="mt-4 text-sm text-destructive">
             {(approveMutation.error ?? cancelMutation.error) instanceof Error
               ? ((approveMutation.error ?? cancelMutation.error) as Error).message
               : "Failed to update CLI auth challenge"}

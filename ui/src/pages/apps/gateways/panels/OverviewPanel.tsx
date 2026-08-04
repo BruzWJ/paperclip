@@ -116,7 +116,7 @@ export function OverviewPanel({
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-foreground">How clients connect</h3>
           <Button variant="outline" size="sm" onClick={() => void copy(snippet, "Client config")}>
-            <Copy className="mr-1 h-3.5 w-3.5" />
+            <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
             Copy
           </Button>
         </div>

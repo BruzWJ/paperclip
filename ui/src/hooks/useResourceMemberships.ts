@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ResourceMembershipResourceType,
   ResourceMembershipState,
@@ -140,16 +141,19 @@ export function useResourceMembershipMutation(companyId: string | null | undefin
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const queryKey = queryKeys.resourceMemberships.mine(companyId ?? "__none__");
+  const [pendingRequests, setPendingRequests] = useState<MutationVariables[]>([]);
 
-  return useMutation({
-    mutationFn: (variables: MutationVariables) => {
-      if (!companyId) throw new Error("Select a company first.");
-      const body = { state: variables.state, starred: variables.starred };
-      return variables.resourceType === "project"
-        ? resourceMembershipsApi.updateProject(companyId, variables.resourceId, body)
-        : resourceMembershipsApi.updateAgent(companyId, variables.resourceId, body);
-    },
-    onMutate: async (variables) => {
+  const mutate = useCallback((variables: MutationVariables) => {
+    if (!companyId) {
+      pushToast({
+        title: "Select a company first.",
+        tone: "error",
+      });
+      return;
+    }
+
+    setPendingRequests((requests) => [...requests, variables]);
+    void (async () => {
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<ResourceMemberships>(queryKey);
       queryClient.setQueryData<ResourceMemberships>(
@@ -159,33 +163,44 @@ export function useResourceMembershipMutation(companyId: string | null | undefin
           starred: variables.starred,
         }),
       );
-      return { previous };
-    },
-    onError: (error, variables, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(queryKey, context.previous);
+
+      try {
+        const body = { state: variables.state, starred: variables.starred };
+        const result = variables.resourceType === "project"
+          ? await resourceMembershipsApi.updateProject(companyId, variables.resourceId, body)
+          : await resourceMembershipsApi.updateAgent(companyId, variables.resourceId, body);
+        queryClient.setQueryData<ResourceMemberships>(
+          queryKey,
+          // Loose null-check: a missing or null starredAt both mean "not starred".
+          (current) => applyMembershipChange(current, variables.resourceType, result.resourceId, {
+            state: result.state,
+            starred: result.starredAt != null,
+          }),
+        );
+      } catch (error) {
+        if (previous) {
+          queryClient.setQueryData(queryKey, previous);
+        }
+        const verb = variables.starred !== undefined
+          ? variables.starred ? "star" : "unstar"
+          : variables.state === "left" ? "leave" : "join";
+        pushToast({
+          title: `Couldn't ${verb} ${variables.resourceName}.`,
+          body: error instanceof Error ? error.message : "Try again.",
+          tone: "error",
+        });
+      } finally {
+        queryClient.invalidateQueries({ queryKey });
+        setPendingRequests((requests) =>
+          requests.filter((request) => request !== variables),
+        );
       }
-      const verb = variables.starred !== undefined
-        ? variables.starred ? "star" : "unstar"
-        : variables.state === "left" ? "leave" : "join";
-      pushToast({
-        title: `Couldn't ${verb} ${variables.resourceName}.`,
-        body: error instanceof Error ? error.message : "Try again.",
-        tone: "error",
-      });
-    },
-    onSuccess: (result, variables) => {
-      queryClient.setQueryData<ResourceMemberships>(
-        queryKey,
-        // Loose null-check: a missing or null starredAt both mean "not starred".
-        (current) => applyMembershipChange(current, variables.resourceType, result.resourceId, {
-          state: result.state,
-          starred: result.starredAt != null,
-        }),
-      );
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey });
-    },
-  });
+    })();
+  }, [companyId, pushToast, queryClient, queryKey]);
+
+  return useMemo(() => ({
+    mutate,
+    isPending: pendingRequests.length > 0,
+    variables: pendingRequests.at(-1),
+  }), [mutate, pendingRequests]);
 }

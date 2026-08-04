@@ -39,6 +39,7 @@ import type {
 } from "@paperclipai/shared";
 import { pluginsApi, type PluginUiContribution } from "@/api/plugins";
 import { authApi } from "@/api/auth";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
 import {
@@ -640,11 +641,23 @@ function usePluginModuleLoader(contributions: PluginUiContribution[] | undefined
  */
 export function usePluginSlots(filters: SlotFilters): UsePluginSlotsResult {
   const queryEnabled = filters.enabled ?? true;
+  const toast = useOptionalToastActions();
   const { data, isLoading: isQueryLoading, error } = useQuery({
     queryKey: queryKeys.plugins.uiContributions,
     queryFn: () => pluginsApi.listUiContributions(),
     enabled: queryEnabled,
   });
+  const pluginError = error ? getErrorMessage(error) : null;
+
+  useEffect(() => {
+    if (!toast || !pluginError) return;
+    toast.pushToast({
+      dedupeKey: "plugin-ui-contributions-error",
+      title: "Plugin extensions unavailable",
+      body: pluginError,
+      tone: "error",
+    });
+  }, [pluginError, toast]);
 
   // Kick off dynamic imports for any new plugin contributions.
   usePluginModuleLoader(data);
@@ -688,7 +701,7 @@ export function usePluginSlots(filters: SlotFilters): UsePluginSlotsResult {
   return {
     slots,
     isLoading,
-    errorMessage: error ? getErrorMessage(error) : null,
+    errorMessage: pluginError,
   };
 }
 
@@ -903,7 +916,7 @@ export function PluginSlotOutlet({
 
   if (errorMessage) {
     return (
-      <div className={cn("rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive", errorClassName)}>
+      <div className={cn("rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive", errorClassName)} role="alert">
         Plugin extensions unavailable: {errorMessage}
       </div>
     );

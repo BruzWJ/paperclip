@@ -101,6 +101,7 @@ export function WizardToolsStep(props: WizardToolsStepProps) {
         <div className="relative min-w-(--sz-220px) flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label="Search tools"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tools…"
@@ -381,7 +382,7 @@ function AdvancedRules({
 
         <div className="flex flex-wrap items-end gap-2">
           <Select value={effect} onValueChange={(v) => setEffect(v as "include" | "exclude")}>
-            <SelectTrigger className="w-28">
+            <SelectTrigger aria-label="Rule effect" className="w-28">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -390,7 +391,7 @@ function AdvancedRules({
             </SelectContent>
           </Select>
           <Select value={kind} onValueChange={(v) => setKind(v as AdvancedRuleKind)}>
-            <SelectTrigger className="w-40">
+            <SelectTrigger aria-label="Rule type" className="w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -403,7 +404,7 @@ function AdvancedRules({
           </Select>
           {kind === "risk_level" ? (
             <Select value={value || "destructive"} onValueChange={setValue}>
-              <SelectTrigger className="w-36">
+              <SelectTrigger aria-label="Rule risk level" className="w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -414,6 +415,7 @@ function AdvancedRules({
             </Select>
           ) : (
             <Input
+              aria-label="Tool rule value"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={kind === "tool_name" ? "e.g. gmail.send*" : "tool ID"}
@@ -421,7 +423,7 @@ function AdvancedRules({
             />
           )}
           <Button type="button" variant="outline" size="sm" onClick={addRule}>
-            <Plus className="mr-1 h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
             Add rule
           </Button>
         </div>

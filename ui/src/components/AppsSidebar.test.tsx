@@ -163,4 +163,29 @@ describe("AppsSidebar", () => {
       root.unmount();
     });
   });
+
+  it("explains when there is no runtime activity yet", async () => {
+    mockToolsApi.listRuntimeSlots.mockResolvedValue({ runtimeSlots: [] });
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <AppsSidebar />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("No runtime activity yet.");
+    expect(container.textContent).toContain("Runtime activity appears after you use a connected app.");
+    expect(container.querySelector('a[href="/apps/browse"]')?.textContent).toContain("Browse apps");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
 });

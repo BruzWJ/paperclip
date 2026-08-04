@@ -132,9 +132,9 @@ function MarkdownAttachmentCard({
       </div>
       <div className="mt-3 rounded-md hover:bg-accent/10">
         {isLoading ? (
-          <p className="px-1 py-2 text-xs text-muted-foreground">Loading preview...</p>
+          <p className="px-1 py-2 text-xs text-muted-foreground" role="status">Loading preview...</p>
         ) : error ? (
-          <p className="px-1 py-2 text-xs text-destructive">Could not load markdown preview.</p>
+          <p className="px-1 py-2 text-xs text-destructive" role="alert">Could not load markdown preview.</p>
         ) : (
           <FoldCurtain>
             <MarkdownBody className="paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7" softBreaks={false}>
@@ -282,28 +282,32 @@ export function IssueAttachmentsSection({
             <div
               key={attachment.id}
               id={`attachment-${attachment.id}`}
-              className="group relative aspect-square cursor-pointer scroll-mt-20 overflow-hidden rounded-lg border border-border bg-accent/10"
-              onClick={() => onImageClick(attachment)}
+              className="group relative aspect-square scroll-mt-20 overflow-hidden rounded-lg border border-border bg-accent/10"
             >
-              <img
-                src={attachment.contentPath}
-                alt={attachment.originalFilename ?? "attachment"}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/30" />
+              <button
+                type="button"
+                className="absolute inset-0 block h-full w-full cursor-pointer border-0 bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onImageClick(attachment)}
+                aria-label={`Preview ${attachment.originalFilename ?? "image attachment"}`}
+              >
+                <img
+                  src={attachment.contentPath}
+                  alt={attachment.originalFilename ?? "attachment"}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+                <span aria-hidden="true" className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/30" />
+              </button>
               {onDelete && confirmDeleteId === attachment.id ? (
                 <div
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/60"
-                  onClick={(event) => event.stopPropagation()}
+                  className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-black/60"
                 >
                   <p className="text-xs font-medium text-white">Delete?</p>
                   <div className="flex gap-1.5">
                     <button
                       type="button"
                       className="rounded bg-destructive px-2 py-0.5 text-xs text-white hover:bg-destructive/80"
-                      onClick={(event) => {
-                        event.stopPropagation();
+                      onClick={() => {
                         confirmDelete(attachment.id);
                       }}
                       disabled={deletePending}
@@ -313,8 +317,7 @@ export function IssueAttachmentsSection({
                     <button
                       type="button"
                       className="rounded bg-muted px-2 py-0.5 text-xs hover:bg-muted/80"
-                      onClick={(event) => {
-                        event.stopPropagation();
+                      onClick={() => {
                         setConfirmDeleteId(null);
                       }}
                     >
@@ -325,9 +328,8 @@ export function IssueAttachmentsSection({
               ) : onDelete ? (
                 <button
                   type="button"
-                  className="absolute right-1.5 top-1.5 rounded-md bg-black/50 p-1 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
+                  className="absolute right-1.5 top-1.5 z-10 rounded-md bg-black/50 p-1 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
+                  onClick={() => {
                     requestDelete(attachment.id);
                   }}
                   title="Delete attachment"

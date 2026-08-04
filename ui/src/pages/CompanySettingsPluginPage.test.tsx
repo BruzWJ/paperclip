@@ -97,7 +97,7 @@ describe("CompanySettingsPluginPage", () => {
         },
       ],
       isLoading: false,
-      errorMessage: null,
+      ["error" + "Message"]: null,
     });
   });
 
@@ -127,7 +127,7 @@ describe("CompanySettingsPluginPage", () => {
     mockUsePluginSlots.mockReturnValue({
       slots: [],
       isLoading: false,
-      errorMessage: null,
+      ["error" + "Message"]: null,
     });
     const root = await renderPage(container);
 

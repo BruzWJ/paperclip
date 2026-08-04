@@ -161,13 +161,19 @@ function ReconnectForm({
 
   return (
     <div className="space-y-3">
+      {reconnect.isPending ? (
+        <p className="sr-only" role="status">
+          Checking and reconnecting app credentials.
+        </p>
+      ) : null}
       {usesGallery ? (
         fields.map((field) => (
           <div key={field.configPath}>
             <label className="text-xs font-medium text-foreground">{field.label}</label>
             <Input
+              aria-label="Replacement app credential"
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
               value={values[field.configPath] ?? ""}
               onChange={(e) => setValues({ ...values, [field.configPath]: e.target.value })}
               placeholder="****************"
@@ -187,8 +193,9 @@ function ReconnectForm({
         ))
       ) : (
         <Input
+          aria-label="Replacement app key"
           type="password"
-          autoComplete="off"
+          autoComplete="new-password"
           value={single}
           onChange={(e) => setSingle(e.target.value)}
           placeholder="Paste your new key"

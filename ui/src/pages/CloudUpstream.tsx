@@ -197,6 +197,17 @@ export function CloudUpstream() {
     },
     onError: (error) => setActionError(error instanceof Error ? error.message : "Failed to activate imported entities."),
   });
+  const pendingActionStatus = finishConnectPending
+    ? "Finishing cloud connection…"
+    : startMutation.isPending
+      ? "Starting cloud connection…"
+      : previewMutation.isPending
+        ? "Building cloud push preview…"
+        : runMutation.isPending
+          ? "Pushing to cloud…"
+          : activationMutation.isPending
+            ? "Updating activation checklist…"
+            : null;
 
   async function invalidateUpstreams() {
     if (!selectedCompanyId) return;
@@ -208,7 +219,7 @@ export function CloudUpstream() {
   }
 
   if (experimentalQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading experimental settings...</div>;
+    return <div role="status" className="text-sm text-muted-foreground">Loading experimental settings...</div>;
   }
 
   if (!cloudSyncEnabled) {
@@ -247,20 +258,21 @@ export function CloudUpstream() {
         {connection?.target.origin ? (
           <Button variant="outline" size="sm" asChild>
             <a href={connection.target.origin} target="_blank" rel="noreferrer">
-              <ExternalLink className="h-4 w-4" />
+              <ExternalLink data-icon="inline-start" className="h-4 w-4" />
               Open cloud
             </a>
           </Button>
         ) : null}
       </div>
 
+      {pendingActionStatus ? <p role="status" className="sr-only">{pendingActionStatus}</p> : null}
       {notice ? (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+        <div role="status" className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
           {notice}
         </div>
       ) : null}
       {actionError ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {actionError}
         </div>
       ) : null}
@@ -337,7 +349,7 @@ export function CloudUpstream() {
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Progress and finish</div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => downloadRunReport(latestRun)}>
-                <FileJson className="h-4 w-4" />
+                <FileJson data-icon="inline-start" className="h-4 w-4" />
                 Download report
               </Button>
               {latestRun.status === "failed" || latestRun.status === "cancelled" ? (
@@ -351,7 +363,7 @@ export function CloudUpstream() {
                   })}
                   disabled={runMutation.isPending}
                 >
-                  <RefreshCcw className="h-4 w-4" />
+                  <RefreshCcw data-icon="inline-start" className="h-4 w-4" />
                   Retry
                 </Button>
               ) : latestRun.status === "succeeded" ? (
@@ -361,7 +373,7 @@ export function CloudUpstream() {
                   onClick={() => runMutation.mutate({ connectionId: latestRun.connectionId, companyId: latestRun.companyId })}
                   disabled={runMutation.isPending}
                 >
-                  <RefreshCcw className="h-4 w-4" />
+                  <RefreshCcw data-icon="inline-start" className="h-4 w-4" />
                   Re-run
                 </Button>
               ) : null}

@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/api/client";
 import { AppDetailSidebar } from "./AppConnectionSidebar";
 
 const sidebarNavItemMock = vi.hoisted(() => vi.fn());
@@ -204,19 +205,21 @@ describe("AppConnectionSidebar", () => {
     expect(container.querySelectorAll("[data-to]").length).toBe(5);
   });
 
-  it("keeps rendering a connection sidebar when its connection is unavailable", async () => {
-    mockToolsApi.getConnection.mockResolvedValue(undefined);
+  it("shows a recoverable empty state when its connection is unavailable", async () => {
+    mockToolsApi.getConnection.mockRejectedValue(new ApiError("Tool connection not found", 404, null));
     mockToolsApi.listGallery.mockResolvedValue({ apps: [] });
     mockToolsApi.listAppsAttention.mockResolvedValue({ apps: [], totals: {} });
 
     await renderSidebar();
 
-    expect(container.textContent).toContain("App");
+    expect(container.textContent).toContain("No connection found.");
+    expect(container.textContent).toContain("No records are available for this app.");
+    expect(container.textContent).toContain("Choose another app from the list.");
     expect(container.querySelector('a[href="/apps"]')?.textContent).toContain("All apps");
     expect(container.querySelectorAll("[data-to]").length).toBe(6);
   });
 
-  it("keeps rendering an application sidebar when its application is unavailable", async () => {
+  it("shows a recoverable empty state when its application is unavailable", async () => {
     mockToolsApi.listApplications.mockResolvedValue({ applications: [] });
     mockToolsApi.listConnections.mockResolvedValue({ connections: [] });
     mockToolsApi.listGallery.mockResolvedValue({ apps: [] });
@@ -224,7 +227,9 @@ describe("AppConnectionSidebar", () => {
 
     await renderSidebar(<AppDetailSidebar kind="application" applicationId="missing-app" />);
 
-    expect(container.textContent).toContain("App");
+    expect(container.textContent).toContain("No application found.");
+    expect(container.textContent).toContain("No records are available for this app.");
+    expect(container.textContent).toContain("Choose another app from the list.");
     expect(container.querySelector('a[href="/apps"]')?.textContent).toContain("All apps");
     expect(container.querySelectorAll("[data-to]").length).toBe(5);
   });

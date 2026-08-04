@@ -453,7 +453,7 @@ export function SkillFolderRail({
         aria-valuenow={width}
         tabIndex={0}
         className={cn(
-          "absolute inset-y-0 right-0 z-20 w-3 cursor-col-resize touch-none outline-none",
+          "absolute inset-y-0 right-0 z-20 w-3 cursor-col-resize touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors",
           "hover:before:bg-border focus-visible:before:bg-ring",
           isResizing && "before:bg-ring",
@@ -591,38 +591,38 @@ function TreeBranch({
         >
           <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isOpen && "rotate-90")} />
         </button>
-        <button
-          type="button"
-          className="flex min-w-0 items-center gap-2 py-1 text-left"
-          aria-current={active ? "page" : undefined}
-          onClick={() => {
-            onSelect(folder.id);
-            if (children.length > 0) onToggle(folder.id);
-          }}
-          onDoubleClick={() => editable && onStartRename(folder)}
-        >
-          {rootIcon ? (
-            <span className="flex h-4 w-4 items-center justify-center text-muted-foreground">{rootIcon}</span>
-          ) : (
-            <FolderSwatch color={folder.color} />
-          )}
-          {renamingId === folder.id ? (
-            <input
-              value={renameDraft}
-              onChange={(event) => onRenameDraftChange(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") onRenameCommit(folder);
-                if (event.key === "Escape") onRenameCancel();
-              }}
-              onBlur={() => onRenameCommit(folder)}
-              className="h-6 min-w-0 flex-1 rounded-sm border border-border bg-background px-1 text-sm outline-none"
-              autoFocus
-            />
-          ) : (
+        {renamingId === folder.id ? (
+          <input
+            value={renameDraft}
+            onChange={(event) => onRenameDraftChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onRenameCommit(folder);
+              if (event.key === "Escape") onRenameCancel();
+            }}
+            onBlur={() => onRenameCommit(folder)}
+            className="h-6 min-w-0 w-full rounded-sm border border-border bg-background px-1 text-sm outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`Rename ${label}`}
+            autoFocus
+          />
+        ) : (
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-2 py-1 text-left"
+            aria-current={active ? "page" : undefined}
+            onClick={() => {
+              onSelect(folder.id);
+              if (children.length > 0) onToggle(folder.id);
+            }}
+            onDoubleClick={() => editable && onStartRename(folder)}
+          >
+            {rootIcon ? (
+              <span className="flex h-4 w-4 items-center justify-center text-muted-foreground">{rootIcon}</span>
+            ) : (
+              <FolderSwatch color={folder.color} />
+            )}
             <span className="truncate">{label}</span>
-          )}
-        </button>
+          </button>
+        )}
         <span className="text-right text-xs tabular-nums text-muted-foreground">{folder.itemCount}</span>
         {editable || canNest ? (
           <DropdownMenu>
@@ -892,28 +892,37 @@ export function MoveToFolderDialog({
         <div
           className={cn(
             "group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-            selectable ? "cursor-pointer hover:bg-accent/40" : "cursor-not-allowed opacity-50",
+            selectable ? "hover:bg-accent/40" : "cursor-not-allowed opacity-50",
             isChosen && "bg-accent/70",
           )}
           style={{ paddingLeft: `${0.5 + depth * 0.9}rem` }}
-          onClick={() => selectable && setTarget(folder.id)}
         >
-          {folder.systemKey && ["my", "projects", "bundled"].includes(folder.systemKey) ? (
-            <FolderIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          ) : (
-            <FolderSwatch color={folder.color} />
-          )}
-          <span className="min-w-0 flex-1 truncate">{reservedRootLabel(folder)}</span>
-          {isCurrent ? <span className="text-xs text-muted-foreground">current</span> : null}
-          {bundled ? <span className="text-xs text-muted-foreground">read-only</span> : null}
-          {isChosen ? <Check className="h-3.5 w-3.5" /> : null}
+          <button
+            type="button"
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-2 text-left",
+              selectable ? "cursor-pointer" : "cursor-not-allowed",
+            )}
+            disabled={!selectable}
+            aria-pressed={isChosen}
+            onClick={() => setTarget(folder.id)}
+          >
+            {folder.systemKey && ["my", "projects", "bundled"].includes(folder.systemKey) ? (
+              <FolderIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <FolderSwatch color={folder.color} />
+            )}
+            <span className="min-w-0 flex-1 truncate">{reservedRootLabel(folder)}</span>
+            {isCurrent ? <span className="text-xs text-muted-foreground">current</span> : null}
+            {bundled ? <span className="text-xs text-muted-foreground">read-only</span> : null}
+            {isChosen ? <Check className="h-3.5 w-3.5" /> : null}
+          </button>
           {nestable ? (
             <button
               type="button"
               title="New folder inside…"
               className="opacity-0 transition-opacity group-hover:opacity-100"
-              onClick={(event) => {
-                event.stopPropagation();
+              onClick={() => {
                 setCreatingParent(folder.id);
                 setNewName("");
               }}
@@ -948,26 +957,29 @@ export function MoveToFolderDialog({
         <div className="flex items-center gap-2 rounded-md border border-border px-2.5">
           <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
+            aria-label="Search folders"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search folders"
-            className="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
 
         <div className="max-h-72 overflow-y-auto rounded-md border border-border p-1">
-          <div
+          <button
+            type="button"
             className={cn(
-              "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/40",
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent/40",
               chosen === null && "bg-accent/70",
             )}
             onClick={() => setTarget(null)}
+            aria-pressed={chosen === null}
           >
             <FolderSwatch color={null} />
             <span className="min-w-0 flex-1 truncate">Unfiled</span>
             {currentFolderId == null ? <span className="text-xs text-muted-foreground">current</span> : null}
             {chosen === null ? <Check className="h-3.5 w-3.5" /> : null}
-          </div>
+          </button>
           {model.roots.map((node) => renderNode(node, 0))}
           <div className="mt-1 border-t border-border pt-1">
             {creatingParent === null ? (
@@ -1045,6 +1057,7 @@ function InlineNewFolder({
     <div className="flex items-center gap-2 py-1" style={{ paddingLeft: `${0.5 + depth * 0.9}rem` }}>
       <FolderPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <Input
+        aria-label="New folder name"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Folder name"

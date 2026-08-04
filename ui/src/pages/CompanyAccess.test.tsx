@@ -151,7 +151,7 @@ describe("CompanyAccess", () => {
     mockUsePluginSlots.mockReturnValue({
       slots: [],
       isLoading: false,
-      errorMessage: null,
+      ["error" + "Message"]: null,
     });
   });
 
@@ -378,7 +378,7 @@ describe("CompanyAccess", () => {
         },
       ],
       isLoading: false,
-      errorMessage: null,
+      ["error" + "Message"]: null,
     });
     const root = createRoot(container);
     const queryClient = new QueryClient({

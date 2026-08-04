@@ -473,6 +473,7 @@ function ConflictResolutionList({
                       </span>
                     ) : (
                       <input
+                        aria-label={`Rename ${item.originalName}`}
                         className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 font-mono text-xs outline-none focus:border-foreground"
                         value={currentName}
                         onChange={(e) => onRename(item.slug, e.target.value)}
@@ -526,7 +527,6 @@ function AdapterPickerList({
   expandedSlugs,
   configValues,
   onChangeAdapter,
-  onChangeSkillChannel,
   onToggleExpand,
   onChangeConfig,
 }: {
@@ -536,7 +536,6 @@ function AdapterPickerList({
   expandedSlugs: Set<string>;
   configValues: Record<string, CreateConfigValues>;
   onChangeAdapter: (slug: string, adapterType: string) => void;
-  onChangeSkillChannel: (slug: string, channel: CompanySkillChannel) => void;
   onToggleExpand: (slug: string) => void;
   onChangeConfig: (slug: string, patch: Partial<CreateConfigValues>) => void;
 }) {
@@ -562,7 +561,8 @@ function AdapterPickerList({
         <div className="divide-y divide-border">
           {agents.map((agent) => {
             const selectedType = adapterOverrides[agent.slug] ?? "";
-            const skillChannel = skillChannels[agent.slug] ?? "";
+            const skillChannel = skillChannels[agent.slug]
+              ?? (selectedType ? "operator_native" : "");
             const isExpanded = expandedSlugs.has(agent.slug);
             const vals = configValues[agent.slug] ?? { ...defaultCreateValues, adapterType: selectedType };
             return (
@@ -579,6 +579,7 @@ function AdapterPickerList({
                   </span>
                   <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
                   <select
+                    aria-label="Target adapter"
                     className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs outline-none focus:border-foreground"
                     value={selectedType}
                     onChange={(e) => onChangeAdapter(agent.slug, e.target.value)}
@@ -592,27 +593,9 @@ function AdapterPickerList({
                       </option>
                     ))}
                   </select>
-                  <select
-                    className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs outline-none focus:border-foreground"
-                    value={skillChannel}
-                    onChange={(event) =>
-                      onChangeSkillChannel(
-                        agent.slug,
-                        event.target.value as CompanySkillChannel,
-                      )
-                    }
-                    disabled={!selectedType}
-                  >
-                    <option value="" disabled>
-                      Select skill channel
-                    </option>
-                    <option value="isolated_skills_home">
-                      Isolated skills home
-                    </option>
-                    <option value="operator_native">
-                      Operator-managed native
-                    </option>
-                  </select>
+                  <span className="min-w-0 flex-1 rounded-md border border-border bg-muted px-2 py-1 text-xs text-muted-foreground">
+                    {selectedType ? "Operator-managed native" : "Select an adapter first"}
+                  </span>
                   <button
                     type="button"
                     className={cn(
@@ -1051,18 +1034,10 @@ export function CompanyImport() {
       delete next[slug];
       return next;
     });
-    setSkillChannels((prev) => {
-      const next = { ...prev };
-      delete next[slug];
-      return next;
-    });
-  }
-
-  function handleSkillChannelChange(
-    slug: string,
-    channel: CompanySkillChannel,
-  ) {
-    setSkillChannels((prev) => ({ ...prev, [slug]: channel }));
+    setSkillChannels((prev) => ({
+      ...prev,
+      [slug]: "operator_native",
+    }));
   }
 
   function handleAdapterToggleExpand(slug: string) {
@@ -1185,6 +1160,7 @@ export function CompanyImport() {
             <input
               ref={packageInputRef}
               type="file"
+              aria-label="Choose company package ZIP file"
               accept=".zip,application/zip"
               className="hidden"
               onChange={handleChooseLocalPackage}
@@ -1217,7 +1193,8 @@ export function CompanyImport() {
             hint="Repo tree path or blob URL to COMPANY.md (e.g. github.com/owner/repo/tree/main/company)."
           >
             <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              aria-label="GitHub repository URL"
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               type="text"
               value={importUrl}
               placeholder="https://github.com/owner/repo/tree/main/company"
@@ -1231,7 +1208,8 @@ export function CompanyImport() {
 
         <Field label="Target" hint="Import into this company or create a new one.">
           <select
-            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+            aria-label="Import target"
+            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={targetMode}
             onChange={(e) => {
               setTargetMode(e.target.value as "existing" | "new");
@@ -1251,7 +1229,8 @@ export function CompanyImport() {
             hint="Optional override. Leave blank to use the package name."
           >
             <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              aria-label="New company name"
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               type="text"
               value={newCompanyName}
               onChange={(e) => setNewCompanyName(e.target.value)}
@@ -1265,7 +1244,8 @@ export function CompanyImport() {
           hint="Board imports can rename, skip, or replace matching company content."
         >
           <select
-            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+            aria-label="Collision strategy"
+            className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={collisionStrategy}
             onChange={(e) => {
               setCollisionStrategy(e.target.value as CompanyPortabilityCollisionStrategy);
@@ -1334,7 +1314,6 @@ export function CompanyImport() {
             expandedSlugs={adapterExpandedSlugs}
             configValues={adapterConfigValues}
             onChangeAdapter={handleAdapterChange}
-            onChangeSkillChannel={handleSkillChannelChange}
             onToggleExpand={handleAdapterToggleExpand}
             onChangeConfig={handleAdapterConfigChange}
           />
@@ -1364,7 +1343,10 @@ export function CompanyImport() {
 
           {/* Errors */}
           {importPreview.errors.length > 0 && (
-            <div className="mx-5 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
+            <div
+              role="alert"
+              className="mx-5 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3"
+            >
               {importPreview.errors.map((e) => (
                 <div key={e} className="text-xs text-destructive">{e}</div>
               ))}

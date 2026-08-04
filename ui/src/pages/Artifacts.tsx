@@ -343,10 +343,13 @@ export function Artifacts() {
         </div>
       ) : null}
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error.message}</p>}
 
       {isLoading ? (
-        <PageSkeleton variant="list" />
+        <div role="status">
+          <span className="sr-only">Loading artifacts…</span>
+          <PageSkeleton variant="list" />
+        </div>
       ) : items.length === 0 ? (
         <EmptyState icon={showGroupCards ? Layers : Package} message={emptyMessage} />
       ) : (
@@ -360,7 +363,7 @@ export function Artifacts() {
                   <ArtifactCard key={`${artifact.source}:${artifact.id}`} artifact={artifact} />
                 ))}
           </div>
-          <div ref={loadMoreRef} className="flex min-h-10 items-center justify-center pb-2 text-xs text-muted-foreground">
+          <div ref={loadMoreRef} aria-live="polite" className="flex min-h-10 items-center justify-center pb-2 text-xs text-muted-foreground">
             {isFetchingNextPage
               ? "Loading more artifacts..."
               : hasNextPage

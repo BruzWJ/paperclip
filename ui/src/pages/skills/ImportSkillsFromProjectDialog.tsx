@@ -543,7 +543,7 @@ export function ImportSkillsFromProjectDialog({
                   </div>
                 )}
                 <Button variant="outline" size="sm" onClick={backToPick}>
-                  <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Back
+                  <ArrowLeft data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> Back
                 </Button>
                 {!scanError && candidates.length > 0 && (
                   <Button
@@ -849,6 +849,7 @@ function SelectStep({
                       const key = selectionKey(candidate.workspaceId, candidate.relativePath);
                       const isSelected = selection.has(key);
                       const selectedValue = selection.get(key);
+                      const checkboxId = `candidate-${candidate.workspaceId}-${candidate.slug}`;
                       return (
                         <li
                           key={`${candidate.workspaceId} ${candidate.relativePath}`}
@@ -857,13 +858,13 @@ function SelectStep({
                             selectable ? "cursor-pointer hover:bg-accent/40" : "opacity-70",
                             isSelected && "bg-accent/50",
                           )}
-                          onClick={() => toggleCandidate(candidate)}
                           data-testid={`candidate-${candidate.relativePath}`}
                           data-status={candidate.status}
                           data-selected={isSelected ? "true" : "false"}
                         >
-                          <div className="pt-0.5" onClick={(event) => event.stopPropagation()}>
+                          <div className="pt-0.5">
                             <Checkbox
+                              id={checkboxId}
                               checked={isSelected}
                               onCheckedChange={() => toggleCandidate(candidate)}
                               disabled={!selectable}
@@ -872,9 +873,9 @@ function SelectStep({
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                              <span className="min-w-0 truncate text-sm font-medium">
+                              <label htmlFor={checkboxId} className={cn("min-w-0 truncate text-sm font-medium", selectable && "cursor-pointer")}>
                                 {candidate.name}
-                              </span>
+                              </label>
                               <CandidateStatusBadge status={candidate.status} />
                             </div>
                             {candidate.description && (
@@ -900,7 +901,6 @@ function SelectStep({
                             {candidate.status === "conflict" && isSelected && (
                               <div
                                 className="mt-2 flex flex-wrap items-center gap-2"
-                                onClick={(event) => event.stopPropagation()}
                               >
                                 <label
                                   htmlFor={`rename-${candidate.workspaceId}-${candidate.slug}`}
@@ -921,9 +921,18 @@ function SelectStep({
                                       ? !isValidSelectionSlug(selectedValue)
                                       : undefined
                                   }
+                                  aria-describedby={
+                                    selectedValue && !isValidSelectionSlug(selectedValue)
+                                      ? `rename-${candidate.workspaceId}-${candidate.slug}-error`
+                                      : undefined
+                                  }
                                 />
                                 {selectedValue && !isValidSelectionSlug(selectedValue) && (
-                                  <span className="text-xs text-destructive">
+                                  <span
+                                    id={`rename-${candidate.workspaceId}-${candidate.slug}-error`}
+                                    role="alert"
+                                    className="text-xs text-destructive"
+                                  >
                                     Use a lowercase URL-safe slug.
                                   </span>
                                 )}

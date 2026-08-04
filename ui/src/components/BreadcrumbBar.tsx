@@ -1,4 +1,5 @@
 import { Link } from "@/lib/router";
+import { cn } from "@/lib/utils";
 import { Menu } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -78,20 +79,21 @@ export function BreadcrumbBar() {
 
   // Single breadcrumb = page title (uppercase)
   if (breadcrumbs.length === 1) {
+    const breadcrumb = breadcrumbs[0];
+
     return (
       <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
         {menuButton}
         <div className="min-w-0 overflow-hidden flex-1">
-          {breadcrumbs[0].leading ? (
-            <h1 className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wider">
-              <span className="flex shrink-0 items-center">{breadcrumbs[0].leading}</span>
-              <span className="truncate">{breadcrumbs[0].label}</span>
-            </h1>
-          ) : (
-            <h1 className="text-sm font-semibold uppercase tracking-wider truncate">
-              {breadcrumbs[0].label}
-            </h1>
-          )}
+          <h1
+            className={cn(
+              "text-sm font-semibold uppercase tracking-wider truncate",
+              breadcrumb.leading && "flex items-center gap-1.5",
+            )}
+          >
+            {breadcrumb.leading ? <span className="flex shrink-0 items-center">{breadcrumb.leading}</span> : null}
+            <span className={breadcrumb.leading ? "truncate" : undefined}>{breadcrumb.label}</span>
+          </h1>
         </div>
         {globalToolbarSlots}
       </div>

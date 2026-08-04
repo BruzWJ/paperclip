@@ -32,11 +32,13 @@ vi.mock("./MarkdownBody", () => ({
 
 import { InlineEditor, queueContainedBlurCommit } from "./InlineEditor";
 
-/** Enter multiline edit mode by clicking the preview surface. */
+/** Enter multiline edit mode through its explicit, semantic edit control. */
 function enterMultilineEdit(container: HTMLDivElement) {
-  const preview = container.querySelector<HTMLDivElement>('[data-testid="multiline-md-preview"]');
-  if (preview) {
-    preview.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (button) => button.textContent?.trim() === "Edit",
+  );
+  if (editButton) {
+    editButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
 }
 
@@ -85,7 +87,7 @@ describe("InlineEditor", () => {
       root.render(<InlineEditor value="hello" nullable onSave={onSave} />);
     });
 
-    const display = container.querySelector("span");
+    const display = container.querySelector("button");
     expect(display).not.toBeNull();
     expect(display?.textContent).toBe("hello");
 
@@ -119,7 +121,7 @@ describe("InlineEditor", () => {
       root.render(<InlineEditor value="hello" onSave={onSave} />);
     });
 
-    const display = container.querySelector("span");
+    const display = container.querySelector("button");
     expect(display).not.toBeNull();
 
     act(() => {
@@ -184,7 +186,7 @@ describe("InlineEditor", () => {
     outside.remove();
   });
 
-  it("multiline defaults to MarkdownBody preview when value is non-empty, swaps to editor on click", () => {
+  it("multiline defaults to MarkdownBody preview when value is non-empty, swaps to editor through Edit", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const root = createRoot(container);
 
@@ -207,7 +209,7 @@ describe("InlineEditor", () => {
     });
   });
 
-  it("marks multiline preview textboxes as multiline", () => {
+  it("exposes a semantic Edit button for the multiline preview", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const root = createRoot(container);
 
@@ -215,17 +217,19 @@ describe("InlineEditor", () => {
       root.render(<InlineEditor value="Hello world" multiline onSave={onSave} />);
     });
 
-    const preview = container.querySelector<HTMLElement>('[role="textbox"]');
-    expect(preview).not.toBeNull();
-    expect(preview?.getAttribute("aria-multiline")).toBe("true");
-    expect(preview?.tabIndex).toBe(0);
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Edit",
+    );
+    expect(editButton).not.toBeUndefined();
+    expect(editButton?.getAttribute("type")).toBe("button");
+    expect(container.querySelector('[role="textbox"]')).toBeNull();
 
     act(() => {
       root.unmount();
     });
   });
 
-  it("enters multiline edit mode from the keyboard preview surface", () => {
+  it("enters multiline edit mode from the semantic Edit button", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const root = createRoot(container);
 
@@ -233,11 +237,13 @@ describe("InlineEditor", () => {
       root.render(<InlineEditor value="Hello world" multiline onSave={onSave} />);
     });
 
-    const preview = container.querySelector<HTMLElement>('[role="textbox"]');
-    expect(preview).not.toBeNull();
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Edit",
+    );
+    expect(editButton).not.toBeUndefined();
 
     act(() => {
-      preview!.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+      editButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(container.querySelector('[data-testid="multiline-md-mock"]')).not.toBeNull();

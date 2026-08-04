@@ -63,7 +63,6 @@ const mockProjectsApi = vi.hoisted(() => ({
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
   listInvokableIssueOwners: vi.fn(),
-  adapterModels: vi.fn(),
 }));
 
 const mockAuthApi = vi.hoisted(() => ({
@@ -192,6 +191,7 @@ vi.mock("./AgentIconPicker", () => ({
 
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
+  DialogTitle: ({ children, ...props }: ComponentProps<"h2">) => <h2 {...props}>{children}</h2>,
   DialogContent: ({
     children,
     showCloseButton: _showCloseButton,
@@ -340,7 +340,6 @@ describe("NewIssueDialog", () => {
     mockAgentsApi.listInvokableIssueOwners.mockResolvedValue([
       { id: "agent-1", name: "Owner", title: null, icon: null },
     ]);
-    mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" } });
     mockAssetsApi.uploadImage.mockResolvedValue({ contentPath: "/uploads/asset.png" });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });

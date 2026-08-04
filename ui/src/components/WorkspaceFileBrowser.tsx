@@ -178,10 +178,6 @@ function WorkspaceFileRow({ item, treeItemId, selected, highlighted, depth, onOp
   const name = basename(item.relativePath);
   return (
     <div
-      id={treeItemId}
-      role="treeitem"
-      aria-selected={selected}
-      onClick={onOpen}
       onMouseEnter={onHover}
       title={item.displayPath}
       className={cn(
@@ -190,8 +186,17 @@ function WorkspaceFileRow({ item, treeItemId, selected, highlighted, depth, onOp
       )}
       style={{ paddingLeft: `${0.5 + depth * 0.875}rem` }}
     >
-      <FileCode2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{name}</span>
+      <button
+        id={treeItemId}
+        type="button"
+        role="treeitem"
+        aria-selected={selected}
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <FileCode2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{name}</span>
+      </button>
       {downloadUrl ? (
         <a
           href={downloadUrl}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import type { Issue, ExecutionWorkspace } from "@paperclipai/shared";
 import { useQuery } from "@tanstack/react-query";
@@ -203,6 +203,7 @@ export function IssueWorkspaceCard({
   const { selectedCompanyId } = useCompany();
   const companyId = issue.companyId ?? selectedCompanyId;
   const [editing, setEditing] = useState(initialEditing);
+  const workspaceModeSelectId = useId();
 
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -365,7 +366,7 @@ export function IssueWorkspaceCard({
                 className="h-6 px-2 text-xs text-muted-foreground"
                 onClick={handleCancel}
               >
-                <X className="h-3 w-3 mr-1" />Cancel
+                <X data-icon="inline-start" className="h-3 w-3 mr-1" />Cancel
               </Button>
               <Button
                 size="sm"
@@ -383,7 +384,7 @@ export function IssueWorkspaceCard({
               className="h-6 px-2 text-xs text-muted-foreground"
               onClick={() => setEditing(true)}
             >
-              <Pencil className="h-3 w-3 mr-1" />Edit
+              <Pencil data-icon="inline-start" className="h-3 w-3 mr-1" />Edit
             </Button>
           )}
         </div>
@@ -435,6 +436,7 @@ export function IssueWorkspaceCard({
               {selectedReusableWorkspaceLink ? (
                 <Link
                   to={selectedReusableWorkspaceLink}
+                  aria-label="View reused workspace details"
                   className="hover:text-foreground hover:underline"
                 >
                   <BreakablePath text={selectedReusableExecutionWorkspace.name} />
@@ -460,8 +462,13 @@ export function IssueWorkspaceCard({
       {/* Editing controls */}
       {editing && (
         <div className="space-y-2 pt-1">
+          <label className="sr-only" htmlFor={workspaceModeSelectId}>
+            Workspace mode
+          </label>
           <select
-            className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
+            id={workspaceModeSelectId}
+            aria-label="Workspace mode"
+            className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             value={draftSelection}
             onChange={(e) => {
               const nextMode = e.target.value;
@@ -500,6 +507,7 @@ export function IssueWorkspaceCard({
                 {currentWorkspaceLink ? (
                   <Link
                     to={currentWorkspaceLink}
+                    aria-label={`View workspace ${workspace.name}`}
                     className="hover:text-foreground hover:underline"
                   >
                     <BreakablePath text={workspace.name} />

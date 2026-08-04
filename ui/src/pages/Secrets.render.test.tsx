@@ -583,11 +583,12 @@ describe("Secrets page layout", () => {
     ) as HTMLButtonElement | null;
     expect(referencesButton).not.toBeNull();
 
-    const companyRow = Array.from(container.querySelectorAll("[role='row']")).find(
-      (row) => row.textContent?.includes("OPENAI_API_KEY"),
-    ) as HTMLElement | undefined;
+    const companyRowOpen = container.querySelector<HTMLButtonElement>(
+      '[data-testid="secrets-card-view"] button[aria-label="Open secret OPENAI_API_KEY"]',
+    );
+    expect(companyRowOpen).not.toBeNull();
     await act(async () => {
-      companyRow?.click();
+      companyRowOpen?.click();
     });
     await flushReact();
 
@@ -805,11 +806,12 @@ describe("Secrets page layout", () => {
     await flushReact();
     await flushReact();
 
-    const definitionRow = Array.from(container.querySelectorAll("[role='row']")).find(
-      (row) => row.textContent?.includes("Personal GitHub token"),
-    ) as HTMLElement | undefined;
+    const definitionRowOpen = container.querySelector<HTMLButtonElement>(
+      '[data-testid="secrets-card-view"] button[aria-label="Open secret Personal GitHub token"]',
+    );
+    expect(definitionRowOpen).not.toBeNull();
     await act(async () => {
-      definitionRow?.click();
+      definitionRowOpen?.click();
     });
     await flushReact();
 

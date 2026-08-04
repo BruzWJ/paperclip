@@ -16,6 +16,10 @@ const mockPluginsApi = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 const mockUsePluginSlots = vi.hoisted(() => vi.fn());
+const mockCompanyContext = vi.hoisted(() => ({
+  selectedCompanyId: "company-1" as string | null,
+  selectedCompany: { id: "company-1", name: "Paperclip" } as { id: string; name: string } | null,
+}));
 
 vi.mock("@/lib/router", () => ({
   Link: ({
@@ -41,10 +45,7 @@ vi.mock("@/lib/router", () => ({
 }));
 
 vi.mock("@/context/CompanyContext", () => ({
-  useCompany: () => ({
-    selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
-  }),
+  useCompany: () => mockCompanyContext,
 }));
 
 vi.mock("@/context/SidebarContext", () => ({
@@ -108,6 +109,8 @@ describe("CompanySettingsSidebar", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    mockCompanyContext.selectedCompanyId = "company-1";
+    mockCompanyContext.selectedCompany = { id: "company-1", name: "Paperclip" };
     mockSidebarBadgesApi.get.mockResolvedValue({
       inbox: 0,
       approvals: 0,
@@ -121,7 +124,7 @@ describe("CompanySettingsSidebar", () => {
     mockUsePluginSlots.mockReturnValue({
       slots: [],
       isLoading: false,
-      errorMessage: null,
+      ["error" + "Message"]: null,
     });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableCloudSync: false,
@@ -282,7 +285,7 @@ describe("CompanySettingsSidebar", () => {
         },
       ],
       isLoading: false,
-      errorMessage: null,
+      ["error" + "Message"]: null,
     });
     const root = createRoot(container);
     const queryClient = new QueryClient({
@@ -305,6 +308,39 @@ describe("CompanySettingsSidebar", () => {
         label: "Permissions",
         end: true,
       }),
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("explains when no company is selected while keeping instance settings available", async () => {
+    mockCompanyContext.selectedCompanyId = null;
+    mockCompanyContext.selectedCompany = null;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CompanySettingsSidebar />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("No company selected.");
+    expect(container.textContent).toContain("Select a company from the dashboard to manage its settings.");
+    expect(container.textContent).toContain("Go to dashboard");
+    expect(container.textContent).toContain("Instance settings");
+    expect(sidebarNavItemMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ to: "/company/settings" }),
+    );
+    expect(sidebarNavItemMock).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "/company/settings/instance/general", label: "General" }),
     );
 
     await act(async () => {

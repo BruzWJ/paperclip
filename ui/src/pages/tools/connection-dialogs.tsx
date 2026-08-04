@@ -80,7 +80,10 @@ export function CatalogDialog({ connection, onClose }: { connection: ToolConnect
           <DialogTitle>Tool catalog — {connection.name}</DialogTitle>
         </DialogHeader>
         {catalog.isLoading ? (
-          <LoadingState />
+          <div role="status">
+            <span className="sr-only">Loading tool catalog.</span>
+            <LoadingState />
+          </div>
         ) : catalog.error ? (
           <ErrorState error={catalog.error} onRetry={() => catalog.refetch()} />
         ) : (catalog.data?.catalog ?? []).length === 0 ? (
@@ -278,6 +281,15 @@ export function AddConnectionDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl">
+        {create.isPending || probe.isPending || activate.isPending ? (
+          <p className="sr-only" role="status">
+            {create.isPending
+              ? "Creating connection draft."
+              : probe.isPending
+                ? "Probing connection."
+                : "Activating connection."}
+          </p>
+        ) : null}
         <DialogHeader>
           <DialogTitle>Add application</DialogTitle>
           <DialogDescription>
@@ -298,7 +310,7 @@ export function AddConnectionDialog({
               <div className="space-y-1.5">
                 <Label>Application</Label>
                 <Select value={applicationMode} onValueChange={(v) => setApplicationMode(v as "existing" | "new")}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Application mode">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -312,7 +324,7 @@ export function AddConnectionDialog({
                 <div className="space-y-1.5">
                   <Label>Existing application</Label>
                   <Select value={applicationId} onValueChange={setApplicationId}>
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="Existing application">
                       <SelectValue placeholder="Select an application" />
                     </SelectTrigger>
                     <SelectContent>
@@ -368,7 +380,7 @@ export function AddConnectionDialog({
                   onValueChange={(v) => setTransport(v as "mcp_remote" | "local_stdio")}
                   disabled={locked}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Connection transport">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -393,7 +405,7 @@ export function AddConnectionDialog({
                 <div className="space-y-1.5">
                   <Label>Command template</Label>
                   <Select value={templateId} onValueChange={setTemplateId} disabled={locked}>
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="Command template">
                       <SelectValue placeholder="Select an approved template" />
                     </SelectTrigger>
                     <SelectContent>
@@ -444,7 +456,7 @@ export function AddConnectionDialog({
                     <div className="flex items-end gap-2">
                       <div className="flex-1 space-y-1">
                         <Select value={pendingSecretId} onValueChange={setPendingSecretId}>
-                          <SelectTrigger>
+                          <SelectTrigger aria-label="Credential secret">
                             <SelectValue placeholder="Select a vault secret" />
                           </SelectTrigger>
                           <SelectContent>
@@ -486,7 +498,7 @@ export function AddConnectionDialog({
           {/* Inline probe panel — runs before activation, follows the Loading/Error rhythm. */}
           {locked ? (
             probe.isPending ? (
-              <div className="rounded-md border border-border bg-muted/40 p-3">
+              <div className="rounded-md border border-border bg-muted/40 p-3" role="status">
                 <LoadingState label="Probing connection…" />
               </div>
             ) : probe.isError ? (

@@ -531,7 +531,7 @@ describe("buildWorkspaceServiceControlEntries", () => {
     const built = sections();
     const entries = buildWorkspaceServiceControlEntries({
       sections: built,
-      isPending: true,
+      pending: true,
       pendingRequest: {
         action: "stop",
         workspaceCommandId: built.services[0].workspaceCommandId ?? null,

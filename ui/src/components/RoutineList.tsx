@@ -104,20 +104,13 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   const runDisabled = runningRoutineId === routine.id || isArchived || disableRunNow;
 
   return (
-    <Link
-      to={href}
-      className={`group flex flex-col gap-3 px-3 py-3 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center no-underline text-inherit${
+    <div
+      className={`group flex flex-col gap-3 px-3 py-3 transition-colors hover:bg-accent/50 sm:flex-row sm:items-center${
         divider ? " border-b border-border last:border-b-0" : ""
       }`}
     >
       {selectMode ? (
-        <div
-          className="flex items-start pt-0.5 sm:pt-1"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-        >
+        <div className="flex items-start pt-0.5 sm:pt-1">
           <input
             type="checkbox"
             className="h-4 w-4 rounded border-border"
@@ -127,7 +120,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
           />
         </div>
       ) : null}
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <Link to={href} className="min-w-0 flex-1 space-y-1.5 no-underline text-inherit">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{routine.title}</span>
           {(isArchived || routine.status === "paused" || isDraft) ? (
@@ -159,9 +152,9 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
         {secondaryDetails ? (
           <div className="text-xs text-muted-foreground">{secondaryDetails}</div>
         ) : null}
-      </div>
+      </Link>
 
-      <div className="flex items-center gap-3" onClick={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+      <div className="flex items-center gap-3">
         {runNowButton ? (
           <Button
             variant="outline"
@@ -227,6 +220,6 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </Link>
+    </div>
   );
 }

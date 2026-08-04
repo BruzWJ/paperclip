@@ -185,12 +185,22 @@ export function PluginManager() {
       ),
     [installedPlugins]
   );
+  const pluginActionStatus = installMutation.isPending
+    ? "Installing plugin…"
+    : uninstallMutation.isPending
+      ? "Uninstalling plugin…"
+      : enableMutation.isPending
+        ? "Enabling plugin…"
+        : disableMutation.isPending
+          ? "Disabling plugin…"
+          : null;
 
-  if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading plugins...</div>;
-  if (error) return <div className="p-4 text-sm text-destructive">Failed to load plugins.</div>;
+  if (isLoading) return <div className="p-4 text-sm text-muted-foreground" role="status">Loading plugins...</div>;
+  if (error) return <div className="p-4 text-sm text-destructive" role="alert">Failed to load plugins.</div>;
 
   return (
     <div className="space-y-6 max-w-5xl">
+      {pluginActionStatus ? <p className="sr-only" role="status">{pluginActionStatus}</p> : null}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Puzzle className="h-6 w-6 text-muted-foreground" />
@@ -200,7 +210,7 @@ export function PluginManager() {
         <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />
+              <Plus data-icon="inline-start" className="h-4 w-4" />
               Install Plugin
             </Button>
           </DialogTrigger>
@@ -255,15 +265,15 @@ export function PluginManager() {
         </div>
 
         {installErrorMessage && (
-          <div className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-4 py-3 text-sm text-destructive whitespace-pre-wrap break-words">
+          <div className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-4 py-3 text-sm text-destructive whitespace-pre-wrap break-words" role="alert">
             {installErrorMessage}
           </div>
         )}
 
         {bundledQuery.isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading bundled plugins...</div>
+          <div className="text-sm text-muted-foreground" role="status">Loading bundled plugins...</div>
         ) : bundledQuery.error ? (
-          <div className="text-sm text-destructive">Failed to load bundled plugins.</div>
+          <div className="text-sm text-destructive" role="alert">Failed to load bundled plugins.</div>
         ) : bundledPlugins.length === 0 ? (
           <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
             No bundled plugins were found in this checkout.
@@ -406,7 +416,7 @@ export function PluginManager() {
                       {plugin.manifestJson.description || "No description provided."}
                     </p>
                     {plugin.status === "error" && (
-                      <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-2">
+                      <div className="mt-3 rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-2" role="alert">
                         <div className="flex flex-wrap items-start gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 text-sm font-medium text-red-700 dark:text-red-300">
@@ -482,7 +492,7 @@ export function PluginManager() {
                       </div>
                       <Button variant="outline" size="sm" className="mt-2 h-8" asChild>
                         <Link to={`/company/settings/instance/plugins/${plugin.id}`}>
-                          <Settings className="h-4 w-4" />
+                          <Settings data-icon="inline-start" className="h-4 w-4" />
                           Configure
                         </Link>
                       </Button>

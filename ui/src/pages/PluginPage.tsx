@@ -169,7 +169,7 @@ export function PluginPage() {
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>
             <Link to={companyPrefix ? `/${companyPrefix}/dashboard` : "/dashboard"}>
-              <ArrowLeft className="h-4 w-4 mr-1" />
+              <ArrowLeft data-icon="inline-start" className="h-4 w-4 mr-1" />
               Back
             </Link>
           </Button>

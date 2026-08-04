@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   compareMoneyAmounts,
   parseMoneyAmount,
@@ -58,6 +58,7 @@ export function BudgetPolicyCard({
   const progress = hasLimit ? Math.min(100, summary.utilizationPercent) : 0;
   const StatusIcon = summary.status === "hard_stop" ? ShieldAlert : summary.status === "warning" ? AlertTriangle : Wallet;
   const isPlain = variant === "plain";
+  const budgetInputId = useId();
 
   const observedBudgetGrid = isPlain ? (
     <div className="grid gap-6 sm:grid-cols-2">
@@ -135,10 +136,14 @@ export function BudgetPolicyCard({
   const saveSection = onSave ? (
     <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-end", isPlain ? "" : "rounded-xl border border-border/70 bg-background/50 p-3")}>
       <div className="min-w-0 flex-1">
-        <label className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">
+        <label
+          htmlFor={budgetInputId}
+          className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground"
+        >
           Budget ({summary.budgetCurrency})
         </label>
         <Input
+          id={budgetInputId}
           value={draftBudget}
           onChange={(event) => setDraftBudget(event.target.value)}
           className="mt-2"

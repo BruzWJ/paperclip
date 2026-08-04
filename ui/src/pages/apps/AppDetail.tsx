@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, Pencil } from "lucide-react";
 import type {
@@ -157,6 +157,7 @@ export function AppDetail() {
   );
 
   const [pending, setPending] = useState(false);
+  const persistInFlightRef = useRef(false);
   const persist = useMutation({
     mutationFn: (next: { enabled: Set<string>; askFirst: Set<string>; access: AccessDraft }) =>
       toolsApi.finishApp(selectedCompanyId!, connectionId, {
@@ -164,7 +165,10 @@ export function AppDetail() {
         askFirstCatalogEntryIds: [...next.askFirst].filter((id) => next.enabled.has(id)),
         access: next.access.mode === "all" ? "all_agents" : { agentIds: [...next.access.agentIds] },
       }),
-    onMutate: () => setPending(true),
+    onMutate: () => {
+      persistInFlightRef.current = true;
+      setPending(true);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tools.connection(connectionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.tools.catalog(connectionId) });
@@ -179,7 +183,10 @@ export function AppDetail() {
         body: error instanceof Error ? error.message : "Please try again.",
         tone: "error",
       }),
-    onSettled: () => setPending(false),
+    onSettled: () => {
+      persistInFlightRef.current = false;
+      setPending(false);
+    },
   });
 
   const persistInstall = useMutation({
@@ -316,12 +323,19 @@ export function AppDetail() {
       }),
   });
 
-  const apply = (mutate: { enabled?: Set<string>; askFirst?: Set<string>; access?: AccessDraft }) =>
+  const apply = (mutate: { enabled?: Set<string>; askFirst?: Set<string>; access?: AccessDraft }) => {
+    if (pending || persistInFlightRef.current) {
+      return;
+    }
+
+    persistInFlightRef.current = true;
     persist.mutate({
       enabled: mutate.enabled ?? new Set(enabledIds),
       askFirst: mutate.askFirst ?? new Set(askFirstIds),
       access: mutate.access ?? access,
     });
+  };
+  const isRenamingPending = rename.isPending;
 
   if (!connectionId || !activeTab) {
     return <Navigate replace to={connectionId ? appTabHref(connectionId, "setup") : "/apps"} />;
@@ -360,26 +374,41 @@ export function AppDetail() {
 
   return (
     <div className="max-w-3xl space-y-6 pb-12">
-      <AppDetailHeader
-        appName={appName}
-        connection={connection}
-        logoEntry={logoEntry}
-        status={status}
-        actionCount={actionCount}
-        renaming={renaming}
-        nameDraft={nameDraft}
-        renamePending={rename.isPending}
-        onNameDraftChange={setNameDraft}
-        onRenameStart={() => {
-          setNameDraft(appName);
-          setRenaming(true);
-        }}
-        onRenameCancel={() => setRenaming(false)}
-        onRenameSubmit={(next) => {
-          if (next && next !== appName) rename.mutate(next);
-          else setRenaming(false);
-        }}
-      />
+      <fieldset
+        aria-label="App details"
+        className="contents"
+        disabled={isRenamingPending}
+      >
+        <AppDetailHeader
+          appName={appName}
+          connection={connection}
+          logoEntry={logoEntry}
+          status={status}
+          actionCount={actionCount}
+          renaming={renaming}
+          nameDraft={nameDraft}
+          pending={isRenamingPending}
+          onNameDraftChange={setNameDraft}
+          onRenameStart={() => {
+            setNameDraft(appName);
+            setRenaming(true);
+          }}
+          onRenameCancel={() => setRenaming(false)}
+          onRenameSubmit={(next) => {
+            if (isRenamingPending) {
+              return;
+            }
+
+            if (next && next !== appName) rename.mutate(next);
+            else setRenaming(false);
+          }}
+        />
+        {isRenamingPending ? (
+          <p className="text-xs text-muted-foreground" role="status">
+            Saving app name…
+          </p>
+        ) : null}
+      </fieldset>
 
       {needsReconnect && (
         <ReconnectCard
@@ -406,33 +435,55 @@ export function AppDetail() {
         />
       )}
       {activeTab === "review" && (
-        <ReviewPanel
-          connectionId={connectionId}
-          quarantined={quarantined}
-          pending={pending}
-          onTurnOnQuarantined={(ids) => apply({ enabled: addAll(new Set(enabledIds), ids) })}
-        />
+        <fieldset
+          aria-label="App action review controls"
+          className="contents"
+          disabled={pending}
+        >
+          {pending ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              Saving action review…
+            </p>
+          ) : null}
+          <ReviewPanel
+            connectionId={connectionId}
+            quarantined={quarantined}
+            pending={pending}
+            onTurnOnQuarantined={(ids) => apply({ enabled: addAll(new Set(enabledIds), ids) })}
+          />
+        </fieldset>
       )}
       {activeTab === "permissions" && (
-        <PermissionsPanel
-          appName={appName}
-          access={access}
-          agents={agents}
-          install={install}
-          readOnly={readOnly}
-          canChange={canChange}
-          quarantined={quarantined}
-          enabledIds={enabledIds}
-          askFirstIds={askFirstIds}
-          pending={pending}
-          installPending={persistInstall.isPending || installsQuery.isLoading}
-          refreshPending={refreshTools.isPending}
-          onSaveAccess={(next) => apply({ access: next })}
-          onSaveInstall={(next) => persistInstall.mutate(next)}
-          onRefreshActions={() => refreshTools.mutate()}
-          onSetActionPermission={(id, next) => apply(actionPermissionMutation(id, next, enabledIds, askFirstIds))}
-          onTurnOnQuarantined={(ids) => apply({ enabled: addAll(new Set(enabledIds), ids) })}
-        />
+        <fieldset
+          aria-label="App permissions controls"
+          className="contents"
+          disabled={pending}
+        >
+          {pending ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              Saving app permissions…
+            </p>
+          ) : null}
+          <PermissionsPanel
+            appName={appName}
+            access={access}
+            agents={agents}
+            install={install}
+            readOnly={readOnly}
+            canChange={canChange}
+            quarantined={quarantined}
+            enabledIds={enabledIds}
+            askFirstIds={askFirstIds}
+            pending={pending}
+            installPending={persistInstall.isPending || installsQuery.isLoading}
+            refreshPending={refreshTools.isPending}
+            onSaveAccess={(next) => apply({ access: next })}
+            onSaveInstall={(next) => persistInstall.mutate(next)}
+            onRefreshActions={() => refreshTools.mutate()}
+            onSetActionPermission={(id, next) => apply(actionPermissionMutation(id, next, enabledIds, askFirstIds))}
+            onTurnOnQuarantined={(ids) => apply({ enabled: addAll(new Set(enabledIds), ids) })}
+          />
+        </fieldset>
       )}
       {activeTab === "test" && (
         <TestPanel connectionId={connectionId} appName={appName} active={active} quarantined={quarantined} />
@@ -476,7 +527,7 @@ function AppDetailHeader({
   actionCount,
   renaming,
   nameDraft,
-  renamePending,
+  pending,
   onNameDraftChange,
   onRenameStart,
   onRenameCancel,
@@ -489,7 +540,7 @@ function AppDetailHeader({
   actionCount: number;
   renaming: boolean;
   nameDraft: string;
-  renamePending: boolean;
+  pending: boolean;
   onNameDraftChange: (value: string) => void;
   onRenameStart: () => void;
   onRenameCancel: () => void;
@@ -503,6 +554,7 @@ function AppDetailHeader({
           {renaming ? (
             <form
               className="flex items-center gap-2"
+              aria-busy={pending}
               onSubmit={(event) => {
                 event.preventDefault();
                 onRenameSubmit(nameDraft.trim());
@@ -512,13 +564,16 @@ function AppDetailHeader({
                 aria-label="App name"
                 value={nameDraft}
                 onChange={(event) => onNameDraftChange(event.target.value)}
+                required={true}
+                minLength={1}
+                disabled={pending}
                 className="h-9 w-64 text-lg font-bold"
                 autoFocus
               />
-              <Button type="submit" size="sm" disabled={renamePending || !nameDraft.trim()}>
-                {renamePending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+              <Button type="submit" size="sm" disabled={pending || !nameDraft.trim()}>
+                {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={onRenameCancel} disabled={renamePending}>
+              <Button type="button" size="sm" variant="ghost" onClick={onRenameCancel} disabled={pending}>
                 Cancel
               </Button>
             </form>

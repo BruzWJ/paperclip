@@ -783,7 +783,7 @@ export function FileViewerSheet({
                   className="h-7 gap-1 px-2 text-xs"
                   aria-label="Back to files"
                 >
-                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <ArrowLeft data-icon="inline-start" className="h-3.5 w-3.5" />
                   Back to files
                 </Button>
               ) : null}
@@ -984,7 +984,7 @@ function FileViewerBody({
                 </Button>
               ) : null}
               <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
-                <RefreshCcw aria-hidden="true" className="mr-1 h-3 w-3" /> Retry
+                <RefreshCcw data-icon="inline-start" aria-hidden="true" className="mr-1 h-3 w-3" /> Retry
               </Button>
             </>
           }
@@ -1008,7 +1008,7 @@ function FileViewerBody({
         body={denial.body}
         actions={
           <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
-            <RefreshCcw aria-hidden="true" className="mr-1 h-3 w-3" /> Retry
+            <RefreshCcw data-icon="inline-start" aria-hidden="true" className="mr-1 h-3 w-3" /> Retry
           </Button>
         }
       />
@@ -1047,7 +1047,7 @@ function FileViewerBody({
         body={denial.body}
         actions={
           <Button type="button" variant="ghost" size="sm" onClick={onRetry}>
-            <RefreshCcw aria-hidden="true" className="mr-1 h-3 w-3" /> Retry
+            <RefreshCcw data-icon="inline-start" aria-hidden="true" className="mr-1 h-3 w-3" /> Retry
           </Button>
         }
       />

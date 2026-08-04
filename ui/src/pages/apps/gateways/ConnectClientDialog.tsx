@@ -119,7 +119,7 @@ export function ConnectClientDialog({
                     {endpoint}
                   </code>
                   <Button variant="outline" size="sm" onClick={() => void copyText(endpoint, "Endpoint URL")}>
-                    <Copy className="mr-1 h-3.5 w-3.5" />
+                    <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                     Copy
                   </Button>
                 </div>
@@ -136,7 +136,7 @@ export function ConnectClientDialog({
                     size="sm"
                     onClick={() => void copyText(configText, `${activeSnippet.label} config`)}
                   >
-                    <Copy className="mr-1 h-3.5 w-3.5" />
+                    <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                     Copy
                   </Button>
                 </div>
@@ -168,7 +168,7 @@ export function ConnectClientDialog({
                       size="sm"
                       onClick={() => void copyText(createdToken.token, "Access token")}
                     >
-                      <Copy className="mr-1 h-3.5 w-3.5" />
+                      <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                       Copy
                     </Button>
                   ) : (
@@ -194,7 +194,7 @@ export function ConnectClientDialog({
 
         <DialogFooter>
           <Button onClick={() => onOpenChange(false)}>
-            <Check className="mr-1.5 h-4 w-4" />
+            <Check data-icon="inline-start" className="mr-1.5 h-4 w-4" />
             Done
           </Button>
         </DialogFooter>

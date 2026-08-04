@@ -138,7 +138,7 @@ export function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                autoComplete="username"
+                autoComplete="email"
                 required
                 aria-required="true"
                 aria-invalid={error ? true : undefined}

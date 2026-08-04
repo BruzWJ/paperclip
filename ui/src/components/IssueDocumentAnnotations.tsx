@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { documentAnnotationsApi, type DocumentAnnotationTarget } from "@/api/document-annotations";
 import { queryKeys } from "@/lib/queryKeys";
 import { parseDocumentAnnotationHash } from "@/lib/document-annotation-hash";
+import { isKeyboardShortcutTextInputTarget } from "@/lib/keyboardShortcuts";
 import {
   initializeSelectionDebug,
   isSelectionDebugEnabled,
@@ -15,6 +16,18 @@ import {
 import { DocumentAnnotationLayer, type PendingAnchor } from "./DocumentAnnotationLayer";
 import { DocumentAnnotationPanel } from "./DocumentAnnotationPanel";
 import type { CompanyUserProfile } from "@/lib/company-members";
+
+function isAnnotationShortcutTextInputTarget(target: EventTarget | null): boolean {
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return isKeyboardShortcutTextInputTarget(target);
+}
 
 const DESKTOP_ANNOTATION_PANEL_WIDTH = 360;
 const DESKTOP_ANNOTATION_PANEL_MIN_WIDTH = 280;
@@ -258,6 +271,7 @@ export function IssueDocumentAnnotations({
     if (typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      if (isAnnotationShortcutTextInputTarget(event.target)) return;
       const isMeta = event.metaKey || event.ctrlKey;
       if (!isMeta || !event.shiftKey) return;
       if (event.key.toLowerCase() !== "m") return;

@@ -227,6 +227,18 @@ describe("WorkspaceFileBrowser", () => {
     return { root, onOpen };
   }
 
+  function findFileTreeRow(path: string) {
+    return Array.from(container.querySelectorAll<HTMLElement>("[title]")).find(
+      (element) =>
+        element.getAttribute("title") === path &&
+        element.querySelector('[role="treeitem"]') !== null,
+    );
+  }
+
+  function findFileTreeItem(path: string) {
+    return findFileTreeRow(path)?.querySelector<HTMLElement>('[role="treeitem"]');
+  }
+
   it("renders the Recently changed files as a tree and opens a row with its relative path", () => {
     useQueryMock.mockReturnValue(
       ok(availableResponse([createItem(), createItem({ relativePath: "README.md", displayPath: "README.md" })])),
@@ -239,11 +251,11 @@ describe("WorkspaceFileBrowser", () => {
     expect(container.textContent).not.toContain("Recently changed");
     expect(container.textContent).not.toContain("From Isolated workspace");
 
-    const option = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === "ui/src/pages/IssueDetail.tsx",
-    );
+    const fileRow = findFileTreeRow("ui/src/pages/IssueDetail.tsx");
+    const option = findFileTreeItem("ui/src/pages/IssueDetail.tsx");
+    expect(fileRow).not.toBeUndefined();
     expect(option).not.toBeUndefined();
-    const download = option!.querySelector<HTMLAnchorElement>('a[aria-label="Download IssueDetail.tsx"]');
+    const download = fileRow!.querySelector<HTMLAnchorElement>('a[aria-label="Download IssueDetail.tsx"]');
     expect(download?.getAttribute("href")).toBe(
       "/api/issues/issue-1/file-resources/content?path=ui%2Fsrc%2Fpages%2FIssueDetail.tsx&download=1",
     );
@@ -325,9 +337,7 @@ describe("WorkspaceFileBrowser", () => {
   it("marks the selected file in the tree", () => {
     useQueryMock.mockReturnValue(ok(availableResponse([createItem()])));
     renderBrowser(vi.fn(), { selectedPath: "ui/src/pages/IssueDetail.tsx" });
-    const selected = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === "ui/src/pages/IssueDetail.tsx",
-    );
+    const selected = findFileTreeItem("ui/src/pages/IssueDetail.tsx");
     expect(selected?.getAttribute("aria-selected")).toBe("true");
   });
 
@@ -351,9 +361,7 @@ describe("WorkspaceFileBrowser", () => {
       mode: "all",
       path: "docs/reference/cli",
     });
-    const selected = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === "docs/reference/cli/commands.md",
-    );
+    const selected = findFileTreeItem("docs/reference/cli/commands.md");
     expect(selected?.getAttribute("aria-selected")).toBe("true");
     expect(container.textContent).toContain("commands.md");
   });
@@ -416,9 +424,7 @@ describe("WorkspaceFileBrowser", () => {
       selectedPath: "docs/reference/cli/commands.md",
     });
 
-    const unrelated = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === "ui/vite.config.ts",
-    );
+    const unrelated = findFileTreeItem("ui/vite.config.ts");
     expect(unrelated?.getAttribute("aria-selected")).toBe("false");
   });
 
@@ -561,9 +567,7 @@ describe("WorkspaceFileBrowser", () => {
       workspaceId: "workspace-content",
     });
 
-    const option = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === contentItem.displayPath,
-    )!;
+    const option = findFileTreeItem(contentItem.displayPath)!;
     act(() => {
       option.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
@@ -611,9 +615,7 @@ describe("WorkspaceFileBrowser", () => {
       path: folderPath,
     });
 
-    const option = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === contentItem.displayPath,
-    )!;
+    const option = findFileTreeItem(contentItem.displayPath)!;
     act(() => {
       option.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
@@ -650,9 +652,7 @@ describe("WorkspaceFileBrowser", () => {
       selectedPath: `${folderPath}/setup-commands.md`,
     });
 
-    const option = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === controlPlane.displayPath,
-    )!;
+    const option = findFileTreeItem(controlPlane.displayPath)!;
     act(() => {
       option.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
@@ -731,9 +731,7 @@ describe("WorkspaceFileBrowser", () => {
 
     const childListCall = useQueryMock.mock.calls.find(([options]) => options.queryKey?.[4]?.path === "docs/cli");
     expect(childListCall?.[0].queryKey[4]).toMatchObject({ path: "docs/cli", offset: 0 });
-    const selected = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-      (el) => el.getAttribute("title") === selectedPath,
-    );
+    const selected = findFileTreeItem(selectedPath);
     expect(selected?.getAttribute("aria-selected")).toBe("true");
     expect(container.textContent).toContain("setup-commands.md");
   });
@@ -783,9 +781,7 @@ describe("WorkspaceFileBrowser", () => {
       expect(pageTwoCall?.[0].queryKey[4]).toMatchObject({ path: folderPath, offset: LIST_LIMIT * 2 });
     });
     await waitForExpectation(() => {
-      const selected = Array.from(container.querySelectorAll('[role="treeitem"]')).find(
-        (el) => el.getAttribute("title") === selectedPath,
-      );
+      const selected = findFileTreeItem(selectedPath);
       expect(selected?.getAttribute("aria-selected")).toBe("true");
       expect(container.textContent).toContain("WorkspaceFileBrowser.tsx");
     });

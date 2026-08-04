@@ -25,6 +25,7 @@ interface ThemeToggleProps {
 }
 
 const MENU_ACTION_DESCRIPTION = "Toggle the app appearance.";
+const THEME_SHORTCUT = "Meta+Shift+D Control+Shift+D";
 
 /**
  * Canonical theme-toggle widget. Both the signed-out `/auth` chrome and
@@ -52,6 +53,7 @@ export function ThemeToggle({ className, variant = "icon", onAfterToggle }: Them
         )}
         onClick={handleClick}
         aria-label={label}
+        aria-keyshortcuts={THEME_SHORTCUT}
       >
         <span className="mt-0.5 rounded-lg border border-border bg-background/70 p-2 text-muted-foreground">
           <Icon className="size-4" />
@@ -71,6 +73,7 @@ export function ThemeToggle({ className, variant = "icon", onAfterToggle }: Them
       size="icon-sm"
       onClick={handleClick}
       aria-label={label}
+      aria-keyshortcuts={THEME_SHORTCUT}
       title={label}
       className={cn("text-muted-foreground", className)}
     >

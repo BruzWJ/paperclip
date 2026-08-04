@@ -236,6 +236,11 @@ export function PipelineItemBodyDocument({
 
   const bodyContentClassName =
     "paperclip-edit-in-place-content min-h-(--sz-220px) text-sm leading-7";
+  const documentOperationStatus = saveMutation.isPending
+    ? "Saving item body…"
+    : restoreMutation.isPending
+      ? "Restoring item body revision…"
+      : null;
 
   const renderReadOnlyBody = (body: string) => (
     <FoldCurtain className="max-w-3xl">
@@ -404,12 +409,15 @@ export function PipelineItemBodyDocument({
               className="h-auto gap-1.5 px-2 py-1 text-xs"
               onClick={beginEdit}
             >
-              <FilePenLine className="h-3.5 w-3.5" />
+              <FilePenLine data-icon="inline-start" className="h-3.5 w-3.5" />
               Edit
             </Button>
           )
         }
       />
+      {documentOperationStatus ? (
+        <p role="status" className="sr-only">{documentOperationStatus}</p>
+      ) : null}
 
       {!folded ? <div className="mt-3 space-y-3">{bodyContent}</div> : null}
     </section>

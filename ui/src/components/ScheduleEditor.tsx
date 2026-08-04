@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -200,6 +200,7 @@ export function ScheduleEditor({
   onChange: (cron: string) => void;
   onValidityChange?: (valid: boolean) => void;
 }) {
+  const customCronValidationId = useId();
   const parsed = useMemo(() => parseCronToPreset(value), [value]);
   const [preset, setPreset] = useState<SchedulePreset>(parsed.preset);
   const [hour, setHour] = useState(parsed.hour);
@@ -279,12 +280,14 @@ export function ScheduleEditor({
             placeholder="0 10 * * *"
             aria-label="Cron expression"
             aria-invalid={!customValidation.valid}
+            aria-describedby={customCronValidationId}
             className="font-mono text-sm"
           />
           <p className="text-xs text-muted-foreground">
             Five fields: minute hour day-of-month month day-of-week
           </p>
           <p
+            id={customCronValidationId}
             className={customValidation.valid ? "text-xs text-muted-foreground" : "text-xs text-destructive"}
             aria-live="polite"
           >
@@ -306,7 +309,7 @@ export function ScheduleEditor({
                   emitChange(preset, h, minute, dayOfWeek, dayOfMonth, customCron);
                 }}
               >
-                <SelectTrigger className="w-(--sz-120px)">
+                <SelectTrigger className="w-(--sz-120px)" aria-label="Hour">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -325,7 +328,7 @@ export function ScheduleEditor({
                   emitChange(preset, hour, m, dayOfWeek, dayOfMonth, customCron);
                 }}
               >
-                <SelectTrigger className="w-(--sz-80px)">
+                <SelectTrigger className="w-(--sz-80px)" aria-label="Minute">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -349,7 +352,7 @@ export function ScheduleEditor({
                   emitChange(preset, hour, m, dayOfWeek, dayOfMonth, customCron);
                 }}
               >
-                <SelectTrigger className="w-(--sz-80px)">
+                <SelectTrigger className="w-(--sz-80px)" aria-label="Minute">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -397,7 +400,7 @@ export function ScheduleEditor({
                   emitChange(preset, hour, minute, dayOfWeek, dom, customCron);
                 }}
               >
-                <SelectTrigger className="w-(--sz-80px)">
+                <SelectTrigger className="w-(--sz-80px)" aria-label="Day of month">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

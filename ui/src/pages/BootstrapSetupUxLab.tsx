@@ -125,7 +125,7 @@ function ClaimingPrivate() {
       </p>
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <Button disabled>
-          <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+          <Loader2 data-icon="inline-start" className="mr-2 size-4 animate-spin" aria-hidden />
           Claiming…
         </Button>
         <span className="text-sm text-muted-foreground">

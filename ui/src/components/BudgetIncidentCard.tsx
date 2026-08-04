@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   addMoneyAmounts,
   compareMoneyAmounts,
@@ -55,6 +55,7 @@ export function BudgetIncidentCard({
   const exceedsObserved = parsed !== null
     && compareMoneyAmounts(parsed, incident.observedAmount) > 0;
   const stateLabel = incidentStateLabel(incident);
+  const budgetInputId = useId();
 
   return (
     <Card className="overflow-hidden border-red-500/20 bg-(image:--gradient-extract-4)">
@@ -90,11 +91,15 @@ export function BudgetIncidentCard({
         </div>
 
         <div className="rounded-xl border border-border/60 bg-background/60 p-3">
-          <label className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground">
+          <label
+            htmlFor={budgetInputId}
+            className="text-(length:--text-micro) uppercase tracking-(--tracking-caps) text-muted-foreground"
+          >
             New budget ({incident.budgetCurrency})
           </label>
           <div className="mt-2 flex flex-col gap-3 sm:flex-row">
             <Input
+              id={budgetInputId}
               value={draftAmount}
               onChange={(event) => setDraftAmount(event.target.value)}
               inputMode="decimal"

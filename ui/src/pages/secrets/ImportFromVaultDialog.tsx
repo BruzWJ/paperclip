@@ -455,12 +455,12 @@ export function ImportFromVaultDialog({
   const draftList = useMemo(() => Array.from(selection.values()), [selection]);
 
   const reviewErrors = useMemo<Map<string, string>>(() => {
-    const errors = new Map<string, string>();
+    const validationMessages = new Map<string, string>();
     for (const draft of draftList) {
       const error = validateDraftRow(draft, existingSecrets, draftList);
-      if (error) errors.set(draft.candidate.externalRef, error);
+      if (error) validationMessages.set(draft.candidate.externalRef, error);
     }
-    return errors;
+    return validationMessages;
   }, [draftList, existingSecrets]);
 
   const blockedReviewCount = reviewErrors.size;
@@ -1142,7 +1142,7 @@ function PreviewErrorBanner({ error, onRetry }: { error: unknown; onRetry: () =>
         </div>
         <div className="mt-2 flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onRetry}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Retry
+            <RefreshCw data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> Retry
           </Button>
           {isPermission && (
             <a
@@ -1223,6 +1223,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="review-list">
         {drafts.map((draft) => {
           const error = reviewErrors.get(draft.candidate.externalRef);
+          const errorId = `review-error-${draft.candidate.externalRef}`;
           return (
             <div
               key={draft.candidate.externalRef}
@@ -1253,6 +1254,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
                         }
                         className="text-xs"
                         aria-invalid={Boolean(error)}
+                        aria-describedby={error ? errorId : undefined}
                         disabled={importing}
                         data-testid={`review-name-${draft.candidate.externalRef}`}
                       />
@@ -1271,6 +1273,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
                         }
                         className="font-mono text-xs"
                         aria-invalid={Boolean(error)}
+                        aria-describedby={error ? errorId : undefined}
                         disabled={importing}
                         data-testid={`review-key-${draft.candidate.externalRef}`}
                       />
@@ -1292,6 +1295,7 @@ function ReviewStep({ drafts, reviewErrors, updateDraft, removeDraft, importing 
                   </div>
                   {error && (
                     <div
+                      id={errorId}
                       className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
                       role="alert"
                       data-testid={`review-error-${draft.candidate.externalRef}`}

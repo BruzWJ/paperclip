@@ -157,6 +157,21 @@ export function ProfileDetail({
     },
     onError: (error: unknown) => pushToast({ title: "Could not submit review", body: errorBody(error), tone: "error" }),
   });
+  const isPending =
+    updateProfile.isPending ||
+    duplicateProfile.isPending ||
+    deleteProfile.isPending ||
+    removeAssignment.isPending ||
+    reviewNewTools.isPending;
+  const pendingStatus = reviewNewTools.isPending
+    ? "Submitting new tool review…"
+    : removeAssignment.isPending
+      ? "Removing profile assignment…"
+      : duplicateProfile.isPending
+        ? "Duplicating profile…"
+        : deleteProfile.isPending
+          ? "Deleting profile…"
+          : "Saving profile changes…";
 
   if (data.profiles.isLoading) return <LoadingState label="Loading profile..." />;
   if (data.profiles.isError) return <ErrorState error={data.profiles.error} onRetry={() => data.profiles.refetch()} />;
@@ -173,30 +188,40 @@ export function ProfileDetail({
   const unassigned = profile.summary.assignmentCount === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" aria-busy={isPending}>
+      {isPending ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          {pendingStatus} Other profile actions are temporarily locked.
+        </p>
+      ) : null}
+      <fieldset
+        aria-label="Access profile details"
+        className="contents"
+        disabled={isPending}
+      >
       <ToolsPageHeader
         title={profile.name}
         description={profile.description ?? "No description yet."}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" disabled={archived} onClick={() => setDialog("edit")}>
-              <Pencil className="mr-1.5 h-4 w-4" />
+              <Pencil data-icon="inline-start" className="mr-1.5 h-4 w-4" />
               Edit
             </Button>
             <Button variant="outline" disabled={archived} onClick={() => setDialog("duplicate")}>
-              <Copy className="mr-1.5 h-4 w-4" />
+              <Copy data-icon="inline-start" className="mr-1.5 h-4 w-4" />
               Duplicate
             </Button>
             {archived ? (
               <Button variant="outline" onClick={() => setDialog("restore")}>
-                <ArchiveRestore className="mr-1.5 h-4 w-4" />
+                <ArchiveRestore data-icon="inline-start" className="mr-1.5 h-4 w-4" />
                 Restore
               </Button>
             ) : (
               <Button variant="outline" onClick={() => setDialog("archive")}>Archive</Button>
             )}
             <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => setDialog("delete")}>
-              <Trash2 className="mr-1.5 h-4 w-4" />
+              <Trash2 data-icon="inline-start" className="mr-1.5 h-4 w-4" />
               Delete
             </Button>
           </div>
@@ -279,9 +304,10 @@ export function ProfileDetail({
       </section>
 
       <Button variant="link" className="h-auto px-0" onClick={() => navigate("/apps/advanced/profiles?check=1")}>
-        <ShieldCheck className="mr-1.5 h-4 w-4" />
+        <ShieldCheck data-icon="inline-start" className="mr-1.5 h-4 w-4" />
         Check what an agent can actually do
       </Button>
+      </fieldset>
 
       <ProfileDialogs
         kind={dialog}
@@ -316,7 +342,11 @@ export function ProfileDetail({
         onDecision={(catalogEntryId, decision) =>
           setReviewDecisions((current) => ({ ...current, [catalogEntryId]: decision }))
         }
-        onSubmit={() => reviewNewTools.mutate()}
+        onSubmit={() => {
+          if (!isPending) {
+            reviewNewTools.mutate();
+          }
+        }}
       />
     </div>
   );
@@ -371,14 +401,19 @@ function NewToolsReviewDialog({
   onSubmit: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-w-2xl">
+    <Dialog open={open} onOpenChange={(next) => !next && !pending && onClose()}>
+      <DialogContent className="max-w-2xl" aria-busy={pending}>
         <DialogHeader>
           <DialogTitle>Review new tools</DialogTitle>
           <DialogDescription>
             Allow the tools this profile should use. Keep the rest blocked.
           </DialogDescription>
         </DialogHeader>
+        <fieldset
+          aria-label="New tool review"
+          className="contents"
+          disabled={pending}
+        >
         {loading ? (
           <LoadingState label="Loading new tools..." />
         ) : error ? (
@@ -430,11 +465,12 @@ function NewToolsReviewDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
           <Button disabled={pending || loading || tools.length === 0} onClick={onSubmit}>
-            Submit review
+            {pending ? "Submitting review…" : "Submit review"}
           </Button>
         </DialogFooter>
+        </fieldset>
       </DialogContent>
     </Dialog>
   );
@@ -542,7 +578,7 @@ function Assignments({
             </div>
           </div>
           <Button variant="ghost" size="sm" disabled={archived} onClick={() => onRemove(binding)}>
-            <UserMinus className="mr-1.5 h-4 w-4" />
+            <UserMinus data-icon="inline-start" className="mr-1.5 h-4 w-4" />
             Remove
           </Button>
         </div>

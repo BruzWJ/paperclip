@@ -219,7 +219,7 @@ function isActiveStatusLabel(statusLabel: string) {
 export function buildWorkspaceServiceControlEntries(input: {
   sections: WorkspaceRuntimeControlSections;
   runtimeServices?: WorkspaceRuntimeService[] | null;
-  isPending?: boolean;
+  pending?: boolean;
   pendingRequest?: WorkspaceRuntimeControlRequest | null;
   pendingRequests?: WorkspaceRuntimeControlRequest[];
 }): WorkspaceServiceControlEntry[] {
@@ -227,7 +227,7 @@ export function buildWorkspaceServiceControlEntries(input: {
     (input.runtimeServices ?? []).map((runtimeService) => [runtimeService.id, runtimeService]),
   );
   const pendingRequests = input.pendingRequests
-    ?? (input.isPending && input.pendingRequest ? [input.pendingRequest] : []);
+    ?? (input.pending && input.pendingRequest ? [input.pendingRequest] : []);
 
   return [...input.sections.services, ...input.sections.otherServices].map((item) => {
     let state: WorkspaceServiceControlEntry["state"] =
@@ -310,6 +310,19 @@ function requestMatchesPending(
     && (pendingRequest?.workspaceCommandId ?? null) === (nextRequest.workspaceCommandId ?? null)
     && (pendingRequest?.runtimeServiceId ?? null) === (nextRequest.runtimeServiceId ?? null)
     && (pendingRequest?.serviceIndex ?? null) === (nextRequest.serviceIndex ?? null);
+}
+
+function describePendingRuntimeAction(request: WorkspaceRuntimeControlRequest) {
+  switch (request.action) {
+    case "run":
+      return "Running workspace job…";
+    case "stop":
+      return "Stopping workspace service…";
+    case "restart":
+      return "Restarting workspace service…";
+    default:
+      return "Starting workspace service…";
+  }
 }
 
 function buildRequest(item: WorkspaceRuntimeControlItem, action: WorkspaceRuntimeAction): WorkspaceRuntimeControlRequest {
@@ -501,9 +514,15 @@ export function WorkspaceRuntimeControls({
     (item) => item.statusLabel === "running" || item.statusLabel === "starting",
   ).length;
   const visibleDisabledHint = runningCount > 0 || disabledHint === null ? null : disabledHint;
+  const pendingActionStatus = isPending && pendingRequest
+    ? describePendingRuntimeAction(pendingRequest)
+    : null;
 
   return (
     <div className={cn("space-y-4", className)}>
+      {pendingActionStatus ? (
+        <p className="sr-only" role="status">{pendingActionStatus}</p>
+      ) : null}
       <div className={cn("border border-border/70 bg-background p-3", square ? "rounded-none" : "rounded-xl")}>
         <div className="space-y-1">
           <div className="text-xs font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Workspace commands</div>
@@ -588,11 +607,17 @@ export function WorkspaceRuntimeQuickControls({
   const controlItems = sections.services.length > 0 ? sections.services : sections.otherServices;
   const serviceUrl = getRunningRuntimeServiceUrl(sections);
   const alignEnd = align === "end";
+  const pendingActionStatus = isPending && pendingRequest
+    ? describePendingRuntimeAction(pendingRequest)
+    : null;
 
   if (controlItems.length === 0 && !serviceUrl) return null;
 
   return (
     <div className={cn("flex min-w-0 flex-col items-stretch gap-2", alignEnd ? "sm:items-end" : "sm:items-start")}>
+      {pendingActionStatus ? (
+        <p className="sr-only" role="status">{pendingActionStatus}</p>
+      ) : null}
       {controlItems.length > 0 ? (
         <div className={cn("flex max-w-full flex-col gap-2 sm:flex-row sm:flex-wrap", alignEnd ? "sm:justify-end" : "sm:justify-start")}>
           {controlItems.map((item) => (

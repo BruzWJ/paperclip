@@ -1,7 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -165,6 +164,7 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
             <div className="relative">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               <Input
+                aria-label="Search filter options"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={searchPlaceholder}
@@ -188,7 +188,15 @@ export function SearchFilterMenu(props: SearchFilterMenuProps) {
                   onClick={() => handleOptionClick(option.value)}
                 >
                   {props.multi ? (
-                    <Checkbox checked={isSelected} tabIndex={-1} className="pointer-events-none" />
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "grid h-4 w-4 shrink-0 place-content-center rounded-(--rad-4) border border-input shadow-xs dark:bg-input/30",
+                        isSelected && "border-primary bg-primary text-primary-foreground dark:bg-primary",
+                      )}
+                    >
+                      {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
+                    </span>
                   ) : (
                     <span className="flex h-4 w-4 items-center justify-center">
                       {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}

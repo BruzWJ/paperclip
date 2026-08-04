@@ -43,7 +43,6 @@ import { AttentionQueueRow } from "../components/AttentionQueueRow";
 import { DecisionTrainingDrawer } from "../components/DecisionTrainingDrawer";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { Button } from "../components/ui/button";
-import { Checkbox } from "../components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -426,7 +425,7 @@ export function WhatNeedsMe() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-xl font-bold">Decisions</h1>
           <Button variant="outline" size="sm" onClick={() => navigate("/training")}>
-            <GraduationCap className="size-4" /> Training
+            <GraduationCap data-icon="inline-start" className="size-4" /> Training
           </Button>
         </div>
         <div className="flex items-center gap-2">
@@ -764,7 +763,15 @@ function FilterRow({
       className="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left text-sm hover:bg-accent/50"
       onClick={onToggle}
     >
-      <Checkbox checked={checked} className="pointer-events-none" tabIndex={-1} />
+      <span
+        aria-hidden="true"
+        className={cn(
+          "grid h-4 w-4 shrink-0 place-content-center rounded-(--rad-4) border border-input shadow-xs dark:bg-input/30",
+          checked && "border-primary bg-primary text-primary-foreground dark:bg-primary",
+        )}
+      >
+        {checked ? <Check className="h-3.5 w-3.5" /> : null}
+      </span>
       <span className="truncate">{label}</span>
     </button>
   );

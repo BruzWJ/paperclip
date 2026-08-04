@@ -49,7 +49,7 @@ export function PauseResumeButton({
   if (isPaused) {
     return (
       <Button variant="outline" size={size} onClick={onResume} disabled={disabled}>
-        <Play className="h-3.5 w-3.5 sm:mr-1" />
+        <Play data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
         <span className="hidden sm:inline">Resume</span>
       </Button>
     );
@@ -57,7 +57,7 @@ export function PauseResumeButton({
 
   return (
     <Button variant="outline" size={size} onClick={onPause} disabled={disabled}>
-      <Pause className="h-3.5 w-3.5 sm:mr-1" />
+      <Pause data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
       <span className="hidden sm:inline">Pause</span>
     </Button>
   );
@@ -81,7 +81,7 @@ export function ClearErrorButton({
       className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive dark:border-destructive/50"
       aria-label="Clear error and return agent to idle"
     >
-      <CheckCircle2 className="h-3.5 w-3.5 sm:mr-1" />
+      <CheckCircle2 data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
       <span className="hidden sm:inline">Clear error</span>
     </Button>
   );
@@ -190,15 +190,18 @@ export function AgentActionButtons({
   const clearErrorDisabled = disabled;
 
   return (
-    <div className={className ?? "flex items-center gap-1 sm:gap-2 shrink-0"}>
+    <div
+      className={className ?? "flex items-center gap-1 sm:gap-2 shrink-0"}
+      aria-busy={agentAction.isPending}
+    >
       <Button
         variant="outline"
         size={size}
         onClick={() => openNewIssue({ ownerAgentId: agent.id })}
-        disabled={assignAndRunDisabled}
+        disabled={assignAndRunDisabled || agentAction.isPending}
         title={workActionsDisabled ? workActionsDisabledReason : undefined}
       >
-        <Plus className="h-3.5 w-3.5 sm:mr-1" />
+        <Plus data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
         <span className="hidden sm:inline">{assignLabel}</span>
       </Button>
       {isError ? (
@@ -227,7 +230,7 @@ export function AgentActionButtons({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => agentAction.mutate("pause")}>
+              <AlertDialogAction disabled={disabled} onClick={() => agentAction.mutate("pause")}>
                 Pause anyway
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -240,10 +243,15 @@ export function AgentActionButtons({
         </span>
       )}
       {children}
+      {agentAction.isPending ? (
+        <span role="status" className="text-xs text-muted-foreground">
+          Updating agent…
+        </span>
+      ) : null}
       <Popover open={moreOpen} onOpenChange={setMoreOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon-xs" aria-label={`Open actions for ${agent.name}`}>
-            <MoreHorizontal className="h-4 w-4" />
+          <Button variant="ghost" size="icon-xs" aria-label={`Open actions for ${agent.name}`} disabled={disabled}>
+            <MoreHorizontal data-icon="inline-start" className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-44 p-1" align="end">
@@ -254,7 +262,7 @@ export function AgentActionButtons({
               setMoreOpen(false);
             }}
           >
-            <Copy className="h-3 w-3" />
+            <Copy data-icon="inline-start" className="h-3 w-3" />
             Copy Agent ID
           </button>
           {!hideTerminate && (
@@ -264,8 +272,9 @@ export function AgentActionButtons({
                 agentAction.mutate("terminate");
                 setMoreOpen(false);
               }}
+              disabled={disabled}
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 data-icon="inline-start" className="h-3 w-3" />
               Terminate
             </button>
           )}

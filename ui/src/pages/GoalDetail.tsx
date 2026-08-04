@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
@@ -53,6 +53,7 @@ export function GoalDetail() {
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const goalPropertyUpdateInFlightRef = useRef(false);
 
   const {
     data: goal,
@@ -107,6 +108,7 @@ export function GoalDetail() {
       );
     }
   });
+  const isPending = updateGoal.isPending || uploadImage.isPending;
 
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
   const linkedProjects = (allProjects ?? []).filter((p) => {
@@ -128,7 +130,15 @@ export function GoalDetail() {
       openPanel(
         <GoalProperties
           goal={goal}
-          onUpdate={(data) => updateGoal.mutate(data)}
+          onUpdate={(data) => {
+            if (goalPropertyUpdateInFlightRef.current) return;
+            goalPropertyUpdateInFlightRef.current = true;
+            updateGoal.mutate(data, {
+              onSettled: () => {
+                goalPropertyUpdateInFlightRef.current = false;
+              },
+            });
+          }}
         />
       );
     }
@@ -141,7 +151,7 @@ export function GoalDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3">
+      <div className="space-y-3" aria-busy={isPending}>
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase text-muted-foreground">
             {goal.level}
@@ -155,25 +165,33 @@ export function GoalDetail() {
           </div>
         </div>
 
-        <InlineEditor
-          value={goal.title}
-          onSave={(title) => updateGoal.mutate({ title })}
-          as="h2"
-          className="text-xl font-bold"
-        />
+        <fieldset className="contents" disabled={isPending}>
+          <legend className="sr-only">Goal details</legend>
+          <InlineEditor
+            value={goal.title}
+            onSave={(title) => updateGoal.mutateAsync({ title })}
+            as="h2"
+            className="text-xl font-bold"
+          />
 
-        <InlineEditor
-          value={goal.description ?? ""}
-          onSave={(description) => updateGoal.mutate({ description })}
-          as="p"
-          className="text-sm text-muted-foreground"
-          placeholder="Add a description..."
-          multiline
-          imageUploadHandler={async (file) => {
-            const asset = await uploadImage.mutateAsync(file);
-            return asset.contentPath;
-          }}
-        />
+          <InlineEditor
+            value={goal.description ?? ""}
+            onSave={(description) => updateGoal.mutateAsync({ description })}
+            as="p"
+            className="text-sm text-muted-foreground"
+            placeholder="Add a description..."
+            multiline
+            imageUploadHandler={async (file) => {
+              const asset = await uploadImage.mutateAsync(file);
+              return asset.contentPath;
+            }}
+          />
+        </fieldset>
+        {isPending ? (
+          <p className="text-xs text-muted-foreground" role="status">
+            {uploadImage.isPending ? "Uploading goal image…" : "Saving goal changes…"}
+          </p>
+        ) : null}
       </div>
 
       <Tabs defaultValue="children">
@@ -193,7 +211,7 @@ export function GoalDetail() {
               variant="outline"
               onClick={() => openNewGoal({ parentId: goalId })}
             >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1.5" />
               Sub Goal
             </Button>
           </div>

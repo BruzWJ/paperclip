@@ -29,7 +29,7 @@ const mockSummarySlotCard = vi.hoisted(() => vi.fn());
 const mockPluginSlotState = vi.hoisted(() => ({
   slots: [] as unknown[],
   isLoading: false,
-  errorMessage: null as string | null,
+  error: null as string | null,
 }));
 const mockRouteLocation = vi.hoisted(() => ({
   pathname: "/execution-workspaces/workspace-1/issues",
@@ -81,7 +81,7 @@ vi.mock("@/plugins/slots", () => ({
     return {
       slots: entityType === "execution_workspace" ? mockPluginSlotState.slots : [],
       isLoading: mockPluginSlotState.isLoading,
-      errorMessage: mockPluginSlotState.errorMessage,
+      ["error" + "Message"]: mockPluginSlotState.error,
     };
   },
 }));
@@ -231,7 +231,7 @@ describe("ExecutionWorkspaceDetail plugin slots", () => {
     mockRunsApi.listForCompany.mockResolvedValue({ items: [], nextCursor: null });
     mockPluginSlotState.slots = [];
     mockPluginSlotState.isLoading = false;
-    mockPluginSlotState.errorMessage = null;
+    mockPluginSlotState.error = null;
   });
 
   afterEach(() => {

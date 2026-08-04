@@ -153,6 +153,15 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+      {definitionsQuery.isPending || save.isPending || remove.isPending ? (
+        <p className="sr-only" role="status">
+          {save.isPending
+            ? "Saving user secret definition."
+            : remove.isPending
+              ? "Removing user secret definition."
+              : "Loading user secret definitions."}
+        </p>
+      ) : null}
       <div className="flex items-start gap-2 rounded-md border border-violet-500/30 bg-violet-500/5 px-4 py-3 text-xs text-violet-800 dark:text-violet-200">
         <UserRound className="h-4 w-4 mt-0.5 shrink-0" />
         <p>
@@ -164,13 +173,13 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
 
       <div className="flex items-center justify-end">
         <Button size="sm" onClick={openCreate}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> New user secret
+          <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" /> New user secret
         </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {definitionsQuery.isError ? (
-          <div className="flex items-center gap-2 py-4 text-sm text-destructive">
+          <div className="flex items-center gap-2 py-4 text-sm text-destructive" role="alert">
             <AlertCircle className="h-4 w-4" /> Failed to load definitions:{" "}
             {(definitionsQuery.error as Error).message}
             <Button variant="ghost" size="sm" onClick={() => definitionsQuery.refetch()}>
@@ -211,7 +220,12 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
                   <CoverageBadge companyId={companyId} definitionId={definition.id} />
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(definition)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => openEdit(definition)}
+                    aria-label="Edit user secret definition"
+                  >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
@@ -219,6 +233,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
                     variant="ghost"
                     className="text-muted-foreground hover:text-destructive"
                     onClick={() => setDeleteTarget(definition)}
+                    aria-label="Delete user secret definition"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -246,6 +261,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
             <div className="space-y-1">
               <label className="text-xs font-medium text-foreground">Name</label>
               <Input
+                aria-label="User secret name"
                 value={form.name}
                 onChange={(event) => {
                   const name = event.target.value;
@@ -262,6 +278,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
             <div className="space-y-1">
               <label className="text-xs font-medium text-foreground">Key</label>
               <Input
+                aria-label="User secret key"
                 value={form.key}
                 onChange={(event) => {
                   setKeyDirty(true);
@@ -278,6 +295,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
             <div className="space-y-1">
               <label className="text-xs font-medium text-foreground">Description</label>
               <Input
+                aria-label="User secret description"
                 value={form.description}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, description: event.target.value }))
@@ -290,6 +308,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
                 Usage guidance <span className="text-muted-foreground">(optional)</span>
               </label>
               <Textarea
+                aria-label="User secret usage guidance"
                 value={form.usageGuidance}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, usageGuidance: event.target.value }))
@@ -307,7 +326,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
                     setForm((current) => ({ ...current, status: status as SecretStatus }))
                   }
                 >
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger aria-label="Secret definition status" className="w-40">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -318,7 +337,7 @@ export function UserSecretDefinitionsTab({ companyId }: { companyId: string }) {
                 </Select>
               </div>
             ) : null}
-            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+            {error ? <p className="text-xs text-destructive" role="alert">{error}</p> : null}
           </div>
 
           <DialogFooter>

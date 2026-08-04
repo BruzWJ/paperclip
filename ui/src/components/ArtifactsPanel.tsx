@@ -155,17 +155,17 @@ export function ArtifactsPanel({ issueId, isAgentWorking, openDocKey, openDocTit
       {/* Work products list */}
       <div className="flex-1 overflow-y-auto scrollbar-auto-hide">
         {isLoading ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Loading...
+          <div role="status" className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden />
+            Loading artifacts...
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <Package className="h-8 w-8 mx-auto text-muted-foreground/40 mb-3" />
             <p className="text-sm text-muted-foreground">
               {workProducts?.length === 0
-                ? "Your team's deliverables and plans will appear here as they're produced."
-                : "No artifacts match this filter."}
+                ? "Nothing to show yet. Your team's deliverables and plans will appear here as they're produced."
+                : "No results match this filter."}
             </p>
           </div>
         ) : (
@@ -271,22 +271,32 @@ function DocumentViewer({
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <button onClick={onBack} className="text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Back to artifacts"
+        >
           <ArrowLeft className="h-4 w-4" />
         </button>
         <h3 className="text-sm font-semibold flex-1 truncate">{title}</h3>
-        <button onClick={onBack} className="text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Close document viewer"
+        >
           <X className="h-4 w-4" />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-auto-hide p-4">
         {isLoading ? (
-          <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          <div role="status" className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden />
             Loading document...
           </div>
         ) : error ? (
-          <p className="text-sm text-muted-foreground">Document not available yet.</p>
+          <p role="alert" className="text-sm text-muted-foreground">Document not available yet.</p>
         ) : doc?.body ? (
           <div className="prose prose-sm dark:prose-invert max-w-none">
             <MarkdownBody>{doc.body}</MarkdownBody>

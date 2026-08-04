@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type {
   FeedbackDataSharingPreference,
   FeedbackVoteValue,
@@ -167,6 +167,7 @@ export function IssueChatFeedbackButtons({
   const [optimisticVote, setOptimisticVote] = useState<FeedbackVoteValue | null>(null);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [downvoteReason, setDownvoteReason] = useState("");
+  const downvoteReasonId = useId();
   const [pendingSharingDialog, setPendingSharingDialog] = useState<{
     vote: FeedbackVoteValue;
     reason?: string;
@@ -267,8 +268,11 @@ export function IssueChatFeedbackButtons({
           </button>
         </PopoverTrigger>
         <PopoverContent side="top" align="start" className="w-80 p-3">
-          <div className="mb-2 text-sm font-medium">What could have been better?</div>
+          <label htmlFor={downvoteReasonId} className="mb-2 block text-sm font-medium">
+            What could have been better?
+          </label>
           <Textarea
+            id={downvoteReasonId}
             value={downvoteReason}
             onChange={(event) => setDownvoteReason(event.target.value)}
             placeholder="Add a short note"

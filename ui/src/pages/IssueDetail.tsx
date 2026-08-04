@@ -3075,10 +3075,16 @@ export function IssueDetail() {
       <input
         ref={fileInputRef}
         type="file"
+        aria-label="Upload issue attachments"
         className="hidden"
         onChange={handleFilePicked}
         multiple
       />
+      {uploadAttachment.isPending || importMarkdownDocument.isPending ? (
+        <span className="sr-only" role="status">
+          Uploading attachment.
+        </span>
+      ) : null}
       <Button
         variant="outline"
         size="sm"
@@ -3609,7 +3615,7 @@ export function IssueDetail() {
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
           <Button variant="outline" size="sm" onClick={openNewSubIssue} className="shrink-0 shadow-none">
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             New Sub-task
           </Button>
         </div>
@@ -3889,10 +3895,11 @@ export function IssueDetail() {
             ) : null}
 
             <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">
+              <label className="text-xs text-muted-foreground" htmlFor="tree-control-reason">
                 Reason (optional)
               </label>
               <Textarea
+                id="tree-control-reason"
                 value={treeControlReason}
                 onChange={(event) => setTreeControlReason(event.target.value)}
                 placeholder="Explain why this subtree control is being applied..."

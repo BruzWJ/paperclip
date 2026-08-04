@@ -911,7 +911,12 @@ export function CompanyExport() {
   }
 
   if (exportPreviewMutation.isPending && !exportData) {
-    return <PageSkeleton variant="detail" />;
+    return (
+      <div role="status">
+        <span className="sr-only">Preparing export data…</span>
+        <PageSkeleton variant="detail" />
+      </div>
+    );
   }
 
   if (!exportData) {
@@ -926,6 +931,7 @@ export function CompanyExport() {
 
   return (
     <div>
+      {downloadMutation.isPending ? <p className="sr-only" role="status">Building export…</p> : null}
       {/* Sticky top action bar */}
       <div className="sticky top-0 z-10 border-b border-border bg-background px-5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -974,11 +980,12 @@ export function CompanyExport() {
             <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1">
               <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <input
+                aria-label="Search package files"
                 type="text"
                 value={treeSearch}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search files..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="w-full bg-transparent text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground"
                 data-page-search-target="true"
               />
             </div>

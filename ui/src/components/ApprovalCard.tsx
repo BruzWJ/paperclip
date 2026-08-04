@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,16 @@ import { timeAgo } from "../lib/timeAgo";
 import type { Approval, Agent } from "@paperclipai/shared";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function statusIcon(status: string) {
   if (status === "approved") return <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />;
@@ -42,6 +53,7 @@ export function ApprovalCard({
   isPending?: boolean;
   pendingAction?: "approve" | "reject" | null;
 }) {
+  const [rejectConfirmationOpen, setRejectConfirmationOpen] = useState(false);
   const payload = approval.payload as Record<string, unknown> | null;
   const Icon = typeIcon[approval.type] ?? defaultTypeIcon;
   const kindLabel = typeLabel[approval.type] ?? approval.type;
@@ -53,7 +65,16 @@ export function ApprovalCard({
   const hasFooter = showResolutionButtons || Boolean(detailLink || onOpen);
 
   return (
-    <Card className="block border-border/70 p-4">
+    <Card className="block border-border/70 p-4" aria-busy={isPending}>
+      {isPending ? (
+        <p className="sr-only" role="status">
+          {pendingAction === "approve"
+            ? "Approving request…"
+            : pendingAction === "reject"
+              ? "Rejecting request…"
+              : "Updating approval…"}
+        </p>
+      ) : null}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-3">
@@ -124,7 +145,8 @@ export function ApprovalCard({
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={onReject}
+                  type="button"
+                  onClick={() => setRejectConfirmationOpen(true)}
                   disabled={isPending}
                 >
                   {pendingAction === "reject" ? "Rejecting..." : "Reject"}
@@ -148,6 +170,26 @@ export function ApprovalCard({
           ) : null}
         </div>
       ) : null}
+      <AlertDialog open={rejectConfirmationOpen} onOpenChange={setRejectConfirmationOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject this approval?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This records a rejection for this request. Review the approval details before continuing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isPending}
+              onClick={() => onReject?.()}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {pendingAction === "reject" ? "Rejecting..." : "Reject approval"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

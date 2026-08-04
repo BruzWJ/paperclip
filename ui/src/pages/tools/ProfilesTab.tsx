@@ -379,7 +379,7 @@ function EntryFields({
       <div className="space-y-1.5">
         <Label>Selector</Label>
         <Select value={selectorType} onValueChange={(value) => setSelectorType(value as ToolProfileEntrySelectorType)}>
-          <SelectTrigger>
+          <SelectTrigger aria-label="Entry selector">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -394,7 +394,7 @@ function EntryFields({
       <div className="space-y-1.5">
         <Label>Effect</Label>
         <Select value={effect} onValueChange={(value) => setEffect(value as ToolProfileEntryEffect)}>
-          <SelectTrigger>
+          <SelectTrigger aria-label="Entry effect">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -407,7 +407,7 @@ function EntryFields({
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Application</Label>
           <Select value={applicationId} onValueChange={setApplicationId}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Application">
               <SelectValue placeholder="Select an application" />
             </SelectTrigger>
             <SelectContent>
@@ -424,7 +424,7 @@ function EntryFields({
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Connection</Label>
           <Select value={connectionId} onValueChange={setConnectionId}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Connection">
               <SelectValue placeholder="Select a connection" />
             </SelectTrigger>
             <SelectContent>
@@ -453,7 +453,7 @@ function EntryFields({
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Risk level</Label>
           <Select value={riskLevel} onValueChange={(value) => setRiskLevel(value as ToolRiskLevel)}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Risk level">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -485,7 +485,7 @@ export function EffectiveAgentPanel({ companyId, agentOptions }: { companyId: st
       <div className="space-y-1.5">
         <Label>Agent</Label>
         <Select value={agentId} onValueChange={setAgentId}>
-          <SelectTrigger>
+          <SelectTrigger aria-label="Agent">
             <SelectValue placeholder="Select an agent" />
           </SelectTrigger>
           <SelectContent>
@@ -502,7 +502,10 @@ export function EffectiveAgentPanel({ companyId, agentOptions }: { companyId: st
           Pick an agent to see what it can use right now.
         </div>
       ) : effective.isLoading ? (
-        <LoadingState label="Checking access..." />
+        <div role="status">
+          <span className="sr-only">Checking agent access.</span>
+          <LoadingState label="Checking access..." />
+        </div>
       ) : effective.error ? (
         <ErrorState error={effective.error} onRetry={() => effective.refetch()} />
       ) : (
@@ -824,7 +827,14 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
     }),
   });
 
-  if (profiles.isLoading) return <LoadingState />;
+  if (profiles.isLoading) {
+    return (
+      <div role="status">
+        <span className="sr-only">Loading access profiles.</span>
+        <LoadingState />
+      </div>
+    );
+  }
   if (profiles.error) return <ErrorState error={profiles.error} onRetry={() => profiles.refetch()} />;
 
   const list = profiles.data?.profiles ?? [];
@@ -923,7 +933,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
         description="Reusable bundles of allowed applications, connections, and tools, assignable to agents, projects, routines, or issues."
         actions={
           <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus data-icon="inline-start" className="mr-1 h-4 w-4" />
             New profile
           </Button>
         }
@@ -1056,7 +1066,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
               <div className="space-y-1.5">
                 <Label>Default action</Label>
                 <Select value={defaultAction} onValueChange={(value) => setDefaultAction(value as ToolProfileDefaultAction)}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Default action">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1068,7 +1078,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
               <div className="space-y-1.5">
                 <Label>Status</Label>
                 <Select value={status} onValueChange={(value) => setStatus(value as ToolProfileStatus)}>
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Profile status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1166,7 +1176,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
             <div className="space-y-1.5">
               <Label>Target type</Label>
               <Select value={targetType} onValueChange={(value) => setTargetType(value as ToolProfileBindingTargetType)}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Binding target type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1182,7 +1192,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
               <div className="space-y-1.5">
                 <Label>Agent</Label>
                 <Select value={targetAgentId} onValueChange={setTargetAgentId}>
-                  <SelectTrigger><SelectValue placeholder="Select an agent" /></SelectTrigger>
+                  <SelectTrigger aria-label="Binding agent"><SelectValue placeholder="Select an agent" /></SelectTrigger>
                   <SelectContent>
                     {agentOptions.map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>)}
                   </SelectContent>
@@ -1193,7 +1203,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
               <div className="space-y-1.5">
                 <Label>Project</Label>
                 <Select value={targetProjectId} onValueChange={setTargetProjectId}>
-                  <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
+                  <SelectTrigger aria-label="Binding project"><SelectValue placeholder="Select a project" /></SelectTrigger>
                   <SelectContent>
                     {projectOptions.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
                   </SelectContent>
@@ -1204,7 +1214,7 @@ export function ProfilesTab({ companyId }: { companyId: string }) {
               <div className="space-y-1.5">
                 <Label>Routine</Label>
                 <Select value={targetRoutineId} onValueChange={setTargetRoutineId}>
-                  <SelectTrigger><SelectValue placeholder="Select a routine" /></SelectTrigger>
+                  <SelectTrigger aria-label="Binding routine"><SelectValue placeholder="Select a routine" /></SelectTrigger>
                   <SelectContent>
                     {routineOptions.map((routine) => <SelectItem key={routine.id} value={routine.id}>{routine.title}</SelectItem>)}
                   </SelectContent>
@@ -1295,15 +1305,15 @@ function ProfileDetail({
           </div>
           <div className="flex shrink-0 flex-wrap gap-1.5">
             <Button size="sm" variant="outline" onClick={onEdit}>
-              <Pencil className="mr-1 h-3.5 w-3.5" />
+              <Pencil data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
               Edit
             </Button>
             <Button size="sm" variant="outline" onClick={onAddEntry}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
               Entry
             </Button>
             <Button size="sm" variant="outline" onClick={onBind}>
-              <Link2 className="mr-1 h-3.5 w-3.5" />
+              <Link2 data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
               Bind
             </Button>
           </div>

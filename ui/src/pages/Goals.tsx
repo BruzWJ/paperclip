@@ -51,7 +51,7 @@ export function Goals() {
         <>
           <div className="flex items-center justify-start">
             <Button size="sm" variant="outline" onClick={() => openNewGoal()}>
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1.5" />
               New Goal
             </Button>
           </div>

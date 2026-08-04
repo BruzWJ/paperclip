@@ -1188,10 +1188,11 @@ export function DiscoveryGrid({
           <div className="flex h-9 min-w-(--sz-12rem) flex-1 items-center gap-2 rounded-md border border-border px-2.5">
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <input
+              aria-label="Search company skills"
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search skills, authors, categories…"
-              className="h-full w-full bg-transparent text-base outline-none placeholder:text-muted-foreground sm:text-sm"
+              className="h-full w-full bg-transparent text-base outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground sm:text-sm"
             />
           </div>
           <DropdownMenu>
@@ -1246,16 +1247,16 @@ export function DiscoveryGrid({
           </Button>
           <Button asChild variant="outline" size="sm">
             <Link to="/skills/studio">
-              <FlaskConical className="h-3.5 w-3.5" />
+              <FlaskConical data-icon="inline-start" className="h-3.5 w-3.5" />
               Studio
             </Link>
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="default">
-                <Plus className="mr-1 h-3.5 w-3.5" />
+                <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                 New
-                <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                <ChevronDown data-icon="inline-end" className="ml-1 h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -1289,7 +1290,7 @@ export function DiscoveryGrid({
           ) : null}
           {onCreateFolder ? (
             <Button variant="outline" size="sm" onClick={onCreateFolder}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
+              <Plus data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
               New folder
             </Button>
           ) : null}
@@ -1397,7 +1398,7 @@ export function DiscoveryGrid({
               {totalCount === 0 ? (
                 <div className="mt-3 flex flex-col items-center gap-2">
                   <Button size="sm" onClick={onBrowseCatalog}>
-                    <Boxes className="mr-1.5 h-3.5 w-3.5" /> Browse catalog
+                    <Boxes data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> Browse catalog
                   </Button>
                   <Button size="sm" variant="ghost" onClick={onCreate}>
                     Create a skill
@@ -1513,6 +1514,7 @@ function NewSkillWizard({
       {step === 0 ? (
         <div className="space-y-3">
           <Input
+            aria-label="Skill name"
             value={draft.name}
             onChange={(event) => {
               const nextName = event.target.value;
@@ -1528,6 +1530,7 @@ function NewSkillWizard({
             className="h-9"
           />
           <Input
+            aria-label="Skill slug"
             value={draft.slug}
             onChange={(event) => {
               const nextSlug = normalizeSkillDraftSlug(event.target.value);
@@ -1538,6 +1541,7 @@ function NewSkillWizard({
             className="h-9 font-mono"
           />
           <Textarea
+            aria-label="Skill tagline"
             value={draft.tagline}
             onChange={(event) => {
               const nextTagline = event.target.value;
@@ -1588,6 +1592,7 @@ function NewSkillWizard({
                 />
               ))}
               <Input
+                aria-label="Skill accent color"
                 value={draft.color}
                 onChange={(event) => patchDraft({ color: event.target.value })}
                 className="h-7 w-28 font-mono text-xs"
@@ -1597,6 +1602,7 @@ function NewSkillWizard({
           <div>
             <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">Categories</label>
             <Input
+              aria-label="Skill categories"
               value={categoryDraft}
               onChange={(event) => patchDraft({ categories: splitCategoryDraft(event.target.value) })}
               placeholder="engineering, review, memory"
@@ -1607,6 +1613,7 @@ function NewSkillWizard({
       ) : step === 2 ? (
         <div className="space-y-2">
           <Textarea
+            aria-label="Skill markdown content"
             value={draft.markdown}
             onChange={(event) => patchDraft({ markdown: event.target.value })}
             className="h-(--sz-calc-34) resize-y font-mono text-xs"
@@ -1657,12 +1664,13 @@ function NewSkillWizard({
       )}
 
       {error ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
           {error}
         </div>
       ) : null}
 
       <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+        {isPending ? <p className="sr-only" role="status">Creating skill…</p> : null}
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={isPending}>
           Cancel
         </Button>
@@ -1868,7 +1876,7 @@ function CatalogDetailPane({
         <TooltipTrigger asChild>
           <span>
             <Button disabled>
-              <Download className="mr-1.5 h-3.5 w-3.5" />
+              <Download data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
               Install skill
             </Button>
           </span>
@@ -1886,14 +1894,14 @@ function CatalogDetailPane({
   } else if (hashOutOfSync) {
     cta = (
       <Button onClick={onUpdate} disabled={loadingPrimaryAction} className="border-amber-500/40 bg-amber-500/20 text-amber-900 dark:text-amber-100 hover:bg-amber-500/30">
-        <ArrowUpCircle className="mr-1.5 h-3.5 w-3.5" />
+        <ArrowUpCircle data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
         Update from catalog
       </Button>
     );
   } else {
     cta = (
       <Button variant="ghost" onClick={() => installedSkillId && onOpenInstalled(installedSkillId)}>
-        <Check className="mr-1.5 h-3.5 w-3.5" />
+        <Check data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
         Installed · Open in library
       </Button>
     );
@@ -1972,9 +1980,12 @@ function CatalogDetailPane({
 
       <div className="min-h-(--sz-400px) px-5 py-5">
         {fileQuery.isLoading ? (
-          <PageSkeleton variant="detail" />
+          <div role="status">
+            <span className="sr-only">Loading skill file…</span>
+            <PageSkeleton variant="detail" />
+          </div>
         ) : fileQuery.error ? (
-          <div className="text-sm text-destructive">{fileQuery.error instanceof Error ? fileQuery.error.message : "Failed to load file"}</div>
+          <div className="text-sm text-destructive" role="alert">{fileQuery.error instanceof Error ? fileQuery.error.message : "Failed to load file"}</div>
         ) : !fileQuery.data ? (
           <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
         ) : fileQuery.data.markdown ? (
@@ -2042,6 +2053,7 @@ function InstallPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={(value) => (!isPending ? onOpenChange(value) : null)}>
       <DialogContent className="sm:max-w-2xl" showCloseButton={!isPending}>
+        {isPending ? <p className="sr-only" role="status">{confirmLabel}</p> : null}
         <DialogHeader>
           <DialogTitle>
             {defaultAction === "update" ? "Update" : defaultAction === "replace" ? "Replace" : "Install"} · {skill.name}
@@ -2121,7 +2133,7 @@ function InstallPreviewDialog({
             <div className="space-y-3 rounded-md border border-border p-3 text-xs">
               <div>
                 <label className="mb-1 block uppercase tracking-wide text-muted-foreground">Slug override</label>
-                <Input value={slug} onChange={(event) => setSlug(event.target.value)} placeholder={defaultSlug ?? skill.slug} className="h-8" />
+                <Input aria-label="Skill slug override" value={slug} onChange={(event) => setSlug(event.target.value)} placeholder={defaultSlug ?? skill.slug} className="h-8" />
               </div>
               <label className="flex items-center gap-2">
                 <Checkbox checked={force} onCheckedChange={(value) => setForce(Boolean(value))} />
@@ -2131,7 +2143,7 @@ function InstallPreviewDialog({
           ) : null}
 
           {error ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive" role="alert">
               {error}
             </div>
           ) : null}
@@ -2169,7 +2181,7 @@ function AttachAgentsPopover({
   versions,
   selectedVersionId,
   pending,
-  onSubmit,
+  onSaveAssignments,
   fullWidth = false,
 }: {
   agents: AttachAgentOption[];
@@ -2177,63 +2189,71 @@ function AttachAgentsPopover({
   versions: CompanySkillVersion[];
   selectedVersionId: string | null;
   pending: boolean;
-  onSubmit: (nextIds: string[], versionId: string | null) => void;
+  onSaveAssignments: (nextIds: string[], versionId: string | null) => void;
   fullWidth?: boolean;
 }) {
   const [draftVersionId, setDraftVersionId] = useState<string | null>(selectedVersionId);
   const attachedIds = useMemo(() => new Set(attachedAgentIds), [attachedAgentIds]);
   const sortedVersions = [...versions].sort((a, b) => b.revisionNumber - a.revisionNumber);
+  const isPending = pending;
 
   return (
-    <AgentMultiSelect
-      agents={agents}
-      selectedAgentIds={attachedIds}
-      onSave={(nextIds) => onSubmit(Array.from(nextIds), draftVersionId)}
-      pending={pending}
-      triggerLabel="Add to agent"
-      triggerIcon={<Plus className="mr-1.5 h-3.5 w-3.5" />}
-      triggerVariant="default"
-      triggerSize="sm"
-      triggerFullWidth={fullWidth}
-      triggerClassName={cn(fullWidth && "w-full")}
-      contentAlign="end"
-      showSelectionPreview={false}
-      onOpenChange={(open) => {
-        if (open) setDraftVersionId(selectedVersionId);
-      }}
-      headerContent={sortedVersions.length > 0 ? (
-        <div className="mt-2 flex items-center gap-2 text-xs">
-          <span className="shrink-0 text-muted-foreground">Version</span>
-          <select
-            value={draftVersionId ?? "__latest__"}
-            onChange={(event) => setDraftVersionId(event.target.value === "__latest__" ? null : event.target.value)}
-            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-          >
-            <option value="__latest__">Latest</option>
-            {sortedVersions.map((version) => (
-              <option key={version.id} value={version.id}>
-                v{version.revisionNumber}{version.label ? ` · ${version.label}` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div aria-busy={isPending}>
+      {isPending ? (
+        <span className="sr-only" role="status">Updating agents. Please wait.</span>
       ) : null}
-      emptyMessage="No agents yet."
-      isAgentDisabled={(agent) => {
-        const option = agent as AttachAgentOption;
-        return option.required;
-      }}
-      getDescription={(agent) => {
-        const option = agent as AttachAgentOption;
-        return `${option.adapterType ?? "Not configured"}${option.required ? " · required" : ""}`;
-      }}
-      renderNameSuffix={(agent) => (agent as AttachAgentOption).paused ? (
-        <Badge variant="outline" className="[&>svg]:size-2.5 border-amber-500/30 bg-amber-500/10 px-1.5 text-(length:--text-nano) uppercase tracking-wide text-amber-500">
-          <Pause className="h-2.5 w-2.5" aria-hidden="true" />
-          Paused
-        </Badge>
-      ) : null}
-    />
+      <AgentMultiSelect
+        agents={agents}
+        selectedAgentIds={attachedIds}
+        onSave={(nextIds) => onSaveAssignments(Array.from(nextIds), draftVersionId)}
+        disabled={isPending}
+        pending={isPending}
+        triggerLabel={isPending ? "Updating agents…" : "Add to agent"}
+        triggerIcon={<Plus className="mr-1.5 h-3.5 w-3.5" />}
+        triggerVariant="default"
+        triggerSize="sm"
+        triggerFullWidth={fullWidth}
+        triggerClassName={cn(fullWidth && "w-full")}
+        contentAlign="end"
+        showSelectionPreview={false}
+        onOpenChange={(open) => {
+          if (open) setDraftVersionId(selectedVersionId);
+        }}
+        headerContent={sortedVersions.length > 0 ? (
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <span className="shrink-0 text-muted-foreground">Version</span>
+            <select
+              aria-label="Skill version to assign"
+              value={draftVersionId ?? "__latest__"}
+              onChange={(event) => setDraftVersionId(event.target.value === "__latest__" ? null : event.target.value)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            >
+              <option value="__latest__">Latest</option>
+              {sortedVersions.map((version) => (
+                <option key={version.id} value={version.id}>
+                  v{version.revisionNumber}{version.label ? ` · ${version.label}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+        emptyMessage="No agents yet."
+        isAgentDisabled={(agent) => {
+          const option = agent as AttachAgentOption;
+          return option.required;
+        }}
+        getDescription={(agent) => {
+          const option = agent as AttachAgentOption;
+          return `${option.adapterType ?? "Not configured"}${option.required ? " · required" : ""}`;
+        }}
+        renderNameSuffix={(agent) => (agent as AttachAgentOption).paused ? (
+          <Badge variant="outline" className="[&>svg]:size-2.5 border-amber-500/30 bg-amber-500/10 px-1.5 text-(length:--text-nano) uppercase tracking-wide text-amber-500">
+            <Pause className="h-2.5 w-2.5" aria-hidden="true" />
+            Paused
+          </Badge>
+        ) : null}
+      />
+    </div>
   );
 }
 
@@ -2663,7 +2683,7 @@ function SkillLocationCard({
         </Button>
         {onMove ? (
           <Button size="sm" variant="outline" onClick={onMove}>
-            <FolderInput className="mr-1.5 h-3.5 w-3.5" />
+            <FolderInput data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             Move
           </Button>
         ) : null}
@@ -2724,6 +2744,7 @@ function SkillTagsEditor({
         ) : null}
       </div>
       <Input
+        aria-label="Add skill tag"
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
@@ -2968,7 +2989,7 @@ export function SkillDetailPage({
                   </>
                 ) : (
                   <Button variant="ghost" size="sm" onClick={() => setEditMode(true)}>
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+                    <Pencil data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> Edit
                   </Button>
                 )
               ) : !skill.editable ? (
@@ -2979,7 +3000,7 @@ export function SkillDetailPage({
                   onClick={onFork}
                   title={skill.editableReason ?? "Fork this skill to edit it."}
                 >
-                  <GitFork className="mr-1.5 h-3.5 w-3.5" />
+                  <GitFork data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                   Fork
                 </Button>
               ) : null}
@@ -2994,6 +3015,7 @@ export function SkillDetailPage({
               <MarkdownEditor value={draft} onChange={setDraft} bordered={false} className="min-h-(--sz-520px)" />
             ) : (
               <Textarea
+                aria-label="Skill file content"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 className="min-h-(--sz-520px) rounded-none border-0 bg-transparent px-0 py-0 font-mono text-sm shadow-none focus-visible:ring-0"
@@ -3046,7 +3068,7 @@ export function SkillDetailPage({
                 <>
                   <span>Read only</span>
                   <Button type="button" variant="outline" size="xs" onClick={onFork}>
-                    <GitFork className="mr-1 h-3 w-3" />
+                    <GitFork data-icon="inline-start" className="mr-1 h-3 w-3" />
                     Fork
                   </Button>
                 </>
@@ -3072,7 +3094,7 @@ export function SkillDetailPage({
             onClick={() => openVersionDiff()}
             disabled={sortedVersions.length < 2}
           >
-            <History className="mr-1.5 h-3.5 w-3.5" /> Compare
+            <History data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" /> Compare
           </Button>
         </div>
         <div className="border-y border-border">
@@ -3131,7 +3153,7 @@ export function SkillDetailPage({
             versions={versions}
             selectedVersionId={currentVersionSelection(skill)}
             pending={attachPending}
-            onSubmit={onSubmitAttach}
+            onSaveAssignments={onSubmitAttach}
           />
         </div>
         {attached.length === 0 ? (
@@ -3257,7 +3279,7 @@ export function SkillDetailPage({
           <div className="flex flex-wrap items-center justify-end gap-1">
             <Button variant="outline" size="sm" asChild>
               <Link to={resolvedStudioHref}>
-                <FlaskConical className="mr-1.5 h-3.5 w-3.5" />
+                <FlaskConical data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                 Open in Studio
               </Link>
             </Button>
@@ -3338,7 +3360,7 @@ export function SkillDetailPage({
                 versions={versions}
                 selectedVersionId={currentVersionSelection(detail)}
                 pending={attachPending}
-                onSubmit={onSubmitAttach}
+                onSaveAssignments={onSubmitAttach}
                 fullWidth
               />
               {detail.usedByAgents.length === 0 ? (
@@ -3444,7 +3466,7 @@ export function SkillDetailPage({
                   <span className="truncate font-mono text-foreground">{currentPin ?? "untracked"}</span>
                 </div>
                 <Button variant="outline" size="sm" className="w-full" onClick={onCheckUpdates} disabled={checkUpdatesPending || updateStatusLoading}>
-                  <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", (checkUpdatesPending || updateStatusLoading) && "animate-spin")} />
+                  <RefreshCw data-icon="inline-start" className={cn("mr-1.5 h-3.5 w-3.5", (checkUpdatesPending || updateStatusLoading) && "animate-spin")} />
                   Check for updates
                 </Button>
                 {updateStatus?.supported && updateStatus.hasUpdate ? (
@@ -3511,6 +3533,7 @@ export function SkillDetailPage({
             <div className="space-y-1.5">
               <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Categories</label>
               <Input
+                aria-label="Skill categories"
                 value={settingsCategoryDraft}
                 onChange={(event) => setSettingsCategoryDraft(event.target.value)}
                 placeholder="engineering, review, memory"
@@ -3522,6 +3545,7 @@ export function SkillDetailPage({
             <div className="space-y-1.5">
               <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sharing</label>
               <select
+                aria-label="Skill sharing scope"
                 value={settingsSharingScope}
                 onChange={(event) => setSettingsSharingScope(event.target.value as Exclude<CompanySkillSharingScope, "public_link">)}
                 disabled={updateSettingsPending}
@@ -3672,7 +3696,7 @@ function SkillPane({
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="outline" size="sm" asChild>
               <Link to={skillStudioRoute(detail.id)}>
-                <FlaskConical className="mr-1.5 h-3.5 w-3.5" />
+                <FlaskConical data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                 Open in Studio
               </Link>
             </Button>
@@ -3742,7 +3766,7 @@ function SkillPane({
                   onClick={onCheckUpdates}
                   disabled={checkUpdatesPending || updateStatusLoading}
                 >
-                  <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", (checkUpdatesPending || updateStatusLoading) && "animate-spin")} />
+                  <RefreshCw data-icon="inline-start" className={cn("mr-1.5 h-3.5 w-3.5", (checkUpdatesPending || updateStatusLoading) && "animate-spin")} />
                   Check for updates
                 </Button>
                 {updateStatus?.supported && updateStatus.hasUpdate && (
@@ -3802,7 +3826,7 @@ function SkillPane({
                 versions={versions}
                 selectedVersionId={usedBy.find((agent) => agent.versionId)?.versionId ?? null}
                 pending={attachPending}
-                onSubmit={onSubmitAttach}
+                onSaveAssignments={onSubmitAttach}
               />
             </div>
             {usedBy.length === 0 ? (
@@ -3816,6 +3840,7 @@ function SkillPane({
                     className="group rounded-md border border-transparent p-2 no-underline hover:border-border hover:bg-accent/40"
                   >
                     <Identity name={agent.name} size="sm" />
+                    <span className="sr-only">View agent skill assignments</span>
                   </Link>
                 ))}
               </div>
@@ -3882,6 +3907,7 @@ function SkillPane({
             />
           ) : (
             <Textarea
+              aria-label="Skill file content"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               className="min-h-(--sz-520px) rounded-none border-0 bg-transparent px-0 py-0 font-mono text-sm shadow-none focus-visible:ring-0"
@@ -3966,6 +3992,7 @@ export function CompanySkills() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [moveAfterCreateSkillIds, setMoveAfterCreateSkillIds] = useState<string[]>([]);
+  const [isUpdatingAgentAssignments, setIsUpdatingAgentAssignments] = useState(false);
   const parsedRoute = useMemo(() => parseSkillRoute(routePath), [routePath]);
   const isStudioNew = routePath === "studio/new";
   const routeSkillToken = isStudioNew ? null : parsedRoute.skillToken;
@@ -4855,7 +4882,7 @@ export function CompanySkills() {
   });
 
   async function handleAttachSubmit(nextAgentIds: string[], versionId: string | null = null) {
-    if (!activeDetail) return;
+    if (!activeDetail || isUpdatingAgentAssignments) return;
     const skillKey = activeDetail.key;
     const pinnedVersionId = versionId ?? activeDetail.currentVersionId;
     if (!pinnedVersionId) {
@@ -4881,6 +4908,7 @@ export function CompanySkills() {
     if (affected.size === 0) {
       return;
     }
+    setIsUpdatingAgentAssignments(true);
     try {
       for (const agentId of affected) {
         const selection = await agentsApi.companySkillPins(
@@ -4900,6 +4928,8 @@ export function CompanySkills() {
       pushToast({ tone: "success", title: "Agents updated", body: `${nextAgentIds.length} agent(s) attached.` });
     } catch (error) {
       pushToast({ tone: "error", title: "Update failed", body: error instanceof Error ? error.message : "Failed to update agent skills." });
+    } finally {
+      setIsUpdatingAgentAssignments(false);
     }
   }
 
@@ -5166,6 +5196,7 @@ export function CompanySkills() {
           <div className="space-y-3">
             <div className="flex items-center gap-2 border-b border-border pb-2">
               <Input
+                aria-label="Skill import source"
                 value={source}
                 onChange={(event) => setSource(event.target.value)}
                 placeholder="Paste path, GitHub URL, or skills.sh command"
@@ -5406,7 +5437,7 @@ export function CompanySkills() {
           versionsLoading={versionsQuery.isLoading}
           attachAgents={eligibleAgentsForAttach}
           onSubmitAttach={handleAttachSubmit}
-          attachPending={attachAgentsMutation.isPending}
+          attachPending={isUpdatingAgentAssignments || attachAgentsMutation.isPending}
           expandedDirs={expandedDirs[selectedSkillId] ?? new Set<string>()}
           onToggleDir={(path) => {
             setExpandedDirs((current) => {

@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Toast } from "radix-ui";
 
 export type ToastTone = "info" | "success" | "warn" | "error";
 
@@ -167,9 +168,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ToastActionsContext.Provider value={actions}>
-      <ToastStateContext.Provider value={toasts}>{children}</ToastStateContext.Provider>
-    </ToastActionsContext.Provider>
+    <Toast.Provider label="Notifications">
+      <ToastActionsContext.Provider value={actions}>
+        <ToastStateContext.Provider value={toasts}>{children}</ToastStateContext.Provider>
+      </ToastActionsContext.Provider>
+    </Toast.Provider>
   );
 }
 

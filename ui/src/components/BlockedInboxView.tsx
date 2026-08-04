@@ -172,22 +172,7 @@ export function BlockedInboxView({
   }
 
   if (allRows.length === 0) {
-    return (
-      <Card
-        data-testid="blocked-inbox-empty"
-        className="items-center gap-3 border-border/70 bg-card/40 px-6 py-10 text-center"
-      >
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">No work is stopped.</p>
-          <p className="text-xs text-muted-foreground">
-            Tasks that need a decision, recovery, or external action will appear here.
-          </p>
-        </div>
-      </Card>
-    );
+    return <BlockedInboxEmptyState />;
   }
 
   if (groups.length === 0) {
@@ -258,6 +243,25 @@ export function BlockedInboxView({
         )}
       </div>
     </div>
+  );
+}
+
+function BlockedInboxEmptyState() {
+  return (
+    <Card
+      data-testid="blocked-inbox-empty"
+      className="items-center gap-3 border-border/70 bg-card/40 px-6 py-10 text-center"
+    >
+      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+        <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">No work is stopped.</p>
+        <p className="text-xs text-muted-foreground">
+          Tasks that need a decision, recovery, or external action will appear here.
+        </p>
+      </div>
+    </Card>
   );
 }
 

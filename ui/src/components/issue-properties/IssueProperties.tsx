@@ -729,8 +729,9 @@ export function IssueProperties({
     <TooltipProvider>
       <Tooltip open={monitorDetailsOpen} onOpenChange={setMonitorDetailsOpen}>
       <TooltipTrigger asChild>
-        <span
-          className="inline-flex min-w-0 items-start gap-1.5"
+        <button
+          type="button"
+          className="inline-flex min-w-0 items-start gap-1.5 border-0 bg-transparent p-0 text-left font-inherit text-inherit"
           data-testid="monitor-row-trigger"
           onClick={() => setMonitorDetailsOpen(false)}
         >
@@ -743,7 +744,7 @@ export function IssueProperties({
               <span className="text-xs text-muted-foreground">{monitorSecondary}</span>
             ) : null}
           </span>
-        </span>
+        </button>
       </TooltipTrigger>
       {monitorNextCheckAt ? (
         <TooltipContent
@@ -793,12 +794,14 @@ export function IssueProperties({
     <div className="flex w-full flex-col gap-2">
       <div className="flex flex-col gap-2 md:flex-row">
         <input
+          aria-label="Schedule monitor check"
           type="datetime-local"
           className="rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           value={monitorAtInput}
           onChange={(e) => setMonitorAtInput(e.target.value)}
         />
         <input
+          aria-label="Monitor check instructions"
           type="text"
           className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           placeholder="What should the agent re-check?"
@@ -808,6 +811,7 @@ export function IssueProperties({
       </div>
       <div className="flex flex-col gap-2 md:flex-row">
         <input
+          aria-label="External service to monitor"
           type="text"
           className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs"
           placeholder="External service"
@@ -889,7 +893,8 @@ export function IssueProperties({
   const labelsContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        aria-label="Search labels"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="Search labels..."
         value={labelSearch}
         onChange={(e) => setLabelSearch(e.target.value)}
@@ -922,13 +927,15 @@ export function IssueProperties({
       <div className="mt-2 border-t border-border pt-2 space-y-1">
         <div className="flex items-center gap-1">
           <input
+            aria-label="New label color"
             className="h-7 w-7 p-0 rounded bg-transparent"
             type="color"
             value={newLabelColor}
             onChange={(e) => setNewLabelColor(e.target.value)}
           />
           <input
-            className="flex-1 px-2 py-1.5 text-xs bg-transparent outline-none rounded placeholder:text-muted-foreground/50"
+            aria-label="New label name"
+            className="flex-1 px-2 py-1.5 text-xs bg-transparent outline-none rounded placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
             placeholder="New label"
             value={newLabelName}
             onChange={(e) => setNewLabelName(e.target.value)}
@@ -1017,7 +1024,8 @@ export function IssueProperties({
         </div>
       ) : null}
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        aria-label="Search owners"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="Search owners..."
         value={ownerSearch}
         onChange={(event) => setOwnerSearch(event.target.value)}
@@ -1041,7 +1049,8 @@ export function IssueProperties({
   ) => (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        aria-label="Search reviewers or approvers"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
         placeholder={`Search ${stageType === "review" ? "reviewers" : "approvers"}...`}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -1153,7 +1162,8 @@ export function IssueProperties({
   const projectContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        aria-label="Search projects"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="Search projects..."
         value={projectSearch}
         onChange={(e) => setProjectSearch(e.target.value)}
@@ -1276,6 +1286,7 @@ export function IssueProperties({
       to={`/issues/${parentIdentifier ?? issue.parentId}`}
       className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
       onClick={(e) => e.stopPropagation()}
+      aria-label="Open parent issue"
     >
       <ArrowUpRight className="h-3 w-3" />
     </Link>
@@ -1297,7 +1308,8 @@ export function IssueProperties({
   const parentContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        aria-label="Search parent tasks"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="Search tasks..."
         value={parentSearch}
         onChange={(e) => setParentSearch(e.target.value)}
@@ -1366,7 +1378,7 @@ export function IssueProperties({
   const blockedByContent = (
     <>
       <input
-        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="Search tasks..."
         value={blockedBySearch}
         onChange={(e) => setBlockedBySearch(e.target.value)}
@@ -1470,6 +1482,7 @@ export function IssueProperties({
           extra={issue.ownerAgentId ? (
             <Link
               to={`/agents/${issue.ownerAgentId}`}
+              aria-label={`Open ${agentName(issue.ownerAgentId) ?? "owner"} agent`}
               className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1491,6 +1504,7 @@ export function IssueProperties({
           extra={issue.projectId ? (
             <Link
               to={projectLink(issue.projectId)!}
+              aria-label="Open project"
               className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1788,6 +1802,7 @@ export function IssueProperties({
             {originatingActor.kind === "agent" ? (
               <Link
                 to={`/agents/${originatingActor.id}`}
+                aria-label={`Open ${agentName(originatingActor.id) ?? "originating"} agent`}
                 className="hover:underline"
               >
                 <Identity

@@ -261,6 +261,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
       <textarea
         ref={textareaRef}
+        aria-label="Message"
         data-testid={inputTestId}
         value={value}
         onChange={handleChange}
@@ -334,6 +335,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
             <input
               ref={fileInputRef}
               type="file"
+              aria-label="Attach files"
               accept={acceptFileTypes}
               className="hidden"
               onChange={handleFileInputChange}

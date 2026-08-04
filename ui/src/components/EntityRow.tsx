@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 
@@ -135,6 +135,14 @@ export function EntityRow({
     content
   );
 
+  const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onClick || event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onClick();
+    }
+  };
+
   if (to) {
     return (
       <Link to={to} className={cn("no-underline text-inherit", shellClasses)} onClick={onClick}>
@@ -143,8 +151,22 @@ export function EntityRow({
     );
   }
 
+  if (onClick) {
+    return (
+      <div
+        className={shellClasses}
+        role="button"
+        tabIndex={0}
+        onClick={onClick}
+        onKeyDown={handleRowKeyDown}
+      >
+        {body}
+      </div>
+    );
+  }
+
   return (
-    <div className={shellClasses} onClick={onClick}>
+    <div className={shellClasses}>
       {body}
     </div>
   );

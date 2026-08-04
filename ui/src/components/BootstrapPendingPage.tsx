@@ -10,7 +10,8 @@ type BootstrapPendingPageProps = {
   claimAvailable: boolean;
   hasActiveInvite?: boolean;
   session: AuthSession | null | undefined;
-  claimState: "idle" | "claiming" | "success";
+  claimState: "idle" | "success";
+  claimPending: boolean;
   claimError?: { status?: number; message?: string } | null;
   onClaim: () => void;
 };
@@ -70,6 +71,7 @@ export function BootstrapPendingPage({
   hasActiveInvite = false,
   session,
   claimState,
+  claimPending,
   claimError,
   onClaim,
 }: BootstrapPendingPageProps) {
@@ -136,7 +138,6 @@ export function BootstrapPendingPage({
   }
 
   const errorCopy = claimErrorCopy(claimError);
-  const isClaiming = claimState === "claiming";
   return (
     <StateChrome>
       <h1 className="text-xl font-semibold">Finish setting up this Paperclip</h1>
@@ -144,9 +145,9 @@ export function BootstrapPendingPage({
         No admin has claimed this instance yet. Claim it now to become the first admin and start onboarding.
       </p>
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Button onClick={onClaim} disabled={isClaiming}>
-          {isClaiming && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
-          {isClaiming ? "Claiming..." : "Claim this instance"}
+        <Button onClick={onClaim} disabled={claimPending}>
+          {claimPending && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
+          {claimPending ? "Claiming..." : "Claim this instance"}
         </Button>
         <span className="text-sm text-muted-foreground">
           Signed in as <span className="font-medium text-foreground">{displayIdentity(session)}</span>

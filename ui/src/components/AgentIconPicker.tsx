@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +33,7 @@ interface AgentIconPickerProps {
 export function AgentIconPicker({ value, onChange, children }: AgentIconPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const searchInputId = useId();
 
   const filtered = useMemo(() => {
     const entries = AGENT_ICON_NAMES.map((name) => [name, AGENT_ICONS[name]] as const);
@@ -45,7 +46,11 @@ export function AgentIconPicker({ value, onChange, children }: AgentIconPickerPr
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent className="w-72 p-3" align="start">
+        <label htmlFor={searchInputId} className="sr-only">
+          Search icons
+        </label>
         <Input
+          id={searchInputId}
           placeholder="Search icons..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -56,6 +61,8 @@ export function AgentIconPicker({ value, onChange, children }: AgentIconPickerPr
           {filtered.map(([name, Icon]) => (
             <button
               key={name}
+              type="button"
+              aria-label={name}
               onClick={() => {
                 onChange(name);
                 setOpen(false);

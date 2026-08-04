@@ -71,7 +71,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
         companyId,
       );
     },
-    onSuccess: async (selection) => {
+    onSuccess: (selection) => {
       queryClient.setQueryData(
         queryKeys.agents.companySkillPins(agent.id),
         selection,
@@ -79,7 +79,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
       const selectedKeys = selection.entries.map((entry) => entry.key);
       lastSavedSkillsRef.current = selectedKeys;
       setLastSavedSkills(selectedKeys);
-      await Promise.all([
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) }),
       ]);
@@ -194,9 +194,14 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   const filteredEnabled = useMemo(() => filterAgentSkills(enabledRows, search), [enabledRows, search]);
   const filteredAvailable = useMemo(() => filterAgentSkills(availableRows, search), [availableRows, search]);
 
+  const isPending = saveSelection.isPending;
   const hasUnsavedChanges = !sameSkillSelection(skillDraft, lastSavedSkills);
 
   const toggleSkill = (key: string, next: boolean) => {
+    if (isPending) {
+      return;
+    }
+
     setSkillDraft((current) =>
       next
         ? Array.from(new Set([...current, key]))
@@ -215,9 +220,11 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   );
 
   const libraryEmpty = libraryRows.length === 0;
+  const selectionStatus = isPending ? "Saving skill selection…" : null;
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="max-w-4xl space-y-4" aria-busy={isPending}>
+      {selectionStatus ? <p className="sr-only" role="status">{selectionStatus}</p> : null}
       {/* Header */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -235,7 +242,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
             </TooltipContent>
           </Tooltip>
           <SaveStatusChip
-            pending={saveSelection.isPending}
+            pending={isPending}
             unsaved={hasUnsavedChanges}
             error={saveSelection.isError && hasUnsavedChanges}
           />
@@ -252,7 +259,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
             </div>
             <Button asChild variant="outline" size="sm" className="shrink-0">
               <Link to="/skills" className="no-underline">
-                <Store className="h-3.5 w-3.5" />
+                <Store data-icon="inline-start" className="h-3.5 w-3.5" />
                 Browse skills store
               </Link>
             </Button>
@@ -260,7 +267,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
         </div>
 
         {saveSelection.isError ? (
-          <p className="text-xs text-destructive">
+          <p className="text-xs text-destructive" role="alert">
             {saveSelection.error instanceof Error
               ? saveSelection.error.message
               : "Failed to update company-skill selection"}
@@ -269,36 +276,49 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
       </div>
 
       {isLoading ? (
-        <PageSkeleton variant="list" />
+        <div role="status">
+          <span className="sr-only">Loading company skills…</span>
+          <PageSkeleton variant="list" />
+        </div>
       ) : libraryEmpty ? (
         <EmptyLibraryCard />
       ) : (
-        <div className="space-y-4">
-          <SkillSection title="Enabled on this agent" count={filteredEnabled.length}>
-            {filteredEnabled.length > 0 ? (
-              filteredEnabled.map((row) => renderRow(row, "enabled"))
-            ) : (
-              <SectionEmpty>
-                {search ? "No enabled skills match your search." : "No skills enabled on this agent yet."}
-              </SectionEmpty>
-            )}
-          </SkillSection>
+        <fieldset
+          aria-label="Agent skill selection"
+          className="contents"
+          disabled={isPending}
+        >
+          {selectionStatus ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {selectionStatus} Skill changes are temporarily locked.
+            </p>
+          ) : null}
+          <div className="space-y-4">
+            <SkillSection title="Enabled on this agent" count={filteredEnabled.length}>
+              {filteredEnabled.length > 0 ? (
+                filteredEnabled.map((row) => renderRow(row, "enabled"))
+              ) : (
+                <SectionEmpty>
+                  {search ? "No enabled skills match your search." : "No skills enabled on this agent yet."}
+                </SectionEmpty>
+              )}
+            </SkillSection>
 
-          <SkillSection title="Available from the library" count={filteredAvailable.length}>
-            {filteredAvailable.length > 0 ? (
-              filteredAvailable.map((row) => renderRow(row, "available"))
-            ) : (
-              <SectionEmpty>
-                {search
-                  ? "No available skills match your search."
-                  : libraryEmpty
-                    ? "Import skills into the company library to enable them here."
-                    : "Every library skill is enabled on this agent."}
-              </SectionEmpty>
-            )}
-          </SkillSection>
-
-        </div>
+            <SkillSection title="Available from the library" count={filteredAvailable.length}>
+              {filteredAvailable.length > 0 ? (
+                filteredAvailable.map((row) => renderRow(row, "available"))
+              ) : (
+                <SectionEmpty>
+                  {search
+                    ? "No available skills match your search."
+                    : libraryEmpty
+                      ? "Import skills into the company library to enable them here."
+                      : "Every library skill is enabled on this agent."}
+                </SectionEmpty>
+              )}
+            </SkillSection>
+          </div>
+        </fieldset>
       )}
     </div>
   );
@@ -315,7 +335,7 @@ function SaveStatusChip({
 }) {
   if (pending) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         Saving…
       </span>
@@ -323,7 +343,7 @@ function SaveStatusChip({
   }
   if (error) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-destructive">
+      <span className="inline-flex items-center gap-1.5 text-xs text-destructive" role="alert">
         <AlertCircle className="h-3.5 w-3.5" />
         Couldn’t save
       </span>
@@ -381,7 +401,7 @@ function EmptyLibraryCard() {
       </div>
       <Button asChild variant="outline" size="sm">
         <Link to="/skills" className="no-underline">
-          <Store className="h-3.5 w-3.5" />
+          <Store data-icon="inline-start" className="h-3.5 w-3.5" />
           Browse skills store
         </Link>
       </Button>

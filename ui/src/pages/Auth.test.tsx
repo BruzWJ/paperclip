@@ -127,8 +127,8 @@ describe("AuthPage", () => {
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
 
-    // 1Password / password-manager recognition: identifier field is "username".
-    expect(emailInput.getAttribute("autocomplete")).toBe("username");
+    // Use the semantic autocomplete token for an email-address identifier.
+    expect(emailInput.getAttribute("autocomplete")).toBe("email");
     expect(emailInput.getAttribute("type")).toBe("email");
     expect(passwordInput.getAttribute("autocomplete")).toBe("current-password");
 

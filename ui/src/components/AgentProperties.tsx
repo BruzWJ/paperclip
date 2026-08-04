@@ -28,7 +28,7 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const lastErrorIsActive = agent.status === "error";
 
-  const { data: agents } = useQuery({
+  const { data: agents, isSuccess: hasLoadedAgents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && !!agent.reportsTo,
@@ -82,9 +82,17 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         {agent.reportsTo && (
           <PropertyRow label="Reports To">
             {reportsToAgent ? (
-              <Link to={agentUrl(reportsToAgent)} className="hover:underline">
+              <Link
+                to={agentUrl(reportsToAgent)}
+                className="hover:underline"
+                aria-label={`View ${reportsToAgent.name}'s profile`}
+              >
                 <Identity name={reportsToAgent.name} size="sm" />
               </Link>
+            ) : hasLoadedAgents ? (
+              <span className="text-sm text-muted-foreground">
+                No results found for this reporting relationship ({agent.reportsTo.slice(0, 8)}).
+              </span>
             ) : (
               <span className="text-sm font-mono">{agent.reportsTo.slice(0, 8)}</span>
             )}

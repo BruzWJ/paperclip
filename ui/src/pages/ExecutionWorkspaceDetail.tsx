@@ -613,6 +613,9 @@ function ExecutionWorkspaceRoutinesList({
 
   return (
     <>
+      {runRoutine.isPending ? (
+        <p className="sr-only" role="status">Starting routine run…</p>
+      ) : null}
       <Card className="rounded-none">
         <CardHeader>
           <CardTitle>Workspace routines</CardTitle>
@@ -622,9 +625,9 @@ function ExecutionWorkspaceRoutinesList({
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading routines...</p>
+            <p className="text-sm text-muted-foreground" role="status">Loading routines...</p>
           ) : error ? (
-            <p className="text-sm text-destructive">
+            <p className="text-sm text-destructive" role="alert">
               {error instanceof Error ? error.message : "Failed to load routines."}
             </p>
           ) : workspaceRoutines.length === 0 ? (
@@ -867,10 +870,10 @@ export function ExecutionWorkspaceDetail() {
     },
   });
 
-  if (workspaceQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading workspace…</p>;
+  if (workspaceQuery.isLoading) return <p className="text-sm text-muted-foreground" role="status">Loading workspace…</p>;
   if (workspaceQuery.error) {
     return (
-      <p className="text-sm text-destructive">
+      <p className="text-sm text-destructive" role="alert">
         {workspaceQuery.error instanceof Error ? workspaceQuery.error.message : "Failed to load workspace"}
       </p>
     );
@@ -958,8 +961,8 @@ export function ExecutionWorkspaceDetail() {
             onManageServices={() => handleTabChange("services")}
           />
         </div>
-        {runtimeActionErrorMessage ? <p className="text-sm text-destructive">{runtimeActionErrorMessage}</p> : null}
-        {!runtimeActionErrorMessage && runtimeActionMessage ? <p className="text-sm text-muted-foreground">{runtimeActionMessage}</p> : null}
+        {runtimeActionErrorMessage ? <p className="text-sm text-destructive" role="alert">{runtimeActionErrorMessage}</p> : null}
+        {!runtimeActionErrorMessage && runtimeActionMessage ? <p className="text-sm text-muted-foreground" role="status">{runtimeActionMessage}</p> : null}
 
         <PluginSlotOutlet
           slotTypes={["toolbarButton", "contextMenuItem"]}
@@ -1025,6 +1028,7 @@ export function ExecutionWorkspaceDetail() {
                   <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">General</div>
                   <Field label="Workspace name">
                     <Input
+                      aria-label="Workspace name"
                       value={form.name}
                       onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
                       placeholder="Execution workspace name"
@@ -1039,6 +1043,7 @@ export function ExecutionWorkspaceDetail() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Branch name" hint="Useful for isolated worktrees">
                       <Input
+                        aria-label="Branch name"
                         className="font-mono"
                         value={form.branchName}
                         onChange={(event) => setForm((current) => current ? { ...current, branchName: event.target.value } : current)}
@@ -1048,6 +1053,7 @@ export function ExecutionWorkspaceDetail() {
 
                     <Field label="Base ref">
                       <Input
+                        aria-label="Base ref"
                         className="font-mono"
                         value={form.baseRef}
                         onChange={(event) => setForm((current) => current ? { ...current, baseRef: event.target.value } : current)}
@@ -1058,6 +1064,7 @@ export function ExecutionWorkspaceDetail() {
 
                   <Field label="Repo URL">
                     <Input
+                      aria-label="Repo URL"
                       value={form.repoUrl}
                       onChange={(event) => setForm((current) => current ? { ...current, repoUrl: event.target.value } : current)}
                       placeholder="https://github.com/org/repo"
@@ -1071,6 +1078,7 @@ export function ExecutionWorkspaceDetail() {
                   <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Paths</div>
                   <Field label="Working directory">
                     <Input
+                      aria-label="Working directory"
                       className="font-mono"
                       value={form.cwd}
                       onChange={(event) => setForm((current) => current ? { ...current, cwd: event.target.value } : current)}
@@ -1080,6 +1088,7 @@ export function ExecutionWorkspaceDetail() {
 
                   <Field label="Provider path / ref">
                     <Input
+                      aria-label="Provider path or ref"
                       className="font-mono"
                       value={form.providerRef}
                       onChange={(event) => setForm((current) => current ? { ...current, providerRef: event.target.value } : current)}
@@ -1094,6 +1103,7 @@ export function ExecutionWorkspaceDetail() {
                   <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Lifecycle commands</div>
                   <Field label="Provision command" hint="Runs when Paperclip prepares this execution workspace">
                     <Textarea
+                      aria-label="Provision command"
                       className="min-h-20 font-mono"
                       value={form.provisionCommand}
                       onChange={(event) => setForm((current) => current ? { ...current, provisionCommand: event.target.value } : current)}
@@ -1103,6 +1113,7 @@ export function ExecutionWorkspaceDetail() {
 
                   <Field label="Teardown command" hint="Runs when the execution workspace is archived or cleaned up">
                     <Textarea
+                      aria-label="Teardown command"
                       className="min-h-20 font-mono"
                       value={form.teardownCommand}
                       onChange={(event) => setForm((current) => current ? { ...current, teardownCommand: event.target.value } : current)}
@@ -1112,6 +1123,7 @@ export function ExecutionWorkspaceDetail() {
 
                   <Field label="Cleanup command" hint="Workspace-specific cleanup before teardown">
                     <Textarea
+                      aria-label="Cleanup command"
                       className="min-h-16 font-mono"
                       value={form.cleanupCommand}
                       onChange={(event) => setForm((current) => current ? { ...current, cleanupCommand: event.target.value } : current)}
@@ -1183,6 +1195,7 @@ export function ExecutionWorkspaceDetail() {
                           <label htmlFor="inherit-runtime-config">Inherit project workspace runtime config</label>
                         </div>
                         <Textarea
+                          aria-label="Workspace commands JSON"
                           className="min-h-64 font-mono sm:min-h-96"
                           value={form.workspaceRuntime}
                           onChange={(event) => setForm((current) => current ? { ...current, workspaceRuntime: event.target.value } : current)}
@@ -1205,6 +1218,7 @@ export function ExecutionWorkspaceDetail() {
                         {configuredRuntimeServicePorts.map((service) => (
                           <Field key={`${service.collection}-${service.index}`} label={service.name} hint="Fixed port">
                             <Input
+                              aria-label="Fixed runtime service port"
                               type="number"
                               min="1"
                               max="65535"
@@ -1263,7 +1277,7 @@ export function ExecutionWorkspaceDetail() {
                 >
                   Reset
                 </Button>
-                {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+                {errorMessage ? <p className="text-sm text-destructive" role="alert">{errorMessage}</p> : null}
                 {!errorMessage && !isDirty ? <p className="text-sm text-muted-foreground">No unsaved changes.</p> : null}
               </div>
               </CardContent>

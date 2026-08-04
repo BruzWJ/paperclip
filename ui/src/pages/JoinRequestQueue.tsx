@@ -70,7 +70,7 @@ export function JoinRequestQueue() {
   }
 
   if (requestsQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading join requests…</div>;
+    return <div className="text-sm text-muted-foreground" role="status">Loading join requests…</div>;
   }
 
   if (requestsQuery.error) {
@@ -80,11 +80,21 @@ export function JoinRequestQueue() {
         : requestsQuery.error instanceof Error
           ? requestsQuery.error.message
           : "Failed to load join requests.";
-    return <div className="text-sm text-destructive">{message}</div>;
+    return <div className="text-sm text-destructive" role="alert">{message}</div>;
   }
 
+  const isPending = approveMutation.isPending || rejectMutation.isPending;
+  const requestStatus = approveMutation.isPending
+    ? "Approving join request…"
+    : rejectMutation.isPending
+      ? "Rejecting join request…"
+      : requestsQuery.isFetching
+        ? "Updating join request list…"
+        : null;
+
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="max-w-6xl space-y-6" aria-busy={isPending}>
+      {isPending ? <p className="text-sm text-muted-foreground" role="status">{requestStatus}</p> : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <UserPlus2 className="h-5 w-5 text-muted-foreground" />
@@ -158,17 +168,23 @@ export function JoinRequestQueue() {
                 </div>
 
                 {request.status === "pending_approval" ? (
-                  <JoinRequestApprovalControls
-                    companyId={selectedCompanyId}
-                    requestType={request.requestType}
-                    adapterType={request.adapterType}
-                    onApprove={({ defaultEnvironmentId }) =>
-                      approveMutation.mutate({ requestId: request.id, defaultEnvironmentId })
-                    }
-                    onReject={() => rejectMutation.mutate(request.id)}
-                    isPending={approveMutation.isPending || rejectMutation.isPending}
-                    className="flex max-w-sm flex-wrap items-end justify-end gap-2"
-                  />
+                  <fieldset
+                    aria-label="Join request approval actions"
+                    className="contents"
+                    disabled={isPending}
+                  >
+                    <JoinRequestApprovalControls
+                      companyId={selectedCompanyId}
+                      requestType={request.requestType}
+                      adapterType={request.adapterType}
+                      onApprove={({ defaultEnvironmentId }) =>
+                        approveMutation.mutate({ requestId: request.id, defaultEnvironmentId })
+                      }
+                      onReject={() => rejectMutation.mutate(request.id)}
+                      isPending={isPending}
+                      className="flex max-w-sm flex-wrap items-end justify-end gap-2"
+                    />
+                  </fieldset>
                 ) : null}
               </div>
 

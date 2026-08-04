@@ -389,10 +389,10 @@ export function ProjectWorkspaceDetail() {
     },
   });
 
-  if (projectQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading workspace…</p>;
+  if (projectQuery.isLoading) return <p className="text-sm text-muted-foreground" role="status">Loading workspace…</p>;
   if (projectQuery.error) {
     return (
-      <p className="text-sm text-destructive">
+      <p className="text-sm text-destructive" role="alert">
         {projectQuery.error instanceof Error ? projectQuery.error.message : "Failed to load workspace"}
       </p>
     );
@@ -410,6 +410,13 @@ export function ProjectWorkspaceDetail() {
     canRunJobs: canRunWorkspaceCommands,
   });
   const pendingRuntimeAction = controlRuntimeServices.isPending ? controlRuntimeServices.variables ?? null : null;
+  const workspaceActionStatus = updateWorkspace.isPending
+    ? "Saving workspace changes."
+    : setPrimaryWorkspace.isPending
+      ? "Making this the primary workspace."
+      : controlRuntimeServices.isPending
+        ? "Updating workspace runtime services."
+        : null;
 
   const saveChanges = () => {
     const validationError = validateWorkspaceForm(form);
@@ -435,10 +442,11 @@ export function ProjectWorkspaceDetail() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      {workspaceActionStatus ? <p className="sr-only" role="status">{workspaceActionStatus}</p> : null}
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
           <Link to={`/projects/${canonicalProjectRef}/workspaces`}>
-            <ArrowLeft className="mr-1 h-4 w-4" />
+            <ArrowLeft data-icon="inline-start" className="mr-1 h-4 w-4" />
             Back to workspaces
           </Link>
         </Button>
@@ -495,7 +503,8 @@ export function ProjectWorkspaceDetail() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Workspace name">
                 <input
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+                  aria-label="Workspace name"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={form.name}
                   onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
                   placeholder="Workspace name"
@@ -504,7 +513,8 @@ export function ProjectWorkspaceDetail() {
 
               <Field label="Visibility">
                 <select
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+                  aria-label="Workspace visibility"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={form.visibility}
                   onChange={(event) =>
                     setForm((current) => current ? { ...current, visibility: event.target.value as ProjectWorkspaceVisibility } : current)
@@ -520,7 +530,8 @@ export function ProjectWorkspaceDetail() {
             <div className="mt-4 grid gap-4">
               <Field label="Source type" hint={sourceTypeDescription ?? undefined}>
                 <select
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+                  aria-label="Workspace source type"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={form.sourceType}
                   onChange={(event) =>
                     setForm((current) => current ? { ...current, sourceType: event.target.value as ProjectWorkspaceSourceType } : current)
@@ -535,7 +546,8 @@ export function ProjectWorkspaceDetail() {
               <div className="grid gap-4 md:grid-cols-(--gtc-13)">
                 <Field label="Local path">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Local workspace path"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.cwd}
                     onChange={(event) => setForm((current) => current ? { ...current, cwd: event.target.value } : current)}
                     placeholder="/absolute/path/to/workspace"
@@ -549,7 +561,8 @@ export function ProjectWorkspaceDetail() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Repo URL">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+                    aria-label="Repository URL"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.repoUrl}
                     onChange={(event) => setForm((current) => current ? { ...current, repoUrl: event.target.value } : current)}
                     placeholder="https://github.com/org/repo"
@@ -557,7 +570,8 @@ export function ProjectWorkspaceDetail() {
                 </Field>
                 <Field label="Repo ref">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Repository ref"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.repoRef}
                     onChange={(event) => setForm((current) => current ? { ...current, repoRef: event.target.value } : current)}
                     placeholder="origin/main"
@@ -568,7 +582,8 @@ export function ProjectWorkspaceDetail() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Default ref">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Default repository ref"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.defaultRef}
                     onChange={(event) => setForm((current) => current ? { ...current, defaultRef: event.target.value } : current)}
                     placeholder="origin/main"
@@ -576,7 +591,8 @@ export function ProjectWorkspaceDetail() {
                 </Field>
                 <Field label="Shared workspace key">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Shared workspace key"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.sharedWorkspaceKey}
                     onChange={(event) => setForm((current) => current ? { ...current, sharedWorkspaceKey: event.target.value } : current)}
                     placeholder="frontend"
@@ -587,7 +603,8 @@ export function ProjectWorkspaceDetail() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Remote provider">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+                    aria-label="Remote workspace provider"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.remoteProvider}
                     onChange={(event) => setForm((current) => current ? { ...current, remoteProvider: event.target.value } : current)}
                     placeholder="codespaces"
@@ -595,7 +612,8 @@ export function ProjectWorkspaceDetail() {
                 </Field>
                 <Field label="Remote workspace ref">
                   <input
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Remote workspace ref"
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.remoteWorkspaceRef}
                     onChange={(event) => setForm((current) => current ? { ...current, remoteWorkspaceRef: event.target.value } : current)}
                     placeholder="workspace-123"
@@ -606,7 +624,8 @@ export function ProjectWorkspaceDetail() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Setup command" hint="Runs when this workspace needs custom bootstrap">
                   <textarea
-                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Workspace setup command"
+                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.setupCommand}
                     onChange={(event) => setForm((current) => current ? { ...current, setupCommand: event.target.value } : current)}
                     placeholder="pnpm install && pnpm dev"
@@ -614,7 +633,8 @@ export function ProjectWorkspaceDetail() {
                 </Field>
                 <Field label="Cleanup command" hint="Runs before project-level execution workspace teardown">
                   <textarea
-                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    aria-label="Workspace cleanup command"
+                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={form.cleanupCommand}
                     onChange={(event) => setForm((current) => current ? { ...current, cleanupCommand: event.target.value } : current)}
                     placeholder="pkill -f vite || true"
@@ -630,7 +650,8 @@ export function ProjectWorkspaceDetail() {
                 <div className="mt-3">
                   <Field label="Workspace commands JSON" hint="Execution workspaces inherit this config unless they override it. Legacy `services` arrays still work, but `commands` supports both services and jobs.">
                     <textarea
-                      className="min-h-96 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                      aria-label="Workspace commands JSON"
+                      className="min-h-96 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       value={form.runtimeConfig}
                       onChange={(event) => setForm((current) => current ? { ...current, runtimeConfig: event.target.value } : current)}
                       placeholder={"{\n  \"commands\": [\n    {\n      \"id\": \"web\",\n      \"name\": \"web\",\n      \"kind\": \"service\",\n      \"command\": \"pnpm dev\",\n      \"cwd\": \".\",\n      \"port\": { \"type\": \"auto\" },\n      \"readiness\": {\n        \"type\": \"http\",\n        \"urlTemplate\": \"http://127.0.0.1:${port}\"\n      },\n      \"expose\": {\n        \"type\": \"url\",\n        \"urlTemplate\": \"http://127.0.0.1:${port}\"\n      },\n      \"lifecycle\": \"shared\",\n      \"reuseScope\": \"project_workspace\"\n    },\n    {\n      \"id\": \"db-migrate\",\n      \"name\": \"db:migrate\",\n      \"kind\": \"job\",\n      \"command\": \"pnpm db:migrate\",\n      \"cwd\": \".\"\n    }\n  ]\n}"}
@@ -656,8 +677,8 @@ export function ProjectWorkspaceDetail() {
               >
                 Reset
               </Button>
-              {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
-              {!errorMessage && runtimeActionMessage ? <p className="text-sm text-muted-foreground">{runtimeActionMessage}</p> : null}
+              {errorMessage ? <p className="text-sm text-destructive" role="alert">{errorMessage}</p> : null}
+              {!errorMessage && runtimeActionMessage ? <p className="text-sm text-muted-foreground" role="status">{runtimeActionMessage}</p> : null}
               {!errorMessage && !isDirty ? <p className="text-sm text-muted-foreground">No unsaved changes.</p> : null}
             </div>
           </Card>
@@ -736,7 +757,10 @@ export function ProjectWorkspaceDetail() {
             missingBehavior="placeholder"
           />
         ) : pluginDetailSlotsLoading || pluginDetailSlotsError ? (
-          <div className="rounded-lg border border-dashed border-border bg-background px-4 py-8 text-sm text-muted-foreground">
+          <div
+            className="rounded-lg border border-dashed border-border bg-background px-4 py-8 text-sm text-muted-foreground"
+            role={pluginDetailSlotsError ? "alert" : "status"}
+          >
             {pluginDetailSlotsError ? pluginDetailSlotsError : "Loading workspace plugin..."}
           </div>
         ) : (

@@ -570,6 +570,7 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
       membershipMutation.variables.starred !== undefined,
     [membershipMutation.isPending, membershipMutation.variables],
   );
+  const isPending = pauseResumeAgent.isPending || membershipMutation.isPending;
 
   // Starred agents pin to the top of the section (name order), and are deduped
   // out of the active/recent subset so no agent appears twice.
@@ -627,6 +628,17 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
         onRadioValueChange: persistSortMode,
       }}
     >
+      {isPending ? (
+        <p
+          aria-live="polite"
+          role="status"
+          className="mx-2 px-2 py-1 text-(length:--text-micro) text-muted-foreground"
+        >
+          {pauseResumeAgent.isPending
+            ? "Updating agent…"
+            : "Updating agent membership…"}
+        </p>
+      ) : null}
       {starredAgents.map((agent: Agent) => renderAgentRow(agent, true))}
       {dedupedDisplayedAgents.map((agent: Agent) => renderAgentRow(agent, false))}
       {showSeeAllLink && (() => {

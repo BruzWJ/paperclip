@@ -6,9 +6,18 @@ import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
 import { BootstrapPendingPage } from "@/components/BootstrapPendingPage";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-function NoBoardAccessPage() {
+function NoBoardAccessEmptyState({
+  onSwitchAccount,
+  switchAccountPending,
+  switchAccountError,
+}: {
+  onSwitchAccount: () => void;
+  switchAccountPending: boolean;
+  switchAccountError: string | null;
+}) {
   return (
     <div className="mx-auto max-w-xl py-10">
       <Card className="block p-6">
@@ -21,6 +30,14 @@ function NoBoardAccessPage() {
           Use a company invite or sign in with an account that already belongs
           to this org.
         </p>
+        <div className="mt-5">
+          <Button variant="outline" onClick={onSwitchAccount} disabled={switchAccountPending}>
+            {switchAccountPending ? "Signing out…" : "Switch account"}
+          </Button>
+        </div>
+        {switchAccountError ? (
+          <p className="mt-3 text-sm text-destructive" role="alert">{switchAccountError}</p>
+        ) : null}
       </Card>
     </div>
   );
@@ -66,6 +83,15 @@ export function AuthenticatedAppGate() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.companies.stats,
       });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.access.currentBoardAccess,
+      });
+    },
+  });
+  const switchAccountMutation = useMutation({
+    mutationFn: () => authApi.signOut(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
       await queryClient.invalidateQueries({
         queryKey: queryKeys.access.currentBoardAccess,
       });
@@ -119,13 +145,8 @@ export function AuthenticatedAppGate() {
         claimAvailable={health.deploymentExposure === "private"}
         hasActiveInvite={health.bootstrapInviteActive}
         session={sessionQuery.data}
-        claimState={
-          claimMutation.isSuccess
-            ? "success"
-            : claimMutation.isPending
-              ? "claiming"
-              : "idle"
-        }
+        claimState={claimMutation.isSuccess ? "success" : "idle"}
+        claimPending={claimMutation.isPending}
         claimError={claimError}
         onClaim={() => claimMutation.mutate()}
       />
@@ -142,7 +163,19 @@ export function AuthenticatedAppGate() {
     !boardAccessQuery.data?.isInstanceAdmin &&
     (boardAccessQuery.data?.companyIds.length ?? 0) === 0
   ) {
-    return <NoBoardAccessPage />;
+    return (
+      <NoBoardAccessEmptyState
+        onSwitchAccount={() => switchAccountMutation.mutate()}
+        switchAccountPending={switchAccountMutation.isPending}
+        switchAccountError={
+          switchAccountMutation.error instanceof Error
+            ? switchAccountMutation.error.message
+            : switchAccountMutation.error
+              ? "Failed to switch accounts."
+              : null
+        }
+      />
+    );
   }
 
   return <Outlet />;

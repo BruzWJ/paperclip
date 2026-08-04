@@ -416,6 +416,9 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
 
   const profiles = effective.data?.profiles ?? [];
   const catalogLoading = catalogQueries.some((q) => q.isLoading);
+  const installSyncStatus = syncInstall.isPending
+    ? `${syncInstall.variables?.installed ? "Granting" : "Removing"} ${syncInstall.variables?.connection.name ?? "app"} access for ${agent.name}…`
+    : null;
 
   if (effective.isLoading) return <ToolsLoadingState label="Resolving effective access…" />;
   if (effective.error) {
@@ -427,6 +430,12 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
 
   return (
     <div className="space-y-4">
+      {installSyncStatus ? (
+        <p className="sr-only" role="status">{installSyncStatus}</p>
+      ) : null}
+      {syncInstall.isError ? (
+        <p className="sr-only" role="alert">Could not save this app access change.</p>
+      ) : null}
       <EnforcementBanner
         tone="info"
         title="Effective access"
@@ -441,21 +450,28 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
         }
       />
 
-      <InstalledAppsSection
-        agentId={agent.id}
-        agentName={agent.name}
-        connections={installedAppConnections}
-        draft={installDraft}
-        permittedConnectionIds={permittedConnectionIds}
-        pendingConnectionId={syncInstall.isPending ? syncInstall.variables?.connection.id ?? null : null}
-        saving={syncInstall.isPending}
-        unsaved={hasInstallUnsavedChanges}
-        error={syncInstall.isError && hasInstallUnsavedChanges}
-        onChange={(connectionId, installed) => {
-          failedInstallDraftRef.current = null;
-          setInstallDraft((current) => ({ ...current, [connectionId]: installed }));
-        }}
-      />
+      <fieldset
+        aria-busy={syncInstall.isPending}
+        aria-label="Installed app controls"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={syncInstall.isPending}
+      >
+        <InstalledAppsSection
+          agentId={agent.id}
+          agentName={agent.name}
+          connections={installedAppConnections}
+          draft={installDraft}
+          permittedConnectionIds={permittedConnectionIds}
+          pendingConnectionId={syncInstall.isPending ? syncInstall.variables?.connection.id ?? null : null}
+          saving={syncInstall.isPending}
+          unsaved={hasInstallUnsavedChanges}
+          error={syncInstall.isError && hasInstallUnsavedChanges}
+          onChange={(connectionId, installed) => {
+            failedInstallDraftRef.current = null;
+            setInstallDraft((current) => ({ ...current, [connectionId]: installed }));
+          }}
+        />
+      </fieldset>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Allowed tools table */}

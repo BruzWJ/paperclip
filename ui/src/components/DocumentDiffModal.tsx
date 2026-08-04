@@ -30,6 +30,28 @@ function getRevisionLabel(revision: DocumentRevision) {
   return `rev ${revision.revisionNumber} — ${relativeTime(revision.createdAt)} • ${actor}`;
 }
 
+function DocumentDiffEmptyState({ revisionCount }: { revisionCount: number }) {
+  const hasNoRevisions = revisionCount === 0;
+
+  return (
+    <div
+      className="p-6 text-center text-sm text-muted-foreground"
+      data-testid="document-diff-empty"
+    >
+      <p>
+        {hasNoRevisions
+          ? "No revisions are available for this document."
+          : "A second revision is needed to compare changes."}
+      </p>
+      <p className="mt-1 text-xs">
+        {hasNoRevisions
+          ? "Save changes to create the first revision, then open the diff again."
+          : "Save another revision, then return here to compare changes."}
+      </p>
+    </div>
+  );
+}
+
 export function DocumentDiffModal({
   issueId,
   documentKey,
@@ -106,7 +128,7 @@ export function DocumentDiffModal({
                 value={effectiveLeftId ?? ""}
                 onValueChange={(value) => setLeftRevisionId(value)}
               >
-                <SelectTrigger className="h-7 w-60 text-xs border-border/60">
+                <SelectTrigger aria-label="Select old revision" className="h-7 w-60 text-xs border-border/60">
                   <SelectValue placeholder="Select revision" />
                 </SelectTrigger>
                 <SelectContent>
@@ -124,7 +146,7 @@ export function DocumentDiffModal({
                 value={effectiveRightId ?? ""}
                 onValueChange={(value) => setRightRevisionId(value)}
               >
-                <SelectTrigger className="h-7 w-60 text-xs border-border/60">
+                <SelectTrigger aria-label="Select new revision" className="h-7 w-60 text-xs border-border/60">
                   <SelectValue placeholder="Select revision" />
                 </SelectTrigger>
                 <SelectContent>
@@ -142,6 +164,8 @@ export function DocumentDiffModal({
         <div className="overflow-auto flex-1 rounded-md border border-border text-xs">
           {!revisions ? (
             <div className="p-6 text-center text-muted-foreground text-sm">Loading revisions...</div>
+          ) : sortedRevisions.length < 2 ? (
+            <DocumentDiffEmptyState revisionCount={sortedRevisions.length} />
           ) : !leftRevision || !rightRevision ? (
             <div className="p-6 text-center text-muted-foreground text-sm">Select two revisions to compare.</div>
           ) : leftRevision.id === rightRevision.id ? (

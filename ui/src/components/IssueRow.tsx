@@ -94,17 +94,8 @@ export function IssueRow({
     <button
       type="button"
       data-slot="icon-button"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
+      onClick={() => {
         onMarkRead?.();
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          event.stopPropagation();
-          onMarkRead?.();
-        }
       }}
       className={cn(
         "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
@@ -141,16 +132,7 @@ export function IssueRow({
   ) : null;
 
   return (
-    <Link
-      to={createIssueDetailPath(issuePathId)}
-      state={detailState}
-      disableIssueQuicklook
-      issuePrefetch={issue}
-      data-inbox-issue-link
-      id={checklistRowId}
-      aria-current={checklistCurrentStep ? "step" : undefined}
-      onClickCapture={() => rememberIssueDetailLocationState(issuePathId, detailState)}
-      onMouseEnter={onMouseEnter}
+    <div
       className={cn(
         // No color transition on the row band: hover/selection must snap
         // instantly. A fade (transition-colors) leaves a trail of fading bands
@@ -162,20 +144,40 @@ export function IssueRow({
         className,
       )}
     >
-      <span className="flex shrink-0 items-center gap-1 pt-px sm:hidden">
+      {/*
+       * Keep navigation as a sibling overlay rather than a wrapper. Rows accept
+       * caller-provided controls (collapse, mark-read, archive, and trailing
+       * actions), so wrapping their slots in an anchor would create invalid
+       * nested interactive controls.
+       */}
+      <Link
+        to={createIssueDetailPath(issuePathId)}
+        state={detailState}
+        disableIssueQuicklook
+        issuePrefetch={issue}
+        data-inbox-issue-link
+        id={checklistRowId}
+        aria-label={`Open task ${identifier}: ${issue.title}`}
+        aria-current={checklistCurrentStep ? "step" : undefined}
+        onClickCapture={() => rememberIssueDetailLocationState(issuePathId, detailState)}
+        onMouseEnter={onMouseEnter}
+        className="absolute inset-0 z-10 rounded-lg"
+      />
+      <span className="relative z-20 flex shrink-0 items-center gap-1 pt-px sm:hidden">
         {mobileLeading ?? <StatusIcon status={issue.boardPresentationStatus} blockerAttention={issue.blockerAttention} size="md" className={selectedStatusClass} />}
         {parkedBlockerIndicator}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
         <span className={cn("line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none", titleClassName)}>
-          {issue.title}{titleSuffix}
+          {issue.title}
+          {titleSuffix ? <span className="relative z-20">{titleSuffix}</span> : null}
         </span>
         {checklistDependencyChips ? (
-          <span className="flex flex-wrap gap-1 sm:order-3 sm:ml-(--sz-calc-13)">
+          <span className="relative z-20 flex flex-wrap gap-1 sm:order-3 sm:ml-(--sz-calc-13)">
             {checklistDependencyChips}
           </span>
         ) : null}
-        <span className="flex items-center gap-2 self-stretch sm:order-1 sm:shrink-0">
+        <span className="relative z-20 flex items-center gap-2 self-stretch sm:order-1 sm:shrink-0">
           {showUnreadSlot ? (
             // Reserved leftmost dot gutter (desktop). Present on read and unread
             // rows so the mark-read dot lives to the LEFT of any leading control
@@ -250,20 +252,12 @@ export function IssueRow({
         </span>
       </span>
       {(onArchive || desktopTrailing || trailingMeta || externalObjectSummary) ? (
-        <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
+        <span className="relative z-20 ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
           {onArchive ? (
             <button
               type="button"
               data-slot="icon-button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onArchive();
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                event.stopPropagation();
+              onClick={() => {
                 onArchive();
               }}
               disabled={archiveDisabled}
@@ -287,10 +281,10 @@ export function IssueRow({
         // Mobile keeps the dot in flow as the leading item (mobile has no
         // reserved desktop dot gutter). Desktop renders the dot in the reserved
         // leading slot above instead, so this is mobile-only.
-        <span className="order-first inline-flex h-4 w-4 shrink-0 items-center justify-center self-center sm:hidden">
+        <span className="relative z-20 order-first inline-flex h-4 w-4 shrink-0 items-center justify-center self-center sm:hidden">
           {unreadDotButton}
         </span>
       ) : null}
-    </Link>
+    </div>
   );
 }

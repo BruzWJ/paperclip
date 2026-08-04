@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, KeyRound, Loader2, Plus, X } from "lucide-react";
 import type { CompanySecret, SecretVersionSelector } from "@paperclipai/shared";
@@ -75,6 +75,7 @@ export function SecretBindingPicker({
   const [createValue, setCreateValue] = useState("");
   const [createDescription, setCreateDescription] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
+  const secretSelectId = useId();
 
   const secretsQuery = useQuery({
     queryKey: selectedCompanyId
@@ -125,9 +126,14 @@ export function SecretBindingPicker({
 
   return (
     <div className={cn("space-y-1.5", className)}>
+      {secretsQuery.isPending ? (
+        <p className="sr-only" role="status">
+          Loading secret choices.
+        </p>
+      ) : null}
       {label ? (
         <div className="flex items-center justify-between text-xs font-medium text-foreground/80">
-          <span>{label}</span>
+          <label htmlFor={secretSelectId}>{label}</label>
           {value ? (
             <button
               type="button"
@@ -144,8 +150,9 @@ export function SecretBindingPicker({
         <div className="relative flex-1">
           <KeyRound className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <select
+            id={secretSelectId}
             className={cn(
-              "h-9 w-full rounded-md border border-border bg-background pl-7 pr-2 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60",
+              "h-9 w-full rounded-md border border-border bg-background pl-7 pr-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
               selectedMissing && "border-destructive text-destructive",
             )}
             value={value?.secretId ?? ""}
@@ -172,7 +179,7 @@ export function SecretBindingPicker({
         </div>
         {allowVersionSelector ? (
           <select
-            className="h-9 rounded-md border border-border bg-background px-2 text-xs outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-9 rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
             value={value?.version === undefined ? VERSION_LATEST : String(value.version)}
             onChange={(event) => {
               if (!value) return;
@@ -215,7 +222,7 @@ export function SecretBindingPicker({
           Bound to {versionDisplay(value?.version)} · {selectedSecret.key}
         </p>
       ) : selectedMissing ? (
-        <p className="text-(length:--text-micro) text-destructive flex items-center gap-1">
+        <p className="text-(length:--text-micro) text-destructive flex items-center gap-1" role="alert">
           <AlertCircle className="h-3 w-3" />
           The previously selected secret is no longer available. Pick another or remove the binding.
         </p>
@@ -225,6 +232,11 @@ export function SecretBindingPicker({
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
+          {createMutation.isPending ? (
+            <p className="sr-only" role="status">
+              Creating and binding secret.
+            </p>
+          ) : null}
           <DialogHeader>
             <DialogTitle>Create new secret</DialogTitle>
           </DialogHeader>
@@ -262,7 +274,7 @@ export function SecretBindingPicker({
                 placeholder="Optional notes (no values)"
               />
             </div>
-            {createError ? <p className="text-xs text-destructive">{createError}</p> : null}
+            {createError ? <p className="text-xs text-destructive" role="alert">{createError}</p> : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>

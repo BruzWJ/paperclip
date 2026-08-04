@@ -21,6 +21,8 @@ interface InlineEntitySelectorProps {
   onChange: (id: string) => void;
   onConfirm?: () => void;
   className?: string;
+  /** Accessible name for the selector trigger when its rendered value is not descriptive. */
+  ariaLabel?: string;
   renderTriggerValue?: (option: InlineEntityOption | null) => ReactNode;
   renderOption?: (option: InlineEntityOption, isSelected: boolean) => ReactNode;
   recentOptionIds?: string[];
@@ -45,6 +47,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       onChange,
       onConfirm,
       className,
+      ariaLabel,
       renderTriggerValue,
       renderOption,
       recentOptionIds = EMPTY_RECENT_OPTION_IDS,
@@ -125,6 +128,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
               if (openOnFocus && !isPointerDownRef.current) setOpen(true);
               isPointerDownRef.current = false;
             }}
+            aria-label={ariaLabel ?? placeholder}
           >
             {renderTriggerValue
               ? renderTriggerValue(currentOption)
@@ -149,8 +153,9 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
         >
           <input
             ref={inputRef}
-            className="w-full border-b border-border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground/60"
+            className="w-full border-b border-border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);

@@ -97,9 +97,7 @@ export function DecisionTrainingDrawer({
         </SheetHeader>
 
         {!item || !target ? (
-          <div className="p-4 text-sm text-muted-foreground">
-            This decision can't be trained — it isn't anchored to an issue.
-          </div>
+          <DecisionTrainingUnavailableEmptyState onClose={() => onOpenChange(false)} />
         ) : savedExampleId ? (
           <SavedState
             exampleId={savedExampleId}
@@ -121,6 +119,23 @@ export function DecisionTrainingDrawer({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+function DecisionTrainingUnavailableEmptyState({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+      <GraduationCap className="size-6 text-muted-foreground" aria-hidden="true" />
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">This decision can&apos;t be trained.</p>
+        <p className="text-sm text-muted-foreground">
+          It isn&apos;t anchored to an issue, so there is no decision context to freeze.
+        </p>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={onClose}>
+        Close
+      </Button>
+    </div>
   );
 }
 
@@ -279,6 +294,11 @@ function SavedState({
   const authorLabel = currentUserId && record.createdByUserId === currentUserId
     ? "You"
     : `User ${record.createdByUserId.slice(0, 8)}`;
+  const pendingStatusMessage = saveNotes.isPending
+    ? "Saving training notes…"
+    : remove.isPending
+      ? "Deleting training example…"
+      : null;
 
   const startEditing = () => {
     setDraftNotes(record.notes);
@@ -314,13 +334,14 @@ function SavedState({
             <span className="text-sm font-medium text-foreground">Notes</span>
             {!editing && (
               <Button variant="ghost" size="xs" onClick={startEditing}>
-                <Pencil className="size-3.5" /> Edit
+                <Pencil data-icon="inline-start" className="size-3.5" /> Edit
               </Button>
             )}
           </div>
           {editing ? (
             <div className="space-y-2">
               <Textarea
+                aria-label="Training notes"
                 value={draftNotes}
                 onChange={(event) => setDraftNotes(event.target.value)}
                 placeholder={NOTES_PLACEHOLDER}
@@ -358,6 +379,11 @@ function SavedState({
       </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-border p-4">
+        {pendingStatusMessage ? (
+          <p role="status" className="mr-auto text-xs text-muted-foreground">
+            {pendingStatusMessage}
+          </p>
+        ) : null}
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={remove.isPending}>
@@ -387,7 +413,7 @@ function SavedState({
         <Button asChild variant="outline" size="sm">
           <Link to={`/training/${record.id}`}>
             Open full record
-            <ExternalLink className="size-3.5" />
+            <ExternalLink className="size-3.5" data-icon="inline-end" />
           </Link>
         </Button>
       </div>

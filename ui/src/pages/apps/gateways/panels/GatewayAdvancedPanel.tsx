@@ -72,6 +72,9 @@ export function GatewayAdvancedPanel({
 
   return (
     <div className="space-y-5">
+      {archiveMutation.isPending ? (
+        <p className="sr-only" role="status">Archiving gateway…</p>
+      ) : null}
       <section className="space-y-2">
         <h3 className="text-sm font-semibold text-foreground">Transport</h3>
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
@@ -85,7 +88,7 @@ export function GatewayAdvancedPanel({
             {endpoint}
           </code>
           <Button variant="outline" size="sm" onClick={() => void copy(endpoint, "Endpoint URL")}>
-            <Copy className="mr-1 h-3.5 w-3.5" />
+            <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
             Copy
           </Button>
         </div>
@@ -95,7 +98,7 @@ export function GatewayAdvancedPanel({
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-foreground">Raw configuration</h3>
           <Button variant="outline" size="sm" onClick={() => void copy(rawConfig, "Gateway config JSON")}>
-            <Copy className="mr-1 h-3.5 w-3.5" />
+            <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
             Copy JSON
           </Button>
         </div>

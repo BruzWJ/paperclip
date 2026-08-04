@@ -573,7 +573,7 @@ export function ActivityFeed({ className }: ActivityFeedProps) {
       };
     }
     return {
-      text: "Your agents are running — activity will appear here shortly.",
+      text: "Nothing to show yet. Your agents are running — activity will appear here shortly.",
       showPulse: true,
     };
   }, [agents]);

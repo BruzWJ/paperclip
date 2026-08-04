@@ -21,6 +21,10 @@ function defaultExpiry(): string {
   return new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+function toDateInputValue(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
 const STATUS_CLASS: Record<TokenStatus, string> = {
   active: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   expiring: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
@@ -156,12 +160,17 @@ export function TokensPanel({
 
   return (
     <div className="space-y-4">
+      {createMutation.isPending || revokeMutation.isPending ? (
+        <p className="sr-only" role="status">
+          {createMutation.isPending ? "Minting gateway token." : "Revoking gateway token."}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           Each token is a separate way in. Revoke any one without breaking the others.
         </p>
         <Button size="sm" onClick={() => setMinting((value) => !value)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          <Plus data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Mint token
         </Button>
       </div>
@@ -171,7 +180,15 @@ export function TokensPanel({
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1.5 text-sm">
               <span className="text-xs font-medium text-muted-foreground">Name</span>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="build-cursor" required autoFocus />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="build-cursor"
+                required={true}
+                minLength={1}
+                maxLength={160}
+                autoFocus
+              />
             </label>
             <label className="space-y-1.5 text-sm">
               <span className="text-xs font-medium text-muted-foreground">Owner / client</span>
@@ -179,17 +196,29 @@ export function TokensPanel({
                 value={clientLabel}
                 onChange={(e) => setClientLabel(e.target.value)}
                 placeholder="Cursor on work laptop"
+                maxLength={160}
               />
             </label>
           </div>
           <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <label className="space-y-1.5 text-sm">
               <span className="text-xs font-medium text-muted-foreground">Note (why it exists)</span>
-              <Input value={ownerNote} onChange={(e) => setOwnerNote(e.target.value)} placeholder="Dotta’s MacBook" />
+              <Input
+                value={ownerNote}
+                onChange={(e) => setOwnerNote(e.target.value)}
+                placeholder="Dotta’s MacBook"
+                maxLength={1000}
+              />
             </label>
             <label className="space-y-1.5 text-sm">
               <span className="text-xs font-medium text-muted-foreground">Expires</span>
-              <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} required />
+              <Input
+                type="date"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                required={true}
+                min={toDateInputValue(new Date())}
+              />
             </label>
           </div>
           <div className="flex justify-end gap-2">
@@ -222,7 +251,7 @@ export function TokensPanel({
             </code>
             {revealed ? (
               <Button variant="outline" size="sm" onClick={() => void copyToken(created.token)}>
-                <Copy className="mr-1 h-3.5 w-3.5" />
+                <Copy data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                 Copy
               </Button>
             ) : (

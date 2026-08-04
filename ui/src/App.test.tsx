@@ -14,6 +14,7 @@ const mockHealthApi = vi.hoisted(() => ({
 
 const mockAuthApi = vi.hoisted(() => ({
   getSession: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 const mockAccessApi = vi.hoisted(() => ({
@@ -96,6 +97,7 @@ describe("AuthenticatedAppGate", () => {
       deploymentExposure: "private",
       bootstrapStatus: "ready",
     });
+    mockAuthApi.signOut.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -132,7 +134,49 @@ describe("AuthenticatedAppGate", () => {
     await waitForText(container, "No company access");
 
     expect(container.textContent).toContain("No company access");
+    expect(container.textContent).toContain("Switch account");
     expect(container.textContent).not.toContain("Outlet content");
+
+    unmountRoot(root);
+  });
+
+  it("lets a signed-in user without company access switch accounts", async () => {
+    mockAuthApi.getSession.mockResolvedValue({
+      session: { id: "session-1", userId: "user-1" },
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
+    });
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue({
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "User",
+        image: null,
+      },
+      userId: "user-1",
+      isInstanceAdmin: false,
+      companyIds: [],
+      source: "session",
+      keyId: null,
+    });
+
+    const root = renderGate(container);
+    await waitForText(container, "Switch account");
+
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent?.includes("Switch account"),
+    );
+    expect(button).toBeTruthy();
+    flushSync(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForText(container, "Switch account");
+
+    expect(mockAuthApi.signOut).toHaveBeenCalledTimes(1);
 
     unmountRoot(root);
   });

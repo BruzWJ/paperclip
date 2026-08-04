@@ -160,11 +160,11 @@ export function PluginSettings() {
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center gap-4">
-        <Link to="/company/settings/instance/plugins">
-          <Button variant="outline" size="icon" className="h-8 w-8">
+        <Button variant="outline" size="icon" className="h-8 w-8" asChild aria-label="Back to plugins">
+          <Link to="/company/settings/instance/plugins" aria-label="Back to plugins">
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div className="flex items-center gap-2">
           <Puzzle className="h-6 w-6 text-muted-foreground" />
           <h1 className="text-xl font-semibold">{plugin.manifestJson.displayName ?? plugin.packageName}</h1>
@@ -265,9 +265,9 @@ export function PluginSettings() {
                     stays instance-scoped while secret bindings still resolve through the selected company context.
                   </p>
                   <div className="mt-3">
-                    <Link to="/company/settings/instance/environments">
-                      <Button variant="outline" size="sm">Open Environments</Button>
-                    </Link>
+                    <Button asChild variant="outline" size="sm">
+                      <Link to="/company/settings/instance/environments">Open Environments</Link>
+                    </Button>
                   </div>
                 </div>
               ) : !hasLocalFolders ? (
@@ -611,12 +611,12 @@ function PluginLocalFoldersSettings({ pluginId, companyId, declarations }: Plugi
         <h3 className="text-sm font-medium">Local folders</h3>
       </div>
       {error ? (
-        <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
           {(error as Error).message || "Failed to load local folder settings."}
         </div>
       ) : null}
       {isLoading ? (
-        <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground" role="status">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading local folders...
         </div>
@@ -696,6 +696,11 @@ function PluginLocalFolderRow({ pluginId, companyId, declaration, status }: Plug
 
   return (
     <div className="space-y-4 rounded-md border border-border/70 bg-background px-4 py-4">
+      {saveMutation.isPending ? (
+        <p className="sr-only" role="status">
+          Saving local folder configuration.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -786,6 +791,7 @@ function PluginLocalFolderRow({ pluginId, companyId, declaration, status }: Plug
 
       {message ? (
         <div
+          role={message.type === "success" ? "status" : "alert"}
           className={`rounded-md border px-3 py-2 text-sm ${
             message.type === "success"
               ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-400"
@@ -1050,7 +1056,7 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4" role="status">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading configuration...
       </div>
@@ -1059,6 +1065,11 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
 
   return (
     <div className="space-y-4">
+      {saveMutation.isPending || testMutation.isPending ? (
+        <p className="sr-only" role="status">
+          {saveMutation.isPending ? "Saving plugin configuration." : "Testing plugin configuration."}
+        </p>
+      ) : null}
       <JsonSchemaForm
         schema={schema}
         values={values}
@@ -1070,6 +1081,7 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
       {/* Status messages */}
       {saveMessage && (
         <div
+          role={saveMessage.type === "success" ? "status" : "alert"}
           className={`text-sm p-2 rounded border ${
             saveMessage.type === "success"
               ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-900"
@@ -1082,6 +1094,7 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
 
       {testResult && (
         <div
+          role={testResult.type === "success" ? "status" : "alert"}
           className={`text-sm p-2 rounded border ${
             testResult.type === "success"
               ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-900"

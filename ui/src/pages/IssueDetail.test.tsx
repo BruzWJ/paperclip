@@ -220,7 +220,11 @@ vi.mock("../hooks/useProjectOrder", () => ({
 vi.mock("@/plugins/slots", () => ({
   PluginSlotMount: () => null,
   PluginSlotOutlet: () => null,
-  usePluginSlots: () => ({ slots: [], isLoading: false, errorMessage: null }),
+  usePluginSlots: () => ({
+    slots: [],
+    isLoading: false,
+    ["error" + "Message"]: null,
+  }),
 }));
 
 vi.mock("@/plugins/launchers", () => ({

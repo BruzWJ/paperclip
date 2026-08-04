@@ -1185,6 +1185,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           ref={fallbackTextareaRef}
           value={value}
           placeholder={placeholder}
+          aria-label={placeholder ?? "Markdown source"}
           readOnly={readOnly}
           onChange={(event) => {
             if (readOnly) return;
@@ -1199,7 +1200,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             }
           }}
           className={cn(
-            "min-h-(--sz-12rem) w-full resize-none bg-transparent px-3 pb-3 pt-2 font-mono text-sm leading-6 outline-none",
+            "min-h-(--sz-12rem) w-full resize-none bg-transparent px-3 pb-3 pt-2 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring",
             contentClassName,
           )}
         />

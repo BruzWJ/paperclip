@@ -127,6 +127,12 @@ export function GatewayDetail() {
         tone: "error",
       }),
   });
+  const isPending = toggleMutation.isPending;
+
+  const handleToggle = () => {
+    if (isPending) return;
+    toggleMutation.mutate();
+  };
 
   if (!selectedCompanyId) {
     return <div className="p-6 text-sm text-muted-foreground">Select a company to manage gateways.</div>;
@@ -178,7 +184,7 @@ export function GatewayDetail() {
           <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{endpointHost}</p>
         </div>
         <Button onClick={() => setSnippetOpen(true)}>
-          <Send className="mr-1.5 h-4 w-4" />
+          <Send data-icon="inline-start" className="mr-1.5 h-4 w-4" />
           Show snippet
         </Button>
       </div>
@@ -205,15 +211,27 @@ export function GatewayDetail() {
       </nav>
 
       {activeTab === "overview" && (
-        <OverviewPanel
-          gateway={gateway}
-          profile={profile}
-          apps={apps}
-          agentNames={agentNames}
-          projectNames={projectNames}
-          toggleDisabled={toggleMutation.isPending}
-          onToggle={() => toggleMutation.mutate()}
-        />
+        <fieldset
+          aria-busy={isPending}
+          aria-label="Gateway overview controls"
+          className="contents"
+          disabled={isPending}
+        >
+          {isPending ? (
+            <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+              {isGatewayOn(gateway) ? "Turning gateway off…" : "Turning gateway on…"}
+            </p>
+          ) : null}
+          <OverviewPanel
+            gateway={gateway}
+            profile={profile}
+            apps={apps}
+            agentNames={agentNames}
+            projectNames={projectNames}
+            toggleDisabled={isPending}
+            onToggle={handleToggle}
+          />
+        </fieldset>
       )}
       {activeTab === "apps" && <AppsToolsPanel apps={apps} profile={profile} />}
       {activeTab === "tokens" && (

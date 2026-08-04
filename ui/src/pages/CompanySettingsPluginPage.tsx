@@ -54,12 +54,12 @@ export function CompanySettingsPluginPage() {
   }
 
   if (!settingsRoutePath || isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading...</div>;
+    return <div className="text-sm text-muted-foreground" role="status">Loading...</div>;
   }
 
   if (errorMessage) {
     return (
-      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
         Plugin extensions unavailable: {errorMessage}
       </div>
     );
@@ -67,7 +67,7 @@ export function CompanySettingsPluginPage() {
 
   if (pageSlots.length > 1) {
     return (
-      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
         Multiple plugins declare the company settings route <code>{settingsRoutePath}</code>. Disable one plugin or change its route.
       </div>
     );

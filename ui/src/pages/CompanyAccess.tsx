@@ -167,7 +167,7 @@ export function CompanyAccess() {
   }
 
   if (membersQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading company access…</div>;
+    return <div role="status" className="text-sm text-muted-foreground">Loading company access…</div>;
   }
 
   if (membersQuery.error) {
@@ -177,7 +177,7 @@ export function CompanyAccess() {
         : membersQuery.error instanceof Error
           ? membersQuery.error.message
           : "Failed to load company members.";
-    return <div className="text-sm text-destructive">{message}</div>;
+    return <div role="alert" className="text-sm text-destructive">{message}</div>;
   }
 
   const members = membersQuery.data?.members ?? [];
@@ -186,8 +186,18 @@ export function CompanyAccess() {
     joinRequestsQuery.data?.filter((request) => request.requestType === "human") ?? [];
   const joinRequestActionPending =
     approveJoinRequestMutation.isPending || rejectJoinRequestMutation.isPending;
+  const pendingAccessStatus = updateMemberMutation.isPending
+    ? "Saving member…"
+    : archiveMemberMutation.isPending
+      ? "Removing member…"
+      : approveJoinRequestMutation.isPending
+        ? "Approving join request…"
+        : rejectJoinRequestMutation.isPending
+          ? "Rejecting join request…"
+          : null;
   return (
     <div className="max-w-6xl space-y-8">
+      {pendingAccessStatus ? <p role="status" className="sr-only">{pendingAccessStatus}</p> : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-muted-foreground" />
@@ -306,7 +316,7 @@ export function CompanyAccess() {
                         disabled={!canArchive}
                         title={removalReason ?? undefined}
                       >
-                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        <Trash2 data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
                         Remove
                       </Button>
                     </div>
@@ -446,7 +456,7 @@ export function CompanyAccessLegacyRoute() {
   }
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Checking for advanced permission extensions...</div>;
+    return <div role="status" className="text-sm text-muted-foreground">Checking for advanced permission extensions...</div>;
   }
 
   return (
@@ -468,7 +478,7 @@ export function CompanyAccessLegacyRoute() {
             Core Paperclip keeps enforcing company boundaries and any existing restrictive policy data, but editing advanced permissions requires an installed extension.
           </p>
           {errorMessage ? (
-            <p className="text-sm text-destructive">Plugin extensions unavailable: {errorMessage}</p>
+            <p role="alert" className="text-sm text-destructive">Plugin extensions unavailable: {errorMessage}</p>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">

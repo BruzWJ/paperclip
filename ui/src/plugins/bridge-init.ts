@@ -22,7 +22,7 @@ import {
   usePluginToast,
 } from "./bridge.js";
 import { Component, createElement, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileTree,
   type FileTreeProps as HostFileTreeProps,

@@ -116,6 +116,18 @@ export function ProfilesIndex({
     },
     onError: (error: unknown) => pushToast({ title: "Could not delete", body: errorBody(error), tone: "error" }),
   });
+  const isPending =
+    duplicate.isPending ||
+    archive.isPending ||
+    restore.isPending ||
+    remove.isPending;
+  const pendingStatus = duplicate.isPending
+    ? "Duplicating profile…"
+    : archive.isPending
+      ? "Archiving profile…"
+      : restore.isPending
+        ? "Restoring profile…"
+        : "Deleting profile…";
 
   const header = (
     <ToolsPageHeader
@@ -123,12 +135,12 @@ export function ProfilesIndex({
       description="Decide which tools your agents can use. Build a profile once, then assign it to the agents that need it."
       actions={
         <>
-          <Button variant="outline" onClick={() => setResolverOpen(true)}>
-            <ShieldCheck className="mr-1.5 h-4 w-4" />
+          <Button variant="outline" disabled={isPending} onClick={() => setResolverOpen(true)}>
+            <ShieldCheck data-icon="inline-start" className="mr-1.5 h-4 w-4" />
             Check an agent's access
           </Button>
-          <Button onClick={() => navigate(newProfileHref())}>
-            <Plus className="mr-1.5 h-4 w-4" />
+          <Button disabled={isPending} onClick={() => navigate(newProfileHref())}>
+            <Plus data-icon="inline-start" className="mr-1.5 h-4 w-4" />
             New profile
           </Button>
         </>
@@ -173,7 +185,17 @@ export function ProfilesIndex({
   const rows = allRows.filter((p) => (statusFilter === "archived" ? p.status === "archived" : p.status !== "archived"));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" aria-busy={isPending}>
+      {isPending ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          {pendingStatus} Other profile actions are temporarily locked.
+        </p>
+      ) : null}
+      <fieldset
+        aria-label="Access profiles"
+        className="contents"
+        disabled={isPending}
+      >
       {header}
 
       <div className="inline-flex rounded-md border border-border p-0.5">
@@ -285,9 +307,18 @@ export function ProfilesIndex({
                     </td>
                     <td className="px-3 py-1.5 text-right">
                       <RowMenu
+                        disabled={isPending}
                         onEdit={open}
-                        onDuplicate={() => duplicate.mutate(profile)}
-                        onArchive={() => archive.mutate(profile)}
+                        onDuplicate={() => {
+                          if (!isPending) {
+                            duplicate.mutate(profile);
+                          }
+                        }}
+                        onArchive={() => {
+                          if (!isPending) {
+                            archive.mutate(profile);
+                          }
+                        }}
                         onRestore={profile.status === "archived" ? () => setActionDialog({ kind: "restore", profile }) : undefined}
                         onDelete={() => setActionDialog({ kind: "delete", profile })}
                       />
@@ -299,23 +330,28 @@ export function ProfilesIndex({
           </table>
         </div>
       )}
+      </fieldset>
 
       {resolverDialog}
       <ProfileActionDialog
         kind={actionDialog?.kind ?? null}
         profile={actionDialog?.profile ?? null}
-        pending={restore.isPending || remove.isPending}
-        onClose={() => setActionDialog(null)}
+        pending={isPending}
+        onClose={() => {
+          if (!isPending) {
+            setActionDialog(null);
+          }
+        }}
         onArchive={() => {
-          if (!actionDialog) return;
+          if (!actionDialog || isPending) return;
           archive.mutate(actionDialog.profile, { onSuccess: () => setActionDialog(null) });
         }}
         onRestore={() => {
-          if (!actionDialog) return;
+          if (!actionDialog || isPending) return;
           restore.mutate(actionDialog.profile, { onSuccess: () => setActionDialog(null) });
         }}
         onDelete={() => {
-          if (!actionDialog) return;
+          if (!actionDialog || isPending) return;
           remove.mutate(actionDialog.profile, { onSuccess: () => setActionDialog(null) });
         }}
       />
@@ -324,18 +360,33 @@ export function ProfilesIndex({
 }
 
 function RowMenu({
+  disabled,
   onEdit,
   onDuplicate,
   onArchive,
   onRestore,
   onDelete,
 }: {
+  disabled: boolean;
   onEdit: () => void;
   onDuplicate: () => void;
   onArchive: () => void;
   onRestore?: () => void;
   onDelete: () => void;
 }) {
+  if (disabled) {
+    return (
+      <button
+        type="button"
+        aria-label="Profile actions unavailable while an action is running"
+        disabled={true}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-50"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

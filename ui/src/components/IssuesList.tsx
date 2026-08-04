@@ -2036,6 +2036,13 @@ export function IssuesList({
 
   return (
     <div ref={rootRef} className="space-y-4">
+      {isLoading || externalObjectFilterLoading || isLoadingMoreIssues ? (
+        <p className="sr-only" role="status">
+          {isLoading || externalObjectFilterLoading
+            ? "Loading tasks."
+            : "Loading more tasks."}
+        </p>
+      ) : null}
       {progressSummary ? (
         <SubIssueProgressSummaryStrip
           summary={progressSummary}
@@ -2367,7 +2374,7 @@ export function IssuesList({
       {(isLoading || externalObjectFilterLoading) && (
         <PageSkeleton variant="issues-list" />
       )}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <p className="text-sm text-destructive" role="alert">{error.message}</p>}
       {!searchWithinLoadedIssues &&
         normalizedIssueSearch.length > 0 &&
         searchedIssues.length === ISSUE_SEARCH_RESULT_LIMIT && (
@@ -2432,7 +2439,6 @@ export function IssuesList({
                         ? "bg-accent/50"
                         : "hover:bg-accent/50",
                     )}
-                    onClick={() => setSelectedNavKey(`group:${group.key}`)}
                     onMouseEnter={() =>
                       setNavSelectionFromPointer(`group:${group.key}`)
                     }
@@ -2713,6 +2719,8 @@ export function IssuesList({
                                 <button
                                   type="button"
                                   data-slot="icon-button"
+                                  aria-label={`${isExpanded ? "Collapse" : "Expand"} sub-tasks for ${issue.title}`}
+                                  aria-expanded={isExpanded}
                                   onClick={toggleCollapse}
                                 >
                                   <ChevronRight
@@ -2725,7 +2733,7 @@ export function IssuesList({
                               ) : (
                                 <span
                                   className="inline-flex items-center"
-                                  onClick={(e) => {
+                                  onClickCapture={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
                                   }}
@@ -2745,6 +2753,8 @@ export function IssuesList({
                                     type="button"
                                     data-slot="icon-button"
                                     className="relative z-10 hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
+                                    aria-label={`${isExpanded ? "Collapse" : "Expand"} sub-tasks for ${issue.title}`}
+                                    aria-expanded={isExpanded}
                                     onClick={toggleCollapse}
                                   >
                                     <ChevronRight
@@ -2775,7 +2785,7 @@ export function IssuesList({
                                   statusSlot={
                                     <span
                                       className="inline-flex items-center"
-                                      onClick={(e) => {
+                                      onClickCapture={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
                                       }}

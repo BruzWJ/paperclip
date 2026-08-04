@@ -213,7 +213,7 @@ export function ActionCard({
   );
   const editButton = (
     <Button size="sm" variant="outline" onClick={onEditResign} className={mobile ? "w-full" : undefined}>
-      <Pencil className="mr-1 h-3.5 w-3.5" />
+      <Pencil data-icon="inline-start" className="mr-1 h-3.5 w-3.5" />
       Edit &amp; re-sign
     </Button>
   );

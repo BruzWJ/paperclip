@@ -437,6 +437,11 @@ function PolicySimulator({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 p-0 sm:max-w-xl">
+        {test.isPending ? (
+          <p className="sr-only" role="status">
+            Checking rule.
+          </p>
+        ) : null}
         <SheetHeader className="border-b border-border">
           <SheetTitle className="flex items-center gap-2 text-base">
             <FlaskConical className="h-4 w-4" />
@@ -449,7 +454,7 @@ function PolicySimulator({
             <div className="space-y-1.5">
               <Label>Agent</Label>
               <Select value={agentId} onValueChange={setAgentId}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Test agent">
                   <SelectValue placeholder="Select an agent" />
                 </SelectTrigger>
                 <SelectContent>
@@ -485,6 +490,7 @@ function PolicySimulator({
                     className="text-left text-sm text-muted-foreground hover:text-foreground"
                     onClick={() => onEditPolicy(decidingPolicy)}
                   >
+                    <span className="sr-only">Edit this rule: </span>
                     <RuleSentence sentence={policySentence(decidingPolicy, maps, catalogByToolName)} />
                   </button>
                 ) : (
@@ -597,7 +603,7 @@ function RuleBuilder({
           </div>
           {form.whenMode === "agent" ? (
             <Select value={form.agentId} onValueChange={(agentId) => setForm({ ...form, agentId })}>
-              <SelectTrigger><SelectValue placeholder="Choose agent" /></SelectTrigger>
+              <SelectTrigger aria-label="Policy agent"><SelectValue placeholder="Choose agent" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_VALUE}>Choose agent</SelectItem>
                 {agents.map((agent) => <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>)}
@@ -606,7 +612,7 @@ function RuleBuilder({
           ) : null}
           {form.whenMode === "project" ? (
             <Select value={form.projectId} onValueChange={(projectId) => setForm({ ...form, projectId })}>
-              <SelectTrigger><SelectValue placeholder="Choose project" /></SelectTrigger>
+              <SelectTrigger aria-label="Policy project"><SelectValue placeholder="Choose project" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_VALUE}>Choose project</SelectItem>
                 {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
@@ -637,7 +643,7 @@ function RuleBuilder({
           </div>
           {form.usesMode === "app" ? (
             <Select value={form.applicationId} onValueChange={(applicationId) => setForm({ ...form, applicationId })}>
-              <SelectTrigger><SelectValue placeholder="Choose app" /></SelectTrigger>
+              <SelectTrigger aria-label="Policy application"><SelectValue placeholder="Choose app" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_VALUE}>Choose app</SelectItem>
                 {applications.map((app) => <SelectItem key={app.id} value={app.id}>{app.name}</SelectItem>)}
@@ -646,7 +652,7 @@ function RuleBuilder({
           ) : null}
           {form.usesMode === "capability" ? (
             <Select value={form.riskLevel} onValueChange={(riskLevel) => setForm({ ...form, riskLevel })}>
-              <SelectTrigger><SelectValue placeholder="Choose capability" /></SelectTrigger>
+              <SelectTrigger aria-label="Policy capability"><SelectValue placeholder="Choose capability" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_VALUE}>Choose capability</SelectItem>
                 {CAPABILITY_OPTIONS.map((option) => (
@@ -712,7 +718,7 @@ function RuleBuilder({
               <div className="space-y-1.5">
                 <Label>Per</Label>
                 <Select value={form.rateLimitWindowSeconds} onValueChange={(rateLimitWindowSeconds) => setForm({ ...form, rateLimitWindowSeconds })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Rate limit interval"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="3600">Hour</SelectItem>
                     <SelectItem value="86400">Day</SelectItem>
@@ -742,7 +748,7 @@ function RuleBuilder({
           <div className="space-y-1.5">
             <Label>Raw connection</Label>
             <Select value={form.connectionId} onValueChange={(connectionId) => setForm({ ...form, connectionId })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Raw connection"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY_VALUE}>Any connection</SelectItem>
                 {[...maps.connection.entries()].map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
@@ -987,11 +993,11 @@ export function PoliciesTab({ companyId }: { companyId: string }) {
         actions={
           <>
             <Button size="sm" variant="outline" onClick={() => setTestOpen(true)}>
-              <FlaskConical className="mr-1 h-4 w-4" />
+              <FlaskConical data-icon="inline-start" className="mr-1 h-4 w-4" />
               Test a rule
             </Button>
             <Button size="sm" onClick={() => setForm(emptyPolicyForm())}>
-              <Plus className="mr-1 h-4 w-4" />
+              <Plus data-icon="inline-start" className="mr-1 h-4 w-4" />
               New rule
             </Button>
           </>
@@ -1000,7 +1006,10 @@ export function PoliciesTab({ companyId }: { companyId: string }) {
 
       <div className="space-y-2">
         {policies.isLoading ? (
-          <LoadingState />
+          <div role="status">
+            <span className="sr-only">Loading rules.</span>
+            <LoadingState />
+          </div>
         ) : policies.error ? (
           <ErrorState error={policies.error} onRetry={() => policies.refetch()} />
         ) : policyList.length === 0 ? (
@@ -1053,6 +1062,7 @@ export function PoliciesTab({ companyId }: { companyId: string }) {
                             className="block min-w-0 text-left font-medium text-foreground"
                             onClick={() => setForm(policyToForm(policy))}
                           >
+                            <span className="sr-only">Edit this rule: </span>
                             <RuleSentence sentence={sentence} />
                           </button>
                           {policy.description ? (

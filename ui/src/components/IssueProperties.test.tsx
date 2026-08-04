@@ -22,7 +22,6 @@ import { createTestIssue } from "../test-utils/issue";
 const mockAgentsApi = vi.hoisted(() => ({
   list: vi.fn(),
   listInvokableIssueOwners: vi.fn(),
-  adapterModels: vi.fn(),
   adapterModelProfiles: vi.fn(),
 }));
 
@@ -416,7 +415,6 @@ describe("IssueProperties", () => {
           icon: agent.icon ?? null,
         })),
     );
-    mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
     mockProjectsApi.list.mockResolvedValue([]);
     mockExecutionWorkspacesApi.controlRuntimeCommands.mockReset();

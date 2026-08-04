@@ -129,7 +129,7 @@ export function ForkSkillDialog({
     },
   });
 
-  const busy = forkMutation.isPending;
+  const isPending = forkMutation.isPending;
   const forkLabel =
     reassign && agentCount > 0
       ? `Create copy & switch ${agentCount} ${agentCount === 1 ? "agent" : "agents"}`
@@ -142,8 +142,13 @@ export function ForkSkillDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (busy ? undefined : onOpenChange(next))}>
+    <Dialog open={open} onOpenChange={(next) => (isPending ? undefined : onOpenChange(next))}>
       <DialogContent className="sm:max-w-lg">
+        {isPending ? (
+          <p className="sr-only" role="status">
+            Creating editable skill copy.
+          </p>
+        ) : null}
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitFork className="h-4 w-4" />
@@ -168,7 +173,7 @@ export function ForkSkillDialog({
               size="sm"
               className="mt-2"
               onClick={openExisting}
-              disabled={busy}
+              disabled={isPending}
             >
               Open your existing copy
             </Button>
@@ -213,7 +218,7 @@ export function ForkSkillDialog({
                 <ToggleSwitch
                   checked={reassign}
                   onCheckedChange={setReassign}
-                  disabled={busy}
+                  disabled={isPending}
                   aria-label="Switch these agents to the copy"
                 />
               </label>
@@ -231,7 +236,7 @@ export function ForkSkillDialog({
             type="button"
             variant="ghost"
             onClick={() => onOpenChange(false)}
-            disabled={busy}
+            disabled={isPending}
           >
             Cancel
           </Button>
@@ -239,9 +244,9 @@ export function ForkSkillDialog({
             type="button"
             variant={reusableFork ? "outline" : "default"}
             onClick={() => forkMutation.mutate()}
-            disabled={busy}
+            disabled={isPending}
           >
-            {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+            {isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
             {reusableFork ? "Create another copy" : forkLabel}
           </Button>
         </DialogFooter>

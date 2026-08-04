@@ -132,7 +132,7 @@ export function Projects() {
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="sm" className="w-fit text-xs" title="Sort">
-              <ArrowUpDown className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+              <ArrowUpDown data-icon="inline-start" className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
               <span>Sort: {sortLabel}</span>
             </Button>
           </PopoverTrigger>
@@ -169,7 +169,7 @@ export function Projects() {
           </PopoverContent>
         </Popover>
         <Button size="sm" variant="outline" onClick={openNewProject}>
-          <Plus className="h-4 w-4 mr-1" />
+          <Plus data-icon="inline-start" className="h-4 w-4 mr-1" />
           Add Project
         </Button>
       </div>

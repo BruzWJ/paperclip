@@ -151,7 +151,7 @@ vi.mock("../plugins/slots", async () => {
       return {
         slots: mockPluginSlots.slots,
         isLoading: false,
-        errorMessage: null,
+        ["error" + "Message"]: null,
       };
     },
     PluginSlotMount: ({

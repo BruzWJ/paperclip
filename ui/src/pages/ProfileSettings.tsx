@@ -121,12 +121,12 @@ export function ProfileSettings() {
   });
 
   if (sessionQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading profile...</div>;
+    return <div className="text-sm text-muted-foreground" role="status">Loading profile...</div>;
   }
 
   if (sessionQuery.error || !sessionQuery.data) {
     return (
-      <div className="text-sm text-destructive">
+      <div className="text-sm text-destructive" role="alert">
         {sessionQuery.error instanceof Error ? sessionQuery.error.message : "Failed to load profile."}
       </div>
     );
@@ -135,13 +135,21 @@ export function ProfileSettings() {
   const currentName = name.trim() || sessionQuery.data.user.name || "Paperclip User";
   const currentImage = image.trim() || null;
   const initials = deriveInitials(currentName);
-  const isSavingProfile = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
+  const isPending = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
+  const profileActionStatus = updateMutation.isPending
+    ? "Saving profile."
+    : uploadAvatarMutation.isPending
+      ? "Uploading profile photo."
+      : removeAvatarMutation.isPending
+        ? "Removing profile photo."
+        : null;
   const uploadHint = selectedCompany
     ? `Stored in Paperclip file storage for ${selectedCompany.name}.`
     : "Select a company to upload an avatar into Paperclip storage.";
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl space-y-6" aria-busy={isPending}>
+      {isPending ? <p className="text-sm text-muted-foreground" role="status">{profileActionStatus}</p> : null}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <UserRoundPen className="h-5 w-5 text-muted-foreground" />
@@ -153,7 +161,7 @@ export function ProfileSettings() {
       </div>
 
       {actionError ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
           {actionError}
         </div>
       ) : null}
@@ -175,7 +183,7 @@ export function ProfileSettings() {
                     type="file"
                     accept="image/*"
                     className="sr-only"
-                    disabled={!selectedCompanyId || isSavingProfile}
+                    disabled={!selectedCompanyId || isPending}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (!file) return;
@@ -197,17 +205,17 @@ export function ProfileSettings() {
                     type="button"
                     variant="secondary"
                     onClick={() => avatarInputRef.current?.click()}
-                    disabled={!selectedCompanyId || isSavingProfile}
+                    disabled={!selectedCompanyId || isPending}
                   >
                     {uploadAvatarMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Camera className="size-4" />}
-                    {currentImage ? "Change photo" : "Upload photo"}
+                    {uploadAvatarMutation.isPending ? "Uploading photo…" : currentImage ? "Change photo" : "Upload photo"}
                   </Button>
                   {currentImage ? (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => removeAvatarMutation.mutate()}
-                      disabled={isSavingProfile}
+                      disabled={isPending}
                     >
                       {removeAvatarMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
                       Remove
@@ -231,6 +239,7 @@ export function ProfileSettings() {
 
         <form
           className="grid gap-6 md:grid-cols-2"
+          aria-busy={isPending}
           onSubmit={(event) => {
             event.preventDefault();
             updateMutation.mutate({ name: resolveProfileName(), image: image.trim() || null });
@@ -244,6 +253,7 @@ export function ProfileSettings() {
               onChange={(event) => setName(event.target.value)}
               maxLength={120}
               placeholder="Your name"
+              disabled={isPending}
             />
             <p className="text-xs text-muted-foreground">
               Shown in the sidebar account footer and comment author surfaces.
@@ -255,6 +265,7 @@ export function ProfileSettings() {
             <Input
               id="profile-email"
               value={sessionQuery.data.user.email ?? ""}
+              autoComplete="email"
               readOnly
               disabled
             />
@@ -264,7 +275,7 @@ export function ProfileSettings() {
           </div>
 
           <div className="md:col-span-2 flex justify-end">
-            <Button type="submit" disabled={isSavingProfile || !name.trim()}>
+            <Button type="submit" disabled={isPending || !name.trim()}>
               {updateMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
               {updateMutation.isPending ? "Saving..." : "Save profile"}
             </Button>

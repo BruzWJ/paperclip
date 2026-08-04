@@ -2540,11 +2540,17 @@ export function Inbox() {
   const showGeneralIssueToolbarControls = tab !== "blocked";
   return (
     <div className="space-y-6">
+      {markAllReadMutation.isPending ? (
+        <p className="sr-only" role="status">
+          Marking all visible inbox items as read.
+        </p>
+      ) : null}
       <div className="space-y-2">
         {/* Search — full-width row on mobile, inline on desktop */}
         <div className="relative sm:hidden">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label="Search inbox"
             type="search"
             placeholder="Search inbox…"
             value={searchQuery}
@@ -2600,6 +2606,7 @@ export function Inbox() {
             <div className="relative hidden sm:block">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                aria-label="Search inbox"
                 type="search"
                 placeholder="Search inbox…"
                 value={searchQuery}
@@ -2909,7 +2916,7 @@ export function Inbox() {
               updateAllCategoryFilter(value as InboxCategoryFilter)
             }
           >
-            <SelectTrigger className="h-8 w-(--sz-170px) text-xs">
+            <SelectTrigger aria-label="Filter inbox by category" className="h-8 w-(--sz-170px) text-xs">
               <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>
@@ -2929,7 +2936,7 @@ export function Inbox() {
                 updateAllApprovalFilter(value as InboxApprovalFilter)
               }
             >
-              <SelectTrigger className="h-8 w-(--sz-170px) text-xs">
+              <SelectTrigger aria-label="Filter inbox by approval status" className="h-8 w-(--sz-170px) text-xs">
                 <SelectValue placeholder="Approval status" />
               </SelectTrigger>
               <SelectContent>
@@ -2945,7 +2952,7 @@ export function Inbox() {
       {approvalsError && (
         <p className="text-sm text-destructive">{approvalsError.message}</p>
       )}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {actionError && <p className="text-sm text-destructive" role="alert">{actionError}</p>}
 
       {tab === "blocked" ? (
         <BlockedInboxView
@@ -3097,6 +3104,8 @@ export function Inbox() {
                                 type="button"
                                 data-slot="icon-button"
                                 className="hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
+                                aria-label="Toggle subtasks"
+                                aria-expanded={isExpanded}
                                 onClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -3146,6 +3155,8 @@ export function Inbox() {
                           <button
                             type="button"
                             data-slot="icon-button"
+                            aria-label="Toggle subtasks"
+                            aria-expanded={isExpanded}
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -3273,7 +3284,7 @@ export function Inbox() {
                         key={`group-${group.key}`}
                         data-inbox-item
                         className={cn(groupIndex > 0 && "pt-2")}
-                        onClick={() => {
+                        onFocusCapture={() => {
                           if (groupNavIdx >= 0) setSelectedIndex(groupNavIdx);
                         }}
                         onMouseEnter={() => {
@@ -3341,7 +3352,7 @@ export function Inbox() {
                         key={`sel-${key}`}
                         data-inbox-item
                         className="relative"
-                        onClick={() => setSelectedIndex(navIdx)}
+                        onFocusCapture={() => setSelectedIndex(navIdx)}
                         onMouseEnter={() => setSelectedIndexFromPointer(navIdx)}
                       >
                         {child}
@@ -3584,7 +3595,7 @@ export function Inbox() {
                             key={`sel-issue:${child.id}`}
                             data-inbox-item
                             className="relative"
-                            onClick={() => {
+                            onFocusCapture={() => {
                               if (childNavIdx >= 0)
                                 setSelectedIndex(childNavIdx);
                             }}

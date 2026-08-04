@@ -3,8 +3,10 @@
  *
  * All functions in `pluginsApi` map 1:1 to REST endpoints on
  * `server/src/routes/plugins.ts`. Call sites should consume these functions
- * through React Query hooks (`useQuery` / `useMutation`) and reference cache
- * keys from `queryKeys.plugins.*`.
+ * through React Query query hooks and their mutation counterparts, and
+ * reference cache keys from `queryKeys.plugins.*`. Interactive mutation
+ * triggers must use pending state to prevent duplicate requests and visibly
+ * describe work in progress.
  *
  * @see ui/src/lib/queryKeys.ts for cache key definitions.
  * @see server/src/routes/plugins.ts for endpoint implementation details.

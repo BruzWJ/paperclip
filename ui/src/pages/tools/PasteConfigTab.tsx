@@ -144,7 +144,8 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
   });
 
   const drafts = preview?.drafts ?? [];
-  const canSubmit = draftText.trim().length > 0 && !importMutation.isPending;
+  const isPending = importMutation.isPending || connectMutation.isPending || finishMutation.isPending;
+  const canSubmit = draftText.trim().length > 0 && !isPending;
 
   const localParseError = useMemo(() => {
     const trimmed = draftText.trim();
@@ -158,7 +159,16 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
   }, [draftText]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" aria-busy={isPending}>
+      {isPending ? (
+        <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+          {importMutation.isPending
+            ? "Checking pasted configuration…"
+            : connectMutation.isPending
+              ? "Checking app connection…"
+              : "Activating app connection…"}
+        </p>
+      ) : null}
       <p className="max-w-2xl text-sm text-muted-foreground">
         Paste the MCP config snippet from the tool's README and we'll turn it into a friendly setup.
       </p>
@@ -172,6 +182,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
 
       <div className="space-y-2">
         <Textarea
+          aria-label="MCP configuration JSON"
           value={draftText}
           onChange={(event) => {
             setDraftText(event.target.value);
@@ -180,6 +191,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
             setActivatedName(null);
           }}
           spellCheck={false}
+          disabled={isPending}
           rows={10}
           placeholder={SAMPLE_CONFIG}
           className="min-h-(--sz-220px) bg-slate-900 font-mono text-(length:--text-compact) leading-relaxed text-slate-100 placeholder:text-slate-500 focus-visible:ring-slate-400"
@@ -196,7 +208,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <Button
           onClick={() => importMutation.mutate(draftText)}
-          disabled={!canSubmit || Boolean(localParseError)}
+          disabled={isPending || !canSubmit || Boolean(localParseError)}
         >
           {importMutation.isPending ? "Checking…" : "Check config"}
         </Button>
@@ -230,6 +242,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
                     setCredentialValues((prev) => ({ ...prev, [credentialValueKey(draft, configPath)]: value }))
                   }
                   checking={connectMutation.isPending && connectMutation.variables?.name === draft.name}
+                  isPending={isPending}
                   canCheck={Boolean(url) && missingFields.length === 0}
                   onCheck={url ? () => connectMutation.mutate(draft) : undefined}
                 />
@@ -264,6 +277,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
             })
           }
           finishing={finishMutation.isPending}
+          isPending={isPending}
           activatedName={activatedName}
           onFinish={() => finishMutation.mutate()}
         />
@@ -278,6 +292,7 @@ function DraftCard({
   credentialValues,
   onCredentialChange,
   checking,
+  isPending,
   canCheck,
   onCheck,
 }: {
@@ -285,6 +300,7 @@ function DraftCard({
   credentialValues: Record<string, string>;
   onCredentialChange: (configPath: string, value: string) => void;
   checking: boolean;
+  isPending: boolean;
   canCheck: boolean;
   onCheck?: () => void;
 }) {
@@ -296,7 +312,7 @@ function DraftCard({
           <div className="text-xs text-muted-foreground">{draftSummary(draft)}</div>
         </div>
         {onCheck ? (
-          <Button size="sm" className="shrink-0" onClick={onCheck} disabled={checking || !canCheck}>
+          <Button size="sm" className="shrink-0" onClick={onCheck} disabled={isPending || !canCheck}>
             {checking ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
             Check actions
           </Button>
@@ -316,9 +332,12 @@ function DraftCard({
                   {field.key}
                 </code>
                 <Input
+                  aria-label="MCP credential value"
                   type="password"
+                  autoComplete="new-password"
                   value={credentialValues[credentialValueKey(draft, field.configPath)] ?? ""}
                   onChange={(event) => onCredentialChange(field.configPath, event.target.value)}
+                  disabled={isPending}
                   placeholder="Paste replacement value"
                   className="h-8 max-w-sm text-xs"
                 />
@@ -353,6 +372,7 @@ function CatalogReview({
   onToggle,
   onBulk,
   finishing,
+  isPending,
   activatedName,
   onFinish,
 }: {
@@ -361,6 +381,7 @@ function CatalogReview({
   onToggle: (id: string, on: boolean) => void;
   onBulk: (ids: string[], on: boolean) => void;
   finishing: boolean;
+  isPending: boolean;
   activatedName: string | null;
   onFinish: () => void;
 }) {
@@ -379,7 +400,7 @@ function CatalogReview({
             Health and catalog checks passed. Read-only actions start on; actions that can change data start off.
           </p>
         </div>
-        <Button size="sm" onClick={onFinish} disabled={finishing || enabledCount === 0 || Boolean(activatedName)}>
+        <Button size="sm" onClick={onFinish} disabled={isPending || enabledCount === 0 || Boolean(activatedName)}>
           {finishing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
           Activate {enabledCount} of {total}
         </Button>
@@ -391,6 +412,7 @@ function CatalogReview({
         onToggle={onToggle}
         onBulk={(on) => onBulk(result.actions.readOnly.map((action) => action.catalogEntryId), on)}
         askFirstLevels={askFirstLevels}
+        disabled={isPending}
       />
       <ActionGroup
         title="Can make changes"
@@ -399,6 +421,7 @@ function CatalogReview({
         onToggle={onToggle}
         onBulk={(on) => onBulk(result.actions.canMakeChanges.map((action) => action.catalogEntryId), on)}
         askFirstLevels={askFirstLevels}
+        disabled={isPending}
       />
       {activatedName ? (
         <p className="text-xs font-medium text-emerald-700">{activatedName} is active for all agents.</p>
@@ -414,6 +437,7 @@ function ActionGroup({
   onToggle,
   onBulk,
   askFirstLevels,
+  disabled,
 }: {
   title: string;
   actions: ToolAppConnectionActionSummary[];
@@ -421,6 +445,7 @@ function ActionGroup({
   onToggle: (id: string, on: boolean) => void;
   onBulk: (on: boolean) => void;
   askFirstLevels: string[];
+  disabled: boolean;
 }) {
   if (actions.length === 0) return null;
   return (
@@ -428,10 +453,24 @@ function ActionGroup({
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
         <div className="flex gap-2">
-          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onBulk(true)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => onBulk(true)}
+            disabled={disabled}
+          >
             Turn all on
           </Button>
-          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onBulk(false)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => onBulk(false)}
+            disabled={disabled}
+          >
             Turn all off
           </Button>
         </div>
@@ -447,7 +486,11 @@ function ActionGroup({
                   {askFirstLevels.includes(action.riskLevel) ? "Ask first when enabled" : action.riskLevel}
                 </div>
               </div>
-              <ToggleSwitch checked={on} onCheckedChange={(next) => onToggle(action.catalogEntryId, next)} />
+              <ToggleSwitch
+                checked={on}
+                onCheckedChange={(next) => onToggle(action.catalogEntryId, next)}
+                disabled={disabled}
+              />
             </div>
           );
         })}

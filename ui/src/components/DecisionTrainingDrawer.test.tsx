@@ -211,11 +211,20 @@ describe("DecisionTrainingDrawer — create state", () => {
     });
   });
 
-  it("refuses to train a decision with no issue anchor", () => {
+  it("explains and closes when a decision has no issue anchor", () => {
     const item = buildItem({ subject: { ...buildItem().subject, metadata: {} }, relatedIssue: null });
-    render(<DecisionTrainingDrawer open onOpenChange={() => {}} companyId="c1" item={item} />);
+    const onOpenChange = vi.fn();
+    render(<DecisionTrainingDrawer open onOpenChange={onOpenChange} companyId="c1" item={item} />);
+    expect(bodyText()).toContain("This decision can't be trained.");
     expect(bodyText()).toContain("isn't anchored to an issue");
     expect(mockApi.preview).not.toHaveBeenCalled();
+    const closeButton = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Close",
+    );
+    act(() => {
+      closeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
 

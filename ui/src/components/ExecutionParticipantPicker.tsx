@@ -116,8 +116,9 @@ export function ExecutionParticipantPicker({
       </PopoverTrigger>
       <PopoverContent className="p-1 w-56" align="start" collisionPadding={16}>
         <input
-          className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+          className="w-full border-b border-border bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
           placeholder={`Search ${label.toLowerCase()}...`}
+          aria-label={`Search ${label.toLowerCase()}`}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           autoFocus

@@ -35,7 +35,7 @@ const nameInputClass =
   "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring/40";
 
 const valueTextInputClass =
-  "min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm font-mono outline-none placeholder:text-muted-foreground/40";
+  "min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm font-mono outline-none placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring";
 
 type SecretPopoverState = { mode: "create" | "store"; name: string; value: string } | null;
 export interface EnvironmentVariableDirtyFields {
@@ -93,6 +93,7 @@ export function EnvironmentVariableRow({
   const [secretPopover, setSecretPopover] = useState<SecretPopoverState>(null);
   const [versionOpen, setVersionOpen] = useState(false);
   const [undoPrev, setUndoPrev] = useState<EnvRow | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
   const health = computeRowHealth(row, secrets) ?? computeUserSecretRowHealth(row, userSecretDefinitions);
   const boundSecret = row.source === "secret" ? secrets.find((s) => s.id === row.secretId) ?? null : null;
@@ -163,17 +164,23 @@ export function EnvironmentVariableRow({
   }
 
   async function submitSecretPopover(name: string, value: string) {
-    const created = await onCreateSecret(name, value);
-    onPatch({
-      source: "secret",
-      secretId: created.id,
-      userSecretKey: "",
-      required: true,
-      version: "latest",
-      textValue: "",
-    });
-    onToast(`Secret ${created.name} created`);
-    setSecretPopover(null);
+    if (isPending) return;
+    setIsPending(true);
+    try {
+      const created = await onCreateSecret(name, value);
+      onPatch({
+        source: "secret",
+        secretId: created.id,
+        userSecretKey: "",
+        required: true,
+        version: "latest",
+        textValue: "",
+      });
+      onToast(`Secret ${created.name} created`);
+      setSecretPopover(null);
+    } finally {
+      setIsPending(false);
+    }
   }
 
   function openStoreAsSecret() {
@@ -198,6 +205,7 @@ export function EnvironmentVariableRow({
 
   return (
     <div
+      aria-busy={isPending}
       className={cn(
         "group/row grid grid-cols-(--gtc-13) items-start gap-x-1.5 gap-y-1 rounded-md px-1 py-1",
         "@[40rem]/env:grid-cols-(--gtc-14) @[40rem]/env:items-center",
@@ -217,7 +225,7 @@ export function EnvironmentVariableRow({
           placeholder="KEY"
           value={row.name}
           spellCheck={false}
-          disabled={disabled}
+          disabled={disabled || isPending}
           aria-label="Variable name"
           aria-invalid={showNameIssue && nameIssue?.level === "error" ? true : undefined}
           aria-describedby={showNameIssue && nameIssue ? nameErrorId : undefined}
@@ -259,7 +267,7 @@ export function EnvironmentVariableRow({
               <DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <DropdownMenuTrigger asChild disabled={disabled}>
+                    <DropdownMenuTrigger asChild disabled={disabled || isPending}>
                       <button
                         type="button"
                         aria-label="Value source"
@@ -305,7 +313,7 @@ export function EnvironmentVariableRow({
                     value={row.textValue}
                     type={sensitive ? "password" : "text"}
                     spellCheck={false}
-                    disabled={disabled}
+                    disabled={disabled || isPending}
                     aria-label="Variable value"
                     onChange={(event) => onPatch({ textValue: event.target.value })}
                     onKeyDown={(event) => {
@@ -320,7 +328,7 @@ export function EnvironmentVariableRow({
                       <button
                         type="button"
                         onClick={openStoreAsSecret}
-                        disabled={disabled}
+                        disabled={disabled || isPending}
                         className="flex items-center gap-1 px-2 text-(length:--text-micro) text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
                         title="This value looks sensitive — store it as a secret"
                       >
@@ -330,7 +338,7 @@ export function EnvironmentVariableRow({
                       <button
                         type="button"
                         onClick={() => onPatch({ sensitiveDismissed: true })}
-                        disabled={disabled}
+                        disabled={disabled || isPending}
                         aria-label="Dismiss sensitive-value suggestion"
                         title="Dismiss — keep this value as plain text"
                         className="flex items-center px-1.5 text-amber-700/60 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400/60 dark:hover:text-amber-400"
@@ -346,7 +354,7 @@ export function EnvironmentVariableRow({
                     secretId={row.secretId}
                     secrets={secrets}
                     recentlyUsedSecrets={recentlyUsedSecrets}
-                    disabled={disabled}
+                    disabled={disabled || isPending}
                     onSelect={(id) => onPatch({ secretId: id, version: "latest" })}
                     onCreateNew={(query) =>
                       setSecretPopover({ mode: "create", name: secretNameFromKey(query) || query.trim(), value: "" })
@@ -361,7 +369,7 @@ export function EnvironmentVariableRow({
                       <PopoverAnchor asChild>
                         <button
                           type="button"
-                          disabled={disabled}
+                          disabled={disabled || isPending}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -424,7 +432,7 @@ export function EnvironmentVariableRow({
                     <select
                       aria-label="User secret"
                       value={row.userSecretKey}
-                      disabled={disabled}
+                      disabled={disabled || isPending}
                       onChange={(event) => {
                         const key = event.target.value;
                         const definition = userSecretDefinitions?.find((candidate) => candidate.key === key);
@@ -433,7 +441,7 @@ export function EnvironmentVariableRow({
                           ...(definition && !row.name.trim() ? { name: definition.key.toUpperCase() } : {}),
                         });
                       }}
-                      className="min-w-0 bg-transparent px-2 py-1.5 text-sm font-mono outline-none disabled:pointer-events-none"
+                      className="min-w-0 bg-transparent px-2 py-1.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
                     >
                       <option value="">Select user secret...</option>
                       {row.userSecretKey && !userSecretDefinitions?.some((definition) => definition.key === row.userSecretKey) ? (
@@ -452,7 +460,7 @@ export function EnvironmentVariableRow({
                       placeholder="user-secret key"
                       value={row.userSecretKey}
                       spellCheck={false}
-                      disabled={disabled}
+                      disabled={disabled || isPending}
                       aria-label="User secret key"
                       onChange={(event) => onPatch({ userSecretKey: event.target.value })}
                     />
@@ -460,9 +468,9 @@ export function EnvironmentVariableRow({
                   <select
                     aria-label="Requirement"
                     value={row.required ? "required" : "optional"}
-                    disabled={disabled}
+                    disabled={disabled || isPending}
                     onChange={(event) => onPatch({ required: event.target.value === "required" })}
-                    className="border-l border-border bg-transparent px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none disabled:pointer-events-none"
+                    className="border-l border-border bg-transparent px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
                   >
                     <option value="required">Required</option>
                     <option value="optional">Optional</option>
@@ -517,6 +525,15 @@ export function EnvironmentVariableRow({
         </Popover>
 
         {/* Inline secret-health message */}
+        {isPending ? (
+          <p
+            aria-live="polite"
+            role="status"
+            className="mt-0.5 text-(length:--text-micro) text-muted-foreground"
+          >
+            Creating and binding secret…
+          </p>
+        ) : null}
         {health ? (
           <p
             id={healthId}
@@ -564,7 +581,7 @@ export function EnvironmentVariableRow({
       <div className="col-start-2 row-start-1 flex items-center justify-end gap-0.5 self-start @[40rem]/env:col-start-3 @[40rem]/env:self-center">
         {row.source === "text" && !sensitive && (row.name.trim() || row.textValue) ? (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild disabled={disabled}>
+            <DropdownMenuTrigger asChild disabled={disabled || isPending}>
               <button
                 type="button"
                 aria-label="More actions"
@@ -594,7 +611,7 @@ export function EnvironmentVariableRow({
         <button
           type="button"
           onClick={onRemove}
-          disabled={disabled}
+          disabled={disabled || isPending}
           aria-label={`Remove ${row.name.trim() || "variable"}`}
           className="rounded p-1 text-muted-foreground opacity-100 hover:bg-destructive/10 hover:text-destructive @[40rem]/env:opacity-0 @[40rem]/env:group-hover/row:opacity-100 @[40rem]/env:group-focus-within/row:opacity-100"
         >

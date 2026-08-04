@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, ShieldQuestion, X } from "lucide-react";
 import type { ToolActionRequestListItem } from "@paperclipai/shared";
@@ -75,10 +75,13 @@ export function ReviewQueueCard({
   );
 }
 
+type Resolution = "allow" | "always" | "decline";
+
 function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionRequestListItem }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
-  const [resolving, setResolving] = useState<null | "allow" | "always" | "decline">(null);
+  const [resolving, setResolving] = useState<Resolution | null>(null);
+  const resolvingRef = useRef(false);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.tools.actionRequests(companyId, "pending") });
@@ -87,7 +90,6 @@ function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionReq
 
   const allowOnce = useMutation({
     mutationFn: () => toolsApi.approveActionRequest(companyId, item.request.id),
-    onMutate: () => setResolving("allow"),
     onSuccess: () => {
       pushToast({ title: "Allowed once", body: `${actionLabel(item)} can run this time.`, tone: "success" });
       invalidate();
@@ -96,7 +98,10 @@ function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionReq
       invalidate();
       failToast(pushToast, error);
     },
-    onSettled: () => setResolving(null),
+    onSettled: () => {
+      resolvingRef.current = false;
+      setResolving(null);
+    },
   });
 
   const alwaysAllow = useMutation({
@@ -105,7 +110,6 @@ function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionReq
       await toolsApi.createTrustRuleFromActionRequest(companyId, item.request.id, { approvalThreshold: 1 });
       return approved;
     },
-    onMutate: () => setResolving("always"),
     onSuccess: () => {
       pushToast({
         title: "Always allowed",
@@ -119,12 +123,14 @@ function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionReq
       invalidate();
       failToast(pushToast, error);
     },
-    onSettled: () => setResolving(null),
+    onSettled: () => {
+      resolvingRef.current = false;
+      setResolving(null);
+    },
   });
 
   const decline = useMutation({
     mutationFn: () => toolsApi.declineActionRequest(companyId, item.request.id),
-    onMutate: () => setResolving("decline"),
     onSuccess: () => {
       pushToast({ title: "Declined", body: `${actionLabel(item)} won’t run.`, tone: "info" });
       invalidate();
@@ -133,14 +139,31 @@ function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionReq
       invalidate();
       failToast(pushToast, error);
     },
-    onSettled: () => setResolving(null),
+    onSettled: () => {
+      resolvingRef.current = false;
+      setResolving(null);
+    },
   });
 
-  const busy = resolving !== null;
+  const isPending = resolving !== null;
   const preview = item.request.previewMarkdown?.trim();
 
+  const resolve = (resolution: Resolution, mutate: () => void) => {
+    if (resolvingRef.current) return;
+    resolvingRef.current = true;
+    setResolving(resolution);
+    mutate();
+  };
+
+  const pendingMessage =
+    resolving === "allow"
+      ? "Allowing this action once…"
+      : resolving === "always"
+        ? "Saving the trust rule and allowing this action…"
+        : "Declining this action…";
+
   return (
-    <div className="rounded-xl border border-amber-500/40 bg-amber-500/[0.07] p-4">
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/[0.07] p-4" aria-busy={isPending}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
         <span className="font-bold text-foreground">{actionLabel(item)}</span>
         {item.applicationName && (
@@ -162,19 +185,24 @@ function ReviewRow({ companyId, item }: { companyId: string; item: ToolActionReq
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => allowOnce.mutate()} disabled={busy}>
-          {resolving === "allow" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
+        <Button size="sm" onClick={() => resolve("allow", () => allowOnce.mutate())} disabled={isPending}>
+          {resolving === "allow" ? <Loader2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />}
           Allow once
         </Button>
-        <Button size="sm" variant="outline" onClick={() => alwaysAllow.mutate()} disabled={busy}>
-          {resolving === "always" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+        <Button size="sm" variant="outline" onClick={() => resolve("always", () => alwaysAllow.mutate())} disabled={isPending}>
+          {resolving === "always" ? <Loader2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
           Always allow
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => decline.mutate()} disabled={busy}>
-          {resolving === "decline" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <X className="mr-1.5 h-3.5 w-3.5" />}
+        <Button size="sm" variant="ghost" onClick={() => resolve("decline", () => decline.mutate())} disabled={isPending}>
+          {resolving === "decline" ? <Loader2 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <X data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />}
           Decline
         </Button>
       </div>
+      {isPending ? (
+        <p aria-live="polite" role="status" className="mt-2 text-xs text-muted-foreground">
+          {pendingMessage}
+        </p>
+      ) : null}
     </div>
   );
 }

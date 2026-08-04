@@ -914,7 +914,7 @@ function SearchTabContent({
             </Button>
           ) : null}
           <Button onClick={openNewIssue} size="sm" variant="default">
-            <Plus className="mr-1.5 h-4 w-4" />
+            <Plus data-icon="inline-start" className="mr-1.5 h-4 w-4" />
             Create task from this query
           </Button>
           <Button onClick={navigateIssuesFallback} size="sm" variant="ghost">

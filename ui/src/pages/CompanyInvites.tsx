@@ -193,7 +193,7 @@ export function CompanyInvites() {
   }
 
   if (invitesQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading invites…</div>;
+    return <div className="text-sm text-muted-foreground" role="status">Loading invites…</div>;
   }
 
   if (invitesQuery.error) {
@@ -203,11 +203,20 @@ export function CompanyInvites() {
         : invitesQuery.error instanceof Error
           ? invitesQuery.error.message
           : "Failed to load invites.";
-    return <div className="text-sm text-destructive">{message}</div>;
+    return <div className="text-sm text-destructive" role="alert">{message}</div>;
   }
+
+  const inviteActionStatus = createInviteMutation.isPending
+    ? "Creating invite…"
+    : revokeMutation.isPending
+      ? "Revoking invite…"
+      : null;
 
   return (
     <div className="max-w-5xl space-y-8">
+      {inviteActionStatus ? (
+        <p className="sr-only" role="status">{inviteActionStatus}</p>
+      ) : null}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <MailPlus className="h-5 w-5 text-muted-foreground" />
@@ -279,7 +288,7 @@ export function CompanyInvites() {
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-medium">Latest invite link</div>
                 {latestInviteCopied ? (
-                  <div className="inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                  <div className="inline-flex items-center gap-1 text-xs font-medium text-foreground" role="status">
                     <Check className="h-3.5 w-3.5" />
                     Copied
                   </div>
@@ -311,12 +320,12 @@ export function CompanyInvites() {
                   setLatestInviteCopied(copied);
                 }}
               >
-                <Copy className="h-4 w-4" />
+                <Copy data-icon="inline-start" className="h-4 w-4" />
                 Copy link
               </Button>
               <Button size="sm" variant="outline" asChild>
                 <a href={latestInviteUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
+                  <ExternalLink data-icon="inline-start" className="h-4 w-4" />
                   Open invite
                 </a>
               </Button>

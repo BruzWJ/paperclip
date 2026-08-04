@@ -127,4 +127,23 @@ describe("CaseRevisionRail", () => {
     expect(container.querySelector('[data-testid="md"]')?.textContent).toBe("# First version");
     act(() => root.unmount());
   });
+
+  it("explains when the case document has no saved revisions", async () => {
+    mockCasesApi.listRevisions.mockResolvedValue({
+      ...revisions,
+      document: {
+        ...revisions.document,
+        latestRevisionId: null,
+        latestRevisionNumber: null,
+      },
+      revisions: [],
+    });
+
+    const root = await render();
+
+    expect(container.textContent).toContain("No revisions yet.");
+    expect(container.querySelector('[data-testid="md"]')).toBeNull();
+
+    act(() => root.unmount());
+  });
 });

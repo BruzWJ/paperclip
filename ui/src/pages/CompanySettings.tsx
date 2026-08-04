@@ -145,6 +145,17 @@ export function CompanySettings() {
       });
     }
   });
+  const companySettingsStatus = generalMutation.isPending
+    ? "Saving company settings…"
+    : logoUploadMutation.isPending
+      ? "Uploading company logo…"
+      : clearLogoMutation.isPending
+        ? "Removing company logo…"
+        : settingsMutation.isPending
+          ? "Saving hiring settings…"
+          : archiveMutation.isPending
+            ? "Archiving company…"
+            : null;
 
   useEffect(() => {
     setBreadcrumbs([
@@ -172,6 +183,7 @@ export function CompanySettings() {
 
   return (
     <div className="max-w-2xl space-y-6">
+      {companySettingsStatus ? <p className="sr-only" role="status">{companySettingsStatus}</p> : null}
       <div className="flex items-center gap-2">
         <Settings className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">Company Settings</h1>
@@ -185,7 +197,8 @@ export function CompanySettings() {
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <Field label="Company name" hint="The display name for your company.">
             <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              aria-label="Company name"
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               type="text"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
@@ -196,7 +209,8 @@ export function CompanySettings() {
             hint="Optional description shown in the company profile."
           >
             <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              aria-label="Company description"
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               type="text"
               value={description}
               placeholder="Optional company description"
@@ -228,10 +242,11 @@ export function CompanySettings() {
               >
                 <div className="space-y-2">
                   <input
+                    aria-label="Company logo image"
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
                     onChange={handleLogoFileChange}
-                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
                   />
                   {logoUrl && (
                     <div className="flex items-center gap-2">
@@ -246,7 +261,7 @@ export function CompanySettings() {
                     </div>
                   )}
                   {(logoUploadMutation.isError || logoUploadError) && (
-                    <span className="text-xs text-destructive">
+                    <span className="text-xs text-destructive" role="alert">
                       {logoUploadError ??
                         (logoUploadMutation.error instanceof Error
                           ? logoUploadMutation.error.message
@@ -254,12 +269,12 @@ export function CompanySettings() {
                     </span>
                   )}
                   {clearLogoMutation.isError && (
-                    <span className="text-xs text-destructive">
+                    <span className="text-xs text-destructive" role="alert">
                       {clearLogoMutation.error.message}
                     </span>
                   )}
                   {logoUploadMutation.isPending && (
-                    <span className="text-xs text-muted-foreground">Uploading logo...</span>
+                    <span className="text-xs text-muted-foreground" role="status">Uploading logo...</span>
                   )}
                 </div>
               </Field>
@@ -270,12 +285,14 @@ export function CompanySettings() {
                 <div className="flex items-center gap-2">
                   {/* token-extraction: allowlisted — <input type="color"> value must be a real hex string, not a var() reference. */}
                   <input
+                    aria-label="Brand color picker"
                     type="color"
                     value={brandColor || "#6366f1"}
                     onChange={(e) => setBrandColor(e.target.value)}
                     className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
                   />
                   <input
+                    aria-label="Brand color hex value"
                     type="text"
                     value={brandColor}
                     onChange={(e) => {
@@ -285,7 +302,7 @@ export function CompanySettings() {
                       }
                     }}
                     placeholder="Auto"
-                    className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none"
+                    className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                   {brandColor && (
                     <Button
@@ -306,13 +323,14 @@ export function CompanySettings() {
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
                     <input
+                      aria-label="Attachment size limit in MiB"
                       type="number"
                       min={1}
                       max={MAX_COMPANY_ATTACHMENT_MAX_MIB}
                       step={1}
                       value={attachmentMaxMiB}
                       onChange={(e) => setAttachmentMaxMiB(e.target.value)}
-                      className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                      className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     />
                     <span className="text-xs text-muted-foreground">MiB</span>
                   </div>
@@ -339,10 +357,10 @@ export function CompanySettings() {
             {generalMutation.isPending ? "Saving..." : "Save changes"}
           </Button>
           {generalMutation.isSuccess && (
-            <span className="text-xs text-muted-foreground">Saved</span>
+            <span className="text-xs text-muted-foreground" role="status">Saved</span>
           )}
           {generalMutation.isError && (
-            <span className="text-xs text-destructive">
+            <span className="text-xs text-destructive" role="alert">
               {generalMutation.error instanceof Error
                   ? generalMutation.error.message
                   : "Failed to save"}
@@ -381,20 +399,20 @@ export function CompanySettings() {
             {cloudSyncEnabled ? (
               <Button size="sm" asChild>
                 <Link to="/company/settings/cloud-upstream">
-                  <CloudUpload className="mr-1.5 h-3.5 w-3.5" />
+                  <CloudUpload data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                   Send to Paperclip Cloud
                 </Link>
               </Button>
             ) : null}
             <Button size="sm" variant="outline" asChild>
               <Link to="/company/export">
-                <Download className="mr-1.5 h-3.5 w-3.5" />
+                <Download data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                 Export
               </Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
               <Link to="/company/import">
-                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                <Upload data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                 Import
               </Link>
             </Button>

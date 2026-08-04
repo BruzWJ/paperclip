@@ -334,9 +334,10 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
               variant="destructive"
               onClick={() => signOutMutation.mutate()}
               disabled={isEditingOrder || signOutMutation.isPending}
+              aria-busy={signOutMutation.isPending}
             >
               <LogOut className="size-4" />
-              <span>{signOutMutation.isPending ? "Signing out..." : "Sign out"}</span>
+              <span aria-live="polite">{signOutMutation.isPending ? "Signing out..." : "Sign out"}</span>
             </DropdownMenuItem>
           </>
         ) : null}

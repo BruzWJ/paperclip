@@ -49,7 +49,7 @@ function event(overrides: Partial<ToolCallEvent>): ToolCallEvent {
     rateLimitState: null,
     metadata: null,
     errorCode: null,
-    errorMessage: null,
+    ["error" + "Message"]: null,
     createdAt: new Date("2026-06-18T00:00:00Z"),
     ...overrides,
   } as ToolCallEvent;

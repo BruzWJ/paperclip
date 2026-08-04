@@ -275,11 +275,17 @@ function CaseLabelsPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-muted-foreground">
-          <Plus className="h-3.5 w-3.5" /> Labels
+          <Plus data-icon="inline-start" className="h-3.5 w-3.5" /> Labels
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2">
+        {createLabel.isPending ? (
+          <p className="sr-only" role="status">
+            Creating label.
+          </p>
+        ) : null}
         <Input
+          aria-label="Search labels"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search labels…"
@@ -318,7 +324,9 @@ function CaseLabelsPicker({
               disabled={createLabel.isPending}
               onClick={() => createLabel.mutate({ name: search.trim(), color: newColor })}
             >
-              Create “{search.trim()}”
+              {createLabel.isPending
+                ? "Creating label…"
+                : `Create “${search.trim()}”`}
             </Button>
           </div>
         )}
@@ -615,6 +623,11 @@ export function CaseDetail() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {patchMutation.isPending ? (
+        <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+          Saving case changes…
+        </p>
+      ) : null}
       <header className="space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 space-y-1">

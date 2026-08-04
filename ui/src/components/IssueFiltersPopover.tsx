@@ -268,6 +268,7 @@ export function IssueFiltersPopover({
                       value={creatorSearch}
                       onChange={(event) => setCreatorSearch(event.target.value)}
                       placeholder="Search creators..."
+                      aria-label="Search creators"
                       className="h-8 pl-7 text-xs"
                     />
                   </div>

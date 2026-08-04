@@ -444,18 +444,18 @@ export function OrgChart() {
   return (
     <div className="flex h-(--sz-calc-38) min-h-(--sz-420px) flex-col md:h-full md:min-h-0">
       <div className="mb-2 flex shrink-0 flex-wrap items-center justify-start gap-2">
-        <Link to="/company/import">
-          <Button variant="outline" size="sm">
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/company/import">
+            <Upload data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             Import company
-          </Button>
-        </Link>
-        <Link to="/company/export">
-          <Button variant="outline" size="sm">
-            <Download className="mr-1.5 h-3.5 w-3.5" />
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/company/export">
+            <Download data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
             Export company
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </div>
       <div
         ref={containerRef}

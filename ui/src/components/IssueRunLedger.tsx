@@ -44,6 +44,7 @@ type IssueRunLedgerContentProps = {
   activityEvents?: ActivityEvent[];
   renderActivityEvent?: (event: ActivityEvent) => ReactNode;
   pendingWatchdogDecision?: WatchdogDecisionInput["decision"] | null;
+  isPending?: boolean;
   canRecordWatchdogDecisions?: boolean;
   watchdogDecisionError?: string | null;
   onWatchdogDecision?: (input: WatchdogDecisionInput) => void;
@@ -249,7 +250,14 @@ export function IssueRunLedger({
   });
 
   return (
-    <IssueRunLedgerContent
+    <>
+      <fieldset
+        aria-busy={watchdogDecision.isPending}
+        aria-label="Task run ledger controls"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={watchdogDecision.isPending}
+      >
+        <IssueRunLedgerContent
       runs={runs}
       selectedDetail={selectedDetail}
       selectedRunId={effectiveSelectedRunId}
@@ -260,10 +268,18 @@ export function IssueRunLedger({
       activityEvents={activityEvents}
       renderActivityEvent={renderActivityEvent}
       pendingWatchdogDecision={watchdogDecision.variables?.decision ?? null}
+      isPending={watchdogDecision.isPending}
       canRecordWatchdogDecisions={canBoardRecordWatchdogDecision(companyId, boardAccess)}
       watchdogDecisionError={watchdogDecisionError}
       onWatchdogDecision={(input) => watchdogDecision.mutate(input)}
-    />
+        />
+      </fieldset>
+      {watchdogDecision.isPending ? (
+        <p aria-live="polite" role="status">
+          Recording watchdog decision…
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -278,6 +294,7 @@ export function IssueRunLedgerContent({
   activityEvents,
   renderActivityEvent,
   pendingWatchdogDecision,
+  isPending = false,
   canRecordWatchdogDecisions = true,
   watchdogDecisionError,
   onWatchdogDecision,
@@ -386,7 +403,7 @@ export function IssueRunLedgerContent({
             <button
               type="button"
               className="rounded-md border border-border bg-background px-2 py-1 text-(length:--text-micro) text-foreground"
-              disabled={pendingWatchdogDecision != null}
+              disabled={isPending || pendingWatchdogDecision != null}
               onClick={() => onWatchdogDecision({ runId: run.id, decision: "continue" })}
             >
               Continue monitoring
@@ -394,7 +411,7 @@ export function IssueRunLedgerContent({
             <button
               type="button"
               className="rounded-md border border-border bg-background px-2 py-1 text-(length:--text-micro) text-foreground"
-              disabled={pendingWatchdogDecision != null}
+              disabled={isPending || pendingWatchdogDecision != null}
               onClick={() => onWatchdogDecision({
                 runId: run.id,
                 decision: "snooze",
@@ -407,7 +424,7 @@ export function IssueRunLedgerContent({
             <button
               type="button"
               className="rounded-md border border-border bg-background px-2 py-1 text-(length:--text-micro) text-foreground"
-              disabled={pendingWatchdogDecision != null}
+              disabled={isPending || pendingWatchdogDecision != null}
               onClick={() => onWatchdogDecision({
                 runId: run.id,
                 decision: "dismissed_false_positive",
@@ -417,6 +434,11 @@ export function IssueRunLedgerContent({
               Mark false positive
             </button>
           </div>
+        ) : null}
+        {isSelected && isPending ? (
+          <p aria-live="polite" role="status">
+            Recording watchdog decision…
+          </p>
         ) : null}
         {isSelected && watchdogDecisionError ? (
           <p className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-900 dark:text-red-200">

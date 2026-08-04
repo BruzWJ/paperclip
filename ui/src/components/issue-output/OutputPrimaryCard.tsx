@@ -101,21 +101,21 @@ export function OutputPrimaryCard({ item, creatorName, onMediaClick }: OutputPri
                 className="max-md:flex-1"
                 onClick={() => onMediaClick(item)}
               >
-                <Maximize2 className="h-4 w-4" />
+                <Maximize2 data-icon="inline-start" className="h-4 w-4" />
                 Browse
               </Button>
             ) : null}
             {!isMedia || !onMediaClick || isVideo ? (
               <Button asChild variant="outline" size="sm" className="max-md:flex-1">
                 <a href={meta.openPath} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
+                  <ExternalLink data-icon="inline-start" className="h-4 w-4" />
                   Open
                 </a>
               </Button>
             ) : null}
             <Button asChild size="sm" className="max-md:flex-1">
               <a href={meta.downloadPath} aria-label={`Download ${filename}`}>
-                <Download className="h-4 w-4" />
+                <Download data-icon="inline-start" className="h-4 w-4" />
                 Download
               </a>
             </Button>

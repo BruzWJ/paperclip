@@ -361,6 +361,10 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
       invalidateProject();
     },
   });
+  const isPending =
+    createWorkspace.isPending ||
+    removeWorkspace.isPending ||
+    updateWorkspace.isPending;
 
   const removeGoal = (goalId: string) => {
     if (!onUpdate && !onFieldUpdate) return;
@@ -521,7 +525,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               value={project.name}
               onCommit={(name) => commitField("name", { name })}
               immediate
-              className="w-full rounded border border-border bg-transparent px-2 py-1 text-sm outline-none"
+              className="w-full rounded border border-border bg-transparent px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="Project name"
             />
           ) : (
@@ -602,7 +606,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   className={cn("h-6 w-fit px-2", linkedGoals.length > 0 && "ml-1")}
                   disabled={availableGoals.length === 0}
                 >
-                  <Plus className="h-3 w-3 mr-1" />
+                  <Plus data-icon="inline-start" className="h-3 w-3 mr-1" />
                   Goal
                 </Button>
               </PopoverTrigger>
@@ -670,7 +674,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-(length:--text-nano) text-muted-foreground hover:text-foreground"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-(length:--text-nano) text-muted-foreground hover:text-foreground"
                   aria-label="Codebase help"
                 >
                   ?
@@ -708,6 +712,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                       variant="outline"
                       size="xs"
                       className="h-6 px-2"
+                      disabled={isPending}
                       onClick={() => {
                         setWorkspaceMode("repo");
                         setWorkspaceRepoUrl(codebase.repoUrl ?? "");
@@ -719,6 +724,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     <Button
                       variant="ghost"
                       size="icon-xs"
+                      disabled={isPending}
                       onClick={clearRepoWorkspace}
                       aria-label="Clear repo"
                     >
@@ -733,6 +739,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     variant="outline"
                     size="xs"
                     className="h-6 px-2"
+                    disabled={isPending}
                     onClick={() => {
                       setWorkspaceMode("repo");
                       setWorkspaceRepoUrl(codebase.repoUrl ?? "");
@@ -761,6 +768,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     variant="outline"
                     size="xs"
                     className="h-6 px-2"
+                    disabled={isPending}
                     onClick={() => {
                       setWorkspaceMode("local");
                       setWorkspaceCwd(codebase.localFolder ?? "");
@@ -773,6 +781,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     <Button
                       variant="ghost"
                       size="icon-xs"
+                      disabled={isPending}
                       onClick={clearLocalWorkspace}
                       aria-label="Clear local folder"
                     >
@@ -839,7 +848,8 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             <div className="space-y-1.5 rounded-md border border-border p-2">
               <div className="flex items-center gap-2">
                 <input
-                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                  aria-label="Local workspace path"
+                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   value={workspaceCwd}
                   onChange={(e) => setWorkspaceCwd(e.target.value)}
                   placeholder="/absolute/path/to/workspace"
@@ -851,7 +861,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   variant="outline"
                   size="xs"
                   className="h-6 px-2"
-                  disabled={(!workspaceCwd.trim() && !primaryCodebaseWorkspace) || createWorkspace.isPending || updateWorkspace.isPending}
+                  disabled={isPending || (!workspaceCwd.trim() && !primaryCodebaseWorkspace)}
                   onClick={submitLocalWorkspace}
                 >
                   Save
@@ -874,7 +884,8 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           {workspaceMode === "repo" && (
             <div className="space-y-1.5 rounded-md border border-border p-2">
               <input
-                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                aria-label="Repository URL"
+                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={workspaceRepoUrl}
                 onChange={(e) => setWorkspaceRepoUrl(e.target.value)}
                 placeholder="https://github.com/org/repo"
@@ -884,7 +895,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   variant="outline"
                   size="xs"
                   className="h-6 px-2"
-                  disabled={(!workspaceRepoUrl.trim() && !primaryCodebaseWorkspace) || createWorkspace.isPending || updateWorkspace.isPending}
+                  disabled={isPending || (!workspaceRepoUrl.trim() && !primaryCodebaseWorkspace)}
                   onClick={submitRepoWorkspace}
                 >
                   Save
@@ -904,6 +915,11 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               </div>
             </div>
           )}
+          {isPending ? (
+            <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+              Saving codebase workspace…
+            </p>
+          ) : null}
           {workspaceError && (
             <p className="text-xs text-destructive">{workspaceError}</p>
           )}
@@ -1014,13 +1030,17 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                         {showExecutionWorkspaceEnvironmentControl ? (
                           <div>
                             <div className="mb-1 flex items-center gap-1.5">
-                              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <label
+                                htmlFor="project-execution-workspace-environment"
+                                className="flex items-center gap-2 text-xs text-muted-foreground"
+                              >
                                 <span>Environment</span>
                                 <SaveIndicator state={fieldState("execution_workspace_environment")} />
                               </label>
                             </div>
                             <select
-                              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                              id="project-execution-workspace-environment"
+                              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                               value={executionWorkspaceEnvironmentId}
                               onChange={(e) =>
                                 commitField(
@@ -1059,7 +1079,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                                 })!,
                               })}
                             immediate
-                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             placeholder="origin/main"
                           />
                         </div>
@@ -1083,7 +1103,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                                 })!,
                               })}
                             immediate
-                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             placeholder="{{issue.identifier}}-{{slug}}"
                           />
                         </div>
@@ -1107,7 +1127,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                                 })!,
                               })}
                             immediate
-                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             placeholder=".paperclip/worktrees"
                           />
                         </div>
@@ -1131,7 +1151,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                                 })!,
                               })}
                             immediate
-                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             placeholder="bash ./scripts/provision-worktree.sh"
                           />
                         </div>
@@ -1155,7 +1175,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                                 })!,
                               })}
                             immediate
-                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                            className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             placeholder="bash ./scripts/teardown-worktree.sh"
                           />
                         </div>

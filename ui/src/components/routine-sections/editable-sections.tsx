@@ -236,6 +236,12 @@ export function OverviewSection({
             />
           ) : null}
         </div>
+        <fieldset
+          aria-busy={saveRoutine.isPending}
+          aria-label="Routine instructions"
+          className="m-0 min-w-0 border-0 p-0"
+          disabled={saveRoutine.isPending}
+        >
         {routine.descriptionDocument ? (
           <IssueDocumentAnnotations
             issueId={routine.id}
@@ -257,6 +263,7 @@ export function OverviewSection({
               bordered={false}
               contentClassName="min-h-(--sz-120px) text-sm leading-7"
               mentions={mentionOptions}
+              readOnly={saveRoutine.isPending}
               onSubmit={() => {
                 if (!saveRoutine.isPending && editDraft.title.trim()) {
                   saveRoutine.mutate();
@@ -273,6 +280,7 @@ export function OverviewSection({
             bordered={false}
             contentClassName="min-h-(--sz-120px) text-sm leading-7"
             mentions={mentionOptions}
+            readOnly={saveRoutine.isPending}
             onSubmit={() => {
               if (!saveRoutine.isPending && editDraft.title.trim()) {
                 saveRoutine.mutate();
@@ -280,6 +288,12 @@ export function OverviewSection({
             }}
           />
         )}
+        </fieldset>
+        {saveRoutine.isPending ? (
+          <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+            Saving routine instructions…
+          </p>
+        ) : null}
       </div>
 
       {/* Variables peek */}
@@ -441,12 +455,12 @@ export function TriggersSection() {
         <p className="text-sm font-medium">Add trigger</p>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1.5">
-            <Label className="text-xs">Kind</Label>
+            <Label htmlFor="new-trigger-kind" className="text-xs">Kind</Label>
             <Select
               value={newTrigger.kind}
               onValueChange={(kind) => setNewTrigger((current) => ({ ...current, kind }))}
             >
-              <SelectTrigger>
+              <SelectTrigger id="new-trigger-kind">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -474,14 +488,14 @@ export function TriggersSection() {
           {newTrigger.kind === "webhook" && (
             <>
               <div className="space-y-1.5">
-                <Label className="text-xs">Signing mode</Label>
+                <Label htmlFor="new-trigger-signing-mode" className="text-xs">Signing mode</Label>
                 <Select
                   value={newTrigger.signingMode}
                   onValueChange={(signingMode) =>
                     setNewTrigger((current) => ({ ...current, signingMode }))
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="new-trigger-signing-mode">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -498,8 +512,12 @@ export function TriggersSection() {
               </div>
               {!SIGNING_MODES_WITHOUT_REPLAY_WINDOW.has(newTrigger.signingMode) && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Replay window (seconds)</Label>
+                  <Label htmlFor="new-trigger-replay-window" className="text-xs">Replay window (seconds)</Label>
                   <Input
+                    id="new-trigger-replay-window"
+                    type="number"
+                    min="0"
+                    step="1"
                     value={newTrigger.replayWindowSec}
                     onChange={(event) =>
                       setNewTrigger((current) => ({ ...current, replayWindowSec: event.target.value }))
@@ -511,6 +529,9 @@ export function TriggersSection() {
           )}
         </div>
         <div className="flex items-center justify-end gap-2">
+          {createTrigger.isPending ? (
+            <p role="status" className="mr-auto text-xs text-muted-foreground">Adding trigger…</p>
+          ) : null}
           <Button size="sm" variant="ghost" onClick={() => setAddOpen(false)}>
             Cancel
           </Button>
@@ -549,6 +570,11 @@ export function TriggersSection() {
               onSave={(id, patch) => updateTrigger.mutate({ id, patch })}
               onRotate={(id) => rotateTrigger.mutate(id)}
               onDelete={(id) => deleteTrigger.mutate(id)}
+              isPending={
+                updateTrigger.isPending ||
+                rotateTrigger.isPending ||
+                deleteTrigger.isPending
+              }
             />
           ))}
         </div>
@@ -571,7 +597,7 @@ export function VariablesSection() {
           placeholder.
         </span>
         <Button variant="secondary" size="sm" onClick={() => navigateToSection("overview")}>
-          <Edit3 className="mr-1.5 h-3.5 w-3.5" />
+          <Edit3 data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
           Edit instructions
         </Button>
       </div>
@@ -633,13 +659,19 @@ export function SecretsSection() {
             {secretMessage.entries.map((entry, index) => (
               <div key={`${entry.webhookUrl}-${index}`} className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Input value={entry.webhookUrl} readOnly className="flex-1" />
+                  <Label className="sr-only" htmlFor={`routine-webhook-url-${index}`}>
+                    Webhook URL
+                  </Label>
+                  <Input id={`routine-webhook-url-${index}`} value={entry.webhookUrl} readOnly className="flex-1" />
                   <Button variant="outline" size="sm" onClick={() => copySecretValue("Webhook URL", entry.webhookUrl)}>
                     URL
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Input value={entry.webhookSecret} readOnly className="flex-1" />
+                  <Label className="sr-only" htmlFor={`routine-webhook-secret-${index}`}>
+                    Webhook secret
+                  </Label>
+                  <Input id={`routine-webhook-secret-${index}`} value={entry.webhookSecret} readOnly className="flex-1" />
                   <Button variant="outline" size="sm" onClick={() => copySecretValue("Webhook secret", entry.webhookSecret)}>
                     Secret
                   </Button>

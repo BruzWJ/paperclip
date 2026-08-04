@@ -299,6 +299,7 @@ export function RuntimeTab({ companyId }: { companyId: string }) {
       pushToast({ title: "Restart failed", body: err instanceof ApiError ? err.message : String(err), tone: "error" }),
     onSettled: () => setConfirm(null),
   });
+  const isPending = stopSlot.isPending || restartSlot.isPending;
 
   const rows = useMemo<RuntimeRow[]>(() => {
     const list = slots.data?.runtimeSlots ?? [];
@@ -339,9 +340,14 @@ export function RuntimeTab({ companyId }: { companyId: string }) {
 
   const errors = (metrics?.toolFailuresLastHour ?? 0) + (metrics?.toolTimeoutsLastHour ?? 0);
 
-  const beginRestart = (row: RuntimeRow) =>
+  const beginRestart = (row: RuntimeRow) => {
+    if (isPending) return;
     setConfirm({ kind: "restart", slotId: row.slot.id, name: row.name });
-  const beginStop = (row: RuntimeRow) => setConfirm({ kind: "stop", slotId: row.slot.id, name: row.name });
+  };
+  const beginStop = (row: RuntimeRow) => {
+    if (isPending) return;
+    setConfirm({ kind: "stop", slotId: row.slot.id, name: row.name });
+  };
 
   return (
     <div className="space-y-5">
@@ -397,8 +403,8 @@ export function RuntimeTab({ companyId }: { companyId: string }) {
               </div>
               <div className="flex flex-wrap items-center gap-4">
                 {action === "restart" && localAttentionRow ? (
-                  <Button size="sm" onClick={() => beginRestart(localAttentionRow)}>
-                    <RotateCw className="mr-1.5 h-3.5 w-3.5" />
+                  <Button size="sm" disabled={isPending} onClick={() => beginRestart(localAttentionRow)}>
+                    <RotateCw data-icon="inline-start" className="mr-1.5 h-3.5 w-3.5" />
                     Restart {localAttentionRow.name}
                   </Button>
                 ) : action === "reviewApps" ? (
@@ -414,6 +420,8 @@ export function RuntimeTab({ companyId }: { companyId: string }) {
                   type="button"
                   className="text-left"
                   onClick={() => setOpenAlertDetails((s) => ({ ...s, [alert.name]: !detailsOpen }))}
+                  aria-label="Toggle technical details"
+                  aria-expanded={detailsOpen}
                 >
                   <Disclosure open={detailsOpen} label="Technical details" />
                 </button>
@@ -485,16 +493,62 @@ export function RuntimeTab({ companyId }: { companyId: string }) {
         no local process to control here.
       </p>
 
-      <ConfirmDialog
-        target={confirm}
-        pending={stopSlot.isPending || restartSlot.isPending}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => {
-          if (!confirm) return;
-          if (confirm.kind === "restart") restartSlot.mutate(confirm.slotId);
-          else stopSlot.mutate(confirm.slotId);
+      {isPending ? (
+        <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+          {confirm?.kind === "restart" ? `Restarting ${confirm.name}…` : `Stopping ${confirm?.name ?? "app"}…`}
+        </p>
+      ) : null}
+
+      <Dialog
+        open={!!confirm}
+        onOpenChange={(open) => {
+          if (!open && !isPending) setConfirm(null);
         }}
-      />
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {confirm?.kind === "restart" ? "Restart" : "Stop"} {confirm?.name}?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-foreground">
+            {confirm?.kind === "restart" ? (
+              <>
+                <p>
+                  Anything in progress will stop. Agents using {confirm?.name} right now will see a Failed result on
+                  their action.
+                </p>
+                <p className="text-xs text-muted-foreground">Restart usually takes 2–3 seconds.</p>
+              </>
+            ) : (
+              <>
+                <p>
+                  {confirm?.name} will stop running. Agents won't be able to use it until it starts again.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  It starts again automatically the next time an agent needs it.
+                </p>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirm(null)} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button
+              disabled={isPending}
+              onClick={() => {
+                if (!confirm || isPending) return;
+                if (confirm.kind === "restart") restartSlot.mutate(confirm.slotId);
+                else stopSlot.mutate(confirm.slotId);
+              }}
+            >
+              {isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              {isPending ? (confirm?.kind === "restart" ? "Restarting…" : "Stopping…") : confirm?.kind === "restart" ? "Restart" : "Stop"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -602,59 +656,5 @@ function RuntimeRowView({
         </tr>
       ) : null}
     </>
-  );
-}
-
-function ConfirmDialog({
-  target,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  target: ConfirmTarget | null;
-  pending: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const isRestart = target?.kind === "restart";
-  return (
-    <Dialog open={!!target} onOpenChange={(o) => (!o ? onCancel() : undefined)}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {isRestart ? "Restart" : "Stop"} {target?.name}?
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2 text-sm text-foreground">
-          {isRestart ? (
-            <>
-              <p>
-                Anything in progress will stop. Agents using {target?.name} right now will see a Failed result on
-                their action.
-              </p>
-              <p className="text-xs text-muted-foreground">Restart usually takes 2–3 seconds.</p>
-            </>
-          ) : (
-            <>
-              <p>
-                {target?.name} will stop running. Agents won't be able to use it until it starts again.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                It starts again automatically the next time an agent needs it.
-              </p>
-            </>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onCancel} disabled={pending}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={pending}>
-            {pending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-            {isRestart ? "Restart" : "Stop"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

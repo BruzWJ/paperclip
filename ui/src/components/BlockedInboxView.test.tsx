@@ -152,6 +152,10 @@ describe("BlockedInboxView", () => {
     expect(
       container.querySelector('[data-testid="blocked-inbox-empty"]'),
     ).not.toBeNull();
+    expect(container.textContent).toContain("No work is stopped.");
+    expect(container.textContent).toContain(
+      "Tasks that need a decision, recovery, or external action will appear here.",
+    );
     act(() => root.unmount());
   });
 
@@ -206,14 +210,18 @@ describe("BlockedInboxView", () => {
       />,
       container,
     );
-    await waitFor(() => container.querySelectorAll("a").length === 4);
+    await waitFor(
+      () => container.querySelectorAll("a[data-inbox-issue-link]").length === 4,
+    );
 
     expect(
       container.querySelectorAll('[data-testid^="blocked-inbox-group-"]'),
     ).toHaveLength(0);
 
-    const titles = Array.from(container.querySelectorAll("a")).map(
-      (a) => a.textContent ?? "",
+    const titles = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-issue-link]"),
+    ).map(
+      (link) => link.parentElement?.textContent ?? "",
     );
     expect(titles[0]).toContain("Critical stalled row");
     expect(titles[1]).toContain("Stalled chain row");
@@ -249,9 +257,9 @@ describe("BlockedInboxView", () => {
       <BlockedInboxView {...blockedViewProps} />,
       container,
     );
-    await waitFor(() => container.querySelector("a") !== null);
+    await waitFor(() => container.querySelector("a[data-inbox-issue-link]") !== null);
 
-    const rowText = container.querySelector("a")?.textContent ?? "";
+    const rowText = container.querySelector("a[data-inbox-issue-link]")?.parentElement?.textContent ?? "";
     expect(rowText.indexOf("Pending board decision")).toBeGreaterThanOrEqual(0);
     expect(rowText.indexOf("Needs decision")).toBeGreaterThan(
       rowText.indexOf("Pending board decision"),
@@ -307,10 +315,10 @@ describe("BlockedInboxView", () => {
       <BlockedInboxView {...blockedViewProps} searchQuery="charlie" />,
       container,
     );
-    await waitFor(() => container.querySelectorAll("a").length > 0);
+    await waitFor(() => container.querySelectorAll("a[data-inbox-issue-link]").length > 0);
 
-    const links = container.querySelectorAll("a");
-    const titles = Array.from(links).map((a) => a.textContent ?? "");
+    const links = container.querySelectorAll<HTMLAnchorElement>("a[data-inbox-issue-link]");
+    const titles = Array.from(links).map((link) => link.parentElement?.textContent ?? "");
     expect(titles.some((t) => t.includes("Resume parked work"))).toBe(true);
     expect(titles.some((t) => t.includes("Other unrelated thing"))).toBe(false);
 
@@ -339,7 +347,7 @@ describe("BlockedInboxView", () => {
       />,
       container,
     );
-    await waitFor(() => container.querySelector("a") !== null);
+    await waitFor(() => container.querySelector("a[data-inbox-issue-link]") !== null);
 
     expect(
       container.querySelector(
