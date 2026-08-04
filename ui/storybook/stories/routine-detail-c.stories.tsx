@@ -84,7 +84,7 @@ const routine: RoutineDetailType = {
     "Compile last week's shipped work and email a digest to {{customer_name}} by {{deadline}}.\n\nKeep it to five bullets.",
   assigneeAgentId: storybookAgents[0]?.id ?? null,
   priority: "medium",
-  attentionMask: null,
+  contextAccessMask: null,
   status: "active",
   concurrencyPolicy: "coalesce_if_active",
   catchUpPolicy: "skip_missed",
@@ -251,7 +251,7 @@ function makeContext(
     priority: routineDetail.priority,
     concurrencyPolicy: routineDetail.concurrencyPolicy,
     catchUpPolicy: routineDetail.catchUpPolicy,
-    attentionMask: routineDetail.attentionMask ?? null,
+    contextAccessMask: routineDetail.contextAccessMask ?? null,
     variables: routineDetail.variables,
     env: routineDetail.env ?? null,
   };

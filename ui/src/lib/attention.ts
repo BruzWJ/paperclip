@@ -1,9 +1,8 @@
 import {
   AlertTriangle,
-  Ban,
   DollarSign,
   Eye,
-  RefreshCw,
+  MessageSquare,
   ShieldCheck,
   UserPlus,
   type LucideIcon,
@@ -22,9 +21,8 @@ import { formatMoneyAmount } from "./utils";
 
 /**
  * Source kinds the queue can fully resolve in-row. Everything else deep-links
- * to its native surface — reviews are *never* inline (converged PAP-12628),
- * and the remaining state-derived sources (failures and budget) expose
- * verbs too rich to safely inline here, so they open their surface.
+ * to its native surface — reviews and Board requests use the existing
+ * issue-aware continuation flow.
  */
 export const INLINE_RESOLVABLE_SOURCE_KINDS: ReadonlySet<AttentionSourceKind> = new Set<AttentionSourceKind>([
   "approval",
@@ -43,12 +41,9 @@ interface SourceMeta {
 const SOURCE_META: Record<AttentionSourceKind, SourceMeta> = {
   approval: { label: "Approval", icon: ShieldCheck },
   join_request: { label: "Join request", icon: UserPlus },
-  blocker_attention: { label: "Blocked dependency", icon: Ban },
   review: { label: "Review", icon: Eye },
-  failed_run: { label: "Failed run", icon: RefreshCw },
   budget_alert: { label: "Budget", icon: DollarSign },
-  agent_error_alert: { label: "Agent error", icon: AlertTriangle },
-  agent_liveness: { label: "Agent liveness", icon: AlertTriangle },
+  mention_board: { label: "Agent request", icon: MessageSquare },
 };
 
 export function sourceMeta(kind: AttentionSourceKind): SourceMeta {
@@ -79,13 +74,13 @@ export function severityStyle(severity: AttentionSeverity): SeverityStyle {
 // The row color is driven by the *kind of decision*, never by severity — one
 // map shared by the attention queue:
 //   • approvals / reviews                                             → sky
-//   • failures (failed run, agent error)                              → rose
-//   • blocked / budget                                                → amber
+//   • budget                                                          → amber
+//   • agent Board requests                                            → violet
 //   • join request                                                    → neutral
 // Severity only ever surfaces as a small Critical/High badge (never the accent).
 // ---------------------------------------------------------------------------
 
-export type AttentionTone = "sky" | "violet" | "rose" | "amber" | "neutral";
+export type AttentionTone = "sky" | "violet" | "amber" | "neutral";
 
 export interface AttentionToneStyle {
   /** Left accent bar background. */
@@ -107,11 +102,6 @@ const TONE_STYLE: Record<AttentionTone, AttentionToneStyle> = {
     icon: "text-violet-600 dark:text-violet-400",
     chip: "border-violet-500/60 bg-violet-500/10 text-violet-900 dark:bg-violet-500/15 dark:text-violet-100",
   },
-  rose: {
-    accent: "bg-rose-500",
-    icon: "text-rose-600 dark:text-rose-400",
-    chip: "border-rose-500/60 bg-rose-500/10 text-rose-900 dark:bg-rose-500/15 dark:text-rose-100",
-  },
   amber: {
     accent: "bg-amber-500",
     icon: "text-amber-600 dark:text-amber-400",
@@ -129,13 +119,10 @@ const TONE_STYLE: Record<AttentionTone, AttentionToneStyle> = {
  */
 export function attentionTone(item: AttentionItem): AttentionTone {
   switch (item.sourceKind) {
-    case "failed_run":
-    case "agent_error_alert":
-      return "rose";
-    case "blocker_attention":
     case "budget_alert":
-    case "agent_liveness":
       return "amber";
+    case "mention_board":
+      return "violet";
     case "join_request":
       return "neutral";
     case "approval":
@@ -188,18 +175,6 @@ export function attentionDetailLine(item: AttentionItem): string | null {
   switch (detail.kind) {
     case "approval":
       return quote(detail.summaryExcerpt);
-    case "failed_run":
-    case "agent_error": {
-      const reason = quote(detail.failureReasonExcerpt);
-      if (detail.agentName && reason) return `${detail.agentName} — ${reason}`;
-      return detail.agentName ?? reason;
-    }
-    case "blocker": {
-      const b = detail.blockingIssue;
-      if (!b) return null;
-      const id = b.identifier ? `${b.identifier} ` : "";
-      return b.title ? `Blocked by ${id}${b.title}` : b.identifier ? `Blocked by ${b.identifier}` : null;
-    }
     case "budget":
       return `${Math.round(detail.observedPercent)}% of budget used (${formatMoneyAmount(detail.observedAmount, detail.budgetCurrency)} / ${formatMoneyAmount(detail.limitAmount, detail.budgetCurrency)})`;
     case "generic":

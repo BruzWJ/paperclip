@@ -6,6 +6,7 @@ import {
   creatorDeliveries,
   instanceSettings,
   issueComments,
+  issueBoardMentions,
   issueCommentProjectionSources,
   issueCreateIdempotencyKeys,
   issueCreatorEdgeReceivability,
@@ -31,7 +32,7 @@ import {
   type IssueExecutionRef,
   type PaperclipActionKey,
   isUuidLike,
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
 } from "@paperclipai/shared";
 import { and, asc, desc, eq, inArray, max, sql } from "drizzle-orm";
 import {
@@ -104,7 +105,7 @@ const CREATE_KEYS = [
   "title",
   "priority",
   "owner",
-  "attentionMask",
+  "contextAccessMask",
 ] as const;
 const ASSIGN_KEYS = ["issueId", "owner"] as const;
 const OWNER_MESSAGE_KEYS = ["form", "message"] as const;
@@ -120,6 +121,7 @@ const CREATOR_UPDATE_KEYS = [
   "creatorTargetIssueId",
   "message",
 ] as const;
+const BOARD_MENTION_KEYS = ["message", "reason"] as const;
 const PRIORITIES = new Set(["critical", "high", "medium", "low"]);
 const STATUSES = new Set<AgentVisibleIssueStatus>([
   "open",
@@ -159,7 +161,7 @@ export interface RuntimeIssueActionService {
     title?: string;
     priority?: "critical" | "high" | "medium" | "low";
     owner: RuntimeIssueOwnerChoice;
-    attentionMask?: Partial<Record<AgentContextGrantKey, false>>;
+    contextAccessMask?: Partial<Record<AgentContextGrantKey, false>>;
   }): Promise<unknown>;
   assign(input: {
     capability: RuntimeActionInvocation["capability"];
@@ -186,6 +188,12 @@ export interface RuntimeIssueActionService {
     targetAgentId: string;
     message: string;
     mentionRunId?: string;
+  }): Promise<unknown>;
+  mentionBoard(input: {
+    capability: RuntimeActionInvocation["capability"];
+    invocationId: string;
+    message: string;
+    reason?: string;
   }): Promise<unknown>;
 }
 
@@ -360,7 +368,13 @@ function stableSessionId(key: string): string {
 }
 
 function runtimeInvocationKey(
-  kind: "create" | "assign" | "owner-update" | "creator-update" | "mention",
+  kind:
+    | "create"
+    | "assign"
+    | "owner-update"
+    | "creator-update"
+    | "mention"
+    | "mention-board",
   capabilityIdentity: string,
   invocationId: string,
 ): string {
@@ -2569,6 +2583,14 @@ function optionalString(value: unknown, label: string): string | undefined {
   return requiredString(value, label);
 }
 
+function nonBlankString(value: unknown, label: string): string {
+  const parsed = requiredString(value, label);
+  if (parsed.trim().length === 0) {
+    throw new RuntimeToolArgumentsInvalid(`${label} must not be blank`);
+  }
+  return parsed;
+}
+
 function ownerChoice(value: unknown): RuntimeIssueOwnerChoice {
   const owner = object(value, "owner");
   if (owner.kind === "self") {
@@ -2585,17 +2607,17 @@ function ownerChoice(value: unknown): RuntimeIssueOwnerChoice {
   throw new RuntimeToolArgumentsInvalid("owner.kind must be self or agent");
 }
 
-function attentionMask(
+function contextAccessMask(
   value: unknown,
 ): Partial<Record<AgentContextGrantKey, false>> | undefined {
   if (value === undefined) return undefined;
   try {
-    return normalizeIssueAttentionMask(value) ?? undefined;
+    return normalizeContextAccess(value) ?? undefined;
   } catch (error) {
     throw new RuntimeToolArgumentsInvalid(
       error instanceof Error
         ? error.message
-        : "Issue attention mask is invalid",
+        : "Issue context access mask is invalid",
     );
   }
 }
@@ -2637,7 +2659,7 @@ export function createRuntimeIssueActionPort(
         priority: priorityValue as
           "critical" | "high" | "medium" | "low" | undefined,
         owner: ownerChoice(input.arguments.owner),
-        attentionMask: attentionMask(input.arguments.attentionMask),
+        contextAccessMask: contextAccessMask(input.arguments.contextAccessMask),
       });
     },
 
@@ -2747,6 +2769,20 @@ export function createRuntimeIssueActionPort(
           : { mentionRunId: mention.mentionRunId }),
       });
     },
+
+    async mentionBoard(input) {
+      assertOwnerExecution(input);
+      exactKeys(input.arguments, BOARD_MENTION_KEYS);
+      return service.mentionBoard({
+        capability: input.capability,
+        invocationId: input.invocationId,
+        message: nonBlankString(input.arguments.message, "message"),
+        reason:
+          input.arguments.reason === undefined
+            ? undefined
+            : nonBlankString(input.arguments.reason, "reason"),
+      });
+    },
   };
 }
 
@@ -2803,7 +2839,7 @@ export function createPostgresRuntimeIssueActionService(
           .limit(1)
           .then((rows) => rows[0] ?? null);
         if (prior) {
-          const expectedMask = input.attentionMask ?? null;
+          const expectedMask = input.contextAccessMask ?? null;
           if (
             prior.issue.parentId !== input.capability.issueId ||
             prior.issue.request !== input.request ||
@@ -2814,7 +2850,7 @@ export function createPostgresRuntimeIssueActionService(
             prior.issue.creatorKind !== "agent-execution" ||
             prior.issue.creatorAuthorityId !==
               input.capability.issueExecutionAuthorityId ||
-            canonicalJson(prior.issue.attentionMask) !==
+            canonicalJson(prior.issue.contextAccessMask) !==
               canonicalJson(expectedMask)
           ) {
             throw new RuntimeIssueActionConflict(
@@ -2888,7 +2924,7 @@ export function createPostgresRuntimeIssueActionService(
               creatorAuthorityId: input.capability.issueExecutionAuthorityId,
               creatorAdapterConfigRevisionId:
                 input.capability.adapterConfigIdentity,
-              attentionMask: input.attentionMask ?? null,
+              contextAccessMask: input.contextAccessMask ?? null,
               issueNumber: issueCounter,
               identifier: `${authorized.company.issuePrefix}-${issueCounter}`,
               originKind: "agent_issue_create",
@@ -3328,6 +3364,108 @@ export function createPostgresRuntimeIssueActionService(
           invocationId: input.invocationId,
         },
       );
+    },
+
+    async mentionBoard(input) {
+      const key = runtimeInvocationKey(
+        "mention-board",
+        promptCapabilityGenerationIdentity(input.capability),
+        input.invocationId,
+      );
+      const committed = await db.transaction(async (tx) => {
+        const now = clock();
+        await lockRuntimeActionAuthority(
+          tx,
+          input.capability,
+          "mention_board",
+          now,
+          { requireOwner: true },
+        );
+        const mentionId = deterministicUuid("issue-board-mention", key);
+        const admission = await sessionAdmission.appendNonDispatchSyntheticComment(
+          {
+            companyId: input.capability.companyId,
+            issueId: input.capability.issueId,
+            sessionId: input.capability.sessionId,
+            sourceKind: "mention_board",
+            immutableSourceKey: key,
+            sourceRecordId: mentionId,
+            exactText: input.message,
+            projectionKind: "issue_update",
+            ownershipEpoch: input.capability.ownershipEpoch,
+            agentId: input.capability.targetAgentId,
+            adapterConfigRevisionId: input.capability.adapterConfigIdentity,
+            runId: input.capability.runId,
+            comment: {
+              author: {
+                kind: "agent",
+                agentId: input.capability.targetAgentId,
+              },
+              producingRun: {
+                runId: input.capability.runId,
+                adapterConfigRevisionId: input.capability.adapterConfigIdentity,
+              },
+            },
+          },
+          tx,
+        );
+        if (!admission.comment) {
+          throw new RuntimeIssueActionConflict(
+            "mention_board did not persist its canonical issue comment",
+          );
+        }
+        const inserted = await tx
+          .insert(issueBoardMentions)
+          .values({
+            id: mentionId,
+            companyId: input.capability.companyId,
+            issueId: input.capability.issueId,
+            ownershipEpoch: input.capability.ownershipEpoch,
+            agentId: input.capability.targetAgentId,
+            runId: input.capability.runId,
+            idempotencyKey: key,
+            reason: input.reason ?? null,
+            commentId: admission.comment.id,
+            createdAt: now,
+          })
+          .onConflictDoNothing({
+            target: [
+              issueBoardMentions.companyId,
+              issueBoardMentions.idempotencyKey,
+            ],
+          })
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        const mention = inserted ?? await tx
+          .select()
+          .from(issueBoardMentions)
+          .where(and(
+            eq(issueBoardMentions.companyId, input.capability.companyId),
+            eq(issueBoardMentions.idempotencyKey, key),
+          ))
+          .limit(1)
+          .for("update")
+          .then((rows) => rows[0] ?? null);
+        if (
+          !mention ||
+          mention.commentId !== admission.comment.id ||
+          mention.reason !== (input.reason ?? null)
+        ) {
+          throw new RuntimeIssueActionConflict(
+            "mention_board invocation was retried with different immutable arguments",
+          );
+        }
+        await recordIssueLivenessActionInTransaction(
+          tx,
+          `issue_board_mention:${mention.id}`,
+        );
+        return { mention, retried: admission.retried };
+      });
+      return {
+        id: committed.mention.id,
+        commentId: committed.mention.commentId,
+        retried: committed.retried,
+      };
     },
 
     async mention(input) {

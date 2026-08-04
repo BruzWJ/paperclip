@@ -74,7 +74,12 @@ Every accepted human/board comment is a typed user input and durable chronologic
 
 Paperclip never parses prose for names, mentions, assignments, approvals, or lifecycle. Document annotations and other freeform activity are evidence only; they do not create provider work.
 
-Agent-to-agent same-issue assistance uses compiled `mention_agent`. Delegation uses a direct child issue. Owner reports and creator follow-ups use the two forms of `issue_update`; no free comment tool exists for providers.
+Agent-to-agent same-issue assistance uses compiled `mention_agent`. An explicitly
+granted owner may use `mention_board` to request information or direction from
+the collective Board; this records a comment but creates no execution ref,
+approval, review, or lifecycle transition. Delegation uses a direct child
+issue. Owner reports and creator follow-ups use the two forms of `issue_update`;
+no generic comment tool exists for providers.
 
 ## Workspace
 

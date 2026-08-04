@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { History as HistoryIcon, RotateCcw, Search } from "lucide-react";
 import {
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
   type
   CompanySecret,
   type
@@ -10,7 +10,7 @@ import {
   type
   EnvSecretRefBinding,
   type
-  IssueAttentionMask,
+  ContextAccess,
   type
   Routine,
   type
@@ -48,7 +48,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "./EmptyState";
 import { MarkdownBody } from "./MarkdownBody";
 import { Badge } from "@/components/ui/badge";
-import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "./IssueContextAccessMaskMatrix";
 
 type AgentLookup = Map<string, { id: string; name: string }>;
 type ProjectLookup = Map<string, { id: string; name: string }>;
@@ -547,11 +547,11 @@ function RevisionPreview({
   const envDiffers = !!currentSnapshot
     && JSON.stringify(normalizeEnv(currentSnapshot.env ?? null))
       !== JSON.stringify(normalizeEnv(snapshot.env ?? null));
-  const attentionMaskDiffers = !!currentSnapshot
+  const contextAccessMaskDiffers = !!currentSnapshot
     && JSON.stringify(
-      normalizeIssueAttentionMask(currentSnapshot.attentionMask),
+      normalizeContextAccess(currentSnapshot.contextAccessMask),
     ) !== JSON.stringify(
-      normalizeIssueAttentionMask(snapshot.attentionMask),
+      normalizeContextAccess(snapshot.contextAccessMask),
     );
   const fieldRows: Array<{ key: string; label: string; value: string; differs: boolean }> = [
     {
@@ -603,10 +603,10 @@ function RevisionPreview({
       differs: envDiffers,
     },
     {
-      key: "attentionMask",
-      label: "Created issue attention",
-      value: summarizeAttentionMask(snapshot.attentionMask),
-      differs: attentionMaskDiffers,
+      key: "contextAccessMask",
+      label: "Created issue context access",
+      value: summarizeContextAccessMask(snapshot.contextAccessMask),
+      differs: contextAccessMaskDiffers,
     },
   ];
 
@@ -663,10 +663,10 @@ function RevisionPreview({
 
       <div className={`${cardWrapper} p-3 space-y-2`}>
         <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-          Created issue attention
+          Created issue context access
         </p>
-        <IssueAttentionMaskMatrix
-          value={snapshot.attentionMask ?? null}
+        <IssueContextAccessMaskMatrix
+          value={snapshot.contextAccessMask ?? null}
           readOnly
         />
       </div>
@@ -1123,11 +1123,11 @@ function computeFieldChanges(
   compareScalar("concurrencyPolicy", "Concurrency", oldRoutine.concurrencyPolicy, newRoutine.concurrencyPolicy);
   compareScalar("catchUpPolicy", "Catch-up", oldRoutine.catchUpPolicy, newRoutine.catchUpPolicy);
   compareScalar(
-    "attentionMask",
-    "Created issue attention",
-    normalizeIssueAttentionMask(oldRoutine.attentionMask),
-    normalizeIssueAttentionMask(newRoutine.attentionMask),
-    (value) => summarizeAttentionMask(value as IssueAttentionMask | null),
+    "contextAccessMask",
+    "Created issue context access",
+    normalizeContextAccess(oldRoutine.contextAccessMask),
+    normalizeContextAccess(newRoutine.contextAccessMask),
+    (value) => summarizeContextAccessMask(value as ContextAccess | null),
   );
   compareScalar("status", "Status", oldRoutine.status, newRoutine.status);
   if (JSON.stringify(oldRoutine.variables) !== JSON.stringify(newRoutine.variables)) {
@@ -1147,9 +1147,9 @@ function normalizeEnv(env: RoutineEnvConfig | null): Record<string, EnvBinding> 
   return env;
 }
 
-function summarizeAttentionMask(mask: IssueAttentionMask | null): string {
+function summarizeContextAccessMask(mask: ContextAccess | null): string {
   const narrowed = Object.entries(
-    normalizeIssueAttentionMask(mask) ?? {},
+    normalizeContextAccess(mask) ?? {},
   )
     .filter(([, value]) => value === false)
     .map(([key]) => key);

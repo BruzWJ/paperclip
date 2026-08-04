@@ -54,6 +54,7 @@ function setup() {
     updateOwner: vi.fn(async (input) => input),
     updateCreator: vi.fn(async (input) => input),
     mention: vi.fn(async (input) => input),
+    mentionBoard: vi.fn(async (input) => input),
   };
   return { service, port: createRuntimeIssueActionPort(service) };
 }
@@ -68,7 +69,7 @@ describe("runtime issue action port", () => {
       arguments: {
         request: "Do exactly this",
         owner: { kind: "agent", agentId: "child" },
-        attentionMask: {
+        contextAccessMask: {
           carry_context: false,
           read_issue_comments: false,
         },
@@ -81,7 +82,7 @@ describe("runtime issue action port", () => {
       title: undefined,
       priority: undefined,
       owner: { kind: "agent", agentId: "child" },
-      attentionMask: {
+      contextAccessMask: {
         carry_context: false,
         read_issue_comments: false,
       },
@@ -97,7 +98,7 @@ describe("runtime issue action port", () => {
       arguments: {
         request: "x",
         owner: { kind: "self" },
-        attentionMask: {
+        contextAccessMask: {
           carry_context: true,
           read_issue_comments: false,
         },
@@ -105,14 +106,14 @@ describe("runtime issue action port", () => {
     });
     expect(service.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        attentionMask: { read_issue_comments: false },
+        contextAccessMask: { read_issue_comments: false },
       }),
     );
     for (const argumentsValue of [
       {
         request: "x",
         owner: { kind: "self" },
-        attentionMask: { unknown_context: false },
+        contextAccessMask: { unknown_context: false },
       },
       {
         request: "x",
@@ -313,5 +314,52 @@ describe("runtime issue action port", () => {
         }),
       ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
     }
+  });
+
+  it("accepts only the closed Board-request payload and requires an owner execution", async () => {
+    const { service, port } = setup();
+    await port.mentionBoard({
+      ...actionInvocationIdentity,
+      capability: ownerCapability,
+      invocationId: "board-request",
+      arguments: {
+        message: "Which release plan should I follow?",
+        reason: "clarification",
+      },
+    });
+    expect(service.mentionBoard).toHaveBeenCalledWith({
+      capability: ownerCapability,
+      invocationId: "board-request",
+      message: "Which release plan should I follow?",
+      reason: "clarification",
+    });
+
+    for (const argumentsValue of [
+      {},
+      { message: "" },
+      { message: "   " },
+      { message: "x", reason: "" },
+      { message: "x", reason: "   " },
+      { message: "x", reason: 42 },
+      { message: "x", agentId: "forged-target" },
+    ]) {
+      await expect(
+        port.mentionBoard({
+          ...actionInvocationIdentity,
+          capability: ownerCapability,
+          invocationId: "invalid-board-request",
+          arguments: argumentsValue,
+        }),
+      ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
+    }
+
+    await expect(
+      port.mentionBoard({
+        ...actionInvocationIdentity,
+        capability: { ...ownerCapability, executionMode: "consult" },
+        invocationId: "consult-board-request",
+        arguments: { message: "Please decide" },
+      }),
+    ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
   });
 });

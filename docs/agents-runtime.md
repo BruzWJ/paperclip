@@ -100,12 +100,12 @@ Configure eligibility and limits as control-plane policy:
 
 - lifecycle status and budgets;
 - all nine context-dial cells, including `carry_context`;
-- the six issue-action grants and explicit mention reach;
+- the seven issue-action grants and explicit mention reach;
 - explicitly selected company tools; and
 - explicitly selected company skills through the `operator_native` channel.
 
 All context grants default to false. Tool presence is the model-visible
-attention boundary; the server still reauthorizes every call.
+context-access boundary; the server still reauthorizes every call.
 
 ### 3.4 Working directory and execution limits
 

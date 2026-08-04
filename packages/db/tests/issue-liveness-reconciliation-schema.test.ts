@@ -3,7 +3,6 @@ import {
   AGENT_LIVENESS_ATTENTION_REASONS,
   ISSUE_EXECUTION_REF_MESSAGE_KINDS,
   ISSUE_EXECUTION_REF_SOURCE_KINDS,
-  type AttentionSourceKind,
 } from "@paperclipai/shared";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -32,10 +31,7 @@ function checkSql(
 }
 
 describe("P15-P17 issue liveness reconciliation schema", () => {
-  it("uses the sole closed shared source, action, attention, and reason catalogs", () => {
-    const attentionSource: AttentionSourceKind = "agent_liveness";
-
-    expect(attentionSource).toBe("agent_liveness");
+  it("uses the sole closed shared source, action, and reason catalogs", () => {
     expect(ISSUE_EXECUTION_REF_SOURCE_KINDS).toContain(
       "agent_liveness_followup",
     );
@@ -47,6 +43,7 @@ describe("P15-P17 issue liveness reconciliation schema", () => {
       "authenticated_human_comment",
       "issue_create_child",
       "mention_agent",
+      "mention_board",
       "issue_assign",
       "issue_update",
       "creator_withdrawal",

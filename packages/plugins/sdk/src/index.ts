@@ -249,7 +249,7 @@ export type {
   PluginSkillsClient,
   PluginCompaniesClient,
   PluginIssuesClient,
-  PluginIssueAttentionMask,
+  PluginContextAccess,
   PluginIssueCreateInput,
   PluginIssueUpdateInput,
   PluginIssueWithdrawalResult,

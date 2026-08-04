@@ -26,7 +26,7 @@ import type { Agent } from "./agent.js";
 import type { CompanySkill } from "./company-skill.js";
 import type { Project } from "./project.js";
 import type { Routine, RoutineTrigger, RoutineVariable } from "./routine.js";
-import type { IssueAttentionMask } from "../issue-runtime.js";
+import type { ContextAccess } from "../issue-runtime.js";
 
 // ---------------------------------------------------------------------------
 // JSON Schema placeholder – plugins declare config schemas as JSON Schema
@@ -293,7 +293,7 @@ export interface PluginManagedRoutineDeclaration {
     surfaceVisibility?: IssueSurfaceVisibility;
     originId?: string | null;
     billingCode?: string | null;
-    attentionMask?: IssueAttentionMask | null;
+    contextAccessMask?: ContextAccess | null;
   };
 }
 

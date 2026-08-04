@@ -1,7 +1,7 @@
 import { memo, useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent, type CSSProperties, type DragEvent, type RefObject } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
   type
   AgentEnvConfig,
   type
@@ -9,7 +9,7 @@ import {
   type
   EnvBinding,
   type
-  IssueAttentionMask,
+  ContextAccess,
   type
   IssueWorkMode,
 } from "@paperclipai/shared";
@@ -77,7 +77,7 @@ import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { getTrustPreset } from "../lib/trust-policy-ui";
 import { ReusableExecutionWorkspaceSelect } from "./ReusableExecutionWorkspaceSelect";
-import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "./IssueContextAccessMaskMatrix";
 
 const DRAFT_KEY = "paperclip:issue-request-draft:v2";
 const DEBOUNCE_MS = 800;
@@ -98,7 +98,7 @@ interface IssueDraft {
   selectedExecutionWorkspaceId?: string;
   useIsolatedExecutionWorkspace?: boolean;
   workMode?: IssueWorkMode;
-  attentionMask?: IssueAttentionMask | null;
+  contextAccessMask?: ContextAccess | null;
 }
 
 type StagedIssueFile = {
@@ -119,7 +119,7 @@ function loadDraft(): IssueDraft | null {
     const draft = JSON.parse(raw) as IssueDraft;
     return {
       ...draft,
-      attentionMask: normalizeIssueAttentionMask(draft.attentionMask),
+      contextAccessMask: normalizeContextAccess(draft.contextAccessMask),
     };
   } catch {
     return null;
@@ -400,7 +400,7 @@ export function NewIssueDialog() {
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("");
   const [ownerAgentId, setOwnerAgentId] = useState("");
-  const [attentionMask, setAttentionMask] = useState<IssueAttentionMask | null>(null);
+  const [contextAccessMask, setContextAccessMask] = useState<ContextAccess | null>(null);
   const [reviewerValue, setReviewerValue] = useState("");
   const [approverValue, setApproverValue] = useState("");
   const [showReviewerRow, setShowReviewerRow] = useState(false);
@@ -613,7 +613,7 @@ export function NewIssueDialog() {
       executionWorkspaceMode,
       selectedExecutionWorkspaceId,
       workMode,
-      attentionMask,
+      contextAccessMask,
     });
   }, [
     newIssueOpen,
@@ -628,7 +628,7 @@ export function NewIssueDialog() {
     executionWorkspaceMode,
     selectedExecutionWorkspaceId,
     workMode,
-    attentionMask,
+    contextAccessMask,
   ]);
 
   const handleTitleChange = useCallback((nextTitle: string) => {
@@ -663,7 +663,7 @@ export function NewIssueDialog() {
     executionWorkspaceMode,
     selectedExecutionWorkspaceId,
     workMode,
-    attentionMask,
+    contextAccessMask,
     newIssueOpen,
     queueDraftSave,
   ]);
@@ -696,7 +696,7 @@ export function NewIssueDialog() {
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(defaultProjectWorkspaceId);
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
-      setAttentionMask(null);
+      setContextAccessMask(null);
       setExecutionWorkspaceMode(defaultExecutionWorkspaceMode);
       setWorkMode(nextWorkMode);
       setSelectedExecutionWorkspaceId(newIssueDefaults.executionWorkspaceId ?? "");
@@ -714,7 +714,7 @@ export function NewIssueDialog() {
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(defaultProject));
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
-      setAttentionMask(null);
+      setContextAccessMask(null);
       setReviewerValue("");
       setApproverValue("");
       setShowReviewerRow(false);
@@ -736,7 +736,7 @@ export function NewIssueDialog() {
       setStatus(draft.status || "todo");
       setPriority(draft.priority);
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? draft.ownerAgentId);
-      setAttentionMask(draft.attentionMask ?? null);
+      setContextAccessMask(draft.contextAccessMask ?? null);
       setReviewerValue(draft.reviewerValue ?? "");
       setApproverValue(draft.approverValue ?? "");
       setShowReviewerRow(!!(draft.reviewerValue));
@@ -775,7 +775,7 @@ export function NewIssueDialog() {
       setProjectId(defaultProjectId);
       setProjectWorkspaceId(newIssueDefaults.projectWorkspaceId ?? defaultProjectWorkspaceIdForProject(defaultProject));
       setOwnerAgentId(newIssueDefaults.ownerAgentId ?? "");
-      setAttentionMask(null);
+      setContextAccessMask(null);
       setReviewerValue("");
       setApproverValue("");
       setShowReviewerRow(false);
@@ -820,7 +820,7 @@ export function NewIssueDialog() {
     setStatus("todo");
     setPriority("");
     setOwnerAgentId("");
-    setAttentionMask(null);
+    setContextAccessMask(null);
     setReviewerValue("");
     setApproverValue("");
     setShowReviewerRow(false);
@@ -845,7 +845,7 @@ export function NewIssueDialog() {
     if (companyId === effectiveCompanyId) return;
     setDialogCompanyId(companyId);
     setOwnerAgentId("");
-    setAttentionMask(null);
+    setContextAccessMask(null);
     setReviewerValue("");
     setApproverValue("");
     setShowReviewerRow(false);
@@ -873,8 +873,8 @@ export function NewIssueDialog() {
       !selectedOwnerAgentId ||
       createIssue.isPending
     ) return;
-    const canonicalAttentionMask =
-      normalizeIssueAttentionMask(attentionMask);
+    const canonicalContextAccessMask =
+      normalizeContextAccess(contextAccessMask);
     createIdempotencyKeyRef.current ??= crypto.randomUUID();
     createIssue.mutate({
       companyId: effectiveCompanyId,
@@ -888,8 +888,8 @@ export function NewIssueDialog() {
       ...(newIssueDefaults.goalId ? { goalId: newIssueDefaults.goalId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
-      ...(canonicalAttentionMask
-        ? { attentionMask: canonicalAttentionMask }
+      ...(canonicalContextAccessMask
+        ? { contextAccessMask: canonicalContextAccessMask }
         : {}),
     });
   }
@@ -1475,9 +1475,9 @@ export function NewIssueDialog() {
 
           {ownerAgentId ? (
             <div className="border-t border-border/60 px-4 py-3">
-              <IssueAttentionMaskMatrix
-                value={attentionMask}
-                onChange={setAttentionMask}
+              <IssueContextAccessMaskMatrix
+                value={contextAccessMask}
+                onChange={setContextAccessMask}
               />
             </div>
           ) : null}

@@ -121,9 +121,8 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   selected = false,
 }: AttentionQueueRowProps) {
   const meta = sourceMeta(item.sourceKind);
-  const suppressionAllowed = item.sourceKind !== "agent_liveness";
-  const dismissHandler = suppressionAllowed ? onDismiss : undefined;
-  const snoozeHandler = suppressionAllowed ? onSnooze : undefined;
+  const dismissHandler = onDismiss;
+  const snoozeHandler = onSnooze;
   const tone = attentionToneStyle(item);
   const sevBadge = severityBadge(item.severity);
   const Icon = meta.icon;

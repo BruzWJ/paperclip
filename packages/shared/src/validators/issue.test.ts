@@ -154,7 +154,7 @@ describe("issue validators", () => {
     expect(upsertIssueWatchdogSchema.safeParse({ instructions: "legacy prompt" }).success).toBe(false);
   });
 
-  it("accepts raw booleans and canonicalizes attention masks to sparse false-only cells", () => {
+  it("accepts raw booleans and canonicalizes context-access masks to sparse false-only cells", () => {
     const canonical = {
       request: "Work with narrowed context",
       ownerAgentId,
@@ -162,21 +162,25 @@ describe("issue validators", () => {
     };
     expect(createIssueSchema.parse({
       ...canonical,
-      attentionMask: {
+      contextAccessMask: {
         carry_context: false,
         read_company_issue_agent_run: false,
       },
-    }).attentionMask).toEqual({
+    }).contextAccessMask).toEqual({
       carry_context: false,
       read_company_issue_agent_run: false,
     });
     expect(createIssueSchema.parse({
       ...canonical,
-      attentionMask: { carry_context: true },
-    }).attentionMask).toBeNull();
+      contextAccessMask: { carry_context: true },
+    }).contextAccessMask).toBeNull();
     expect(createIssueSchema.safeParse({
       ...canonical,
-      attentionMask: { arbitrary_context: false },
+      contextAccessMask: { arbitrary_context: false },
+    }).success).toBe(false);
+    expect(createIssueSchema.safeParse({
+      ...canonical,
+      attentionMask: { carry_context: false },
     }).success).toBe(false);
   });
 

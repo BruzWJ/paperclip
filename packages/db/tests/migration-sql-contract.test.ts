@@ -150,4 +150,28 @@ describe("generated PostgreSQL migration contract", () => {
     expect(source).toContain(`'registryName'`);
   });
 
+  it("keeps the Board-mention index purge-safe", () => {
+    const file = migrationFiles().find((entry) => entry.startsWith("0004_"));
+    expect(file).toBeDefined();
+    const source = migrationSql(file!);
+    for (const constraint of [
+      "issue_board_mentions_run_fk",
+      "issue_board_mentions_comment_fk",
+    ]) {
+      expect(source).toMatch(
+        new RegExp(`CONSTRAINT "${constraint}"[^;]*ON DELETE cascade`),
+      );
+    }
+  });
+
+  it("renames persisted context-access keys outside typed columns", () => {
+    const file = migrationFiles().find((entry) => entry.startsWith("0004_"));
+    expect(file).toBeDefined();
+    const source = migrationSql(file!);
+    expect(source).toContain(`UPDATE "routine_revisions"`);
+    expect(source).toContain(`UPDATE "plugins" AS "plugin"`);
+    expect(source).toContain(`UPDATE "plugin_managed_resources"`);
+    expect(source).toContain(`'{issueTemplate,contextAccessMask}'`);
+  });
+
 });

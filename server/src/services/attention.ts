@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@paperclipai/db";
 import {
-  agents,
   approvals,
   assets,
   companies,
@@ -10,7 +10,9 @@ import {
   invites,
   issueApprovals,
   issueAttachments,
-  issueRelations,
+  issueBoardMentions,
+  issueBoardUserComments,
+  issueComments,
   issues,
   joinRequests,
   projects,
@@ -29,29 +31,16 @@ import type {
   AttentionSubject,
   AttentionWorkspaceRef,
   MoneyAmount,
-  IssueExecutionRunStatus,
 } from "@paperclipai/shared";
 import { budgetService } from "./budgets.js";
-import {
-  listActiveIssueLivenessAttentionRows,
-} from "./issue-liveness-reconciliation.js";
-import { issueService } from "./issues.js";
 import { parseIssueExecutionState } from "./issue-execution-policy.js";
-import {
-  listIssueExecutionRunsForActivity,
-  type IssueExecutionRunEnvelope,
-  type IssueExecutionRunListCursor,
-} from "./issue-execution-run-service.js";
 
 const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "approval",
   "join_request",
-  "blocker_attention",
   "review",
-  "failed_run",
   "budget_alert",
-  "agent_error_alert",
-  "agent_liveness",
+  "mention_board",
 ];
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = {
@@ -62,62 +51,17 @@ const SEVERITY_RANK: Record<AttentionSeverity, number> = {
 };
 
 const SOURCE_RANK: Record<AttentionSourceKind, number> = {
-  failed_run: 0,
-  blocker_attention: 1,
-  budget_alert: 2,
-  agent_liveness: 3,
-  agent_error_alert: 4,
-  approval: 5,
-  review: 6,
-  join_request: 7,
+  mention_board: 0,
+  budget_alert: 1,
+  approval: 2,
+  review: 3,
+  join_request: 4,
 };
 
-const FAILED_RUN_STATUSES = ["failed", "timed_out"] as const;
 const DETAIL_EXCERPT_LENGTH = 160;
 const DETAIL_IMAGE_LIMIT = 3;
-
-async function listCompanyRuns(
-  db: Db,
-  companyId: string,
-  statuses?: readonly IssueExecutionRunStatus[],
-): Promise<IssueExecutionRunEnvelope[]> {
-  const runs: IssueExecutionRunEnvelope[] = [];
-  let cursor: IssueExecutionRunListCursor | null = null;
-  do {
-    const page = await listIssueExecutionRunsForActivity(db, {
-      companyId,
-      statuses,
-      cursor,
-      limit: 200,
-    });
-    runs.push(...page.items);
-    cursor = page.nextCursor;
-  } while (cursor !== null);
-  return runs;
-}
-
-async function listCompanyRunsCreatedAfter(
-  db: Db,
-  companyId: string,
-  after: Date,
-): Promise<IssueExecutionRunEnvelope[]> {
-  const runs: IssueExecutionRunEnvelope[] = [];
-  let cursor: IssueExecutionRunListCursor | null = null;
-  let reachedBoundary = false;
-  do {
-    const page = await listIssueExecutionRunsForActivity(db, {
-      companyId,
-      cursor,
-      limit: 200,
-    });
-    for (const run of page.items) {
-      if (run.createdAt > after) runs.push(run);
-      else reachedBoundary = true;
-    }
-    cursor = reachedBoundary ? null : page.nextCursor;
-  } while (cursor !== null);
-  return runs;
-}
+const boardMentionComments = alias(issueComments, "board_mention_comments");
+const boardReplyComments = alias(issueComments, "board_reply_comments");
 
 type IssueSummaryRow = {
   id: string;
@@ -140,12 +84,6 @@ type DismissalState = {
   kind: "dismiss" | "snooze";
   dismissedAt: Date;
   snoozedUntil: Date | null;
-};
-
-type BlockingIssueSummary = {
-  id: string | null;
-  identifier: string | null;
-  title: string | null;
 };
 
 type AttentionListOptions = {
@@ -448,35 +386,6 @@ async function issueImageMap(db: Db, companyId: string, issueIds: Array<string |
   return map;
 }
 
-async function blockingIssueMap(db: Db, companyId: string, blockedIssueIds: Array<string | null | undefined>) {
-  const ids = [...new Set(blockedIssueIds.filter((value): value is string => Boolean(value)))];
-  if (ids.length === 0) return new Map<string, BlockingIssueSummary>();
-  const rows = await db
-    .select({
-      blockedIssueId: issueRelations.relatedIssueId,
-      id: issues.id,
-      identifier: issues.identifier,
-      title: issues.title,
-    })
-    .from(issueRelations)
-    .innerJoin(issues, eq(issueRelations.issueId, issues.id))
-    .where(and(
-      eq(issueRelations.companyId, companyId),
-      eq(issues.companyId, companyId),
-      eq(issueRelations.type, "blocks"),
-      inArray(issueRelations.relatedIssueId, ids),
-      isNull(issues.hiddenAt),
-    ))
-    .orderBy(asc(issueRelations.relatedIssueId), asc(issueRelations.createdAt), asc(issueRelations.id));
-  const map = new Map<string, BlockingIssueSummary>();
-  for (const row of rows) {
-    if (!map.has(row.blockedIssueId)) {
-      map.set(row.blockedIssueId, { id: row.id, identifier: row.identifier, title: row.title });
-    }
-  }
-  return map;
-}
-
 export function attentionService(db: Db) {
   return {
     list: async (companyId: string, options: AttentionListOptions = {}): Promise<AttentionFeed> => {
@@ -632,49 +541,6 @@ export function attentionService(db: Db) {
         }));
       }
 
-      const blockedIssues = await issueService(db).list(companyId, { status: "blocked", includeBlockedBy: true });
-      const blockedIssueSummaries = await issueSummaryMap(db, companyId, blockedIssues.map((issue) => issue.id));
-      const blockedImageMap = await issueImageMap(db, companyId, blockedIssues.map((issue) => issue.id));
-      const blockingIssues = await blockingIssueMap(db, companyId, blockedIssues.map((issue) => issue.id));
-      for (const canonicalIssue of blockedIssues) {
-        const issue: IssueSubjectRow & {
-          blockerAttention?: {
-            state?: string;
-            sampleStalledBlockerIdentifier?: string | null;
-            sampleBlockerIdentifier?: string | null;
-          } | null;
-        } = canonicalIssue;
-        const blockerAttention = issue.blockerAttention;
-        if (blockerAttention?.state !== "stalled") continue;
-        const issueSummary = blockedIssueSummaries.get(issue.id) ?? null;
-        const summarizedIssue = issueSummary ?? issue;
-        const sample = blockerAttention.sampleStalledBlockerIdentifier ?? blockerAttention.sampleBlockerIdentifier ?? issue.identifier ?? issue.id;
-        const blockingIssue = blockingIssues.get(issue.id) ?? { id: null, identifier: sample, title: null };
-        const dedupKey = `blocker:${issue.id}:${sample}`;
-        add(createItem({
-          companyId,
-          sourceKind: "blocker_attention",
-          subject: issueSubject(prefix, summarizedIssue),
-          whyNow: "Blocked dependency chain is stalled and needs a human to choose the next owner or action.",
-          decisionVerbs: decisionVerbs(
-            { id: "unblock", label: "Unblock", description: "Repair or replace the stalled blocker path." },
-            { id: "reassign", label: "Reassign", description: "Assign the stalled blocker to a live owner." },
-            { id: "nudge", label: "Nudge", description: "Request a same-owner follow-up prompt." },
-          ),
-          inlineResolvable: false,
-          entryRule: "blocked issue has blockerAttention.state = 'stalled'",
-          exitRule: "Blocker chain is no longer stalled or the issue leaves blocked status.",
-          dedupKey,
-          severity: "high",
-          activityAt: toIso(issue.updatedAt),
-          createdAt: toIso(issue.createdAt),
-          updatedAt: toIso(issue.updatedAt),
-          relatedIssue: null,
-          ...issueContext(issueSummary),
-          detail: { kind: "blocker", blockingIssue, images: issueImages(blockedImageMap, issue.id) },
-        }));
-      }
-
       const reviewRows = await db
         .select({
           id: issues.id,
@@ -745,129 +611,92 @@ export function attentionService(db: Db) {
         }));
       }
 
-      const failedRunEnvelopes = await listCompanyRuns(
+      const activeBoardMentions = await db
+        .select({
+          id: issueBoardMentions.id,
+          issueId: issueBoardMentions.issueId,
+          message: boardMentionComments.body,
+          reason: issueBoardMentions.reason,
+          createdAt: issueBoardMentions.createdAt,
+        })
+        .from(issueBoardMentions)
+        .innerJoin(
+          boardMentionComments,
+          and(
+            eq(boardMentionComments.companyId, issueBoardMentions.companyId),
+            eq(boardMentionComments.issueId, issueBoardMentions.issueId),
+            eq(boardMentionComments.id, issueBoardMentions.commentId),
+          ),
+        )
+        .innerJoin(
+          issues,
+          and(
+            eq(issues.companyId, issueBoardMentions.companyId),
+            eq(issues.id, issueBoardMentions.issueId),
+            eq(issues.ownershipEpoch, issueBoardMentions.ownershipEpoch),
+          ),
+        )
+        .where(and(
+          eq(issueBoardMentions.companyId, companyId),
+          isNull(issues.hiddenAt),
+          inArray(issues.lifecycleStatus, ["open", "blocked"]),
+          notExists(
+            db
+              .select({ id: issueBoardUserComments.id })
+              .from(issueBoardUserComments)
+              .innerJoin(
+                boardReplyComments,
+                and(
+                  eq(boardReplyComments.companyId, issueBoardUserComments.companyId),
+                  eq(boardReplyComments.issueId, issueBoardUserComments.issueId),
+                  eq(boardReplyComments.id, issueBoardUserComments.commentId),
+                ),
+              )
+              .where(and(
+                eq(issueBoardUserComments.companyId, issueBoardMentions.companyId),
+                eq(issueBoardUserComments.issueId, issueBoardMentions.issueId),
+                eq(issueBoardUserComments.ownershipEpoch, issueBoardMentions.ownershipEpoch),
+                eq(issueBoardUserComments.mentionTargetAgentId, issueBoardMentions.agentId),
+                gt(boardReplyComments.projectedEventSeq, boardMentionComments.projectedEventSeq),
+              )),
+          ),
+        ))
+        .orderBy(desc(issueBoardMentions.createdAt), desc(issueBoardMentions.id));
+      const boardMentionIssueMap = await issueSummaryMap(
         db,
         companyId,
-        FAILED_RUN_STATUSES,
+        activeBoardMentions.map((mention) => mention.issueId),
       );
-      const failedTargetAgentIds = [
-        ...new Set(failedRunEnvelopes.map((run) => run.targetAgentId)),
-      ];
-      const failedTargetAgents = failedTargetAgentIds.length === 0
-        ? []
-        : await db
-          .select({ id: agents.id, name: agents.name })
-          .from(agents)
-          .where(and(
-            eq(agents.companyId, companyId),
-            inArray(agents.id, failedTargetAgentIds),
-            sql`${agents.status} <> 'terminated'`,
-          ));
-      const failedTargetAgentById = new Map(
-        failedTargetAgents.map((agent) => [agent.id, agent]),
-      );
-      const exhaustedRunRows = failedRunEnvelopes.flatMap((run) => {
-        const agent = failedTargetAgentById.get(run.targetAgentId);
-        return agent
-          ? [{
-              id: run.runId,
-              companyId: run.companyId,
-              agentId: agent.id,
-              agentName: agent.name,
-              status: run.status,
-              terminalReasonCode: run.terminalReasonCode,
-              issueId: run.issueId,
-              createdAt: run.createdAt,
-              updatedAt: run.updatedAt,
-              finishedAt: run.finishedAt,
-            }]
-          : [];
-      });
-
-      const latestExhaustedByRunId = new Map<string, (typeof exhaustedRunRows)[number]>();
-      for (const row of exhaustedRunRows) {
-        if (!latestExhaustedByRunId.has(row.id)) latestExhaustedByRunId.set(row.id, row);
-      }
-      const failedRows = [...latestExhaustedByRunId.values()];
-      const failedIssueIds = failedRows.map((row) => row.issueId);
-      const failedIssueMap = await issueSummaryMap(
+      const boardMentionImageMap = await issueImageMap(
         db,
         companyId,
-        failedIssueIds,
+        activeBoardMentions.map((mention) => mention.issueId),
       );
-      const failedImageMap = await issueImageMap(db, companyId, failedIssueIds);
-      const failedAgentIds = [...new Set(failedRows.map((row) => row.agentId))];
-      const oldestFailedRunCreatedAt = failedRows.reduce<Date | null>((oldest, row) => {
-        if (!oldest || row.createdAt < oldest) return row.createdAt;
-        return oldest;
-      }, null);
-      const latestRunCreatedAtByKey = new Map<string, Date>();
-      if (oldestFailedRunCreatedAt && failedAgentIds.length > 0) {
-        const newerRuns = (await listCompanyRunsCreatedAfter(
-          db,
-          companyId,
-          oldestFailedRunCreatedAt,
-        )).filter((run) => failedAgentIds.includes(run.targetAgentId)).map((run) => ({
-          agentId: run.targetAgentId,
-          createdAt: run.createdAt,
-          issueId: run.issueId,
-        }));
-        for (const newerRun of newerRuns) {
-          const newerRunKey = `${newerRun.agentId}:${newerRun.issueId}`;
-          const latestCreatedAt = latestRunCreatedAtByKey.get(newerRunKey);
-          if (!latestCreatedAt || newerRun.createdAt > latestCreatedAt) {
-            latestRunCreatedAtByKey.set(newerRunKey, newerRun.createdAt);
-          }
-        }
-      }
-      for (const run of failedRows) {
-        const issueId = run.issueId;
-        const runKey = `${run.agentId}:${issueId}`;
-        const hasNewerRun = (latestRunCreatedAtByKey.get(runKey)?.getTime() ?? 0) > run.createdAt.getTime();
-        if (hasNewerRun) continue;
-
-        const issue = failedIssueMap.get(issueId) ?? null;
-        const dedupKey = `run:${run.id}`;
+      for (const mention of activeBoardMentions) {
+        const issue = boardMentionIssueMap.get(mention.issueId);
+        if (!issue) continue;
         add(createItem({
           companyId,
-          sourceKind: "failed_run",
-          subject: {
-            kind: "run",
-            id: run.id,
-            companyId,
-            title: `${run.agentName} run ${run.status}`,
-            identifier: null,
-            status: run.status,
-            href: `/${prefix}/agents/${run.agentId}/runs/${run.id}`,
-            metadata: {
-              agentId: run.agentId,
-              agentName: run.agentName,
-              issueId,
-              terminalReasonCode: run.terminalReasonCode,
-            },
-          },
-          whyNow: "The latest run for this issue and agent failed.",
+          sourceKind: "mention_board",
+          subject: issueSubject(prefix, issue),
+          whyNow: "An agent requested information or direction from the Board.",
           decisionVerbs: decisionVerbs(
-            { id: "retry", label: "Retry", description: "Retry the failed run or issue." },
-            { id: "reassign", label: "Reassign", description: "Move the work to another owner." },
-            { id: "dismiss", label: "Dismiss", description: "Dismiss this failed-run attention row." },
+            { id: "reply_and_continue", label: "Reply & continue", description: "Reply to the agent and continue this issue." },
           ),
-          inlineResolvable: true,
-          entryRule: "latest productive/consult run for the issue and agent is failed or timed_out.",
-          exitRule: "A newer run exists for the same issue/agent pair or the row is dismissed.",
-          dedupKey,
-          severity: "high",
-          activityAt: toIso(run.finishedAt ?? run.updatedAt ?? run.createdAt),
-          createdAt: toIso(run.createdAt),
-          updatedAt: toIso(run.updatedAt),
-          relatedIssue: issue ? issueSubject(prefix, issue) : null,
+          inlineResolvable: false,
+          entryRule: "An active agent Board mention exists for the current nonterminal issue ownership epoch.",
+          exitRule: "A Board user resumes the exact owner/epoch, or the issue ownership epoch leaves scope.",
+          dedupKey: `board-mention:${mention.id}`,
+          severity: "medium",
+          activityAt: toIso(mention.createdAt),
+          createdAt: toIso(mention.createdAt),
+          updatedAt: toIso(mention.createdAt),
+          relatedIssue: null,
           ...issueContext(issue),
-          detail: {
-            kind: "failed_run",
-            agentName: run.agentName,
-            failureReasonExcerpt: excerpt(run.terminalReasonCode),
-            images: issueImages(failedImageMap, issueId),
-          },
+          detail: genericDetail(
+            [mention.reason, mention.message].filter(Boolean).join(" — "),
+            issueImages(boardMentionImageMap, mention.issueId),
+          ),
         }));
       }
 
@@ -925,97 +754,6 @@ export function attentionService(db: Db) {
             images: [],
           },
         }));
-      }
-
-      const erroredAgents = await db
-        .select({
-          id: agents.id,
-          companyId: agents.companyId,
-          name: agents.name,
-          status: agents.status,
-          errorReason: agents.errorReason,
-          createdAt: agents.createdAt,
-          updatedAt: agents.updatedAt,
-        })
-        .from(agents)
-        .where(and(eq(agents.companyId, companyId), eq(agents.status, "error")))
-        .orderBy(desc(agents.updatedAt), desc(agents.id));
-
-      for (const agent of erroredAgents) {
-        const dedupKey = `agent_error:${agent.id}`;
-        add(createItem({
-          companyId,
-          sourceKind: "agent_error_alert",
-          subject: {
-            kind: "agent",
-            id: agent.id,
-            companyId,
-            title: agent.name,
-            identifier: null,
-            status: agent.status,
-            href: `/${prefix}/agents/${agent.id}`,
-            metadata: { errorReason: agent.errorReason },
-          },
-          whyNow: "Agent is in error status and needs operator action or dismissal.",
-          decisionVerbs: decisionVerbs(
-            { id: "inspect", label: "Inspect", description: "Inspect the agent error." },
-            { id: "dismiss", label: "Dismiss", description: "Dismiss this alert." },
-          ),
-          inlineResolvable: true,
-          entryRule: "agents.status = 'error'",
-          exitRule: "Agent leaves error status or the row is dismissed.",
-          dedupKey,
-          severity: "high",
-          activityAt: toIso(agent.updatedAt),
-          createdAt: toIso(agent.createdAt),
-          updatedAt: toIso(agent.updatedAt),
-          relatedIssue: null,
-          detail: {
-            kind: "agent_error",
-            agentName: agent.name,
-            failureReasonExcerpt: excerpt(agent.errorReason),
-            images: [],
-          },
-        }));
-      }
-
-      const livenessRows = await listActiveIssueLivenessAttentionRows(
-        db,
-        companyId,
-      );
-      const livenessIssueMap = await issueSummaryMap(
-        db,
-        companyId,
-        livenessRows.map((row) => row.issueId),
-        { includeHidden: true },
-      );
-      for (const reconciliation of livenessRows) {
-        const issue = livenessIssueMap.get(reconciliation.issueId);
-        if (!issue || !reconciliation.boardAttentionEmittedAt) continue;
-        const dedupKey = `agent-liveness:${reconciliation.issueId}:${reconciliation.ownershipEpoch}:${reconciliation.frontierFinalizationId}`;
-        const whyNow = reconciliation.boardAttentionReason === "agent_unavailable"
-          ? "The same agent is unavailable and no continuation or lifecycle action was named."
-          : reconciliation.boardAttentionReason === "agent_followup_failed"
-            ? "The same-agent follow-up failed before naming a continuation or lifecycle action."
-            : "The same-agent follow-up finished without naming a continuation or lifecycle action.";
-        add(createItem({
-          companyId,
-          sourceKind: "agent_liveness",
-          subject: issueSubject(prefix, issue),
-          whyNow,
-          decisionVerbs: [],
-          inlineResolvable: false,
-          entryRule: "A post-finalization liveness reconciliation emitted board Attention and has no accepted exit action.",
-          exitRule: "A checked explicit same-issue work or lifecycle action records the reconciliation exit.",
-          dedupKey,
-          severity: "high",
-          activityAt: toIso(reconciliation.boardAttentionEmittedAt),
-          createdAt: toIso(reconciliation.admittedAt),
-          updatedAt: toIso(reconciliation.boardAttentionEmittedAt),
-          relatedIssue: issueSubject(prefix, issue),
-          ...issueContext(issue),
-          detail: genericDetail(whyNow, []),
-        }), { suppressible: false });
       }
 
       const deduped = new Map<string, AttentionItem>();

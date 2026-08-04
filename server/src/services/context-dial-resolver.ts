@@ -16,7 +16,7 @@ export interface ResolveContextDialInput {
    */
   agent: ContextAttenuationMask;
   /**
-   * Assignment attention is false-only. Missing keys preserve the agent cell.
+   * Assignment context access is false-only. Missing keys preserve the agent cell.
    */
   assignment?: ContextAttenuationMask | null;
   /**
@@ -33,7 +33,7 @@ export interface ResolvedContextDial {
   digest: string;
 }
 
-export type AttentionPreset =
+export type ContextAccessPreset =
   | "heads_down"
   | "focused"
   | "supervisor"
@@ -72,7 +72,7 @@ const ALL_TRUE = Object.freeze(
   Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, true])),
 ) as ContextDial;
 
-const PRESET_STAMPS: Readonly<Record<AttentionPreset, ContextDial>> =
+const PRESET_STAMPS: Readonly<Record<ContextAccessPreset, ContextDial>> =
   Object.freeze({
     heads_down: ALL_FALSE,
     focused: dialFromEnabled(["carry_context", "read_issue_comments"]),
@@ -172,7 +172,7 @@ export function resolveContextDial(
  * Presets are UI conveniences only. This returns the concrete one-time stamp;
  * callers persist cells, never the preset name.
  */
-export function stampAttentionPreset(preset: AttentionPreset): ContextDial {
+export function stampContextAccessPreset(preset: ContextAccessPreset): ContextDial {
   return { ...PRESET_STAMPS[preset] };
 }
 

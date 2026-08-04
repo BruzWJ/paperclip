@@ -91,6 +91,7 @@ function replayingExecutor(
       issueAssign: vi.fn(),
       issueUpdate: vi.fn(),
       mentionAgent: vi.fn(),
+      mentionBoard: vi.fn(),
       ...actions,
     },
     companyTools: {

@@ -69,7 +69,7 @@ import type {
   RoutineEnvConfig,
   RoutineVariable,
 } from "@paperclipai/shared";
-import { normalizeIssueAttentionMask } from "@paperclipai/shared";
+import { normalizeContextAccess } from "@paperclipai/shared";
 
 const LAST_SECTION_STORAGE_KEY = "paperclip.routineLastSection";
 
@@ -168,7 +168,7 @@ export function RoutineDetail() {
     priority: "medium",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
-    attentionMask: null,
+    contextAccessMask: null,
     variables: [],
     env: null,
   });
@@ -267,7 +267,7 @@ export function RoutineDetail() {
             priority: routine.priority,
             concurrencyPolicy: routine.concurrencyPolicy,
             catchUpPolicy: routine.catchUpPolicy,
-            attentionMask: routine.attentionMask ?? null,
+            contextAccessMask: routine.contextAccessMask ?? null,
             variables: routine.variables,
             env: routine.env ?? null,
           }
@@ -298,13 +298,13 @@ export function RoutineDetail() {
     }
     if (
       JSON.stringify(
-        normalizeIssueAttentionMask(editDraft.attentionMask),
+        normalizeContextAccess(editDraft.contextAccessMask),
       ) !==
       JSON.stringify(
-        normalizeIssueAttentionMask(routineDefaults.attentionMask),
+        normalizeContextAccess(routineDefaults.contextAccessMask),
       )
     ) {
-      result.push({ key: "attentionMask", label: "the issue attention mask" });
+      result.push({ key: "contextAccessMask", label: "the issue context access mask" });
     }
     if (JSON.stringify(editDraft.variables) !== JSON.stringify(routineDefaults.variables)) {
       result.push({ key: "variables", label: "the variables" });
@@ -663,7 +663,7 @@ export function RoutineDetail() {
         priority: response.routine.priority,
         concurrencyPolicy: response.routine.concurrencyPolicy,
         catchUpPolicy: response.routine.catchUpPolicy,
-        attentionMask: response.routine.attentionMask ?? null,
+        contextAccessMask: response.routine.contextAccessMask ?? null,
         variables: response.routine.variables as RoutineVariable[],
         env: (response.routine.env ?? null) as RoutineEnvConfig | null,
       });

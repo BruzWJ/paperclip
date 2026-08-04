@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   canonicalizeMoneyAmount,
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
 } from "@paperclipai/shared";
 export { canonicalizeMoneyAmount };
 import type {
@@ -1287,8 +1287,8 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             responsibleUserId: null,
             assigneeAgentId,
             priority: declaration.priority ?? "medium",
-            attentionMask:
-              declaration.issueTemplate?.attentionMask ?? null,
+            contextAccessMask:
+              declaration.issueTemplate?.contextAccessMask ?? null,
             status: declaration.status ?? (assigneeAgentId ? "active" : "paused"),
             concurrencyPolicy: declaration.concurrencyPolicy ?? "coalesce_if_active",
             catchUpPolicy: declaration.catchUpPolicy ?? "skip_missed",
@@ -1660,8 +1660,8 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           ownerUserId: null,
           ownerAssignmentSource: null,
           ownershipEpoch: 1,
-          attentionMask: normalizeIssueAttentionMask(
-            input.attentionMask,
+          contextAccessMask: normalizeContextAccess(
+            input.contextAccessMask,
           ),
           creatorKind: "plugin",
           creatorAuthorityId: null,

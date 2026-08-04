@@ -35,9 +35,6 @@ const DISPATCHER =
 const CANCELLATION_RECONCILER =
   "server/src/services/issue-execution-cancellation.ts";
 const ATTENTION_OWNER = "server/src/services/attention.ts";
-const DISMISSAL_OWNER = "server/src/services/inbox-dismissals.ts";
-const ATTENTION_ROW = "ui/src/components/AttentionQueueRow.tsx";
-const ATTENTION_PAGE = "ui/src/pages/WhatNeedsMe.tsx";
 // Keep the lifecycle gate's production-table allowlist honest: this boundary
 // names the separate fact owner only through a structural symbol assembled at
 // runtime, rather than looking like another direct table consumer itself.
@@ -60,6 +57,7 @@ const ACTION_KINDS = [
   "authenticated_human_comment",
   "issue_create_child",
   "mention_agent",
+  "mention_board",
   "issue_assign",
   "issue_update",
   "creator_withdrawal",
@@ -146,6 +144,7 @@ const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
       "recordIssueLivenessActionInTransaction(",
       "`issue_update:${update.id}`",
       "`issue_consult_execution:${completedConsult[0]!.id}`",
+      "`issue_board_mention:${",
     ],
   ],
   [
@@ -166,6 +165,7 @@ const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
 
 const SETTLEMENT_REFERENCE_TOKENS = [
   "`issue_board_user_comment:${string}`",
+  "`issue_board_mention:${string}`",
   "`issue:${string}`",
   "`issue_consult_execution:${string}`",
   "`issue_execution_prompt_segment:${string}:${string}:${number}`",
@@ -869,12 +869,12 @@ function schemaBoundaryViolations(repositoryRoot: string): string[] {
     );
     if (!accepted || !sameValues(accepted, ACTION_KINDS)) {
       violations.push(
-        `${LIVENESS_SCHEMA}: accepted-action predicate must contain exactly eight kinds`,
+        `${LIVENESS_SCHEMA}: accepted-action predicate must contain exactly nine kinds`,
       );
     }
     if (!exit || !sameValues(exit, ACTION_KINDS)) {
       violations.push(
-        `${LIVENESS_SCHEMA}: exit-action predicate must reuse exactly the same eight kinds`,
+        `${LIVENESS_SCHEMA}: exit-action predicate must reuse exactly the same nine kinds`,
       );
     }
 
@@ -1192,7 +1192,7 @@ function sameAgentBoundaryViolations(repositoryRoot: string): string[] {
   const kinds = runtime ? stringArray(runtime, "AGENT_LIVENESS_ACTION_KINDS") : null;
   if (!kinds || !sameValues(kinds, ACTION_KINDS)) {
     violations.push(
-      `${SHARED_RUNTIME}: agent-liveness action kind closure must contain exactly eight values`,
+      `${SHARED_RUNTIME}: agent-liveness action kind closure must contain exactly nine values`,
     );
   }
 
@@ -1256,44 +1256,15 @@ function sameAgentBoundaryViolations(repositoryRoot: string): string[] {
   return violations;
 }
 
-function attentionBoundaryViolations(repositoryRoot: string): string[] {
+function legacyBoardAttentionViolations(repositoryRoot: string): string[] {
   const violations: string[] = [];
-  const attention = read(repositoryRoot, ATTENTION_OWNER);
-  if (
-    !attention ||
-    !/sourceKind:\s*"agent_liveness"[\s\S]{0,500}?decisionVerbs:\s*\[\][\s\S]{0,250}?inlineResolvable:\s*false[\s\S]{0,1500}?\{\s*suppressible:\s*false\s*\}/.test(
-      attention,
-    )
-  ) {
-    violations.push(
-      `${ATTENTION_OWNER}: agent_liveness must have empty verbs, inlineResolvable false, and suppressible false`,
-    );
+  for (const path of [LIVENESS_SERVICE, CANONICAL_ASSEMBLY]) {
+    if (read(repositoryRoot, path)?.includes("notifyAttention")) {
+      violations.push(`${path}: agent liveness must not dispatch Board Attention`);
+    }
   }
-
-  violations.push(
-    ...requireFileTokens(repositoryRoot, DISMISSAL_OWNER, [
-      'const AGENT_LIVENESS_DISMISSAL_PREFIX = "attention:agent-liveness:";',
-      "if (itemKey.startsWith(AGENT_LIVENESS_DISMISSAL_PREFIX))",
-      "throw badRequest(",
-      "Agent-liveness Attention items remain until an explicit issue action advances the issue",
-    ]),
-    ...requireFileTokens(repositoryRoot, ATTENTION_ROW, [
-      'const suppressionAllowed = item.sourceKind !== "agent_liveness";',
-      "const dismissHandler = suppressionAllowed ? onDismiss : undefined;",
-      "const snoozeHandler = suppressionAllowed ? onSnooze : undefined;",
-    ]),
-    ...requireFileTokens(repositoryRoot, ATTENTION_PAGE, [
-      'onDismiss={item.sourceKind === "agent_liveness" ? undefined : handleDismiss}',
-      'onSnooze={item.sourceKind === "agent_liveness" ? undefined : handleSnooze}',
-    ]),
-  );
-  const dismissals = read(repositoryRoot, DISMISSAL_OWNER);
-  const guardCalls = dismissals?.match(/assertDismissibleItemKey\(itemKey\);/g)
-    ?.length ?? 0;
-  if (guardCalls !== 2) {
-    violations.push(
-      `${DISMISSAL_OWNER}: dismissal/snooze and restore must both reject agent_liveness keys`,
-    );
+  if (read(repositoryRoot, ATTENTION_OWNER)?.includes('sourceKind: "agent_liveness"')) {
+    violations.push(`${ATTENTION_OWNER}: agent liveness must not project Board Attention`);
   }
   return violations;
 }
@@ -1337,7 +1308,7 @@ export function issueLivenessBoundaryViolations(
     ...writerAndCallerViolations(repositoryRoot),
     ...settlementProducerViolations(repositoryRoot),
     ...sameAgentBoundaryViolations(repositoryRoot),
-    ...attentionBoundaryViolations(repositoryRoot),
+    ...legacyBoardAttentionViolations(repositoryRoot),
     ...runLivenessFactViolations(repositoryRoot),
   ].filter((value, index, all) => all.indexOf(value) === index).sort();
 }

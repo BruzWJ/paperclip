@@ -1128,7 +1128,7 @@ export interface PluginCompaniesClient {
   get(companyId: string): Promise<Company | null>;
 }
 
-export type PluginIssueAttentionMask = Partial<
+export type PluginContextAccess = Partial<
   Record<
     | "carry_context"
     | "read_issue_comments"
@@ -1154,7 +1154,7 @@ export interface PluginIssueCreateInput {
   goalId?: string;
   parentId?: string;
   priority?: Issue["priority"];
-  attentionMask?: PluginIssueAttentionMask | null;
+  contextAccessMask?: PluginContextAccess | null;
 }
 
 export type PluginIssueUpdateInput =

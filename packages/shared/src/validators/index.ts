@@ -380,7 +380,7 @@ export {
   createIssueSchema,
   createIssueInputSchema,
   createChildIssueSchema,
-  issueCreationAttentionMaskSchema,
+  issueCreationContextAccessSchema,
   issueDispositionSchema,
   createIssueLabelSchema,
   issueBlockedInboxAttentionSchema,

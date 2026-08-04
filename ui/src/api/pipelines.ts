@@ -579,7 +579,7 @@ export const pipelinesApi = {
     data: {
       ownerAgentId: string;
       request: string;
-      attentionMask?: Record<string, false> | null;
+      contextAccessMask?: Record<string, false> | null;
       idempotencyKey?: string;
     },
   ) => api.post<{ issue: Issue; created: boolean; refId: string }>(

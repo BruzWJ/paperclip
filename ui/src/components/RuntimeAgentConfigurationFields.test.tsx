@@ -122,13 +122,13 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
     );
   });
 
-  it("uses one nine-cell attention matrix for the agent context grants", async () => {
+  it("uses one nine-cell context access matrix for the agent context grants", async () => {
     const value = createEmptyRuntimeAgentConfigurationValues();
     const onChange = vi.fn();
     await act(async () => render({ value, onChange }));
 
     const matrix = container.querySelector(
-      '[data-testid="agent-attention-matrix"]',
+      '[data-testid="agent-context-access-matrix"]',
     );
     expect(matrix).not.toBeNull();
     expect(matrix!.querySelectorAll('[role="checkbox"]')).toHaveLength(9);
@@ -151,5 +151,14 @@ describe("RuntimeAgentConfigurationFields company-tool options", () => {
         carry_context: true,
       },
     });
+  });
+
+  it("shows an explicit managed grant for collective Board requests", async () => {
+    await act(async () => render());
+
+    expect(container.textContent).toContain("Can mention Board");
+    expect(container.textContent).toContain(
+      "Request information or direction from the collective Board.",
+    );
   });
 });

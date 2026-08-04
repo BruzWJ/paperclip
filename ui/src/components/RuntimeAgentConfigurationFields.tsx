@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
-import { AttentionMatrix } from "./AttentionMatrix";
+import { ContextAccessMatrix } from "./ContextAccessMatrix";
 
 export type RuntimeAgentConfigurationValues = {
   contextGrants: Record<AgentContextGrantKey, boolean>;
@@ -21,7 +21,7 @@ export type RuntimeAgentConfigurationValues = {
   companyToolIds: string[];
 };
 
-type AttentionPreset =
+type ContextAccessPreset =
   | "heads_down"
   | "focused"
   | "supervisor"
@@ -48,6 +48,10 @@ const ACTION_LABELS: Record<
     label: "Mention agents",
     description: "Consult an eligible agent on the same issue.",
   },
+  mention_board: {
+    label: "Can mention Board",
+    description: "Request information or direction from the collective Board.",
+  },
   agent_hire: {
     label: "Hire direct-child agents",
     description: "Create an ordinary direct-child agent.",
@@ -72,7 +76,7 @@ const MENTION_LABELS: Record<
   },
 };
 
-const PRESET_LABELS: Record<AttentionPreset, string> = {
+const PRESET_LABELS: Record<ContextAccessPreset, string> = {
   heads_down: "Heads-down",
   focused: "Focused",
   supervisor: "Supervisor",
@@ -90,8 +94,8 @@ function booleanMap<Key extends string>(
   ) as Record<Key, boolean>;
 }
 
-const ATTENTION_PRESETS: Record<
-  AttentionPreset,
+const CONTEXT_ACCESS_PRESETS: Record<
+  ContextAccessPreset,
   Record<AgentContextGrantKey, boolean>
 > = {
   heads_down: booleanMap(AGENT_CONTEXT_GRANT_KEYS),
@@ -131,13 +135,13 @@ export function createEmptyRuntimeAgentConfigurationValues(): RuntimeAgentConfig
   };
 }
 
-function matchingAttentionPreset(
+function matchingContextAccessPreset(
   contextGrants: Record<AgentContextGrantKey, boolean>,
-): AttentionPreset | "custom" {
-  for (const preset of Object.keys(ATTENTION_PRESETS) as AttentionPreset[]) {
+): ContextAccessPreset | "custom" {
+  for (const preset of Object.keys(CONTEXT_ACCESS_PRESETS) as ContextAccessPreset[]) {
     if (
       AGENT_CONTEXT_GRANT_KEYS.every(
-        (key) => ATTENTION_PRESETS[preset][key] === contextGrants[key],
+        (key) => CONTEXT_ACCESS_PRESETS[preset][key] === contextGrants[key],
       )
     ) {
       return preset;
@@ -220,7 +224,7 @@ export function RuntimeAgentConfigurationFields({
   );
   const toolsLoading = toolOptions.isLoading;
   const toolsError = toolOptions.error;
-  const activePreset = matchingAttentionPreset(value.contextGrants);
+  const activePreset = matchingContextAccessPreset(value.contextGrants);
 
   function toggleCompanyTool(id: string, checked: boolean) {
     const next = checked
@@ -234,7 +238,7 @@ export function RuntimeAgentConfigurationFields({
       <div>
         <h3 className="text-sm font-medium">Runtime access</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Attention controls what this agent can see; actions control what it
+          Context access controls what this agent can see; actions control what it
           can do. The two dials are independent.
         </p>
       </div>
@@ -243,43 +247,43 @@ export function RuntimeAgentConfigurationFields({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Attention
+              Context access
             </h4>
             <p className="mt-1 text-xs text-muted-foreground">
               Presets stamp concrete cells once; later edits do not stay linked.
             </p>
           </div>
           <select
-            aria-label="Attention preset"
+            aria-label="Context access preset"
             className="rounded-md border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={activePreset}
             disabled={disabled}
             onChange={(event) => {
               if (event.target.value === "custom") return;
-              const preset = event.target.value as AttentionPreset;
+              const preset = event.target.value as ContextAccessPreset;
               onChange({
                 ...value,
-                contextGrants: { ...ATTENTION_PRESETS[preset] },
+                contextGrants: { ...CONTEXT_ACCESS_PRESETS[preset] },
               });
             }}
           >
             {activePreset === "custom" ? (
               <option value="custom">Custom</option>
             ) : null}
-            {(Object.keys(PRESET_LABELS) as AttentionPreset[]).map((preset) => (
+            {(Object.keys(PRESET_LABELS) as ContextAccessPreset[]).map((preset) => (
               <option key={preset} value={preset}>
                 {PRESET_LABELS[preset]}
               </option>
             ))}
           </select>
         </div>
-        <AttentionMatrix
+        <ContextAccessMatrix
           value={value.contextGrants}
           disabled={disabled}
           enabledLabel="allowed"
           disabledLabel="blocked"
-          description="Checked cells grant this agent that level of attention. Unchecked cells remain unavailable."
-          testId="agent-attention-matrix"
+          description="Checked cells grant this agent that level of context access. Unchecked cells remain unavailable."
+          testId="agent-context-access-matrix"
           onCellChange={(key, enabled) =>
             onChange({
               ...value,

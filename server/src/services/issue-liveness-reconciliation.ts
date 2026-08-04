@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   agentAdapterConfigRevisions,
   agents,
+  issueBoardMentions,
   issueBoardLifecycleCommands,
   companies,
   issueBoardReopenCommands,
@@ -30,7 +31,6 @@ import {
 import {
   and,
   asc,
-  desc,
   eq,
   gt,
   inArray,
@@ -96,13 +96,11 @@ export interface IssueLivenessPostCommitPort {
       { kind: "owner_followup" | "consult_followup" }
     >,
   ): Promise<void>;
-  notifyAttention(
-    work: Extract<IssueLivenessPostCommitWork, { kind: "attention" }>,
-  ): Promise<void>;
 }
 
 export type IssueLivenessActionReference =
   | `issue_board_user_comment:${string}`
+  | `issue_board_mention:${string}`
   | `issue:${string}`
   | `issue_consult_execution:${string}`
   | `issue_execution_prompt_segment:${string}:${string}:${number}`
@@ -263,6 +261,7 @@ type ParsedIssueLivenessActionReference =
   | {
       readonly source:
         | "issue_board_user_comment"
+        | "issue_board_mention"
         | "issue"
         | "issue_consult_execution"
         | "issue_execution_ref"
@@ -302,6 +301,7 @@ function parseIssueLivenessActionReference(
   }
   const simpleSources = new Set([
     "issue_board_user_comment",
+    "issue_board_mention",
     "issue",
     "issue_consult_execution",
     "issue_execution_ref",
@@ -366,6 +366,33 @@ async function resolveIssueLivenessActionSourceInTransaction(
         companyId: source.companyId,
         issueId: source.issueId,
         kind: "authenticated_human_comment",
+        referenceId: sourceReference,
+        committedAt: source.createdAt,
+        ownershipEpoch: source.ownershipEpoch,
+        resultingOwnershipEpoch: source.ownershipEpoch,
+      };
+    }
+
+    case "issue_board_mention": {
+      const source = exactlyOne(
+        await transaction
+          .select({
+            id: issueBoardMentions.id,
+            companyId: issueBoardMentions.companyId,
+            issueId: issueBoardMentions.issueId,
+            ownershipEpoch: issueBoardMentions.ownershipEpoch,
+            createdAt: issueBoardMentions.createdAt,
+          })
+          .from(issueBoardMentions)
+          .where(eq(issueBoardMentions.id, reference.sourceId))
+          .limit(2)
+          .for("update"),
+        "Board-mention liveness action has no exact immutable request",
+      );
+      return {
+        companyId: source.companyId,
+        issueId: source.issueId,
+        kind: "mention_board",
         referenceId: sourceReference,
         committedAt: source.createdAt,
         ownershipEpoch: source.ownershipEpoch,
@@ -942,6 +969,31 @@ async function findExplicitAction(
       kind: "mention_agent",
       referenceId: `issue_consult_execution:${mention.id}`,
       committedAt: mention.closedAt,
+    });
+  }
+
+  const boardMentions = await transaction
+    .select({
+      id: issueBoardMentions.id,
+      createdAt: issueBoardMentions.createdAt,
+    })
+    .from(issueBoardMentions)
+    .where(
+      and(
+        eq(issueBoardMentions.companyId, scope.companyId),
+        eq(issueBoardMentions.issueId, scope.issueId),
+        eq(issueBoardMentions.ownershipEpoch, scope.ownershipEpoch),
+        search.kind === "run"
+          ? eq(issueBoardMentions.runId, search.runId)
+          : gt(issueBoardMentions.createdAt, search.row.admittedAt),
+      ),
+    )
+    .orderBy(asc(issueBoardMentions.createdAt), asc(issueBoardMentions.id));
+  for (const boardMention of boardMentions) {
+    actions.push({
+      kind: "mention_board",
+      referenceId: `issue_board_mention:${boardMention.id}`,
+      committedAt: boardMention.createdAt,
     });
   }
 
@@ -1557,36 +1609,6 @@ export async function attachIssueLivenessFollowupRunInTransaction(
     );
   }
   return { replyToCommentId: row.followupSystemReplyCommentId };
-}
-
-export async function listActiveIssueLivenessAttentionRows(
-  database: Db,
-  companyId: string,
-) {
-  return database
-    .select({
-      issueId: issueLivenessReconciliations.issueId,
-      ownershipEpoch: issueLivenessReconciliations.ownershipEpoch,
-      frontierFinalizationId:
-        issueLivenessReconciliations.frontierFinalizationId,
-      boardAttentionEmittedAt:
-        issueLivenessReconciliations.boardAttentionEmittedAt,
-      boardAttentionReason:
-        issueLivenessReconciliations.boardAttentionReason,
-      admittedAt: issueLivenessReconciliations.admittedAt,
-    })
-    .from(issueLivenessReconciliations)
-    .where(
-      and(
-        eq(issueLivenessReconciliations.companyId, companyId),
-        isNotNull(issueLivenessReconciliations.boardAttentionEmittedAt),
-        isNull(issueLivenessReconciliations.exitActionCommittedAt),
-      ),
-    )
-    .orderBy(
-      desc(issueLivenessReconciliations.boardAttentionEmittedAt),
-      desc(issueLivenessReconciliations.frontierFinalizationId),
-    );
 }
 
 export function createIssueLivenessReconciliationService(
@@ -2331,8 +2353,6 @@ export function createIssueLivenessReconciliationService(
     );
     if (work.kind === "owner_followup" || work.kind === "consult_followup") {
       await options.postCommit.dispatchFollowup(work);
-    } else if (work.kind === "attention") {
-      await options.postCommit.notifyAttention(work);
     }
     return work;
   }

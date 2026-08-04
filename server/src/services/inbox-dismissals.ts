@@ -2,17 +2,6 @@ import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { inboxDismissals } from "@paperclipai/db";
 import type { InboxDismissalKind } from "@paperclipai/shared";
-import { badRequest } from "../errors.js";
-
-const AGENT_LIVENESS_DISMISSAL_PREFIX = "attention:agent-liveness:";
-
-function assertDismissibleItemKey(itemKey: string): void {
-  if (itemKey.startsWith(AGENT_LIVENESS_DISMISSAL_PREFIX)) {
-    throw badRequest(
-      "Agent-liveness Attention items remain until an explicit issue action advances the issue",
-    );
-  }
-}
 
 export function inboxDismissalService(db: Db) {
   async function upsert(
@@ -21,7 +10,6 @@ export function inboxDismissalService(db: Db) {
     itemKey: string,
     input: { kind: InboxDismissalKind; dismissedAt?: Date; snoozedUntil?: Date | null },
   ) {
-    assertDismissibleItemKey(itemKey);
     const now = new Date();
     const dismissedAt = input.dismissedAt ?? now;
     const snoozedUntil = input.kind === "snooze" ? input.snoozedUntil ?? null : null;
@@ -73,7 +61,6 @@ export function inboxDismissalService(db: Db) {
     ) => upsert(companyId, userId, itemKey, { kind: "snooze", dismissedAt, snoozedUntil }),
 
     restore: async (companyId: string, userId: string, itemKey: string) => {
-      assertDismissibleItemKey(itemKey);
       const [row] = await db
         .delete(inboxDismissals)
         .where(and(

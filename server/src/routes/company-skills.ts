@@ -83,7 +83,7 @@ type SkillPolicyResourceInput =
   | Promise<SkillPolicyEvaluationResource>
   | (() => SkillPolicyEvaluationResource | Promise<SkillPolicyEvaluationResource>);
 
-const SKILL_TEST_ATTENTION_MASK = {
+const SKILL_TEST_CONTEXT_ACCESS_MASK = {
   carry_context: false,
   read_issue_comments: false,
   read_issue_agent_run: false,
@@ -591,7 +591,7 @@ export function companySkillRoutes(
             priority: "medium",
             workMode: "skill_test",
             harnessKind: "skill_test",
-            attentionMask: SKILL_TEST_ATTENTION_MASK,
+            contextAccessMask: SKILL_TEST_CONTEXT_ACCESS_MASK,
             correlate: harnessIssue.correlate,
           });
           await logActivity(db, {

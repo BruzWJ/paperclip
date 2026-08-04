@@ -86,15 +86,15 @@ describe("isInlineResolvable", () => {
     expect(isInlineResolvable(buildItem({ sourceKind: "review", inlineResolvable: true }))).toBe(false);
   });
 
-  it("deep-links failure/budget/blocker rows rather than inlining", () => {
-    for (const kind of ["failed_run", "budget_alert", "blocker_attention"] as AttentionSourceKind[]) {
+  it("deep-links Board requests, reviews, and budget rows rather than inlining", () => {
+    for (const kind of ["mention_board", "budget_alert", "review"] as AttentionSourceKind[]) {
       expect(isInlineResolvable(buildItem({ sourceKind: kind, inlineResolvable: true }))).toBe(false);
     }
   });
 });
 
 describe("attentionBadgeCount", () => {
-  it("counts every queue row as a decision (mentions/unread never enter the feed)", () => {
+  it("counts every Board Attention row", () => {
     const feed: AttentionFeed = {
       companyId: "c1",
       generatedAt: "2026-07-09T12:00:00Z",
@@ -116,12 +116,9 @@ describe("sourceMeta + severityStyle", () => {
     const kinds: AttentionSourceKind[] = [
       "approval",
       "join_request",
-      "blocker_attention",
       "review",
-      "failed_run",
       "budget_alert",
-      "agent_error_alert",
-      "agent_liveness",
+      "mention_board",
     ];
     for (const kind of kinds) {
       expect(sourceMeta(kind).label.length).toBeGreaterThan(0);
@@ -139,12 +136,9 @@ describe("attentionTone + attentionToneStyle (canonical color map §4)", () => {
     expect(attentionTone(buildItem({ sourceKind: "approval" }))).toBe("sky");
   });
 
-  it("colors failures rose and blocked/budget amber", () => {
-    expect(attentionTone(buildItem({ sourceKind: "failed_run" }))).toBe("rose");
-    expect(attentionTone(buildItem({ sourceKind: "agent_error_alert" }))).toBe("rose");
-    expect(attentionTone(buildItem({ sourceKind: "blocker_attention" }))).toBe("amber");
+  it("colors Board requests violet and budget amber", () => {
+    expect(attentionTone(buildItem({ sourceKind: "mention_board" }))).toBe("violet");
     expect(attentionTone(buildItem({ sourceKind: "budget_alert" }))).toBe("amber");
-    expect(attentionTone(buildItem({ sourceKind: "agent_liveness" }))).toBe("amber");
   });
 
   it("colors join requests neutral", () => {
@@ -152,13 +146,13 @@ describe("attentionTone + attentionToneStyle (canonical color map §4)", () => {
   });
 
   it("gives every tone a distinct accent and never keys color off severity", () => {
-    const rose = buildItem({ sourceKind: "failed_run", severity: "low" });
+    const violet = buildItem({ sourceKind: "mention_board", severity: "low" });
     const amber = buildItem({ sourceKind: "budget_alert", severity: "critical" });
     // Same-source rows with opposite severities share one accent (color ≠ severity).
-    expect(attentionToneStyle(buildItem({ sourceKind: "failed_run", severity: "critical" })).accent).toBe(
-      attentionToneStyle(rose).accent,
+    expect(attentionToneStyle(buildItem({ sourceKind: "mention_board", severity: "critical" })).accent).toBe(
+      attentionToneStyle(violet).accent,
     );
-    expect(attentionToneStyle(rose).accent).not.toBe(attentionToneStyle(amber).accent);
+    expect(attentionToneStyle(violet).accent).not.toBe(attentionToneStyle(amber).accent);
   });
 });
 
@@ -172,15 +166,19 @@ describe("severityBadge", () => {
 });
 
 describe("attentionDetailLine (§7)", () => {
-  it("renders a failed run as agent — reason", () => {
+  it("renders an agent Board request message", () => {
     const line = attentionDetailLine(
       buildItem({
-        sourceKind: "failed_run",
-        detail: { kind: "failed_run", agentName: "Deployer", failureReasonExcerpt: "exit code 1", images: [] },
+        sourceKind: "mention_board",
+        detail: {
+          kind: "generic",
+          summaryExcerpt: "clarification — Which auth provider should I use?",
+          images: [],
+        },
       }),
     );
-    expect(line).toContain("Deployer");
-    expect(line).toContain("exit code 1");
+    expect(line).toContain("clarification");
+    expect(line).toContain("Which auth provider");
   });
 
   it("returns null when there is no detail block", () => {

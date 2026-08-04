@@ -119,7 +119,7 @@ describe("POST /api/board/chat/messages", () => {
       sourceKind: "board_chat",
       title: "Board Chat",
       priority: "medium",
-      attentionMask: null,
+      contextAccessMask: null,
     });
     expect(res.body).toMatchObject({
       issueId: "issue-1",
@@ -128,7 +128,7 @@ describe("POST /api/board/chat/messages", () => {
     });
   });
 
-  it("normalizes the initial issue attention mask and rejects malformed masks", async () => {
+  it("normalizes initial issue context access and rejects malformed masks", async () => {
     mockGetExperimental.mockResolvedValue({
       enableConferenceRoomChat: true,
     });
@@ -145,7 +145,7 @@ describe("POST /api/board/chat/messages", () => {
         companyId: "company-1",
         agentId: "agent-1",
         message: "hello",
-        attentionMask: {
+        contextAccessMask: {
           carry_context: true,
           read_issue_comments: false,
         },
@@ -154,7 +154,7 @@ describe("POST /api/board/chat/messages", () => {
 
     expect(mockOrdinaryIssues.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        attentionMask: { read_issue_comments: false },
+        contextAccessMask: { read_issue_comments: false },
       }),
     );
 
@@ -164,7 +164,7 @@ describe("POST /api/board/chat/messages", () => {
         companyId: "company-1",
         agentId: "agent-1",
         message: "hello",
-        attentionMask: { unknown_context: false },
+        contextAccessMask: { unknown_context: false },
       });
     expect(malformed.status).toBe(400);
     expect(mockOrdinaryIssues.create).toHaveBeenCalledTimes(1);
@@ -194,7 +194,7 @@ describe("POST /api/board/chat/messages", () => {
     expect(mockOrdinaryIssues.create).not.toHaveBeenCalled();
   });
 
-  it("rejects an attention mask on a follow-up", async () => {
+  it("rejects context access on a follow-up", async () => {
     mockGetExperimental.mockResolvedValue({
       enableConferenceRoomChat: true,
     });
@@ -207,7 +207,7 @@ describe("POST /api/board/chat/messages", () => {
         agentId: "agent-1",
         issueId: "issue-1",
         message: "follow up",
-        attentionMask: { carry_context: false },
+        contextAccessMask: { carry_context: false },
       });
 
     expect(res.status).toBe(400);

@@ -116,7 +116,7 @@ import { ScrollToBottom } from "../components/ScrollToBottom";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { Identity } from "../components/Identity";
-import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "../components/IssueContextAccessMaskMatrix";
 import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { Separator } from "@/components/ui/separator";
@@ -3537,10 +3537,10 @@ export function IssueDetail() {
         </section>
         <section className="space-y-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Issue attention
+            Issue context access
           </h3>
-          <IssueAttentionMaskMatrix
-            value={issue.attentionMask ?? null}
+          <IssueContextAccessMaskMatrix
+            value={issue.contextAccessMask ?? null}
             readOnly
           />
         </section>

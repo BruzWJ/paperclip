@@ -99,7 +99,7 @@ export interface RuntimeInterfaceCompilerSnapshot {
     ownerKind: string | null;
     ownerAgentId: string | null;
     ownershipEpoch: number | null;
-    attentionMask:
+    contextAccessMask:
       | Partial<Record<AgentContextGrantKey, false>>
       | null;
     workMode: string;
@@ -285,7 +285,7 @@ export function buildRuntimeInterfaceCompileInput(
   );
   const contextDial = resolveContextDial({
     agent: contextGrants,
-    assignment: issue.attentionMask,
+    assignment: issue.contextAccessMask,
     executionMode: resolveExecutionModeContextMask({
       workMode: issue.workMode,
       harnessKind: issue.harnessKind,
@@ -511,7 +511,7 @@ async function loadSnapshot(
         ownerKind: issues.ownerKind,
         ownerAgentId: issues.ownerAgentId,
         ownershipEpoch: issues.ownershipEpoch,
-        attentionMask: issues.attentionMask,
+        contextAccessMask: issues.contextAccessMask,
         workMode: issues.workMode,
         harnessKind: issues.harnessKind,
         originKind: issues.originKind,

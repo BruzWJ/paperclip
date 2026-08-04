@@ -24,7 +24,7 @@ import {
   ISSUE_SURFACE_VISIBILITIES,
 } from "../constants.js";
 import { routineVariableSchema } from "./routine.js";
-import { issueCreationAttentionMaskSchema } from "./issue.js";
+import { issueCreationContextAccessSchema } from "./issue.js";
 import { externalObjectProviderKeySchema, externalObjectTypeSchema } from "./external-object.js";
 
 // ---------------------------------------------------------------------------
@@ -237,7 +237,7 @@ export const pluginManagedRoutineDeclarationSchema = z.object({
     surfaceVisibility: z.enum(ISSUE_SURFACE_VISIBILITIES).optional(),
     originId: z.string().trim().max(255).nullable().optional(),
     billingCode: z.string().trim().max(200).nullable().optional(),
-    attentionMask: issueCreationAttentionMaskSchema.nullable().optional(),
+    contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   }).optional(),
 });
 

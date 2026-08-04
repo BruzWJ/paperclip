@@ -31,7 +31,7 @@ const MATRIX_ROWS = TIER_LABELS.map((tier, tierIndex) => ({
   })),
 }));
 
-export function AttentionMatrix({
+export function ContextAccessMatrix({
   value,
   onCellChange,
   disabled = false,
@@ -53,7 +53,7 @@ export function AttentionMatrix({
   return (
     <div className={cn("space-y-2", className)} data-testid={testId}>
       <div className="grid grid-cols-4 gap-1 text-xs">
-        <div className="px-2 py-1 text-muted-foreground">Attention</div>
+        <div className="px-2 py-1 text-muted-foreground">Context access</div>
         {DEPTH_LABELS.map((depth) => (
           <div
             key={depth}

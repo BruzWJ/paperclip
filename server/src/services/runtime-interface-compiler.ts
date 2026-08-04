@@ -721,7 +721,7 @@ function issueCreateDescriptor(
           enum: ["critical", "high", "medium", "low"],
         },
         owner: { oneOf: ownerVariants },
-        attentionMask: objectSchema(
+        contextAccessMask: objectSchema(
           Object.fromEntries(
             [
               "carry_context",
@@ -877,6 +877,33 @@ function mentionDescriptor(
   };
 }
 
+/**
+ * A collective Board request deliberately has no target catalog. The Board is
+ * one company-scoped recipient, and this signal never creates an execution
+ * ref, an approval, or a review stage.
+ */
+function mentionBoardDescriptor(): CompiledRunToolDescriptor {
+  return {
+    name: "mention_board",
+    title: "Mention Board",
+    description:
+      "Request information or direction from the collective Board. This does not change issue lifecycle, approvals, or review.",
+    inputSchema: objectSchema(
+      {
+        message: MESSAGE,
+        reason: {
+          type: "string",
+          minLength: 1,
+          description:
+            "Optional presentation hint for the Board; it has no governance effect.",
+        },
+      },
+      ["message"],
+    ),
+    source: "paperclip",
+  };
+}
+
 function hireDescriptor(
   options: readonly RuntimeAgentCompanyToolOption[],
 ): CompiledRunToolDescriptor {
@@ -934,6 +961,9 @@ function actionDescriptors(
     input.mentionTargets.length > 0
   ) {
     descriptors.push(mentionDescriptor(input.mentionTargets));
+  }
+  if (ownerMode && input.actionGrants.mention_board === true) {
+    descriptors.push(mentionBoardDescriptor());
   }
   if (input.actionGrants.agent_hire === true) {
     descriptors.push(hireDescriptor(input.agentHireCompanyToolOptions));

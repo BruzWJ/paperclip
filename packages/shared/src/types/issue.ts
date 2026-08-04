@@ -30,7 +30,7 @@ import type {
 import type {
   AgentContextGrantKey,
   AgentVisibleIssueStatus,
-  IssueAttentionMask,
+  ContextAccess,
   IssueDisposition,
   SystemCreatorSourceKind,
 } from "../issue-runtime.js";
@@ -446,7 +446,7 @@ interface IssueBase {
   workMode: IssueWorkMode;
   priority: IssuePriority;
   ownershipEpoch: number;
-  attentionMask?: IssueAttentionMask | null;
+  contextAccessMask?: ContextAccess | null;
   escalatedFromAffectedIssueId?: string | null;
   escalatedFromTriggeringRunId?: string | null;
   escalatedFromReason?: string | null;

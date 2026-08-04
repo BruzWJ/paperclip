@@ -58,7 +58,7 @@ import {
   computePipelineHealth,
   deriveCaseType,
   envConfigSchema,
-  issueCreationAttentionMaskSchema,
+  issueCreationContextAccessSchema,
   issueDocumentKeySchema,
   pipelineCaseGenericIssueLinkRoleSchema,
   pipelineAutomationRetryRequestSchema,
@@ -217,7 +217,7 @@ const openConversationSchema = z.object({
     .refine((value) => value.trim().length > 0, {
       message: "Request must contain non-whitespace text",
     }),
-  attentionMask: issueCreationAttentionMaskSchema.nullable().optional(),
+  contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   idempotencyKey: z.string().trim().min(1).max(512).optional(),
 }).strict();
 const bulkReviewSchema = z.object({
@@ -1881,7 +1881,7 @@ export function pipelineRoutes(
         idempotencyKey: req.body.idempotencyKey ?? randomUUID(),
         title: `Discuss: ${detail.case.title}`,
         priority: "medium",
-        attentionMask: req.body.attentionMask ?? null,
+        contextAccessMask: req.body.contextAccessMask ?? null,
         correlate: async (tx, persisted) => {
           await tx.insert(pipelineCaseIssueLinks).values({
             companyId,

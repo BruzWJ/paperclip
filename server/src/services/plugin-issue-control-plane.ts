@@ -101,7 +101,7 @@ export function createPluginIssueControlPlane(
           | "medium"
           | "low"
           | undefined,
-        attentionMask: params.attentionMask,
+        contextAccessMask: params.contextAccessMask,
       });
       return requireIssue(
         await issueReads.getById(created.issue.id),

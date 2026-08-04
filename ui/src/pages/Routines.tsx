@@ -34,7 +34,7 @@ import {
   type RoutineRunDialogSubmitData,
 } from "../components/RoutineRunVariablesDialog";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
-import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "../components/IssueContextAccessMaskMatrix";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -49,7 +49,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import type {
-  IssueAttentionMask,
+  ContextAccess,
   RoutineListItem,
   RoutineVariable,
 } from "@paperclipai/shared";
@@ -147,7 +147,7 @@ function buildRoutineMutationPayload(input: {
   priority: string;
   concurrencyPolicy: string;
   catchUpPolicy: string;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   variables: RoutineVariable[];
 }) {
   return {
@@ -298,7 +298,7 @@ export function Routines() {
     priority: string;
     concurrencyPolicy: string;
     catchUpPolicy: string;
-    attentionMask: IssueAttentionMask | null;
+    contextAccessMask: ContextAccess | null;
     variables: RoutineVariable[];
   }>({
     title: "",
@@ -309,7 +309,7 @@ export function Routines() {
     priority: "medium",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
-    attentionMask: null,
+    contextAccessMask: null,
     variables: [],
   });
   const routineViewStateKey = selectedCompanyId
@@ -399,7 +399,7 @@ export function Routines() {
         priority: "medium",
         concurrencyPolicy: "coalesce_if_active",
         catchUpPolicy: "skip_missed",
-        attentionMask: null,
+        contextAccessMask: null,
         variables: [],
       });
       setComposerOpen(false);
@@ -1135,14 +1135,14 @@ export function Routines() {
                   </div>
                   <div className="mt-4 space-y-2">
                     <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">
-                      Created issue attention
+                      Created issue context access
                     </p>
-                    <IssueAttentionMaskMatrix
-                      value={draft.attentionMask}
-                      onChange={(attentionMask) =>
+                    <IssueContextAccessMaskMatrix
+                      value={draft.contextAccessMask}
+                      onChange={(contextAccessMask) =>
                         setDraft((current) => ({
                           ...current,
-                          attentionMask,
+                          contextAccessMask,
                         }))
                       }
                     />

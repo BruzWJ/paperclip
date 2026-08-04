@@ -6,7 +6,7 @@ import {
   resolveContextDial,
   resolveContextRetrievalPolicy,
   resolveFreshCompositionDepth,
-  stampAttentionPreset,
+  stampContextAccessPreset,
 } from "../services/context-dial-resolver.ts";
 
 describe("context dial resolver", () => {
@@ -50,27 +50,27 @@ describe("context dial resolver", () => {
   });
 
   it("stamps the exact five presets without persisting preset authority", () => {
-    expect(stampAttentionPreset("heads_down")).toEqual(
+    expect(stampContextAccessPreset("heads_down")).toEqual(
       Object.fromEntries(AGENT_CONTEXT_GRANT_KEYS.map((key) => [key, false])),
     );
-    expect(stampAttentionPreset("focused")).toMatchObject({
+    expect(stampContextAccessPreset("focused")).toMatchObject({
       carry_context: true,
       read_issue_comments: true,
       list_sub_issues: false,
     });
-    expect(stampAttentionPreset("supervisor")).toMatchObject({
+    expect(stampContextAccessPreset("supervisor")).toMatchObject({
       carry_context: true,
       read_issue_comments: true,
       list_sub_issues: true,
       read_sub_issue_comments: true,
       read_issue_agent_run: false,
     });
-    expect(stampAttentionPreset("investigator")).toMatchObject({
+    expect(stampContextAccessPreset("investigator")).toMatchObject({
       read_issue_agent_run: true,
       read_sub_issue_agent_run: false,
       list_company_issues: false,
     });
-    expect(stampAttentionPreset("situational")).toMatchObject({
+    expect(stampContextAccessPreset("situational")).toMatchObject({
       read_issue_agent_run: true,
       read_sub_issue_agent_run: false,
       list_company_issues: true,

@@ -248,6 +248,7 @@ describe("runtime interface compiler", () => {
           issue_create: true,
           issue_update: true,
           mention_agent: true,
+          mention_board: true,
         },
         creatorUpdateTargets: [{ issueId: "child-1", identifier: "PAP-1" }],
         mentionTargets: [
@@ -263,6 +264,7 @@ describe("runtime interface compiler", () => {
       "issue_create",
       "issue_update",
       "mention_agent",
+      "mention_board",
     ]);
   });
 
@@ -367,6 +369,7 @@ describe("runtime interface compiler", () => {
           issue_assign: true,
           issue_update: true,
           mention_agent: true,
+          mention_board: true,
           agent_hire: true,
           agent_configure: true,
         },
@@ -404,6 +407,38 @@ describe("runtime interface compiler", () => {
     expect(result.descriptors).toEqual([]);
   });
 
+  it("compiles an owner-only collective Board request without a target catalog", () => {
+    const descriptor = compileRuntimeInterface(
+      compileInput({
+        actionGrants: { mention_board: true },
+      }),
+    ).byName.get("mention_board");
+
+    expect(descriptor).toMatchObject({
+      name: "mention_board",
+      title: "Mention Board",
+      description:
+        "Request information or direction from the collective Board. This does not change issue lifecycle, approvals, or review.",
+      inputSchema: {
+        type: "object",
+        required: ["message"],
+        additionalProperties: false,
+        properties: {
+          message: { type: "string", minLength: 1 },
+          reason: {
+            type: "string",
+            minLength: 1,
+          },
+        },
+      },
+    });
+    expect(
+      compileRuntimeInterface(
+        compileInput({ mode: "consult", actionGrants: { mention_board: true } }),
+      ).byName.has("mention_board"),
+    ).toBe(false);
+  });
+
   it("exposes only the closed runtime-agent configuration cells", () => {
     const companyToolId = "11111111-1111-4111-8111-111111111111";
     const result = compileRuntimeInterface(
@@ -433,7 +468,7 @@ describe("runtime interface compiler", () => {
       Object.keys(
         hire.inputSchema.properties?.actionGrants.properties ?? {},
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
     expect(
       Object.keys(
         configure.inputSchema.properties?.mentionReachGrants.properties ?? {},

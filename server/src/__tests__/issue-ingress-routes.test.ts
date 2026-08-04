@@ -115,7 +115,7 @@ describe("canonical board issue ingress", () => {
         idempotencyKey: "board-create-1",
         title: "Canonical issue",
         priority: "high",
-        attentionMask: { carry_context: false },
+        contextAccessMask: { carry_context: false },
         executionWorkspaceId,
         executionWorkspacePreference: "reuse_existing",
         executionWorkspaceSettings: {
@@ -144,7 +144,7 @@ describe("canonical board issue ingress", () => {
       goalId: null,
       parentId: null,
       priority: "high",
-      attentionMask: { carry_context: false },
+      contextAccessMask: { carry_context: false },
     });
     expect(dispatchPersistedRef).toHaveBeenCalledOnce();
     expect(dispatchPersistedRef).toHaveBeenCalledWith(

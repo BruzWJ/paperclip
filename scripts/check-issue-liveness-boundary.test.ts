@@ -120,8 +120,8 @@ function canonicalLivenessSchema(): string {
     "  (table) => [",
     '    check("issue_liveness_reconciliations_followup_chain_check", sql`${table.followupRunId}`),',
     '    check("issue_liveness_reconciliations_initial_settlement_check", sql`${table.acceptedActionKind}`),',
-    '    check("issue_liveness_reconciliations_accepted_action_kind_check", sql`${table.acceptedActionKind} in (\'authenticated_human_comment\', \'issue_create_child\', \'mention_agent\', \'issue_assign\', \'issue_update\', \'creator_withdrawal\', \'board_lifecycle_command\', \'board_reopen\')`),',
-    '    check("issue_liveness_reconciliations_exit_action_kind_check", sql`${table.exitActionKind} in (\'authenticated_human_comment\', \'issue_create_child\', \'mention_agent\', \'issue_assign\', \'issue_update\', \'creator_withdrawal\', \'board_lifecycle_command\', \'board_reopen\')`),',
+    '    check("issue_liveness_reconciliations_accepted_action_kind_check", sql`${table.acceptedActionKind} in (\'authenticated_human_comment\', \'issue_create_child\', \'mention_agent\', \'mention_board\', \'issue_assign\', \'issue_update\', \'creator_withdrawal\', \'board_lifecycle_command\', \'board_reopen\')`),',
+    '    check("issue_liveness_reconciliations_exit_action_kind_check", sql`${table.exitActionKind} in (\'authenticated_human_comment\', \'issue_create_child\', \'mention_agent\', \'mention_board\', \'issue_assign\', \'issue_update\', \'creator_withdrawal\', \'board_lifecycle_command\', \'board_reopen\')`),',
     "    foreignKey({",
     "      columns: [table.companyId, table.issueId, table.ownershipEpoch, table.creatorEdgeId, table.creatorEdgeAdmissionVersion],",
     "      foreignColumns: [issueCreatorEdgeReceivability.companyId, issueCreatorEdgeReceivability.issueId, issueCreatorEdgeReceivability.ownershipEpoch, issueCreatorEdgeReceivability.id, issueCreatorEdgeReceivability.admissionVersion],",
@@ -214,6 +214,7 @@ function canonicalLivenessService(): string {
   return [
     "export type IssueLivenessActionReference =",
     "  | `issue_board_user_comment:${string}`",
+    "  | `issue_board_mention:${string}`",
     "  | `issue:${string}`",
     "  | `issue_consult_execution:${string}`",
     "  | `issue_execution_prompt_segment:${string}:${string}:${number}`",
@@ -259,7 +260,7 @@ function fixtureRoot(): string {
     "packages/shared/src/issue-runtime.ts",
     [
       'export const AGENT_VISIBLE_ISSUE_STATUSES = ["open", "blocked", "done", "cancelled"] as const;',
-      'export const AGENT_LIVENESS_ACTION_KINDS = ["authenticated_human_comment", "issue_create_child", "mention_agent", "issue_assign", "issue_update", "creator_withdrawal", "board_lifecycle_command", "board_reopen"] as const;',
+      'export const AGENT_LIVENESS_ACTION_KINDS = ["authenticated_human_comment", "issue_create_child", "mention_agent", "mention_board", "issue_assign", "issue_update", "creator_withdrawal", "board_lifecycle_command", "board_reopen"] as const;',
       "",
     ].join("\n"),
   );
@@ -479,55 +480,6 @@ function fixtureRoot(): string {
       "",
     ].join("\n"),
   );
-  write(
-    root,
-    "server/src/services/attention.ts",
-    [
-      "add(createItem({",
-      '  sourceKind: "agent_liveness",',
-      "  decisionVerbs: [],",
-      "  inlineResolvable: false,",
-      "}), { suppressible: false });",
-      "",
-    ].join("\n"),
-  );
-  write(
-    root,
-    "server/src/services/inbox-dismissals.ts",
-    [
-      'const AGENT_LIVENESS_DISMISSAL_PREFIX = "attention:agent-liveness:";',
-      "function assertDismissibleItemKey(itemKey: string) {",
-      "  if (itemKey.startsWith(AGENT_LIVENESS_DISMISSAL_PREFIX)) {",
-      "    throw badRequest(",
-      '      "Agent-liveness Attention items remain until an explicit issue action advances the issue",',
-      "    );",
-      "  }",
-      "}",
-      "function upsert(itemKey: string) { assertDismissibleItemKey(itemKey); }",
-      "function restore(itemKey: string) { assertDismissibleItemKey(itemKey); }",
-      "",
-    ].join("\n"),
-  );
-  write(
-    root,
-    "ui/src/components/AttentionQueueRow.tsx",
-    [
-      'const suppressionAllowed = item.sourceKind !== "agent_liveness";',
-      "const dismissHandler = suppressionAllowed ? onDismiss : undefined;",
-      "const snoozeHandler = suppressionAllowed ? onSnooze : undefined;",
-      "",
-    ].join("\n"),
-  );
-  write(
-    root,
-    "ui/src/pages/WhatNeedsMe.tsx",
-    [
-      '<AttentionQueueRow onDismiss={item.sourceKind === "agent_liveness" ? undefined : handleDismiss}',
-      '  onSnooze={item.sourceKind === "agent_liveness" ? undefined : handleSnooze} />',
-      "",
-    ].join("\n"),
-  );
-
   const producers: Record<string, string> = {
     "server/src/services/canonical-issue-aggregate.ts":
       "recordIssueLivenessActionInTransaction(tx, `issue:${persistedIssue.id}`);\n",
@@ -541,6 +493,7 @@ function fixtureRoot(): string {
     "server/src/services/runtime-issue-action-port.ts": [
       "recordIssueLivenessActionInTransaction(tx, `issue_update:${update.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_consult_execution:${completedConsult[0]!.id}`);",
+      "recordIssueLivenessActionInTransaction(tx, `issue_board_mention:${mention.id}`);",
       "",
     ].join("\n"),
     "server/src/services/issue-board-lifecycle-command.ts":
@@ -780,7 +733,7 @@ test("rejects a duplicate issue-liveness frontier/outcome table", () => {
   );
 });
 
-test("rejects weakening the exact eight-action predicate", () => {
+test("rejects weakening the exact nine-action predicate", () => {
   const root = fixtureRoot();
   replace(
     root,
@@ -790,9 +743,27 @@ test("rejects weakening the exact eight-action predicate", () => {
   );
   assert.ok(
     issueLivenessBoundaryViolations(root).some((entry) =>
-      entry.includes("exactly eight values"),
+      entry.includes("exactly nine values"),
     ),
   );
+});
+
+test("rejects restoring automatic agent-liveness Board Attention", () => {
+  const root = fixtureRoot();
+  replace(
+    root,
+    "server/src/services/issue-execution-postgres.ts",
+    "const finalizer =",
+    "notifyAttention();\nconst finalizer =",
+  );
+  write(
+    root,
+    "server/src/services/attention.ts",
+    'add({ sourceKind: "agent_liveness" });\n',
+  );
+  const violations = issueLivenessBoundaryViolations(root);
+  assert.ok(violations.some((entry) => entry.includes("must not dispatch")));
+  assert.ok(violations.some((entry) => entry.includes("must not project")));
 });
 
 test("rejects weakening finalization-frontier uniqueness", () => {
@@ -977,22 +948,6 @@ for (const [field, column] of [
   });
 }
 
-for (const [canonical, mutation] of [
-  ["  decisionVerbs: [],", '  decisionVerbs: [{ id: "dismiss" }],'],
-  ["  inlineResolvable: false,", "  inlineResolvable: true,"],
-  ["}), { suppressible: false });", "}), { suppressible: true });"],
-] as const) {
-  test(`rejects mutable agent-liveness Attention contract ${canonical.trim()}`, () => {
-    const root = fixtureRoot();
-    replace(root, "server/src/services/attention.ts", canonical, mutation);
-    assert.ok(
-      issueLivenessBoundaryViolations(root).some((entry) =>
-        entry.includes("empty verbs, inlineResolvable false, and suppressible false"),
-      ),
-    );
-  });
-}
-
 test("rejects removal of a canonical reference-only settlement producer", () => {
   const root = fixtureRoot();
   replace(
@@ -1004,51 +959,6 @@ test("rejects removal of a canonical reference-only settlement producer", () => 
   assert.ok(
     issueLivenessBoundaryViolations(root).some((entry) =>
       entry.includes("canonical-issue-aggregate.ts"),
-    ),
-  );
-});
-
-test("rejects removal of the server dismissal/snooze guard", () => {
-  const root = fixtureRoot();
-  replace(
-    root,
-    "server/src/services/inbox-dismissals.ts",
-    "    throw badRequest(",
-    "    return badRequest(",
-  );
-  assert.ok(
-    issueLivenessBoundaryViolations(root).some((entry) =>
-      entry.includes("throw badRequest"),
-    ),
-  );
-});
-
-test("rejects removal of the reusable Attention-row UI guard", () => {
-  const root = fixtureRoot();
-  replace(
-    root,
-    "ui/src/components/AttentionQueueRow.tsx",
-    'const suppressionAllowed = item.sourceKind !== "agent_liveness";',
-    "const suppressionAllowed = true;",
-  );
-  assert.ok(
-    issueLivenessBoundaryViolations(root).some((entry) =>
-      entry.includes("suppressionAllowed"),
-    ),
-  );
-});
-
-test("rejects removal of either What Needs Me UI guard", () => {
-  const root = fixtureRoot();
-  replace(
-    root,
-    "ui/src/pages/WhatNeedsMe.tsx",
-    'onSnooze={item.sourceKind === "agent_liveness" ? undefined : handleSnooze}',
-    "onSnooze={handleSnooze}",
-  );
-  assert.ok(
-    issueLivenessBoundaryViolations(root).some((entry) =>
-      entry.includes("onSnooze"),
     ),
   );
 });

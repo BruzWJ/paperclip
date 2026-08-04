@@ -286,6 +286,7 @@ values are not defaulted. Its payload shape is:
     "issue_assign": false,
     "issue_update": false,
     "mention_agent": false,
+    "mention_board": false,
     "agent_hire": false,
     "agent_configure": false
   },

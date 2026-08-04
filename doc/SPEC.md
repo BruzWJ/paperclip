@@ -91,7 +91,7 @@ Every agent has nine false-by-default context keys:
 | company | `list_company_issues` | `read_company_issue_comments` | `read_company_issue_agent_run` |
 
 The same keys govern retrieval and fresh-execution composition. A per-issue
-attention mask may only narrow true grants to false. False surfaces are absent
+context-access mask may only narrow true grants to false. False surfaces are absent
 and undiscoverable.
 
 `carry_context` controls same-issue provider continuity; it never controls what
@@ -128,12 +128,13 @@ session remains resumable.
 
 ## Compiled provider interface
 
-The six possible issue actions are:
+The seven possible issue actions are:
 
 - `issue_create`
 - `issue_assign`
 - `issue_update`
 - `mention_agent`
+- `mention_board`
 - `agent_hire`
 - `agent_configure`
 
@@ -161,6 +162,15 @@ mention may invoke only the exact current agent owner and ownership epoch. Prose
 is never parsed as a mention, assignment, approval, or lifecycle operation.
 Same-issue assistance through `mention_agent` executes as an isolated nested
 provider view in the same issue Session.
+
+An owner agent with the explicit `mention_board` action grant may publish a
+message, plus an optional advisory reason, to collective Board Attention. It
+does not change issue lifecycle or create an approval, review, or execution
+reference. A later typed Board comment mention to that exact owner and ownership
+epoch supplies the response and removes the request from Board Attention. The
+request also counts as an explicit liveness action, so completion does not queue
+or dispatch a stale-owner follow-up when the standard finalization check is
+consumed.
 
 Provider-producing sources—creation, reassignment, the invokable-agent branch
 of audited reopen, typed mention/update, routine/plugin creation, and typed

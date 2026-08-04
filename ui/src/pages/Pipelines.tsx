@@ -6,7 +6,7 @@ import type {
   BoardIssueCommentGroupPage,
   FeedbackVote,
   Issue,
-  IssueAttentionMask,
+  ContextAccess,
   IssueExecutionRunListPageRecord,
   PipelineAutomationRetryCleanupOptions,
   PipelineAutomationRetryPlan,
@@ -87,7 +87,7 @@ import { projectsApi } from "../api/projects";
 import { EmptyState } from "../components/EmptyState";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { IssueChatThread } from "../components/IssueChatThread";
-import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "../components/IssueContextAccessMaskMatrix";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PipelineHealthBar } from "../components/PipelineHealthWarnings";
@@ -1993,8 +1993,8 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   const [conversationCreateOpen, setConversationCreateOpen] = useState(false);
   const [conversationOwnerAgentId, setConversationOwnerAgentId] = useState("");
   const [conversationRequest, setConversationRequest] = useState("");
-  const [conversationAttentionMask, setConversationAttentionMask] =
-    useState<IssueAttentionMask | null>(null);
+  const [conversationContextAccessMask, setConversationContextAccessMask] =
+    useState<ContextAccess | null>(null);
 
   const pipeline = useQuery({
     queryKey: queryKeys.pipelines.detail(pipelineId),
@@ -2252,13 +2252,13 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
     mutationFn: async (input: {
       ownerAgentId: string;
       request: string;
-      attentionMask: IssueAttentionMask | null;
+      contextAccessMask: ContextAccess | null;
     }) => {
       return pipelinesApi.openConversation(caseId, {
         ownerAgentId: input.ownerAgentId,
         request: input.request,
-        ...(input.attentionMask
-          ? { attentionMask: input.attentionMask }
+        ...(input.contextAccessMask
+          ? { contextAccessMask: input.contextAccessMask }
           : {}),
         idempotencyKey: crypto.randomUUID(),
       });
@@ -2267,7 +2267,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
       await invalidateItem();
       setConversationCreateOpen(false);
       setConversationRequest("");
-      setConversationAttentionMask(null);
+      setConversationContextAccessMask(null);
       pushToast({ title: "Conversation started", tone: "success" });
     },
     onError: () => pushToast({ title: "Could not start the conversation", tone: "error" }),
@@ -2812,7 +2812,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           setConversationCreateOpen(open);
           if (!open && !startConversation.isPending) {
             setConversationRequest("");
-            setConversationAttentionMask(null);
+            setConversationContextAccessMask(null);
           }
         }}
       >
@@ -2845,9 +2845,9 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 </SelectContent>
               </Select>
             </label>
-            <IssueAttentionMaskMatrix
-              value={conversationAttentionMask}
-              onChange={setConversationAttentionMask}
+            <IssueContextAccessMaskMatrix
+              value={conversationContextAccessMask}
+              onChange={setConversationContextAccessMask}
             />
             <label className="block space-y-2">
               <span className="text-sm font-medium text-foreground">Request</span>
@@ -2866,7 +2866,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               onClick={() => {
                 setConversationCreateOpen(false);
                 setConversationRequest("");
-                setConversationAttentionMask(null);
+                setConversationContextAccessMask(null);
               }}
               disabled={startConversation.isPending}
             >
@@ -2878,7 +2878,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 startConversation.mutate({
                   ownerAgentId: conversationOwnerAgentId,
                   request: conversationRequest,
-                  attentionMask: conversationAttentionMask,
+                  contextAccessMask: conversationContextAccessMask,
                 })
               }
               disabled={
@@ -3267,8 +3267,8 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           <DetailSection title="Conversation">
             {activeConversationIssue ? (
               <div className="space-y-4 py-3">
-                <IssueAttentionMaskMatrix
-                  value={activeConversationIssue.attentionMask ?? null}
+                <IssueContextAccessMaskMatrix
+                  value={activeConversationIssue.contextAccessMask ?? null}
                   readOnly
                 />
                 <IssueChatThread

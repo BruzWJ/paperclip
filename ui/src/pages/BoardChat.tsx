@@ -34,10 +34,10 @@ import { cn, formatDateTime } from "../lib/utils";
 import type {
   FeedbackVoteValue,
   Issue,
-  IssueAttentionMask,
+  ContextAccess,
 } from "@paperclipai/shared";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { IssueAttentionMaskMatrix } from "../components/IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "../components/IssueContextAccessMaskMatrix";
 import { flattenBoardIssueCommentGroupPages } from "../lib/optimistic-issue-comments";
 
 /**
@@ -293,8 +293,8 @@ export function BoardChat() {
   });
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
-  const [attentionMask, setAttentionMask] =
-    useState<IssueAttentionMask | null>(null);
+  const [contextAccessMask, setContextAccessMask] =
+    useState<ContextAccess | null>(null);
   const selectableAgents = useMemo(
     () => issueOwnerCatalogQuery.data ?? [],
     [issueOwnerCatalogQuery.data],
@@ -600,7 +600,7 @@ export function BoardChat() {
               companyId: selectedCompanyId,
               agentId: selectedAgent.id,
               message: body,
-              ...(attentionMask ? { attentionMask } : {}),
+              ...(contextAccessMask ? { contextAccessMask } : {}),
               idempotencyKey: crypto.randomUUID(),
             }),
           });
@@ -644,7 +644,7 @@ export function BoardChat() {
             queryKey: queryKeys.issues.list(selectedCompanyId),
           }),
         ]);
-        setAttentionMask(null);
+        setContextAccessMask(null);
       } catch (err) {
         console.error("Board chat error:", err);
         setInput(body);
@@ -665,7 +665,7 @@ export function BoardChat() {
       selectedAgent,
       boardIssueId,
       boardIssueTerminal,
-      attentionMask,
+      contextAccessMask,
       queryClient,
     ],
   );
@@ -715,7 +715,7 @@ export function BoardChat() {
       });
     }
     setBoardIssueId(null);
-    setAttentionMask(null);
+    setContextAccessMask(null);
     setOptimisticMessage(null);
     setErrorText("");
     hasRestoredScrollRef.current = false;
@@ -813,14 +813,14 @@ export function BoardChat() {
                 ))}
               </select>
               <div className="mt-2 max-w-2xl">
-                <IssueAttentionMaskMatrix
+                <IssueContextAccessMaskMatrix
                   value={
                     boardIssue
-                      ? boardIssue.attentionMask ?? null
-                      : attentionMask
+                      ? boardIssue.contextAccessMask ?? null
+                      : contextAccessMask
                   }
                   onChange={
-                    boardIssueId ? undefined : setAttentionMask
+                    boardIssueId ? undefined : setContextAccessMask
                   }
                   readOnly={Boolean(boardIssueId)}
                 />

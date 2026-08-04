@@ -194,10 +194,6 @@ export function createPostgresIssueExecutionProductionRuntime(
           ref: projectPersistedIssueExecutionRef(work.ref),
         });
       },
-      async notifyAttention() {
-        // Attention is a read derivation of the committed reconciliation.
-        // No second durable item, queue, or provider invocation is created.
-      },
     },
   });
   const finalizer = createPostgresIssueExecutionFinalizationWriter({

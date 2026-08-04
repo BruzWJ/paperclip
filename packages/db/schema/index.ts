@@ -116,6 +116,7 @@ export {
   issueBoardReopenCommands,
   issueBoardUserComments,
 } from "./issue_board_reopen_commands.js";
+export { issueBoardMentions } from "./issue_board_mentions.js";
 export {
   issueCreatorWithdrawalCommands,
   issueBoardLifecycleCommands,

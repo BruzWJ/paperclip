@@ -35,9 +35,9 @@ import type {
   IssueBoardReopenDispatch,
   IssueCreatorEdgeTerminalReason,
   IssueExecutionRefSourceKind,
-  RawIssueAttentionMask,
+  RawContextAccess,
 } from "@paperclipai/shared";
-import { normalizeIssueAttentionMask } from "@paperclipai/shared";
+import { normalizeContextAccess } from "@paperclipai/shared";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   InvokableIssueOwnerRejected,
@@ -252,7 +252,7 @@ export interface OrdinaryIssueCreateInput {
   originRunId?: string | null;
   originFingerprint?: string | null;
   billingCode?: string | null;
-  attentionMask?: RawIssueAttentionMask | null;
+  contextAccessMask?: RawContextAccess | null;
   workMode?: string;
   harnessKind?: string | null;
   /**
@@ -495,15 +495,15 @@ function nonBlankPreservingBytes(value: string, label: string): string {
   return value;
 }
 
-function canonicalAttentionMask(
-  value: OrdinaryIssueCreateInput["attentionMask"],
-): ReturnType<typeof normalizeIssueAttentionMask> {
+function canonicalContextAccessMask(
+  value: OrdinaryIssueCreateInput["contextAccessMask"],
+): ReturnType<typeof normalizeContextAccess> {
   try {
-    return normalizeIssueAttentionMask(value);
+    return normalizeContextAccess(value);
   } catch {
     throw new OrdinaryIssueRuntimeRejected(
-      "Attention mask accepts only known boolean context-grant keys",
-      "attention_mask_invalid",
+      "Context access mask accepts only known boolean context-grant keys",
+      "context_access_mask_invalid",
     );
   }
 }
@@ -1625,7 +1625,7 @@ export function createOrdinaryIssueRuntime(
           "execution_workspace_missing",
         );
       }
-      const attentionMask = canonicalAttentionMask(input.attentionMask);
+      const contextAccessMask = canonicalContextAccessMask(input.contextAccessMask);
       const key = `ordinary-issue-create:${input.companyId}:${input.idempotencyKey}`;
       const issueId = input.issueId?.trim() || deterministicUuid("ordinary-issue", key);
       const sessionId = stableSessionId(key);
@@ -1707,8 +1707,8 @@ export function createOrdinaryIssueRuntime(
             existing.originFingerprint !==
               (input.originFingerprint ?? key) ||
             existing.billingCode !== (input.billingCode ?? null) ||
-            canonicalJson(existing.attentionMask) !==
-              canonicalJson(attentionMask) ||
+            canonicalJson(existing.contextAccessMask) !==
+              canonicalJson(contextAccessMask) ||
             !sameCreator(existing, input.creator)
           ) {
             throw new OrdinaryIssueRuntimeRejected(
@@ -1838,7 +1838,7 @@ export function createOrdinaryIssueRuntime(
             ownerAssignmentSource: null,
             ownershipEpoch: 1,
             ...creatorColumns(input.creator),
-            attentionMask,
+            contextAccessMask,
             responsibleUserId: input.responsibleUserId ?? null,
             issueNumber,
             identifier,

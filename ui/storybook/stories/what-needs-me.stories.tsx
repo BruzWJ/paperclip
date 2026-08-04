@@ -146,12 +146,12 @@ const POPULATED: AttentionItem[] = [
     },
   ),
   item(
-    "fail-1",
-    "failed_run",
+    "board-1",
+    "mention_board",
     "high",
-    "Deploy pipeline failed after 3 retries",
-    "Retries are exhausted; a human action is needed.",
-    { relatedIssue: null, inlineResolvable: false },
+    "Agent needs a deployment decision",
+    "An agent requested direction from the Board.",
+    { inlineResolvable: false },
   ),
   item(
     "budget-1",
@@ -170,7 +170,7 @@ const ACTIVITY_OFFSETS: Record<string, number> = {
   "appr-1": NOW - 2 * HOUR,
   "review-1": NOW - 27 * HOUR,
   "join-1": NOW - 3 * DAY,
-  "fail-1": NOW - 5 * DAY,
+  "board-1": NOW - 5 * DAY,
   "budget-1": NOW - 40 * DAY,
 };
 const PROJECTS: Record<string, AttentionItem["project"]> = {
@@ -181,7 +181,7 @@ const DETAILS: Record<string, AttentionItem["detail"]> = {
   "recov-1": { kind: "generic", summaryExcerpt: "Agent has not produced output in 40 minutes.", images: [] },
   "appr-1": { kind: "approval", approvalType: "hire_agent", summaryExcerpt: "Adds a Research Analyst to the Growth pod.", images: [] },
   "review-1": { kind: "generic", summaryExcerpt: "3 files changed · +212 / −41", images: [IMAGES[0], IMAGES[1], IMAGES[2], IMAGES[3]] },
-  "fail-1": { kind: "failed_run", agentName: "Deployer", failureReasonExcerpt: "exit code 1 running migrate", images: [] },
+  "board-1": { kind: "generic", summaryExcerpt: "decision_request — Should I retry the migration or roll back?", images: [] },
   "budget-1": {
     kind: "budget",
     observedPercent: 85,
@@ -216,12 +216,11 @@ const SHOWCASE: AttentionItem[] = [
     detail: { kind: "approval", approvalType: "release", summaryExcerpt: "Ship the changelog to the public page.", images: [] },
   },
   {
-    ...item("fail-2", "failed_run", "critical", "Deploy pipeline failed after 3 retries", "Retries exhausted.", {
+    ...item("board-2", "mention_board", "high", "Agent needs deployment direction", "A Board decision was requested.", {
       inlineResolvable: false,
-      relatedIssue: null,
     }),
     activityAt: new Date(NOW - 3 * HOUR).toISOString(),
-    detail: { kind: "failed_run", agentName: "Deployer", failureReasonExcerpt: "exit code 1 running migrate", images: [IMAGES[3]] },
+    detail: { kind: "generic", summaryExcerpt: "decision_request — Should I retry the migration or roll back?", images: [IMAGES[3]] },
   },
   {
     ...item("budg-2", "budget_alert", "low", "Company budget crossed 85%", "Budget threshold crossed.", {
@@ -261,12 +260,11 @@ const IMAGE_ROWS: AttentionItem[] = [
     detail: { kind: "generic", summaryExcerpt: "5 files changed · +212 / −41", images: [IMAGES[0], IMAGES[1], IMAGES[2], IMAGES[3], IMAGES[0]] },
   },
   {
-    ...item("img-failed", "failed_run", "high", "Deploy pipeline failed after 3 retries", "Retries exhausted.", {
+    ...item("img-board", "mention_board", "high", "Agent requests a visual review", "A Board review was requested.", {
       inlineResolvable: false,
-      relatedIssue: null,
     }),
     activityAt: new Date(NOW - 3 * HOUR).toISOString(),
-    detail: { kind: "failed_run", agentName: "Deployer", failureReasonExcerpt: "exit code 1 running migrate", images: [IMAGES[3]] },
+    detail: { kind: "generic", summaryExcerpt: "review_request — Does this output match the intended design?", images: [IMAGES[3]] },
   },
 ];
 
@@ -284,7 +282,7 @@ const SNOOZED: AttentionItem[] = [
 ];
 const DISMISSED: AttentionItem[] = [
   {
-    ...item("dsm-1", "agent_error_alert", "medium", "Agent error: research analyst", "Dismissed earlier today.", { inlineResolvable: false }),
+    ...item("dsm-1", "mention_board", "medium", "Agent requested clarification", "Dismissed earlier today.", { inlineResolvable: false }),
     activityAt: new Date(NOW - 8 * HOUR).toISOString(),
     dismissal: dismissal("dismiss", null),
   },

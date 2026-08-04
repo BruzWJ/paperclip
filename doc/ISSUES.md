@@ -22,7 +22,7 @@ An issue contains:
 | `parentId` | Optional parent issue; the only work hierarchy relation |
 | `projectId`, `goalId` | Optional board organization links |
 | `priority`, `labels`, `billingCode` | Board presentation/accounting metadata |
-| `attentionMask` | Optional sparse, false-only, write-once creation attenuation |
+| `contextAccessMask` | Optional sparse, false-only, write-once context-access attenuation |
 | `presentationStage` | Optional board-only presentation state |
 | timestamps | Audit chronology |
 

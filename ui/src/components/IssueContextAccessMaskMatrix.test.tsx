@@ -3,13 +3,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IssueAttentionMaskMatrix } from "./IssueAttentionMaskMatrix";
+import { IssueContextAccessMaskMatrix } from "./IssueContextAccessMaskMatrix";
 
 (globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean;
 }).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe("IssueAttentionMaskMatrix", () => {
+describe("IssueContextAccessMaskMatrix", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -28,7 +28,7 @@ describe("IssueAttentionMaskMatrix", () => {
     const onChange = vi.fn();
     act(() => {
       root.render(
-        <IssueAttentionMaskMatrix value={null} onChange={onChange} />,
+        <IssueContextAccessMaskMatrix value={null} onChange={onChange} />,
       );
     });
     const identity = container.querySelector<HTMLButtonElement>(
@@ -40,7 +40,7 @@ describe("IssueAttentionMaskMatrix", () => {
 
     act(() => {
       root.render(
-        <IssueAttentionMaskMatrix
+        <IssueContextAccessMaskMatrix
           value={{ carry_context: false }}
           onChange={onChange}
         />,
@@ -57,7 +57,7 @@ describe("IssueAttentionMaskMatrix", () => {
     const onChange = vi.fn();
     act(() => {
       root.render(
-        <IssueAttentionMaskMatrix
+        <IssueContextAccessMaskMatrix
           value={{ read_company_issue_agent_run: false }}
           onChange={onChange}
           readOnly
@@ -76,12 +76,12 @@ describe("IssueAttentionMaskMatrix", () => {
     const onChange = vi.fn();
     act(() => {
       root.render(
-        <IssueAttentionMaskMatrix
+        <IssueContextAccessMaskMatrix
           value={{
             carry_context: true,
             read_issue_comments: false,
           } as unknown as Parameters<
-            typeof IssueAttentionMaskMatrix
+            typeof IssueContextAccessMaskMatrix
           >[0]["value"]}
           onChange={onChange}
         />,

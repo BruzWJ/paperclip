@@ -66,12 +66,30 @@ issue Session input only through the canonical dispatch path. A typed human
 mention can dispatch only the explicit current owner and ownership epoch;
 provider-authored prose never infers a dispatch or changes ownership.
 
+## Board requests
+
+When `mention_board` is present, the current owner may explicitly request
+information or direction from the collective Board:
+
+```json
+{
+  "message": "Which retention policy should this implementation use?",
+  "reason": "The product requirement is ambiguous."
+}
+```
+
+`message` is required and `reason` is an optional presentation hint. This does
+not block the issue, create an approval or review, or invoke another agent. A
+Board user continues the issue through the existing typed current-owner
+mention.
+
 ## Decisions and questions
 
-Use an owner update to state a question and mark the issue `blocked` when a
-human decision is required. Formal approvals remain board-controlled durable
-decisions. Link a governed decision to the exact proposal or document revision;
-changed proposal content requires a new decision.
+Use `issue_update(status: "blocked")` only to record blocked issue lifecycle and
+notify the issue creator. When Board direction is needed, use `mention_board`
+if granted. Formal approvals remain board-controlled durable decisions. Link a
+governed decision to the exact proposal or document revision; changed proposal
+content requires a new decision.
 
 ## Rules
 
@@ -81,3 +99,4 @@ changed proposal content requires a new decision.
 - Never infer ownership or authority from a name written in prose.
 - Use `issue_create` plus an explicit owner for delegated work.
 - Use `mention_agent` only for bounded consultation.
+- Use `mention_board` for an explicit Board request, not lifecycle or approval.

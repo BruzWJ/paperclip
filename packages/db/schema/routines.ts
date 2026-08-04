@@ -22,7 +22,7 @@ import { goals } from "./goals.js";
 import { issueExecutionRuns } from "./issue_execution_runs.js";
 import { folders } from "./folders.js";
 import type {
-  IssueAttentionMask,
+  ContextAccess,
   RoutineEnvConfig,
   RoutineRevisionSnapshotV1,
   RoutineVariable,
@@ -41,7 +41,7 @@ export const routines = pgTable(
     description: text("description"),
     assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id),
     priority: text("priority").notNull().default("medium"),
-    attentionMask: jsonb("attention_mask").$type<IssueAttentionMask | null>(),
+    contextAccessMask: jsonb("context_access_mask").$type<ContextAccess | null>(),
     status: text("status").notNull().default("active"),
     concurrencyPolicy: text("concurrency_policy").notNull().default("coalesce_if_active"),
     catchUpPolicy: text("catch_up_policy").notNull().default("skip_missed"),
@@ -76,12 +76,12 @@ export const routines = pgTable(
     companyFolderIdx: index("routines_company_folder_idx").on(table.companyId, table.folderId),
     companyResponsibleUserIdx: index("routines_company_responsible_user_idx").on(table.companyId, table.responsibleUserId),
     companyOriginIdx: index("routines_company_origin_idx").on(table.companyId, table.originKind, table.originId),
-    attentionMaskCheck: check(
-      "routines_attention_mask_check",
-      sql`${table.attentionMask} is null
+    contextAccessMaskCheck: check(
+      "routines_context_access_mask_check",
+      sql`${table.contextAccessMask} is null
         or (
-          jsonb_typeof(${table.attentionMask}) = 'object'
-          and ${table.attentionMask} - array[
+          jsonb_typeof(${table.contextAccessMask}) = 'object'
+          and ${table.contextAccessMask} - array[
             'carry_context',
             'read_issue_comments',
             'read_issue_agent_run',
@@ -92,7 +92,7 @@ export const routines = pgTable(
             'read_company_issue_comments',
             'read_company_issue_agent_run'
           ]::text[] = '{}'::jsonb
-          and not jsonb_path_exists(${table.attentionMask}, '$.* ? (@ != false)')
+          and not jsonb_path_exists(${table.contextAccessMask}, '$.* ? (@ != false)')
         )`,
     ),
   }),

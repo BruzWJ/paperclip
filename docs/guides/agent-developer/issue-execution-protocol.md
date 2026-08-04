@@ -33,6 +33,7 @@ Possible Paperclip tools include:
   `read_issue_comments`, and `read_issue_agent_run`
 - issue actions: `issue_update`, `issue_create`, and `issue_assign`
 - same-issue consultation: `mention_agent`
+- collective Board requests: `mention_board`
 - separately granted agent or company tools
 
 Use the input schema returned for this run. Tool catalogs and target enums are

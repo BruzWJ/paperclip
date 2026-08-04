@@ -26,7 +26,7 @@ function ordinaryIssue(overrides: Record<string, unknown> = {}) {
     routine: null,
     lifecycleStatus: "open",
     disposition: null,
-    attentionMask: null,
+    contextAccessMask: null,
     boardPresentationStatus: "todo",
     priority: "medium",
     labelIds: [],
@@ -42,14 +42,14 @@ describe("company portability issue manifests", () => {
   it("normalizes raw true away and retains only false mask cells", () => {
     const parsed = portabilityIssueManifestEntrySchema.parse(
       ordinaryIssue({
-        attentionMask: {
+        contextAccessMask: {
           carry_context: true,
           read_issue_comments: false,
         },
       }),
     );
 
-    expect(parsed.attentionMask).toEqual({
+    expect(parsed.contextAccessMask).toEqual({
       read_issue_comments: false,
     });
 
@@ -60,7 +60,7 @@ describe("company portability issue manifests", () => {
         routine: {
           concurrencyPolicy: null,
           catchUpPolicy: null,
-          attentionMask: {
+          contextAccessMask: {
             list_sub_issues: true,
             read_sub_issue_comments: false,
           },
@@ -69,7 +69,7 @@ describe("company portability issue manifests", () => {
         },
       }),
     );
-    expect(recurring.routine?.attentionMask).toEqual({
+    expect(recurring.routine?.contextAccessMask).toEqual({
       read_sub_issue_comments: false,
     });
   });
@@ -78,14 +78,21 @@ describe("company portability issue manifests", () => {
     expect(() =>
       portabilityIssueManifestEntrySchema.parse(
         ordinaryIssue({
-          attentionMask: { unknown_context: false },
+          contextAccessMask: { unknown_context: false },
         }),
       ),
     ).toThrow();
     expect(() =>
       portabilityIssueManifestEntrySchema.parse(
         ordinaryIssue({
-          attentionMask: { carry_context: "false" },
+          contextAccessMask: { carry_context: "false" },
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      portabilityIssueManifestEntrySchema.parse(
+        ordinaryIssue({
+          attentionMask: { carry_context: false },
         }),
       ),
     ).toThrow();

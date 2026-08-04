@@ -20,38 +20,38 @@ export const AGENT_CONTEXT_GRANT_KEYS = [
 
 export type AgentContextGrantKey = (typeof AGENT_CONTEXT_GRANT_KEYS)[number];
 
-export type IssueAttentionMask = Partial<
+export type ContextAccess = Partial<
   Record<AgentContextGrantKey, false>
 >;
 
-export type RawIssueAttentionMask = Partial<
+export type RawContextAccess = Partial<
   Record<AgentContextGrantKey, boolean>
 >;
 
 /**
- * Canonicalize a creation-time attention mask exactly once.
+ * Canonicalize a creation-time context-access mask exactly once.
  *
  * Raw `true` means "leave the grant unchanged" and therefore disappears;
  * raw `false` is the only durable value. Empty canonical identity is stored
  * as null rather than as a second equivalent representation.
  */
-export function normalizeIssueAttentionMask(
+export function normalizeContextAccess(
   value: unknown,
-): IssueAttentionMask | null {
+): ContextAccess | null {
   if (value == null) return null;
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new TypeError("Issue attention mask must be an object");
+    throw new TypeError("Context access mask must be an object");
   }
   const input = value as Record<string, unknown>;
   const allowed = new Set<string>(AGENT_CONTEXT_GRANT_KEYS);
   for (const [key, enabled] of Object.entries(input)) {
     if (!allowed.has(key) || typeof enabled !== "boolean") {
       throw new TypeError(
-        "Issue attention mask accepts only known boolean context-grant keys",
+        "Context access mask accepts only known boolean context-grant keys",
       );
     }
   }
-  const canonical: IssueAttentionMask = {};
+  const canonical: ContextAccess = {};
   for (const key of AGENT_CONTEXT_GRANT_KEYS) {
     if (input[key] === false) canonical[key] = false;
   }
@@ -162,6 +162,7 @@ export const PAPERCLIP_ACTION_KEYS = [
   "issue_assign",
   "issue_update",
   "mention_agent",
+  "mention_board",
   "agent_hire",
   "agent_configure",
 ] as const;
@@ -308,6 +309,7 @@ export const AGENT_LIVENESS_ACTION_KINDS = [
   "authenticated_human_comment",
   "issue_create_child",
   "mention_agent",
+  "mention_board",
   "issue_assign",
   "issue_update",
   "creator_withdrawal",

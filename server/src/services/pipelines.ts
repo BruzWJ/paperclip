@@ -977,7 +977,7 @@ function routineRevisionSnapshotRoutine(routine: typeof routines.$inferSelect): 
     description: routine.description,
     assigneeAgentId: routine.assigneeAgentId,
     priority: routine.priority as RoutineRevisionSnapshotV1["routine"]["priority"],
-    attentionMask: routine.attentionMask,
+    contextAccessMask: routine.contextAccessMask,
     status: routine.status as RoutineRevisionSnapshotV1["routine"]["status"],
     concurrencyPolicy: routine.concurrencyPolicy as RoutineRevisionSnapshotV1["routine"]["concurrencyPolicy"],
     catchUpPolicy: routine.catchUpPolicy as RoutineRevisionSnapshotV1["routine"]["catchUpPolicy"],

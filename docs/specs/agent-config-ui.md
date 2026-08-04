@@ -34,7 +34,7 @@ Select an adapter and configure only its supported operator-owned native fields.
 - execution timeout/grace controls
 - execution-workspace policy
 - nine context-dial cells
-- six issue-action grants
+- seven issue-action grants
 - two mention-reach grants
 - selected company tools
 - selected genuine company skills

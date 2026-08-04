@@ -51,7 +51,7 @@ import {
   interpolateRoutineTemplate,
   isValidRoutineDateString,
   pluginOperationIssueOriginKind,
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
   stringifyRoutineVariableValue,
   syncRoutineVariablesWithTemplate,
 } from "@paperclipai/shared";
@@ -572,9 +572,15 @@ function createRoutineDispatchFingerprint(input: {
   executionWorkspaceSettings?: Record<string, unknown> | null;
   title: string;
   description: string | null;
-  attentionMask: Routine["attentionMask"];
+  contextAccessMask: Routine["contextAccessMask"];
 }) {
-  const canonical = JSON.stringify(normalizeRoutineDispatchFingerprintValue(input));
+  const { contextAccessMask, ...rest } = input;
+  // Keep the pre-rename wire key inside the persisted hash contract so active
+  // routine work retains the same fingerprint across this terminology change.
+  const canonical = JSON.stringify(normalizeRoutineDispatchFingerprintValue({
+    ...rest,
+    attentionMask: contextAccessMask,
+  }));
   return crypto.createHash("sha256").update(canonical).digest("hex");
 }
 
@@ -609,7 +615,7 @@ function routineRevisionSnapshotRoutine(routine: RoutineRow): RoutineRevisionSna
     description: routine.description,
     assigneeAgentId: routine.assigneeAgentId,
     priority: routine.priority as RoutineRevisionSnapshotV1["routine"]["priority"],
-    attentionMask: routine.attentionMask ?? null,
+    contextAccessMask: routine.contextAccessMask ?? null,
     status: routine.status as RoutineRevisionSnapshotV1["routine"]["status"],
     concurrencyPolicy: routine.concurrencyPolicy as RoutineRevisionSnapshotV1["routine"]["concurrencyPolicy"],
     catchUpPolicy: routine.catchUpPolicy as RoutineRevisionSnapshotV1["routine"]["catchUpPolicy"],
@@ -1659,8 +1665,8 @@ export function routineService(
       throw conflict("Routine current revision is unavailable");
     }
     const boundRoutineSnapshot = boundRevision.snapshot as RoutineRevisionSnapshotV1;
-    const boundAttentionMask = normalizeIssueAttentionMask(
-      boundRoutineSnapshot.routine.attentionMask,
+    const boundContextAccessMask = normalizeContextAccess(
+      boundRoutineSnapshot.routine.contextAccessMask,
     );
     const allVariables = { ...getBuiltinRoutineVariableValues(), ...automaticVariables, ...resolvedVariables };
     const title = interpolateRoutineTemplate(input.routine.title, allVariables) ?? input.routine.title;
@@ -1696,7 +1702,7 @@ export function routineService(
       executionWorkspaceSettings: input.executionWorkspaceSettings ?? null,
       title,
       description,
-      attentionMask: boundAttentionMask,
+      contextAccessMask: boundContextAccessMask,
     });
     const manualRunnerUserId =
       input.source === "manual" ? input.actor?.userId ?? null : null;
@@ -1999,7 +2005,7 @@ export function routineService(
           originRunId: run.id,
           originFingerprint: dispatchFingerprint,
           billingCode: managedIssueTemplate?.billingCode ?? null,
-          attentionMask: boundAttentionMask,
+          contextAccessMask: boundContextAccessMask,
           correlate: async (tx, persisted) => {
             const txDb = tx as unknown as Db;
             if (manualRunnerUserId) {
@@ -2358,8 +2364,8 @@ export function routineService(
             description: input.description ?? null,
             assigneeAgentId: input.assigneeAgentId ?? null,
             priority: input.priority,
-            attentionMask:
-              normalizeIssueAttentionMask(input.attentionMask),
+            contextAccessMask:
+              normalizeContextAccess(input.contextAccessMask),
             status,
             concurrencyPolicy: input.concurrencyPolicy,
             catchUpPolicy: input.catchUpPolicy,
@@ -2481,10 +2487,10 @@ export function routineService(
           description: nextDescription,
           assigneeAgentId: nextAssigneeAgentId,
           priority: patch.priority ?? locked.priority,
-          attentionMask:
-            patch.attentionMask === undefined
-              ? locked.attentionMask
-              : normalizeIssueAttentionMask(patch.attentionMask),
+          contextAccessMask:
+            patch.contextAccessMask === undefined
+              ? locked.contextAccessMask
+              : normalizeContextAccess(patch.contextAccessMask),
           status: nextStatus,
           concurrencyPolicy: patch.concurrencyPolicy ?? locked.concurrencyPolicy,
           catchUpPolicy: patch.catchUpPolicy ?? locked.catchUpPolicy,
@@ -2570,7 +2576,7 @@ export function routineService(
             description: candidate.description,
             assigneeAgentId: candidate.assigneeAgentId,
             priority: candidate.priority,
-            attentionMask: candidate.attentionMask,
+            contextAccessMask: candidate.contextAccessMask,
             status: candidate.status,
             concurrencyPolicy: candidate.concurrencyPolicy,
             catchUpPolicy: candidate.catchUpPolicy,
@@ -3005,7 +3011,7 @@ export function routineService(
             description: routineSnapshot.description,
             assigneeAgentId: routineSnapshot.assigneeAgentId,
             priority: routineSnapshot.priority,
-            attentionMask: routineSnapshot.attentionMask,
+            contextAccessMask: routineSnapshot.contextAccessMask,
             status: routineSnapshot.status,
             concurrencyPolicy: routineSnapshot.concurrencyPolicy,
             catchUpPolicy: routineSnapshot.catchUpPolicy,

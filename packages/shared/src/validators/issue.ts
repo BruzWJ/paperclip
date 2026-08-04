@@ -24,8 +24,8 @@ import {
 import { multilineTextSchema } from "./text.js";
 import {
   decodeIssueDisposition,
-  normalizeIssueAttentionMask,
-  type IssueAttentionMask,
+  normalizeContextAccess,
+  type ContextAccess,
 } from "../issue-runtime.js";
 
 export const issueBlockedInboxStateSchema = z.enum([
@@ -239,7 +239,7 @@ export const issueExecutionStateSchema = z.object({
   monitor: issueExecutionMonitorStateSchema.optional().nullable(),
 });
 
-const rawIssueCreationAttentionMaskSchema = z
+const rawIssueCreationContextAccessSchema = z
   .object({
     carry_context: z.boolean().optional(),
     read_issue_comments: z.boolean().optional(),
@@ -253,9 +253,9 @@ const rawIssueCreationAttentionMaskSchema = z
   })
   .strict();
 
-export const issueCreationAttentionMaskSchema =
-  rawIssueCreationAttentionMaskSchema.transform(
-    (value): IssueAttentionMask | null => normalizeIssueAttentionMask(value),
+export const issueCreationContextAccessSchema =
+  rawIssueCreationContextAccessSchema.transform(
+    (value): ContextAccess | null => normalizeContextAccess(value),
   );
 
 export const issueDispositionSchema = z
@@ -293,7 +293,7 @@ const canonicalIssueCreateBaseSchema = z
     goalId: z.string().uuid().nullable().optional(),
     parentId: z.string().uuid().nullable().optional(),
     priority: z.enum(ISSUE_PRIORITIES).optional(),
-    attentionMask: issueCreationAttentionMaskSchema.nullable().optional(),
+    contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   })
   .strict();
 

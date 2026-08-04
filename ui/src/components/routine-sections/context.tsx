@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 import type { UseMutationResult } from "@tanstack/react-query";
 import type {
   CompanySecret,
-  IssueAttentionMask,
+  ContextAccess,
   RoutineDetail as RoutineDetailType,
   RoutineEnvConfig,
   RoutineVariable,
@@ -46,7 +46,7 @@ export const SECTION_FIELD_KEYS: Record<string, string[]> = {
   overview: ["title", "description", "projectId", "assigneeAgentId", "priority"],
   variables: ["variables"],
   secrets: ["env"],
-  delivery: ["concurrencyPolicy", "catchUpPolicy", "attentionMask"],
+  delivery: ["concurrencyPolicy", "catchUpPolicy", "contextAccessMask"],
 };
 
 export type RoutineEditDraft = {
@@ -57,7 +57,7 @@ export type RoutineEditDraft = {
   priority: string;
   concurrencyPolicy: string;
   catchUpPolicy: string;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   variables: RoutineVariable[];
   env: RoutineEnvConfig | null;
 };

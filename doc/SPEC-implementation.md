@@ -41,7 +41,7 @@ enforcement.
 The shared package exports the closed canonical vocabulary:
 
 - nine context keys
-- six issue-action keys
+- seven issue-action keys
 - two mention-reach keys
 - canonical owner/creator/lifecycle/disposition types
 - `IssueExecutionRef`

@@ -94,7 +94,7 @@ function snapshotV1(overrides?: Partial<RoutineRevisionSnapshotV1["routine"]>): 
       description: "Summarize standup notes",
       assigneeAgentId: null,
       priority: "medium",
-      attentionMask: null,
+      contextAccessMask: null,
       status: "active",
       concurrencyPolicy: "coalesce_if_active",
       catchUpPolicy: "skip_missed",
@@ -137,7 +137,7 @@ function createRoutine(overrides: Partial<Routine> = {}): Routine {
     description: "Summarize standup notes",
     assigneeAgentId: null,
     priority: "medium",
-    attentionMask: null,
+      contextAccessMask: null,
     status: "active",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
@@ -230,12 +230,12 @@ describe("RoutineHistoryTab", () => {
     expect(container.textContent).toContain("Current");
   });
 
-  it("renders historical attention masks read-only without order-only diffs", async () => {
+  it("renders historical context access masks read-only without order-only diffs", async () => {
     const current = createRevision({
       id: "revision-2",
       revisionNumber: 2,
       snapshot: snapshotV1({
-        attentionMask: {
+        contextAccessMask: {
           carry_context: false,
           read_issue_comments: false,
         },
@@ -245,7 +245,7 @@ describe("RoutineHistoryTab", () => {
       id: "revision-1",
       revisionNumber: 1,
       snapshot: snapshotV1({
-        attentionMask: {
+        contextAccessMask: {
           read_issue_comments: false,
           carry_context: false,
         },

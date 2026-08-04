@@ -467,7 +467,7 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
-  it("normalizes a persisted raw attention mask before rendering and submission", async () => {
+  it("normalizes persisted raw context access before rendering and submission", async () => {
     localStorage.setItem(
       "paperclip:issue-request-draft:v2",
       JSON.stringify({
@@ -479,7 +479,7 @@ describe("NewIssueDialog", () => {
         reviewerValue: "",
         approverValue: "",
         projectId: "",
-        attentionMask: {
+        contextAccessMask: {
           carry_context: true,
           read_issue_comments: false,
         },
@@ -514,13 +514,13 @@ describe("NewIssueDialog", () => {
     expect(mockIssuesApi.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
-        attentionMask: {
+        contextAccessMask: {
           read_issue_comments: false,
         },
       }),
     );
     expect(
-      mockIssuesApi.create.mock.calls[0]?.[1]?.attentionMask,
+      mockIssuesApi.create.mock.calls[0]?.[1]?.contextAccessMask,
     ).not.toHaveProperty("carry_context");
 
     act(() => root.unmount());

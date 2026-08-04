@@ -51,7 +51,7 @@ function snapshot(
       ownerKind: "agent",
       ownerAgentId: "owner",
       ownershipEpoch: 4,
-      attentionMask: { list_company_issues: false },
+      contextAccessMask: { list_company_issues: false },
       workMode: "standard",
       harnessKind: null,
       originKind: "manual",

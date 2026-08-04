@@ -5,7 +5,7 @@ import type {
   AgentContextGrantKey,
   AgentMentionReachGrantKey,
   AgentVisibleIssueStatus,
-  IssueAttentionMask,
+  ContextAccess,
   IssueDisposition,
   PaperclipActionKey,
 } from "../issue-runtime.js";
@@ -107,7 +107,7 @@ export interface CompanyPortabilityIssueRoutineTriggerManifestEntry {
 export interface CompanyPortabilityIssueRoutineManifestEntry {
   concurrencyPolicy: string | null;
   catchUpPolicy: string | null;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   variables?: RoutineVariable[] | null;
   triggers: CompanyPortabilityIssueRoutineTriggerManifestEntry[];
 }
@@ -135,7 +135,7 @@ export interface CompanyPortabilityIssueManifestEntry {
   routine: CompanyPortabilityIssueRoutineManifestEntry | null;
   lifecycleStatus: AgentVisibleIssueStatus;
   disposition: IssueDisposition | null;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   boardPresentationStatus: string;
   priority: string | null;
   labelIds: string[];

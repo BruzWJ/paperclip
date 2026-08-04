@@ -185,7 +185,7 @@ describe("onboarding launch payloads", () => {
     expect(retry.title).toBe("Changed display title");
   });
 
-  it("lets the first issue inherit the configured agent attention unchanged", () => {
+  it("lets the first issue inherit the configured agent context access unchanged", () => {
     const payload = buildOnboardingIssuePayload({
       title: "Start",
       request: "Begin the first assignment",
@@ -194,6 +194,6 @@ describe("onboarding launch payloads", () => {
       goalId: null,
     });
 
-    expect(payload).not.toHaveProperty("attentionMask");
+    expect(payload).not.toHaveProperty("contextAccessMask");
   });
 });

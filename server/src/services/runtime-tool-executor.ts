@@ -38,6 +38,7 @@ export interface RuntimeActionPort {
   issueAssign(input: RuntimeActionInvocation): Promise<unknown>;
   issueUpdate(input: RuntimeActionInvocation): Promise<unknown>;
   mentionAgent(input: RuntimeActionInvocation): Promise<unknown>;
+  mentionBoard(input: RuntimeActionInvocation): Promise<unknown>;
   agentHire(input: RuntimeActionInvocation): Promise<unknown>;
   agentConfigure(input: RuntimeActionInvocation): Promise<unknown>;
 }
@@ -163,6 +164,7 @@ export function createRuntimeToolExecutor(options: {
     issue_assign: options.actions.issueAssign.bind(options.actions),
     issue_update: options.actions.issueUpdate.bind(options.actions),
     mention_agent: options.actions.mentionAgent.bind(options.actions),
+    mention_board: options.actions.mentionBoard.bind(options.actions),
     agent_hire: options.actions.agentHire.bind(options.actions),
     agent_configure: options.actions.agentConfigure.bind(options.actions),
   };

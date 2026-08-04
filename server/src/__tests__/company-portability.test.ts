@@ -2144,7 +2144,7 @@ describe("company portability", () => {
         status: "paused",
         concurrencyPolicy: "always_enqueue",
         catchUpPolicy: "enqueue_missed_with_cap",
-        attentionMask: {
+        contextAccessMask: {
           read_issue_comments: false,
         },
         createdByAgentId: null,
@@ -2238,7 +2238,7 @@ describe("company portability", () => {
         routine: expect.objectContaining({
           concurrencyPolicy: "always_enqueue",
           catchUpPolicy: "enqueue_missed_with_cap",
-          attentionMask: {
+          contextAccessMask: {
             read_issue_comments: false,
           },
           triggers: expect.arrayContaining([
@@ -2451,7 +2451,7 @@ describe("company portability", () => {
         "  monday-review:",
         '    concurrencyPolicy: "always_enqueue"',
         '    catchUpPolicy: "enqueue_missed_with_cap"',
-        "    attentionMask:",
+        "    contextAccessMask:",
         "      carry_context: true",
         "      read_issue_comments: false",
         "    triggers:",
@@ -2504,7 +2504,7 @@ describe("company portability", () => {
       status: "paused",
       concurrencyPolicy: "always_enqueue",
       catchUpPolicy: "enqueue_missed_with_cap",
-      attentionMask: {
+      contextAccessMask: {
         read_issue_comments: false,
       },
     }), expect.any(Object));
@@ -3325,7 +3325,7 @@ describe("company portability", () => {
         boardPresentationStatus: "todo",
         lifecycleStatus: "open",
         disposition: null,
-        attentionMask: {
+        contextAccessMask: {
           carry_context: false,
           read_issue_comments: false,
         },
@@ -3366,14 +3366,14 @@ describe("company portability", () => {
     expect(ordinaryIssueRuntime.create).toHaveBeenCalledWith(expect.objectContaining({
       companyId: "company-imported",
       labelIds: ["label-a", "label-b"],
-      attentionMask: {
+      contextAccessMask: {
         carry_context: false,
         read_issue_comments: false,
       },
     }));
   });
 
-  it("round-trips terminal lifecycle, strict disposition, and attention mask in preview", async () => {
+  it("round-trips terminal lifecycle, strict disposition, and context access in preview", async () => {
     const portability = companyPortabilityService({} as any);
     projectSvc.list.mockResolvedValue([]);
     projectSvc.listWorkspaces.mockResolvedValue([]);
@@ -3392,7 +3392,7 @@ describe("company portability", () => {
           message: "Completed exactly.",
           structuredResult: null,
         },
-        attentionMask: {
+        contextAccessMask: {
           read_company_issue_agent_run: false,
         },
         priority: "medium",
@@ -3423,7 +3423,7 @@ describe("company portability", () => {
         message: "Completed exactly.",
         structuredResult: null,
       },
-      attentionMask: {
+      contextAccessMask: {
         read_company_issue_agent_run: false,
       },
     });
@@ -3454,7 +3454,7 @@ describe("company portability", () => {
         message: "Completed exactly.",
         structuredResult: null,
       },
-      attentionMask: {
+      contextAccessMask: {
         read_company_issue_agent_run: false,
       },
     });
@@ -3492,7 +3492,7 @@ describe("company portability", () => {
         "  narrowed:",
         "    lifecycleStatus: open",
         "    boardPresentationStatus: todo",
-        "    attentionMask:",
+        "    contextAccessMask:",
         "      carry_context: true",
         "      read_issue_comments: false",
         "",
@@ -3520,7 +3520,7 @@ describe("company portability", () => {
     }, "user-1");
     expect(ordinaryIssueRuntime.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        attentionMask: {
+        contextAccessMask: {
           read_issue_comments: false,
         },
       }),
@@ -3555,7 +3555,7 @@ describe("company portability", () => {
         collisionStrategy: "rename",
       }),
     ).rejects.toThrow(
-      "Issue narrowed attentionMask accepts only known boolean context-grant keys",
+      "Issue narrowed contextAccessMask accepts only known boolean context-grant keys",
     );
   });
 

@@ -31,7 +31,7 @@ function issue(input: Partial<Issue> & Pick<Issue, "id" | "companyId" | "title">
     ownerUserId: null,
     ownerAssignmentSource: null,
     ownershipEpoch: 1,
-    attentionMask: null,
+    contextAccessMask: null,
     creatorKind: "user/board",
     creatorAuthorityId: null,
     creatorAdapterConfigRevisionId: null,

@@ -4,12 +4,9 @@ import type { BudgetCurrency, MoneyAmount } from "../money.js";
 export type AttentionSourceKind =
   | "approval"
   | "join_request"
-  | "blocker_attention"
   | "review"
-  | "failed_run"
   | "budget_alert"
-  | "agent_error_alert"
-  | "agent_liveness";
+  | "mention_board";
 
 export type AttentionSubjectKind =
   | "approval"
@@ -71,32 +68,11 @@ export type AttentionItemDetail =
       images: AttentionDetailImage[];
     }
   | {
-      kind: "failed_run";
-      agentName: string | null;
-      failureReasonExcerpt: string | null;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "blocker";
-      blockingIssue: {
-        id: string | null;
-        identifier: string | null;
-        title: string | null;
-      } | null;
-      images: AttentionDetailImage[];
-    }
-  | {
       kind: "budget";
       observedPercent: number;
       budgetCurrency: BudgetCurrency;
       observedAmount: MoneyAmount;
       limitAmount: MoneyAmount;
-      images: AttentionDetailImage[];
-    }
-  | {
-      kind: "agent_error";
-      agentName: string | null;
-      failureReasonExcerpt: string | null;
       images: AttentionDetailImage[];
     }
   | {

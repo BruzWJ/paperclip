@@ -61,6 +61,7 @@ describe("issue liveness reconciliation", () => {
     for (const reference of [
       "issue_creator_withdrawal_audit:legacy-id",
       "issue_update:",
+      "issue_board_mention:",
       "issue_execution_prompt_segment:run-id:ref-id:0",
     ]) {
       await expect(

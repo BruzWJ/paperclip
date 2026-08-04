@@ -10,7 +10,7 @@ import type {
 } from "../constants.js";
 import type { EnvBinding } from "./secrets.js";
 import type { ExecutionWorkspaceMode, IssueExecutionWorkspaceSettings } from "./workspace-runtime.js";
-import type { IssueAttentionMask } from "../issue-runtime.js";
+import type { ContextAccess } from "../issue-runtime.js";
 
 export interface RoutineDescriptionDocument {
   id: string;
@@ -78,7 +78,7 @@ export interface Routine {
   description: string | null;
   assigneeAgentId: string | null;
   priority: string;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   status: string;
   concurrencyPolicy: string;
   catchUpPolicy: string;
@@ -122,7 +122,7 @@ export interface RoutineRevisionSnapshotRoutineV1 {
   description: string | null;
   assigneeAgentId: string | null;
   priority: IssuePriority;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   status: RoutineStatus;
   concurrencyPolicy: RoutineConcurrencyPolicy;
   catchUpPolicy: RoutineCatchUpPolicy;

@@ -127,7 +127,7 @@ function routine(overrides: Record<string, unknown> = {}) {
     description: "Review the repository",
     assigneeAgentId: "agent-owner",
     priority: "medium",
-    attentionMask: null,
+    contextAccessMask: null,
     status: "active",
     concurrencyPolicy: "coalesce_if_active",
     catchUpPolicy: "skip_missed",
@@ -165,7 +165,7 @@ function snapshot(row: ReturnType<typeof routine>, triggers: unknown[] = []) {
       description: row.description,
       assigneeAgentId: row.assigneeAgentId,
       priority: row.priority,
-      attentionMask: row.attentionMask,
+      contextAccessMask: row.contextAccessMask,
       status: row.status,
       concurrencyPolicy: row.concurrencyPolicy,
       catchUpPolicy: row.catchUpPolicy,
@@ -878,7 +878,7 @@ describe("routine service contracts without a database", () => {
           originKind: "routine_execution",
           originRunId: createdRun.id,
           responsibleUserId: "revision-owner",
-          attentionMask: null,
+          contextAccessMask: null,
         }),
       );
       expect(queryValues(harness, "insert")[0]).toEqual(

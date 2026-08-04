@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
 } from "@paperclipai/shared";
 import {
   instanceSettingsService,
@@ -45,14 +45,14 @@ export function boardChatRoutes(
       message?: unknown;
       agentId?: unknown;
       idempotencyKey?: unknown;
-      attentionMask?: unknown;
+      contextAccessMask?: unknown;
     };
     const allowedBodyKeys = new Set([
       "companyId",
       "message",
       "agentId",
       "idempotencyKey",
-      "attentionMask",
+      "contextAccessMask",
     ]);
     if (
       !req.body ||
@@ -85,13 +85,13 @@ export function boardChatRoutes(
       });
       return;
     }
-    let attentionMask;
+    let contextAccessMask;
     try {
-      attentionMask = normalizeIssueAttentionMask(body.attentionMask);
+      contextAccessMask = normalizeContextAccess(body.contextAccessMask);
     } catch {
       res.status(400).json({
         error:
-          "attentionMask accepts only known boolean context-grant keys",
+          "contextAccessMask accepts only known boolean context-grant keys",
       });
       return;
     }
@@ -109,7 +109,7 @@ export function boardChatRoutes(
       sourceKind: "board_chat",
       title: "Board Chat",
       priority: "medium",
-      attentionMask,
+      contextAccessMask,
     });
     res.status(created.retried ? 200 : 201).json({
       issue: created.issue,

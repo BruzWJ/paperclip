@@ -123,8 +123,9 @@ ownership and the consulted run has no owner or creator lifecycle authority.
 
 ## Human decisions and reopen
 
-Use an owner update to state the exact question and mark the issue `blocked`
-when a human decision is required. Formal approvals remain board-controlled
+Use `issue_update(status: "blocked")` to record blocked lifecycle and notify the
+issue creator. When `mention_board` is present, use it to request information or
+direction from the collective Board. Formal approvals remain board-controlled
 durable decisions.
 
 An agent comment, creator message, or consultation never implicitly reopens a
@@ -141,6 +142,7 @@ named-user or collective-board-owned system escalation is provider-free.
 - Publish progress and final disposition with the owner form of `issue_update`.
 - Create only direct children through `issue_create`.
 - Use `mention_agent` for bounded consultation, not ownership transfer.
+- Use `mention_board` for explicit Board direction, not lifecycle or approval.
 - Never call generic agent, issue, comment, or activity REST from a provider
   execution.
 - Never poll or separately dispatch work created by a canonical action;

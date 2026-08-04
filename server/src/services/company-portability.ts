@@ -45,7 +45,7 @@ import type {
   PermissionKey,
   RoutineVariable,
   AgentVisibleIssueStatus,
-  IssueAttentionMask,
+  ContextAccess,
   IssueDisposition,
   IssueStatus,
 } from "@paperclipai/shared";
@@ -71,7 +71,7 @@ import {
   issueCommentMetadataSchema,
   issueCommentPresentationSchema,
   isUuidLike,
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
   normalizeAgentUrlKey,
   parseBudgetCurrency,
   parseMoneyAmount,
@@ -645,7 +645,7 @@ const PORTABLE_ISSUE_EXTENSION_KEYS = [
   "identifier",
   "lifecycleStatus",
   "disposition",
-  "attentionMask",
+  "contextAccessMask",
   "boardPresentationStatus",
   "priority",
   "labelIds",
@@ -800,15 +800,15 @@ function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
 
-function normalizePortableAttentionMask(
+function normalizePortableContextAccessMask(
   value: unknown,
   subjectLabel: string,
 ) {
   try {
-    return normalizeIssueAttentionMask(value);
+    return normalizeContextAccess(value);
   } catch {
     throw unprocessable(
-      `${subjectLabel} attentionMask accepts only known boolean context-grant keys`,
+      `${subjectLabel} contextAccessMask accepts only known boolean context-grant keys`,
     );
   }
 }
@@ -904,7 +904,7 @@ interface PortableCanonicalIssueCreateInput {
   lifecycleStatus: AgentVisibleIssueStatus;
   boardPresentationStatus: IssueStatus;
   disposition: IssueDisposition | null;
-  attentionMask: IssueAttentionMask | null;
+  contextAccessMask: ContextAccess | null;
   priority: "critical" | "high" | "medium" | "low";
   labelIds: string[];
   billingCode: string | null;
@@ -971,8 +971,8 @@ async function createPortableCanonicalIssue(
           input.boardPresentationStatus ||
         canonicalPortableJson(existing.disposition) !==
           canonicalPortableJson(input.disposition) ||
-        canonicalPortableJson(existing.attentionMask) !==
-          canonicalPortableJson(input.attentionMask) ||
+        canonicalPortableJson(existing.contextAccessMask) !==
+          canonicalPortableJson(input.contextAccessMask) ||
         existing.priority !== input.priority ||
         existing.billingCode !== input.billingCode ||
         canonicalPortableJson(existing.executionWorkspaceSettings) !==
@@ -1093,7 +1093,7 @@ async function createPortableCanonicalIssue(
         ownershipEpoch: 1,
         creatorKind: "user/board",
         creatorUserId: input.creatorUserId,
-        attentionMask: input.attentionMask,
+        contextAccessMask: input.contextAccessMask,
         responsibleUserId: null,
         issueNumber,
         identifier,
@@ -1392,8 +1392,8 @@ function normalizeRoutineExtension(value: unknown): CompanyPortabilityIssueRouti
   const routine = {
     concurrencyPolicy: asString(value.concurrencyPolicy),
     catchUpPolicy: asString(value.catchUpPolicy),
-    attentionMask: normalizePortableAttentionMask(
-      value.attentionMask,
+    contextAccessMask: normalizePortableContextAccessMask(
+      value.contextAccessMask,
       "Routine issue template",
     ),
     variables,
@@ -1406,8 +1406,8 @@ function buildRoutineManifestFromLiveRoutine(routine: RoutineLike): CompanyPorta
   return {
     concurrencyPolicy: routine.concurrencyPolicy,
     catchUpPolicy: routine.catchUpPolicy,
-    attentionMask: normalizePortableAttentionMask(
-      routine.attentionMask,
+    contextAccessMask: normalizePortableContextAccessMask(
+      routine.contextAccessMask,
       `Routine ${routine.id}`,
     ),
     variables: routine.variables,
@@ -1708,14 +1708,14 @@ function resolvePortableRoutineDefinition(
     ? {
       concurrencyPolicy: issue.routine.concurrencyPolicy,
       catchUpPolicy: issue.routine.catchUpPolicy,
-      attentionMask: issue.routine.attentionMask,
+      contextAccessMask: issue.routine.contextAccessMask,
       variables: issue.routine.variables ?? null,
       triggers: [...issue.routine.triggers],
     }
     : {
       concurrencyPolicy: null,
       catchUpPolicy: null,
-      attentionMask: null,
+      contextAccessMask: null,
       variables: null,
       triggers: [] as CompanyPortabilityIssueRoutineTriggerManifestEntry[],
     };
@@ -3332,8 +3332,8 @@ function buildManifestFromPackageFiles(
         lifecycleStatus as CompanyPortabilityIssueManifestEntry["lifecycleStatus"],
         `Issue ${slug}`,
       ),
-      attentionMask: normalizePortableAttentionMask(
-        extension.attentionMask,
+      contextAccessMask: normalizePortableContextAccessMask(
+        extension.contextAccessMask,
         `Issue ${slug}`,
       ),
       boardPresentationStatus,
@@ -4231,8 +4231,8 @@ export function companyPortabilityService(
       const extension = stripEmptyValues({
         identifier: issue.identifier,
         lifecycleStatus: issue.lifecycleStatus,
-        attentionMask: normalizePortableAttentionMask(
-          issue.attentionMask,
+        contextAccessMask: normalizePortableContextAccessMask(
+          issue.contextAccessMask,
           `Issue ${issue.identifier ?? issue.id}`,
         ) ?? undefined,
         boardPresentationStatus: issue.boardPresentationStatus,
@@ -4295,8 +4295,8 @@ export function companyPortabilityService(
       const routineExtension = stripEmptyValues({
         concurrencyPolicy: routine.concurrencyPolicy !== "coalesce_if_active" ? routine.concurrencyPolicy : undefined,
         catchUpPolicy: routine.catchUpPolicy !== "skip_missed" ? routine.catchUpPolicy : undefined,
-        attentionMask: normalizePortableAttentionMask(
-          routine.attentionMask,
+        contextAccessMask: normalizePortableContextAccessMask(
+          routine.contextAccessMask,
           `Routine ${routine.id}`,
         ) ?? undefined,
         variables: (routine.variables ?? []).length > 0 ? routine.variables : undefined,
@@ -5669,7 +5669,7 @@ export function companyPortabilityService(
             const routineDefinition = resolvedRoutine.routine ?? {
               concurrencyPolicy: null,
               catchUpPolicy: null,
-              attentionMask: null,
+              contextAccessMask: null,
               variables: null,
               triggers: [],
             };
@@ -5693,7 +5693,7 @@ export function companyPortabilityService(
                 routineDefinition.catchUpPolicy && ROUTINE_CATCH_UP_POLICIES.includes(routineDefinition.catchUpPolicy as any)
                   ? routineDefinition.catchUpPolicy as typeof ROUTINE_CATCH_UP_POLICIES[number]
                   : "skip_missed",
-              attentionMask: routineDefinition.attentionMask,
+              contextAccessMask: routineDefinition.contextAccessMask,
               variables: routineDefinition.variables ?? [],
             }, secretMutationActor);
             for (const trigger of routineDefinition.triggers) {
@@ -5776,7 +5776,7 @@ export function companyPortabilityService(
                   billingCode: manifestIssue.billingCode,
                   executionWorkspaceSettings:
                     manifestIssue.executionWorkspaceSettings,
-                  attentionMask: manifestIssue.attentionMask,
+                  contextAccessMask: manifestIssue.contextAccessMask,
                 })
               : await createPortableCanonicalIssue(db, {
                   companyId: targetCompany.id,
@@ -5790,7 +5790,7 @@ export function companyPortabilityService(
                   lifecycleStatus: manifestIssue.lifecycleStatus,
                   boardPresentationStatus,
                   disposition: manifestIssue.disposition,
-                  attentionMask: manifestIssue.attentionMask,
+                  contextAccessMask: manifestIssue.contextAccessMask,
                   priority,
                   labelIds: manifestIssue.labelIds ?? [],
                   billingCode: manifestIssue.billingCode,

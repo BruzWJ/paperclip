@@ -46,7 +46,7 @@ export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
 import type {
   PluginEvent,
-  PluginIssueAttentionMask,
+  PluginContextAccess,
   PluginIssueUpdateInput,
   PluginIssueWithdrawalResult,
   PluginCreatorCallbackAcknowledgement,
@@ -1537,7 +1537,7 @@ export interface WorkerToHostMethods {
       goalId?: string;
       parentId?: string;
       priority?: string;
-      attentionMask?: PluginIssueAttentionMask | null;
+      contextAccessMask?: PluginContextAccess | null;
     },
     result: Issue,
   ];

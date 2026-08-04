@@ -10,7 +10,7 @@ import {
 } from "../constants.js";
 import {
   ISSUE_EXECUTION_WORKSPACE_PREFERENCES,
-  issueCreationAttentionMaskSchema,
+  issueCreationContextAccessSchema,
   issueExecutionWorkspaceSettingsSchema,
 } from "./issue.js";
 import { envConfigSchema } from "./secret.js";
@@ -69,7 +69,7 @@ export const createRoutineSchema = z.object({
   description: z.string().optional().nullable(),
   assigneeAgentId: z.string().uuid().optional().nullable(),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
-  attentionMask: issueCreationAttentionMaskSchema.nullable().optional(),
+  contextAccessMask: issueCreationContextAccessSchema.nullable().optional(),
   status: z.enum(ROUTINE_STATUSES).optional().default("active"),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES).optional().default("coalesce_if_active"),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES).optional().default("skip_missed"),
@@ -95,7 +95,7 @@ export const routineRevisionSnapshotRoutineV1Schema = z.object({
   description: z.string().nullable(),
   assigneeAgentId: z.string().uuid().nullable(),
   priority: z.enum(ISSUE_PRIORITIES),
-  attentionMask: issueCreationAttentionMaskSchema.nullable(),
+  contextAccessMask: issueCreationContextAccessSchema.nullable(),
   status: z.enum(ROUTINE_STATUSES),
   concurrencyPolicy: z.enum(ROUTINE_CONCURRENCY_POLICIES),
   catchUpPolicy: z.enum(ROUTINE_CATCH_UP_POLICIES),

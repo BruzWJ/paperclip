@@ -409,7 +409,7 @@ describe("AttentionQueueRow", () => {
   it("does not expose a toggle button for non-inline rows", () => {
     render(
       <AttentionQueueRow
-        item={buildItem({ sourceKind: "failed_run" as AttentionSourceKind, inlineResolvable: false })}
+        item={buildItem({ sourceKind: "mention_board" as AttentionSourceKind, inlineResolvable: false })}
         companyId="c1"
         expanded={false}
         onToggleExpand={noop}
@@ -419,11 +419,11 @@ describe("AttentionQueueRow", () => {
     expect(container?.querySelector('[role="button"][aria-expanded]')).toBeNull();
   });
 
-  it("never exposes dismiss or snooze controls for agent liveness", () => {
+  it("links an agent Board request to its issue", () => {
     const el = render(
       <AttentionQueueRow
         item={buildItem({
-          sourceKind: "agent_liveness",
+          sourceKind: "mention_board",
           inlineResolvable: false,
           subject: {
             kind: "issue",
@@ -445,8 +445,7 @@ describe("AttentionQueueRow", () => {
     );
 
     expect(el.textContent).toContain("Open");
-    expect(el.textContent).not.toContain("Dismiss");
-    expect(el.textContent).not.toContain("Snooze");
+    expect(el.querySelector('[aria-label="Row actions"]')).not.toBeNull();
   });
 
   it("makes a non-inline row with images expandable", () => {

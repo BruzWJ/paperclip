@@ -48,6 +48,7 @@ function serviceSpies(): RuntimeIssueActionService {
     updateOwner: vi.fn(async (input) => ({ kind: "owner", input })),
     updateCreator: vi.fn(async (input) => ({ kind: "creator", input })),
     mention: vi.fn(async (input) => ({ kind: "mention", input })),
+    mentionBoard: vi.fn(async (input) => ({ kind: "board", input })),
   };
 }
 
@@ -84,7 +85,7 @@ describe("runtime issue action contracts", () => {
       title: "Child task",
       priority: "high",
       owner: { kind: "self" },
-      attentionMask: {
+      contextAccessMask: {
         carry_context: true,
         read_issue_comments: false,
       },
@@ -99,7 +100,7 @@ describe("runtime issue action contracts", () => {
       title: "Child task",
       priority: "high",
       owner: { kind: "self" },
-      attentionMask: { read_issue_comments: false },
+      contextAccessMask: { read_issue_comments: false },
     });
   });
 

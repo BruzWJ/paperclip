@@ -1960,7 +1960,7 @@ const issueListSelect = {
   creatorRoutineDispatchId: issues.creatorRoutineDispatchId,
   creatorSystemSourceKind: issues.creatorSystemSourceKind,
   creatorSystemSourceId: issues.creatorSystemSourceId,
-  attentionMask: issues.attentionMask,
+  contextAccessMask: issues.contextAccessMask,
   escalatedFromAffectedIssueId: issues.escalatedFromAffectedIssueId,
   escalatedFromTriggeringRunId: issues.escalatedFromTriggeringRunId,
   escalatedFromReason: issues.escalatedFromReason,

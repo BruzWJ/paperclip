@@ -90,6 +90,7 @@ export const agentActionGrants = pgTable(
         'issue_assign',
         'issue_update',
         'mention_agent',
+        'mention_board',
         'agent_hire',
         'agent_configure'
       )`,

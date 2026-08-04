@@ -10,15 +10,7 @@ import { createMockDb } from "./helpers/mock-db.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const dependencyMocks = vi.hoisted(() => ({
-  blockedIssues: vi.fn(),
   budgetOverview: vi.fn(),
-  executionRuns: vi.fn(),
-  livenessRows: vi.fn(),
-}));
-
-vi.mock("../services/issues.js", async () => ({
-  ...await vi.importActual<typeof import("../services/issues.js")>("../services/issues.js"),
-  issueService: () => ({ list: dependencyMocks.blockedIssues }),
 }));
 
 vi.mock("../services/budgets.js", async () => ({
@@ -26,15 +18,6 @@ vi.mock("../services/budgets.js", async () => ({
   budgetService: () => ({ overview: dependencyMocks.budgetOverview }),
 }));
 
-vi.mock("../services/issue-execution-run-service.js", async () => ({
-  ...await vi.importActual<typeof import("../services/issue-execution-run-service.js")>("../services/issue-execution-run-service.js"),
-  listIssueExecutionRunsForActivity: dependencyMocks.executionRuns,
-}));
-
-vi.mock("../services/issue-liveness-reconciliation.js", async () => ({
-  ...await vi.importActual<typeof import("../services/issue-liveness-reconciliation.js")>("../services/issue-liveness-reconciliation.js"),
-  listActiveIssueLivenessAttentionRows: dependencyMocks.livenessRows,
-}));
 
 const companyId = "00000000-0000-4000-8000-000000000001";
 const approvalId = "00000000-0000-4000-8000-000000000010";
@@ -42,10 +25,7 @@ const reviewIssueId = "00000000-0000-4000-8000-000000000020";
 const at = new Date("2026-07-09T12:00:00.000Z");
 
 function emptyRuntimeDependencies() {
-  dependencyMocks.blockedIssues.mockResolvedValue([]);
   dependencyMocks.budgetOverview.mockResolvedValue({ activeIncidents: [] });
-  dependencyMocks.executionRuns.mockResolvedValue({ items: [], nextCursor: null });
-  dependencyMocks.livenessRows.mockResolvedValue([]);
 }
 
 function approvalOnlySelectPlan(input: {
@@ -102,7 +82,7 @@ describe("attention service", () => {
     emptyRuntimeDependencies();
   });
 
-  it("returns ranked decision rows across approvals, joins, reviews, budgets, and agent errors", async () => {
+  it("returns ranked Board Attention rows across approvals, joins, reviews, budgets, and agent requests", async () => {
     dependencyMocks.budgetOverview.mockResolvedValue({
       activeIncidents: [{
         id: "budget-1",
@@ -134,6 +114,16 @@ describe("attention service", () => {
       executionState: null,
       createdAt: at,
       updatedAt: new Date("2026-07-09T12:02:00.000Z"),
+    };
+    const boardMentionIssueId = "00000000-0000-4000-8000-000000000021";
+    const boardMention = {
+      id: "00000000-0000-4000-8000-000000000030",
+      issueId: boardMentionIssueId,
+      agentId: "00000000-0000-4000-8000-000000000031",
+      ownershipEpoch: 1,
+      message: "Which rollout should I use?",
+      reason: "clarification" as const,
+      createdAt: new Date("2026-07-09T12:04:00.000Z"),
     };
     const harness = createMockDb({
       select: [
@@ -174,14 +164,21 @@ describe("attention service", () => {
         }],
         [],
         [{
-          id: "agent-error-1",
+          ...boardMention,
+        }],
+        [{
+          id: boardMentionIssueId,
           companyId,
-          name: "Broken Agent",
-          status: "error",
-          errorReason: "adapter config missing",
+          identifier: "ATN-7",
+          title: "Choose rollout path",
+          boardPresentationStatus: "in_progress",
+          priority: "medium",
+          ownerAgentId: boardMention.agentId,
+          ownerUserId: null,
           createdAt: at,
           updatedAt: new Date("2026-07-09T12:04:00.000Z"),
         }],
+        [],
         [],
       ],
     });
@@ -194,14 +191,14 @@ describe("attention service", () => {
       join_request: 1,
       review: 1,
       budget_alert: 1,
-      agent_error_alert: 1,
+      mention_board: 1,
     });
     expect(feed.items.map((item) => item.sourceKind)).toEqual(expect.arrayContaining([
       "approval",
       "join_request",
       "review",
       "budget_alert",
-      "agent_error_alert",
+      "mention_board",
     ]));
     for (const item of feed.items) {
       expect(item.dismissalKey).toBe(`attention:${item.dedupKey}`);
@@ -217,6 +214,10 @@ describe("attention service", () => {
     expect(feed.items.find((item) => item.sourceKind === "budget_alert")?.detail).toMatchObject({
       kind: "budget",
       observedPercent: 100,
+    });
+    expect(feed.items.find((item) => item.sourceKind === "mention_board")?.detail).toMatchObject({
+      kind: "generic",
+      summaryExcerpt: "clarification — Which rollout should I use?",
     });
     expect(harness.remaining("select")).toBe(0);
   });

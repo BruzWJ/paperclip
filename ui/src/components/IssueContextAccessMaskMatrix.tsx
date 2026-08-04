@@ -1,18 +1,18 @@
 import {
   AGENT_CONTEXT_GRANT_KEYS,
-  normalizeIssueAttentionMask,
+  normalizeContextAccess,
   type AgentContextGrantKey,
-  type IssueAttentionMask,
+  type ContextAccess,
 } from "@paperclipai/shared";
-import { AttentionMatrix } from "./AttentionMatrix";
+import { ContextAccessMatrix } from "./ContextAccessMatrix";
 
 function toggleMaskCell(
-  value: IssueAttentionMask | null,
+  value: ContextAccess | null,
   key: AgentContextGrantKey,
   enabled: boolean,
-): IssueAttentionMask | null {
-  const next: IssueAttentionMask = {
-    ...(normalizeIssueAttentionMask(value) ?? {}),
+): ContextAccess | null {
+  const next: ContextAccess = {
+    ...(normalizeContextAccess(value) ?? {}),
   };
   if (enabled) {
     delete next[key];
@@ -22,18 +22,18 @@ function toggleMaskCell(
   return Object.keys(next).length > 0 ? next : null;
 }
 
-export function IssueAttentionMaskMatrix({
+export function IssueContextAccessMaskMatrix({
   value,
   onChange,
   readOnly = false,
   className,
 }: {
-  value: IssueAttentionMask | null;
-  onChange?: (value: IssueAttentionMask | null) => void;
+  value: ContextAccess | null;
+  onChange?: (value: ContextAccess | null) => void;
   readOnly?: boolean;
   className?: string;
 }) {
-  const canonicalValue = normalizeIssueAttentionMask(value);
+  const canonicalValue = normalizeContextAccess(value);
   const matrixValue = Object.fromEntries(
     AGENT_CONTEXT_GRANT_KEYS.map((key) => [
       key,
@@ -42,18 +42,18 @@ export function IssueAttentionMaskMatrix({
   ) as Record<AgentContextGrantKey, boolean>;
 
   return (
-    <AttentionMatrix
+    <ContextAccessMatrix
       value={matrixValue}
       disabled={readOnly}
       enabledLabel="unchanged"
       disabledLabel="narrowed"
       description={
         readOnly
-          ? "Checked cells use the owner's configured attention; unchecked cells were narrowed for this issue."
+          ? "Checked cells use the owner's configured context access; unchecked cells were narrowed for this issue."
           : "Uncheck only what this issue should narrow. Checked cells leave the owner's configuration unchanged."
       }
       className={className}
-      testId="issue-attention-mask-matrix"
+      testId="issue-context-access-mask-matrix"
       onCellChange={(key, enabled) =>
         onChange?.(toggleMaskCell(canonicalValue, key, enabled))
       }

@@ -201,7 +201,7 @@ describe("plugin orchestration APIs without a database process", () => {
       callbackKey: "mission-progress",
       callbackVersion: "1",
       title: "Mission alpha",
-      attentionMask: { read_issue_comments: false },
+      contextAccessMask: { read_issue_comments: false },
     };
     const operation = { hostRpcOperationId: "rpc-create-1" };
 

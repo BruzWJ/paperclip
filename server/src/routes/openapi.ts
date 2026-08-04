@@ -16,7 +16,7 @@ import {
   refreshSummarySlotSchema,
   // Issue
   createIssueSchema,
-  issueCreationAttentionMaskSchema,
+  issueCreationContextAccessSchema,
   updateIssueTitleSchema,
   updateIssueExecutionPolicySchema,
   decideIssueExecutionStageSchema,
@@ -3631,7 +3631,7 @@ registry.registerPath({
         message: z.string(),
         agentId: z.string(),
         idempotencyKey: z.string().optional(),
-        attentionMask: issueCreationAttentionMaskSchema.optional(),
+        contextAccessMask: issueCreationContextAccessSchema.optional(),
       }).strict(),
     ),
   },

@@ -62,12 +62,16 @@ function setup(options: {
   const mentionAgent = vi.fn(
     async (_input: RuntimeActionInvocation) => ({ consulted: true }),
   );
+  const mentionBoard = vi.fn(
+    async (_input: RuntimeActionInvocation) => ({ requested: true }),
+  );
   const no = vi.fn(async () => null);
   const actions: RuntimeActionPort = {
     issueCreate: no,
     issueAssign: no,
     issueUpdate,
     mentionAgent,
+    mentionBoard,
     agentHire: no,
     agentConfigure,
   };
@@ -168,6 +172,7 @@ function setup(options: {
     issueUpdate,
     agentConfigure,
     mentionAgent,
+    mentionBoard,
     classify,
     withMentionAdmission,
     executeCompany,
@@ -338,6 +343,45 @@ describe("runtime tool executor", () => {
         targetAgentId: "mentioned-agent",
       }),
     );
+  });
+
+  it("routes a Board request as a non-mention ledger action", async () => {
+    const { executor, mentionBoard, classify, withMentionAdmission } = setup();
+    const descriptor = compileRuntimeInterface({
+      mode: "owner",
+      contextDial: resolveContextDial({ agent: {} }).effective,
+      actionGrants: { mention_board: true },
+      isCurrentOwner: true,
+      issueCreateDirectChildren: [],
+      issueAssignTargets: [],
+      creatorUpdateTargets: [],
+      mentionTargets: [],
+      configureTargets: [],
+      agentHireCompanyToolOptions: [],
+      selectedCompanyTools: [],
+    }).byName.get("mention_board")!;
+
+    await expect(
+      executor.execute({
+        capability,
+        descriptor,
+        arguments: { message: "Please choose a rollout", reason: "decision_request" },
+        callIdentity: { source: "jsonrpc", id: "board-request-1" },
+        ingressOrdinal: 8,
+        mintPluginRunContext,
+      }),
+    ).resolves.toEqual({ requested: true });
+
+    expect(classify).toHaveBeenCalledWith({
+      capability,
+      id: "ledger-call-1",
+      ingressOrdinal: 8,
+      classification: "non_mention",
+    });
+    expect(mentionBoard).toHaveBeenCalledWith(expect.objectContaining({
+      arguments: { message: "Please choose a rollout", reason: "decision_request" },
+    }));
+    expect(withMentionAdmission).not.toHaveBeenCalled();
   });
 
   it("rejects broad or malformed retrieval arguments", async () => {

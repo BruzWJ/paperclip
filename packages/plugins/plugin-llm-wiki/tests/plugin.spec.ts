@@ -577,7 +577,7 @@ function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
     ownerUserId: null,
     ownerAssignmentSource: null,
     ownershipEpoch: 1,
-    attentionMask: null,
+    contextAccessMask: null,
     creatorKind: "user/board",
     creatorAuthorityId: null,
     creatorAdapterConfigRevisionId: null,
