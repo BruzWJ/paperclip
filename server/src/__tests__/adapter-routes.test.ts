@@ -7,7 +7,11 @@ import { testBoardSessionActor } from "./helpers/request-actor.js";
 
 const catalog = vi.hoisted(() => ({
   adapters: [] as ServerAdapterModule[],
-  probeDiagnostics: [] as Array<{ type: string; message: string }>,
+  probeDiagnostics: [] as Array<{
+    type: string;
+    code: "acpx_probe_failed" | "acpx_catalog_invalid";
+    message: string;
+  }>,
   refreshAcpxAdapters: vi.fn(async () => undefined),
 }));
 
@@ -125,6 +129,7 @@ describe("ACPX adapter routes", () => {
   it("reports a failed ACPX probe without admitting it as a selectable adapter", async () => {
     catalog.probeDiagnostics = [{
       type: "fixture-agent-unavailable",
+      code: "acpx_probe_failed",
       message: "fixture local CLI is not authenticated",
     }];
     const res = await request(app()).get("/api/adapters");
@@ -151,6 +156,32 @@ describe("ACPX adapter routes", () => {
       "/api/adapters/fixture-agent-unavailable",
     );
     expect(detail.status, JSON.stringify(detail.body)).toBe(404);
+  });
+
+  it("reports rejected ACPX catalog metadata without hiding ready agents", async () => {
+    catalog.probeDiagnostics = [{
+      type: "fixture-agent-invalid",
+      code: "acpx_catalog_invalid",
+      message: "ACP config option at index 0.values[75].label must be an exact non-empty string",
+    }];
+
+    const res = await request(app()).get("/api/adapters");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(
+      res.body.filter((entry: { loaded: boolean }) => entry.loaded),
+    ).toHaveLength(2);
+    expect(
+      res.body.find(
+        (entry: { type: string }) => entry.type === "fixture-agent-invalid",
+      ),
+    ).toMatchObject({
+      type: "fixture-agent-invalid",
+      loaded: false,
+      diagnostic: {
+        code: "acpx_catalog_invalid",
+      },
+    });
   });
 
   it("retires instance-level ACPX availability mutation", async () => {

@@ -18,7 +18,10 @@ import {
   sameAdapterImplementationIdentity,
   type AdapterImplementationIdentity,
 } from "@paperclipai/shared";
-import { discoverLocalAcpxAdapterCatalog } from "./acpx-catalog.js";
+import {
+  discoverLocalAcpxAdapterCatalog,
+  type AcpxCatalogDiagnosticCode,
+} from "./acpx-catalog.js";
 
 export interface RegisteredServerAdapterImplementation {
   readonly identity: Readonly<AdapterImplementationIdentity>;
@@ -28,11 +31,13 @@ export interface RegisteredServerAdapterImplementation {
 
 /**
  * A registry-listed ACPX agent that was intentionally not admitted as an
- * executable Paperclip adapter because its disposable local probe failed.
- * This is observability only: it never participates in selection or launch.
+ * executable Paperclip adapter because its disposable local probe or generic
+ * dynamic-contract validation failed. This is observability only: it never
+ * participates in selection or launch.
  */
 export interface AcpxAdapterProbeDiagnostic {
   readonly type: string;
+  readonly code: AcpxCatalogDiagnosticCode;
   readonly message: string;
 }
 
@@ -131,6 +136,19 @@ function createDiscoveredAcpxAdapter(
   return registered;
 }
 
+function acpxCandidateDiagnostic(
+  type: string,
+  error: unknown,
+): AcpxAdapterProbeDiagnostic {
+  return Object.freeze({
+    type,
+    code: "acpx_catalog_invalid",
+    message: error instanceof Error
+      ? error.message
+      : "ACPX candidate could not be admitted",
+  });
+}
+
 /**
  * Re-probes locally available ACPX agents. A short successful-snapshot cache
  * prevents every board repaint from opening temporary ACPX-resolved sessions
@@ -153,18 +171,28 @@ export function refreshAcpxAdapters(input: { force?: boolean } = {}): Promise<vo
       const registry = await loadConfiguredAcpRegistry({ cwd });
       const snapshot = await discoverLocalAcpxAdapterCatalog(cwd, registry);
       const next = new Map<string, RegisteredServerAdapterImplementation>();
-      for (const adapter of snapshot.adapters) {
-        const registered = createDiscoveredAcpxAdapter(adapter, registry);
-        next.set(registered.adapter.type, registered);
-      }
       const nextDiagnostics = new Map<string, AcpxAdapterProbeDiagnostic>();
-      for (const [type, message] of Object.entries(snapshot.unavailable)) {
+      for (const adapter of snapshot.adapters) {
+        try {
+          const registered = createDiscoveredAcpxAdapter(adapter, registry);
+          next.set(registered.adapter.type, registered);
+        } catch (error) {
+          // The discovery projection validates each candidate already. Keep
+          // this admission fence as a second containment boundary so an
+          // unexpected malformed candidate never hides healthy ACPX agents.
+          nextDiagnostics.set(
+            adapter.type,
+            acpxCandidateDiagnostic(adapter.type, error),
+          );
+        }
+      }
+      for (const [type, diagnostic] of Object.entries(snapshot.unavailable)) {
         // A successful probe always wins should an upstream supplier ever emit
         // contradictory data for one exact registry name.
-        if (next.has(type)) continue;
+        if (next.has(type) || nextDiagnostics.has(type)) continue;
         nextDiagnostics.set(
           type,
-          Object.freeze({ type, message }),
+          Object.freeze({ type, ...diagnostic }),
         );
       }
       currentByType.clear();

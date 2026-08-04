@@ -14,6 +14,7 @@ import type {
   ConfigFieldSchema,
   ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
+import { validateServerAdapterModule } from "@paperclipai/adapter-utils";
 
 const DISCOVERY_CONCURRENCY = 4;
 
@@ -291,9 +292,36 @@ async function mapConcurrent<T, U>(
   return Object.freeze(results);
 }
 
+export type AcpxCatalogDiagnosticCode =
+  | "acpx_probe_failed"
+  | "acpx_catalog_invalid";
+
+export interface AcpxCatalogDiagnostic {
+  readonly code: AcpxCatalogDiagnosticCode;
+  readonly message: string;
+}
+
 export interface AcpxCatalogSnapshot {
   readonly adapters: readonly ServerAdapterModule[];
-  readonly unavailable: Readonly<Record<string, string>>;
+  readonly unavailable: Readonly<Record<string, AcpxCatalogDiagnostic>>;
+}
+
+type AcpxCatalogCandidate = {
+  readonly agentName: string;
+  readonly adapter: ServerAdapterModule | null;
+  readonly diagnostic: AcpxCatalogDiagnostic | null;
+};
+
+function candidateDiagnostic(
+  code: AcpxCatalogDiagnosticCode,
+  error: unknown,
+): AcpxCatalogDiagnostic {
+  return Object.freeze({
+    code,
+    message: error instanceof Error
+      ? error.message
+      : "ACPX candidate could not be admitted",
+  });
 }
 
 /**
@@ -307,9 +335,13 @@ export async function discoverLocalAcpxAdapterCatalog(
 ): Promise<AcpxCatalogSnapshot> {
   const registry = suppliedRegistry ?? await loadConfiguredAcpRegistry({ cwd });
   const names = listAcpRegistryAgentNames(registry);
-  const probes = await mapConcurrent(names, async (agentName) => {
+  const probes = await mapConcurrent<
+    string,
+    AcpxCatalogCandidate
+  >(names, async (agentName) => {
+    let discovery: AcpxAgentDiscovery;
     try {
-      const discovery = await probeAcpxAgent({
+      discovery = await probeAcpxAgent({
         cwd,
         agentName,
         dependencies: { createAgentRegistry: () => registry },
@@ -325,26 +357,41 @@ export async function discoverLocalAcpxAdapterCatalog(
           "ACPX runtime does not advertise session/set_config_option for its discovered settings",
         );
       }
+    } catch (error) {
       return {
         agentName,
-        discovery,
-        error: null,
+        adapter: null,
+        diagnostic: candidateDiagnostic("acpx_probe_failed", error),
+      };
+    }
+
+    try {
+      // Validate the generated, data-only Paperclip projection while this
+      // candidate is still isolated. A malformed ACPX advertisement must not
+      // erase otherwise healthy dynamically discovered agents.
+      const adapter = validateServerAdapterModule(
+        acpxDiscoveryToServerAdapter(discovery),
+      );
+      return {
+        agentName,
+        adapter,
+        diagnostic: null,
       };
     } catch (error) {
       return {
         agentName,
-        discovery: null,
-        error: error instanceof Error ? error.message : "ACPX probe failed",
+        adapter: null,
+        diagnostic: candidateDiagnostic("acpx_catalog_invalid", error),
       };
     }
   });
-  const unavailable: Record<string, string> = {};
+  const unavailable: Record<string, AcpxCatalogDiagnostic> = {};
   const adapters: ServerAdapterModule[] = [];
   for (const probe of probes) {
-    if (probe.discovery) {
-      adapters.push(acpxDiscoveryToServerAdapter(probe.discovery));
-    } else if (probe.error) {
-      unavailable[probe.agentName] = probe.error;
+    if (probe.adapter) {
+      adapters.push(probe.adapter);
+    } else if (probe.diagnostic) {
+      unavailable[probe.agentName] = probe.diagnostic;
     }
   }
   return Object.freeze({

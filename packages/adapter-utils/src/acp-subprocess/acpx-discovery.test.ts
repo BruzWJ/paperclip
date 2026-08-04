@@ -239,6 +239,85 @@ describe("dynamic ACPX discovery", () => {
     });
   });
 
+  it("normalizes ACPX display metadata without changing ACPX configuration values", async () => {
+    const handle: AcpRuntimeHandle = {
+      sessionKey: "display-metadata-probe",
+      backend: "acpx",
+      runtimeSessionName: "display-metadata-probe",
+    };
+    const capabilities: AcpRuntimeCapabilities = {
+      controls: ["session/status", "session/set_config_option"],
+      configOptionKeys: ["model"],
+    };
+    const runtime: AcpxDiscoveryRuntime = {
+      ensureSession: vi.fn(async () => handle),
+      getCapabilities: vi.fn(async () => capabilities),
+      getStatus: vi.fn(async () => ({
+        models: {
+          currentModelId: "model-a",
+          availableModelIds: ["model-a", "model-b"],
+        },
+        details: {
+          configOptions: [
+            {
+              id: "model",
+              name: " Model ",
+              type: "select",
+              category: " model ",
+              currentValue: "model-a",
+              options: [
+                { value: "model-a", name: " Model A " },
+                { value: "model-b", name: "   " },
+              ],
+            },
+          ],
+        },
+      })),
+      setConfigOption: vi.fn(async () => {}),
+      close: vi.fn(async () => {}),
+    };
+
+    const result = await probeAcpxAgent({
+      cwd: process.cwd(),
+      agentName: "display-metadata-agent",
+      dependencies: {
+        createAgentRegistry: () => ({
+          list: () => ["display-metadata-agent"],
+          resolve: () => "not-used-by-the-fake-runtime",
+        }),
+        createRuntimeStore: () => ({
+          load: async () => undefined,
+          save: async () => {},
+        }),
+        createAcpRuntime: () => runtime,
+        createTemporaryStateDir: async () => "/private/discovery-state",
+        removeTemporaryStateDir: async () => {},
+        createSessionKey: () => "display-metadata-probe",
+      },
+    });
+
+    expect(result.configOptions).toEqual([
+      {
+        id: "model",
+        name: "Model",
+        type: "select",
+        category: "model",
+        currentValue: "model-a",
+        options: [
+          { kind: "value", value: "model-a", name: "Model A" },
+          // A missing display label uses the exact ACPX choice value only as
+          // presentation text; the configuration value is never normalized.
+          { kind: "value", value: "model-b", name: "model-b" },
+        ],
+      },
+    ]);
+    expect(runtime.setConfigOption).toHaveBeenCalledWith({
+      handle,
+      key: "model",
+      value: "model-a",
+    });
+  });
+
   it("uses ACPX's public no-prompt availability probe before opening a session", async () => {
     const ensureSession = vi.fn();
     const doctor = vi.fn(async () => ({ ok: false }));

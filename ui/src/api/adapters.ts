@@ -25,9 +25,9 @@ export interface ReadyAdapterInfo {
 }
 
 /**
- * A name listed by ACPX whose disposable local ACPX session probe failed. It is
- * intentionally visible for operator diagnosis but never becomes a picker
- * option or executable adapter in Paperclip.
+ * A name listed by ACPX whose disposable local probe or dynamic-contract
+ * admission failed. It is intentionally visible for operator diagnosis but
+ * never becomes a picker option or executable adapter in Paperclip.
  */
 export interface UnavailableAdapterInfo {
   type: string;
@@ -36,7 +36,7 @@ export interface UnavailableAdapterInfo {
   modelsCount: 0;
   loaded: false;
   diagnostic: {
-    code: "acpx_probe_failed";
+    code: "acpx_probe_failed" | "acpx_catalog_invalid";
     message: string;
   };
   registryName: string;

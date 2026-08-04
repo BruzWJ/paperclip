@@ -24,7 +24,7 @@ import { buildAgentOnboardingPrompt } from "@/lib/agent-onboarding-prompt";
 import { listUIAdapters } from "../adapters";
 import { isVisualAdapterChoice } from "../adapters/metadata";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
-import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
+import { useAdapterCatalogSyncState } from "../adapters/use-adapter-catalog";
 import { useToast } from "../context/ToastContext";
 import { Badge } from "@/components/ui/badge";
 
@@ -40,7 +40,8 @@ export function NewAgentDialog() {
   const [agentMessage, setAgentMessage] = useState("");
   const [latestAgentPrompt, setLatestAgentPrompt] = useState<string | null>(null);
   const [latestAgentPromptCopied, setLatestAgentPromptCopied] = useState(false);
-  const admittedAdapters = useAdapterCatalogSync();
+  const adapterCatalog = useAdapterCatalogSyncState();
+  const admittedAdapters = adapterCatalog.adapters;
 
   function resetDialogState() {
     setMode("choices");
@@ -244,33 +245,61 @@ export function NewAgentDialog() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {adapterGrid.map((opt) => (
-                  <button
-                    key={opt.value}
-                    className={cn(
-                      "flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs transition-colors hover:bg-accent/50 relative",
-                      opt.comingSoon && "opacity-40 cursor-not-allowed",
-                    )}
-                    disabled={!!opt.comingSoon}
-                    title={opt.comingSoon ? opt.disabledLabel : undefined}
+              {adapterCatalog.isLoading ? (
+                <p role="status" className="text-sm text-muted-foreground">
+                  Checking locally available ACPX runtimes…
+                </p>
+              ) : adapterCatalog.isError ? (
+                <div
+                  role="alert"
+                  className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-destructive"
+                >
+                  <p>
+                    Paperclip could not refresh the ACPX runtime catalog. Check ACPX agent diagnostics, then retry.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => {
-                      if (!opt.comingSoon) handleAdvancedAdapterPick(opt.value);
+                      void adapterCatalog.refetch();
                     }}
                   >
-                    {opt.recommended && (
-                      <Badge variant="ghost" className="absolute -top-1.5 right-1.5 bg-green-500 text-white text-(length:--text-nano) font-semibold px-1.5 leading-none">
-                        Recommended
-                      </Badge>
-                    )}
-                    <opt.icon className="h-4 w-4" />
-                    <span className="font-medium">{opt.label}</span>
-                    <span className="text-muted-foreground text-(length:--text-nano)">
-                      {opt.desc}
-                    </span>
-                  </button>
-                ))}
-              </div>
+                    Retry catalog refresh
+                  </Button>
+                </div>
+              ) : adapterGrid.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No compatible ACPX runtime is currently available. Install or authenticate a compatible local CLI, then retry.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {adapterGrid.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs transition-colors hover:bg-accent/50 relative",
+                        opt.comingSoon && "opacity-40 cursor-not-allowed",
+                      )}
+                      disabled={!!opt.comingSoon}
+                      title={opt.comingSoon ? opt.disabledLabel : undefined}
+                      onClick={() => {
+                        if (!opt.comingSoon) handleAdvancedAdapterPick(opt.value);
+                      }}
+                    >
+                      {opt.recommended && (
+                        <Badge variant="ghost" className="absolute -top-1.5 right-1.5 bg-green-500 text-white text-(length:--text-nano) font-semibold px-1.5 leading-none">
+                          Recommended
+                        </Badge>
+                      )}
+                      <opt.icon className="h-4 w-4" />
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="text-muted-foreground text-(length:--text-nano)">
+                        {opt.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </>
           ) : mode === "invite" ? (
             <div className="space-y-5">

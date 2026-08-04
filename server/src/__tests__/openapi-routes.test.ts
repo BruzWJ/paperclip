@@ -302,7 +302,7 @@ describe("openapi routes", () => {
           additionalProperties: false,
           required: ["code", "message"],
           properties: {
-            code: { type: "string", enum: ["acpx_probe_failed"] },
+            code: { type: "string", enum: ["acpx_probe_failed", "acpx_catalog_invalid"] },
             message: { type: "string" },
           },
         },

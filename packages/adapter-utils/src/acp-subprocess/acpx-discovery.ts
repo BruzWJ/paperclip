@@ -162,9 +162,19 @@ function exactNonEmptyString(value: unknown): string | undefined {
 }
 
 function displayString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value
-    : undefined;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+/**
+ * ACPX option identifiers and selected values are execution inputs, so they
+ * must remain exact. Display names are presentation metadata only: normalize
+ * them generically and, when absent, expose the exact ACPX identifier/value
+ * rather than inventing a provider-specific label.
+ */
+function displayName(value: unknown, fallback: string): string {
+  return displayString(value) ?? fallback;
 }
 
 function distinctStrings(value: unknown): readonly string[] {
@@ -182,8 +192,8 @@ function parseConfigOptionValue(
 ): AcpxDiscoveredConfigOptionValue | undefined {
   if (!isRecord(value)) return undefined;
   const optionValue = exactNonEmptyString(value.value);
-  const name = displayString(value.name);
-  if (!optionValue || !name) return undefined;
+  if (!optionValue) return undefined;
+  const name = displayName(value.name, optionValue);
   const description = displayString(value.description);
   return Object.freeze({
     kind: "value",
@@ -206,8 +216,8 @@ function parseConfigOptionValues(
   for (const entry of value) {
     if (!isRecord(entry)) continue;
     const group = exactNonEmptyString(entry.group);
-    const groupName = displayString(entry.name);
-    if (group && groupName && Array.isArray(entry.options)) {
+    if (group && Array.isArray(entry.options)) {
+      const groupName = displayName(entry.name, group);
       const options = entry.options
         .map((candidate) => parseConfigOptionValue(candidate))
         .filter(
@@ -237,9 +247,9 @@ function parseConfigOptions(value: unknown): readonly AcpxDiscoveredConfigOption
   for (const entry of value) {
     if (!isRecord(entry)) continue;
     const id = exactNonEmptyString(entry.id);
-    const name = displayString(entry.name);
     const type = exactNonEmptyString(entry.type);
-    if (!id || !name || !type || seenIds.has(id)) continue;
+    if (!id || !type || seenIds.has(id)) continue;
+    const name = displayName(entry.name, id);
     seenIds.add(id);
     const description = displayString(entry.description);
     const category = displayString(entry.category);

@@ -22,7 +22,11 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
               variant="secondary"
               className={isReady ? "text-green-700" : "text-destructive"}
             >
-              {isReady ? "Ready" : "Probe failed"}
+              {isReady
+                ? "Ready"
+                : adapter.diagnostic.code === "acpx_catalog_invalid"
+                  ? "Catalog metadata rejected"
+                  : "Probe failed"}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -32,7 +36,7 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
               </>
             ) : (
               <>
-                ACPX agent name <code>{adapter.type}</code> · not selectable until its local ACPX probe succeeds
+                ACPX agent name <code>{adapter.type}</code> · not selectable until its local ACPX probe and catalog admission succeed
               </>
             )}
           </p>
@@ -50,7 +54,7 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
         </div>
       ) : (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <span className="font-medium">ACPX probe diagnostic:</span>{" "}
+          <span className="font-medium">ACPX candidate diagnostic:</span>{" "}
           {adapter.diagnostic.message}
         </div>
       )}

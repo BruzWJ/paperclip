@@ -14,6 +14,8 @@ const closeNewAgentMock = vi.hoisted(() => vi.fn());
 const openNewIssueMock = vi.hoisted(() => vi.fn());
 const pushToastMock = vi.hoisted(() => vi.fn());
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const adapterCatalogStateMock = vi.hoisted(() => vi.fn());
+const refetchAdapterCatalogMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/router", () => ({
   useNavigate: () => navigateMock,
@@ -59,7 +61,7 @@ vi.mock("../adapters/metadata", () => ({
 }));
 
 vi.mock("../adapters/use-adapter-catalog", () => ({
-  useAdapterCatalogSync: () => [],
+  useAdapterCatalogSyncState: () => adapterCatalogStateMock(),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -91,6 +93,14 @@ describe("NewAgentDialog", () => {
     document.body.appendChild(container);
 
     listAgentsMock.mockResolvedValue([]);
+    adapterCatalogStateMock.mockReturnValue({
+      adapters: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchAdapterCatalogMock,
+    });
+    refetchAdapterCatalogMock.mockResolvedValue(undefined);
     createCompanyInviteMock.mockResolvedValue({
       id: "invite-1",
       token: "agent-token",
@@ -206,6 +216,51 @@ describe("NewAgentDialog", () => {
 
     expect(container.textContent).toContain("Optional message for the agent");
     expect(container.textContent).toContain("Generate onboarding prompt");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("shows a recoverable ACPX catalog error instead of an empty runtime picker", async () => {
+    adapterCatalogStateMock.mockReturnValue({
+      adapters: [],
+      isLoading: false,
+      isError: true,
+      error: new Error("Internal server error"),
+      refetch: refetchAdapterCatalogMock,
+    });
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <NewAgentDialog />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    const configureButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.startsWith("Configure a runtime manually"),
+    );
+    await act(async () => {
+      configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("could not refresh the ACPX runtime catalog");
+    expect(container.textContent).toContain("Retry catalog refresh");
+
+    const retryButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Retry catalog refresh",
+    );
+    await act(async () => {
+      retryButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(refetchAdapterCatalogMock).toHaveBeenCalledOnce();
 
     await act(async () => {
       root.unmount();

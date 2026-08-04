@@ -551,7 +551,7 @@ const publicUnavailableAdapterInfoSchema = z.object({
   modelsCount: z.literal(0),
   loaded: z.literal(false),
   diagnostic: z.object({
-    code: z.literal("acpx_probe_failed"),
+    code: z.enum(["acpx_probe_failed", "acpx_catalog_invalid"]),
     message: z.string().min(1),
   }).strict(),
   registryName: z.string().min(1),

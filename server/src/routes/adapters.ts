@@ -42,14 +42,14 @@ interface ReadyAdapterInfo {
 
 interface UnavailableAdapterInfo {
   type: string;
-  /** No label is available until ACPX successfully initializes the agent. */
+  /** No ACPX display label is trusted until the candidate is admitted. */
   label: string;
   source: "acpx";
   modelsCount: 0;
   loaded: false;
   /** The candidate remains visible but cannot be selected or launched. */
   diagnostic: {
-    code: "acpx_probe_failed";
+    code: "acpx_probe_failed" | "acpx_catalog_invalid";
     message: string;
   };
   /** Exact registry name emitted by ACPX; always equal to `type`. */
@@ -84,14 +84,14 @@ function buildUnavailableAdapterInfo(
 ): UnavailableAdapterInfo {
   return {
     type: diagnostic.type,
-    // The registry name is the only trustworthy presentation value when a
-    // failed probe has no ACPX-provided UI metadata.
+    // The registry name is the only trustworthy presentation value when an
+    // ACPX probe or projected dynamic contract cannot be admitted.
     label: diagnostic.type,
     source: "acpx",
     modelsCount: 0,
     loaded: false,
     diagnostic: {
-      code: "acpx_probe_failed",
+      code: diagnostic.code,
       message: diagnostic.message,
     },
     registryName: diagnostic.type,

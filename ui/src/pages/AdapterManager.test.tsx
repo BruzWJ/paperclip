@@ -90,7 +90,7 @@ describe("AdapterManager", () => {
       expect(container.textContent).toContain("Ready agent");
       expect(container.textContent).toContain("Probe failed");
       expect(container.textContent).toContain(
-        "not selectable until its local ACPX probe succeeds",
+        "not selectable until its local ACPX probe and catalog admission succeed",
       );
       expect(container.textContent).toContain(
         "fixture local CLI is not authenticated",

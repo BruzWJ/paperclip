@@ -7,19 +7,31 @@ import {
 import { queryKeys } from "@/lib/queryKeys";
 import { syncServerAdapters } from "./registry";
 
+export interface AdapterCatalogSyncState {
+  /** Exact selectable agents from the current successful ACPX snapshot. */
+  readonly adapters: readonly ReadyAdapterInfo[];
+  /** True only while the initial catalogue snapshot is being resolved. */
+  readonly isLoading: boolean;
+  /** A whole-catalog ACPX refresh failed, rather than returning no agents. */
+  readonly isError: boolean;
+  readonly error: Error | null;
+  /** Re-runs the ACPX-backed catalogue request on operator demand. */
+  readonly refetch: () => Promise<unknown>;
+}
+
 /**
  * Fetch and install the server-admitted ACPX catalog in the UI
  * schema renderer. The browser cannot add, override, hide, or infer an
  * adapter entry. ACPX probe diagnostics remain visible in the manager but
  * deliberately do not enter this selectable catalog.
  */
-export function useAdapterCatalogSync(
+export function useAdapterCatalogSyncState(
   options: { enabled?: boolean } = {},
-): readonly ReadyAdapterInfo[] {
+): AdapterCatalogSyncState {
   const queryClient = useQueryClient();
   const previousCatalogUpdateAt = useRef(0);
   const enabled = options.enabled ?? true;
-  const { data, dataUpdatedAt, isError, isSuccess } = useQuery({
+  const query = useQuery({
     queryKey: queryKeys.adapters.all,
     queryFn: () => adaptersApi.list(),
     enabled,
@@ -30,6 +42,7 @@ export function useAdapterCatalogSync(
     // sync when a local compatible CLI is installed or authenticated.
     refetchInterval: 30_000,
   });
+  const { data, dataUpdatedAt, isError, isSuccess } = query;
 
   const selectableAdapters = isSuccess && data
     ? data.filter(
@@ -64,5 +77,22 @@ export function useAdapterCatalogSync(
     });
   }, [dataUpdatedAt, isSuccess, queryClient]);
 
-  return selectableAdapters;
+  return {
+    adapters: selectableAdapters,
+    isLoading: enabled && query.isPending,
+    isError: enabled && isError,
+    error: enabled && isError ? query.error : null,
+    refetch: async () => await query.refetch(),
+  };
+}
+
+/**
+ * Compatibility shorthand for consumers that only need the current dynamic
+ * ACPX selection set. New picker surfaces should prefer the stateful variant
+ * so they can distinguish a failed refresh from an empty successful catalog.
+ */
+export function useAdapterCatalogSync(
+  options: { enabled?: boolean } = {},
+): readonly ReadyAdapterInfo[] {
+  return useAdapterCatalogSyncState(options).adapters;
 }

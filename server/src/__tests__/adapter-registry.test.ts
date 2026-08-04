@@ -77,7 +77,7 @@ vi.mock("@paperclipai/adapter-utils/acp-subprocess", async (importOriginal) => {
   return {
     ...actual,
     loadConfiguredAcpRegistry: vi.fn(async () => ({
-      list: () => [acpxFixture.agentName],
+      list: () => acpxFixture.state.snapshot.map((adapter) => adapter.type),
       resolve: acpxFixture.registryResolve,
     })),
   };
@@ -98,6 +98,7 @@ vi.mock("../adapters/acpx-catalog.js", () => ({
 const {
   findSelectableServerAdapterImplementation,
   findServerAdapter,
+  listAcpxAdapterProbeDiagnostics,
   listAdapterModels,
   listServerAdapters,
   refreshAcpxAdapters,
@@ -162,6 +163,38 @@ describe("ACPX-supplied server adapter registry", () => {
     );
     expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
     expect(findSelectableServerAdapterImplementation(acpxFixture.agentName)).toBeNull();
+  });
+
+  it("quarantines one invalid ACPX candidate without hiding healthy agents", async () => {
+    const invalidAgentName = "invalid-agent";
+    const invalidAdapter: ServerAdapterModule = {
+      ...acpxFixture.adapter,
+      type: invalidAgentName,
+      definition: {
+        ...acpxFixture.adapter.definition,
+        launchProfile: { registryName: invalidAgentName },
+        configOptions: [{
+          ...acpxFixture.adapter.definition.configOptions[0]!,
+          values: [{
+            ...acpxFixture.adapter.definition.configOptions[0]!.values[0]!,
+            label: "Malformed label ",
+          }],
+        }],
+      },
+    };
+    acpxFixture.state.snapshot = [acpxFixture.adapter, invalidAdapter];
+
+    await expect(refreshAcpxAdapters({ force: true })).resolves.toBeUndefined();
+
+    expect(findServerAdapter(acpxFixture.agentName)).toBe(acpxFixture.adapter);
+    expect(findServerAdapter(invalidAgentName)).toBeNull();
+    expect(listAcpxAdapterProbeDiagnostics()).toEqual([
+      expect.objectContaining({
+        type: invalidAgentName,
+        code: "acpx_catalog_invalid",
+        message: expect.stringContaining("exact non-empty string"),
+      }),
+    ]);
   });
 
   it("does not accept Paperclip-owned adapter registrations or override state", () => {
