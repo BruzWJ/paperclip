@@ -8,17 +8,17 @@ import {
   requireFileTokens,
 } from "./static-removal-gate-utils.ts";
 
-const ROUTES = "server/src/routes/tool-gateway.ts";
-const NAMED_GATEWAY = "server/src/services/tool-gateway.ts";
+const ROUTES = "apps/server/src/routes/tool-gateway.ts";
+const NAMED_GATEWAY = "apps/server/src/services/tool-gateway.ts";
 const NAMED_SCHEMA = "packages/db/schema/tool_access.ts";
-const RUN_ROUTE = "server/src/routes/run-tools.ts";
-const RUN_GATEWAY = "server/src/services/prompt-capability-gateway.ts";
+const RUN_ROUTE = "apps/server/src/routes/run-tools.ts";
+const RUN_GATEWAY = "apps/server/src/services/prompt-capability-gateway.ts";
 const RUN_MINT_OWNER =
-  "server/src/services/issue-execution-prompt-cycle-postgres.ts";
+  "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts";
 const ATTEMPT_EXECUTOR =
-  "server/src/services/issue-execution-attempt-executor.ts";
-const COMPILER = "server/src/services/runtime-interface-compiler.ts";
-const SERVICES_INDEX = "server/src/services/index.ts";
+  "apps/server/src/services/issue-execution-attempt-executor.ts";
+const COMPILER = "apps/server/src/services/runtime-interface-compiler.ts";
+const SERVICES_INDEX = "apps/server/src/services/index.ts";
 const SELF = "scripts/check-gateway-credential-boundary.ts";
 const SELF_TEST = "scripts/check-gateway-credential-boundary.test.ts";
 
@@ -63,7 +63,7 @@ function lineAt(source: string, offset: number): number {
 }
 
 function productionSourceFiles(repositoryRoot: string) {
-  return listRepositoryTextFiles(repositoryRoot, ["server/src", "packages"])
+  return listRepositoryTextFiles(repositoryRoot, ["apps/server/src", "packages"])
     .map((absolute) => ({
       absolute,
       path: relative(repositoryRoot, absolute).replaceAll("\\", "/"),
@@ -144,14 +144,11 @@ export function gatewayCredentialBoundaryViolations(
       roots: [
         ".agents",
         ".github",
-        "cli",
+        "apps",
         "doc",
-        "docs",
         "docker",
         "evals",
         "packages",
-        "server",
-        "ui",
       ],
     }),
   ];

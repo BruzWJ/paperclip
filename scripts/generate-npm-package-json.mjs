@@ -3,13 +3,13 @@
  * generate-npm-package-json.mjs
  *
  * Reads the dev package.json (which has workspace:* refs) and produces
- * a publishable package.json in cli/ with:
+ * a publishable package.json in packages/cli/ with:
  *   - workspace:* dependencies removed
  *   - all external dependencies from workspace packages inlined
  *   - proper metadata for npm
  *
- * Reads from cli/package.dev.json if it exists (build already ran),
- * otherwise from cli/package.json.
+ * Reads from packages/cli/package.dev.json if it exists (build already ran),
+ * otherwise from packages/cli/package.json.
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -26,9 +26,9 @@ function readPkg(relativePath) {
 }
 
 // Read all workspace packages that are BUNDLED into the CLI.
-// Note: "server" is excluded — it's published separately as a dependency.
+// Note: the server is excluded — it's published separately as a dependency.
 const workspacePaths = [
-  "cli",
+  "packages/cli",
   "packages/db",
   "packages/shared",
   "packages/adapter-utils",
@@ -54,7 +54,7 @@ for (const pkgPath of workspacePaths) {
     if (bundledCliNpmDependencies.has(name)) continue;
     // For external workspace packages, read their version directly
     if (externalWorkspacePackages.has(name)) {
-      const pkgDirMap = { "@paperclipai/server": "server" };
+      const pkgDirMap = { "@paperclipai/server": "apps/server" };
       const wsPkg = readPkg(pkgDirMap[name]);
       allDeps[name] = wsPkg.version;
       continue;
@@ -77,10 +77,10 @@ const sortedOptDeps = Object.fromEntries(
 );
 
 // Read the CLI package metadata — prefer the dev backup if it exists
-const devPkgPath = resolve(repoRoot, "cli/package.dev.json");
+const devPkgPath = resolve(repoRoot, "packages/cli/package.dev.json");
 const cliPkg = existsSync(devPkgPath)
   ? JSON.parse(readFileSync(devPkgPath, "utf8"))
-  : readPkg("cli");
+  : readPkg("packages/cli");
 const rootPkg = readPkg(".");
 
 if (rootPkg.engines?.node !== REQUIRED_NODE_ENGINE || cliPkg.engines?.node !== REQUIRED_NODE_ENGINE) {
@@ -111,7 +111,7 @@ if (Object.keys(sortedOptDeps).length > 0) {
 }
 
 const output = JSON.stringify(publishPkg, null, 2) + "\n";
-const outPath = resolve(repoRoot, "cli/package.json");
+const outPath = resolve(repoRoot, "packages/cli/package.json");
 writeFileSync(outPath, output);
 
 console.log(`  ✓  Generated publishable package.json (${Object.keys(sortedDeps).length} deps)`);

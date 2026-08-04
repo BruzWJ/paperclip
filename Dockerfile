@@ -15,9 +15,10 @@ RUN usermod -u $USER_UID --non-unique node \
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
-COPY cli/package.json cli/
-COPY server/package.json server/
-COPY ui/package.json ui/
+COPY apps/docs/package.json apps/docs/
+COPY packages/cli/package.json packages/cli/
+COPY apps/server/package.json apps/server/
+COPY apps/ui/package.json apps/ui/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
@@ -39,10 +40,9 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
-RUN pnpm --filter @paperclipai/ui build
-RUN pnpm --filter @paperclipai/plugin-sdk build
-RUN pnpm --filter @paperclipai/server build
-RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
+# Turborepo honors package dependency order (^build) and caches package outputs.
+RUN pnpm exec turbo run build --filter=@paperclipai/server
+RUN test -f apps/server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
 FROM base AS production
 ARG USER_UID=1000
@@ -73,4 +73,4 @@ ENV NODE_ENV=production \
 EXPOSE 3100
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/runtime-entry.js"]
+CMD ["node", "--import", "./apps/server/node_modules/tsx/dist/loader.mjs", "apps/server/dist/runtime-entry.js"]

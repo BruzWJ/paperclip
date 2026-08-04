@@ -2,6 +2,8 @@
 .github
 .paperclip
 .pnpm-store
+.turbo
+**/.turbo
 node_modules
 **/node_modules
 .env

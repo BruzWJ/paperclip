@@ -11,10 +11,8 @@ export const generalWorkspacesBLane = "general-workspaces-b";
 export const serializedWorkspaceLane = "serialized-workspace";
 
 export const vitestProjectSearchRoots = Object.freeze([
+  "apps",
   "packages",
-  "server",
-  "ui",
-  "cli",
 ]);
 
 const ignoredDirectoryNames = new Set([
@@ -123,9 +121,9 @@ function isWorkspacePackage(projectPath, workspaceEntries) {
 }
 
 function laneForProject(projectPath) {
-  if (projectPath === "server") return generalServerLane;
+  if (projectPath === "apps/server") return generalServerLane;
   if (projectPath === "packages/db") return serializedWorkspaceLane;
-  if (projectPath === "ui" || projectPath === "cli") {
+  if (projectPath === "apps/ui" || projectPath === "packages/cli") {
     return generalWorkspacesALane;
   }
   return generalWorkspacesBLane;

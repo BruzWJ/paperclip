@@ -18,7 +18,7 @@ Plugins are their own packages. Unless the task **explicitly** asks for a bundle
 - Install it into the running Paperclip instance by local absolute path.
 - Edit code in the external package; let Paperclip pick up rebuilt output.
 
-Only edit Paperclip core itself when the user asks to surface a plugin as a bundled example (`server/src/routes/plugins.ts`, in-repo example lists, docs).
+Only edit Paperclip core itself when the user asks to surface a plugin as a bundled example (`apps/server/src/routes/plugins.ts`, in-repo example lists, docs).
 
 ## 2. Ground rules
 
@@ -139,7 +139,7 @@ Do not add the plugin under `packages/plugins/` or update bundled-example wiring
 
 If the user does ask for a bundled example, also update:
 
-- `server/src/routes/plugins.ts` example list
+- `apps/server/src/routes/plugins.ts` example list
 - any docs that enumerate in-repo example plugins
 
 ## 9. Documentation expectations

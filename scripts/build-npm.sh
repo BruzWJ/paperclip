@@ -11,7 +11,7 @@ set -euo pipefail
 #   ./scripts/build-npm.sh --skip-checks  # skip forbidden-token check (CI without token list)
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CLI_DIR="$REPO_ROOT/cli"
+CLI_DIR="$REPO_ROOT/packages/cli"
 DIST_DIR="$CLI_DIR/dist"
 
 skip_checks=false
@@ -37,7 +37,7 @@ fi
 if [ "$skip_typecheck" = false ]; then
   echo "  [2/6] Type-checking..."
   cd "$REPO_ROOT"
-  pnpm -r typecheck
+  pnpm typecheck
 else
   echo "  [2/6] Skipping type-check (--skip-typecheck)"
 fi
@@ -72,9 +72,9 @@ BUNDLE_SIZE=$(wc -c < "$DIST_DIR/index.js" | xargs)
 echo "  [6/6] Build verification..."
 echo ""
 echo "Build complete."
-echo "  Bundle: cli/dist/index.js (${BUNDLE_SIZE} bytes)"
-echo "  Source map: cli/dist/index.js.map"
+echo "  Bundle: packages/cli/dist/index.js (${BUNDLE_SIZE} bytes)"
+echo "  Source map: packages/cli/dist/index.js.map"
 echo ""
-echo "To preview:   cd cli && npm pack --dry-run"
-echo "To publish:   cd cli && npm publish --access public"
-echo "To restore:   mv cli/package.dev.json cli/package.json"
+echo "To preview:   cd packages/cli && npm pack --dry-run"
+echo "To publish:   cd packages/cli && npm publish --access public"
+echo "To restore:   mv packages/cli/package.dev.json packages/cli/package.json"

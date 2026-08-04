@@ -22,13 +22,20 @@ Before making changes, read in this order:
 
 ## 3. Repo Map
 
-- `server/`: Express REST API and orchestration services
-- `ui/`: React + Vite board UI
+- `apps/server/`: Express REST API and orchestration services
+- `apps/ui/`: React + Vite board UI
+- `apps/docs/`: published Mintlify documentation site and its assets
+- `packages/cli/`: publishable Paperclip CLI
 - `packages/db/`: Drizzle schema, migrations, DB clients
 - `packages/shared/`: shared types, constants, validators, API path constants
 - `packages/adapter-utils/`: ACPX public-runtime discovery and execution bridge
-- `packages/plugins/`: plugin system packages
-- `doc/`: operational and product docs
+- `packages/skills-catalog/` and `packages/teams-catalog/`: generated catalog packages
+- `packages/plugins/`: plugin SDK, tooling, first-party plugins, and examples
+- `doc/`: repository-internal product, engineering, operations, and planning docs
+
+`apps/docs/` and `doc/` are intentionally different. Content intended for the
+published documentation site belongs in `apps/docs/`; engineering contracts and
+repository plans remain in `doc/`.
 
 ## 4. Dev Setup
 
@@ -66,8 +73,8 @@ Every domain entity should be scoped to a company and company boundaries must be
 If you change schema/API behavior, update all impacted layers:
 - `packages/db` schema and exports
 - `packages/shared` types/constants/validators
-- `server` routes/services
-- `ui` API clients and pages
+- `apps/server` routes/services
+- `apps/ui` API clients and pages
 
 3. Preserve control-plane invariants.
 - Exactly one checked issue owner record
@@ -104,7 +111,7 @@ pnpm db:generate
 4. Validate compile:
 
 ```sh
-pnpm -r typecheck
+pnpm typecheck
 ```
 
 Notes:
@@ -133,7 +140,7 @@ For normal issue work, run the smallest relevant verification first. Do not defa
 Run this full check before claiming repo work done in a PR-ready hand-off, or when the change scope is broad enough that targeted checks are not sufficient:
 
 ```sh
-pnpm -r typecheck
+pnpm typecheck
 pnpm test:run
 pnpm build
 ```
@@ -177,7 +184,7 @@ A change is done when all are true:
 
 1. Behavior matches `doc/SPEC-implementation.md`
 2. Typecheck, tests, and build pass
-3. Contracts are synced across db/shared/server/ui
+3. Contracts are synced across `packages/db`, `packages/shared`, `apps/server`, and `apps/ui`
 4. Docs updated when behavior or commands change
 5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
 
@@ -206,7 +213,7 @@ eligible resume.
 - `npx vite build` hangs on NTFS — use `node node_modules/vite/bin/vite.js build` instead
 - Server startup from NTFS takes 30-60s — don't assume failure immediately
 - Kill ALL paperclip processes before starting: `pkill -f "paperclip"; pkill -f "tsx.*index.ts"`
-- Vite cache survives `rm -rf dist` — delete both: `rm -rf ui/dist ui/node_modules/.vite`
+- Vite cache survives `rm -rf dist` — delete both: `rm -rf apps/ui/dist apps/ui/node_modules/.vite`
 
 ### Fork QoL Patches (not in upstream)
 
@@ -234,4 +241,4 @@ nothing, and does not treat that observation as execution-workspace readiness.
 
 ## Design system
 
-`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.
+`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `apps/ui/` changes: every color, spacing, radius, type, shadow, and motion value in `apps/ui/src/components/**` and `apps/ui/src/pages/**` comes from the token layer in `apps/ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `apps/ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.

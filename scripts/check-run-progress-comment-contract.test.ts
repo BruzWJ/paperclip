@@ -26,7 +26,7 @@ const CANONICAL_FILES: Readonly<Record<string, string>> = {
     "kind('run_progress');",
     "",
   ].join("\n"),
-  "server/src/services/issue-execution-dispatcher-postgres.ts": [
+  "apps/server/src/services/issue-execution-dispatcher-postgres.ts": [
     "immutableSourceKey: `run-progress:${created.run.runId}`;",
     "sourceRecordId: created.run.runId;",
     'exactText: "";',
@@ -34,12 +34,12 @@ const CANONICAL_FILES: Readonly<Record<string, string>> = {
     "runId: created.run.runId;",
     "",
   ].join("\n"),
-  "server/src/services/issue-session/admission.ts": [
+  "apps/server/src/services/issue-session/admission.ts": [
     'input.sourceKind === "run_progress";',
     'kind: "run_progress" as const;',
     "",
   ].join("\n"),
-  "server/src/services/issue-session/projector.ts": [
+  "apps/server/src/services/issue-session/projector.ts": [
     "function projectIssueSessionFinalCommentInTx() {}",
     'eq(issueCommentProjectionSources.sourceKind, "run_progress");',
     "eq(issueCommentProjectionSources.commentId, input.progressCommentId);",
@@ -48,21 +48,21 @@ const CANONICAL_FILES: Readonly<Record<string, string>> = {
     "eq(issueComments.id, comment.id);",
     "",
   ].join("\n"),
-  "server/src/services/issue-execution-finalization-postgres.ts": [
+  "apps/server/src/services/issue-execution-finalization-postgres.ts": [
     "progressCommentId: progress.comment.id;",
     "folded.id !== progress.comment.id;",
     "throw new Error('Stable progress comment did not fold to the exact terminal assistant');",
     "",
   ].join("\n"),
-  "server/src/services/context-retrieval.ts": [
+  "apps/server/src/services/context-retrieval.ts": [
     "function providerSafeCommentBody(value: unknown): string { return String(value); }",
     "const safe = { body: providerSafeCommentBody(comment.body) };",
     "",
   ].join("\n"),
-  "server/src/routes/openapi.ts":
+  "apps/server/src/routes/openapi.ts":
     "const route = [boardIssueCommentSchema, boardIssueCommentGroupPageSchema];\n",
-  "ui/src/api/issues.ts": "type Response = IssueComment | BoardIssueComment;\n",
-  "ui/src/lib/issue-chat-messages.ts": [
+  "apps/ui/src/api/issues.ts": "type Response = IssueComment | BoardIssueComment;\n",
+  "apps/ui/src/lib/issue-chat-messages.ts": [
     'comment.presentation?.kind === "run_progress";',
     'comment.runState === "queued";',
     '"Queued…";',
@@ -120,28 +120,28 @@ for (const [path, token] of [
     "issue_comment_projection_sources_run_progress_uq",
   ],
   [
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     'exactText: ""',
   ],
   [
-    "server/src/services/issue-session/admission.ts",
+    "apps/server/src/services/issue-session/admission.ts",
     'kind: "run_progress" as const',
   ],
   [
-    "server/src/services/issue-session/projector.ts",
+    "apps/server/src/services/issue-session/projector.ts",
     "eq(issueComments.id, comment.id)",
   ],
   [
-    "server/src/services/issue-execution-finalization-postgres.ts",
+    "apps/server/src/services/issue-execution-finalization-postgres.ts",
     "folded.id !== progress.comment.id",
   ],
   [
-    "server/src/services/context-retrieval.ts",
+    "apps/server/src/services/context-retrieval.ts",
     "body: providerSafeCommentBody(comment.body)",
   ],
-  ["server/src/routes/openapi.ts", "boardIssueCommentSchema"],
-  ["ui/src/api/issues.ts", "IssueComment"],
-  ["ui/src/lib/issue-chat-messages.ts", '"Queued…"'],
+  ["apps/server/src/routes/openapi.ts", "boardIssueCommentSchema"],
+  ["apps/ui/src/api/issues.ts", "IssueComment"],
+  ["apps/ui/src/lib/issue-chat-messages.ts", '"Queued…"'],
 ] as const) {
   test(`fails closed when ${path} loses ${token}`, () => {
     const root = fixtureRoot();
@@ -152,7 +152,7 @@ for (const [path, token] of [
 
 test("rejects synthetic run-assistant anchors", () => {
   const root = fixtureRoot();
-  write(root, "ui/src/lib/legacy-anchor.ts", "const id = `run-assistant:${run.id}`;\n");
+  write(root, "apps/ui/src/lib/legacy-anchor.ts", "const id = `run-assistant:${run.id}`;\n");
   assert.ok(
     runProgressCommentContractViolations(root).some((violation) =>
       violation.includes("run-assistant:"),
@@ -164,8 +164,8 @@ test("rejects non-empty validation for canonical run-progress bodies", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/context-retrieval.ts",
-    `${CANONICAL_FILES["server/src/services/context-retrieval.ts"]}\nconst rejected = requiredString(comment.body, "Context comment body");\n`,
+    "apps/server/src/services/context-retrieval.ts",
+    `${CANONICAL_FILES["apps/server/src/services/context-retrieval.ts"]}\nconst rejected = requiredString(comment.body, "Context comment body");\n`,
   );
   assert.ok(
     runProgressCommentContractViolations(root).some((violation) =>
@@ -179,8 +179,8 @@ for (const label of ['"Queued..."', '"Working..."'] as const) {
     const root = fixtureRoot();
     write(
       root,
-      "ui/src/lib/issue-chat-messages.ts",
-      `${CANONICAL_FILES["ui/src/lib/issue-chat-messages.ts"]}${label};\n`,
+      "apps/ui/src/lib/issue-chat-messages.ts",
+      `${CANONICAL_FILES["apps/ui/src/lib/issue-chat-messages.ts"]}${label};\n`,
     );
     assert.ok(
       runProgressCommentContractViolations(root).some((violation) =>
@@ -198,8 +198,8 @@ for (const label of [
     const root = fixtureRoot();
     write(
       root,
-      "server/src/services/issue-execution-dispatcher-postgres.ts",
-      `${CANONICAL_FILES["server/src/services/issue-execution-dispatcher-postgres.ts"]}${label};\n`,
+      "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
+      `${CANONICAL_FILES["apps/server/src/services/issue-execution-dispatcher-postgres.ts"]}${label};\n`,
     );
     assert.ok(
       runProgressCommentContractViolations(root).some((violation) =>

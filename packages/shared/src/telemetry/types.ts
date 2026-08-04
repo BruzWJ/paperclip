@@ -13,7 +13,7 @@ export interface TelemetryState {
 /**
  * Exponential-backoff-with-jitter parameters for the (future) batched-retry
  * sender. Shape mirrors the plugin worker crash-recovery backoff
- * (`server/src/services/plugin-worker-manager.ts`). Consumed by the
+ * (`apps/server/src/services/plugin-worker-manager.ts`). Consumed by the
  * batched-retry sender; nothing reads it yet.
  */
 export interface TelemetryBackoffConfig {

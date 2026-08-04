@@ -12,21 +12,21 @@
 
 ## File Structure
 
-- Modify `ui/src/components/IssuesList.tsx`: extend `IssueViewState`, derive high-volume board preferences, add toolbar controls, pass props into `KanbanBoard`.
-- Modify `ui/src/components/KanbanBoard.tsx`: add compact cards, collapsed rail lanes, visible-card limits, and per-column reveal behavior.
-- Create `ui/src/components/KanbanBoard.test.tsx`: focused tests for high-volume behavior and drag/drop update callback.
-- Modify `ui/src/components/IssuesList.test.tsx`: update the mocked `KanbanBoard` expectations for new props.
+- Modify `apps/ui/src/components/IssuesList.tsx`: extend `IssueViewState`, derive high-volume board preferences, add toolbar controls, pass props into `KanbanBoard`.
+- Modify `apps/ui/src/components/KanbanBoard.tsx`: add compact cards, collapsed rail lanes, visible-card limits, and per-column reveal behavior.
+- Create `apps/ui/src/components/KanbanBoard.test.tsx`: focused tests for high-volume behavior and drag/drop update callback.
+- Modify `apps/ui/src/components/IssuesList.test.tsx`: update the mocked `KanbanBoard` expectations for new props.
 - Keep `doc/plans/2026-05-05-scaled-kanban-board-design.md` as the design source of truth.
 
 ## Task 1: Add Kanban Board Scaling Mechanics
 
 **Files:**
-- Modify: `ui/src/components/KanbanBoard.tsx`
-- Create: `ui/src/components/KanbanBoard.test.tsx`
+- Modify: `apps/ui/src/components/KanbanBoard.tsx`
+- Create: `apps/ui/src/components/KanbanBoard.test.tsx`
 
 - [ ] **Step 1: Write focused tests**
 
-Create `ui/src/components/KanbanBoard.test.tsx` with tests that render 60 todo issues and assert:
+Create `apps/ui/src/components/KanbanBoard.test.tsx` with tests that render 60 todo issues and assert:
 
 ```tsx
 renderBoard({ issues: createIssues(60, "todo"), compactCards: true, initialVisibleCount: 10, revealIncrement: 10 });
@@ -48,7 +48,7 @@ expect(container.textContent).not.toContain("Issue 1");
 Run:
 
 ```bash
-pnpm exec vitest run ui/src/components/KanbanBoard.test.tsx
+pnpm exec vitest run apps/ui/src/components/KanbanBoard.test.tsx
 ```
 
 Expected: fail because `KanbanBoard.test.tsx` is new and the props/behavior do not exist.
@@ -86,7 +86,7 @@ Keep `DndContext`, `SortableContext`, and `handleDragEnd` status detection. Beca
 Run:
 
 ```bash
-pnpm exec vitest run ui/src/components/KanbanBoard.test.tsx
+pnpm exec vitest run apps/ui/src/components/KanbanBoard.test.tsx
 ```
 
 Expected: pass.
@@ -94,15 +94,15 @@ Expected: pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add ui/src/components/KanbanBoard.tsx ui/src/components/KanbanBoard.test.tsx
+git add apps/ui/src/components/KanbanBoard.tsx apps/ui/src/components/KanbanBoard.test.tsx
 git commit -m "Scale kanban board columns"
 ```
 
 ## Task 2: Wire Board Density State Into IssuesList
 
 **Files:**
-- Modify: `ui/src/components/IssuesList.tsx`
-- Modify: `ui/src/components/IssuesList.test.tsx`
+- Modify: `apps/ui/src/components/IssuesList.tsx`
+- Modify: `apps/ui/src/components/IssuesList.test.tsx`
 
 - [ ] **Step 1: Write/update tests**
 
@@ -131,7 +131,7 @@ expect(mockKanbanBoard).toHaveBeenLastCalledWith(expect.objectContaining({
 Run:
 
 ```bash
-pnpm exec vitest run ui/src/components/IssuesList.test.tsx
+pnpm exec vitest run apps/ui/src/components/IssuesList.test.tsx
 ```
 
 Expected: fail because `IssuesList` does not pass the new props yet.
@@ -193,7 +193,7 @@ Update the `KanbanBoard` call:
 Run:
 
 ```bash
-pnpm exec vitest run ui/src/components/IssuesList.test.tsx ui/src/components/KanbanBoard.test.tsx
+pnpm exec vitest run apps/ui/src/components/IssuesList.test.tsx apps/ui/src/components/KanbanBoard.test.tsx
 ```
 
 Expected: pass.
@@ -201,7 +201,7 @@ Expected: pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add ui/src/components/IssuesList.tsx ui/src/components/IssuesList.test.tsx
+git add apps/ui/src/components/IssuesList.tsx apps/ui/src/components/IssuesList.test.tsx
 git commit -m "Wire issue board density controls"
 ```
 
@@ -213,7 +213,7 @@ git commit -m "Wire issue board density controls"
 - [ ] **Step 1: Run targeted UI tests**
 
 ```bash
-pnpm exec vitest run ui/src/components/IssuesList.test.tsx ui/src/components/KanbanBoard.test.tsx
+pnpm exec vitest run apps/ui/src/components/IssuesList.test.tsx apps/ui/src/components/KanbanBoard.test.tsx
 ```
 
 Expected: pass.

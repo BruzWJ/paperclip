@@ -23,20 +23,20 @@ function files(
 describe("canonical human auth retired-contract scan", () => {
   it("rejects every parallel human identity family in shipped code and active docs", () => {
     const fixtures = [
-      ["server/src/config.ts", `const mode = "local_trusted";`],
-      ["server/src/middleware/auth.ts", `const source = "local_implicit";`],
-      ["ui/src/auth.ts", `const userId = "local-board";`],
-      ["server/src/cloud.ts", `const source = "cloud_tenant";`],
+      ["apps/server/src/config.ts", `const mode = "local_trusted";`],
+      ["apps/server/src/middleware/auth.ts", `const source = "local_implicit";`],
+      ["apps/ui/src/auth.ts", `const userId = "local-board";`],
+      ["apps/server/src/cloud.ts", `const source = "cloud_tenant";`],
       ["packages/shared/src/config.ts", `type Mode = DeploymentMode;`],
-      ["cli/src/onboard.ts", `process.env.PAPERCLIP_DEPLOYMENT_MODE;`],
-      ["server/src/cloud.ts", `req.get("x-paperclip-cloud-user-id");`],
-      ["server/src/claim.ts", `const page = "Board Claim";`],
-      ["ui/src/api/auth.ts", `fetch("/api/auth/profile");`],
-      ["server/src/routes/auth.ts", "return `paperclip:${source}:${userId}`;"],
-      ["server/src/seed.ts", `const source = "paperclip-seed";`],
-      ["cli/src/bootstrap.ts", `const purpose = "bootstrap_ceo";`],
+      ["packages/cli/src/onboard.ts", `process.env.PAPERCLIP_DEPLOYMENT_MODE;`],
+      ["apps/server/src/cloud.ts", `req.get("x-paperclip-cloud-user-id");`],
+      ["apps/server/src/claim.ts", `const page = "Board Claim";`],
+      ["apps/ui/src/api/auth.ts", `fetch("/api/auth/profile");`],
+      ["apps/server/src/routes/auth.ts", "return `paperclip:${source}:${userId}`;"],
+      ["apps/server/src/seed.ts", `const source = "paperclip-seed";`],
+      ["packages/cli/src/bootstrap.ts", `const purpose = "bootstrap_ceo";`],
       [
-        "server/src/invites.ts",
+        "apps/server/src/invites.ts",
         `const invite = { invitedByUserId: "system" };`,
       ],
       [
@@ -44,7 +44,7 @@ describe("canonical human auth retired-contract scan", () => {
         `const helper = "create-auth-bootstrap-invite";`,
       ],
       [
-        "docs/deploy/auth.md",
+        "apps/docs/deploy/auth.md",
         "Local setup formerly uses `local_trusted`.",
       ],
     ] as const;
@@ -60,7 +60,7 @@ describe("canonical human auth retired-contract scan", () => {
   });
 
   it("allows only exact-line, test-local removal-proof fixtures", () => {
-    const fixturePath = "server/src/__tests__/auth-removal.test.ts";
+    const fixturePath = "apps/server/src/__tests__/auth-removal.test.ts";
     const marked =
       `const rejected = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`;
     assert.deepEqual(
@@ -81,7 +81,7 @@ describe("canonical human auth retired-contract scan", () => {
     assert.ok(
       scanRetiredHumanIdentityTokens(
         files({
-          "server/src/auth.ts":
+          "apps/server/src/auth.ts":
             `const stale = "local_trusted"; // ${REMOVAL_PROOF_MARKER}`,
         }),
       ).some((entry) => entry.kind === "removal_proof"),
@@ -101,13 +101,13 @@ describe("canonical human auth retired-contract scan", () => {
     assert.deepEqual(
       scanRetiredHumanIdentityTokens(
         files({
-          "server/src/auth/better-auth.ts": `
+          "apps/server/src/auth/better-auth.ts": `
             const source = "session";
             const otherSource = "board_key";
             const provenance = "bootstrap_admin_cli";
             const updatePath = "/api/auth/update-user";
           `,
-          "docs/auth.md":
+          "apps/docs/auth.md":
             "Every human signs up and signs in through Better Auth.",
         }),
       ),
@@ -116,7 +116,7 @@ describe("canonical human auth retired-contract scan", () => {
   });
 
   it("allows only the exact onboarding rejection for the retired deployment-mode input", () => {
-    const path = "cli/src/commands/onboard.ts";
+    const path = "packages/cli/src/commands/onboard.ts";
     const rejection = [
       "if (process.env.PAPERCLIP_DEPLOYMENT_MODE !== undefined) {",
       "  throw new Error(",
@@ -162,15 +162,15 @@ describe("Better Auth durable secret boundary", () => {
         "BETTER_AUTH_SECRET=paperclip-dev-secret",
       ],
       [
-        "server/src/config.ts",
+        "apps/server/src/config.ts",
         'const secret = process.env.BETTER_AUTH_SECRET ?? "paperclip-dev-secret";',
       ],
       [
-        "server/src/config.ts",
+        "apps/server/src/config.ts",
         'const DEFAULT_BETTER_AUTH_SECRET = "paperclip-dev-secret";',
       ],
       [
-        "docs/deploy/auth.md",
+        "apps/docs/deploy/auth.md",
         'BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-paperclip-dev-secret}"',
       ],
     ] as const;
@@ -243,7 +243,7 @@ describe("canonical HTTP actor boundary", () => {
       'const agentId = req.actor.agentId ?? "unknown-agent";',
     ]) {
       const violations = scanHttpActorBoundary(
-        files({ "server/src/routes/example.ts": source }),
+        files({ "apps/server/src/routes/example.ts": source }),
       );
       assert.ok(
         violations.some((entry) => entry.kind === "http_actor"),
@@ -254,7 +254,7 @@ describe("canonical HTTP actor boundary", () => {
   it("requires Express to use the closed canonical actor union", () => {
     const violations = scanHttpActorBoundary(
       files({
-        "server/src/types/express.d.ts": `
+        "apps/server/src/types/express.d.ts": `
           declare global {
             namespace Express {
               interface Request {
@@ -275,7 +275,7 @@ describe("canonical HTTP actor boundary", () => {
   it("rejects generic middleware that mints an agent actor", () => {
     const violations = scanHttpActorBoundary(
       files({
-        "server/src/middleware/auth.ts": `
+        "apps/server/src/middleware/auth.ts": `
           req.actor = {
             type: "agent",
             agentId: "agent-1",
@@ -340,7 +340,7 @@ describe("canonical HTTP actor boundary", () => {
       `,
     ]) {
       const violations = scanHttpActorBoundary(
-        files({ "server/src/routes/example.ts": source }),
+        files({ "apps/server/src/routes/example.ts": source }),
       );
       assert.ok(
         violations.some((entry) => entry.kind === "http_actor"),
@@ -352,7 +352,7 @@ describe("canonical HTTP actor boundary", () => {
     assert.deepEqual(
       scanHttpActorBoundary(
         files({
-          "server/src/routes/compiled-interface-only.ts": `
+          "apps/server/src/routes/compiled-interface-only.ts": `
             export function denyGenericAgentRest() {
               return (req, res, next) => {
                 if (req.actor.type === "agent") {
@@ -363,7 +363,7 @@ describe("canonical HTTP actor boundary", () => {
               };
             }
           `,
-          "server/src/routes/example.ts": `
+          "apps/server/src/routes/example.ts": `
             router.get("/items", (req, res) => {
               assertBoard(req);
               res.json({ userId: req.actor.userId });
@@ -378,7 +378,7 @@ describe("canonical HTTP actor boundary", () => {
   it("rejects a generic change-consent request endpoint", () => {
     const violations = scanHttpActorBoundary(
       files({
-        "server/src/routes/change-consents.ts": `
+        "apps/server/src/routes/change-consents.ts": `
           router.post("/companies/:companyId/change-consents", async (req, res) => {
             res.status(201).json(await service.request(req.body));
           });
@@ -395,12 +395,12 @@ describe("canonical HTTP actor boundary", () => {
   it("requires the compiled agent_configure consent-request owner", () => {
     const violations = scanHttpActorBoundary(
       files({
-        "server/src/services/runtime-agent-action-port.ts": `
+        "apps/server/src/services/runtime-agent-action-port.ts": `
           export function createRuntimeAgentActionPort(service) {
             return { agentConfigure: service.configureFromRun };
           }
         `,
-        "server/src/index.ts": `
+        "apps/server/src/index.ts": `
           const agentActions = createRuntimeAgentActionPort(service);
         `,
       }),
@@ -429,14 +429,14 @@ describe("canonical HTTP actor boundary", () => {
     `;
     assert.deepEqual(
       scanHttpActorBoundary(
-        files({ "server/src/app.ts": canonical }),
+        files({ "apps/server/src/app.ts": canonical }),
       ),
       [],
     );
 
     const invalid = scanHttpActorBoundary(
       files({
-        "server/src/app.ts": `
+        "apps/server/src/app.ts": `
           actorMiddleware(db, {});
           app.use("/api", runToolsRoutes(service));
           app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
@@ -475,7 +475,7 @@ describe("canonical HTTP actor boundary", () => {
   it("requires an explicit run-bearer wall at named MCP gateways", () => {
     const violations = scanHttpActorBoundary(
       files({
-        "server/src/routes/tool-gateway.ts": `
+        "apps/server/src/routes/tool-gateway.ts": `
           router.post("/mcp/gateways/:id", handleNamedGateway);
         `,
       }),
@@ -488,7 +488,7 @@ describe("canonical HTTP actor boundary", () => {
     assert.deepEqual(
       scanHttpActorBoundary(
         files({
-          "server/src/routes/tool-gateway.ts": `
+          "apps/server/src/routes/tool-gateway.ts": `
             assertRunBearerRejectedByNamedGateway(bearer);
             router.post("/mcp/gateways/:id", handleNamedGateway);
           `,
@@ -520,7 +520,7 @@ describe("canonical HTTP actor boundary", () => {
 
       export function setupLiveEventsWebSocketServer() {}
     `;
-    const path = "server/src/realtime/live-events-ws.ts";
+    const path = "apps/server/src/realtime/live-events-ws.ts";
     assert.deepEqual(
       scanHttpActorBoundary(files({ [path]: canonical })),
       [],
@@ -560,13 +560,13 @@ describe("Better Auth table writer boundary", () => {
           export { authUsers as people } from "./auth.js";
           export * from "./auth.js";
         `,
-        "server/src/services/direct.ts": `
-          import { people as importedPeople } from "../../../packages/db/schema/auth-barrel.js";
+        "apps/server/src/services/direct.ts": `
+          import { people as importedPeople } from "../../../../../packages/db/schema/auth-barrel.js";
           const localPeople = importedPeople;
           db.insert(localPeople).values({});
         `,
-        "server/src/services/namespace.ts": `
-          import * as schema from "../../../packages/db/schema/auth-barrel.js";
+        "apps/server/src/services/namespace.ts": `
+          import * as schema from "../../../../../packages/db/schema/auth-barrel.js";
           const tables = schema;
           const { authSessions: sessions } = tables;
           tx.update(sessions).set({});
@@ -589,7 +589,7 @@ describe("Better Auth table writer boundary", () => {
   it("rejects raw SQL mutations while allowing reads", () => {
     const violations = scanBetterAuthTableWriters(
       files({
-        "server/src/services/sql.ts": `
+        "apps/server/src/services/sql.ts": `
           db.execute(sql\`INSERT INTO "user" ("id") VALUES ('x')\`);
           db.execute("UPDATE public.account SET password = null");
           db.execute(sql\`DELETE FROM "verification"\`);
@@ -609,7 +609,7 @@ describe("Better Auth table writer boundary", () => {
   it("permits only the Better Auth adapter and validated whole-database restore owner", () => {
     const allowed = scanBetterAuthTableWriters(
       files({
-        "server/src/auth/better-auth.ts": `
+        "apps/server/src/auth/better-auth.ts": `
           import { authUsers } from "@paperclipai/db";
           db.insert(authUsers).values(input);
         `,
@@ -640,7 +640,7 @@ describe("Better Auth table writer boundary", () => {
     assert.deepEqual(
       scanBetterAuthTableWriters(
         files({
-          "server/src/__tests__/auth-fixture.ts": `
+          "apps/server/src/__tests__/auth-fixture.ts": `
             import { authAccounts, authUsers } from "@paperclipai/db";
             db.insert(authUsers).values(user);
             db.insert(authAccounts).values(account);
@@ -668,21 +668,21 @@ describe("test-local setup production import boundary", () => {
   it("rejects production, barrel, dynamic, and E2E imports of test setup", () => {
     const violations = scanProductionImportsOfTestSetup(
       files({
-        "server/src/__tests__/auth-fixture.ts": `
+        "apps/server/src/__tests__/auth-fixture.ts": `
           import { authUsers } from "@paperclipai/db";
           export async function insertAccountGraph(db: any) {
             await db.insert(authUsers).values({});
           }
         `,
-        "server/src/runtime.ts":
+        "apps/server/src/runtime.ts":
           `import { accountGraph } from "./__tests__/auth-fixture.js";`,
-        "server/src/index.ts":
+        "apps/server/src/index.ts":
           `export * from "./__tests__/auth-fixture.js";`,
-        "cli/src/run.ts":
-          `const fixture = await import("../../server/src/__tests__/auth-fixture.js");`,
+        "packages/cli/src/run.ts":
+          `const fixture = await import("../../../apps/server/src/__tests__/auth-fixture.js");`,
         "tests/e2e/auth.spec.ts":
-          `import "../../server/src/__tests__/auth-fixture.js";`,
-        "server/src/__tests__/consumer.test.ts":
+          `import "../../apps/server/src/__tests__/auth-fixture.js";`,
+        "apps/server/src/__tests__/consumer.test.ts":
           `import { accountGraph } from "./auth-fixture.js";`,
       }),
     );
@@ -715,11 +715,11 @@ describe("/api/auth namespace ownership", () => {
     assert.deepEqual(
       scanAuthNamespaceOwnership(
         files({
-          "server/src/app.ts": canonicalOwner,
-          "server/src/index.ts": canonicalFactory,
-          "server/src/client.ts":
+          "apps/server/src/app.ts": canonicalOwner,
+          "apps/server/src/index.ts": canonicalFactory,
+          "apps/server/src/client.ts":
             `fetch("/api/auth/get-session");`,
-          "server/src/routes/openapi.ts":
+          "apps/server/src/routes/openapi.ts":
             `registry.registerPath({ path: "/api/auth/get-session" });`,
         }),
       ),
@@ -730,9 +730,9 @@ describe("/api/auth namespace ownership", () => {
   it("rejects competing absolute, mounted-relative, and fake-handler owners", () => {
     const competing = scanAuthNamespaceOwnership(
       files({
-        "server/src/app.ts": canonicalOwner,
-        "server/src/index.ts": canonicalFactory,
-        "server/src/routes/auth.ts": `
+        "apps/server/src/app.ts": canonicalOwner,
+        "apps/server/src/index.ts": canonicalFactory,
+        "apps/server/src/routes/auth.ts": `
           router.get("/api/auth/profile", profile);
           router.post("/auth/sign-in", customSignIn);
         `,
@@ -747,7 +747,7 @@ describe("/api/auth namespace ownership", () => {
 
     const fake = scanAuthNamespaceOwnership(
       files({
-        "server/src/app.ts": `
+        "apps/server/src/app.ts": `
           app.all("/api/auth/{*authPath}", customAuthHandler);
         `,
       }),
@@ -758,8 +758,8 @@ describe("/api/auth namespace ownership", () => {
   it("fails closed when the namespace has no owner", () => {
     const violations = scanAuthNamespaceOwnership(
       files({
-        "server/src/app.ts": "export const app = express();",
-        "server/src/index.ts": canonicalFactory,
+        "apps/server/src/app.ts": "export const app = express();",
+        "apps/server/src/index.ts": canonicalFactory,
       }),
     );
     assert.equal(violations.length, 1);
@@ -769,12 +769,12 @@ describe("/api/auth namespace ownership", () => {
   it("rejects optional registration and unproven handler injection", () => {
     const violations = scanAuthNamespaceOwnership(
       files({
-        "server/src/app.ts": `
+        "apps/server/src/app.ts": `
           if (opts.betterAuthHandler) {
             app.all("/api/auth/{*authPath}", opts.betterAuthHandler);
           }
         `,
-        "server/src/index.ts": `
+        "apps/server/src/index.ts": `
           const betterAuthHandler = customHandler;
           createApp({ betterAuthHandler });
         `,

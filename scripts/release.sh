@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=./release-lib.sh
 . "$REPO_ROOT/scripts/release-lib.sh"
-CLI_DIR="$REPO_ROOT/cli"
+CLI_DIR="$REPO_ROOT/packages/cli"
 
 channel=""
 release_date=""
@@ -47,9 +47,9 @@ restore_publish_artifacts() {
   fi
 
   rm -f "$CLI_DIR/README.md"
-  rm -rf "$REPO_ROOT/server/ui-dist"
+  rm -rf "$REPO_ROOT/apps/server/ui-dist"
 
-  for pkg_dir in server; do
+  for pkg_dir in apps/server; do
     rm -rf "$REPO_ROOT/$pkg_dir/skills"
   done
 }
@@ -206,7 +206,7 @@ fi
 
 set_cleanup_trap
 
-# The release flow already prepares ui/dist before packaging. Reuse that output
+# The release flow already prepares apps/ui/dist before packaging. Reuse that output
 # so server prepack does not rebuild the UI a second time during preview/publish.
 export PAPERCLIP_RELEASE_REUSE_UI_DIST=1
 
@@ -214,7 +214,7 @@ if [ "$skip_verify" = false ]; then
   release_info ""
   release_info "==> Step 1/7: Verification gate..."
   cd "$REPO_ROOT"
-  pnpm -r typecheck
+  pnpm typecheck
   pnpm test:run
   pnpm build
 else
@@ -228,7 +228,7 @@ cd "$REPO_ROOT"
 pnpm build
 node "$REPO_ROOT/scripts/build-standalone-public-packages.mjs"
 bash "$REPO_ROOT/scripts/prepare-server-ui-dist.sh"
-for pkg_dir in server; do
+for pkg_dir in apps/server; do
   rm -rf "$REPO_ROOT/$pkg_dir/skills"
   cp -r "$REPO_ROOT/skills" "$REPO_ROOT/$pkg_dir/skills"
 done

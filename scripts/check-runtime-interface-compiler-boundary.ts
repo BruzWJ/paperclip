@@ -6,12 +6,12 @@ import {
   requireFileTokens,
 } from "./static-removal-gate-utils.ts";
 
-const COMPILER = "server/src/services/runtime-interface-compiler.ts";
+const COMPILER = "apps/server/src/services/runtime-interface-compiler.ts";
 const DATABASE_OWNER =
-  "server/src/services/runtime-interface-compiler-db.ts";
+  "apps/server/src/services/runtime-interface-compiler-db.ts";
 const CAPABILITY_GATEWAY =
-  "server/src/services/prompt-capability-gateway.ts";
-const RUN_TOOLS_ROUTE = "server/src/routes/run-tools.ts";
+  "apps/server/src/services/prompt-capability-gateway.ts";
+const RUN_TOOLS_ROUTE = "apps/server/src/routes/run-tools.ts";
 
 const COMPILER_REQUIRED = [
   "export interface RuntimeInterfaceCompileInput",

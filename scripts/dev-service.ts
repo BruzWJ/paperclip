@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --import tsx
-import { listLocalServiceRegistryRecords, removeLocalServiceRegistryRecord, terminateLocalService } from "../server/src/services/local-service-supervisor.ts";
+import { listLocalServiceRegistryRecords, removeLocalServiceRegistryRecord, terminateLocalService } from "../apps/server/src/services/local-service-supervisor.ts";
 import { repoRoot } from "./dev-service-profile.ts";
 
 function toDisplayLines(records: Awaited<ReturnType<typeof listLocalServiceRegistryRecords>>) {

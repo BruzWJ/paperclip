@@ -16,9 +16,9 @@ function fixture() {
     ".github/workflows",
     "packages/example/src",
     "packages/db",
-    "server/src",
+    "apps/server/src",
     "tests/e2e",
-    "ui",
+    "apps/ui",
   ]) {
     mkdirSync(path.join(root, directory), { recursive: true });
   }
@@ -39,11 +39,11 @@ function fixture() {
     "export default { envDir: false, test: {} };\n",
   );
   writeFileSync(
-    path.join(root, "ui/vite.config.ts"),
+    path.join(root, "apps/ui/vite.config.ts"),
     "export default { server: { proxy: { '/api': 'http://localhost:3100' } } };\n",
   );
   writeFileSync(
-    path.join(root, "ui/vite.e2e.config.ts"),
+    path.join(root, "apps/ui/vite.e2e.config.ts"),
     "export default { envDir: false, server: {} };\n",
   );
   writeFileSync(
@@ -55,11 +55,11 @@ function fixture() {
     "export function resolveDatabaseTarget() { return { connectionString: 'postgres://configured.invalid/paperclip' }; }\n",
   );
   writeFileSync(
-    path.join(root, "server/src/config.ts"),
+    path.join(root, "apps/server/src/config.ts"),
     "export function loadConfig() { return {}; }\n",
   );
   writeFileSync(
-    path.join(root, "server/src/runtime-environment.ts"),
+    path.join(root, "apps/server/src/runtime-environment.ts"),
     "import { config as loadDotenv } from 'dotenv';\nexport function loadRuntimeEnvironmentFiles() { loadDotenv(); }\n",
   );
   return root;
@@ -246,12 +246,12 @@ test("rejects live clients, harnesses, lifecycle SQL, server boot, and workflow 
       "test('unsafe request', async ({ page }) => { await page.request.get('/api/companies'); });\n",
     );
     writeFileSync(
-      path.join(root, "ui/vite.config.ts"),
+      path.join(root, "apps/ui/vite.config.ts"),
       "const isTestMode = mode === 'test';\nexport default { plugins: [isTestMode && { configureServer(server) { server.middlewares.use('/api', (_request, response) => response.end()); } }], server: { proxy: { '/api': 'http://localhost:3100' } } };\n",
     );
-    mkdirSync(path.join(root, "server/src/__tests__/helpers"), { recursive: true });
+    mkdirSync(path.join(root, "apps/server/src/__tests__/helpers"), { recursive: true });
     writeFileSync(
-      path.join(root, "server/src/__tests__/helpers/external-postgres.ts"),
+      path.join(root, "apps/server/src/__tests__/helpers/external-postgres.ts"),
       "export {};\n",
     );
 
@@ -266,7 +266,7 @@ test("rejects live clients, harnesses, lifecycle SQL, server boot, and workflow 
     assert.match(violations, /page\.request, which bypasses the test-owned API fixture/);
     assert.match(violations, /forwards the ambient process environment/);
     assert.match(violations, /installs a Vite request interceptor/);
-    assert.match(violations, /server\/src\/__tests__\/helpers\/external-postgres\.ts:1 retains/);
+    assert.match(violations, /apps\/server\/src\/__tests__\/helpers\/external-postgres\.ts:1 retains/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -428,11 +428,11 @@ test("rejects production runtime test branches and import-time dotenv loading", 
       "export function resolveDatabaseTarget() { if (process.env.NODE_ENV === 'test') throw new Error('blocked'); return {}; }\n",
     );
     writeFileSync(
-      path.join(root, "server/src/config.ts"),
+      path.join(root, "apps/server/src/config.ts"),
       "import { config as loadDotenv } from 'dotenv';\nloadDotenv();\nexport function loadConfig() { return {}; }\n",
     );
     writeFileSync(
-      path.join(root, "server/src/runtime-environment.ts"),
+      path.join(root, "apps/server/src/runtime-environment.ts"),
       "export function loadRuntimeEnvironmentFiles({ nodeEnv = process.env.NODE_ENV } = {}) { if (nodeEnv === 'test') return; }\n",
     );
 
@@ -443,11 +443,11 @@ test("rejects production runtime test branches and import-time dotenv loading", 
     );
     assert.match(
       violations,
-      /server\/src\/runtime-environment\.ts:1 branches production database\/config loading on test mode/,
+      /apps\/server\/src\/runtime-environment\.ts:1 branches production database\/config loading on test mode/,
     );
     assert.match(
       violations,
-      /server\/src\/config\.ts:1 loads environment files from an importable configuration module/,
+      /apps\/server\/src\/config\.ts:1 loads environment files from an importable configuration module/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -587,7 +587,7 @@ test("rejects arrow-form Vite request interceptors", () => {
   const root = fixture();
   try {
     writeFileSync(
-      path.join(root, "ui/vite.config.ts"),
+      path.join(root, "apps/ui/vite.config.ts"),
       "export default { plugins: [{ configureServer: (server) => server.middlewares.use('/api', () => {}) }] };\n",
     );
 
@@ -781,7 +781,7 @@ test("parses quoted workflow images, shell database input, migrations, and docke
 test("rejects production test-mode branches anywhere in first-party runtime source", () => {
   const root = fixture();
   try {
-    const serviceDirectory = path.join(root, "server/src/services");
+    const serviceDirectory = path.join(root, "apps/server/src/services");
     mkdirSync(serviceDirectory, { recursive: true });
     writeFileSync(
       path.join(serviceDirectory, "database-adapter.ts"),
@@ -790,7 +790,7 @@ test("rejects production test-mode branches anywhere in first-party runtime sour
 
     assert.match(
       scanZeroDatabaseTests(root).join("\n"),
-      /server\/src\/services\/database-adapter\.ts:1 branches production database\/config loading on test mode/,
+      /apps\/server\/src\/services\/database-adapter\.ts:1 branches production database\/config loading on test mode/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -801,17 +801,17 @@ test("traverses Vite plugin imports for hidden request interceptors", () => {
   const root = fixture();
   try {
     writeFileSync(
-      path.join(root, "ui/vite.config.ts"),
+      path.join(root, "apps/ui/vite.config.ts"),
       "import { apiPlugin } from './vite-api-plugin.js';\nexport default { plugins: [apiPlugin] };\n",
     );
     writeFileSync(
-      path.join(root, "ui/vite-api-plugin.ts"),
+      path.join(root, "apps/ui/vite-api-plugin.ts"),
       "export const apiPlugin = { configureServer: (server) => server.middlewares.use('/api', () => {}) };\n",
     );
 
     assert.match(
       scanZeroDatabaseTests(root).join("\n"),
-      /reaches ui\/vite-api-plugin\.ts, which installs a Vite request interceptor/,
+      /reaches apps\/ui\/vite-api-plugin\.ts, which installs a Vite request interceptor/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

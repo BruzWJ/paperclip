@@ -32,8 +32,8 @@ body:
     attributes:
       label: Subsystem affected
       options:
-        - server/ — REST API & orchestration services
-        - ui/ — React + Vite board UI
+        - apps/server/ — REST API & orchestration services
+        - apps/ui/ — React + Vite board UI
         - packages/db — Drizzle schema, migrations
         - packages/shared — types, constants, validators, API paths
         - packages/adapters — agent adapter implementations

@@ -6,9 +6,9 @@
  * (branch design/token-extraction). Replaces hardcoded TYPE values —
  * arbitrary Tailwind font-size (`text-[11px]`), letter-spacing
  * (`tracking-[0.18em]`), line-height (`leading-[...]`), and raw inline
- * `fontSize` style literals — in `ui/src/components/**` and
- * `ui/src/pages/**` (including their *.test.tsx companions) with
- * references to CSS custom-property tokens defined in `ui/src/index.css`.
+ * `fontSize` style literals — in `apps/ui/src/components/**` and
+ * `apps/ui/src/pages/**` (including their *.test.tsx companions) with
+ * references to CSS custom-property tokens defined in `apps/ui/src/index.css`.
  *
  * Unlike Batch 1's color codemod (which used a hand-audited site table to
  * avoid false-positiving on non-color hex-like strings such as issue
@@ -17,7 +17,7 @@
  * class strings, and `fontSize: "Npx"` / `fontSize: "N.Nrem"` inline-style
  * string literals, cannot mean anything other than a type-size/spacing
  * value. A blanket regex sweep is therefore safe and is used here, scoped
- * to `ui/src/components/**` and `ui/src/pages/**` only. Numeric or
+ * to `apps/ui/src/components/**` and `apps/ui/src/pages/**` only. Numeric or
  * computed `fontSize` forms (e.g. `fontSize: 12`, `fontSize: Math.round(...)`)
  * are functional (third-party config objects / runtime-computed values)
  * and are left untouched — see ALLOWLIST_NOTES below.
@@ -52,7 +52,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
-const UI_SRC = resolve(REPO_ROOT, "ui/src");
+const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
 const SCAN_DIRS = ["components", "pages"];
 
 const DRY_RUN = process.argv.includes("--check");
@@ -172,7 +172,7 @@ function main() {
   const changedFiles = [];
 
   for (const filePath of files) {
-    const relPath = "ui/src/" + relative(UI_SRC, filePath);
+    const relPath = "apps/ui/src/" + relative(UI_SRC, filePath);
     const { changed, siteCount } = rewriteFile(filePath, relPath);
     if (changed) {
       filesChanged++;

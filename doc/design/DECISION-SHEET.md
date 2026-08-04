@@ -90,7 +90,7 @@ Post-reconcile verification: full suite 509 passed clean + 1 known-pattern paral
 
 ## Interactive-card pattern (Run 3 review feedback, Jul 7 2026)
 
-**One Card, two modes.** The Card primitive is a static container by default; when the whole card is a click target it takes the `interactive` prop (ui/src/components/ui/card.tsx): `cursor-pointer` + quiet hover (border darkens to foreground/20, shadow lifts to md) + keyboard focus ring. Non-Card interactive cards (skills tiles in CompanySkills, artifact Link-cards) carry the same class recipe verbatim. Chosen over the louder accent-border/tint hover after user review. Cards whose *rows* are the click targets (Costs "By agent") keep the card boundary static — the affordance belongs to the row.
+**One Card, two modes.** The Card primitive is a static container by default; when the whole card is a click target it takes the `interactive` prop (apps/ui/src/components/ui/card.tsx): `cursor-pointer` + quiet hover (border darkens to foreground/20, shadow lifts to md) + keyboard focus ring. Non-Card interactive cards (skills tiles in CompanySkills, artifact Link-cards) carry the same class recipe verbatim. Chosen over the louder accent-border/tint hover after user review. Cards whose *rows* are the click targets (Costs "By agent") keep the card boundary static — the affordance belongs to the row.
 
 ## Run 3 — component convergence — DONE pending review (Jul 7, 2026)
 

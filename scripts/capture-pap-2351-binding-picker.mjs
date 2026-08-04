@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Captures the BindingPicker storybook screenshot for PAP-2351 re-review.
-// Boots a tiny static server over `ui/storybook-static` and screenshots the
+// Boots a tiny static server over `apps/ui/storybook-static` and screenshots the
 // happy-path picker grid in dark mode at 1440x900 (matches the original
 // PAP-2350 capture).
 
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const storybookRoot = path.join(repoRoot, "ui", "storybook-static");
+const storybookRoot = path.join(repoRoot, "apps", "ui", "storybook-static");
 const outDir = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.join(repoRoot, "screenshots", "pap-2351");

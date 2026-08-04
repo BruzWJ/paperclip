@@ -28,7 +28,7 @@ function scan(path, source) {
 }
 
 test("classifies a retired runtime source", () => {
-  const violations = scan("server/src/runtime.ts", `const retired = \"${retiredRuntime}\";`);
+  const violations = scan("apps/server/src/runtime.ts", `const retired = \"${retiredRuntime}\";`);
   assert.deepEqual(violations.map(({ category, rule }) => ({ category, rule })), [
     { category: "source", rule: "retired-runtime" },
   ]);
@@ -91,7 +91,7 @@ test("does not treat a Compose service URL as a generated local default", () => 
 
 test("rejects a local runtime default", () => {
   const source = "const url = 'postgres://paperclip:paperclip@localhost:5432/paperclip';";
-  const violations = scan("server/src/runtime.ts", source);
+  const violations = scan("apps/server/src/runtime.ts", source);
   assert.equal(violations.length, 1);
   assert.equal(violations[0].rule, "default-local-target");
 });
@@ -134,7 +134,7 @@ test("permits a constructed release artifact deny-list and rejects literal mutat
 });
 
 test("scans documentation instead of exempting it wholesale", () => {
-  const violations = scan("docs/deploy/database.md", `legacy: ${retiredRuntime}`);
+  const violations = scan("apps/docs/deploy/database.md", `legacy: ${retiredRuntime}`);
   assert.equal(violations.length, 1);
   assert.equal(violations[0].category, "documentation");
 });

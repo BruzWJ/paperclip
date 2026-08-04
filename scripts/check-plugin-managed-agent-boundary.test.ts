@@ -53,7 +53,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/plugin-managed-agents.ts",
+    "apps/server/src/services/plugin-managed-agents.ts",
     [
       'const MANAGED_AGENT_ENTITY_TYPE = "managed_agent";',
       "createRuntimeAgentConfigurationService;",
@@ -73,7 +73,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/plugin-managed-routines.ts",
+    "apps/server/src/services/plugin-managed-routines.ts",
     [
       'eq(pluginManagedResources.resourceKind, "agent")',
       'eq(pluginManagedResources.lifecycleState, "active")',
@@ -82,7 +82,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/plugin-registry.ts",
+    "apps/server/src/services/plugin-registry.ts",
     [
       'const HOST_MANAGED_AGENT_ENTITY_TYPE = "managed_agent";',
       "function assertGenericPluginEntityMutationAllowed(entityType: string) {",
@@ -110,7 +110,7 @@ test("rejects a second managed-agent provenance writer", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/parallel-agent-binding.ts",
+    "apps/server/src/services/parallel-agent-binding.ts",
     'db.insert(pluginManagedResources).values({ resourceKind: "agent" });\n',
   );
   assert.ok(
@@ -124,7 +124,7 @@ test("rejects a direct lifecycle writer", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/parallel-lifecycle.ts",
+    "apps/server/src/services/parallel-lifecycle.ts",
     'db.update(pluginManagedResources).set({ lifecycleState: "adopted" });\n',
   );
   assert.ok(
@@ -136,7 +136,7 @@ test("rejects a direct lifecycle writer", () => {
 
 test("rejects an inactive routine agent reference", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/plugin-managed-routines.ts";
+  const path = "apps/server/src/services/plugin-managed-routines.ts";
   write(
     root,
     path,
@@ -154,7 +154,7 @@ test("rejects an inactive routine agent reference", () => {
 
 test("rejects plugin-key lookup in place of immutable installation id", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/plugin-managed-agents.ts";
+  const path = "apps/server/src/services/plugin-managed-agents.ts";
   write(
     root,
     path,
@@ -172,7 +172,7 @@ test("rejects plugin-key lookup in place of immutable installation id", () => {
 
 test("rejects generic CRUD access to reserved managed-agent rows", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/plugin-registry.ts";
+  const path = "apps/server/src/services/plugin-registry.ts";
   write(
     root,
     path,

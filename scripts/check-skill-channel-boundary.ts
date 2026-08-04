@@ -13,20 +13,20 @@ const MATERIALIZER =
 const TARGET_DRIVER =
   "packages/adapter-utils/src/acp-subprocess/execution-target.ts";
 const ATTEMPT_EXECUTOR =
-  "server/src/services/issue-execution-attempt-executor.ts";
+  "apps/server/src/services/issue-execution-attempt-executor.ts";
 const PROMPT_CYCLE =
-  "server/src/services/issue-execution-prompt-cycle-postgres.ts";
+  "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts";
 const MATERIALIZATION_LIFECYCLE =
-  "server/src/services/company-skill-materialization-lifecycle.ts";
+  "apps/server/src/services/company-skill-materialization-lifecycle.ts";
 const RUN_SERVICE =
-  "server/src/services/issue-execution-run-service.ts";
+  "apps/server/src/services/issue-execution-run-service.ts";
 const DISPATCHER =
-  "server/src/services/issue-execution-dispatcher-postgres.ts";
+  "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
 const RETRY_SCHEDULE =
-  "server/src/services/issue-execution-attempt-retry-schedule-postgres.ts";
+  "apps/server/src/services/issue-execution-attempt-retry-schedule-postgres.ts";
 const REVISION_OWNER =
-  "server/src/services/agent-adapter-config-revisions.ts";
-const COMPANY_SKILL_OWNER = "server/src/services/company-skills.ts";
+  "apps/server/src/services/agent-adapter-config-revisions.ts";
+const COMPANY_SKILL_OWNER = "apps/server/src/services/company-skills.ts";
 const SERVER_UTILS = "packages/adapter-utils/src/server-utils.ts";
 
 const RETIRED_IDENTIFIERS = [
@@ -148,9 +148,9 @@ function retiredIdentifierViolations(repositoryRoot: string): string[] {
   for (const absolutePath of listRepositoryTextFiles(repositoryRoot, [
     "packages/adapter-utils/src",
     "packages/shared/src",
-    "server/src",
-    "ui/src",
-    "cli/src",
+    "apps/server/src",
+    "apps/ui/src",
+    "packages/cli/src",
   ])) {
     const path = relative(repositoryRoot, absolutePath).replaceAll("\\", "/");
     if (!isProductionSource(path)) continue;
@@ -636,7 +636,7 @@ export function skillChannelBoundaryViolations(
 
   for (const absolutePath of listRepositoryTextFiles(repositoryRoot, [
     "packages/adapter-utils/src",
-    "server/src",
+    "apps/server/src",
   ])) {
     const path = relative(repositoryRoot, absolutePath).replaceAll("\\", "/");
     if (!isProductionSource(path)) continue;

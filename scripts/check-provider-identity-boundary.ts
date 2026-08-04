@@ -13,14 +13,14 @@ const REMOTE_ENV = "packages/adapter-utils/src/remote-execution-env.ts";
 const PROCESS_ENV = "packages/adapter-utils/src/server-utils.ts";
 const ACP_PROCESS = "packages/adapter-utils/src/acp-subprocess/process.ts";
 const ATTEMPT_EXECUTOR =
-  "server/src/services/issue-execution-attempt-executor.ts";
+  "apps/server/src/services/issue-execution-attempt-executor.ts";
 const AGENT_ACTION_PORT =
-  "server/src/services/runtime-agent-action-port.ts";
-const SERVER_ENTRY = "server/src/index.ts";
+  "apps/server/src/services/runtime-agent-action-port.ts";
+const SERVER_ENTRY = "apps/server/src/index.ts";
 const AGENT_ACTION_PORT_TEST =
-  "server/src/__tests__/runtime-agent-action-port.test.ts";
+  "apps/server/src/__tests__/runtime-agent-action-port.test.ts";
 const RUN_TOOLS_ROUTE_TEST =
-  "server/src/__tests__/run-tools-routes.test.ts";
+  "apps/server/src/__tests__/run-tools-routes.test.ts";
 
 const RETIRED_PROVIDER_IDENTITY_TOKENS = [
   "AdapterExecutionContext.agent",
@@ -65,8 +65,8 @@ const RETIRED_PROVIDER_IDENTITY_TOKENS = [
 ] as const;
 
 const RETIRED_INSTRUCTION_OWNERS = [
-  "server/src/services/agent-instructions.ts",
-  "server/src/services/default-agent-instructions.ts",
+  "apps/server/src/services/agent-instructions.ts",
+  "apps/server/src/services/default-agent-instructions.ts",
 ] as const;
 
 function read(repositoryRoot: string, path: string): string | null {
@@ -109,12 +109,9 @@ export function providerIdentityBoundaryViolations(
       roots: [
         ".agents",
         ".github",
+        "apps",
         "packages",
-        "server",
-        "cli",
-        "ui",
         "doc",
-        "docs",
         "evals",
         "releases",
         "README.md",

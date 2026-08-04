@@ -54,7 +54,7 @@ function fixtureRoot(): string {
     'check("change_consents_consumption_check");',
     'check("change_consents_expiry_check");',
   ].join("\n"));
-  write(root, "server/src/services/tool-access-policy.ts", [
+  write(root, "apps/server/src/services/tool-access-policy.ts", [
     "async function recordInvocation() {",
     "return db.transaction(async (tx) => {",
     "tx.insert(toolInvocations);",
@@ -64,7 +64,7 @@ function fixtureRoot(): string {
     "});",
     "}",
   ].join("\n"));
-  write(root, "server/src/services/tool-gateway.ts", [
+  write(root, "apps/server/src/services/tool-gateway.ts", [
     "requestApprovalForRecordedToolCall;",
     "dispatchIdempotencyKey; const parameters = claimed.canonicalArguments; approvalSnapshotsMatch();",
     'if (formalApproval.status !== "approved") throw new Error();',
@@ -75,23 +75,23 @@ function fixtureRoot(): string {
     'db.update(toolActionRequests).set({ status: "executing" }).where(eq(toolActionRequests.status, "approved"));',
     'status: "executed";',
   ].join("\n"));
-  write(root, "server/src/routes/tool-gateway.ts", [
+  write(root, "apps/server/src/routes/tool-gateway.ts", [
     'router.post("/companies/:companyId/tools/action-requests/:id/approve", async (req) => {',
     "assertBoard(req); assertBoardMutationAccess(req, companyId);",
     "approveActionRequest({ actor: { userId: req.actor.userId } });",
     "});",
   ].join("\n"));
-  write(root, "server/src/services/tool-access.ts", [
+  write(root, "apps/server/src/services/tool-access.ts", [
     "async function startOAuth() {}",
     "db.insert(toolOauthStates); db.from(toolOauthStates); db.delete(toolOauthStates);",
     "db.update(toolConnections);",
   ].join("\n"));
-  write(root, "server/src/services/issue-execution-policy.ts", [
+  write(root, "apps/server/src/services/issue-execution-policy.ts", [
     "export function issueExecutionPolicyControlService() {}",
     "deterministicExecutionPolicyDecisionId; issueExecutionPolicyPersistencePatch;",
     "db.insert(issueExecutionDecisions);",
   ].join("\n"));
-  write(root, "server/src/services/change-consent-gate.ts", [
+  write(root, "apps/server/src/services/change-consent-gate.ts", [
     "consumeAcceptedChangeConsentInTransaction;",
     "eq(changeConsents.companyId, input.companyId);",
     "eq(changeConsents.requestedByAgentId, actorAgentId);",
@@ -121,7 +121,7 @@ test("rejects a separate company-tool approval signing credential", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/retired-tool-action-signing.ts",
+    "apps/server/src/services/retired-tool-action-signing.ts",
     `export const legacy = process.env.${["PAPERCLIP_TOOL_ACTION", "_SIGNING_SECRET"].join("")};\n`,
   );
   assert.ok(
@@ -135,7 +135,7 @@ test("rejects the retired issue-only approval fallback", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/retired-issue-only-approval.ts",
+    "apps/server/src/services/retired-issue-only-approval.ts",
     'export const reasonCode = "approval_path_missing";\n',
   );
   assert.ok(
@@ -147,41 +147,41 @@ test("rejects the retired issue-only approval fallback", () => {
 
 test("rejects non-atomic invocation and action-request admission", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/tool-access-policy.ts";
+  const path = "apps/server/src/services/tool-access-policy.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace("return db.transaction(async (tx) => {", "{"));
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("transaction")));
 });
 
 test("rejects approval execution without the approved-state claim", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/tool-gateway.ts";
+  const path = "apps/server/src/services/tool-gateway.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace('eq(toolActionRequests.status, "approved")', "true"));
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("pending → approved → executing")));
 });
 
 test("rejects a weakened exact-diff consent predicate", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/change-consent-gate.ts";
+  const path = "apps/server/src/services/change-consent-gate.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace("eq(changeConsents.displayedDiff, displayedDiff);", "true;"));
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("displayedDiff")));
 });
 
 test("rejects same-run change-consent consumption", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/change-consent-gate.ts";
+  const path = "apps/server/src/services/change-consent-gate.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace("ne(changeConsents.sourceRunId, actorRunId);", "true;"));
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("sourceRunId")));
 });
 
 test("rejects an alternate consent writer", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/parallel-consent.ts", "db.update(changeConsents);\n");
+  write(root, "apps/server/src/services/parallel-consent.ts", "db.update(changeConsents);\n");
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("alternate change-consent writer")));
 });
 
 test("rejects an alternate execution-decision writer", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/parallel-policy.ts", "db.insert(issueExecutionDecisions);\n");
+  write(root, "apps/server/src/services/parallel-policy.ts", "db.insert(issueExecutionDecisions);\n");
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("alternate execution-policy")));
 });
 
@@ -193,14 +193,14 @@ test("rejects a replacement generic board-gate table", () => {
 
 test("rejects interaction-card coupling", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/tool-gateway.ts";
+  const path = "apps/server/src/services/tool-gateway.ts";
   write(root, path, `${readFileSync(join(root, path), "utf8")}\nissueThreadInteractions;\n`);
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("retired interaction")));
 });
 
 test("rejects provider wake coupling", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/issue-execution-policy.ts";
+  const path = "apps/server/src/services/issue-execution-policy.ts";
   write(root, path, `${readFileSync(join(root, path), "utf8")}\nenqueueWakeup();\n`);
   assert.ok(retainedBoardGateBoundaryViolations(root).some((entry) => entry.includes("wake symbol")));
 });

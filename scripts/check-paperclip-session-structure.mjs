@@ -23,7 +23,7 @@ function run(args) {
 
 export const SESSION_STRUCTURE_COMMANDS = Object.freeze([
   Object.freeze([
-    "cli/node_modules/tsx/dist/cli.mjs",
+    "packages/cli/node_modules/tsx/dist/cli.mjs",
     "scripts/check-opencode-session-donor.ts",
   ]),
   Object.freeze([

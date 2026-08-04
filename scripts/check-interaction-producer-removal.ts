@@ -22,8 +22,8 @@ const IGNORED_PATHS = [
   "scripts/check-interaction-producer-removal.test.ts",
 ] as const;
 
-const TOOL_GATEWAY_OWNER = "server/src/services/tool-gateway.ts";
-const PIPELINE_OWNER = "server/src/routes/pipelines.ts";
+const TOOL_GATEWAY_OWNER = "apps/server/src/services/tool-gateway.ts";
+const PIPELINE_OWNER = "apps/server/src/routes/pipelines.ts";
 
 function requireOrderedTokens(
   repositoryRoot: string,

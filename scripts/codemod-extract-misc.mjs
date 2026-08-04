@@ -4,9 +4,9 @@
  *
  * Phase 2 (extraction), Batch 4/4 (final sweep) of the design-token audit
  * (branch design/token-extraction). Replaces the remaining value-bearing
- * arbitrary Tailwind bracket utilities in `ui/src/components/**` and
- * `ui/src/pages/**` (including their *.test.tsx companions) with references
- * to CSS custom-property tokens defined in `ui/src/index.css`.
+ * arbitrary Tailwind bracket utilities in `apps/ui/src/components/**` and
+ * `apps/ui/src/pages/**` (including their *.test.tsx companions) with references
+ * to CSS custom-property tokens defined in `apps/ui/src/index.css`.
  *
  * Patterns covered this batch:
  *   grid-cols-[...] / grid-rows-[...]   -> --gtc-<n> / --gtr-<n> (track lists,
@@ -92,7 +92,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
-const UI_SRC = resolve(REPO_ROOT, "ui/src");
+const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
 const SCAN_DIRS = ["components", "pages"];
 
 const DRY_RUN = process.argv.includes("--check");
@@ -248,7 +248,7 @@ function registerDropShadowToken(unescapedValue, sourceNote) {
 // paren-with-fallback-comma shorthand (confirmed unsupported in the Step 0
 // spike). theme(colors.a.b) fallbacks are resolved to the equivalent
 // var(--token) form the Tailwind build already resolves them to today
-// (inspected in ui/storybook-static/assets/*.css before writing this
+// (inspected in apps/ui/storybook-static/assets/*.css before writing this
 // codemod - theme() is a Tailwind build-time function and cannot appear
 // inside a runtime custom property).
 const THEME_COLOR_MAP = {
@@ -460,7 +460,7 @@ function main() {
   const changedFiles = [];
 
   for (const filePath of files) {
-    const relPath = "ui/src/" + relative(UI_SRC, filePath);
+    const relPath = "apps/ui/src/" + relative(UI_SRC, filePath);
     const { changed, siteCount } = rewriteFile(filePath, relPath);
     if (changed) {
       filesChanged++;
@@ -525,8 +525,8 @@ function main() {
     lines.push("   Allowlist (sites intentionally left as-is - see ALLOWLIST doc-comment");
     lines.push("   at the end of this file for the machine-readable list consumed by");
     lines.push("   scripts/check-token-gates.mjs):");
-    lines.push("   allow ui/src/components/ui/dialog.tsx — tw-animate-css plugin utilities (zoom-in-[0.97] etc.) are dead/no-op classes today (plugin not installed, verified via built-CSS grep); nothing to tokenize without visually changing a currently-inert class");
-    lines.push("   allow ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx");
+    lines.push("   allow apps/ui/src/components/ui/dialog.tsx — tw-animate-css plugin utilities (zoom-in-[0.97] etc.) are dead/no-op classes today (plugin not installed, verified via built-CSS grep); nothing to tokenize without visually changing a currently-inert class");
+    lines.push("   allow apps/ui/src/components/ui/alert-dialog.tsx — same tw-animate-css dead-class situation as dialog.tsx");
     lines.push("*/");
     lines.push(":root {");
     for (const [name, { value, comment }] of gtcTokens) {

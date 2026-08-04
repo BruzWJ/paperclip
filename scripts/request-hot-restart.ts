@@ -2,7 +2,7 @@
 import {
   resolveHotRestartIntentPath,
   writeHotRestartIntent,
-} from "../server/src/services/hot-restart.js";
+} from "../apps/server/src/services/hot-restart.js";
 
 function usage(): never {
   console.error([

@@ -9,7 +9,7 @@ The SSH and workspace round-trip helpers below remain generic utilities for
 non-ACPX callers. They are not an alternate ACPX agent execution path.
 
 For the ACPX discovery contract, see
-[`docs/adapters/creating-an-adapter.md`](../../docs/adapters/creating-an-adapter.md).
+[`apps/docs/adapters/creating-an-adapter.md`](../../apps/docs/adapters/creating-an-adapter.md).
 
 ## No-remote-git contract
 

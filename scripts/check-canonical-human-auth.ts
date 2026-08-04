@@ -18,15 +18,12 @@ const CHECKER_FILES = new Set([
 
 const SOURCE_ROOTS = [
   ".github",
-  "cli",
+  "apps",
   "doc",
   "docker",
-  "docs",
   "packages",
   "scripts",
-  "server",
   "tests",
-  "ui",
 ] as const;
 
 const ROOT_FILES = [
@@ -173,7 +170,7 @@ const CANONICAL_RETIRED_INPUT_REJECTION_LINES = new Map<
   ReadonlySet<string>
 >([
   [
-    "cli/src/commands/onboard.ts:PAPERCLIP_DEPLOYMENT_MODE",
+    "packages/cli/src/commands/onboard.ts:PAPERCLIP_DEPLOYMENT_MODE",
     new Set([
       "if (process.env.PAPERCLIP_DEPLOYMENT_MODE !== undefined) {",
       '"PAPERCLIP_DEPLOYMENT_MODE is unsupported. Configure PAPERCLIP_BIND and PAPERCLIP_DEPLOYMENT_EXPOSURE instead.",',
@@ -185,7 +182,7 @@ const CANONICAL_RETIRED_INPUT_REJECTION_BLOCKS = new Map<
   RegExp
 >([
   [
-    "cli/src/commands/onboard.ts:PAPERCLIP_DEPLOYMENT_MODE",
+    "packages/cli/src/commands/onboard.ts:PAPERCLIP_DEPLOYMENT_MODE",
     /if\s*\(\s*process\.env\.PAPERCLIP_DEPLOYMENT_MODE\s*!==\s*undefined\s*\)\s*\{\s*throw\s+new\s+Error\s*\(\s*"PAPERCLIP_DEPLOYMENT_MODE is unsupported\. Configure PAPERCLIP_BIND and PAPERCLIP_DEPLOYMENT_EXPOSURE instead\."\s*,?\s*\)\s*;?\s*\}/g,
   ],
 ]);
@@ -843,10 +840,10 @@ export function scanHttpActorBoundary(
     }
     const genericHttpOwner =
       (
-        filePath.startsWith("server/src/routes/")
-        || filePath.startsWith("server/src/middleware/")
+        filePath.startsWith("apps/server/src/routes/")
+        || filePath.startsWith("apps/server/src/middleware/")
       )
-      && filePath !== "server/src/routes/compiled-interface-only.ts";
+      && filePath !== "apps/server/src/routes/compiled-interface-only.ts";
     if (genericHttpOwner) {
       for (const [label, pattern] of GENERIC_ROUTE_AGENT_ACTOR_RULES) {
         const matcher = new RegExp(pattern.source, pattern.flags);
@@ -885,8 +882,8 @@ export function scanHttpActorBoundary(
   }
 
   for (const ownerPath of [
-    "server/src/routes/change-consents.ts",
-    "server/src/routes/openapi.ts",
+    "apps/server/src/routes/change-consents.ts",
+    "apps/server/src/routes/openapi.ts",
   ]) {
     const owner = byPath.get(ownerPath);
     if (!owner) continue;
@@ -904,7 +901,7 @@ export function scanHttpActorBoundary(
   }
 
   const runtimeAgentActionPort = byPath.get(
-    "server/src/services/runtime-agent-action-port.ts",
+    "apps/server/src/services/runtime-agent-action-port.ts",
   );
   if (
     runtimeAgentActionPort
@@ -926,7 +923,7 @@ export function scanHttpActorBoundary(
     );
   }
 
-  const serverEntry = byPath.get("server/src/index.ts");
+  const serverEntry = byPath.get("apps/server/src/index.ts");
   if (
     serverEntry
     && (
@@ -942,7 +939,7 @@ export function scanHttpActorBoundary(
     );
   }
 
-  const declaration = byPath.get("server/src/types/express.d.ts");
+  const declaration = byPath.get("apps/server/src/types/express.d.ts");
   if (
     declaration
     && !/\bactor\s*:\s*RequestActor\s*;/.test(declaration.source)
@@ -955,7 +952,7 @@ export function scanHttpActorBoundary(
     );
   }
 
-  const contract = byPath.get("server/src/http/request-actor.ts");
+  const contract = byPath.get("apps/server/src/http/request-actor.ts");
   if (contract) {
     const requiredFragments = [
       /\buserId\s*:\s*string\s*;/,
@@ -981,7 +978,7 @@ export function scanHttpActorBoundary(
     }
   }
 
-  const middleware = byPath.get("server/src/middleware/auth.ts");
+  const middleware = byPath.get("apps/server/src/middleware/auth.ts");
   if (middleware) {
     const agentAssignment =
       /req\.actor\s*=\s*\{[^}]*\btype\s*:\s*["'`]agent["'`]/gs.exec(
@@ -998,7 +995,7 @@ export function scanHttpActorBoundary(
   }
 
   const liveEvents = byPath.get(
-    "server/src/realtime/live-events-ws.ts",
+    "apps/server/src/realtime/live-events-ws.ts",
   );
   if (liveEvents) {
     const authorizeStart = liveEvents.source.indexOf(
@@ -1033,7 +1030,7 @@ export function scanHttpActorBoundary(
     }
   }
 
-  const app = byPath.get("server/src/app.ts");
+  const app = byPath.get("apps/server/src/app.ts");
   if (app) {
     const runTools = app.source.indexOf(
       'app.use("/api", runToolsRoutes(',
@@ -1072,7 +1069,7 @@ export function scanHttpActorBoundary(
   }
 
   const namedGatewayRoutes = byPath.get(
-    "server/src/routes/tool-gateway.ts",
+    "apps/server/src/routes/tool-gateway.ts",
   );
   if (
     namedGatewayRoutes
@@ -1626,7 +1623,7 @@ function isAllowedAuthWriterOwner(
   file: string,
   node: ts.Node,
 ): boolean {
-  if (file === "server/src/auth/better-auth.ts") return true;
+  if (file === "apps/server/src/auth/better-auth.ts") return true;
   if (file !== "packages/db/backup-lib.ts") return false;
   return new Set([
     "restoreCompleteArchive",
@@ -1903,7 +1900,7 @@ function hasConditionalAncestor(node: ts.Node): boolean {
 function betterAuthHandlerFactoryCount(
   modules: ReadonlyMap<string, ParsedModule>,
 ): number {
-  const index = modules.get("server/src/index.ts");
+  const index = modules.get("apps/server/src/index.ts");
   if (!index) return 0;
   const importsCanonicalModule = index.imports.some(
     (entry) => entry.specifier === "./auth/better-auth.js",
@@ -1932,7 +1929,7 @@ function betterAuthHandlerFactoryCount(
 function betterAuthHandlerInjectionCount(
   modules: ReadonlyMap<string, ParsedModule>,
 ): number {
-  const index = modules.get("server/src/index.ts");
+  const index = modules.get("apps/server/src/index.ts");
   if (!index) return 0;
   let count = 0;
   const visit = (node: ts.Node) => {
@@ -1981,7 +1978,7 @@ export function scanAuthNamespaceOwnership(
   for (const module of modules.values()) {
     if (
       isTestSourcePath(module.file.path)
-      || !module.file.path.startsWith("server/src/")
+      || !module.file.path.startsWith("apps/server/src/")
     ) {
       continue;
     }
@@ -2001,7 +1998,7 @@ export function scanAuthNamespaceOwnership(
             method,
             route,
             canonical:
-              module.file.path === "server/src/app.ts"
+              module.file.path === "apps/server/src/app.ts"
               && method === "all"
               && route === "/api/auth/{*authPath}"
               && isBetterAuthHandlerExpression(node.arguments[1])
@@ -2029,7 +2026,7 @@ export function scanAuthNamespaceOwnership(
   const canonical = registrations.filter((entry) => entry.canonical);
   if (registrations.length !== 1 || canonical.length !== 1) {
     addViolation(violations, {
-      path: "server/src/app.ts",
+      path: "apps/server/src/app.ts",
       line: 1,
       column: 1,
       kind: "auth_namespace_owner",
@@ -2041,7 +2038,7 @@ export function scanAuthNamespaceOwnership(
   const injectionCount = betterAuthHandlerInjectionCount(modules);
   if (factoryCount !== 1 || injectionCount !== 1) {
     addViolation(violations, {
-      path: "server/src/index.ts",
+      path: "apps/server/src/index.ts",
       line: 1,
       column: 1,
       kind: "auth_namespace_owner",

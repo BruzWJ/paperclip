@@ -279,7 +279,7 @@ Run focused static and unit checks before the broader suites:
 
 ```sh
 pnpm check:production-boundaries
-pnpm -r typecheck
+pnpm typecheck
 pnpm test:run
 pnpm build
 ```

@@ -9,13 +9,12 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_REPO_ROOT = resolve(SCRIPT_DIR, "..");
 
 const SOURCE_ROOTS = [
-  "server/src",
+  "apps/server/src",
   "packages",
-  "cli/src",
 ];
 
-const PROJECTOR_PATH = "server/src/services/issue-session/projector.ts";
-const PURGE_PATH = "server/src/services/issue-session-lifecycle.ts";
+const PROJECTOR_PATH = "apps/server/src/services/issue-session/projector.ts";
+const PURGE_PATH = "apps/server/src/services/issue-session-lifecycle.ts";
 const PROJECTOR_WRITER_FUNCTION = "materializeComment";
 const LIFECYCLE_PURGE_FUNCTION =
   "purgeCompanySessionGraphInTx";

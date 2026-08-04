@@ -8,7 +8,7 @@ import ts from "typescript";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_REPO_ROOT = resolve(SCRIPT_DIR, "..");
 
-const SOURCE_ROOTS = ["server/src", "cli/src", "packages"];
+const SOURCE_ROOTS = ["apps/server/src", "packages"];
 const SQL_ROOTS = [
   "packages/db/migrations",
   "packages/db/migrations",
@@ -16,13 +16,13 @@ const SQL_ROOTS = [
 ];
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 
-const ISSUE_INSERT_OWNER = "server/src/services/canonical-issue-aggregate.ts";
+const ISSUE_INSERT_OWNER = "apps/server/src/services/canonical-issue-aggregate.ts";
 const ISSUE_INSERT_FUNCTION = "persistCanonicalIssueAggregateInTx";
-const ISSUE_DELETE_OWNER = "server/src/services/issue-session-lifecycle.ts";
+const ISSUE_DELETE_OWNER = "apps/server/src/services/issue-session-lifecycle.ts";
 const ISSUE_DELETE_FUNCTION = "purgeCompanySessionGraphInTx";
-const ISSUE_CONTROL_OWNER = "server/src/services/issues.ts";
-const COMPILER_OWNER = "server/src/services/runtime-interface-compiler.ts";
-const ACTION_PORT_OWNER = "server/src/services/runtime-issue-action-port.ts";
+const ISSUE_CONTROL_OWNER = "apps/server/src/services/issues.ts";
+const COMPILER_OWNER = "apps/server/src/services/runtime-interface-compiler.ts";
+const ACTION_PORT_OWNER = "apps/server/src/services/runtime-issue-action-port.ts";
 const ISSUE_SCHEMA_OWNER = "packages/db/schema/issues.ts";
 
 const IMMUTABLE_UPDATE_FIELDS = new Set([

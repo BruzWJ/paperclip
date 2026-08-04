@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Tiny dependency-free static file server for the built Storybook
-// (ui/storybook-static). Used by the visual snapshot suite's webServer so we
+// (apps/ui/storybook-static). Used by the visual snapshot suite's webServer so we
 // don't add an http-server dependency.
 import { createServer } from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
   "..",
+  "apps",
   "ui",
   "storybook-static",
 );

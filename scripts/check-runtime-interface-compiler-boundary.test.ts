@@ -26,7 +26,7 @@ function fixtureRoot(): string {
   roots.add(root);
   write(
     root,
-    "server/src/services/runtime-interface-compiler.ts",
+    "apps/server/src/services/runtime-interface-compiler.ts",
     [
       "type IssueExecutionRefMode = 'owner' | 'consult';",
       "type ContextDial = {}; type PaperclipActionKey = string;",
@@ -62,7 +62,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/runtime-interface-compiler-db.ts",
+    "apps/server/src/services/runtime-interface-compiler-db.ts",
     [
       "type ConfigureGrant = {}; type RuntimeAgentConfigureTarget = {};",
       "interface Snapshot { configureGrants: readonly ConfigureGrant[] }",
@@ -79,7 +79,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/prompt-capability-gateway.ts",
+    "apps/server/src/services/prompt-capability-gateway.ts",
     [
       "declare function compileRuntimeInterface(value: unknown): { descriptors: unknown[] };",
       "declare function compiledRuntimeInterfaceDigest(value: unknown): string;",
@@ -90,7 +90,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/routes/run-tools.ts",
+    "apps/server/src/routes/run-tools.ts",
     [
       "interface Request { method: \"initialize\" | \"tools/list\" | \"tools/call\" }",
       "export async function route(gateway: any, token: string) {",
@@ -119,7 +119,7 @@ for (const mutation of [
 ] as const) {
   test(`rejects compiler input mutation ${mutation}`, () => {
     const root = fixtureRoot();
-    const path = "server/src/services/runtime-interface-compiler.ts";
+    const path = "apps/server/src/services/runtime-interface-compiler.ts";
     const original = readFileSync(join(root, path), "utf8");
     write(
       root,
@@ -139,7 +139,7 @@ for (const mutation of [
 
 test("rejects a company-skill database import", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/runtime-interface-compiler-db.ts";
+  const path = "apps/server/src/services/runtime-interface-compiler-db.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
@@ -161,7 +161,7 @@ test("rejects a company-skill database import", () => {
 
 test("rejects management rows in compile input and digest", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/runtime-interface-compiler.ts";
+  const path = "apps/server/src/services/runtime-interface-compiler.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
@@ -191,7 +191,7 @@ test("rejects management rows in compile input and digest", () => {
 
 test("rejects configure target derivation without the action grant", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/runtime-interface-compiler-db.ts";
+  const path = "apps/server/src/services/runtime-interface-compiler-db.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
@@ -210,7 +210,7 @@ test("rejects configure target derivation without the action grant", () => {
 
 test("rejects an agent_configure descriptor without the action grant", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/runtime-interface-compiler.ts";
+  const path = "apps/server/src/services/runtime-interface-compiler.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
@@ -228,8 +228,8 @@ test("rejects an agent_configure descriptor without the action grant", () => {
 });
 
 for (const path of [
-  "server/src/services/prompt-capability-gateway.ts",
-  "server/src/routes/run-tools.ts",
+  "apps/server/src/services/prompt-capability-gateway.ts",
+  "apps/server/src/routes/run-tools.ts",
 ] as const) {
   test(`rejects company-skill data in ${path}`, () => {
     const root = fixtureRoot();
@@ -245,7 +245,7 @@ for (const path of [
 
 test("rejects management rows in the run capability surface", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/prompt-capability-gateway.ts";
+  const path = "apps/server/src/services/prompt-capability-gateway.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(root, path, `${original}\nconst configureGrants = [];\n`);
   assert.ok(

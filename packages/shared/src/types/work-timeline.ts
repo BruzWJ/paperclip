@@ -5,8 +5,8 @@ import type {
 
 /**
  * Work Timeline (Gantt) types — shared between the aggregation service
- * (`server/src/services/work-timeline.ts`) and the UI page
- * (`ui/src/pages/Timeline.tsx`). Defined here so both sides consume one contract
+ * (`apps/server/src/services/work-timeline.ts`) and the UI page
+ * (`apps/ui/src/pages/Timeline.tsx`). Defined here so both sides consume one contract
  * without redefining DTOs. Returned by `GET /api/companies/:companyId/timeline`.
  */
 

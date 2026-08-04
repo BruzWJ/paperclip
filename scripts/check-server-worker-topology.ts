@@ -12,7 +12,7 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 
 const SOURCE_ROOTS = [
-  "server/src",
+  "apps/server/src",
   "packages/adapter-utils/src",
   "packages/adapters",
 ] as const;
@@ -22,14 +22,14 @@ const SOURCE_ROOTS = [
  * ACPX supplies all locally available agent metadata at runtime.
  */
 const REQUIRED_OWNERS = [
-  "server/src/adapters/acpx-catalog.ts",
-  "server/src/adapters/registry.ts",
-  "server/src/services/environment-run-orchestrator.ts",
-  "server/src/services/environment-execution-target.ts",
-  "server/src/services/issue-execution-attempt-executor.ts",
-  "server/src/services/issue-execution-postgres.ts",
-  "server/src/services/issue-execution-provider-configuration.ts",
-  "server/src/index.ts",
+  "apps/server/src/adapters/acpx-catalog.ts",
+  "apps/server/src/adapters/registry.ts",
+  "apps/server/src/services/environment-run-orchestrator.ts",
+  "apps/server/src/services/environment-execution-target.ts",
+  "apps/server/src/services/issue-execution-attempt-executor.ts",
+  "apps/server/src/services/issue-execution-postgres.ts",
+  "apps/server/src/services/issue-execution-provider-configuration.ts",
+  "apps/server/src/index.ts",
   "packages/adapter-utils/package.json",
   "packages/adapter-utils/src/types.ts",
   "packages/adapter-utils/src/server-adapter-contract.ts",
@@ -48,18 +48,18 @@ const RETIRED_AI_PATHS = [
   "packages/adapter-utils/src/provider-cli.ts",
   "packages/adapter-utils/src/provider-cli-adapter.ts",
   "packages/adapter-utils/src/session-provider-event.ts",
-  "server/src/services/agent-execution/session-runner/stateless.ts",
-  "server/src/services/agent-execution/session-runner/provider-turn.ts",
-  "server/src/services/agent-execution/session-runner/to-provider-messages.ts",
-  "server/src/services/agent-execution/session-runner/native-events.ts",
-  "server/src/services/agent-execution/session-runner/output.ts",
+  "apps/server/src/services/agent-execution/session-runner/stateless.ts",
+  "apps/server/src/services/agent-execution/session-runner/provider-turn.ts",
+  "apps/server/src/services/agent-execution/session-runner/to-provider-messages.ts",
+  "apps/server/src/services/agent-execution/session-runner/native-events.ts",
+  "apps/server/src/services/agent-execution/session-runner/output.ts",
 ] as const;
 
 /** Paperclip must not retain an independent catalog of agent names or models. */
 const RETIRED_STATIC_AGENT_CATALOG_PATHS = [
-  "server/src/adapters/builtin-adapter-catalog.ts",
-  "server/src/adapters/builtin-adapter-types.ts",
-  "server/src/adapters/codex.ts",
+  "apps/server/src/adapters/builtin-adapter-catalog.ts",
+  "apps/server/src/adapters/builtin-adapter-types.ts",
+  "apps/server/src/adapters/codex.ts",
 ] as const;
 
 const RETIRED_AI_SYMBOLS = [
@@ -148,7 +148,7 @@ function productionRawInvocationImport(
   path: string,
   source: string,
 ): string | null {
-  if (!path.startsWith("server/src/") || isTestOrFixturePath(path)) {
+  if (!path.startsWith("apps/server/src/") || isTestOrFixturePath(path)) {
     return null;
   }
   if (RAW_ACP_INVOCATION_MODULE.test(source)) {
@@ -258,7 +258,7 @@ export function scanServerWorkerTopology(
     if (rawInvocationImport) {
       add(path, `production ACPX runtime boundary forbids ${rawInvocationImport}`);
     }
-    if (path.startsWith("server/src/") && source.includes("resolveAcpRegistryLaunch")) {
+    if (path.startsWith("apps/server/src/") && source.includes("resolveAcpRegistryLaunch")) {
       add(path, "production ACPX runtime boundary must not resolve a launch argv");
     }
   }
@@ -292,7 +292,7 @@ export function scanServerWorkerTopology(
     contract: "local ACPX compatibility probe",
   });
 
-  const catalogPath = "server/src/adapters/acpx-catalog.ts";
+  const catalogPath = "apps/server/src/adapters/acpx-catalog.ts";
   requireMarkers({
     path: catalogPath,
     source: required(catalogPath),
@@ -308,7 +308,7 @@ export function scanServerWorkerTopology(
     contract: "ACPX-supplied dynamic adapter catalog",
   });
 
-  const adapterRegistryPath = "server/src/adapters/registry.ts";
+  const adapterRegistryPath = "apps/server/src/adapters/registry.ts";
   requireMarkers({
     path: adapterRegistryPath,
     source: required(adapterRegistryPath),
@@ -376,7 +376,7 @@ export function scanServerWorkerTopology(
   }
 
   const executorPath =
-    "server/src/services/issue-execution-attempt-executor.ts";
+    "apps/server/src/services/issue-execution-attempt-executor.ts";
   const executor = required(executorPath);
   requireMarkers({
     path: executorPath,
@@ -458,7 +458,7 @@ export function scanServerWorkerTopology(
   });
 
   const providerConfigurationPath =
-    "server/src/services/issue-execution-provider-configuration.ts";
+    "apps/server/src/services/issue-execution-provider-configuration.ts";
   requireMarkers({
     path: providerConfigurationPath,
     source: required(providerConfigurationPath),
@@ -473,7 +473,7 @@ export function scanServerWorkerTopology(
   });
 
   const productionRuntimePath =
-    "server/src/services/issue-execution-postgres.ts";
+    "apps/server/src/services/issue-execution-postgres.ts";
   requireMarkers({
     path: productionRuntimePath,
     source: required(productionRuntimePath),
@@ -488,7 +488,7 @@ export function scanServerWorkerTopology(
   });
 
   const orchestratorPath =
-    "server/src/services/environment-run-orchestrator.ts";
+    "apps/server/src/services/environment-run-orchestrator.ts";
   requireMarkers({
     path: orchestratorPath,
     source: required(orchestratorPath),
@@ -497,7 +497,7 @@ export function scanServerWorkerTopology(
     contract: "existing environment orchestrator",
   });
   const targetPath =
-    "server/src/services/environment-execution-target.ts";
+    "apps/server/src/services/environment-execution-target.ts";
   requireMarkers({
     path: targetPath,
     source: required(targetPath),
@@ -506,7 +506,7 @@ export function scanServerWorkerTopology(
     contract: "existing environment execution target",
   });
 
-  const assemblyPath = "server/src/index.ts";
+  const assemblyPath = "apps/server/src/index.ts";
   requireMarkers({
     path: assemblyPath,
     source: required(assemblyPath),

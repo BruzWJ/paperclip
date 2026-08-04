@@ -300,7 +300,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/company-portability.ts",
+    "apps/server/src/services/company-portability.ts",
     [
       "interface PortableCanonicalIssueCreateInput {",
       "  lifecycleStatus: AgentVisibleIssueStatus;",
@@ -319,7 +319,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/runtime-interface-compiler.ts",
+    "apps/server/src/services/runtime-interface-compiler.ts",
     [
       "function issueFilterSchema() {",
       "  return objectSchema({",
@@ -390,7 +390,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "ui/src/plugins/bridge-init.ts",
+    "apps/ui/src/plugins/bridge-init.ts",
     [
       "type PluginIssuesListFilters = {",
       '  status?: "open" | "blocked" | "done" | "cancelled";',
@@ -400,7 +400,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "ui/src/pages/IssueDetail.tsx",
+    "apps/ui/src/pages/IssueDetail.tsx",
     [
       "const commitHumanOwnerStatus = useMutation({",
       "  mutationFn: async (input: {",
@@ -412,10 +412,10 @@ function fixtureRoot(): string {
   );
   write(root, "packages/db/schema/issue_liveness_reconciliations.ts", canonicalLivenessSchema());
   write(root, "packages/db/schema/issue_execution_runs.ts", canonicalRunSchema());
-  write(root, "server/src/services/issue-liveness-reconciliation.ts", canonicalLivenessService());
+  write(root, "apps/server/src/services/issue-liveness-reconciliation.ts", canonicalLivenessService());
   write(
     root,
-    "server/src/services/issue-execution-finalization-postgres.ts",
+    "apps/server/src/services/issue-execution-finalization-postgres.ts",
     [
       "function insertProductiveLivenessFact() {",
       "  transaction.insert(issueExecutionRunLivenessFacts).values({",
@@ -440,7 +440,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-postgres.ts",
+    "apps/server/src/services/issue-execution-postgres.ts",
     [
       "const liveness = createIssueLivenessReconciliationService(database, {});",
       "const finalizer = createPostgresIssueExecutionFinalizationWriter({",
@@ -451,7 +451,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     [
       "async function assertRefDispatchable(issue: any) {",
       '  if (!["open", "blocked"].includes(issue.lifecycleStatus)) throw new Error();',
@@ -465,7 +465,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-cancellation.ts",
+    "apps/server/src/services/issue-execution-cancellation.ts",
     [
       "interface TypedCancellationSettlement {",
       "  consumeFinalizationOutboxForRun(input: {",
@@ -481,24 +481,24 @@ function fixtureRoot(): string {
     ].join("\n"),
   );
   const producers: Record<string, string> = {
-    "server/src/services/canonical-issue-aggregate.ts":
+    "apps/server/src/services/canonical-issue-aggregate.ts":
       "recordIssueLivenessActionInTransaction(tx, `issue:${persistedIssue.id}`);\n",
-    "server/src/services/ordinary-issue-runtime.ts": [
+    "apps/server/src/services/ordinary-issue-runtime.ts": [
       "recordIssueLivenessActionInTransaction(tx, `issue_execution_ref:${admission.ref.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_board_reopen_command:${command.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_board_user_comment:${command.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_creator_withdrawal_command:${command.id}`);",
       "",
     ].join("\n"),
-    "server/src/services/runtime-issue-action-port.ts": [
+    "apps/server/src/services/runtime-issue-action-port.ts": [
       "recordIssueLivenessActionInTransaction(tx, `issue_update:${update.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_consult_execution:${completedConsult[0]!.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_board_mention:${mention.id}`);",
       "",
     ].join("\n"),
-    "server/src/services/issue-board-lifecycle-command.ts":
+    "apps/server/src/services/issue-board-lifecycle-command.ts":
       "recordIssueLivenessActionInTransaction(tx, `issue_board_lifecycle_command:${row.id}`);\n",
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts":
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts":
       "recordIssueLivenessActionInTransaction(tx, `issue_execution_prompt_segment:${prompt.identity.runId}:${prompt.identity.refId}:${prompt.identity.segmentOrdinal}`);\n",
   };
   for (const [path, source] of Object.entries(producers)) write(root, path, source);
@@ -580,7 +580,7 @@ test("rejects an arbitrary fifth company-portability parser value", () => {
   const root = fixtureRoot();
   replaceAfter(
     root,
-    "server/src/services/company-portability.ts",
+    "apps/server/src/services/company-portability.ts",
     "const lifecycleStatus = asString(extension.lifecycleStatus);",
     '"cancelled"',
     '"cancelled", "parked"',
@@ -592,7 +592,7 @@ test("rejects extending the canonical company-portability input type", () => {
   const root = fixtureRoot();
   replaceAfter(
     root,
-    "server/src/services/company-portability.ts",
+    "apps/server/src/services/company-portability.ts",
     "interface PortableCanonicalIssueCreateInput",
     "AgentVisibleIssueStatus;",
     'AgentVisibleIssueStatus | "parked";',
@@ -618,7 +618,7 @@ for (const [owner, expected, replacement, expectedViolation] of [
     const root = fixtureRoot();
     replaceAfter(
       root,
-      "server/src/services/runtime-interface-compiler.ts",
+      "apps/server/src/services/runtime-interface-compiler.ts",
       owner,
       expected,
       replacement,
@@ -631,7 +631,7 @@ test("rejects an arbitrary third locked dispatchable lifecycle value", () => {
   const root = fixtureRoot();
   replaceAfter(
     root,
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     "async function assertRefDispatchable",
     '"blocked"',
     '"blocked", "parked"',
@@ -685,12 +685,12 @@ for (const [path, owner, expectedViolation] of [
 
 for (const [path, owner, expectedViolation] of [
   [
-    "ui/src/plugins/bridge-init.ts",
+    "apps/ui/src/plugins/bridge-init.ts",
     "type PluginIssuesListFilters =",
     "host UI plugin bridge filter",
   ],
   [
-    "ui/src/pages/IssueDetail.tsx",
+    "apps/ui/src/pages/IssueDetail.tsx",
     "const commitHumanOwnerStatus = useMutation(",
     "human owner status mutation",
   ],
@@ -752,13 +752,13 @@ test("rejects restoring automatic agent-liveness Board Attention", () => {
   const root = fixtureRoot();
   replace(
     root,
-    "server/src/services/issue-execution-postgres.ts",
+    "apps/server/src/services/issue-execution-postgres.ts",
     "const finalizer =",
     "notifyAttention();\nconst finalizer =",
   );
   write(
     root,
-    "server/src/services/attention.ts",
+    "apps/server/src/services/attention.ts",
     'add({ sourceKind: "agent_liveness" });\n',
   );
   const violations = issueLivenessBoundaryViolations(root);
@@ -815,7 +815,7 @@ test("rejects a second finalization stale-check outbox writer", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/parallel-finalizer.ts",
+    "apps/server/src/services/parallel-finalizer.ts",
     "transaction.insert(issueExecutionFinalizationStaleCheckOutbox).values({});\n",
   );
   assert.ok(
@@ -826,9 +826,9 @@ test("rejects a second finalization stale-check outbox writer", () => {
 });
 
 for (const path of [
-  "server/src/services/issue-liveness-timer.ts",
-  "server/src/routes/issue-liveness-read.ts",
-  "server/src/services/startup-issue-liveness.ts",
+  "apps/server/src/services/issue-liveness-timer.ts",
+  "apps/server/src/routes/issue-liveness-read.ts",
+  "apps/server/src/services/startup-issue-liveness.ts",
 ] as const) {
   test(`rejects stale-check caller ${path}`, () => {
     const root = fixtureRoot();
@@ -843,8 +843,8 @@ for (const path of [
 }
 
 for (const path of [
-  "server/src/services/issue-execution-postgres.ts",
-  "server/src/services/unrelated-finalization-caller.ts",
+  "apps/server/src/services/issue-execution-postgres.ts",
+  "apps/server/src/services/unrelated-finalization-caller.ts",
 ] as const) {
   test(`rejects a per-run stale-check consumer in ${path}`, () => {
     const root = fixtureRoot();
@@ -861,7 +861,7 @@ test("rejects an ordinary-comment per-run stale-check caller", () => {
   const root = fixtureRoot();
   append(
     root,
-    "server/src/services/ordinary-issue-runtime.ts",
+    "apps/server/src/services/ordinary-issue-runtime.ts",
     "await finalizer.consumeFinalizationOutboxForRun(comment);\n",
   );
   assertViolation(root, "per-run stale-check consumption");
@@ -871,7 +871,7 @@ test("rejects an alternate follow-up recipient", () => {
   const root = fixtureRoot();
   replace(
     root,
-    "server/src/services/issue-liveness-reconciliation.ts",
+    "apps/server/src/services/issue-liveness-reconciliation.ts",
     "    targetAgentId: run.targetAgentId,",
     "    targetAgentId: issue.ownerAgentId,",
   );
@@ -886,7 +886,7 @@ test("rejects generated mention routing", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/issue-liveness-reconciliation.ts",
+    "apps/server/src/services/issue-liveness-reconciliation.ts",
     `${canonicalLivenessService()}\nmention_agent({ agentId: run.targetAgentId });\n`,
   );
   assert.ok(
@@ -915,7 +915,7 @@ test("rejects a system-escalation reader coupled to the liveness frontier", () =
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/system-escalation.ts",
+    "apps/server/src/services/system-escalation.ts",
     [
       "const rows = await database",
       "  .select()",
@@ -952,7 +952,7 @@ test("rejects removal of a canonical reference-only settlement producer", () => 
   const root = fixtureRoot();
   replace(
     root,
-    "server/src/services/canonical-issue-aggregate.ts",
+    "apps/server/src/services/canonical-issue-aggregate.ts",
     "recordIssueLivenessActionInTransaction",
     "removedIssueLivenessSettlement",
   );

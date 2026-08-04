@@ -64,7 +64,7 @@ const REQUIRED_ADDED_PROJECT_PATHS = [
   "packages/plugins/sandbox-providers/modal",
   "packages/plugins/sandbox-providers/novita",
 ];
-const RAW_CENSUS_ROOTS = ["packages", "server", "ui", "cli"];
+const RAW_CENSUS_ROOTS = ["apps", "packages"];
 const RAW_CENSUS_IGNORED_DIRECTORIES = new Set([
   ".git",
   "dist",
@@ -332,7 +332,7 @@ test("a serialized suite never leaks into the general-server shards", () => {
 });
 
 test("execution, Session, liveness, prompt/ACP, and PostgreSQL suites are structurally serialized", () => {
-  const allServerTests = walkFiles(path.join(repoRoot, "server", "src"))
+  const allServerTests = walkFiles(path.join(repoRoot, "apps", "server", "src"))
     .map((file) => path.relative(repoRoot, file).split(path.sep).join("/"))
     .filter((file) => file.endsWith(".test.ts"))
     .sort();
@@ -350,12 +350,12 @@ test("execution, Session, liveness, prompt/ACP, and PostgreSQL suites are struct
   }
 
   const representatives = [
-    "server/src/services/issue-execution-run-service.test.ts",
-    "server/src/services/issue-session/publication.test.ts",
-    "server/src/services/issue-liveness-reconciliation.test.ts",
-    "server/src/services/acp-prompt-settlement.test.ts",
-    "server/src/services/prompt-capability-gateway.test.ts",
-    "server/src/__tests__/ordinary-issue-runtime-postgres.test.ts",
+    "apps/server/src/services/issue-execution-run-service.test.ts",
+    "apps/server/src/services/issue-session/publication.test.ts",
+    "apps/server/src/services/issue-liveness-reconciliation.test.ts",
+    "apps/server/src/services/acp-prompt-settlement.test.ts",
+    "apps/server/src/services/prompt-capability-gateway.test.ts",
+    "apps/server/src/__tests__/ordinary-issue-runtime-postgres.test.ts",
   ];
   for (const removed of representatives) {
     assert.throws(

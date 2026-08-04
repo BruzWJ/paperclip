@@ -3,7 +3,7 @@ node_modules/
 **/node_modules
 **/node_modules/
 dist/
-ui/storybook-static/
+apps/ui/storybook-static/
 .env
 *.tsbuildinfo
 drizzle/meta/
@@ -13,8 +13,10 @@ coverage/
 data/
 .paperclip/
 .pnpm-store/
+.turbo/
+**/.turbo/
 tmp-*
-cli/tmp/
+packages/cli/tmp/
 
 # Scratch/seed scripts (but not scripts/ dir)
 check-*.mjs
@@ -24,18 +26,19 @@ check-*.mjs
 new-agent*.json
 newcompany.json
 seed-*.mjs
-server/check-*.mjs
-server/seed-*.mjs
+apps/server/check-*.mjs
+apps/server/seed-*.mjs
 packages/db/seed-*.mjs
 
 # npm publish build artifacts
-cli/package.dev.json
+packages/cli/package.dev.json
 
 # Build artifacts in src directories
-server/src/**/*.js
-server/src/**/*.js.map
-server/src/**/*.d.ts
-server/src/**/*.d.ts.map
+apps/server/src/**/*.js
+apps/server/src/**/*.js.map
+apps/server/src/**/*.d.ts
+!apps/server/src/types/express.d.ts
+apps/server/src/**/*.d.ts.map
 tmp/
 feedback-export-*
 diagnostics/

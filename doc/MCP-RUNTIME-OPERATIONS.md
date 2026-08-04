@@ -144,6 +144,6 @@ Recovery is complete when stuck-slot alerts clear, timeout/error rates return be
 
 Automated coverage includes:
 
-- A synthetic degraded runtime-health scenario in `server/src/__tests__/tool-access-service.test.ts` that creates a stale running slot, degraded connection, timeout event, capacity deferral, and restart suppression.
-- A durable audit-write failure scenario in `server/src/__tests__/tool-access-service.test.ts` that verifies `mcp_runtime_audit_write_failures` fires from the counter path.
-- A gateway runtime recovery scenario in `server/src/__tests__/tool-gateway.test.ts` that recovers a stuck local stdio slot before reuse.
+- A synthetic degraded runtime-health scenario in `apps/server/src/__tests__/tool-access-service.test.ts` that creates a stale running slot, degraded connection, timeout event, capacity deferral, and restart suppression.
+- A durable audit-write failure scenario in `apps/server/src/__tests__/tool-access-service.test.ts` that verifies `mcp_runtime_audit_write_failures` fires from the counter path.
+- A gateway runtime recovery scenario in `apps/server/src/__tests__/tool-gateway.test.ts` that recovers a stuck local stdio slot before reuse.

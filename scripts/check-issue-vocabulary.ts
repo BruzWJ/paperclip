@@ -27,17 +27,17 @@ export const ISSUE_VOCABULARY_SCAN_OWNERS = Object.freeze([
   ".agents/skills/create-agent-adapter",
   ".agents/skills/doc-maintenance",
   ".agents/skills/prepare-paperclip-pr",
-  "server/src",
+  "apps/server/src",
   "packages/db/schema",
   "packages/shared/src",
   "packages/plugins/sdk/src",
   "packages/plugins/sdk/README.md",
   "packages/teams-catalog/catalog",
   "packages/teams-catalog/generated",
-  "cli/src",
-  "cli/README.md",
-  "ui/src/api",
-  "docs",
+  "packages/cli/src",
+  "packages/cli/README.md",
+  "apps/ui/src/api",
+  "apps/docs",
   "doc",
 ]);
 
@@ -93,44 +93,44 @@ export const ISSUE_VOCABULARY_OWNER_ALLOWLIST: readonly OwnerAllowance[] =
   Object.freeze([
     {
       category: "retained-security-discriminator",
-      owner: "server/src/services/execution-mode-context-mask.ts",
+      owner: "apps/server/src/services/execution-mode-context-mask.ts",
       line: /input\.originKind === "task_bridge"/u,
       token: /^task_bridge$/u,
     },
     {
       category: "promise-cancellation-work-queue",
-      owner: "server/src/routes/issue-tree-control.ts",
+      owner: "apps/server/src/routes/issue-tree-control.ts",
       line: /(?:waitForRunCancellationTasks|runCancellationTasks|cancellationTask|tasks: Promise<void>\[\]|Promise\.all\(tasks\))/u,
       token: /^(?:waitForRunCancellationTasks|runCancellationTasks|cancellationTask|tasks)$/u,
     },
     {
       category: "javascript-microtask",
-      owner: "server/src/services/plugin-event-bus.ts",
+      owner: "apps/server/src/services/plugin-event-bus.ts",
       line: /\bmicrotask\b/u,
     },
     {
       category: "provider-process-stop-reason",
-      owner: "server/src/services/run-liveness.ts",
+      owner: "apps/server/src/services/run-liveness.ts",
       line: /(?:UNMANAGED_BACKGROUND_TASK|unmanaged_background_task_stopped|unmanaged background task stopped|unmanagedBackgroundTask|hasUnmanagedBackgroundTaskEvidence)/u,
     },
     {
       category: "rendered-ui-copy-governed-by-design",
-      owner: "server/src/ui-branding.ts",
+      owner: "apps/server/src/ui-branding.ts",
       line: /"Run tasks in this worktree"/u,
     },
     {
       category: "provider-native-stream-example",
-      owner: "docs/adapters/adapter-ui-parser.md",
+      owner: "apps/docs/adapters/adapter-ui-parser.md",
       line: /"Thinking about the task\.\.\."/u,
     },
     {
       category: "aws-ecs-native-vocabulary",
-      owner: "docs/deploy/aws-ecs.md",
+      owner: "apps/docs/deploy/aws-ecs.md",
       line: /(?:\bECS\b|\becs-|AmazonECS|TASK_ARN|task-definition|list-tasks|describe-tasks|tasks\[|task def|Task execution|Task role|Watch task|Check task|new task|old task|paperclip-task-def|taskDefinitionArns)/u,
     },
     {
       category: "aws-ecs-native-vocabulary",
-      owner: "docs/deploy/secrets.md",
+      owner: "apps/docs/deploy/secrets.md",
       line: /(?:ECS task role|orchestrator task role|^task role\))/u,
     },
     {
@@ -329,7 +329,7 @@ export function scanIssueVocabulary(
     const contracts: Array<string | null> = [
       contractViolation(
         repositoryRoot,
-        "server/src/services/execution-mode-context-mask.ts",
+        "apps/server/src/services/execution-mode-context-mask.ts",
         /input\.originKind === "task_bridge"/u,
         "task_bridge must remain the exact all-false execution-mode discriminator",
       ),
@@ -341,7 +341,7 @@ export function scanIssueVocabulary(
       ),
       contractViolation(
         repositoryRoot,
-        "server/src/routes/routines.ts",
+        "apps/server/src/routes/routines.ts",
         /entityType: "routine_run"/u,
         "routine_run must remain the unchanged execution activity kind",
       ),

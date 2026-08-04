@@ -62,7 +62,7 @@ export function categoryForPath(relativePath) {
   if (normalized.startsWith("docker/")) return "container";
   if (
     normalized.startsWith("doc/") ||
-    normalized.startsWith("docs/") ||
+    normalized.startsWith("apps/docs/") ||
     normalized.startsWith("releases/") ||
     normalized.startsWith("report/") ||
     /\.mdx?$/i.test(basename) ||

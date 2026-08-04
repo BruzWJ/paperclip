@@ -57,7 +57,7 @@ test('ignores removed test files', () => {
 // New tests for prefix-aware skip behavior
 
 test('skips test requirement for docs: prefix (markdown only)', () => {
-  assert.equal(checkTestCoverage(makeFiles(['README.md', 'docs/setup.md']), 'docs: update guide').passed, true);
+  assert.equal(checkTestCoverage(makeFiles(['README.md', 'apps/docs/setup.md']), 'docs: update guide').passed, true);
 });
 
 test('skips test requirement for chore: prefix (config only)', () => {

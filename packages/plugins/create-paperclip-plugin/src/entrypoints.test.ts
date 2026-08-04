@@ -23,7 +23,7 @@ describe("create-paperclip-plugin entrypoints", () => {
     const outputRoot = makeTempDir();
 
     try {
-      process.argv = [process.execPath, path.resolve("cli/dist/index.js"), "demo-plugin", "--output", outputRoot];
+      process.argv = [process.execPath, path.resolve("packages/cli/dist/index.js"), "demo-plugin", "--output", outputRoot];
       const library = await import("./index.js");
 
       expect(library.scaffoldPluginProject).toBeTypeOf("function");

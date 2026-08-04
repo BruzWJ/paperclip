@@ -58,7 +58,7 @@ Use **seeded identicons/profile pills** when an agent needs a reproducible perso
 1. Identify which capsule family you are working in: individual agent, status capsule, hero bank, generator layout, or identicon.
 2. Load the matching reference file from this skill.
 3. Prefer existing source implementations:
-   - Product UI: `ui/src/components/AgentCapsule.tsx`, `ui/src/index.css`, and `ui/src/lib/status-colors.ts`.
+   - Product UI: `apps/ui/src/components/AgentCapsule.tsx`, `apps/ui/src/index.css`, and `apps/ui/src/lib/status-colors.ts`.
    - Hero bank: canonical spec in `references/hero-capsule-bank.md`.
    - Video work: pair this skill with the Paperclip feature-video HyperFrames skill when available.
 4. If generating an artifact, choose a reproducible workflow and write down the seed/config.

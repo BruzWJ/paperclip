@@ -34,7 +34,7 @@ const REQUIRED_OWNERS = [
     ],
   },
   {
-    path: "server/src/services/issue-execution-dispatcher-postgres.ts",
+    path: "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     tokens: [
       'immutableSourceKey: `run-progress:${created.run.runId}`',
       "sourceRecordId: created.run.runId",
@@ -44,14 +44,14 @@ const REQUIRED_OWNERS = [
     ],
   },
   {
-    path: "server/src/services/issue-session/admission.ts",
+    path: "apps/server/src/services/issue-session/admission.ts",
     tokens: [
       'input.sourceKind === "run_progress"',
       'kind: "run_progress" as const',
     ],
   },
   {
-    path: "server/src/services/issue-session/projector.ts",
+    path: "apps/server/src/services/issue-session/projector.ts",
     tokens: [
       "projectIssueSessionFinalCommentInTx",
       'eq(issueCommentProjectionSources.sourceKind, "run_progress")',
@@ -62,7 +62,7 @@ const REQUIRED_OWNERS = [
     ],
   },
   {
-    path: "server/src/services/issue-execution-finalization-postgres.ts",
+    path: "apps/server/src/services/issue-execution-finalization-postgres.ts",
     tokens: [
       "progressCommentId: progress.comment.id",
       "folded.id !== progress.comment.id",
@@ -70,22 +70,22 @@ const REQUIRED_OWNERS = [
     ],
   },
   {
-    path: "server/src/services/context-retrieval.ts",
+    path: "apps/server/src/services/context-retrieval.ts",
     tokens: [
       "function providerSafeCommentBody(value: unknown): string",
       "body: providerSafeCommentBody(comment.body)",
     ],
   },
   {
-    path: "server/src/routes/openapi.ts",
+    path: "apps/server/src/routes/openapi.ts",
     tokens: ["boardIssueCommentSchema", "boardIssueCommentGroupPageSchema"],
   },
   {
-    path: "ui/src/api/issues.ts",
+    path: "apps/ui/src/api/issues.ts",
     tokens: ["IssueComment", "BoardIssueComment"],
   },
   {
-    path: "ui/src/lib/issue-chat-messages.ts",
+    path: "apps/ui/src/lib/issue-chat-messages.ts",
     tokens: [
       'comment.presentation?.kind === "run_progress"',
       'comment.runState === "queued"',
@@ -111,13 +111,13 @@ export function runProgressCommentContractViolations(
     );
   }
 
-  const uiPath = resolve(repositoryRoot, "ui/src/lib/issue-chat-messages.ts");
+  const uiPath = resolve(repositoryRoot, "apps/ui/src/lib/issue-chat-messages.ts");
   if (existsSync(uiPath)) {
     const source = readFileSync(uiPath, "utf8");
     for (const label of ['"Queued..."', '"Working..."']) {
       if (source.includes(label)) {
         violations.push(
-          `ui/src/lib/issue-chat-messages.ts: run progress label must use U+2026, not ${label}`,
+          `apps/ui/src/lib/issue-chat-messages.ts: run progress label must use U+2026, not ${label}`,
         );
       }
     }
@@ -125,7 +125,7 @@ export function runProgressCommentContractViolations(
 
   const dispatcherPath = resolve(
     repositoryRoot,
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
   );
   if (existsSync(dispatcherPath)) {
     const source = readFileSync(dispatcherPath, "utf8");
@@ -137,7 +137,7 @@ export function runProgressCommentContractViolations(
     ]) {
       if (source.includes(storedLabel)) {
         violations.push(
-          `server/src/services/issue-execution-dispatcher-postgres.ts: run progress label must be UI-derived, not stored as ${storedLabel}`,
+          `apps/server/src/services/issue-execution-dispatcher-postgres.ts: run progress label must be UI-derived, not stored as ${storedLabel}`,
         );
       }
     }
@@ -145,13 +145,13 @@ export function runProgressCommentContractViolations(
 
   const retrievalPath = resolve(
     repositoryRoot,
-    "server/src/services/context-retrieval.ts",
+    "apps/server/src/services/context-retrieval.ts",
   );
   if (existsSync(retrievalPath)) {
     const source = readFileSync(retrievalPath, "utf8");
     if (/requiredString\s*\(\s*comment\.body\b/.test(source)) {
       violations.push(
-        "server/src/services/context-retrieval.ts: run-progress comment bodies must accept the canonical empty string",
+        "apps/server/src/services/context-retrieval.ts: run-progress comment bodies must accept the canonical empty string",
       );
     }
   }

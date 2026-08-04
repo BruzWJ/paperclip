@@ -40,13 +40,13 @@ The retired run-centric execution service previously owned this behavior.
 
 ### 2. Workspace runtime already uses stronger ownership
 
-`server/src/services/workspace-runtime.ts`
+`apps/server/src/services/workspace-runtime.ts`
 
 - runtime services are spawned with `detached: process.platform !== "win32"`
 - the service record stores `processGroupId`
 - shutdown calls `terminateLocalService()` with group-aware killing
 
-`server/src/services/local-service-supervisor.ts`
+`apps/server/src/services/local-service-supervisor.ts`
 
 - `terminateLocalService()` prefers `process.kill(-processGroupId, signal)` on POSIX
 - it escalates from `SIGTERM` to `SIGKILL`

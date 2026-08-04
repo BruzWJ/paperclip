@@ -14,8 +14,8 @@ const DISCOVERY_PATH = `${ACP_DIRECTORY}/acpx-discovery.ts`;
 const RUNTIME_EXECUTION_PATH = `${ACP_DIRECTORY}/acpx-runtime-execution.ts`;
 const RUNTIME_INVOCATION_PATH = `${ACP_DIRECTORY}/acpx-runtime-invocation.ts`;
 const RUNTIME_READINESS_PATH = `${ACP_DIRECTORY}/acpx-runtime-readiness.ts`;
-const SERVER_CATALOG_PATH = "server/src/adapters/acpx-catalog.ts";
-const SERVER_REGISTRY_PATH = "server/src/adapters/registry.ts";
+const SERVER_CATALOG_PATH = "apps/server/src/adapters/acpx-catalog.ts";
+const SERVER_REGISTRY_PATH = "apps/server/src/adapters/registry.ts";
 
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs"]);
 const EXACT_DEPENDENCIES = Object.freeze({
@@ -602,7 +602,7 @@ function scanProductionRawInvocationImports(
   violations: MutableViolation[],
 ): void {
   for (const [filePath, source] of sources) {
-    if (!filePath.startsWith("server/src/") || isTestOrFixturePath(filePath)) {
+    if (!filePath.startsWith("apps/server/src/") || isTestOrFixturePath(filePath)) {
       continue;
     }
     const sourceFile = parseSource(filePath, source);
@@ -725,7 +725,7 @@ export async function listAcpRegistryAdmissionFiles(
   const files: AcpRegistryAdmissionFile[] = [];
   await Promise.all([
     walk(path.resolve(repositoryRoot, "packages/adapter-utils/src"), repositoryRoot, files),
-    walk(path.resolve(repositoryRoot, "server/src"), repositoryRoot, files),
+    walk(path.resolve(repositoryRoot, "apps/server/src"), repositoryRoot, files),
   ]);
   for (const filePath of [ADAPTER_UTILS_MANIFEST, ROOT_MANIFEST, LOCKFILE]) {
     try {

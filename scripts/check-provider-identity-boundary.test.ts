@@ -41,8 +41,8 @@ function fixtureRoot(): string {
     "const child = { ...sanitizeInheritedProviderChildEnv(process.env), ...opts.env };",
   ].join("\n"));
   write(root, "packages/adapter-utils/src/acp-subprocess/process.ts", "const child = { ...sanitizeInheritedProviderChildEnv(process.env), ...hostLaunch.environment };\n");
-  write(root, "server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\n");
-  write(root, "server/src/services/runtime-agent-action-port.ts", [
+  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\n");
+  write(root, "apps/server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
     "  async function hire() {",
@@ -61,7 +61,7 @@ function fixtureRoot(): string {
     "}",
     "",
   ].join("\n"));
-  write(root, "server/src/index.ts", [
+  write(root, "apps/server/src/index.ts", [
     "const assembly = {",
     "  async requestChangeConsent({ capability, targetAgentId, displayedDiff }: any) {",
     "    await changeConsents.request({ capability, targetAgentId, displayedDiff });",
@@ -69,7 +69,7 @@ function fixtureRoot(): string {
     "};",
     "",
   ].join("\n"));
-  write(root, "server/src/__tests__/runtime-agent-action-port.test.ts", [
+  write(root, "apps/server/src/__tests__/runtime-agent-action-port.test.ts", [
     "persists and replays only the closed hire receipt",
     "persists and replays only the closed %s configure receipt",
     "persists and replays only the closed pending-consent receipt",
@@ -78,7 +78,7 @@ function fixtureRoot(): string {
     'result: { status: "change_consent_requested" }',
     "",
   ].join("\n"));
-  write(root, "server/src/__tests__/run-tools-routes.test.ts", [
+  write(root, "apps/server/src/__tests__/run-tools-routes.test.ts", [
     "serializes the closed %s action receipt identically as text and structured content",
     "structuredContent: { status }",
     "text: JSON.stringify({ status })",
@@ -101,13 +101,13 @@ test("accepts exact provenance-aware ACP child input boundary", () => {
 test("rejects a retired Paperclip child environment channel", () => {
   const root = fixtureRoot();
   const retired = ["PAPERCLIP", "API", "URL"].join("_");
-  write(root, "server/src/legacy.ts", `const injected = ${JSON.stringify(retired)};\n`);
+  write(root, "apps/server/src/legacy.ts", `const injected = ${JSON.stringify(retired)};\n`);
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes(retired)));
 });
 
 test("rejects a retired instruction materializer", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/agent-instructions.ts", "export const legacy = true;\n");
+  write(root, "apps/server/src/services/agent-instructions.ts", "export const legacy = true;\n");
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("retired instruction owner")));
 });
 
@@ -137,13 +137,13 @@ test("rejects explicit configuration layered before inherited state", () => {
 
 test("rejects a Paperclip-authored setup prompt override", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\nsystemPrompt: generated,\n");
+  write(root, "apps/server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\nsystemPrompt: generated,\n");
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("prompt override")));
 });
 
 test("rejects a raw hire configuration result at the provider action boundary", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/runtime-agent-action-port.ts", [
+  write(root, "apps/server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
     "  async function hire() { return service.hireFromRun({}); }",
@@ -159,7 +159,7 @@ test("rejects a raw hire configuration result at the provider action boundary", 
 
 test("rejects a raw configure result at the provider action boundary", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/runtime-agent-action-port.ts", [
+  write(root, "apps/server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
     "  async function hire() { await service.hireFromRun({}); return { status: \"created\" as const }; }",
@@ -175,7 +175,7 @@ test("rejects a raw configure result at the provider action boundary", () => {
 
 test("rejects a raw consent row at the provider action boundary", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/runtime-agent-action-port.ts", [
+  write(root, "apps/server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
     "  async function hire() { await service.hireFromRun({}); return { status: \"created\" as const }; }",
@@ -191,7 +191,7 @@ test("rejects a raw consent row at the provider action boundary", () => {
 
 test("rejects returning the raw consent row from server assembly", () => {
   const root = fixtureRoot();
-  write(root, "server/src/index.ts", [
+  write(root, "apps/server/src/index.ts", [
     "const assembly = {",
     "  requestChangeConsent({ capability, targetAgentId, displayedDiff }: any) {",
     "    return changeConsents.request({ capability, targetAgentId, displayedDiff });",
@@ -208,12 +208,12 @@ test("rejects route-only redaction when the provider action projection is absent
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/runtime-agent-action-port.ts",
+    "apps/server/src/services/runtime-agent-action-port.ts",
     "export function create(service: any) { return { hire: () => service.hireFromRun({}) }; }\n",
   );
   write(
     root,
-    "server/src/routes/run-tools.ts",
+    "apps/server/src/routes/run-tools.ts",
     "const redacted = { status: result.status };\n",
   );
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) =>

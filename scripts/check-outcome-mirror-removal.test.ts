@@ -17,7 +17,7 @@ test("rejects every retired outcome mirror spelling", () => {
   for (const term of terms) {
     const violations = scanOutcomeMirrorRemovalFiles([
       {
-        path: "server/src/services/legacy-finalizer.ts",
+        path: "apps/server/src/services/legacy-finalizer.ts",
         source: `export const stale = ${JSON.stringify(term)};`,
       },
     ]);

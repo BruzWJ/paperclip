@@ -7,7 +7,7 @@ import {
 
 function canonicalFiles(): ServerWorkerTopologyFile[] {
   const sources: Record<string, string> = {
-    "server/src/adapters/acpx-catalog.ts": `
+    "apps/server/src/adapters/acpx-catalog.ts": `
       import { listAcpRegistryAgentNames, probeAcpxAgent } from "acpx";
       export function acpxDiscoveryToServerAdapter(value) {
         return { definition: { configOptions: [], limits: null } };
@@ -16,21 +16,21 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
         return [listAcpRegistryAgentNames, probeAcpxAgent, acpxDiscoveryToServerAdapter];
       }
     `,
-    "server/src/adapters/registry.ts": `
+    "apps/server/src/adapters/registry.ts": `
       import { assertAcpRegistryAgentName } from "acp";
       import { discoverLocalAcpxAdapterCatalog } from "./acpx-catalog.js";
       export async function refreshAcpxAdapters() { return discoverLocalAcpxAdapterCatalog(); }
       export function registerServerAdapter() { throw new Error("supplied exclusively by ACPX"); }
       assertAcpRegistryAgentName("from-acpx");
     `,
-    "server/src/services/environment-run-orchestrator.ts": `
+    "apps/server/src/services/environment-run-orchestrator.ts": `
       export function acquireExecutionTargetForRun(environmentRuntime) {}
     `,
-    "server/src/services/environment-execution-target.ts": `
+    "apps/server/src/services/environment-execution-target.ts": `
       type Target = AdapterExecutionTarget;
       type Driver = EnvironmentDriver;
     `,
-    "server/src/services/issue-execution-attempt-executor.ts": `
+    "apps/server/src/services/issue-execution-attempt-executor.ts": `
       import { executeAcpxOneShotPrompt } from "acpx";
       import { prepareAcpxRuntimeInvocation } from "acpx-invocation";
       export async function executeAcpxRuntimePrompt() {
@@ -43,13 +43,13 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
       type Prompt = { promptKind: "base" | "steering" };
       repository.recordSubprocessTeardown();
     `,
-    "server/src/services/issue-execution-provider-configuration.ts": `
+    "apps/server/src/services/issue-execution-provider-configuration.ts": `
       interface IssueExecutionTargetAcquirer {}
       const selector = executionTargetSelector;
       acquireExecutionTargetForRun();
       releaseExecutionTarget();
     `,
-    "server/src/services/issue-execution-postgres.ts": `
+    "apps/server/src/services/issue-execution-postgres.ts": `
       export function createPostgresIssueExecutionProductionRuntime(options) {
         const target = { environmentOrchestrator: options.environmentOrchestrator };
         let cancellation = createIssueExecutionCancellationService({});
@@ -57,7 +57,7 @@ function canonicalFiles(): ServerWorkerTopologyFile[] {
         return { target, cancellation };
       }
     `,
-    "server/src/index.ts": `
+    "apps/server/src/index.ts": `
       environmentRuntimeService();
       environmentRunOrchestrator();
       createPostgresIssueExecutionProductionRuntime();
@@ -137,7 +137,7 @@ describe("dynamic ACPX server/worker topology gate", () => {
   it("rejects a Paperclip-owned agent catalog and every retired invocation ABI", () => {
     const files = canonicalFiles();
     files.push({
-      path: "server/src/adapters/builtin-adapter-catalog.ts",
+      path: "apps/server/src/adapters/builtin-adapter-catalog.ts",
       source: "export const catalog = [];",
     });
     files.push({
@@ -160,7 +160,7 @@ describe("dynamic ACPX server/worker topology gate", () => {
 
   it("rejects bypassing the common ACPX lifecycle or request-scoped tools", () => {
     const files = canonicalFiles().map((file) =>
-      file.path === "server/src/services/issue-execution-attempt-executor.ts"
+      file.path === "apps/server/src/services/issue-execution-attempt-executor.ts"
         ? {
             ...file,
             source: file.source
@@ -182,7 +182,7 @@ describe("dynamic ACPX server/worker topology gate", () => {
 
   it("rejects importing a legacy raw ACP invocation in production server code", () => {
     const files = canonicalFiles().map((file) =>
-      file.path === "server/src/services/issue-execution-attempt-executor.ts"
+      file.path === "apps/server/src/services/issue-execution-attempt-executor.ts"
         ? {
             ...file,
             source: `${file.source}\nimport { executeAcpSubprocessPrompt } from "@paperclipai/adapter-utils/acp-subprocess";`,
@@ -203,7 +203,7 @@ describe("dynamic ACPX server/worker topology gate", () => {
         manifest.dependencies.acpx = "^0.13.0";
         return { ...file, source: JSON.stringify(manifest) };
       }
-      if (file.path === "server/src/index.ts") {
+      if (file.path === "apps/server/src/index.ts") {
         return {
           ...file,
           source: `${file.source}\ncreateConnectedMachineRuntime();`,
@@ -223,7 +223,7 @@ describe("dynamic ACPX server/worker topology gate", () => {
 
   it("rejects moving canonical cancellation outside the production runtime factory", () => {
     const files = canonicalFiles().map((file) =>
-      file.path === "server/src/services/issue-execution-postgres.ts"
+      file.path === "apps/server/src/services/issue-execution-postgres.ts"
         ? {
             ...file,
             source: file.source.replaceAll(

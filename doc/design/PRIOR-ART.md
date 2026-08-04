@@ -18,4 +18,4 @@ A previous audit/relink pass ran against this codebase in mid-2026. Its code nev
 ## Reusable machinery on the branch
 
 - A theme playground / theme editor with portable `*.theme.json` export-import (whole-app live retheme, A/B compare). Useful later for the human scale-collapse and brand/preset tune steps — not needed for the extraction run.
-- `.claude/skills/design-guide/` skill + `ui/src/pages/DesignGuide.tsx` showcase page (branch versions are richer than master's).
+- `.claude/skills/design-guide/` skill + `apps/ui/src/pages/DesignGuide.tsx` showcase page (branch versions are richer than master's).

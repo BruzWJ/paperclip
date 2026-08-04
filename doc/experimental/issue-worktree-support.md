@@ -27,23 +27,23 @@ We are intentionally not shipping the UI for this yet. The runtime code remains 
 These are the current user-facing UI surfaces for the feature, now intentionally disabled:
 
 - project settings:
-  - `ui/src/components/ProjectProperties.tsx`
+  - `apps/ui/src/components/ProjectProperties.tsx`
   - execution workspace policy controls
   - git worktree base ref / branch template / parent dir
   - provision / teardown command inputs
 
 - issue creation:
-  - `ui/src/components/NewIssueDialog.tsx`
+  - `apps/ui/src/components/NewIssueDialog.tsx`
   - isolated issue checkout toggle
   - defaulting issue execution workspace settings from project policy
 
 - issue editing:
-  - `ui/src/components/IssueProperties.tsx`
+  - `apps/ui/src/components/IssueProperties.tsx`
   - issue-level workspace mode toggle
   - defaulting issue execution workspace settings when project changes
 
 - agent/runtime settings:
-  - `ui/src/adapters/runtime-json-fields.tsx`
+  - `apps/ui/src/adapters/runtime-json-fields.tsx`
   - runtime services JSON field, which is part of the broader workspace-runtime support surface
 
 ## Why the UI is hidden

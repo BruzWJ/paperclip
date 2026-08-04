@@ -33,7 +33,7 @@ function scan(files: Record<string, string>): string[] {
 
 test("rejects word, camelCase, snake_case, kebab-case, and path vocabulary", () => {
   const violations = scan({
-    "server/src/routes/tasks.ts": [
+    "apps/server/src/routes/tasks.ts": [
       "const taskRows = [];",
       'const source = "sub_task";',
       'const path = "sub-task";',
@@ -42,7 +42,7 @@ test("rejects word, camelCase, snake_case, kebab-case, and path vocabulary", () 
   });
   assert.ok(
     violations.some((entry) =>
-      entry.includes("server/src/routes/tasks.ts: issue-domain"),
+      entry.includes("apps/server/src/routes/tasks.ts: issue-domain"),
     ),
   );
   assert.ok(violations.some((entry) => entry.includes('"taskRows"')));
@@ -53,7 +53,7 @@ test("rejects word, camelCase, snake_case, kebab-case, and path vocabulary", () 
 
 test("rejects a renamed issue_bridge alias", () => {
   const violations = scan({
-    "server/src/services/execution-mode-context-mask.ts":
+    "apps/server/src/services/execution-mode-context-mask.ts":
       'export const originKind = "issue_bridge";\n',
   });
   assert.ok(
@@ -65,26 +65,26 @@ test("rejects a renamed issue_bridge alias", () => {
 
 test("allows only the exact retained task_bridge owner", () => {
   const allowedRoot = fixture({
-    "server/src/services/execution-mode-context-mask.ts":
+    "apps/server/src/services/execution-mode-context-mask.ts":
       'if (input.originKind === "task_bridge") return denyAll;\n',
   });
   assert.deepEqual(
     scanIssueVocabulary(
       allowedRoot,
-      ["server/src/services/execution-mode-context-mask.ts"],
+      ["apps/server/src/services/execution-mode-context-mask.ts"],
       { checkRetainedContracts: false },
     ),
     [],
   );
 
   const violations = scan({
-    "server/src/services/other.ts":
+    "apps/server/src/services/other.ts":
       'export const originKind = "task_bridge";\n',
   });
   assert.ok(violations.some((entry) => entry.includes('"task_bridge"')));
 
   const mixedLineViolations = scan({
-    "server/src/services/execution-mode-context-mask.ts":
+    "apps/server/src/services/execution-mode-context-mask.ts":
       'if (input.originKind === "task_bridge") throw new Error("linked task");\n',
   });
   assert.ok(mixedLineViolations.some((entry) => entry.includes('"task"')));
@@ -92,7 +92,7 @@ test("allows only the exact retained task_bridge owner", () => {
 
 test("allows an owned Promise work queue but rejects issue-domain wording beside it", () => {
   const root = fixture({
-    "server/src/routes/issue-tree-control.ts": [
+    "apps/server/src/routes/issue-tree-control.ts": [
       "async function waitForRunCancellationTasks(tasks: Promise<void>[]) {",
       "  await Promise.all(tasks);",
       "}",
@@ -101,7 +101,7 @@ test("allows an owned Promise work queue but rejects issue-domain wording beside
   });
   const violations = scanIssueVocabulary(
     root,
-    ["server/src/routes/issue-tree-control.ts"],
+    ["apps/server/src/routes/issue-tree-control.ts"],
     { checkRetainedContracts: false },
   );
   assert.equal(violations.length, 1);
@@ -131,19 +131,19 @@ test("keeps an unrelated native Task API exception bound to its exact owner", ()
 
 test("fails closed when routine_run or linkedIssueId ownership is renamed", () => {
   const root = fixture({
-    "server/src/services/execution-mode-context-mask.ts":
+    "apps/server/src/services/execution-mode-context-mask.ts":
       'if (input.originKind === "task_bridge") return denyAll;\n',
     "packages/shared/src/types/routine.ts":
       "export interface RoutineRun { linkedIssueId: string | null; }\n",
-    "server/src/routes/routines.ts":
+    "apps/server/src/routes/routines.ts":
       'const activity = { entityType: "routine_issue" };\n',
     "packages/db/schema/routines.ts":
       'const row = { linkedIssueId: uuid("linked_issue_id") };\n',
   });
   const violations = scanIssueVocabulary(root, [
-    "server/src/services/execution-mode-context-mask.ts",
+    "apps/server/src/services/execution-mode-context-mask.ts",
     "packages/shared/src/types/routine.ts",
-    "server/src/routes/routines.ts",
+    "apps/server/src/routes/routines.ts",
     "packages/db/schema/routines.ts",
   ]);
   assert.ok(

@@ -21,7 +21,7 @@ Enable a CEO agent to create new agents directly, with lightweight but explicit 
 - The former mixed board agent-creation endpoint is retired. Ordinary identity,
   immutable adapter revision, and operational configuration now have separate
   board-owned contracts.
-- Approvals support `pending/approved/rejected/cancelled` and `hire_agent` + `approve_ceo_strategy` (`packages/shared/src/constants.ts`, `server/src/services/approvals.ts`).
+- Approvals support `pending/approved/rejected/cancelled` and `hire_agent` + `approve_ceo_strategy` (`packages/shared/src/constants.ts`, `apps/server/src/services/approvals.ts`).
 - `hire_agent` approval currently creates the agent only on approval; there is no pre-created limbo agent.
 - There is no agent permissions system today.
 - There is no company setting for "new hires require board approval".
@@ -230,7 +230,7 @@ Implement in:
 
 - `packages/adapters/claude-local`
 - `packages/adapters/codex-local`
-- `server/src/adapters/registry.ts`
+- `apps/server/src/adapters/registry.ts`
 
 This is required so reflection is generated from installed adapters, not hardcoded.
 

@@ -51,7 +51,7 @@ try {
       "run",
       "--project",
       "@paperclipai/server",
-      "server/src/__tests__/server-startup-feedback-export.test.ts",
+      "apps/server/src/__tests__/server-startup-feedback-export.test.ts",
       "--no-file-parallelism",
       "--maxWorkers=1",
     ],

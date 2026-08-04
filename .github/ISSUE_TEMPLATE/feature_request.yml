@@ -12,8 +12,8 @@ body:
       label: Subsystem affected
       description: Which part of the codebase would this primarily live in?
       options:
-        - server/ — REST API & orchestration services
-        - ui/ — React + Vite board UI
+        - apps/server/ — REST API & orchestration services
+        - apps/ui/ — React + Vite board UI
         - packages/db — Drizzle schema, migrations
         - packages/shared — types, constants, validators, API paths
         - packages/adapters — agent adapter implementations

@@ -61,27 +61,27 @@ const FORBIDDEN_TOKENS = [
   "agents.sessions",
 ] as const;
 
-const TOOL_GATEWAY = "server/src/services/tool-gateway.ts";
+const TOOL_GATEWAY = "apps/server/src/services/tool-gateway.ts";
 const RUNTIME_COMPILER =
-  "server/src/services/runtime-interface-compiler.ts";
-const SUMMARY_SERVICE = "server/src/services/summary-slots.ts";
+  "apps/server/src/services/runtime-interface-compiler.ts";
+const SUMMARY_SERVICE = "apps/server/src/services/summary-slots.ts";
 const SUMMARY_FINALIZER =
-  "server/src/services/summary-slot-finalization.ts";
-const SUMMARY_ROUTE = "server/src/routes/summary-slots.ts";
+  "apps/server/src/services/summary-slot-finalization.ts";
+const SUMMARY_ROUTE = "apps/server/src/routes/summary-slots.ts";
 const SUMMARY_API = "packages/shared/src/api.ts";
 const SUMMARY_TYPES = "packages/shared/src/types/summary-slot.ts";
 const SUMMARY_VALIDATOR =
   "packages/shared/src/validators/summary-slot.ts";
-const SUMMARY_UI_API = "ui/src/api/summarySlots.ts";
+const SUMMARY_UI_API = "apps/ui/src/api/summarySlots.ts";
 const WIKI_CORE = "packages/plugins/plugin-llm-wiki/src/wiki/core.ts";
-const DISPATCHER = "server/src/services/issue-execution-dispatcher.ts";
+const DISPATCHER = "apps/server/src/services/issue-execution-dispatcher.ts";
 const POSTGRES_DISPATCHER =
-  "server/src/services/issue-execution-dispatcher-postgres.ts";
+  "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
 const POSTGRES_TRIGGER =
-  "server/src/services/issue-execution-postgres.ts";
+  "apps/server/src/services/issue-execution-postgres.ts";
 const SYSTEM_ESCALATION =
-  "server/src/services/system-escalation-postgres.ts";
-const ORDINARY_ISSUES = "server/src/services/ordinary-issue-runtime.ts";
+  "apps/server/src/services/system-escalation-postgres.ts";
+const ORDINARY_ISSUES = "apps/server/src/services/ordinary-issue-runtime.ts";
 
 const ACTIVE_EXECUTION_DOCUMENTS = [
   "AGENTS.md",
@@ -93,15 +93,15 @@ const ACTIVE_EXECUTION_DOCUMENTS = [
   "doc/SPEC-implementation.md",
   "doc/SPEC.md",
   "doc/spec/agents-runtime.md",
-  "docs/adapters/creating-an-adapter.md",
-  "docs/adapters/external-adapters.md",
-  "docs/adapters/overview.md",
-  "docs/agents-runtime.md",
-  "docs/api/agents.md",
-  "docs/guides/board-operator/execution-workspaces-and-runtime-services.md",
-  "docs/specs/cliphub-plan.md",
-  "docs/start/architecture.md",
-  "docs/start/what-is-paperclip.md",
+  "apps/docs/adapters/creating-an-adapter.md",
+  "apps/docs/adapters/external-adapters.md",
+  "apps/docs/adapters/overview.md",
+  "apps/docs/agents-runtime.md",
+  "apps/docs/api/agents.md",
+  "apps/docs/guides/board-operator/execution-workspaces-and-runtime-services.md",
+  "apps/docs/specs/cliphub-plan.md",
+  "apps/docs/start/architecture.md",
+  "apps/docs/start/what-is-paperclip.md",
   "packages/adapters/AUTHORING.md",
 ] as const;
 
@@ -204,10 +204,10 @@ function structuralRemovalViolations(repositoryRoot: string): string[] {
   }
 
   const productionFiles = listRepositoryTextFiles(repositoryRoot, [
-    "cli/src",
+    "packages/cli/src",
     "packages",
-    "server/src",
-    "ui/src",
+    "apps/server/src",
+    "apps/ui/src",
   ]);
   for (const absolutePath of productionFiles) {
     const path = normalizePath(relative(repositoryRoot, absolutePath));

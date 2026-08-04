@@ -32,11 +32,11 @@ The current implementation is already service-oriented:
 Relevant files:
 
 - `packages/shared/src/types/workspace-runtime.ts`
-- `server/src/services/workspace-runtime.ts`
-- `server/src/services/project-workspace-runtime-config.ts`
-- `ui/src/components/WorkspaceRuntimeControls.tsx`
-- `ui/src/pages/ProjectWorkspaceDetail.tsx`
-- `ui/src/pages/ExecutionWorkspaceDetail.tsx`
+- `apps/server/src/services/workspace-runtime.ts`
+- `apps/server/src/services/project-workspace-runtime-config.ts`
+- `apps/ui/src/components/WorkspaceRuntimeControls.tsx`
+- `apps/ui/src/pages/ProjectWorkspaceDetail.tsx`
+- `apps/ui/src/pages/ExecutionWorkspaceDetail.tsx`
 
 This is directionally correct for Paperclip because it gives the control plane an explicit model for service lifecycle, health, reuse, and restart behavior.
 

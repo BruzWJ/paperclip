@@ -30,8 +30,8 @@ function assertSuccessful(result, label) {
 
 test("built package metadata and artifacts resolve to the shipped entrypoints", () => {
   const rootPackage = readJson("package.json");
-  const cliPackage = readJson("cli/package.json");
-  const serverPackage = readJson("server/package.json");
+  const cliPackage = readJson("packages/cli/package.json");
+  const serverPackage = readJson("apps/server/package.json");
 
   assert.equal(
     rootPackage.scripts?.["test:release-smoke"],
@@ -48,9 +48,9 @@ test("built package metadata and artifacts resolve to the shipped entrypoints", 
   assert.ok(serverPackage.files?.includes("dist"));
 
   for (const relativePath of [
-    "cli/dist/index.js",
-    "server/dist/index.js",
-    "server/dist/runtime-entry.js",
+    "packages/cli/dist/index.js",
+    "apps/server/dist/index.js",
+    "apps/server/dist/runtime-entry.js",
   ]) {
     assert.equal(existsSync(path.join(repoRoot, relativePath)), true, `${relativePath} is missing`);
     assertSuccessful(
@@ -64,7 +64,7 @@ test("built package metadata and artifacts resolve to the shipped entrypoints", 
   }
 
   const runtimeEntry = readFileSync(
-    path.join(repoRoot, "server/dist/runtime-entry.js"),
+    path.join(repoRoot, "apps/server/dist/runtime-entry.js"),
     "utf8",
   );
   assert.match(runtimeEntry, /import\(["']\.\/index\.js["']\)/);
@@ -73,14 +73,14 @@ test("built package metadata and artifacts resolve to the shipped entrypoints", 
   const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8");
   assert.match(
     dockerfile,
-    /CMD \["node", "--import", "\.\/server\/node_modules\/tsx\/dist\/loader\.mjs", "server\/dist\/runtime-entry\.js"\]/,
+    /CMD \["node", "--import", "\.\/apps\/server\/node_modules\/tsx\/dist\/loader\.mjs", "apps\/server\/dist\/runtime-entry\.js"\]/,
   );
 });
 
 test("the local publishable package contains its executable entrypoint", () => {
   const packed = spawnSync(
     "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts", "./cli"],
+    ["pack", "--dry-run", "--json", "--ignore-scripts", "./packages/cli"],
     {
       cwd: repoRoot,
       encoding: "utf8",
@@ -107,14 +107,14 @@ test("built runtime configuration fails before startup when no external target e
   );
   try {
     const configModuleUrl = pathToFileURL(
-      path.join(repoRoot, "server/dist/config.js"),
+      path.join(repoRoot, "apps/server/dist/config.js"),
     ).href;
     const script = `const { loadConfig } = await import(${JSON.stringify(configModuleUrl)}); loadConfig();`;
     const result = spawnSync(
       process.execPath,
       [
         "--import",
-        path.join(repoRoot, "server/node_modules/tsx/dist/loader.mjs"),
+        path.join(repoRoot, "apps/server/node_modules/tsx/dist/loader.mjs"),
         "--input-type=module",
         "--eval",
         script,

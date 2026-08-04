@@ -1,0 +1,40 @@
+{
+  "$schema": "https://v2-9-16.turborepo.dev/schema.json",
+  "envMode": "loose",
+  "globalDependencies": [
+    "tsconfig.base.json",
+    "tsconfig.json",
+    "pnpm-workspace.yaml",
+    "scripts/cli-bundled-npm-dependencies.mjs",
+    "scripts/ensure-plugin-build-deps.mjs"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", "generated/**"],
+      "env": ["VITE_FEEDBACK_TERMS_URL"]
+    },
+    "build-storybook": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["storybook-static/**"],
+      "env": ["VITE_FEEDBACK_TERMS_URL"]
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false
+    },
+    "storybook": {
+      "persistent": true,
+      "cache": false
+    },
+    "start": {
+      "cache": false
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": []
+    }
+  }
+}

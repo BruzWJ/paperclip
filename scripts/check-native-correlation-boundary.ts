@@ -12,13 +12,13 @@ import {
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const SOURCE_ROOTS = [
-  "server/src",
+  "apps/server/src",
   "packages/adapter-utils/src",
   "packages/adapters",
   "packages/shared/src",
   "packages/plugins/sdk",
-  "cli/src",
-  "ui",
+  "packages/cli/src",
+  "apps/ui/src",
 ] as const;
 const SOURCE_EXTENSIONS = new Set([
   ".ts",

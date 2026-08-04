@@ -8,9 +8,9 @@ import {
 } from "./static-removal-gate-utils.ts";
 
 const MANAGED_AGENT_OWNER =
-  "server/src/services/plugin-managed-agents.ts";
-const GENERIC_ENTITY_OWNER = "server/src/services/plugin-registry.ts";
-const ROUTINE_RESOLVER = "server/src/services/plugin-managed-routines.ts";
+  "apps/server/src/services/plugin-managed-agents.ts";
+const GENERIC_ENTITY_OWNER = "apps/server/src/services/plugin-registry.ts";
+const ROUTINE_RESOLVER = "apps/server/src/services/plugin-managed-routines.ts";
 const MANAGED_RESOURCE_SCHEMA =
   "packages/db/schema/plugin_managed_resources.ts";
 const ENTITY_SCHEMA = "packages/db/schema/plugin_entities.ts";
@@ -127,7 +127,7 @@ export function pluginManagedAgentBoundaryViolations(
   ];
 
   for (const absolute of listRepositoryTextFiles(repositoryRoot, [
-    "server/src/services",
+    "apps/server/src/services",
   ])) {
     const path = normalizedRelative(repositoryRoot, absolute);
     if (/\.(?:test|spec)\.tsx?$/.test(path)) continue;

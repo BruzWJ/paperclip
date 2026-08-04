@@ -8,20 +8,20 @@ import {
 } from "./static-removal-gate-utils.ts";
 
 const SCHEMA = "packages/db/schema/run_interface_foundation.ts";
-const COMPILER = "server/src/services/runtime-interface-compiler.ts";
-const EXECUTOR = "server/src/services/runtime-tool-executor.ts";
-const GATEWAY = "server/src/services/prompt-capability-gateway.ts";
+const COMPILER = "apps/server/src/services/runtime-interface-compiler.ts";
+const EXECUTOR = "apps/server/src/services/runtime-tool-executor.ts";
+const GATEWAY = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY =
-  "server/src/services/prompt-capability-gateway-postgres.ts";
-const TOOL_GATEWAY = "server/src/services/tool-gateway.ts";
-const DISPATCHER = "server/src/services/plugin-tool-dispatcher.ts";
-const REGISTRY = "server/src/services/plugin-tool-registry.ts";
+  "apps/server/src/services/prompt-capability-gateway-postgres.ts";
+const TOOL_GATEWAY = "apps/server/src/services/tool-gateway.ts";
+const DISPATCHER = "apps/server/src/services/plugin-tool-dispatcher.ts";
+const REGISTRY = "apps/server/src/services/plugin-tool-registry.ts";
 const SDK_PROTOCOL = "packages/plugins/sdk/src/protocol.ts";
 const SDK_TYPES = "packages/plugins/sdk/src/types.ts";
 const SDK_WORKER = "packages/plugins/sdk/src/worker-rpc-host.ts";
 const SDK_HOST_CLIENT = "packages/plugins/sdk/src/host-client-factory.ts";
-const HOST_SERVICES = "server/src/services/plugin-host-services.ts";
-const RUN_RUNTIME = "server/src/services/run-interface-runtime.ts";
+const HOST_SERVICES = "apps/server/src/services/plugin-host-services.ts";
+const RUN_RUNTIME = "apps/server/src/services/run-interface-runtime.ts";
 
 const PLUGIN_CONTEXT_COLUMNS = new Set([
   "capabilityConnectionId",

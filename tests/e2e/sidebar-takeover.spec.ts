@@ -15,7 +15,7 @@ import { test, expect, request as pwRequest, type APIRequestContext } from "./fi
  * The plugin `routeSidebar` half of this behavior shares the exact same Layout
  * code path (one `secondarySidebar`/`hasSecondarySidebar` resolver drives both
  * company-settings and plugin routes) and is covered by the unit tests in
- * `ui/src/components/Layout.test.tsx`. A plugin-route browser check requires a
+ * `apps/ui/src/components/Layout.test.tsx`. A plugin-route browser check requires a
  * dedicated test-owned plugin fixture and is out of scope for this suite;
  * visual QA of both panes is delegated to the QA child issue.
  */

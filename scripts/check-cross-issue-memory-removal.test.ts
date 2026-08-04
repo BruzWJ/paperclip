@@ -90,7 +90,7 @@ test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-corre
   );
   write(
     root,
-    "server/src/services/durable-audit.ts",
+    "apps/server/src/services/durable-audit.ts",
     "export const persistent = true;\n",
   );
   write(
@@ -100,7 +100,7 @@ test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-corre
   );
   write(
     root,
-    "server/src/provider-environment.ts",
+    "apps/server/src/provider-environment.ts",
     "export const env = { CODEX_HOME: operatorEnvironment.CODEX_HOME };\n",
   );
   write(
@@ -146,7 +146,7 @@ for (const token of DIRECT_RETIRED_TOKENS) {
   test(`rejects exact retired identifier ${token}`, () => {
     const violations = scanCrossIssueMemoryRemovalFiles([
       {
-        path: "server/src/legacy.ts",
+        path: "apps/server/src/legacy.ts",
         source: `export const retired = ${JSON.stringify(token)};`,
       },
     ]);
@@ -253,13 +253,13 @@ test("rejects every legacy consumer class instead of checking only old filenames
   for (const path of [
     "packages/db/schema/runtime.ts",
     "packages/shared/src/validators/adapter.ts",
-    "server/src/routes/agents.ts",
-    "server/src/routes/openapi.ts",
-    "cli/src/generated/client.ts",
-    "ui/src/pages/AgentDetail.tsx",
+    "apps/server/src/routes/agents.ts",
+    "apps/server/src/routes/openapi.ts",
+    "packages/cli/src/generated/client.ts",
+    "apps/ui/src/pages/AgentDetail.tsx",
     "skills/onboarding/AGENTS.md",
     "evals/promptfoo/tests/runtime.yaml",
-    "docs/adapters/overview.md",
+    "apps/docs/adapters/overview.md",
     "releases/v1.md",
   ]) {
     const violations = scanCrossIssueMemoryRemovalFiles([
@@ -304,7 +304,7 @@ test("rejects Paperclip-managed provider homes but accepts opaque operator envir
   assert.ok(
     scanCrossIssueMemoryRemovalFiles([
       {
-        path: "docs/legacy-provider-home.md",
+        path: "apps/docs/legacy-provider-home.md",
         source: "Paperclip stages auth.json and skills beneath CODEX_HOME.",
       },
     ]).some((violation) => violation.term === "CODEX_HOME"),
@@ -312,11 +312,11 @@ test("rejects Paperclip-managed provider homes but accepts opaque operator envir
   assert.deepEqual(
     scanCrossIssueMemoryRemovalFiles([
       {
-        path: "server/src/provider-environment.ts",
+        path: "apps/server/src/provider-environment.ts",
         source: "const child = { CODEX_HOME: input.env.CODEX_HOME };",
       },
       {
-        path: "docs/operator-provider-home.md",
+        path: "apps/docs/operator-provider-home.md",
         source: [
           "The operator owns CODEX_HOME, including native auth.json and skills.",
           'Run mkdir -p "$CODEX_HOME" before starting Paperclip if needed.',

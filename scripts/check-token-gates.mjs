@@ -4,8 +4,8 @@
  *
  * Phase 2 (extraction) DONE-WHEN gate check for the design-token-extraction
  * run (branch design/token-extraction; see DESIGN.md, GOAL-PROMPT.md,
- * TOKEN-AUDIT.md). Scans `ui/src/components/**` and `ui/src/pages/**`
- * (excluding `ui/src/lib|context|plugins`, which are explicitly out of
+ * TOKEN-AUDIT.md). Scans `apps/ui/src/components/**` and `apps/ui/src/pages/**`
+ * (excluding `apps/ui/src/lib|context|plugins`, which are explicitly out of
  * scope for this run per TOKEN-AUDIT.md's Batch 4 log) for three gates:
  *
  *   Gate 1 — zero hardcoded COLOR LITERALS: hex colors (#fff, #ffffff,
@@ -50,7 +50,7 @@
  *     inline styles or css-in-js.
  *
  * The ALLOWLIST is parsed from the machine-readable block in
- * ui/src/index.css (search for "── ALLOWLIST" below it), one entry per
+ * apps/ui/src/index.css (search for "── ALLOWLIST" below it), one entry per
  * line in the form:
  *   * allow <repo-relative-path> — <reason>
  * A violation at a path is suppressed if the path CONTAINS (substring
@@ -71,13 +71,13 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
-const UI_SRC = resolve(REPO_ROOT, "ui/src");
+const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
 const SCAN_DIRS = ["components", "pages"];
 const CSS_PATH = resolve(UI_SRC, "index.css");
 
 // ── Allowlist parsing ────────────────────────────────────────────────────
 // Reads the machine-readable "* allow <path> — <reason>" lines from the
-// ALLOWLIST block in ui/src/index.css. Tolerant of either em-dash (—) or
+// ALLOWLIST block in apps/ui/src/index.css. Tolerant of either em-dash (—) or
 // a plain hyphen-minus as the path/reason separator, and of the historical
 // per-batch prose blocks NOT being in this format (they are not parsed;
 // only lines starting with "* allow " are).
@@ -309,7 +309,7 @@ function main() {
 // Windows path separators never appear in this repo's CI, but keep relative
 // paths POSIX-style for allowlist substring matching regardless of platform.
 function relPathToPosix(filePath) {
-  return ("ui/src/" + relative(UI_SRC, filePath)).split("\\").join("/");
+  return ("apps/ui/src/" + relative(UI_SRC, filePath)).split("\\").join("/");
 }
 
 main();

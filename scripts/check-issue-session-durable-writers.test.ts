@@ -5,7 +5,7 @@ import { scanIssueSessionDurableWriterSource } from "./check-issue-session-durab
 describe("check-issue-session-durable-writers", () => {
   it("rejects renamed and wrapped event-store writers", () => {
     const violations = scanIssueSessionDurableWriterSource(
-      "server/src/services/bypass.ts",
+      "apps/server/src/services/bypass.ts",
       `
         import { appendIssueSessionEvent as append } from "./issue-session/event-store.js";
         const wrapped = append;
@@ -24,7 +24,7 @@ describe("check-issue-session-durable-writers", () => {
 
     const barrelViolations =
       scanIssueSessionDurableWriterSource(
-        "server/src/services/bypass.ts",
+        "apps/server/src/services/bypass.ts",
         `
           import { appendIssueSessionEvent as append } from "./index.js";
           import * as sessionRuntime from "./issue-session-runtime.js";
@@ -44,7 +44,7 @@ describe("check-issue-session-durable-writers", () => {
 
   it("rejects aliased table writes and raw-SQL bootstrap bypasses", () => {
     const direct = scanIssueSessionDurableWriterSource(
-      "server/src/bootstrap.ts",
+      "apps/server/src/bootstrap.ts",
       `
         import { issueSessionEvents as events } from "@paperclipai/db";
         const table = events;
@@ -59,13 +59,13 @@ describe("check-issue-session-durable-writers", () => {
     );
 
     const raw = scanIssueSessionDurableWriterSource(
-      "server/src/bootstrap.ts",
+      "apps/server/src/bootstrap.ts",
       "db.execute(sql`INSERT INTO issue_session_events (id) VALUES ('x')`);",
     );
     assert.match(raw[0]?.message ?? "", /raw SQL insert/);
 
     const namespace = scanIssueSessionDurableWriterSource(
-      "server/src/bootstrap.ts",
+      "apps/server/src/bootstrap.ts",
       `
         import * as schema from "@paperclipai/db";
         const tables = schema;
@@ -78,7 +78,7 @@ describe("check-issue-session-durable-writers", () => {
     );
 
     const rawString = scanIssueSessionDurableWriterSource(
-      "server/src/bootstrap.ts",
+      "apps/server/src/bootstrap.ts",
       `db.execute('UPDATE "issue_session_messages" SET data = "{}"');`,
     );
     assert.match(rawString[0]?.message ?? "", /raw SQL update/);
@@ -86,7 +86,7 @@ describe("check-issue-session-durable-writers", () => {
 
   it("rejects the deleted local_file/S3 NDJSON run-log store", () => {
     const violations = scanIssueSessionDurableWriterSource(
-      "server/src/services/run-log-mirror.ts",
+      "apps/server/src/services/run-log-mirror.ts",
       `
         const store = "local_file";
         const key = process.env.RUN_LOG_S3_BUCKET;
@@ -99,7 +99,7 @@ describe("check-issue-session-durable-writers", () => {
     );
 
     const disguised = scanIssueSessionDurableWriterSource(
-      "server/src/services/provider-transcript.ts",
+      "apps/server/src/services/provider-transcript.ts",
       `
         const issueSessionMirror = true;
         const stream = createWriteStream("events.ndjson");
@@ -113,7 +113,7 @@ describe("check-issue-session-durable-writers", () => {
 
   it("rejects direct typed companion helper calls", () => {
     const violations = scanIssueSessionDurableWriterSource(
-      "server/src/services/bypass.ts",
+      "apps/server/src/services/bypass.ts",
       `
         import {
           insertOrAssertIssueSessionSourceUserExecution as persistSource,
@@ -130,7 +130,7 @@ describe("check-issue-session-durable-writers", () => {
   it("permits the closed publication/event-store/projector owners", () => {
     assert.deepEqual(
       scanIssueSessionDurableWriterSource(
-        "server/src/services/issue-session/publication.ts",
+        "apps/server/src/services/issue-session/publication.ts",
         `
           import { appendIssueSessionEvent } from "./event-store.js";
           import { projectIssueSessionEventInTx } from "./projector.js";

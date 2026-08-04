@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import cliEsbuildConfig from "../cli/esbuild.config.mjs";
+import cliEsbuildConfig from "../packages/cli/esbuild.config.mjs";
 import { bundledCliNpmDependencies } from "./cli-bundled-npm-dependencies.mjs";
 import { materializePublishManifest } from "./prepare-bundled-package.mjs";
 

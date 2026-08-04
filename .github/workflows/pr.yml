@@ -193,7 +193,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The server suite is pinned to maxWorkers=1 (server/vitest.config.ts),
+          # The server suite is pinned to maxWorkers=1 (apps/server/vitest.config.ts),
           # so it can only be parallelized across runners. Shard it to keep this
           # lane off the PR critical path.
           - group: general-server

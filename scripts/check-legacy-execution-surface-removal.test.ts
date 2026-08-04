@@ -43,7 +43,7 @@ function fixtureRoot(): string {
   roots.add(root);
   write(
     root,
-    "server/src/services/tool-gateway.ts",
+    "apps/server/src/services/tool-gateway.ts",
     [
       "async function connectedMcpToolsForCompany() { return []; }",
       "export const gateway = {",
@@ -54,7 +54,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/runtime-interface-compiler.ts",
+    "apps/server/src/services/runtime-interface-compiler.ts",
     [
       "interface CompiledRunToolDescriptor { name: string }",
       "interface RuntimeInterfaceCompileInput { actionGrants: unknown; selectedCompanyTools: unknown }",
@@ -65,7 +65,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/summary-slots.ts",
+    "apps/server/src/services/summary-slots.ts",
     [
       "declare const routineService: unknown;",
       "declare const routinesSvc: { runRoutine(input: unknown): unknown };",
@@ -77,7 +77,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/summary-slot-finalization.ts",
+    "apps/server/src/services/summary-slot-finalization.ts",
     [
       "declare const issueUpdates: { form: unknown; status: unknown };",
       "declare const issueComments: unknown;",
@@ -90,7 +90,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/routes/summary-slots.ts",
+    "apps/server/src/routes/summary-slots.ts",
     [
       "const path = \"/companies/:companyId/summary-slots/:scopeKind/:slotKey/refresh\";",
       "declare const refreshSummarySlotSchema: unknown;",
@@ -116,7 +116,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "ui/src/api/summarySlots.ts",
+    "apps/ui/src/api/summarySlots.ts",
     [
       "interface RefreshSummarySlotResponse {}",
       "declare function summarySlotPath(a: unknown, b: string): string;",
@@ -138,7 +138,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-dispatcher.ts",
+    "apps/server/src/services/issue-execution-dispatcher.ts",
     [
       "// Dispatcher accepts only a persisted IssueExecutionRef",
       "declare const coordinator: { wake(lane: unknown): void };",
@@ -152,7 +152,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     [
       "declare const issueExecutionLeases: any;",
       "declare const lease: any;",
@@ -168,12 +168,12 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-postgres.ts",
+    "apps/server/src/services/issue-execution-postgres.ts",
     "export async function start(dispatcher: any, input: any) { await dispatcher.notifyPersistedRef(input.refId); }\n",
   );
   write(
     root,
-    "server/src/services/system-escalation-postgres.ts",
+    "apps/server/src/services/system-escalation-postgres.ts",
     [
       "declare function appendNonDispatchControlNotice(input: unknown): void;",
       "export function escalation() {",
@@ -186,7 +186,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/ordinary-issue-runtime.ts",
+    "apps/server/src/services/ordinary-issue-runtime.ts",
     [
       "declare function appendNonDispatchUserComment(input: unknown): unknown;",
       "declare function dispatch(id: string): Promise<void>;",
@@ -222,12 +222,12 @@ test("accepts only the canonical compiler, routine, callback, ref, re-lease, esc
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/plugin-tool-registry.ts",
+    "apps/server/src/services/plugin-tool-registry.ts",
     "const pluginTools = new Set<string>();\npluginTools.add('selected-company-row');\n",
   );
   write(
     root,
-    "server/src/services/plugin-worker-manager.ts",
+    "apps/server/src/services/plugin-worker-manager.ts",
     "export function sendMessage(message: unknown) { return message; }\n",
   );
   assert.deepEqual(legacyExecutionSurfaceRemovalViolations(root), []);
@@ -281,7 +281,7 @@ for (const token of [
 ] as const) {
   test(`rejects retired exact identity ${token}`, () => {
     const root = fixtureRoot();
-    write(root, "server/src/retired.ts", `export const retired = ${JSON.stringify(token)};\n`);
+    write(root, "apps/server/src/retired.ts", `export const retired = ${JSON.stringify(token)};\n`);
     expectViolation(root, token);
   });
 }
@@ -291,7 +291,7 @@ for (const collector of ["allTools", "pluginTools"] as const) {
     const root = fixtureRoot();
     append(
       root,
-      "server/src/services/tool-gateway.ts",
+      "apps/server/src/services/tool-gateway.ts",
       `function ${collector}() { return []; }\n${collector}();`,
     );
     expectViolation(root, "retired static Tool Gateway");
@@ -302,7 +302,7 @@ test("rejects static Paperclip descriptors in the Tool Gateway", () => {
   const root = fixtureRoot();
   append(
     root,
-    "server/src/services/tool-gateway.ts",
+    "apps/server/src/services/tool-gateway.ts",
     "const descriptor = { source: \"paperclip\", name: \"issue_update\", inputSchema: {} };",
   );
   expectViolation(root, "static Paperclip run-tool descriptors");
@@ -312,7 +312,7 @@ test("rejects collector re-exports while allowing selected-company pluginTools l
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/static-tools.ts",
+    "apps/server/src/services/static-tools.ts",
     "export { allTools as staticTools } from './tool-gateway.js';\n",
   );
   expectViolation(root, "aliased or re-exported");
@@ -322,7 +322,7 @@ test("rejects renamed static Paperclip tool catalogs", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/static-tools.ts",
+    "apps/server/src/services/static-tools.ts",
     "export function buildStaticPaperclipToolCatalog() { return []; }\n",
   );
   expectViolation(root, "renamed static Paperclip run-tool catalog");
@@ -332,7 +332,7 @@ test("rejects old and renamed direct summary generation", () => {
   const generateRoot = fixtureRoot();
   append(
     generateRoot,
-    "server/src/services/summary-slots.ts",
+    "apps/server/src/services/summary-slots.ts",
     "declare const svc: any;\nsvc.generate({});",
   );
   expectViolation(generateRoot, "summary-slot generate wrapper");
@@ -340,7 +340,7 @@ test("rejects old and renamed direct summary generation", () => {
   const providerRoot = fixtureRoot();
   append(
     providerRoot,
-    "server/src/services/summary-slots.ts",
+    "apps/server/src/services/summary-slots.ts",
     "declare const provider: any;\nprovider.execute({});",
   );
   expectViolation(providerRoot, "cannot call a provider or adapter directly");
@@ -348,7 +348,7 @@ test("rejects old and renamed direct summary generation", () => {
   const aliasRoot = fixtureRoot();
   write(
     aliasRoot,
-    "server/src/services/summary-provider.ts",
+    "apps/server/src/services/summary-provider.ts",
     "export function refreshSummaryWithProvider() {}\n",
   );
   expectViolation(aliasRoot, "renamed direct summary-provider generation");
@@ -361,7 +361,7 @@ for (const alias of [
 ] as const) {
   test(`rejects interaction continuation alias ${alias}`, () => {
     const root = fixtureRoot();
-    write(root, "server/src/services/interaction.ts", `export function ${alias}() {}\n`);
+    write(root, "apps/server/src/services/interaction.ts", `export function ${alias}() {}\n`);
     expectViolation(root, "interaction continuation aliases");
   });
 }
@@ -373,14 +373,14 @@ for (const alias of [
 ] as const) {
   test(`rejects generic wake alias ${alias}`, () => {
     const root = fixtureRoot();
-    write(root, "server/src/services/wake.ts", `export function ${alias}() {}\n`);
+    write(root, "apps/server/src/services/wake.ts", `export function ${alias}() {}\n`);
     expectViolation(root, "generic wake wrapper aliases");
   });
 }
 
 test("rejects an injected wake dependency but preserves the dispatcher's internal coordinator signal", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/injected.ts", "export const deps = { wakeup: () => null };\n");
+  write(root, "apps/server/src/services/injected.ts", "export const deps = { wakeup: () => null };\n");
   expectViolation(root, "injected generic wake dependencies");
 });
 
@@ -397,20 +397,20 @@ for (const alias of [
 }
 
 for (const [path, token] of [
-  ["server/src/services/runtime-interface-compiler.ts", "compileRuntimeInterface"],
-  ["server/src/services/summary-slots.ts", "dispatchRefresh"],
-  ["server/src/services/summary-slot-finalization.ts", "finalizeSummarySlotsForTerminalIssue"],
-  ["server/src/routes/summary-slots.ts", "svc.dispatchRefresh"],
+  ["apps/server/src/services/runtime-interface-compiler.ts", "compileRuntimeInterface"],
+  ["apps/server/src/services/summary-slots.ts", "dispatchRefresh"],
+  ["apps/server/src/services/summary-slot-finalization.ts", "finalizeSummarySlotsForTerminalIssue"],
+  ["apps/server/src/routes/summary-slots.ts", "svc.dispatchRefresh"],
   ["packages/shared/src/api.ts", "summarySlotRefresh"],
   ["packages/shared/src/types/summary-slot.ts", "RefreshSummarySlotResponse"],
   ["packages/shared/src/validators/summary-slot.ts", "refreshSummarySlotSchema"],
-  ["ui/src/api/summarySlots.ts", "refresh:"],
+  ["apps/ui/src/api/summarySlots.ts", "refresh:"],
   ["packages/plugins/plugin-llm-wiki/src/wiki/core.ts", "ctx.issues.registerCreatorCallback"],
-  ["server/src/services/issue-execution-dispatcher.ts", "notifyPersistedRef"],
-  ["server/src/services/issue-execution-dispatcher-postgres.ts", "releaseAttempt"],
-  ["server/src/services/issue-execution-postgres.ts", "dispatcher.notifyPersistedRef(input.refId)"],
-  ["server/src/services/system-escalation-postgres.ts", "appendNonDispatchControlNotice"],
-  ["server/src/services/ordinary-issue-runtime.ts", "appendNonDispatchUserComment"],
+  ["apps/server/src/services/issue-execution-dispatcher.ts", "notifyPersistedRef"],
+  ["apps/server/src/services/issue-execution-dispatcher-postgres.ts", "releaseAttempt"],
+  ["apps/server/src/services/issue-execution-postgres.ts", "dispatcher.notifyPersistedRef(input.refId)"],
+  ["apps/server/src/services/system-escalation-postgres.ts", "appendNonDispatchControlNotice"],
+  ["apps/server/src/services/ordinary-issue-runtime.ts", "appendNonDispatchUserComment"],
 ] as const) {
   test(`rejects missing canonical owner token ${token}`, () => {
     const root = fixtureRoot();
@@ -423,7 +423,7 @@ test("allows marker-scoped removal assertions only in tests", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/removal.test.ts",
+    "apps/server/src/removal.test.ts",
     [
       "// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: enqueueWakeup, agentSessions",
       "const removed = ['enqueueWakeup', 'agentSessions'];",
@@ -433,7 +433,7 @@ test("allows marker-scoped removal assertions only in tests", () => {
 
   write(
     root,
-    "server/src/unmarked.test.ts",
+    "apps/server/src/unmarked.test.ts",
     "const removed = 'heartbeat.invoke';\n",
   );
   expectViolation(root, "heartbeat.invoke");
@@ -451,7 +451,7 @@ for (const claim of [
 ] as const) {
   test(`rejects active documentation claim: ${claim}`, () => {
     const root = fixtureRoot();
-    write(root, "docs/start/architecture.md", `${claim}\n`);
+    write(root, "apps/docs/start/architecture.md", `${claim}\n`);
     expectViolation(root, "active documentation cannot advertise a retired AI execution path");
   });
 }

@@ -11,8 +11,8 @@ import {
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const GATE_PATH = "scripts/check-ai-cost-currency-cutover.ts";
 const SELF_TEST_PATH = "scripts/check-ai-cost-currency-cutover.test.ts";
-const BUDGET_OWNER = "server/src/services/budgets.ts";
-const COMPANY_PURGE_OWNER = "server/src/services/issue-session-lifecycle.ts";
+const BUDGET_OWNER = "apps/server/src/services/budgets.ts";
+const COMPANY_PURGE_OWNER = "apps/server/src/services/issue-session-lifecycle.ts";
 
 const RETIRED_AI_MONEY_TOKENS = [
   "budgetMonthlyCents",
@@ -29,35 +29,35 @@ const CANONICAL_SCAN_ROOTS = [
   "packages/db",
   "packages/shared/src",
   "packages/adapter-utils/src",
-  "server/src",
-  "cli/src",
-  "ui/src",
-  "docs/api",
-  "docs/cli",
-  "docs/companies",
-  "docs/guides",
+  "apps/server/src",
+  "packages/cli/src",
+  "apps/ui/src",
+  "apps/docs/api",
+  "apps/docs/cli",
+  "apps/docs/companies",
+  "apps/docs/guides",
 ] as const;
 
 const FINANCE_EVENT_PRODUCTION_OWNERS = new Set([
   "packages/db/schema/finance_events.ts",
   "packages/db/schema/index.ts",
-  "server/src/services/finance.ts",
+  "apps/server/src/services/finance.ts",
   COMPANY_PURGE_OWNER,
 ]);
 
 const AI_MONEY_PRESENTATION_PATHS = [
-  "cli/src/commands/client/cost.ts",
-  "ui/src/components/ApprovalPayload.tsx",
-  "ui/src/components/BudgetIncidentCard.tsx",
-  "ui/src/components/BudgetPolicyCard.tsx",
-  "ui/src/lib/attention.ts",
-  "ui/src/lib/utils.ts",
-  "ui/src/pages/AgentDetail.tsx",
-  "ui/src/pages/Companies.tsx",
-  "ui/src/pages/Costs.tsx",
-  "ui/src/pages/Dashboard.tsx",
-  "ui/src/pages/ProjectDetail.tsx",
-  "ui/src/pages/UserProfile.tsx",
+  "packages/cli/src/commands/client/cost.ts",
+  "apps/ui/src/components/ApprovalPayload.tsx",
+  "apps/ui/src/components/BudgetIncidentCard.tsx",
+  "apps/ui/src/components/BudgetPolicyCard.tsx",
+  "apps/ui/src/lib/attention.ts",
+  "apps/ui/src/lib/utils.ts",
+  "apps/ui/src/pages/AgentDetail.tsx",
+  "apps/ui/src/pages/Companies.tsx",
+  "apps/ui/src/pages/Costs.tsx",
+  "apps/ui/src/pages/Dashboard.tsx",
+  "apps/ui/src/pages/ProjectDetail.tsx",
+  "apps/ui/src/pages/UserProfile.tsx",
 ] as const;
 
 const SUBORDINATE_BUDGET_SCHEMA_PATHS = [
@@ -155,7 +155,7 @@ function tableAliases(source: string, canonical: string): Set<string> {
 
 function budgetWriterViolations(repositoryRoot: string): string[] {
   const violations: string[] = [];
-  for (const file of productionFiles(repositoryRoot, ["server/src"])) {
+  for (const file of productionFiles(repositoryRoot, ["apps/server/src"])) {
     for (const table of ["budgetPolicies", "budgetIncidents"] as const) {
       for (const alias of tableAliases(file.source, table)) {
         const mutation = new RegExp(
@@ -305,9 +305,9 @@ function storageAndDtoOwnershipViolations(repositoryRoot: string): string[] {
   for (const file of productionFiles(repositoryRoot, [
     "packages/shared/src/types",
     "packages/shared/src/validators",
-    "server/src/routes",
-    "cli/src",
-    "ui/src",
+    "apps/server/src/routes",
+    "packages/cli/src",
+    "apps/ui/src",
   ])) {
     for (const match of file.source.matchAll(
       /\b[A-Za-z_$][\w$]*Cents\b|\b[a-z][a-z0-9_]*_cents\b/g,
@@ -379,7 +379,7 @@ function sharedMoneyContractViolations(repositoryRoot: string): string[] {
 
 function rawCostAggregateViolations(repositoryRoot: string): string[] {
   const violations: string[] = [];
-  for (const file of productionFiles(repositoryRoot, ["server/src"])) {
+  for (const file of productionFiles(repositoryRoot, ["apps/server/src"])) {
     for (const match of file.source.matchAll(
       /sum\(\s*\$\{costEvents\.([A-Za-z_$][\w$]*)\}\s*\)/g,
     )) {
@@ -422,9 +422,9 @@ function numberMoneyBoundaryViolations(repositoryRoot: string): string[] {
     "budgetMonthlyAmount|limitAmount|observedAmount|knownSpendAmount|knownCostAmount|remainingAmount|knownDeltaAmount";
   for (const file of productionFiles(repositoryRoot, [
     "packages/shared/src",
-    "server/src",
-    "cli/src",
-    "ui/src",
+    "apps/server/src",
+    "packages/cli/src",
+    "apps/ui/src",
   ])) {
     for (const pattern of [
       new RegExp(`\\b(?:${moneyField})\\??\\s*:\\s*number\\b`, "g"),
@@ -444,7 +444,7 @@ function numberMoneyBoundaryViolations(repositoryRoot: string): string[] {
 function genericPatchViolations(repositoryRoot: string): string[] {
   const violations: string[] = [];
   for (const file of productionFiles(repositoryRoot, [
-    "server/src/routes",
+    "apps/server/src/routes",
     "packages/shared/src/validators",
   ])) {
     for (const match of file.source.matchAll(
@@ -495,7 +495,7 @@ function financeIsolationViolations(repositoryRoot: string): string[] {
     "packages/db",
     "packages/shared/src",
     "packages/adapter-utils/src",
-    "server/src",
+    "apps/server/src",
   ])) {
     if (
       /\bfinanceEvents\b|schema\/finance_events|from\s+["'][^"']*finance_events/.test(
@@ -508,19 +508,19 @@ function financeIsolationViolations(repositoryRoot: string): string[] {
       );
     }
   }
-  const financeService = read(repositoryRoot, "server/src/services/finance.ts");
+  const financeService = read(repositoryRoot, "apps/server/src/services/finance.ts");
   if (
     financeService === null ||
     /\bcostEvents\b|budgetService|budgetCurrency/.test(financeService)
   ) {
     violations.push(
-      "server/src/services/finance.ts: finance aggregation depends on AI cost or budget currency",
+      "apps/server/src/services/finance.ts: finance aggregation depends on AI cost or budget currency",
     );
   }
   for (const path of [
     BUDGET_OWNER,
-    "server/src/services/costs.ts",
-    "server/src/services/acp-prompt-settlement.ts",
+    "apps/server/src/services/costs.ts",
+    "apps/server/src/services/acp-prompt-settlement.ts",
     "packages/shared/src/acp-cost.ts",
   ]) {
     const source = read(repositoryRoot, path);
@@ -631,7 +631,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       "costEvents.knownDeltaAmount",
       'eq(costEvents.kind, "known")',
     ]),
-    ...requireFileTokens(repositoryRoot, "server/src/services/companies.ts", [
+    ...requireFileTokens(repositoryRoot, "apps/server/src/services/companies.ts", [
       "const budgets = budgetService(db)",
       "budgets.createCompany(data, actorUserId)",
       '"budgetCurrency" | "budgetMonthlyAmount"',
@@ -639,7 +639,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
     ]),
     ...requireFileTokens(
       repositoryRoot,
-      "server/src/services/agent-operational-configuration.ts",
+      "apps/server/src/services/agent-operational-configuration.ts",
       [
         "budgetService(txDb, budgetHooks).setAgentMonthlyLimit(",
         '"budgetMonthlyAmount"',
@@ -658,27 +658,27 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       "budgetCurrency: budgetCurrencySchema",
       "budgetMonthlyAmount: moneyAmountSchema",
     ]),
-    ...requireFileTokens(repositoryRoot, "server/src/routes/openapi.ts", [
+    ...requireFileTokens(repositoryRoot, "apps/server/src/routes/openapi.ts", [
       "moneyAmountSchema",
       "budgetCurrencySchema",
       "knownDeltaAmount: moneyAmountSchema.nullable()",
       "budgetMonthlyAmount: moneyAmountSchema",
     ]),
-    ...requireFileTokens(repositoryRoot, "ui/src/lib/utils.ts", [
+    ...requireFileTokens(repositoryRoot, "apps/ui/src/lib/utils.ts", [
       "export function formatMoneyAmount(",
       "serializeMoneyAmount(amount)",
       "currency: BudgetCurrency | string",
     ]),
-    ...requireFileTokens(repositoryRoot, "ui/src/pages/Costs.tsx", [
+    ...requireFileTokens(repositoryRoot, "apps/ui/src/pages/Costs.tsx", [
       "formatMoneyAmount(summary.knownSpendAmount, summary.budgetCurrency)",
       "formatMoneyAmount(summary.budgetMonthlyAmount, summary.budgetCurrency)",
       "formatMoneyAmount(summary.remainingAmount, summary.budgetCurrency)",
     ]),
-    ...requireFileTokens(repositoryRoot, "ui/src/components/BudgetPolicyCard.tsx", [
+    ...requireFileTokens(repositoryRoot, "apps/ui/src/components/BudgetPolicyCard.tsx", [
       "formatMoneyAmount(summary.observedAmount, summary.budgetCurrency)",
       "formatMoneyAmount(summary.limitAmount, summary.budgetCurrency)",
     ]),
-    ...requireFileTokens(repositoryRoot, "cli/src/commands/client/cost.ts", [
+    ...requireFileTokens(repositoryRoot, "packages/cli/src/commands/client/cost.ts", [
       "updateCompanyBudgetSchema.parse(",
       "parseAgentBudgetPayload",
       '"budgetMonthlyAmount"',

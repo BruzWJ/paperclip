@@ -25,8 +25,8 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_SCAN_ROOTS = [
   "packages/adapters",
   "packages/adapter-utils",
-  "server/src",
-  "cli/src",
+  "apps/server/src",
+  "packages/cli/src",
 ];
 
 const SCANNABLE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs"]);

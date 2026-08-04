@@ -12,7 +12,7 @@ Create agent company packages that conform to the Agent Companies specification.
 
 Spec references:
 
-- Normative spec: `docs/companies/companies-spec.md` (read this before generating files)
+- Normative spec: `apps/docs/companies/companies-spec.md` (read this before generating files)
 - Web spec: https://agentcompanies.io/specification
 - Protocol site: https://agentcompanies.io/
 
@@ -90,7 +90,7 @@ For from-repo companies, infer the pattern from the repo's structure. If skills 
 Before generating any files, read the normative spec:
 
 ```
-docs/companies/companies-spec.md
+apps/docs/companies/companies-spec.md
 ```
 
 Also read the quick reference: [references/companies-spec.md](references/companies-spec.md)

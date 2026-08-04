@@ -64,7 +64,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts",
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts",
     [
       "const issueExecutionSessions = {};",
       "const promptCycle = {",
@@ -81,7 +81,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/company-skill-materialization-lifecycle.ts",
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts",
     [
       "const issueExecutionSessions = {};",
       "const companySkillVersions = { fileInventory: null };",
@@ -101,7 +101,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-run-service.ts",
+    "apps/server/src/services/issue-execution-run-service.ts",
     [
       "const issueExecutionAttempts = {}; const issueExecutionRuns = {};",
       "async function hasActiveIssueExecutionAttemptForMaterializationInTransaction() {",
@@ -112,7 +112,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     [
       "const issueExecutionAttempts = {};",
       "async function createRunningLease(transaction: any) {",
@@ -155,7 +155,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-attempt-retry-schedule-postgres.ts",
+    "apps/server/src/services/issue-execution-attempt-retry-schedule-postgres.ts",
     [
       "const issueExecutionAttempts = {};",
       "async function claimIssueExecutionAttemptRetryInTransaction(transaction: any) {",
@@ -167,7 +167,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/agent-adapter-config-revisions.ts",
+    "apps/server/src/services/agent-adapter-config-revisions.ts",
     [
       "function replace(currentRevision: any, requestedPins: any, requestedSkillChannel: any) {",
       "  currentRevision.acpConfiguration;",
@@ -177,8 +177,8 @@ function fixtureRoot(): string {
     ].join("\n"),
   );
   for (const path of [
-    "server/src/services/issue-execution-attempt-executor.ts",
-    "server/src/services/company-skills.ts",
+    "apps/server/src/services/issue-execution-attempt-executor.ts",
+    "apps/server/src/services/company-skills.ts",
     "packages/adapter-utils/src/server-utils.ts",
   ]) {
     write(root, path, "export {};\n");
@@ -263,7 +263,7 @@ for (const retired of [
 ] as const) {
   test(`rejects retired skill-channel identifier ${retired}`, () => {
     const root = fixtureRoot();
-    const path = "server/src/services/company-skills.ts";
+    const path = "apps/server/src/services/company-skills.ts";
     write(root, path, `const ${retired} = true;\n`);
     assert.ok(
       skillChannelBoundaryViolations(root).some((violation) =>
@@ -275,7 +275,7 @@ for (const retired of [
 
 test("rejects a runtime .agents/skills write", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/company-skills.ts";
+  const path = "apps/server/src/services/company-skills.ts";
   write(
     root,
     path,
@@ -366,7 +366,7 @@ test("rejects a provider-visible Paperclip execution suffix", () => {
 test("rejects a parallel prompt-cycle skill selection projection", () => {
   const root = fixtureRoot();
   const path =
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts";
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts";
   write(
     root,
     path,
@@ -382,7 +382,7 @@ test("rejects a parallel prompt-cycle skill selection projection", () => {
 test("rejects operator_native selection reads before its zero-I/O return", () => {
   const root = fixtureRoot();
   const path =
-    "server/src/services/company-skill-materialization-lifecycle.ts";
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts";
   const original = readFileSync(join(root, path), "utf8");
   write(
     root,
@@ -418,7 +418,7 @@ function expectSkillChannelMutation(
 
 test("rejects removal of the correlation activation fence", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts",
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts",
     (source) => source.replace(
       "      await fenceCompanySkillMaterializationReferenceInTransaction(transaction, input);\n",
       "",
@@ -429,7 +429,7 @@ test("rejects removal of the correlation activation fence", () => {
 
 test("rejects removal of the initial attempt fence", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => source.replace(
       "  await fenceCompanySkillMaterializationReferenceInTransaction(transaction, {});\n",
       "",
@@ -440,7 +440,7 @@ test("rejects removal of the initial attempt fence", () => {
 
 test("rejects removal of the target-not-found successor fence", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => source.replace(
       [
         "async function createTargetNotFoundSuccessorAttempt(transaction: any) {",
@@ -454,7 +454,7 @@ test("rejects removal of the target-not-found successor fence", () => {
 
 test("rejects removal of the scheduled-retry successor fence", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-attempt-retry-schedule-postgres.ts",
+    "apps/server/src/services/issue-execution-attempt-retry-schedule-postgres.ts",
     (source) => source.replace(
       "  await fenceCompanySkillMaterializationReferenceInTransaction(transaction, {});\n",
       "",
@@ -466,21 +466,21 @@ test("rejects removal of the scheduled-retry successor fence", () => {
 for (const [label, path, fence, writer, expected] of [
   [
     "native-correlation activation",
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts",
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts",
     "      await fenceCompanySkillMaterializationReferenceInTransaction(transaction, input);\n",
     "      await transaction.insert(issueExecutionSessions);\n",
     "native-correlation activation materialization fence",
   ],
   [
     "initial attempt",
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     "  await fenceCompanySkillMaterializationReferenceInTransaction(transaction, {});\n",
     "  await transaction.insert(issueExecutionAttempts);\n",
     "initial attempt materialization fence",
   ],
   [
     "scheduled-retry successor",
-    "server/src/services/issue-execution-attempt-retry-schedule-postgres.ts",
+    "apps/server/src/services/issue-execution-attempt-retry-schedule-postgres.ts",
     "  await fenceCompanySkillMaterializationReferenceInTransaction(transaction, {});\n",
     "  await transaction.insert(issueExecutionAttempts);\n",
     "scheduled-retry successor materialization fence",
@@ -499,7 +499,7 @@ for (const [label, path, fence, writer, expected] of [
 
 test("rejects a target-not-found successor published before its exact fence", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => source.replace(
       [
         "async function createTargetNotFoundSuccessorAttempt(transaction: any) {",
@@ -518,7 +518,7 @@ test("rejects a target-not-found successor published before its exact fence", ()
 
 test("rejects an unrelated duplicate exact-key collector", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) =>
       `${source}\nasync function fakeFifthCollector(transaction: any) {\n` +
       "  await collectCompanySkillMaterializationIfUnreferencedInTransaction(transaction, null);\n}\n",
@@ -528,7 +528,7 @@ test("rejects an unrelated duplicate exact-key collector", () => {
 
 test("rejects a retry branch that bypasses exact-key collection", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => source.replace(
       "        await createTargetNotFoundSuccessorAttempt(transaction);\n",
       "        await createTargetNotFoundSuccessorAttempt(transaction);\n        return;\n",
@@ -539,7 +539,7 @@ test("rejects a retry branch that bypasses exact-key collection", () => {
 
 test("rejects collection before retry branch state changes", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => {
       const collection =
         "      await collectCompanySkillMaterializationIfUnreferencedInTransaction(transaction, input.materialization);\n";
@@ -556,7 +556,7 @@ test("rejects collection before retry branch state changes", () => {
 
 test("rejects a terminal cancellation branch that bypasses collection", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => source.replace(
       "        completed = { finalization: null, laneReleased: false };\n",
       "        return { finalization: null, laneReleased: false };\n",
@@ -567,7 +567,7 @@ test("rejects a terminal cancellation branch that bypasses collection", () => {
 
 test("rejects terminal collection inside only the non-cancellation branch", () => {
   expectSkillChannelMutation(
-    "server/src/services/issue-execution-dispatcher-postgres.ts",
+    "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     (source) => {
       const collection =
         "      await collectCompanySkillMaterializationIfUnreferencedInTransaction(transaction, input.materialization);\n";
@@ -589,22 +589,22 @@ test("rejects terminal collection inside only the non-cancellation branch", () =
 for (const [label, path, token] of [
   [
     "transaction advisory fence",
-    "server/src/services/company-skill-materialization-lifecycle.ts",
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts",
     "pg_advisory_xact_lock",
   ],
   [
     "active-attempt states",
-    "server/src/services/issue-execution-run-service.ts",
+    "apps/server/src/services/issue-execution-run-service.ts",
     '"pending",',
   ],
   [
     "eligible-correlation states",
-    "server/src/services/company-skill-materialization-lifecycle.ts",
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts",
     '"eligible", "current"',
   ],
   [
     "exact target collector",
-    "server/src/services/company-skill-materialization-lifecycle.ts",
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts",
     "candidate.collectExact(resolved.materializationKey)",
   ],
 ] as const) {
@@ -623,7 +623,7 @@ for (const [label, path, token] of [
 test("rejects age-based materialization collection", () => {
   const root = fixtureRoot();
   const path =
-    "server/src/services/company-skill-materialization-lifecycle.ts";
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts";
   write(
     root,
     path,
@@ -639,7 +639,7 @@ test("rejects age-based materialization collection", () => {
 test("rejects complement-list materialization collection", () => {
   const root = fixtureRoot();
   const path =
-    "server/src/services/company-skill-materialization-lifecycle.ts";
+    "apps/server/src/services/company-skill-materialization-lifecycle.ts";
   write(
     root,
     path,

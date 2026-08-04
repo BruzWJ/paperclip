@@ -18,7 +18,7 @@ import {
   type OrgNode,
   type OrgChartStyle,
   ORG_CHART_STYLES,
-} from "../server/src/routes/org-chart-svg.js";
+} from "../apps/server/src/routes/org-chart-svg.js";
 
 // ── Sample org data ──────────────────────────────────────────────
 

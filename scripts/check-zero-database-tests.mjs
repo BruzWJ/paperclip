@@ -1057,7 +1057,7 @@ function productionSourceBranchesOnTest(sourceFile) {
 function isFirstPartyProductionSource(relative) {
   if (!/\.[cm]?[jt]sx?$/.test(relative) || /\.d\.[cm]?ts$/.test(relative)) return false;
   if (
-    !/^(?:server|cli|ui)\/src\//.test(relative) &&
+    !/^apps\/(?:server|ui)\/src\//.test(relative) &&
     !/^packages\/.*\/src\//.test(relative) &&
     // The DB package intentionally follows TradingGoose's root-owned Drizzle
     // layout instead of placing its production modules under src/.
@@ -1138,7 +1138,7 @@ function scanPackageValidationScripts(relative, source) {
 
 function isActiveDocumentation(relativePath) {
   return (
-    /^(?:doc|docs)\/.*\.mdx?$/.test(relativePath) ||
+    /^(?:doc|apps\/docs)\/.*\.mdx?$/.test(relativePath) ||
     /^\.agents\/skills\/.*\.mdx?$/.test(relativePath)
   );
 }
@@ -1326,7 +1326,7 @@ export function scanZeroDatabaseTests(repoRoot) {
 
   const forbiddenHarnessPaths = [
     path.join(repoRoot, "packages", "db", `${liveHarnessFile}.ts`),
-    path.join(repoRoot, "server", "src", "__tests__", "helpers", "external-postgres.ts"),
+    path.join(repoRoot, "apps", "server", "src", "__tests__", "helpers", "external-postgres.ts"),
   ];
   for (const forbiddenHarnessPath of forbiddenHarnessPaths) {
     if (existsSync(forbiddenHarnessPath)) {
@@ -1380,22 +1380,22 @@ export function scanZeroDatabaseTests(repoRoot) {
     }
   }
 
-  const e2eViteConfigPath = path.join(repoRoot, "ui", "vite.e2e.config.ts");
+  const e2eViteConfigPath = path.join(repoRoot, "apps", "ui", "vite.e2e.config.ts");
   if (!existsSync(e2eViteConfigPath)) {
     violations.push(
-      "ui/vite.e2e.config.ts:1 is required so browser tests use a dotenv-free, backend-free UI server",
+      "apps/ui/vite.e2e.config.ts:1 is required so browser tests use a dotenv-free, backend-free UI server",
     );
   } else {
-    const relative = "ui/vite.e2e.config.ts";
+    const relative = "apps/ui/vite.e2e.config.ts";
     const facts = collectSourceFacts(relative, e2eViteConfigPath, factsCache);
     if (!configHasExactEnvDirFalse(facts.sourceFile)) {
       violations.push(
-        "ui/vite.e2e.config.ts:1 must set envDir: false",
+        "apps/ui/vite.e2e.config.ts:1 must set envDir: false",
       );
     }
     if (e2eConfigHasBackendProxy(facts.sourceFile)) {
       violations.push(
-        "ui/vite.e2e.config.ts:1 must not configure a backend proxy",
+        "apps/ui/vite.e2e.config.ts:1 must not configure a backend proxy",
       );
     }
   }
@@ -1501,7 +1501,7 @@ export function scanZeroDatabaseTests(repoRoot) {
     }
   }
 
-  const serverConfigPath = path.join(repoRoot, "server", "src", "config.ts");
+  const serverConfigPath = path.join(repoRoot, "apps", "server", "src", "config.ts");
   if (existsSync(serverConfigPath)) {
     const source = readFileSync(serverConfigPath, "utf8");
     if (
@@ -1510,7 +1510,7 @@ export function scanZeroDatabaseTests(repoRoot) {
       || /\bloadRuntimeEnvironmentFiles\s*\(/.test(source)
     ) {
       violations.push(
-        "server/src/config.ts:1 loads environment files from an importable configuration module; dotenv loading belongs only at an explicit process startup boundary",
+        "apps/server/src/config.ts:1 loads environment files from an importable configuration module; dotenv loading belongs only at an explicit process startup boundary",
       );
     }
   }

@@ -6,8 +6,8 @@
     { "path": "./packages/google-sheets-mcp-server" },
     { "path": "./packages/shared" },
     { "path": "./packages/db" },
-    { "path": "./server" },
-    { "path": "./ui" },
-    { "path": "./cli" }
+    { "path": "./apps/server" },
+    { "path": "./apps/ui" },
+    { "path": "./packages/cli" }
   ]
 }

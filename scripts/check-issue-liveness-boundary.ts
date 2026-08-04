@@ -13,28 +13,28 @@ const ISSUES_SCHEMA = "packages/db/schema/issues.ts";
 const ISSUE_UPDATES_SCHEMA =
   "packages/db/schema/issue_creator_delivery.ts";
 const OWNER_FORM_VALIDATOR = "packages/shared/src/validators/issue.ts";
-const COMPANY_PORTABILITY = "server/src/services/company-portability.ts";
+const COMPANY_PORTABILITY = "apps/server/src/services/company-portability.ts";
 const RUNTIME_INTERFACE_COMPILER =
-  "server/src/services/runtime-interface-compiler.ts";
+  "apps/server/src/services/runtime-interface-compiler.ts";
 const PLUGIN_TYPES = "packages/plugins/sdk/src/types.ts";
 const PLUGIN_PROTOCOL = "packages/plugins/sdk/src/protocol.ts";
 const PLUGIN_WORKER_HOST = "packages/plugins/sdk/src/worker-rpc-host.ts";
 const PLUGIN_UI_COMPONENTS = "packages/plugins/sdk/src/ui/components.ts";
-const UI_PLUGIN_BRIDGE = "ui/src/plugins/bridge-init.ts";
-const UI_ISSUE_DETAIL = "ui/src/pages/IssueDetail.tsx";
+const UI_PLUGIN_BRIDGE = "apps/ui/src/plugins/bridge-init.ts";
+const UI_ISSUE_DETAIL = "apps/ui/src/pages/IssueDetail.tsx";
 const LIVENESS_SCHEMA =
   "packages/db/schema/issue_liveness_reconciliations.ts";
 const RUN_SCHEMA = "packages/db/schema/issue_execution_runs.ts";
 const LIVENESS_SERVICE =
-  "server/src/services/issue-liveness-reconciliation.ts";
+  "apps/server/src/services/issue-liveness-reconciliation.ts";
 const FINALIZATION_OWNER =
-  "server/src/services/issue-execution-finalization-postgres.ts";
-const CANONICAL_ASSEMBLY = "server/src/services/issue-execution-postgres.ts";
+  "apps/server/src/services/issue-execution-finalization-postgres.ts";
+const CANONICAL_ASSEMBLY = "apps/server/src/services/issue-execution-postgres.ts";
 const DISPATCHER =
-  "server/src/services/issue-execution-dispatcher-postgres.ts";
+  "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
 const CANCELLATION_RECONCILER =
-  "server/src/services/issue-execution-cancellation.ts";
-const ATTENTION_OWNER = "server/src/services/attention.ts";
+  "apps/server/src/services/issue-execution-cancellation.ts";
+const ATTENTION_OWNER = "apps/server/src/services/attention.ts";
 // Keep the lifecycle gate's production-table allowlist honest: this boundary
 // names the separate fact owner only through a structural symbol assembled at
 // runtime, rather than looking like another direct table consumer itself.
@@ -125,11 +125,11 @@ const RUN_LIVENESS_FACT_FIELDS = [
 
 const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
   [
-    "server/src/services/canonical-issue-aggregate.ts",
+    "apps/server/src/services/canonical-issue-aggregate.ts",
     ["recordIssueLivenessActionInTransaction(", "`issue:${persistedIssue.id}`"],
   ],
   [
-    "server/src/services/ordinary-issue-runtime.ts",
+    "apps/server/src/services/ordinary-issue-runtime.ts",
     [
       "recordIssueLivenessActionInTransaction(",
       "`issue_execution_ref:${admission.ref.id}`",
@@ -139,7 +139,7 @@ const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
     ],
   ],
   [
-    "server/src/services/runtime-issue-action-port.ts",
+    "apps/server/src/services/runtime-issue-action-port.ts",
     [
       "recordIssueLivenessActionInTransaction(",
       "`issue_update:${update.id}`",
@@ -148,14 +148,14 @@ const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
     ],
   ],
   [
-    "server/src/services/issue-board-lifecycle-command.ts",
+    "apps/server/src/services/issue-board-lifecycle-command.ts",
     [
       "recordIssueLivenessActionInTransaction(",
       "`issue_board_lifecycle_command:${row.id}`",
     ],
   ],
   [
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts",
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts",
     [
       "recordIssueLivenessActionInTransaction(",
       "`issue_execution_prompt_segment:${prompt.identity.runId}:${prompt.identity.refId}:${prompt.identity.segmentOrdinal}`",
@@ -535,7 +535,7 @@ function productionServerFiles(repositoryRoot: string): Array<{
   path: string;
   source: string;
 }> {
-  return listRepositoryTextFiles(repositoryRoot, ["server/src"])
+  return listRepositoryTextFiles(repositoryRoot, ["apps/server/src"])
     .filter((absolute) => /\.(?:ts|tsx)$/.test(absolute))
     .map((absolute) => ({
       path: normalizedRelative(repositoryRoot, absolute),
@@ -1105,7 +1105,7 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
       source.includes("createIssueLivenessReconciliationService") &&
       path !== LIVENESS_SERVICE &&
       path !== CANONICAL_ASSEMBLY &&
-      path !== "server/src/services/index.ts"
+      path !== "apps/server/src/services/index.ts"
     ) {
       violations.push(`${path}: alternate liveness processor assembly`);
     }
@@ -1159,7 +1159,7 @@ function settlementProducerViolations(repositoryRoot: string): string[] {
   const violations: string[] = [];
   const allowed = new Set([
     LIVENESS_SERVICE,
-    "server/src/services/index.ts",
+    "apps/server/src/services/index.ts",
     ...SETTLEMENT_PRODUCERS.keys(),
   ]);
   for (const { path, source } of productionServerFiles(repositoryRoot)) {

@@ -16,11 +16,11 @@ const SESSION_MESSAGE = "packages/shared/src/issue-session/session-message.ts";
 const SESSION_EVENT = "packages/shared/src/issue-session/session-event.ts";
 const CODEC_TEST = "packages/shared/src/issue-session/codec.test.ts";
 const MESSAGE_UPDATER =
-  "server/src/services/issue-session/message-updater.ts";
-const PROJECTOR = "server/src/services/issue-session/projector.ts";
+  "apps/server/src/services/issue-session/message-updater.ts";
+const PROJECTOR = "apps/server/src/services/issue-session/projector.ts";
 const ACP_EVENT_MAPPER =
-  "server/src/services/issue-execution-acp-events-postgres.ts";
-const ACP_SETTLEMENT = "server/src/services/acp-prompt-settlement.ts";
+  "apps/server/src/services/issue-execution-acp-events-postgres.ts";
+const ACP_SETTLEMENT = "apps/server/src/services/acp-prompt-settlement.ts";
 
 const RETIRED_ACCOUNTING_TOKENS = [
   "totalInputTokens",
@@ -90,7 +90,7 @@ function throughputAggregationViolations(repositoryRoot: string): string[] {
   const violations: string[] = [];
   for (const absolute of listRepositoryTextFiles(repositoryRoot, [
     "packages/db/schema",
-    "server/src",
+    "apps/server/src",
   ])) {
     const path = normalizedRelative(repositoryRoot, absolute);
     if (/\.(?:test|spec)\.tsx?$/.test(path)) continue;
@@ -124,12 +124,9 @@ export function aiAccountingBoundaryViolations(
         "scripts/check-ai-accounting-boundary.test.ts",
       ],
       roots: [
+        "apps",
         "packages",
-        "server",
-        "cli",
-        "ui",
         "doc",
-        "docs",
         "evals",
         "README.md",
         "ROADMAP.md",

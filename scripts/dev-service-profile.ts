@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createLocalServiceKey } from "../server/src/services/local-service-supervisor.ts";
+import { createLocalServiceKey } from "../apps/server/src/services/local-service-supervisor.ts";
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

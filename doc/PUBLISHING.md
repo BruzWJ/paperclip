@@ -36,11 +36,11 @@ Run:
 This script:
 
 1. runs the forbidden token check unless `--skip-checks` is supplied
-2. runs `pnpm -r typecheck`
-3. bundles the CLI entrypoint with esbuild into `cli/dist/index.js`
+2. runs `pnpm typecheck`
+3. bundles the CLI entrypoint with esbuild into `packages/cli/dist/index.js`
 4. verifies the bundled entrypoint with `node --check`
-5. rewrites `cli/package.json` into a publishable npm manifest and stores the dev copy as `cli/package.dev.json`
-6. copies the repo `README.md` into `cli/README.md` for npm metadata
+5. rewrites `packages/cli/package.json` into a publishable npm manifest and stores the dev copy as `packages/cli/package.dev.json`
+6. copies the repo `README.md` into `packages/cli/README.md` for npm metadata
 
 After the release script exits, the dev manifest and temporary files are restored automatically.
 
@@ -49,9 +49,9 @@ After the release script exits, the dev manifest and temporary files are restore
 Public packages are discovered from:
 
 - `packages/`
-- `server/`
-- `ui/`
-- `cli/`
+- `apps/server/`
+- `apps/ui/`
+- `packages/cli/`
 
 The version rewrite step now uses [`scripts/release-package-map.mjs`](../scripts/release-package-map.mjs), which:
 
@@ -103,9 +103,9 @@ pnpm publish --no-git-checks --access public
 
 Notes:
 
-- Publish from `ui/`, not the repo root.
-- `prepack` automatically rewrites `ui/package.json` to the lean publish manifest, and `postpack` restores the dev manifest after the command finishes.
-- If `npm view @paperclipai/ui version` already returns the same version that is in [`ui/package.json`](../ui/package.json), do not republish. Bump the version or use the normal repo-wide release flow in [`scripts/release.sh`](../scripts/release.sh).
+- Publish from `apps/ui/`, not the repo root.
+- `prepack` automatically rewrites `apps/ui/package.json` to the lean publish manifest, and `postpack` restores the dev manifest after the command finishes.
+- If `npm view @paperclipai/ui version` already returns the same version that is in [`apps/ui/package.json`](../apps/ui/package.json), do not republish. Bump the version or use the normal repo-wide release flow in [`scripts/release.sh`](../scripts/release.sh).
 
 If the first real publish returns npm `E404`, check npm-side prerequisites before retrying:
 
@@ -249,5 +249,5 @@ This is the fastest way to restore the default install path if a stable release 
 - [`scripts/generate-npm-package-json.mjs`](../scripts/generate-npm-package-json.mjs)
 - [`scripts/generate-ui-package-json.mjs`](../scripts/generate-ui-package-json.mjs)
 - [`scripts/release-package-map.mjs`](../scripts/release-package-map.mjs)
-- [`cli/esbuild.config.mjs`](../cli/esbuild.config.mjs)
+- [`packages/cli/esbuild.config.mjs`](../packages/cli/esbuild.config.mjs)
 - [`doc/RELEASING.md`](RELEASING.md)

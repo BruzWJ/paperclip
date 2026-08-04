@@ -38,7 +38,7 @@ reviewable commits: one component-conversion unit per commit.
 
 SCOPE
 1. C5a: every hand-rolled card container (rounded-* + border +
-   bg-card pattern) in ui/src/components/** and ui/src/pages/**
+   bg-card pattern) in apps/ui/src/components/** and apps/ui/src/pages/**
    converts to the Card primitive, preserving layout and behavior.
 2. C5b: every hand-rolled pill span converts to Badge (or the
    status-chip system where it encodes status), same preservation.
@@ -68,7 +68,7 @@ VERIFICATION DISCIPLINE (small visual deltas are EXPECTED)
 
 DONE WHEN (all verified in this worktree)
 1. rg finds no hand-rolled card-container or pill-span patterns in
-   ui/src/components/** or ui/src/pages/** outside documented inline
+   apps/ui/src/components/** or apps/ui/src/pages/** outside documented inline
    allowlist comments; converted sites import Card/Badge/SidebarNavItem.
 2. C2/C3 verdicts written in COMPONENT-INVENTORY.md; C11 policy
    recorded in DECISION-SHEET.md.

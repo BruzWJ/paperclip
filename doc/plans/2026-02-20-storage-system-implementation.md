@@ -44,13 +44,13 @@ Add a single storage subsystem for Paperclip that supports:
   - localDisk.baseDir
   - s3.bucket, s3.region, s3.endpoint?, s3.prefix?, s3.forcePathStyle?
 - [ ] `packages/shared/src/index.ts`: export new storage config/types.
-- [ ] `cli/src/config/schema.ts`: ensure re-export includes new storage schema/types.
-- [ ] `cli/src/commands/configure.ts`: add `storage` section support.
-- [ ] `cli/src/commands/onboard.ts`: initialize default storage config.
-- [ ] `cli/src/prompts/storage.ts`: new prompt flow for local disk vs s3 settings.
-- [ ] `cli/src/prompts/index` (if present) or direct imports: wire new storage prompt.
-- [ ] `server/src/config.ts`: load storage config and resolve home-aware local path.
-- [ ] `server/src/home-paths.ts`: add `resolveDefaultStorageDir()`.
+- [ ] `packages/cli/src/config/schema.ts`: ensure re-export includes new storage schema/types.
+- [ ] `packages/cli/src/commands/configure.ts`: add `storage` section support.
+- [ ] `packages/cli/src/commands/onboard.ts`: initialize default storage config.
+- [ ] `packages/cli/src/prompts/storage.ts`: new prompt flow for local disk vs s3 settings.
+- [ ] `packages/cli/src/prompts/index` (if present) or direct imports: wire new storage prompt.
+- [ ] `apps/server/src/config.ts`: load storage config and resolve home-aware local path.
+- [ ] `apps/server/src/home-paths.ts`: add `resolveDefaultStorageDir()`.
 - [ ] `doc/CLI.md`: document `configure --section storage`.
 - [ ] `doc/DEVELOPING.md`: document default local storage path and overrides.
 
@@ -64,15 +64,15 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Checklist (Per File)
 
-- [ ] `server/src/storage/types.ts`: define provider + service interfaces.
-- [ ] `server/src/storage/service.ts`: provider-agnostic service (key generation, validation, stream APIs).
-- [ ] `server/src/storage/local-disk-provider.ts`: implement local disk provider with safe path resolution.
-- [ ] `server/src/storage/s3-provider.ts`: implement S3-compatible provider (`@aws-sdk/client-s3`).
-- [ ] `server/src/storage/provider-registry.ts`: provider lookup by configured id.
-- [ ] `server/src/storage/index.ts`: export storage factory helpers.
-- [ ] `server/src/services/index.ts`: export `storageService` factory.
-- [ ] `server/src/app.ts` or route wiring point: inject/use storage service where needed.
-- [ ] `server/package.json`: add AWS SDK dependency if not present.
+- [ ] `apps/server/src/storage/types.ts`: define provider + service interfaces.
+- [ ] `apps/server/src/storage/service.ts`: provider-agnostic service (key generation, validation, stream APIs).
+- [ ] `apps/server/src/storage/local-disk-provider.ts`: implement local disk provider with safe path resolution.
+- [ ] `apps/server/src/storage/s3-provider.ts`: implement S3-compatible provider (`@aws-sdk/client-s3`).
+- [ ] `apps/server/src/storage/provider-registry.ts`: provider lookup by configured id.
+- [ ] `apps/server/src/storage/index.ts`: export storage factory helpers.
+- [ ] `apps/server/src/services/index.ts`: export `storageService` factory.
+- [ ] `apps/server/src/app.ts` or route wiring point: inject/use storage service where needed.
+- [ ] `apps/server/package.json`: add AWS SDK dependency if not present.
 
 ### Acceptance Criteria
 
@@ -110,15 +110,15 @@ Add a single storage subsystem for Paperclip that supports:
 ### Checklist (Per File)
 
 - [ ] `packages/shared/src/validators/issue.ts`: add schemas for upload/list/delete attachment operations.
-- [ ] `server/src/services/issues.ts`: add attachment CRUD helpers with company checks.
-- [ ] `server/src/routes/issues.ts`: add endpoints:
+- [ ] `apps/server/src/services/issues.ts`: add attachment CRUD helpers with company checks.
+- [ ] `apps/server/src/routes/issues.ts`: add endpoints:
   - `POST /companies/:companyId/issues/:issueId/attachments` (multipart)
   - `GET /issues/:issueId/attachments`
   - `GET /attachments/:attachmentId/content`
   - `DELETE /attachments/:attachmentId`
-- [ ] `server/src/routes/authz.ts`: reuse/enforce company access for attachment endpoints.
-- [ ] `server/src/services/activity-log.ts` usage callsites: log attachment add/remove mutations.
-- [ ] `server/src/app.ts`: ensure multipart parsing middleware is in place for upload route.
+- [ ] `apps/server/src/routes/authz.ts`: reuse/enforce company access for attachment endpoints.
+- [ ] `apps/server/src/services/activity-log.ts` usage callsites: log attachment add/remove mutations.
+- [ ] `apps/server/src/app.ts`: ensure multipart parsing middleware is in place for upload route.
 
 ### API Behavior
 
@@ -136,11 +136,11 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Checklist (Per File)
 
-- [ ] `ui/src/api/issues.ts`: add attachment API client methods.
-- [ ] `ui/src/api/client.ts`: support multipart upload helper (no JSON `Content-Type` for `FormData`).
-- [ ] `ui/src/lib/queryKeys.ts`: add issue attachment query keys.
-- [ ] `ui/src/pages/IssueDetail.tsx`: add upload UI + attachment list/query invalidation.
-- [ ] `ui/src/components/CommentThread.tsx`: optional comment image attach or display linked images.
+- [ ] `apps/ui/src/api/issues.ts`: add attachment API client methods.
+- [ ] `apps/ui/src/api/client.ts`: support multipart upload helper (no JSON `Content-Type` for `FormData`).
+- [ ] `apps/ui/src/lib/queryKeys.ts`: add issue attachment query keys.
+- [ ] `apps/ui/src/pages/IssueDetail.tsx`: add upload UI + attachment list/query invalidation.
+- [ ] `apps/ui/src/components/CommentThread.tsx`: optional comment image attach or display linked images.
 - [ ] `packages/shared/src/types/index.ts`: ensure attachment types are consumed cleanly in UI.
 
 ### Acceptance Criteria
@@ -153,9 +153,9 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Checklist (Per File)
 
-- [ ] `cli/src/checks/storage-check.ts`: add storage check (local writable dir, optional S3 reachability check).
-- [ ] `cli/src/checks/index.ts`: export new storage check.
-- [ ] `cli/src/commands/doctor.ts`: include storage check in doctor sequence.
+- [ ] `packages/cli/src/checks/storage-check.ts`: add storage check (local writable dir, optional S3 reachability check).
+- [ ] `packages/cli/src/checks/index.ts`: export new storage check.
+- [ ] `packages/cli/src/commands/doctor.ts`: include storage check in doctor sequence.
 - [ ] `doc/DATABASE.md` or `doc/DEVELOPING.md`: mention storage backend behavior by deployment mode.
 - [ ] `doc/SPEC-implementation.md`: add storage subsystem and issue-attachment endpoint contract.
 
@@ -169,20 +169,20 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Server Integration Tests
 
-- [ ] `server/src/__tests__/issue-attachments.auth.test.ts`: company boundary and permission tests.
-- [ ] `server/src/__tests__/issue-attachments.lifecycle.test.ts`: upload/list/read/delete flow.
-- [ ] `server/src/__tests__/storage-local-provider.test.ts`: local provider path safety and round-trip.
-- [ ] `server/src/__tests__/storage-s3-provider.test.ts`: s3 provider contract (mocked client).
-- [ ] `server/src/__tests__/activity-log.attachments.test.ts`: mutation logging assertions.
+- [ ] `apps/server/src/__tests__/issue-attachments.auth.test.ts`: company boundary and permission tests.
+- [ ] `apps/server/src/__tests__/issue-attachments.lifecycle.test.ts`: upload/list/read/delete flow.
+- [ ] `apps/server/src/__tests__/storage-local-provider.test.ts`: local provider path safety and round-trip.
+- [ ] `apps/server/src/__tests__/storage-s3-provider.test.ts`: s3 provider contract (mocked client).
+- [ ] `apps/server/src/__tests__/activity-log.attachments.test.ts`: mutation logging assertions.
 
 ### CLI Tests
 
-- [ ] `cli/src/__tests__/configure-storage.test.ts`: configure section writes valid config.
-- [ ] `cli/src/__tests__/doctor-storage-check.test.ts`: storage health output and repair behavior.
+- [ ] `packages/cli/src/__tests__/configure-storage.test.ts`: configure section writes valid config.
+- [ ] `packages/cli/src/__tests__/doctor-storage-check.test.ts`: storage health output and repair behavior.
 
 ### UI Tests (if present in current stack)
 
-- [ ] `ui/src/...`: issue detail upload and error handling tests.
+- [ ] `apps/ui/src/...`: issue detail upload and error handling tests.
 
 ## Verification Gate Before Merge
 

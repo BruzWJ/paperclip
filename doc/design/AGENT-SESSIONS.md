@@ -26,7 +26,7 @@ The agent should: edit token(s) → run `pnpm test:storybook-visual` → show yo
 Review the gallery, iterate ("the dark red is too soft", "two different greens on toggles — one green"), then tell it to re-baseline and merge when you're satisfied.
 
 **Large (a day, unattended) — a bounded autonomous run.** Use `/goal` with a *measurable* finish line — the evaluator needs conditions a command can verify, not aspirations:
-> Good conditions: "rg finds zero palette classes in ui/src/components", "the snapshot suite passes against the pinned external baseline", "pnpm check:token-gates reports 3/3 CLEAN".
+> Good conditions: "rg finds zero palette classes in apps/ui/src/components", "the snapshot suite passes against the pinned external baseline", "pnpm check:token-gates reports 3/3 CLEAN".
 > Bad conditions: "the UI feels cleaner", "design is more consistent".
 
 See `doc/design/GOAL-PROMPT.md` for a complete worked example (the run that built this system), including the phase structure and guardrails worth copying: work in a worktree, commit per phase, never re-baseline without human review, stop-and-report over partial application.

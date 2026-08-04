@@ -136,7 +136,7 @@ test("runCheck ignores opt-in marker outside the scoped tree", () => {
     );
     const code = runCheck({
       repoRoot: tmpRoot,
-      scanRoots: ["packages/adapters", "server/src"],
+      scanRoots: ["packages/adapters", "apps/server/src"],
       log: () => {},
       error: () => {},
     });

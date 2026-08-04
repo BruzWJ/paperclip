@@ -4,12 +4,12 @@ Status: Proposed
 Date: 2026-04-07
 Audience: Product and engineering
 Related:
-- `ui/src/pages/IssueDetail.tsx`
-- `ui/src/components/IssueProperties.tsx`
-- `ui/src/api/issues.ts`
-- `ui/src/lib/queryKeys.ts`
-- `server/src/routes/issues.ts`
-- `server/src/services/issues.ts`
+- `apps/ui/src/pages/IssueDetail.tsx`
+- `apps/ui/src/components/IssueProperties.tsx`
+- `apps/ui/src/api/issues.ts`
+- `apps/ui/src/lib/queryKeys.ts`
+- `apps/server/src/routes/issues.ts`
+- `apps/server/src/services/issues.ts`
 - [PAP-1192](/PAP/issues/PAP-1192)
 - [PAP-1191](/PAP/issues/PAP-1191)
 - [PAP-1188](/PAP/issues/PAP-1188)
@@ -85,7 +85,7 @@ Pattern: the product has recurring pressure to reduce blank/loading states acros
 
 ## 4.1 Mount query fan-out is high
 
-`ui/src/pages/IssueDetail.tsx` mounts all of these data sources up front:
+`apps/ui/src/pages/IssueDetail.tsx` mounts all of these data sources up front:
 
 - issue detail
 - comments
@@ -117,14 +117,14 @@ That is expensive relative to the need.
 Important detail:
 
 - the server route already supports `parentId`
-- `server/src/services/issues.ts` already supports `parentId`
-- but `ui/src/api/issues.ts` does not expose `parentId` in the filter type
+- `apps/server/src/services/issues.ts` already supports `parentId`
+- but `apps/ui/src/api/issues.ts` does not expose `parentId` in the filter type
 
 So the client is missing an already-supported narrow query path.
 
 ## 4.3 Comments are still fetched as full-thread loads
 
-`server/src/routes/issues.ts` and `server/src/services/issues.ts` already support:
+`apps/server/src/routes/issues.ts` and `apps/server/src/services/issues.ts` already support:
 
 - `after`
 - `order`
@@ -163,7 +163,7 @@ That is duplicate polling for closely related state.
 
 ## 4.6 Properties panel duplicates more list fetching
 
-`ui/src/components/IssueProperties.tsx` fetches:
+`apps/ui/src/components/IssueProperties.tsx` fetches:
 
 - session
 - agents list
@@ -286,7 +286,7 @@ The same standards should apply to:
 ## 7. Suggested Execution Order
 
 1. `PAP-1192`: issue-detail skeletons and staged loading
-2. add `parentId` support to `ui/src/api/issues.ts` and switch child-issue fetching to a narrow query
+2. add `parentId` support to `apps/ui/src/api/issues.ts` and switch child-issue fetching to a narrow query
 3. move comments to bounded initial load plus incremental updates
 4. shrink invalidation and polling scope
 5. only then decide whether a new issue-detail bootstrap endpoint is still needed

@@ -121,21 +121,21 @@ export function scanTestPatterns(files) {
 
 const SENSITIVE_PATHS = [
   // Advisory 2 & 11: OS command injection / privilege escalation via provisionCommand / cleanupCommand
-  'server/src/services/workspace-realization.ts',
-  'server/src/routes/execution-workspaces.ts',
-  'server/src/routes/workspace-command-authz.ts',
+  'apps/server/src/services/workspace-realization.ts',
+  'apps/server/src/routes/execution-workspaces.ts',
+  'apps/server/src/routes/workspace-command-authz.ts',
   // Advisory 3 & 6: Cross-tenant agent API key minting and IDOR on /agents/:id/keys
-  'server/src/routes/agents.ts',
+  'apps/server/src/routes/agents.ts',
   // Advisory 4: Approval decision attribution spoofing via decidedByUserId
-  'server/src/routes/approvals.ts',
+  'apps/server/src/routes/approvals.ts',
   // Advisory 5: Stored XSS via javascript: URLs in MarkdownBody (urlTransform)
-  'ui/src/components/MarkdownBody.tsx',
+  'apps/ui/src/components/MarkdownBody.tsx',
   // Advisory 7: Unauthenticated access to protected endpoints
-  'server/src/routes/authz.ts',
+  'apps/server/src/routes/authz.ts',
   // Advisory 8: Unauthenticated RCE via import authorization bypass
-  'server/src/routes/companies.ts',
+  'apps/server/src/routes/companies.ts',
   // Advisory 9: Malicious skills able to exfiltrate / destroy user data
-  'server/src/routes/company-skills.ts',
+  'apps/server/src/routes/company-skills.ts',
 ];
 
 export function scanSensitivePaths(files) {

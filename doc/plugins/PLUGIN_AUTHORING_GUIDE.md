@@ -383,7 +383,7 @@ the user chose as soon as they navigate away.
 Use shared components from `@paperclipai/plugin-sdk/ui` when the plugin needs a
 Paperclip-native control. The host owns the implementation, so plugins inherit
 the board's current styling, ordering, recent selections, and dark-mode behavior
-without importing `ui/src` internals.
+without importing `apps/ui/src` internals.
 
 Prefer shared components for common Paperclip UX patterns to reduce drift and
 deprecation risk, especially for issue/assignment flows and routine or sidebar-like
@@ -496,7 +496,7 @@ Boundary rules:
   plugin/host boundary in v1; the supported escape hatches are
   `fileBadges` (status pill keyed by path) and `fileTones` (row tone keyed by
   path).
-- Do not import the host's `FileTree.tsx` or any `ui/src/*` module. The SDK
+- Do not import the host's `FileTree.tsx` or any `apps/ui/src/*` module. The SDK
   declaration is the only supported import path for plugin UI.
 - The shared `FileTree` is for rendering and selection. Plugin-specific editors,
   ingest flows, query forms, and lint runs stay inside the plugin and do not
@@ -599,7 +599,7 @@ pnpm --filter <your-plugin-package> build
 If you changed host integration too, also run:
 
 ```bash
-pnpm -r typecheck
+pnpm typecheck
 pnpm test:run
 pnpm build
 ```

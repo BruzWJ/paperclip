@@ -21,10 +21,10 @@ function scan(path: string, source: string) {
 
 test("rejects correlation fields and wire literals from public boundaries", () => {
   const fixtures = [
-    ["server/src/routes/adapters.ts", "const result = { nativeCorrelationKind: kind };"],
-    ["server/src/routes/openapi.ts", "const schema = z.object({ nativeCorrelation: z.unknown() });"],
+    ["apps/server/src/routes/adapters.ts", "const result = { nativeCorrelationKind: kind };"],
+    ["apps/server/src/routes/openapi.ts", "const schema = z.object({ nativeCorrelation: z.unknown() });"],
     ["packages/shared/src/types/adapter.ts", "export interface PublicAdapter { nativeCorrelation?: unknown }"],
-    ["ui/src/api/adapters.ts", "const kind = 'issue-execution-native/v1';"],
+    ["apps/ui/src/api/adapters.ts", "const kind = 'issue-execution-native/v1';"],
     ["packages/plugins/sdk/src/index.ts", "export const nativeCorrelationKind = 'leak';"],
   ] as const;
 
@@ -44,7 +44,7 @@ test("rejects adapter codec and generic result propagation", () => {
       "export interface Result { nativeCorrelation?: unknown }",
     ],
     [
-      "server/src/services/run-result.ts",
+      "apps/server/src/services/run-result.ts",
       "logger.info({ nativeCorrelation: result.nativeCorrelation });",
     ],
   ] as const;
@@ -79,7 +79,7 @@ test("ACP client and event boundaries cannot transport correlation fields", () =
   for (const path of [
     "packages/adapter-utils/src/acp-subprocess/client.ts",
     "packages/adapter-utils/src/acp-subprocess/events.ts",
-    "server/src/services/issue-execution-plan-live.ts",
+    "apps/server/src/services/issue-execution-plan-live.ts",
   ]) {
     const violations = scan(
       path,
@@ -95,7 +95,7 @@ test("ACP client and event boundaries cannot transport correlation fields", () =
 
 test("fixed envelope literal cannot move to another internal service", () => {
   const violations = scan(
-    "server/src/services/native-correlation.ts",
+    "apps/server/src/services/native-correlation.ts",
     'const envelopeVersion = "issue-execution-native/v1";',
   );
   assert.deepEqual(

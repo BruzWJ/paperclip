@@ -1,0 +1,7 @@
+{
+  "name": "@paperclipai/docs",
+  "private": true,
+  "scripts": {
+    "dev": "npx mintlify dev"
+  }
+}

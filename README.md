@@ -377,8 +377,8 @@ Agents run when a canonical issue operation commits executable work: creation or
 pnpm dev              # Full dev (API + UI, watch mode)
 pnpm dev:once         # Full dev without file watching
 pnpm dev:server       # Server only
-pnpm build            # Build all
-pnpm typecheck        # Type checking
+pnpm build            # Build all workspaces with Turborepo
+pnpm typecheck        # Type-check workspaces with Turborepo
 pnpm test             # Cheap default test run (Vitest only)
 pnpm test:watch       # Vitest watch mode
 pnpm test:e2e         # Playwright browser suite
@@ -387,6 +387,34 @@ pnpm db:migrate       # Apply migrations
 ```
 
 `pnpm test` does not run Playwright. Browser suites stay separate and are typically run only when working on those flows or in CI.
+
+Paperclip uses Turborepo for cached, dependency-aware workspace builds and
+typechecks. The managed `pnpm dev` supervisor and stable `pnpm test` runner keep
+their existing Paperclip-specific process, isolation, and sharding behavior.
+
+The monorepo separates deployable applications from reusable and publishable
+packages:
+
+```text
+apps/
+  server/        # Express API and orchestration services
+  ui/            # React + Vite board UI
+  docs/           # Published Mintlify documentation site
+packages/
+  cli/            # Publishable Paperclip CLI
+  db/             # Drizzle schema, migrations, and database clients
+  shared/         # Shared contracts, validators, and constants
+  adapter-utils/  # ACPX runtime discovery and execution bridge
+  adapters/       # Adapter-authoring guidance
+  skills-catalog/ # Bundled skill catalog and manifest builder
+  teams-catalog/  # Bundled team catalog and manifest builder
+  *-mcp-server/   # MCP server packages and fixtures
+  plugins/        # Plugin SDK, tooling, plugins, and examples
+doc/              # Internal product, engineering, operations, and plan docs
+```
+
+`apps/docs/` is the public documentation application. The similarly named
+`doc/` directory is deliberately retained for repository-internal documents.
 
 See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 

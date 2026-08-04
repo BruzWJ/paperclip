@@ -12,7 +12,7 @@ Context: Follow-up from run `faeab00e-7857-4acc-b2b2-86f6d078adb4`
 
 Root cause is explicit route logic:
 
-- `server/src/routes/agents.ts` currently blocks any agent patching another agent:
+- `apps/server/src/routes/agents.ts` currently blocks any agent patching another agent:
   - `if (req.actor.type === "agent" && req.actor.agentId !== id) { ... "Agent can only modify itself" }`
 
 So even though the CEO has hire permission, the route still enforces old self-only patch behavior.

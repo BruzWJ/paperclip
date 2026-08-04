@@ -28,7 +28,7 @@ function fixtureRoot(): string {
   roots.add(root);
   write(
     root,
-    "server/src/routes/tool-gateway.ts",
+    "apps/server/src/routes/tool-gateway.ts",
     [
       'router.post("/tool-gateway/gateways/:gatewayId/tokens", () => createNamedGatewayToken({}));',
       'router.post("/tool-gateway/gateway-tokens/:tokenId/revoke", () => revokeNamedGatewayToken({}));',
@@ -39,7 +39,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/tool-gateway.ts",
+    "apps/server/src/services/tool-gateway.ts",
     [
       "generateNamedGatewayToken; namedGatewayTokenId; hashGatewayToken; consumeProtocolRateLimit;",
       "policyService.decide(); approval_requested; writeAudit();",
@@ -75,12 +75,12 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/routes/run-tools.ts",
+    "apps/server/src/routes/run-tools.ts",
     'router.post("/run-tools", () => { gateway.listTools(token); gateway.callTool({}); });\n',
   );
   write(
     root,
-    "server/src/services/prompt-capability-gateway.ts",
+    "apps/server/src/services/prompt-capability-gateway.ts",
     [
       'const PROMPT_CAPABILITY_BEARER_PREFIX = "pc_run_v1_";',
       'const PLUGIN_RUN_CONTEXT_HANDLE_PREFIX = "pc_plugin_ctx_v1_";',
@@ -95,7 +95,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-prompt-cycle-postgres.ts",
+    "apps/server/src/services/issue-execution-prompt-cycle-postgres.ts",
     [
       "import { mintPromptCapabilityBearer } from './prompt-capability-gateway.js';",
       "const repository = {",
@@ -108,15 +108,15 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/issue-execution-attempt-executor.ts",
+    "apps/server/src/services/issue-execution-attempt-executor.ts",
     "await repository.mintPendingCapability(input.prompt);\n",
   );
   write(
     root,
-    "server/src/services/runtime-interface-compiler.ts",
+    "apps/server/src/services/runtime-interface-compiler.ts",
     "export function compileRuntimeInterface() {}\n",
   );
-  write(root, "server/src/services/index.ts", "export {};\n");
+  write(root, "apps/server/src/services/index.ts", "export {};\n");
   return root;
 }
 
@@ -133,7 +133,7 @@ test("rejects removal of a retained named gateway route", () => {
   const root = fixtureRoot();
   replace(
     root,
-    "server/src/routes/tool-gateway.ts",
+    "apps/server/src/routes/tool-gateway.ts",
     'router.post("/tool-gateway/gateways/:gatewayId/tokens"',
     'router.post("/gone"',
   );
@@ -146,7 +146,7 @@ for (const token of [
 ] as const) {
   test(`rejects retired generic session surface ${token}`, () => {
     const root = fixtureRoot();
-    write(root, "server/src/routes/legacy.ts", `export const legacy = ${JSON.stringify(token)};\n`);
+    write(root, "apps/server/src/routes/legacy.ts", `export const legacy = ${JSON.stringify(token)};\n`);
     assert.ok(gatewayCredentialBoundaryViolations(root).some((v) => v.includes(token)));
   });
 }
@@ -155,8 +155,8 @@ test("rejects a shared run/plugin credential classifier", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/prompt-capability-gateway.ts",
-    `${readFileSync(join(root, "server/src/services/prompt-capability-gateway.ts"), "utf8")}\nfunction classifyCapabilityCredential() {}\n`,
+    "apps/server/src/services/prompt-capability-gateway.ts",
+    `${readFileSync(join(root, "apps/server/src/services/prompt-capability-gateway.ts"), "utf8")}\nfunction classifyCapabilityCredential() {}\n`,
   );
   assert.ok(gatewayCredentialBoundaryViolations(root).some((v) => v.includes("classifier/union")));
 });
@@ -165,8 +165,8 @@ test("rejects named-token authentication through the run gateway", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/prompt-capability-gateway.ts",
-    `${readFileSync(join(root, "server/src/services/prompt-capability-gateway.ts"), "utf8")}\nnamedGatewayTokenId(token);\n`,
+    "apps/server/src/services/prompt-capability-gateway.ts",
+    `${readFileSync(join(root, "apps/server/src/services/prompt-capability-gateway.ts"), "utf8")}\nnamedGatewayTokenId(token);\n`,
   );
   assert.ok(gatewayCredentialBoundaryViolations(root).some((v) => v.includes("named-gateway credentials entered")));
 });
@@ -175,7 +175,7 @@ test("rejects run authentication in the named-token owner", () => {
   const root = fixtureRoot();
   replace(
     root,
-    "server/src/services/tool-gateway.ts",
+    "apps/server/src/services/tool-gateway.ts",
     "  namedGatewayTokenId;",
     "  assertPromptCapabilityCredential; namedGatewayTokenId;",
   );
@@ -186,7 +186,7 @@ test("rejects named-token fallback in run-tools", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/routes/run-tools.ts",
+    "apps/server/src/routes/run-tools.ts",
     'router.post("/run-tools", () => { namedGatewayTokenId(token); gateway.listTools(token); gateway.callTool({}); });\n',
   );
   assert.ok(gatewayCredentialBoundaryViolations(root).some((v) => v.includes("run-tools endpoint accepts")));
@@ -194,13 +194,13 @@ test("rejects named-token fallback in run-tools", () => {
 
 test("rejects a second production run-bearer mint caller", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/rogue-mint.ts", "mintPromptCapabilityBearer();\n");
+  write(root, "apps/server/src/services/rogue-mint.ts", "mintPromptCapabilityBearer();\n");
   assert.ok(gatewayCredentialBoundaryViolations(root).some((v) => v.includes("minted outside")));
 });
 
 test("rejects exporting the raw run-bearer mint", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/index.ts", "export { mintPromptCapabilityBearer };\n");
+  write(root, "apps/server/src/services/index.ts", "export { mintPromptCapabilityBearer };\n");
   assert.ok(gatewayCredentialBoundaryViolations(root).some((v) => v.includes("raw run-bearer mint is exported")));
 });
 
@@ -208,7 +208,7 @@ test("rejects loss of named token hash/expiry/revocation enforcement", () => {
   const root = fixtureRoot();
   replace(
     root,
-    "server/src/services/tool-gateway.ts",
+    "apps/server/src/services/tool-gateway.ts",
     "  namedGatewayTokenId; hashGatewayToken; toolMcpGatewayTokens; revokedAt; expiresAt;",
     "  namedGatewayTokenId; hashGatewayToken; toolMcpGatewayTokens; revokedAt;",
   );

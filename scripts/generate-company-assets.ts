@@ -13,12 +13,12 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { renderOrgChartPng, type OrgNode, type OrgChartOverlay } from "../server/src/routes/org-chart-svg.js";
+import { renderOrgChartPng, type OrgNode, type OrgChartOverlay } from "../apps/server/src/routes/org-chart-svg.js";
 import {
   generateReadme,
   type CompanyReadmeAgent,
   type CompanyReadmeManifest,
-} from "../server/src/services/company-export-readme.js";
+} from "../apps/server/src/services/company-export-readme.js";
 import type { CompanyPortabilityManifest } from "@paperclipai/shared";
 
 // ── YAML frontmatter parser (minimal, no deps) ──────────────────

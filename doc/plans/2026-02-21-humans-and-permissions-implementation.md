@@ -58,8 +58,8 @@ If this document conflicts with prior exploratory notes, this document wins for 
 
 Current baseline (repo as of this doc):
 
-- server actor model defaults to `board` in `server/src/middleware/auth.ts`
-- authorization is mostly `assertBoard` + company check in `server/src/routes/authz.ts`
+- server actor model defaults to `board` in `apps/server/src/middleware/auth.ts`
+- authorization is mostly `assertBoard` + company check in `apps/server/src/routes/authz.ts`
 - no human auth/session tables in local schema
 - no principal membership or grants tables
 - no invite or join-request lifecycle
@@ -83,7 +83,7 @@ Add explicit runtime mode:
 Config behavior:
 
 - mode stored in config file (`packages/shared/src/config-schema.ts`)
-- loaded in server config (`server/src/config.ts`)
+- loaded in server config (`apps/server/src/config.ts`)
 - surfaced in `/api/health`
 
 Startup guardrails:
@@ -324,9 +324,9 @@ All under `/api`.
 Files:
 
 - `packages/shared/src/config-schema.ts`
-- `server/src/config.ts`
-- `server/src/index.ts`
-- `server/src/startup-banner.ts`
+- `apps/server/src/config.ts`
+- `apps/server/src/index.ts`
+- `apps/server/src/startup-banner.ts`
 
 Changes:
 
@@ -339,9 +339,9 @@ Changes:
 
 Files:
 
-- `server/package.json` (dependency)
-- `server/src/auth/*` (new)
-- `server/src/app.ts` (mount auth handler endpoints + session middleware)
+- `apps/server/package.json` (dependency)
+- `apps/server/src/auth/*` (new)
+- `apps/server/src/app.ts` (mount auth handler endpoints + session middleware)
 
 Changes:
 
@@ -353,9 +353,9 @@ Changes:
 
 Files:
 
-- `server/src/middleware/auth.ts`
-- `server/src/routes/authz.ts`
-- `server/src/middleware/board-mutation-guard.ts`
+- `apps/server/src/middleware/auth.ts`
+- `apps/server/src/routes/authz.ts`
+- `apps/server/src/middleware/board-mutation-guard.ts`
 
 Changes:
 
@@ -372,7 +372,7 @@ Changes:
 
 Files:
 
-- `server/src/services` (new modules)
+- `apps/server/src/services` (new modules)
   - `memberships.ts`
   - `permissions.ts`
   - `invites.ts`
@@ -389,7 +389,7 @@ Changes:
 
 Files:
 
-- `server/src/routes/index.ts` and new route modules:
+- `apps/server/src/routes/index.ts` and new route modules:
   - `auth.ts` (if needed)
   - `invites.ts`
   - `join-requests.ts`
@@ -407,7 +407,7 @@ Changes:
 
 Files:
 
-- `server/src/services/activity-log.ts`
+- `apps/server/src/services/activity-log.ts`
 - call sites in invite/join/member/admin routes
 
 Required actions:
@@ -429,8 +429,8 @@ Required actions:
 
 Files:
 
-- `server/src/services/live-events.ts`
-- `server/src/realtime/live-events-ws.ts`
+- `apps/server/src/services/live-events.ts`
+- `apps/server/src/realtime/live-events-ws.ts`
 - inbox data source endpoint(s)
 
 Changes:
@@ -442,10 +442,10 @@ Changes:
 
 Files:
 
-- `cli/src/index.ts`
-- `cli/src/commands/onboard.ts`
-- `cli/src/commands/configure.ts`
-- `cli/src/prompts/server.ts`
+- `packages/cli/src/index.ts`
+- `packages/cli/src/commands/onboard.ts`
+- `packages/cli/src/commands/configure.ts`
+- `packages/cli/src/prompts/server.ts`
 
 Commands:
 
@@ -466,8 +466,8 @@ Config additions:
 
 Files:
 
-- routing: `ui/src/App.tsx`
-- API clients: `ui/src/api/*`
+- routing: `apps/ui/src/App.tsx`
+- API clients: `apps/ui/src/api/*`
 - pages/components (new):
   - `AuthLogin` / `AuthSignup` (cloud mode)
   - `BootstrapPending` page

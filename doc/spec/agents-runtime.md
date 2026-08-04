@@ -2,7 +2,7 @@
 
 Status: current
 
-The user-facing runtime guide is [docs/agents-runtime.md](../../docs/agents-runtime.md). This file records the protocol boundary expected by the ACPX bridge and server implementations.
+The user-facing runtime guide is [apps/docs/agents-runtime.md](../../apps/docs/agents-runtime.md). This file records the protocol boundary expected by the ACPX bridge and server implementations.
 
 ## Admission
 

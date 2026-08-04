@@ -12,7 +12,7 @@ configuration, and provider execution; Paperclip owns durable authority and
 request-scoped MCP.
 
 To make a CLI available, install and authenticate its ACPX-compatible native
-flow locally. See [Adding an ACPX-compatible CLI](../../docs/adapters/creating-an-adapter.md).
+flow locally. See [Adding an ACPX-compatible CLI](../../apps/docs/adapters/creating-an-adapter.md).
 
 Every advertised non-secret ACPX option is persisted as an immutable session
 configuration selection and applied through `session/set_config_option` before

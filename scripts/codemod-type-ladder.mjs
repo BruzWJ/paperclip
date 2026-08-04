@@ -18,9 +18,9 @@
  *   0.12em, 0.14em, 0.16em         -> --tracking-eyebrow: 0.14em
  *   0.18em, 0.2em, 0.22em, 0.24em  -> --tracking-caps: 0.2em
  *
- * The codemod rewrites every site under ui/src (components, pages, lib,
+ * The codemod rewrites every site under apps/ui/src (components, pages, lib,
  * context, plugins — all .ts/.tsx/.js/.jsx), replaces the --fs-* / --ls-*
- * definitions in ui/src/index.css with the named-ladder block, and fails
+ * definitions in apps/ui/src/index.css with the named-ladder block, and fails
  * loudly if any --fs-* / --ls-* reference survives (e.g. a var(--fs-12) site,
  * which has no token replacement because that bucket maps to a Tailwind
  * scale class and would need a manual decision).
@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
-const UI_SRC = resolve(REPO_ROOT, "ui/src");
+const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
 const CSS_PATH = resolve(UI_SRC, "index.css");
 
 // ── Site replacement map (exact strings, closing paren included) ─────────
@@ -111,7 +111,7 @@ const LADDER_BLOCK = `  /* ── Named type ladder (DECISION-SHEET.md B3, prese
   --tracking-eyebrow: 0.14em;
   --tracking-caps: 0.2em;`;
 
-// ── Walk ui/src ───────────────────────────────────────────────────────────
+// ── Walk apps/ui/src ───────────────────────────────────────────────────────────
 function walk(dir, out) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
@@ -165,7 +165,7 @@ if (!css.includes(LADDER_MARKER)) {
   console.log("index.css: ladder marker already present — skipped (idempotent)");
 }
 
-// ── Guard: no survivors anywhere in ui/src (incl. index.css) ─────────────
+// ── Guard: no survivors anywhere in apps/ui/src (incl. index.css) ─────────────
 const SURVIVOR_RE = /--(?:fs-[0-9a-z_]+|ls-[0-9_]+)/;
 const survivors = [];
 for (const f of [...files, CSS_PATH]) {

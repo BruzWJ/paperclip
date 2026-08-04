@@ -21,5 +21,5 @@ immutable adapter revision JSON and applied through ACPX's
 advertise an option, Paperclip does not
 offer or synthesize it.
 
-See `docs/adapters/creating-an-adapter.md` and
-`docs/adapters/external-adapters.md`.
+See `apps/docs/adapters/creating-an-adapter.md` and
+`apps/docs/adapters/external-adapters.md`.

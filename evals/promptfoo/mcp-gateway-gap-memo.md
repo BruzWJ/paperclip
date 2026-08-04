@@ -18,9 +18,9 @@
 
 The promptfoo suite evaluates provider behavior at the compiled run-interface boundary. It does not execute the gateway service or prove database-side enforcement. Those mechanics are covered by targeted Vitest coverage in:
 
-- `server/src/__tests__/tool-gateway.test.ts`
-- `server/src/__tests__/tool-gateway-service.test.ts`
-- `server/src/__tests__/tool-access-policy-service.test.ts`
+- `apps/server/src/__tests__/tool-gateway.test.ts`
+- `apps/server/src/__tests__/tool-gateway-service.test.ts`
+- `apps/server/src/__tests__/tool-access-policy-service.test.ts`
 
 ## Remaining gaps
 

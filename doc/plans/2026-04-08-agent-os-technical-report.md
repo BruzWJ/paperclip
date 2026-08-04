@@ -109,11 +109,11 @@ The most relevant current Paperclip surfaces for any future `agent-os` integrati
 
 - `packages/adapter-utils/src/types.ts`
   - shared adapter contract, session metadata, runtime service reporting, environment tests, and optional `detectModel()`
-- `server/src/services/issue-execution-attempt-executor.ts`
+- `apps/server/src/services/issue-execution-attempt-executor.ts`
   - persisted-ref execution, ACP invocation, cost capture, workspace realization, and canonical issue projections
-- `server/src/services/execution-workspaces.ts`
+- `apps/server/src/services/execution-workspaces.ts`
   - execution workspace lifecycle and git readiness/cleanup logic
-- `server/src/services/plugin-loader.ts`
+- `apps/server/src/services/plugin-loader.ts`
   - dynamic plugin activation, host capability boundaries, and runtime extension loading
 - local adapters such as `packages/adapters/codex-local/src/server/execute.ts` and peers
   - current host-CLI execution model that an `agent-os` runtime experiment would complement or replace for selected agents

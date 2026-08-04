@@ -5,9 +5,9 @@
  * Phase 2 (extraction), Batch 3/4 of the design-token audit
  * (branch design/token-extraction). Replaces hardcoded SIZE / SPACING /
  * RADIUS / SHADOW arbitrary Tailwind bracket values in
- * `ui/src/components/**` and `ui/src/pages/**` (including their
+ * `apps/ui/src/components/**` and `apps/ui/src/pages/**` (including their
  * *.test.tsx companions) with references to CSS custom-property tokens
- * defined in `ui/src/index.css`.
+ * defined in `apps/ui/src/index.css`.
  *
  * Patterns covered (all unambiguous bracket-literal Tailwind utilities —
  * like Batch 2's font-size/tracking sweep, a blanket regex is safe here
@@ -130,7 +130,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
-const UI_SRC = resolve(REPO_ROOT, "ui/src");
+const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
 const SCAN_DIRS = ["components", "pages"];
 
 const DRY_RUN = process.argv.includes("--check");
@@ -262,7 +262,7 @@ const ENV_ONLY_RE = /^env\((safe-area-inset-[a-z]+)\)$/;
 const THEME_SPACING_RE = /theme\(spacing\.([0-9.]+)\)/g;
 
 // Tailwind v4 default spacing scale: --spacing: 0.25rem (confirmed via Step 0:
-// no --spacing override exists in ui/src/index.css).
+// no --spacing override exists in apps/ui/src/index.css).
 const TAILWIND_SPACING_BASE_REM = 0.25;
 
 function resolveThemeSpacing(raw) {
@@ -432,7 +432,7 @@ function main() {
   const changedFiles = [];
 
   for (const filePath of files) {
-    const relPath = "ui/src/" + relative(UI_SRC, filePath);
+    const relPath = "apps/ui/src/" + relative(UI_SRC, filePath);
     const { changed, siteCount } = rewriteFile(filePath, relPath);
     if (changed) {
       filesChanged++;

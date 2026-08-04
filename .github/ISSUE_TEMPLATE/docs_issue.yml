@@ -25,7 +25,7 @@ body:
     attributes:
       label: Where is the issue?
       description: File path, URL, or section name.
-      placeholder: "e.g. README.md#installation, doc/DEVELOPING.md, docs/plugins.md"
+      placeholder: "e.g. README.md#installation, doc/DEVELOPING.md, apps/docs/start/quickstart.md"
     validations:
       required: true
 

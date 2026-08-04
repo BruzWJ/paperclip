@@ -180,7 +180,7 @@ export interface ServerAdapterModule {
 }
 
 // ---------------------------------------------------------------------------
-// UI config form values (moved from ui/src/components/AgentConfigForm.tsx)
+// UI config form values (moved from apps/ui/src/components/AgentConfigForm.tsx)
 // ---------------------------------------------------------------------------
 
 export interface CreateConfigValues {

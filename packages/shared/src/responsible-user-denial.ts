@@ -5,7 +5,7 @@
  * intersection of the agent's permissions and that user's permissions
  * (see PAP-12447 / PAP-12459). When the intersection denies, the authz layer
  * emits one of the codes below (`AuthorizationDecision.code` in
- * `server/src/services/authorization.ts`). This module is the single source of
+ * `apps/server/src/services/authorization.ts`). This module is the single source of
  * truth for how those codes are explained to humans, so every surface that
  * renders an agent-call failure uses consistent, actionable language.
  *

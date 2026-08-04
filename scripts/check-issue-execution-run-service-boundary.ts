@@ -15,16 +15,13 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const SCAN_ROOTS = [
   ".agents",
   ".github",
-  "cli",
+  "apps",
   "doc",
-  "docs",
   "docker",
   "evals",
   "packages",
   "scripts",
-  "server",
   "tests",
-  "ui",
 ] as const;
 const ROOT_FILES = [
   "AGENTS.md",
@@ -53,25 +50,25 @@ const SOURCE_EXTENSIONS = new Set([
 const SELF_TEST_PATH =
   "scripts/check-issue-execution-run-service-boundary.test.ts";
 const RUN_SERVICE_PATH =
-  "server/src/services/issue-execution-run-service.ts";
+  "apps/server/src/services/issue-execution-run-service.ts";
 const DISPATCHER_POSTGRES_PATH =
-  "server/src/services/issue-execution-dispatcher-postgres.ts";
+  "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
 const ATTEMPT_EXECUTOR_PATH =
-  "server/src/services/issue-execution-attempt-executor.ts";
+  "apps/server/src/services/issue-execution-attempt-executor.ts";
 const RUN_FINALIZER_PATH =
-  "server/src/services/issue-execution-finalization-postgres.ts";
+  "apps/server/src/services/issue-execution-finalization-postgres.ts";
 const RUN_SCHEMA_PATH =
   "packages/db/schema/issue_execution_runs.ts";
 const WATCHDOG_SCHEMA_PATH =
   "packages/db/schema/issue_execution_watchdog_decisions.ts";
-const RUN_ROUTE_PATH = "server/src/routes/runs.ts";
+const RUN_ROUTE_PATH = "apps/server/src/routes/runs.ts";
 const TOOL_EXECUTOR_PATH =
-  "server/src/services/runtime-tool-executor.ts";
+  "apps/server/src/services/runtime-tool-executor.ts";
 const TOOL_RETRIEVAL_PATH =
-  "server/src/services/context-retrieval-db.ts";
+  "apps/server/src/services/context-retrieval-db.ts";
 const TOOL_RETRIEVAL_CONTRACT_PATH =
-  "server/src/services/context-retrieval.ts";
-const OPENAPI_PATH = "server/src/routes/openapi.ts";
+  "apps/server/src/services/context-retrieval.ts";
+const OPENAPI_PATH = "apps/server/src/routes/openapi.ts";
 
 const LEGACY_TERMS = [
   ["heartbeat", "_runs"].join(""),
@@ -191,10 +188,10 @@ function isProductionRuntimePath(path: string): boolean {
   if (isTestPath(normalized)) return false;
   if (normalized.startsWith("packages/db/schema/")) return false;
   return (
-    normalized.startsWith("server/src/") ||
+    normalized.startsWith("apps/server/src/") ||
     normalized.startsWith("packages/") ||
-    normalized.startsWith("cli/src/") ||
-    normalized.startsWith("ui/src/")
+    normalized.startsWith("packages/cli/src/") ||
+    normalized.startsWith("apps/ui/src/")
   );
 }
 

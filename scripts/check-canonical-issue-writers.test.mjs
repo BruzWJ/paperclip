@@ -6,7 +6,7 @@ import {
   requiredOwnershipViolations,
 } from "./check-canonical-issue-writers.mjs";
 
-const INSERT_OWNER = "server/src/services/canonical-issue-aggregate.ts";
+const INSERT_OWNER = "apps/server/src/services/canonical-issue-aggregate.ts";
 
 function operations(violations) {
   return violations.map((entry) => entry.operation).sort();
@@ -14,7 +14,7 @@ function operations(violations) {
 
 test("rejects direct, aliased, namespace, helper-returned, and wrapped issue inserts", () => {
   const direct = inspectSourceText(
-    "server/src/services/legacy.ts",
+    "apps/server/src/services/legacy.ts",
     `
       import { issues as issueRows } from "@paperclipai/db";
       const alias = issueRows;
@@ -28,7 +28,7 @@ test("rejects direct, aliased, namespace, helper-returned, and wrapped issue ins
   assert.deepEqual(operations(direct), ["insert", "insert", "insert", "table-wrapper"]);
 
   const namespace = inspectSourceText(
-    "server/src/services/namespace-writer.ts",
+    "apps/server/src/services/namespace-writer.ts",
     `
       import * as schema from "@paperclipai/db";
       await db.insert(schema.issues).values({});
@@ -75,7 +75,7 @@ test("permits exactly one insert inside the canonical function", () => {
 
 test("rejects raw SQL inserts and later migration mutations of immutable fields", () => {
   const source = inspectSourceText(
-    "server/src/services/raw-writer.ts",
+    "apps/server/src/services/raw-writer.ts",
     `
       await tx.execute(sql\`insert into issues (id) values (\${id})\`);
       await tx.execute(sql\`update public.issues set request = \${request}\`);
@@ -92,7 +92,7 @@ test("rejects raw SQL inserts and later migration mutations of immutable fields"
 
 test("rejects direct, aliased, spread, and generic immutable updates", () => {
   const direct = inspectSourceText(
-    "server/src/services/legacy-update.ts",
+    "apps/server/src/services/legacy-update.ts",
     `
       import { issues as rows } from "@paperclipai/db";
       const requestPatch = { request: "replacement" };
@@ -119,12 +119,12 @@ test("allows the one statically closed control-state patch contract", () => {
       },
     };
   `;
-  assert.deepEqual(inspectSourceText("server/src/services/issues.ts", source), []);
+  assert.deepEqual(inspectSourceText("apps/server/src/services/issues.ts", source), []);
 });
 
 test("rejects a partial agent-execution creator pair at canonical creation", () => {
   const partial = inspectSourceText(
-    "server/src/services/runtime-issue-action-port.ts",
+    "apps/server/src/services/runtime-issue-action-port.ts",
     `
       await persistCanonicalIssueAggregateInTx(tx, {
         issue: {
@@ -137,7 +137,7 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
   assert.deepEqual(operations(partial), ["partial-creator-pair"]);
 
   const complete = inspectSourceText(
-    "server/src/services/runtime-issue-action-port.ts",
+    "apps/server/src/services/runtime-issue-action-port.ts",
     `
       await persistCanonicalIssueAggregateInTx(tx, {
         issue: {
@@ -154,7 +154,7 @@ test("rejects a partial agent-execution creator pair at canonical creation", () 
 function validOwnerGraph() {
   return new Map([
     [
-      "server/src/services/canonical-issue-aggregate.ts",
+      "apps/server/src/services/canonical-issue-aggregate.ts",
       `
         export interface CanonicalIssueAggregateInput { issue: { request: string } }
         export async function persistCanonicalIssueAggregateInTx(tx, input) {
@@ -165,16 +165,16 @@ function validOwnerGraph() {
       `,
     ],
     [
-      "server/src/services/issues.ts",
+      "apps/server/src/services/issues.ts",
       `type IssueControlStateUpdate = Omit<Row, | "request" | "creatorAuthorityId" | "creatorAdapterConfigRevisionId">;
        function updateControlState(data: IssueControlStateUpdate) {}`,
     ],
     [
-      "server/src/services/runtime-interface-compiler.ts",
+      "apps/server/src/services/runtime-interface-compiler.ts",
       `if (input.actionGrants.issue_create === true) descriptors.push(issueCreateDescriptor(input.issueCreateDirectChildren));`,
     ],
     [
-      "server/src/services/runtime-issue-action-port.ts",
+      "apps/server/src/services/runtime-issue-action-port.ts",
       `
         lockRuntimeActionAuthority(tx, capability, "issue_create", now);
         if (!input.capability.issueExecutionAuthorityId) throw denied();
@@ -195,10 +195,10 @@ test("requires compiler, action-port, aggregate, schema, and closed update owner
   assert.deepEqual(requiredOwnershipViolations(validOwnerGraph()), []);
 
   for (const [path, marker] of [
-    ["server/src/services/canonical-issue-aggregate.ts", "await assertAgentExecutionCreator(tx, issue);"],
-    ["server/src/services/issues.ts", '| "request"'],
-    ["server/src/services/runtime-interface-compiler.ts", "input.actionGrants.issue_create === true"],
-    ["server/src/services/runtime-issue-action-port.ts", "if (!input.capability.issueExecutionAuthorityId)"],
+    ["apps/server/src/services/canonical-issue-aggregate.ts", "await assertAgentExecutionCreator(tx, issue);"],
+    ["apps/server/src/services/issues.ts", '| "request"'],
+    ["apps/server/src/services/runtime-interface-compiler.ts", "input.actionGrants.issue_create === true"],
+    ["apps/server/src/services/runtime-issue-action-port.ts", "if (!input.capability.issueExecutionAuthorityId)"],
     ["packages/db/schema/issues.ts", 'request: text("request").notNull()'],
   ]) {
     const mutated = validOwnerGraph();

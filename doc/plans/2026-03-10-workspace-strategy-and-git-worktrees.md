@@ -492,8 +492,8 @@ Suggested columns:
 
 Files:
 
-- `server/src/services/projects.ts`
-- project routes in `server/src/routes/projects.ts`
+- `apps/server/src/services/projects.ts`
+- project routes in `apps/server/src/routes/projects.ts`
 
 Work items:
 
@@ -505,8 +505,8 @@ Work items:
 
 Files:
 
-- `server/src/services/issues.ts`
-- `server/src/routes/issues.ts`
+- `apps/server/src/services/issues.ts`
+- `apps/server/src/routes/issues.ts`
 
 Work items:
 
@@ -518,7 +518,7 @@ Work items:
 
 Primary file:
 
-- `server/src/services/issue-execution-attempt-executor.ts`
+- `apps/server/src/services/issue-execution-attempt-executor.ts`
 
 Current behavior should be refactored so workspace resolution is based on:
 
@@ -552,9 +552,9 @@ type EffectiveExecutionWorkspaceDecision = {
 
 Likely files:
 
-- `ui/src/components/ProjectProperties.tsx`
-- project detail/settings pages under `ui/src/pages/`
-- project API client in `ui/src/api/projects.ts`
+- `apps/ui/src/components/ProjectProperties.tsx`
+- project detail/settings pages under `apps/ui/src/pages/`
+- project API client in `apps/ui/src/api/projects.ts`
 
 Add a project-owned section:
 
@@ -576,8 +576,8 @@ Important UX rule:
 
 Likely files:
 
-- issue create UI components and issue detail edit surfaces in `ui/src/pages/`
-- issue API client in `ui/src/api/issues.ts`
+- issue create UI components and issue detail edit surfaces in `apps/ui/src/pages/`
+- issue API client in `apps/ui/src/api/issues.ts`
 
 Add:
 
@@ -595,9 +595,9 @@ in the default issue creation flow.
 
 Files:
 
-- `ui/src/adapters/local-workspace-runtime-fields.tsx`
-- `ui/src/adapters/codex-local/config-fields.tsx`
-- `ui/src/adapters/claude-local/config-fields.tsx`
+- `apps/ui/src/adapters/local-workspace-runtime-fields.tsx`
+- `apps/ui/src/adapters/codex-local/config-fields.tsx`
+- `apps/ui/src/adapters/claude-local/config-fields.tsx`
 
 Technical direction:
 
@@ -625,7 +625,7 @@ Work items:
 
 Files:
 
-- `server/src/services/workspace-runtime.ts`
+- `apps/server/src/services/workspace-runtime.ts`
 
 Work items:
 
@@ -641,7 +641,7 @@ This is not fully implemented today and should be treated as a separate orchestr
 
 Likely files:
 
-- `server/src/services/issue-execution-attempt-executor.ts`
+- `apps/server/src/services/issue-execution-attempt-executor.ts`
 - future git/provider integration helpers
 
 Needed decisions:
@@ -661,8 +661,8 @@ Suggested approach:
 
 Likely files:
 
-- `server/src/services/workspace-runtime.ts`
-- `server/src/services/issue-execution-attempt-executor.ts`
+- `apps/server/src/services/workspace-runtime.ts`
+- `apps/server/src/services/issue-execution-attempt-executor.ts`
 - any future merge-detection hooks
 
 Needed behaviors:
@@ -703,7 +703,7 @@ Paperclip already has the right foundation for a project-first model.
 
 - `project_workspaces` already exists in `packages/db/schema/project_workspaces.ts`
 - the shared `ProjectWorkspace` type already includes `cwd`, `repoUrl`, and `repoRef` in `packages/shared/src/types/project.ts`
-- docs already state that agents use the project's primary workspace for project-scoped issues in `docs/api/goals-and-projects.md`
+- docs already state that agents use the project's primary workspace for project-scoped issues in `apps/docs/api/goals-and-projects.md`
 
 ### Heartbeat already resolves workspace in the right order
 
@@ -713,7 +713,7 @@ Current run resolution already prefers:
 2. prior conversational session cwd
 3. agent-home fallback
 
-See `server/src/services/issue-execution-attempt-executor.ts`.
+See `apps/server/src/services/issue-execution-attempt-executor.ts`.
 
 ### Session resume is already cwd-aware
 
@@ -1128,7 +1128,7 @@ Acceptance:
 
 Primary touchpoints:
 
-- `server/src/services/issue-execution-attempt-executor.ts`
+- `apps/server/src/services/issue-execution-attempt-executor.ts`
 
 Acceptance:
 

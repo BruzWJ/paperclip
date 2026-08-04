@@ -22,7 +22,7 @@ describe("adapter-agnostic config keys", () => {
   });
 
   it("is imported by the adapter-revision editor instead of being re-declared", () => {
-    const uiSource = readRepoFile("ui/src/lib/agent-config-patch.ts");
+    const uiSource = readRepoFile("apps/ui/src/lib/agent-config-patch.ts");
 
     expect(uiSource).toContain("ADAPTER_AGNOSTIC_KEYS");
     expect(uiSource).toContain("from \"@paperclipai/shared\"");

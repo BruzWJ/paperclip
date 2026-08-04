@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const TSX_RUNNER = resolve(REPO_ROOT, "cli/node_modules/tsx/dist/cli.mjs");
+const TSX_RUNNER = resolve(REPO_ROOT, "packages/cli/node_modules/tsx/dist/cli.mjs");
 const EXTERNAL_DATABASE_GATE_PATH = [
   "scripts/check-no-",
   ["embed", "ded"].join(""),

@@ -5,9 +5,9 @@
  * Phase 2 (extraction), Batch 1/4 of the design-token audit
  * (branch design/token-extraction). Replaces hardcoded COLOR literals
  * (hex / rgb() / rgba() / hsl() / hsla() / oklch()) in Tailwind class
- * strings and inline style objects, in `ui/src/components/**` and
- * `ui/src/pages/**` (including their *.test.tsx companions), with
- * references to CSS custom-property tokens defined in `ui/src/index.css`.
+ * strings and inline style objects, in `apps/ui/src/components/**` and
+ * `apps/ui/src/pages/**` (including their *.test.tsx companions), with
+ * references to CSS custom-property tokens defined in `apps/ui/src/index.css`.
  *
  * Scope is deliberately a fixed, manually-audited SITE TABLE rather than a
  * blind hex-matching regex sweep: a generic `#[0-9a-f]{3,8}` regex produces
@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
-const UI_SRC = resolve(REPO_ROOT, "ui/src");
+const UI_SRC = resolve(REPO_ROOT, "apps/ui/src");
 
 const DRY_RUN = process.argv.includes("--check");
 
@@ -43,7 +43,7 @@ const DRY_RUN = process.argv.includes("--check");
  * `name` is the CSS custom-property name (without leading --).
  * `value` is the exact literal value from the source site.
  * `comment` documents where it came from / why, emitted above the
- * declaration in ui/src/index.css.
+ * declaration in apps/ui/src/index.css.
  */
 const NEW_TOKENS = [
   // --- Tailwind bracket color-class hex sites (section: bracket hex) ---
@@ -463,7 +463,7 @@ function main() {
   console.log(`  index.css token block:  ${cssChanged ? "added" : "already present (idempotent no-op)"}`);
   if (changedFiles.length) {
     console.log(`\n  Changed files:`);
-    for (const f of changedFiles) console.log(`    - ui/src/${f}`);
+    for (const f of changedFiles) console.log(`    - apps/ui/src/${f}`);
   }
 }
 

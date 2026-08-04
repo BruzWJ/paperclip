@@ -6,7 +6,7 @@ How to make visual changes now that the design system exists. Written for everyo
 
 Paperclip's look lives in **three layers**, and you almost always work in the first one:
 
-1. **Tokens** — every color, text size, spacing, radius, and shadow is a named value in `ui/src/index.css`. Change a token, and every surface using it follows.
+1. **Tokens** — every color, text size, spacing, radius, and shadow is a named value in `apps/ui/src/index.css`. Change a token, and every surface using it follows.
 2. **Components** — consume tokens, never raw values. One component per job (one Button, one Card, one ToggleSwitch).
 3. **Screenshots** — 510 baseline images (255 stories × light/dark) downloaded into `tests/storybook-visual/.snapshots/` from the pinned external archive in `tests/storybook-visual/baseline-manifest.json`. They are the proof of what the UI looks like. Any visual change shows up as a screenshot diff; no visual change proves itself the same way.
 
@@ -24,7 +24,7 @@ pnpm test:storybook-visual:update   # accept my intentional changes as the new b
 
 *"Make the corners rounder." "That amber is too loud." "Bump the smallest text size."*
 
-1. Find the token in `ui/src/index.css` (they're named and commented: `--radius`, `--status-task-todo`, `--text-micro`, …).
+1. Find the token in `apps/ui/src/index.css` (they're named and commented: `--radius`, `--status-task-todo`, `--text-micro`, …).
 2. Change the value.
 3. `pnpm test:storybook-visual` — it will "fail" on every affected story. That's the point: each failure writes a before/actual/diff image triplet into `tests/storybook-visual/test-results/`. Review them (or `npx playwright show-report` from `tests/storybook-visual/` for a browsable version).
 4. Happy? `pnpm test:storybook-visual:update`, review the generated bundle under `tests/storybook-visual/baseline-review/`, publish it from a trusted maintainer environment, then commit the token edit **and** the updated manifest metadata together.
@@ -45,8 +45,8 @@ Then **review the git diff and keep only the CSS-variable value changes** — th
 
 - **Values**: tokens only. No hex, no `text-[11px]`, no `p-[13px]`. If no token fits, **add a token** — that's a feature, not a workaround.
 - **Type**: use the named ladder — `--text-nano` (10px) / `--text-micro` (11px) / Tailwind `text-xs` (12) / `--text-compact` (13) / `text-sm` (14). Letter-spacing: `--tracking-label` / `--tracking-eyebrow` / `--tracking-caps`.
-- **Status**: anything that means running/idle/paused/error/todo/done/blocked uses the status system (`ui/src/lib/status-colors.ts` helpers or `--status-*` tokens). Liveness is always blue.
-- **Primitives**: check `ui/src/components/ui/` and `doc/design/COMPONENT-INVENTORY.md` before writing a new component. Switches are `ToggleSwitch`; badges/chips route through `brandChipBadge`.
+- **Status**: anything that means running/idle/paused/error/todo/done/blocked uses the status system (`apps/ui/src/lib/status-colors.ts` helpers or `--status-*` tokens). Liveness is always blue.
+- **Primitives**: check `apps/ui/src/components/ui/` and `doc/design/COMPONENT-INVENTORY.md` before writing a new component. Switches are `ToggleSwitch`; badges/chips route through `brandChipBadge`.
 - **Give it a story.** New visual surface = new Storybook story = automatic screenshot coverage forever.
 - `pnpm check:token-gates` before you push. If a value genuinely can't be a token (third-party config, canvas fills, intentional one-off decoration on demo pages), it goes on the allowlist **with an inline comment saying why**.
 

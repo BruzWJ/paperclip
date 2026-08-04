@@ -20,16 +20,16 @@ function write(root: string, path: string, content: string): void {
 }
 
 const presentationPaths = [
-  "ui/src/components/ApprovalPayload.tsx",
-  "ui/src/components/BudgetIncidentCard.tsx",
-  "ui/src/components/BudgetPolicyCard.tsx",
-  "ui/src/lib/attention.ts",
-  "ui/src/pages/AgentDetail.tsx",
-  "ui/src/pages/Companies.tsx",
-  "ui/src/pages/Costs.tsx",
-  "ui/src/pages/Dashboard.tsx",
-  "ui/src/pages/ProjectDetail.tsx",
-  "ui/src/pages/UserProfile.tsx",
+  "apps/ui/src/components/ApprovalPayload.tsx",
+  "apps/ui/src/components/BudgetIncidentCard.tsx",
+  "apps/ui/src/components/BudgetPolicyCard.tsx",
+  "apps/ui/src/lib/attention.ts",
+  "apps/ui/src/pages/AgentDetail.tsx",
+  "apps/ui/src/pages/Companies.tsx",
+  "apps/ui/src/pages/Costs.tsx",
+  "apps/ui/src/pages/Dashboard.tsx",
+  "apps/ui/src/pages/ProjectDetail.tsx",
+  "apps/ui/src/pages/UserProfile.tsx",
 ] as const;
 
 function fixtureRoot(): string {
@@ -197,7 +197,7 @@ function fixtureRoot(): string {
 
   write(
     root,
-    "server/src/services/budgets.ts",
+    "apps/server/src/services/budgets.ts",
     [
       "async function upsertPolicyInTransaction() {",
       "  const budgetCurrency = parseBudgetCurrency(data.budgetCurrency ?? \"USD\");",
@@ -220,7 +220,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/companies.ts",
+    "apps/server/src/services/companies.ts",
     [
       "const budgets = budgetService(db);",
       "budgets.createCompany(data, actorUserId);",
@@ -231,7 +231,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/agent-operational-configuration.ts",
+    "apps/server/src/services/agent-operational-configuration.ts",
     [
       "budgetService(txDb, budgetHooks).setAgentMonthlyLimit(",
       "  companyId, agentId, configuration.budgetMonthlyAmount, actorUserId,",
@@ -242,12 +242,12 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/finance.ts",
+    "apps/server/src/services/finance.ts",
     "db.select({ currency: financeEvents.currency, amount: financeEvents.amount }).from(financeEvents);\n",
   );
   write(
     root,
-    "server/src/routes/openapi.ts",
+    "apps/server/src/routes/openapi.ts",
     [
       "const moneyAmountSchema = z.string();",
       "const budgetCurrencySchema = z.string();",
@@ -259,7 +259,7 @@ function fixtureRoot(): string {
 
   write(
     root,
-    "ui/src/lib/utils.ts",
+    "apps/ui/src/lib/utils.ts",
     [
       "export function formatMoneyAmount(amount: MoneyAmount, currency: BudgetCurrency | string) {",
       "  return `${currency} ${serializeMoneyAmount(amount)}`;",
@@ -286,7 +286,7 @@ function fixtureRoot(): string {
   }
   write(
     root,
-    "cli/src/commands/client/cost.ts",
+    "packages/cli/src/commands/client/cost.ts",
     [
       "updateCompanyBudgetSchema.parse(payload);",
       "parseAgentBudgetPayload(payload);",
@@ -322,7 +322,7 @@ for (const token of [
     const root = fixtureRoot();
     write(
       root,
-      "server/src/services/retired-money.ts",
+      "apps/server/src/services/retired-money.ts",
       `export const retired = ${JSON.stringify(token)};\n`,
     );
     assert.ok(
@@ -337,7 +337,7 @@ test("allows a retired literal only in an explicitly marked negative test", () =
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/money-removal.test.ts",
+    "apps/server/src/services/money-removal.test.ts",
     [
       "// PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: costCents",
       "expect(value).not.toHaveProperty('costCents');",
@@ -356,7 +356,7 @@ test("rejects JavaScript-number money fields and JSON examples", () => {
   );
   write(
     root,
-    "server/src/routes/rogue-money.ts",
+    "apps/server/src/routes/rogue-money.ts",
     "const body = { budgetMonthlyAmount: 12.5 };\n",
   );
   const violations = aiCostCurrencyCutoverViolations(root);
@@ -419,7 +419,7 @@ test("rejects direct policy, incident, and retained-limit writers", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/rogue-budget.ts",
+    "apps/server/src/services/rogue-budget.ts",
     [
       "import { budgetPolicies as policies, budgetIncidents } from '@paperclipai/db';",
       "const incidents = budgetIncidents;",
@@ -440,7 +440,7 @@ test("rejects company currency mutation and database defaults", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/rogue-currency.ts",
+    "apps/server/src/services/rogue-currency.ts",
     "db.update(companies).set({ budgetCurrency: 'EUR' });\n",
   );
   const companyPath = "packages/db/schema/companies.ts";
@@ -463,7 +463,7 @@ test("rejects generic budget and spend PATCH surfaces", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/routes/rogue-company.ts",
+    "apps/server/src/routes/rogue-company.ts",
     [
       "router.patch('/:id', async (req) => {",
       "  await updateCompany(req.params.id, { budgetMonthlyAmount: req.body.budgetMonthlyAmount });",
@@ -482,7 +482,7 @@ test("rejects raw or unfenced cost summation", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/rogue-costs.ts",
+    "apps/server/src/services/rogue-costs.ts",
     [
       "const total = sql`sum(${costEvents.observedCumulativeAmount})`;",
       "const other = sql`sum(${costEvents.knownDeltaAmount})`;",
@@ -500,7 +500,7 @@ test("rejects raw or unfenced cost summation", () => {
 
 test("rejects a finance-ledger edge into AI budget accounting", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/budgets.ts";
+  const path = "apps/server/src/services/budgets.ts";
   write(
     root,
     path,
@@ -517,7 +517,7 @@ test("rejects AI budget currency as a finance aggregation dependency", () => {
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/finance.ts",
+    "apps/server/src/services/finance.ts",
     "db.select({ currency: companies.budgetCurrency }).from(financeEvents);\n",
   );
   assert.ok(
@@ -529,7 +529,7 @@ test("rejects AI budget currency as a finance aggregation dependency", () => {
 
 test("rejects hard-coded AI currency presentation", () => {
   const root = fixtureRoot();
-  write(root, "ui/src/pages/Costs.tsx", "const rendered = '$12.50';\n");
+  write(root, "apps/ui/src/pages/Costs.tsx", "const rendered = '$12.50';\n");
   assert.ok(
     aiCostCurrencyCutoverViolations(root).some((entry) =>
       entry.includes("hard-coded AI money presentation"),
@@ -541,7 +541,7 @@ test("rejects a literal dollar prefix before a template interpolation", () => {
   const root = fixtureRoot();
   write(
     root,
-    "ui/src/pages/Costs.tsx",
+    "apps/ui/src/pages/Costs.tsx",
     "const rendered = `$${amount}`;\n",
   );
   assert.ok(
@@ -571,7 +571,7 @@ test("fails closed when matching-currency cost transitions are removed", () => {
 
 test("fails closed when canonical creation no longer owns the USD default", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/budgets.ts";
+  const path = "apps/server/src/services/budgets.ts";
   write(
     root,
     path,
@@ -611,7 +611,7 @@ test("rejects a non-uppercase catalog member and currency normalization", () => 
 
 test("fails closed when the company-aware budget UI formatter is bypassed", () => {
   const root = fixtureRoot();
-  const path = "ui/src/components/BudgetPolicyCard.tsx";
+  const path = "apps/ui/src/components/BudgetPolicyCard.tsx";
   write(
     root,
     path,

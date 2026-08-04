@@ -52,10 +52,10 @@ function fixtureRoot(): string {
     "cache: { read: 0, write: 0 }",
     "tokens: { input: 0 }",
   ].join("\n"));
-  write(root, "server/src/services/issue-session/message-updater.ts", 'case "session.next.step.ended": if (event.data.tokens !== undefined) message.tokens = event.data.tokens;\n');
-  write(root, "server/src/services/issue-session/projector.ts", "canonicalJson(assistant.tokens) !== canonicalJson(event.data.tokens);\n");
-  write(root, "server/src/services/issue-execution-acp-events-postgres.ts", 'if (input.event.kind === "usage") { return; }\n');
-  write(root, "server/src/services/acp-prompt-settlement.ts", [
+  write(root, "apps/server/src/services/issue-session/message-updater.ts", 'case "session.next.step.ended": if (event.data.tokens !== undefined) message.tokens = event.data.tokens;\n');
+  write(root, "apps/server/src/services/issue-session/projector.ts", "canonicalJson(assistant.tokens) !== canonicalJson(event.data.tokens);\n");
+  write(root, "apps/server/src/services/issue-execution-acp-events-postgres.ts", 'if (input.event.kind === "usage") { return; }\n');
+  write(root, "apps/server/src/services/acp-prompt-settlement.ts", [
     "contextUsedTokens: settlement.occupancy.used,",
     "contextWindowTokens: settlement.occupancy.size,",
     "lastContextUsedTokens: input.contextUsedTokens,",
@@ -86,21 +86,21 @@ test("rejects a legacy runtime throughput aggregate", () => {
 
 test("rejects stable-ACP Step.Ended token fabrication", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/acp-prompt-settlement.ts";
+  const path = "apps/server/src/services/acp-prompt-settlement.ts";
   write(root, path, `${readFileSync(join(root, path), "utf8")}\nconst stepEndedData = { tokens: { input: 1 } };\n`);
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("constructs donor")));
 });
 
 test("rejects donor components derived from occupancy", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/acp-prompt-settlement.ts";
+  const path = "apps/server/src/services/acp-prompt-settlement.ts";
   write(root, path, `${readFileSync(join(root, path), "utf8")}\nconst fabricated = { input: settlement.occupancy.used };\n`);
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("derives donor")));
 });
 
 test("rejects token-throughput summation", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/throughput.ts", "const total = sum(inputTokens);\n");
+  write(root, "apps/server/src/services/throughput.ts", "const total = sum(inputTokens);\n");
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("throughput")));
 });
 
@@ -127,7 +127,7 @@ test("rejects zero-hostile donor storage", () => {
 
 test("rejects mapping stable ACP usage into Session events", () => {
   const root = fixtureRoot();
-  const path = "server/src/services/issue-execution-acp-events-postgres.ts";
+  const path = "apps/server/src/services/issue-execution-acp-events-postgres.ts";
   write(root, path, readFileSync(join(root, path), "utf8").replace('input.event.kind === "usage"', 'input.event.kind === "never"'));
   assert.ok(aiAccountingBoundaryViolations(root).some((entry) => entry.includes("usage")));
 });

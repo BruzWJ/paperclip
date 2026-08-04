@@ -10,5 +10,5 @@ Seed list for the audit. Add components you already believe are redundant, and a
 
 ## Off-limits in this run
 
-- `ui/src/components/theme-editor/` and anything under experimental theme/playground paths, if present on this branch.
-- Server code, adapters, CLI — everything outside `ui/`.
+- `apps/ui/src/components/theme-editor/` and anything under experimental theme/playground paths, if present on this branch.
+- Server code, adapters, CLI — everything outside `apps/ui/`.

@@ -49,20 +49,20 @@ The current product default is company-wide visibility for agents. That is corre
 
 Relevant current behavior:
 
-- `server/src/routes/issues.ts`
+- `apps/server/src/routes/issues.ts`
   - Same-company agents can read `GET /issues/:id`, `/heartbeat-context`, `/comments`, `/documents`, `/work-products`, `/attachments`, and `/attachments/:id/content` after `assertCompanyAccess`.
   - Mutations are mostly guarded by `assertAgentIssueMutationAllowed`, which protects against mutating another agent's active issue but does not narrow reads to a review issue.
-- `server/src/routes/agents.ts`
+- `apps/server/src/routes/agents.ts`
   - `GET /agents/me` returns full agent detail, including raw `adapterConfig` and `runtimeConfig`, while other config routes are access-gated or redacted.
-- `server/src/routes/workspace-runtime-service-authz.ts`
+- `apps/server/src/routes/workspace-runtime-service-authz.ts`
   - CEO or reporting-tree agents can manage runtime services for linked workspaces.
-- `server/src/routes/plugins.ts` and `server/src/services/plugin-capability-validator.ts`
+- `apps/server/src/routes/plugins.ts` and `apps/server/src/services/plugin-capability-validator.ts`
   - Plugin tools, plugin state, outbound HTTP, DB namespace access, local folders, and secret refs exist as grantable capabilities.
-- `server/src/services/plugin-secrets-handler.ts`
+- `apps/server/src/services/plugin-secrets-handler.ts`
   - Plugin workers can resolve secret UUID refs to plaintext when granted `secrets.read-ref`.
-- `server/src/services/issue-continuation-summary.ts`
+- `apps/server/src/services/issue-continuation-summary.ts`
   - Continuation summaries already prefer sanitized summaries over transcript copies.
-- `server/src/services/recovery/*` and `server/src/__tests__/heartbeat-process-recovery.test.ts`
+- `apps/server/src/services/recovery/*` and `apps/server/src/__tests__/heartbeat-process-recovery.test.ts`
   - Recovery/transfer code already encodes a no-transcript-copy direction and redacts secret-bearing progress summaries.
 
 ## Contract: `low_trust_review`

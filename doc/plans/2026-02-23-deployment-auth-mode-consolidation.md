@@ -28,18 +28,18 @@ Keep Paperclip low-friction while making the mode model simpler and safer:
 
 - Runtime deployment modes are currently `local_trusted | cloud_hosted` (`packages/shared/src/constants.ts`).
 - `local_trusted` actor is currently synthetic:
-  - `req.actor = { type: "board", userId: "local-board", source: "local_implicit" }` (`server/src/middleware/auth.ts`).
+  - `req.actor = { type: "board", userId: "local-board", source: "local_implicit" }` (`apps/server/src/middleware/auth.ts`).
   - this is not a real auth user row by default.
-- `cloud_hosted` uses Better Auth sessions and `authUsers` rows (`server/src/auth/better-auth.ts`, `packages/db/schema/auth.ts`).
+- `cloud_hosted` uses Better Auth sessions and `authUsers` rows (`apps/server/src/auth/better-auth.ts`, `packages/db/schema/auth.ts`).
 
 ## Bootstrap/Admin
 
-- `cloud_hosted` requires `BETTER_AUTH_SECRET` and reports bootstrap status from `instance_user_roles` (`server/src/index.ts`, `server/src/routes/health.ts`).
-- bootstrap invite acceptance promotes the signed-in user to `instance_admin` (`server/src/routes/access.ts`, `server/src/services/access.ts`).
+- `cloud_hosted` requires `BETTER_AUTH_SECRET` and reports bootstrap status from `instance_user_roles` (`apps/server/src/index.ts`, `apps/server/src/routes/health.ts`).
+- bootstrap invite acceptance promotes the signed-in user to `instance_admin` (`apps/server/src/routes/access.ts`, `apps/server/src/services/access.ts`).
 
 ## Membership/Assignment Integration
 
-- User issue assignment requires active `company_memberships` entry for that user (`server/src/services/issues.ts`).
+- User issue assignment requires active `company_memberships` entry for that user (`apps/server/src/services/issues.ts`).
 - Local implicit board identity is not automatically a real membership principal; this is a gap for “board as assignable user” semantics.
 
 ## Proposed Runtime Model
@@ -161,19 +161,19 @@ This change is a clean cut:
 
 - `packages/shared/src/constants.ts`: define canonical mode/exposure constants.
 - `packages/shared/src/config-schema.ts`: add mode/exposure/auth URL fields.
-- `server/src/config.ts` and CLI config types: consume canonical fields only.
+- `apps/server/src/config.ts` and CLI config types: consume canonical fields only.
 
 ## Phase 2: CLI Interactive UX
 
-- `cli/src/prompts/server.ts`: implement defaulted mode prompt and authenticated exposure guidance copy.
-- `cli/src/commands/onboard.ts`: keep interactive-first flow; optional overrides only.
-- `cli/src/commands/configure.ts`: same behavior for server section.
-- `cli/src/commands/doctor.ts`: mode-aware checks from config, flagless default flow.
+- `packages/cli/src/prompts/server.ts`: implement defaulted mode prompt and authenticated exposure guidance copy.
+- `packages/cli/src/commands/onboard.ts`: keep interactive-first flow; optional overrides only.
+- `packages/cli/src/commands/configure.ts`: same behavior for server section.
+- `packages/cli/src/commands/doctor.ts`: mode-aware checks from config, flagless default flow.
 
 ## Phase 3: Runtime/Auth Policy
 
-- `server/src/index.ts`: enforce mode-specific startup constraints.
-- `server/src/auth/better-auth.ts`: implement `auto` vs `explicit` base URL behavior.
+- `apps/server/src/index.ts`: enforce mode-specific startup constraints.
+- `apps/server/src/auth/better-auth.ts`: implement `auto` vs `explicit` base URL behavior.
 - host/origin trust helper for `authenticated + private`.
 
 ## Phase 4: Board Principal Integration

@@ -104,7 +104,7 @@ describe("dynamic ACPX registry and dependency pins", () => {
 
   it("rejects runtime values outside the registry/discovery owners", () => {
     const mutation = addFile(canonicalFiles, {
-      path: "server/src/services/acpx-escape.ts",
+      path: "apps/server/src/services/acpx-escape.ts",
       source: 'import { createAcpRuntime } from "acpx/runtime";',
     });
     expectViolation(mutation, "registry_import", "second runtime owner");
@@ -161,7 +161,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
   it("rejects importing a legacy raw ACP invocation from production server code", () => {
     expectViolation(
       addFile(canonicalFiles, {
-        path: "server/src/services/raw-acp-escape.ts",
+        path: "apps/server/src/services/raw-acp-escape.ts",
         source:
           'import { executeAcpSubprocessPrompt } from "@paperclipai/adapter-utils/acp-subprocess";\n',
       }),
@@ -173,7 +173,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
   it("rejects importing a legacy raw ACP launcher type from production server code", () => {
     expectViolation(
       addFile(canonicalFiles, {
-        path: "server/src/services/raw-acp-launcher-type-escape.ts",
+        path: "apps/server/src/services/raw-acp-launcher-type-escape.ts",
         source:
           'import type { AcpSubprocessLaunch } from "@paperclipai/adapter-utils/acp-subprocess";\n',
       }),
@@ -185,7 +185,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
   it("rejects direct imports of a legacy raw ACP subprocess module", () => {
     expectViolation(
       addFile(canonicalFiles, {
-        path: "server/src/services/raw-acp-module-escape.ts",
+        path: "apps/server/src/services/raw-acp-module-escape.ts",
         source:
           'import { PaperclipAcpClient } from "@paperclipai/adapter-utils/acp-subprocess/client";\n',
       }),
@@ -198,7 +198,7 @@ describe("ACPX runtime configuration and provider-neutral boundaries", () => {
     expectViolation(
       replaceSource(
         canonicalFiles,
-        "server/src/adapters/acpx-catalog.ts",
+        "apps/server/src/adapters/acpx-catalog.ts",
         "acpxDiscoveryToServerAdapter",
         "resolveApprovedAcpLaunch",
       ),

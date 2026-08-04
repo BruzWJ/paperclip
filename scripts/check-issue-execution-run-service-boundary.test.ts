@@ -37,7 +37,7 @@ test("rejects every retired run-store surface", () => {
   for (const term of terms) {
     const violations = scanCanonicalRunBoundaryFiles([
       {
-        path: "server/src/services/legacy-run-store.ts",
+        path: "apps/server/src/services/legacy-run-store.ts",
         source: `export const stale = ${JSON.stringify(term)};`,
       },
     ]);
@@ -51,7 +51,7 @@ test("rejects every retired run-store surface", () => {
 test("rejects run-table access outside the canonical service", () => {
   const violations = scanCanonicalRunBoundaryFiles([
     {
-      path: "server/src/services/bypass.ts",
+      path: "apps/server/src/services/bypass.ts",
       source: [
         'import { issueExecutionRuns } from "@paperclipai/db";',
         "await tx.select().from(issueExecutionRuns);",
@@ -68,7 +68,7 @@ test("rejects run-table access outside the canonical service", () => {
 test("allows typed run ids and schema references without table access", () => {
   const violations = scanCanonicalRunBoundaryFiles([
     {
-      path: "server/src/services/consumer.ts",
+      path: "apps/server/src/services/consumer.ts",
       source:
         "export async function read(runId: string) { return service.readRun({ runId }); }",
     },
@@ -84,7 +84,7 @@ test("allows typed run ids and schema references without table access", () => {
 test("keeps terminal liveness insertion inside the canonical finalizer", () => {
   const rejected = scanCanonicalRunBoundaryFiles([
     {
-      path: "server/src/services/read-repair.ts",
+      path: "apps/server/src/services/read-repair.ts",
       source:
         "await tx.insert(issueExecutionRunLivenessFacts).values(fact);",
     },
@@ -97,7 +97,7 @@ test("keeps terminal liveness insertion inside the canonical finalizer", () => {
 
   const accepted = scanCanonicalRunBoundaryFiles([
     {
-      path: "server/src/services/issue-execution-finalization-postgres.ts",
+      path: "apps/server/src/services/issue-execution-finalization-postgres.ts",
       source:
         "await tx.insert(issueExecutionRunLivenessFacts).values(fact);",
     },
@@ -109,7 +109,7 @@ test("rejects mutation of immutable terminal liveness facts", () => {
   for (const operation of ["update", "delete"] as const) {
     const violations = scanCanonicalRunBoundaryFiles([
       {
-        path: "server/src/services/issue-execution-finalization-postgres.ts",
+        path: "apps/server/src/services/issue-execution-finalization-postgres.ts",
         source: `await tx.${operation}(issueExecutionRunLivenessFacts);`,
       },
     ]);
@@ -124,23 +124,23 @@ test("rejects mutation of immutable terminal liveness facts", () => {
 test("rejects the removed generic canonical run-trace event surface at each former owner", () => {
   for (const fixture of [
     {
-      path: "server/src/services/context-retrieval.ts",
+      path: "apps/server/src/services/context-retrieval.ts",
       source: "export interface CanonicalRunTraceEvent {}",
     },
     {
-      path: "server/src/services/context-retrieval-db.ts",
+      path: "apps/server/src/services/context-retrieval-db.ts",
       source: "export function sanitizeCanonicalEventRow() {}",
     },
     {
-      path: "server/src/services/context-retrieval-db.ts",
+      path: "apps/server/src/services/context-retrieval-db.ts",
       source: "return { turns, events: [] };",
     },
     {
-      path: "server/src/routes/openapi.ts",
+      path: "apps/server/src/routes/openapi.ts",
       source: "const canonicalRunTraceEventSchema = z.object({});",
     },
     {
-      path: "server/src/routes/openapi.ts",
+      path: "apps/server/src/routes/openapi.ts",
       source: "const canonicalRunTraceSchema = z.object({});",
     },
   ]) {

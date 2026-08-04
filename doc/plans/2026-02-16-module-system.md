@@ -1,6 +1,6 @@
 # Paperclip Module System
 
-> Supersession note: the company-template/package-format direction in this document is no longer current. For the current markdown-first company import/export plan, see `doc/plans/2026-03-13-company-import-export-v2.md` and `docs/companies/companies-spec.md`.
+> Supersession note: the company-template/package-format direction in this document is no longer current. For the current markdown-first company import/export plan, see `doc/plans/2026-03-13-company-import-export-v2.md` and `apps/docs/companies/companies-spec.md`.
 
 ## Overview
 
@@ -374,7 +374,7 @@ The core UI shell provides:
 Modules declare pages and widgets in the manifest. The shell lazy-loads them:
 
 ```typescript
-// ui/src/modules/loader.ts
+// apps/ui/src/modules/loader.ts
 // At build time or runtime, discover module UI entries and create lazy routes
 
 import { lazy } from "react";

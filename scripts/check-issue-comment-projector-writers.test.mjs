@@ -11,7 +11,7 @@ test("rejects direct, aliased, and raw SQL issue comment writes", () => {
     await tx.execute(sql\`delete from issue_comments where issue_id = \${issueId}\`);
   `;
 
-  const violations = inspectSourceText("server/src/services/legacy.ts", source);
+  const violations = inspectSourceText("apps/server/src/services/legacy.ts", source);
   assert.deepEqual(
     violations.map((entry) => entry.operation).sort(),
     ["delete", "insert", "update"],
@@ -20,7 +20,7 @@ test("rejects direct, aliased, and raw SQL issue comment writes", () => {
 
 test("allows only projector inserts and updates", () => {
   const allowed = inspectSourceText(
-    "server/src/services/issue-session/projector.ts",
+    "apps/server/src/services/issue-session/projector.ts",
     `
       import { issueComments } from "@paperclipai/db";
       async function materializeComment() {
@@ -32,7 +32,7 @@ test("allows only projector inserts and updates", () => {
   assert.deepEqual(allowed, []);
 
   const deniedWrongFunction = inspectSourceText(
-    "server/src/services/issue-session/projector.ts",
+    "apps/server/src/services/issue-session/projector.ts",
     `
       import { issueComments } from "@paperclipai/db";
       async function projectSomethingElse() {
@@ -44,7 +44,7 @@ test("allows only projector inserts and updates", () => {
   assert.equal(deniedWrongFunction[0].operation, "insert");
 
   const deniedDelete = inspectSourceText(
-    "server/src/services/issue-session/projector.ts",
+    "apps/server/src/services/issue-session/projector.ts",
     `
       import { issueComments } from "@paperclipai/db";
       async function materializeComment() {
@@ -58,7 +58,7 @@ test("allows only projector inserts and updates", () => {
 
 test("allows only lifecycle purge deletes", () => {
   const allowed = inspectSourceText(
-    "server/src/services/issue-session-lifecycle.ts",
+    "apps/server/src/services/issue-session-lifecycle.ts",
     `
       import { issueComments } from "@paperclipai/db";
       async function purgeCompanySessionGraphInTx() {
@@ -69,7 +69,7 @@ test("allows only lifecycle purge deletes", () => {
   assert.deepEqual(allowed, []);
 
   const deniedWrongFunction = inspectSourceText(
-    "server/src/services/issue-session-lifecycle.ts",
+    "apps/server/src/services/issue-session-lifecycle.ts",
     `
       import { issueComments } from "@paperclipai/db";
       async function purgeSomeOtherState() {
@@ -81,7 +81,7 @@ test("allows only lifecycle purge deletes", () => {
   assert.equal(deniedWrongFunction[0].operation, "delete");
 
   const deniedInsert = inspectSourceText(
-    "server/src/services/issue-session-lifecycle.ts",
+    "apps/server/src/services/issue-session-lifecycle.ts",
     `
       import { issueComments } from "@paperclipai/db";
       async function purgeCompanySessionGraphInTx() {
@@ -95,7 +95,7 @@ test("allows only lifecycle purge deletes", () => {
 
 test("rejects exported generic comment mutators even without a direct write", () => {
   const violations = inspectSourceText(
-    "server/src/services/issues.ts",
+    "apps/server/src/services/issues.ts",
     `export async function addComment() { return publishLater(); }`,
   );
   assert.equal(violations.length, 1);

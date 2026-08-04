@@ -107,7 +107,7 @@ semantics.
 | --- | --- |
 | Database schema | `packages/db/schema/issue_watchdogs.ts` |
 | Generated migrations | ordered `packages/db/migrations/*.sql` files emitted by `pnpm db:generate` |
-| Classifier and nudge service | `server/src/services/issue-watchdogs.ts` |
-| HTTP routes | `server/src/routes/issues.ts` |
+| Classifier and nudge service | `apps/server/src/services/issue-watchdogs.ts` |
+| HTTP routes | `apps/server/src/routes/issues.ts` |
 | Shared API validator | `packages/shared/src/validators/issue.ts` |
-| Board UI | `ui/src/components/issue-properties/IssueProperties.tsx` |
+| Board UI | `apps/ui/src/components/issue-properties/IssueProperties.tsx` |

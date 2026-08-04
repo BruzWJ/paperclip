@@ -22,6 +22,37 @@ GitHub Actions owns `pnpm-lock.yaml`.
 - Pull request CI validates dependency resolution when manifests change.
 - Pushes to `master` regenerate `pnpm-lock.yaml` with `pnpm install --lockfile-only --no-frozen-lockfile`, commit it back if needed, and then run verification with `--frozen-lockfile`.
 
+## Monorepo Task Orchestration
+
+Paperclip is a pnpm workspace orchestrated by Turborepo. The root
+`turbo.json` defines dependency-aware, cached workspace builds and typechecks:
+
+```sh
+pnpm build
+pnpm typecheck
+```
+
+The application workspaces live under `apps/`: the product backend and frontend
+are `apps/server/` and `apps/ui/`, while `apps/docs/` is the
+published documentation site. Reusable and publishable workspaces live under
+`packages/`, including `packages/cli/`, `packages/db/`, `packages/shared/`,
+catalog packages, MCP fixtures, and the plugin packages. Turbo discovers these
+workspace roots through `pnpm-workspace.yaml`.
+
+Not every directory below `packages/plugins/` is a root workspace. The
+sandbox-provider implementations and the orchestration smoke fixture remain
+standalone packages, as recorded by the exclusions in `pnpm-workspace.yaml`;
+they keep their independent install and test workflows.
+
+The root `doc/` directory is not a duplicate documentation app. It holds
+repository-internal product contracts, engineering notes, operational runbooks,
+and dated implementation plans. Public documentation and Mintlify navigation
+belong in `apps/docs/`; internal repository documentation remains in `doc/`.
+
+`pnpm dev` remains Paperclip's managed same-origin development supervisor, and
+`pnpm test` remains the stable repository-wide Vitest runner so its isolation,
+serialization, and CI sharding contracts stay intact.
+
 ## Start Dev
 
 From repo root:
@@ -46,14 +77,14 @@ Issue execution may also use project execution workspace policies and workspace 
 
 ## Storybook
 
-The board UI Storybook keeps stories and Storybook config under `ui/storybook/` so component review files stay out of the app source routes.
+The board UI Storybook keeps stories and Storybook config under `apps/ui/storybook/` so component review files stay out of the app source routes.
 
 ```sh
 pnpm storybook
 pnpm build-storybook
 ```
 
-These run the `@paperclipai/ui` Storybook on port `6006` and build the static output to `ui/storybook-static/`.
+These run the `@paperclipai/ui` Storybook on port `6006` and build the static output to `apps/ui/storybook-static/`.
 
 The Storybook visual regression suite uses external PNG baselines instead of
 committed screenshots:
@@ -85,15 +116,15 @@ upload or mutate baseline objects.
 
 ## UI Fonts And Screenshots
 
-The board UI ships its own sans-serif webfont assets in `ui/public/fonts/`.
-`ui/src/index.css` declares Inter v4.1 variable regular and italic faces and wires
+The board UI ships its own sans-serif webfont assets in `apps/ui/public/fonts/`.
+`apps/ui/src/index.css` declares Inter v4.1 variable regular and italic faces and wires
 the Tailwind `font-sans` token to those bundled files before system fallbacks.
 Linux screenshot or Storybook capture jobs should not install host Inter packages
 or inject external font CSS to make Paperclip text render correctly.
 
 Font assets live in Vite's public directory so `pnpm --filter @paperclipai/ui build`
-emits them under `ui/dist/fonts/`. The server package copies the same output into
-`server/ui-dist/fonts/` through `scripts/prepare-server-ui-dist.sh`.
+emits them under `apps/ui/dist/fonts/`. The server package copies the same output into
+`apps/server/ui-dist/fonts/` through `scripts/prepare-server-ui-dist.sh`.
 
 Inspect or stop the current repo's managed dev runner:
 
@@ -431,7 +462,7 @@ packages/skills-catalog/
   scripts/
     build-catalog-manifest.ts             # regenerate generated/catalog.json
     validate-catalog.ts                   # validation only
-  src/                                    # builder + types consumed by server/CLI
+  src/                                    # builder + types consumed by server and CLI
 ```
 
 Server and CLI import the generated manifest; they do not crawl repository
@@ -618,7 +649,7 @@ CLI configuration support:
 Per-company provider vaults are configured in the board UI under
 `Company Settings → Secrets → Provider vaults`, backed by
 `/api/companies/{companyId}/secret-provider-configs`. The CLI does not own
-vault lifecycle today. See `docs/deploy/secrets.md` (`Provider Vaults` section)
+vault lifecycle today. See `apps/docs/deploy/secrets.md` (`Provider Vaults` section)
 for the operator model.
 
 ## Company Deletion Toggle

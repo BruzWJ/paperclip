@@ -4,12 +4,12 @@ Status: Proposed
 Date: 2026-04-06
 Audience: Product and engineering
 Related:
-- `ui/src/pages/IssueDetail.tsx`
-- `ui/src/components/IssueProperties.tsx`
-- `ui/src/components/NewIssueDialog.tsx`
-- `ui/src/context/DialogContext.tsx`
+- `apps/ui/src/pages/IssueDetail.tsx`
+- `apps/ui/src/components/IssueProperties.tsx`
+- `apps/ui/src/components/NewIssueDialog.tsx`
+- `apps/ui/src/context/DialogContext.tsx`
 - `packages/shared/src/validators/issue.ts`
-- `server/src/services/issues.ts`
+- `apps/server/src/services/issues.ts`
 
 ## 1. Purpose
 
@@ -28,7 +28,7 @@ This is a UI-first change. The backend already supports child issue creation wit
 
 ### 2.1 Existing child issue display
 
-`ui/src/pages/IssueDetail.tsx` already derives `childIssues` by filtering the company issue list on `parentId === issue.id`.
+`apps/ui/src/pages/IssueDetail.tsx` already derives `childIssues` by filtering the company issue list on `parentId === issue.id`.
 
 Current limitation:
 
@@ -37,22 +37,22 @@ Current limitation:
 
 ### 2.2 Existing properties pane
 
-`ui/src/components/IssueProperties.tsx` shows `Blocked by`, `Blocking`, and `Parent`, but it has no sub-issue section or child issue affordance.
+`apps/ui/src/components/IssueProperties.tsx` shows `Blocked by`, `Blocking`, and `Parent`, but it has no sub-issue section or child issue affordance.
 
 ### 2.3 Existing dialog state
 
-`ui/src/context/DialogContext.tsx` can open the global new-issue dialog with defaults such as status, priority, project, assignee, title, and description.
+`apps/ui/src/context/DialogContext.tsx` can open the global new-issue dialog with defaults such as status, priority, project, assignee, title, and description.
 
 Current limitation:
 
 - there is no way to pass sub-issue context like `parentId`
-- `ui/src/components/NewIssueDialog.tsx` therefore cannot submit a child issue or render parent-specific context
+- `apps/ui/src/components/NewIssueDialog.tsx` therefore cannot submit a child issue or render parent-specific context
 
 ### 2.4 Backend contract already exists
 
 The create-issue validator already accepts `parentId`.
 
-`server/src/services/issues.ts` already uses:
+`apps/server/src/services/issues.ts` already uses:
 
 - `parentId` for parent-child issue relationships
 - `parentId` as the default workspace inheritance source when `inheritExecutionWorkspaceFromIssueId` is not provided
@@ -63,7 +63,7 @@ That means the required API and workspace inheritance behavior already exist. No
 
 ## 3.1 Extend dialog defaults for sub-issue context
 
-Extend `NewIssueDefaults` in `ui/src/context/DialogContext.tsx` with:
+Extend `NewIssueDefaults` in `apps/ui/src/context/DialogContext.tsx` with:
 
 - `parentId?: string`
 - optional parent display metadata for the dialog header, for example:
@@ -74,7 +74,7 @@ This keeps the dialog self-contained and avoids re-fetching parent context purel
 
 ## 3.2 Add issue-detail entry points
 
-Use `openNewIssue(...)` from `ui/src/pages/IssueDetail.tsx` in two places:
+Use `openNewIssue(...)` from `apps/ui/src/pages/IssueDetail.tsx` in two places:
 
 1. `Sub-issues` tab
 2. properties pane via props passed into `IssueProperties`
@@ -116,7 +116,7 @@ This satisfies the requirement that the action is visible whether or not sub-iss
 
 ## 3.5 Add sub-issue mode to the new-issue dialog
 
-Update `ui/src/components/NewIssueDialog.tsx` so that when `newIssueDefaults.parentId` is present:
+Update `apps/ui/src/components/NewIssueDialog.tsx` so that when `newIssueDefaults.parentId` is present:
 
 - the dialog submits `parentId`
 - the header/button copy can switch to `New sub-issue` / `Create sub-issue`

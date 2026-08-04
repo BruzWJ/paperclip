@@ -25,15 +25,15 @@ const DURABLE_TABLES = new Set([
 ]);
 
 const PUBLICATION_FILE =
-  "server/src/services/issue-session/publication.ts";
+  "apps/server/src/services/issue-session/publication.ts";
 const EVENT_STORE_FILE =
-  "server/src/services/issue-session/event-store.ts";
+  "apps/server/src/services/issue-session/event-store.ts";
 const PROJECTOR_FILE =
-  "server/src/services/issue-session/projector.ts";
+  "apps/server/src/services/issue-session/projector.ts";
 const LIFECYCLE_FILE =
-  "server/src/services/issue-session-lifecycle.ts";
+  "apps/server/src/services/issue-session-lifecycle.ts";
 const SOURCE_USER_EXECUTION_FILE =
-  "server/src/services/issue-session/source-user-execution.ts";
+  "apps/server/src/services/issue-session/source-user-execution.ts";
 
 function normalized(file: string): string {
   return file.replaceAll(path.sep, "/");
@@ -362,8 +362,8 @@ export function scanIssueSessionDurableWriterSource(
     "i",
   ).test(mirrorContext);
   const workspaceOperationLogFiles = new Set([
-    "server/src/services/workspace-operation-log-store.ts",
-    "server/src/services/workspace-operations.ts",
+    "apps/server/src/services/workspace-operation-log-store.ts",
+    "apps/server/src/services/workspace-operations.ts",
   ]);
   if (
     /(?:RUN_LOG_S3_|RUN_LOG_BASE_PATH)/.test(text) ||
@@ -412,8 +412,7 @@ export async function checkIssueSessionDurableWriters(
   repositoryRoot: string,
 ): Promise<DurableWriterViolation[]> {
   const roots = [
-    path.join(repositoryRoot, "server", "src"),
-    path.join(repositoryRoot, "cli", "src"),
+    path.join(repositoryRoot, "apps", "server", "src"),
     path.join(repositoryRoot, "packages"),
   ];
   const violations: DurableWriterViolation[] = [];

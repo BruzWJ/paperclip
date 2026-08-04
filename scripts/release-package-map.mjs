@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const manifestPath = join(repoRoot, "scripts", "release-package-manifest.json");
-const roots = ["packages", "server", "ui", "cli"];
+const roots = ["apps", "packages"];
 
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -243,7 +243,7 @@ function setVersion(version) {
     writeFileSync(pkg.pkgPath, `${JSON.stringify(nextPkg, null, 2)}\n`);
   }
 
-  const cliEntryPath = join(repoRoot, "cli/src/index.ts");
+  const cliEntryPath = join(repoRoot, "packages/cli/src/index.ts");
   const cliEntry = readFileSync(cliEntryPath, "utf8");
   const nextCliEntry = cliEntry.replace(
     /\.version\("([^"]+)"\)/,
@@ -256,7 +256,7 @@ function setVersion(version) {
   }
 
   if (!cliEntry.includes(".version(cliVersion)")) {
-    throw new Error("failed to rewrite CLI version string in cli/src/index.ts");
+    throw new Error("failed to rewrite CLI version string in packages/cli/src/index.ts");
   }
 }
 

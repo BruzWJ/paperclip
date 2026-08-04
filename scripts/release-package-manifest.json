@@ -35,12 +35,12 @@
     "publishFromCi": true
   },
   {
-    "dir": "server",
+    "dir": "apps/server",
     "name": "@paperclipai/server",
     "publishFromCi": true
   },
   {
-    "dir": "cli",
+    "dir": "packages/cli",
     "name": "paperclipai",
     "publishFromCi": true
   },
@@ -95,7 +95,7 @@
     "publishFromCi": true
   },
   {
-    "dir": "ui",
+    "dir": "apps/ui",
     "name": "@paperclipai/ui",
     "publishFromCi": true
   }

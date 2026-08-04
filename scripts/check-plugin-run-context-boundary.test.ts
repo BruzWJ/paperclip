@@ -123,7 +123,7 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/plugin-host-services.ts",
+    "apps/server/src/services/plugin-host-services.ts",
     [
       "export interface PluginRunIssueContextReader {}",
       "const pluginRunIssueContextReader = true;",
@@ -136,19 +136,19 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "server/src/services/run-interface-runtime.ts",
+    "apps/server/src/services/run-interface-runtime.ts",
     "gateway.resolvePluginRunContext( ); retrieval.listCompanyIssues; retrieval.listSubIssues; retrieval.readIssueComments; retrieval.readIssueAgentRun;\n",
   );
   return root;
 }
 
-const COMPILER_PATH = "server/src/services/runtime-interface-compiler.ts";
-const EXECUTOR_PATH = "server/src/services/runtime-tool-executor.ts";
-const GATEWAY_PATH = "server/src/services/prompt-capability-gateway.ts";
-const GATEWAY_REPOSITORY_PATH = "server/src/services/prompt-capability-gateway-postgres.ts";
-const TOOL_GATEWAY_PATH = "server/src/services/tool-gateway.ts";
-const DISPATCHER_PATH = "server/src/services/plugin-tool-dispatcher.ts";
-const REGISTRY_PATH = "server/src/services/plugin-tool-registry.ts";
+const COMPILER_PATH = "apps/server/src/services/runtime-interface-compiler.ts";
+const EXECUTOR_PATH = "apps/server/src/services/runtime-tool-executor.ts";
+const GATEWAY_PATH = "apps/server/src/services/prompt-capability-gateway.ts";
+const GATEWAY_REPOSITORY_PATH = "apps/server/src/services/prompt-capability-gateway-postgres.ts";
+const TOOL_GATEWAY_PATH = "apps/server/src/services/tool-gateway.ts";
+const DISPATCHER_PATH = "apps/server/src/services/plugin-tool-dispatcher.ts";
+const REGISTRY_PATH = "apps/server/src/services/plugin-tool-registry.ts";
 
 afterEach(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });

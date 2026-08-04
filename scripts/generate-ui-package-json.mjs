@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const uiDir = join(repoRoot, "ui");
+const uiDir = join(repoRoot, "apps", "ui");
 const packageJsonPath = join(uiDir, "package.json");
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));

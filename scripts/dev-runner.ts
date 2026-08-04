@@ -5,15 +5,15 @@ import path from "node:path";
 import { createCapturedOutputBuffer } from "./dev-runner-output.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
-import { bootstrapDevRunnerWorktreeEnv } from "../server/src/dev-runner-worktree.ts";
-import { consumeDevServerRestartRequest } from "../server/src/dev-server-status.ts";
-import { loadRuntimeEnvironmentFiles } from "../server/src/runtime-environment.ts";
+import { bootstrapDevRunnerWorktreeEnv } from "../apps/server/src/dev-runner-worktree.ts";
+import { consumeDevServerRestartRequest } from "../apps/server/src/dev-server-status.ts";
+import { loadRuntimeEnvironmentFiles } from "../apps/server/src/runtime-environment.ts";
 import {
   findAdoptableLocalService,
   removeLocalServiceRegistryRecord,
   touchLocalServiceRegistryRecord,
   writeLocalServiceRegistryRecord,
-} from "../server/src/services/local-service-supervisor.ts";
+} from "../apps/server/src/services/local-service-supervisor.ts";
 
 // Keep these values local so the dev runner can boot from the server package's
 // tsx context without requiring workspace package resolution first.
@@ -46,9 +46,9 @@ const devServerStatusFilePath = path.join(repoRoot, ".paperclip", "dev-server-st
 const devServerRestartRequestFilePath = path.join(repoRoot, ".paperclip", "dev-server-restart-request.json");
 
 const watchedDirectories = [
-  "cli",
+  "packages/cli",
   "scripts",
-  "server",
+  "apps/server",
   "packages/adapter-utils",
   "packages/adapters",
   "packages/db",
@@ -63,6 +63,7 @@ const watchedFiles = [
   "pnpm-workspace.yaml",
   "tsconfig.base.json",
   "tsconfig.json",
+  "turbo.json",
   "vitest.config.ts",
 ].map((relativePath) => path.join(repoRoot, relativePath));
 

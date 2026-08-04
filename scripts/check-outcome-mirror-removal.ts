@@ -14,12 +14,10 @@ const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const SCAN_ROOTS = [
   ".agents",
   ".github",
-  "cli",
+  "apps",
   "doc",
   "packages",
   "scripts",
-  "server",
-  "ui",
 ] as const;
 const SOURCE_EXTENSIONS = new Set([
   ".cjs",

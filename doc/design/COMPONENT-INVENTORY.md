@@ -1,6 +1,6 @@
 # COMPONENT-INVENTORY.md — Component Inventory (Phase 1)
 
-Run scope: `ui/src/components/` and `ui/src/pages/` on branch `design/token-extraction`. Read-only audit — no source files modified.
+Run scope: `apps/ui/src/components/` and `apps/ui/src/pages/` on branch `design/token-extraction`. Read-only audit — no source files modified.
 
 **All consolidation, merge, and shadcn-swap recommendations in this document are RECOMMENDATIONS ONLY.** Per `GOAL-PROMPT.md` and `DESIGN.md`, no component merges, deletions, or swaps happen in this run. They become human-approved follow-up runs ("Run 2"/"Run 3").
 
@@ -8,16 +8,16 @@ Run scope: `ui/src/components/` and `ui/src/pages/` on branch `design/token-extr
 
 | Area | Count |
 |---|---:|
-| Shared primitives (`ui/src/components/ui/`) | 24 |
-| Feature components, flat (`ui/src/components/*.tsx`) | 178 |
+| Shared primitives (`apps/ui/src/components/ui/`) | 24 |
+| Feature components, flat (`apps/ui/src/components/*.tsx`) | 178 |
 | Feature components, nested subdirs (`access/`, `artifacts/`, `environment-variables-editor/`, `interrupt-transfer/`, `issue-output/`, `issue-properties/`, `routine-sections/`, `search/`, `timeline/`, `transcript/`) | 28 |
 | **Feature components total** | **206** |
-| Pages (`ui/src/pages/`, incl. `pages/secrets/`) | 73 |
+| Pages (`apps/ui/src/pages/`, incl. `pages/secrets/`) | 73 |
 | **Grand total** | **303** (roughly matches DESIGN.md's "24 + ~277") |
 
 ---
 
-## 1. Shared primitives — `ui/src/components/ui/` (24)
+## 1. Shared primitives — `apps/ui/src/components/ui/` (24)
 
 All 24 checked against the live shadcn registry via `npx shadcn@latest diff` (network-available in this environment). Aggregate `diff` and per-component spot checks (`button`, `dialog`) both returned **"No updates found"** — these are currently in sync with the upstream registry source.
 
@@ -50,11 +50,11 @@ All 24 checked against the live shadcn registry via `npx shadcn@latest diff` (ne
 
 **Note:** `radio-card` and `toggle-switch` are not standard shadcn registry component names (the registry ships `radio-group` and `switch` respectively) — these were custom-built or heavily renamed/adapted rather than installed from the registry, so `shadcn diff` cannot check them against an upstream source. See shadcn-candidates section 4c.
 
-**Stock-value note:** several "arbitrary Tailwind bracket values" flagged in `TOKEN-AUDIT.md` inside these primitives (`checkbox.tsx` `rounded-[4px]`, `tooltip.tsx` `rounded-[2px]`, `command.tsx` `max-h-[300px]`, `avatar.tsx` `text-[10px]`) were verified to match the **current shadcn/ui registry source verbatim** — they are not local drift, just registry boilerplate that itself doesn't route through a token layer. Phase 2 will still need to touch them (DESIGN.md's gate is "zero arbitrary values in `ui/src/components/**`" with no carve-out for `components/ui/`), but they are not evidence of local customization.
+**Stock-value note:** several "arbitrary Tailwind bracket values" flagged in `TOKEN-AUDIT.md` inside these primitives (`checkbox.tsx` `rounded-[4px]`, `tooltip.tsx` `rounded-[2px]`, `command.tsx` `max-h-[300px]`, `avatar.tsx` `text-[10px]`) were verified to match the **current shadcn/ui registry source verbatim** — they are not local drift, just registry boilerplate that itself doesn't route through a token layer. Phase 2 will still need to touch them (DESIGN.md's gate is "zero arbitrary values in `apps/ui/src/components/**`" with no carve-out for `components/ui/`), but they are not evidence of local customization.
 
 ---
 
-## 2. Feature components — `ui/src/components/` (206)
+## 2. Feature components — `apps/ui/src/components/` (206)
 
 Grouped by rough domain area. One line each; variants column is props-based where notable, blank where the component is largely propless/single-purpose.
 
@@ -253,7 +253,7 @@ Grouped by rough domain area. One line each; variants column is props-based wher
 
 ---
 
-## 3. Pages — `ui/src/pages/` (73)
+## 3. Pages — `apps/ui/src/pages/` (73)
 
 Grouped by area; one line each.
 
@@ -313,11 +313,11 @@ Grouped by area; one line each.
 
 ### 4b. Installed shadcn components drifted from the registry
 
-`npx shadcn@latest diff` (run from `ui/`, network available) reported **"No updates found"** for the aggregate diff and for spot-checked `button` and `dialog` individually. **No drift detected** against the current registry for any of the 22 standard-named primitives. (`radio-card` and `toggle-switch` aren't standard registry names so `diff` cannot evaluate them — see 4c.)
+`npx shadcn@latest diff` (run from `apps/ui/`, network available) reported **"No updates found"** for the aggregate diff and for spot-checked `button` and `dialog` individually. **No drift detected** against the current registry for any of the 22 standard-named primitives. (`radio-card` and `toggle-switch` aren't standard registry names so `diff` cannot evaluate them — see 4c.)
 
 ### 4c. Raw Radix/plain elements where an installed shadcn wrapper exists
 
-- **No raw `@radix-ui/*` imports were found outside `ui/src/components/ui/`** (`rg -l '@radix-ui' -g '*.tsx' -g '!components/ui/*'` returned zero files) — every Radix primitive in the app is properly routed through the `components/ui/` wrapper layer. This is a clean result; no action needed.
+- **No raw `@radix-ui/*` imports were found outside `apps/ui/src/components/ui/`** (`rg -l '@radix-ui' -g '*.tsx' -g '!components/ui/*'` returned zero files) — every Radix primitive in the app is properly routed through the `components/ui/` wrapper layer. This is a clean result; no action needed.
 - One raw hand-rolled modal (`plugins/launchers.tsx`, `role="dialog"` on a plain `<div>`) exists where `Dialog`/`Sheet` wrappers are installed — see 4a above, same finding, cross-listed here because it's also a "plain element where a wrapper exists" case.
 - `radio-card.tsx` and `toggle-switch.tsx` are functioning as de facto custom primitives sitting in the `ui/` folder alongside real shadcn components, but they were not installed via the registry (no matching registry names). Recommend a human decide whether to (a) leave them as intentionally custom, documenting why the registry's `radio-group`/`switch` don't fit, or (b) evaluate swapping to the registry versions if the customization was incidental rather than deliberate.
 

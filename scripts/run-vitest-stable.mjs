@@ -26,25 +26,25 @@ const serializedDomainTestPatterns = Object.freeze([
   /(?:^|\/)[^/]*postgres[^/]*\.test\.ts$/,
 ]);
 const serializedIsolationSuites = new Set([
-  "server/src/__tests__/approval-routes-idempotency.test.ts",
-  "server/src/__tests__/assets.test.ts",
-  "server/src/__tests__/authz-company-access.test.ts",
-  "server/src/__tests__/companies-route-path-guard.test.ts",
-  "server/src/__tests__/company-portability.test.ts",
-  "server/src/__tests__/costs-service.test.ts",
-  "server/src/__tests__/express5-auth-wildcard.test.ts",
-  "server/src/__tests__/health-dev-server-access.test.ts",
-  "server/src/__tests__/health.test.ts",
-  "server/src/__tests__/invite-accept-existing-member.test.ts",
-  "server/src/__tests__/invite-accept-gateway-defaults.test.ts",
-  "server/src/__tests__/invite-accept-replay.test.ts",
-  "server/src/__tests__/invite-expiry.test.ts",
-  "server/src/__tests__/invite-join-manager.test.ts",
-  "server/src/__tests__/invite-onboarding-text.test.ts",
-  "server/src/__tests__/issues-service.test.ts",
-  "server/src/__tests__/project-routes-env.test.ts",
-  "server/src/__tests__/redaction.test.ts",
-  "server/src/__tests__/routines-e2e.test.ts",
+  "apps/server/src/__tests__/approval-routes-idempotency.test.ts",
+  "apps/server/src/__tests__/assets.test.ts",
+  "apps/server/src/__tests__/authz-company-access.test.ts",
+  "apps/server/src/__tests__/companies-route-path-guard.test.ts",
+  "apps/server/src/__tests__/company-portability.test.ts",
+  "apps/server/src/__tests__/costs-service.test.ts",
+  "apps/server/src/__tests__/express5-auth-wildcard.test.ts",
+  "apps/server/src/__tests__/health-dev-server-access.test.ts",
+  "apps/server/src/__tests__/health.test.ts",
+  "apps/server/src/__tests__/invite-accept-existing-member.test.ts",
+  "apps/server/src/__tests__/invite-accept-gateway-defaults.test.ts",
+  "apps/server/src/__tests__/invite-accept-replay.test.ts",
+  "apps/server/src/__tests__/invite-expiry.test.ts",
+  "apps/server/src/__tests__/invite-join-manager.test.ts",
+  "apps/server/src/__tests__/invite-onboarding-text.test.ts",
+  "apps/server/src/__tests__/issues-service.test.ts",
+  "apps/server/src/__tests__/project-routes-env.test.ts",
+  "apps/server/src/__tests__/redaction.test.ts",
+  "apps/server/src/__tests__/routines-e2e.test.ts",
 ]);
 let invocationIndex = 0;
 const serializedModeName = "serialized";
@@ -113,7 +113,7 @@ export function buildIsolatedVitestEnv(baseEnvironment, testRoot, instanceId) {
 }
 
 export function isSerializedServerTest(file) {
-  if (!file.startsWith("server/src/") || !file.endsWith(".test.ts")) return false;
+  if (!file.startsWith("apps/server/src/") || !file.endsWith(".test.ts")) return false;
   return (
     routeTestPattern.test(file) ||
     serializedIsolationSuites.has(file) ||
@@ -494,9 +494,11 @@ export function main(argv = process.argv.slice(2)) {
   const generalServerShardDurations = loadShardDurations(
     path.join(scriptsDir, "general-server-shard-durations.json"),
   );
-  const serverRoot = path.join(repoRoot, "server");
+  const serverRoot = path.join(repoRoot, "apps", "server");
   const { projects: testProjects } = discoverVitestProjectManifest(repoRoot);
-  const serverProject = testProjects.find((project) => project.path === "server");
+  const serverProject = testProjects.find(
+    (project) => project.path === "apps/server",
+  );
   if (!serverProject) fail("The server Vitest project is missing");
   const serializedWorkspaceProjects = testProjects
     .filter((project) => project.lane === serializedWorkspaceLane);

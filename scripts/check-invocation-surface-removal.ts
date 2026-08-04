@@ -30,7 +30,7 @@ const IGNORED_PATHS = [
 ] as const;
 
 const PREFLIGHT_OWNER =
-  "server/src/services/adapter-configuration-preflight.ts";
+  "apps/server/src/services/adapter-configuration-preflight.ts";
 const PREFLIGHT_REQUIRED_TOKENS = [
   "createPostgresAdapterConfigurationPreflightService",
   "loadExactBinding",

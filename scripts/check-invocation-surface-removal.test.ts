@@ -18,7 +18,7 @@ function fixtureRoot(): string {
   roots.add(root);
   write(
     root,
-    "server/src/services/adapter-configuration-preflight.ts",
+    "apps/server/src/services/adapter-configuration-preflight.ts",
     [
       "declare function probeAcpxRuntimeReadiness(): unknown;",
       "declare function resolveCompanySkillMaterializationRevisionInTransaction(): unknown;",
@@ -70,7 +70,7 @@ for (const token of [
 ] as const) {
   test(`rejects retired invocation surface ${token}`, () => {
     const root = fixtureRoot();
-    write(root, "server/src/adapters/retired.ts", `export const retired = ${JSON.stringify(token)};\n`);
+    write(root, "apps/server/src/adapters/retired.ts", `export const retired = ${JSON.stringify(token)};\n`);
     assert.ok(
       invocationSurfaceRemovalViolations(root).some((violation) =>
         violation.includes(token),
@@ -127,7 +127,7 @@ for (const effect of [
     const root = fixtureRoot();
     write(
       root,
-      "server/src/services/adapter-configuration-preflight.ts",
+      "apps/server/src/services/adapter-configuration-preflight.ts",
       [
         "declare function probeAcpxRuntimeReadiness(): unknown;",
         "declare function resolveCompanySkillMaterializationRevisionInTransaction(): unknown;",

@@ -94,7 +94,7 @@ Key commands:
 ```bash
 git diff --name-only v{last}..HEAD -- packages/db/src/migrations/
 git diff v{last}..HEAD -- packages/db/src/schema/
-git diff v{last}..HEAD -- server/src/routes/ server/src/api/
+git diff v{last}..HEAD -- apps/server/src/routes/ apps/server/src/api/
 git log v{last}..HEAD --format="%s" | rg -n 'BREAKING CHANGE|BREAKING:|^[a-z]+!:' || true
 ```
 

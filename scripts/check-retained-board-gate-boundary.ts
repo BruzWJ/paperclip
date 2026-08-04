@@ -9,17 +9,17 @@ import {
 } from "./static-removal-gate-utils.ts";
 
 const TOOL_SCHEMA = "packages/db/schema/tool_access.ts";
-const TOOL_GATEWAY = "server/src/services/tool-gateway.ts";
-const TOOL_GATEWAY_ROUTE = "server/src/routes/tool-gateway.ts";
-const TOOL_POLICY = "server/src/services/tool-access-policy.ts";
-const TOOL_ACCESS = "server/src/services/tool-access.ts";
+const TOOL_GATEWAY = "apps/server/src/services/tool-gateway.ts";
+const TOOL_GATEWAY_ROUTE = "apps/server/src/routes/tool-gateway.ts";
+const TOOL_POLICY = "apps/server/src/services/tool-access-policy.ts";
+const TOOL_ACCESS = "apps/server/src/services/tool-access.ts";
 const APPROVAL_SCHEMA = "packages/db/schema/approvals.ts";
 const ISSUE_APPROVAL_SCHEMA = "packages/db/schema/issue_approvals.ts";
 const EXECUTION_DECISION_SCHEMA =
   "packages/db/schema/issue_execution_decisions.ts";
-const EXECUTION_POLICY = "server/src/services/issue-execution-policy.ts";
+const EXECUTION_POLICY = "apps/server/src/services/issue-execution-policy.ts";
 const CONSENT_SCHEMA = "packages/db/schema/change_consents.ts";
-const CONSENT_OWNER = "server/src/services/change-consent-gate.ts";
+const CONSENT_OWNER = "apps/server/src/services/change-consent-gate.ts";
 
 const TOOL_ACTION_WRITERS = new Set([
   TOOL_GATEWAY,
@@ -88,12 +88,10 @@ export function retainedBoardGateBoundaryViolations(
     ...literalRemovalViolations(repositoryRoot, {
       roots: [
         ".env.example",
-        "server",
+        "apps",
         "packages",
-        "ui",
         "tests",
         "doc",
-        "docs",
         "docker",
         "Dockerfile",
       ],
@@ -219,8 +217,8 @@ export function retainedBoardGateBoundaryViolations(
   ];
 
   for (const absolute of listRepositoryTextFiles(repositoryRoot, [
-    "server/src/services",
-    "server/src/routes",
+    "apps/server/src/services",
+    "apps/server/src/routes",
   ])) {
     const path = normalizedRelative(repositoryRoot, absolute);
     if (/\.(?:test|spec)\.tsx?$/.test(path)) continue;

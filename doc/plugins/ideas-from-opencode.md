@@ -56,12 +56,11 @@ Primary files reviewed:
 
 Relevant Paperclip files reviewed for current extension seams:
 
-- [server/src/adapters/registry.ts](../../server/src/adapters/registry.ts)
-- [ui/src/adapters/registry.ts](../../ui/src/adapters/registry.ts)
-- [server/src/storage/provider-registry.ts](../../server/src/storage/provider-registry.ts)
-- [server/src/secrets/provider-registry.ts](../../server/src/secrets/provider-registry.ts)
-- [server/src/services/run-log-store.ts](../../server/src/services/run-log-store.ts)
-- [server/src/services/activity-log.ts](../../server/src/services/activity-log.ts)
+- [apps/server/src/adapters/registry.ts](../../apps/server/src/adapters/registry.ts)
+- [apps/ui/src/adapters/registry.ts](../../apps/ui/src/adapters/registry.ts)
+- [apps/server/src/storage/provider-registry.ts](../../apps/server/src/storage/provider-registry.ts)
+- [apps/server/src/secrets/provider-registry.ts](../../apps/server/src/secrets/provider-registry.ts)
+- [apps/server/src/services/activity-log.ts](../../apps/server/src/services/activity-log.ts)
 - [doc/SPEC.md](../SPEC.md)
 - [doc/SPEC-implementation.md](../SPEC-implementation.md)
 
@@ -379,12 +378,11 @@ That means Paperclip should borrow the good ideas from `opencode` but use a stri
 
 Paperclip has several extension-like seams already:
 
-- server adapter registry: [server/src/adapters/registry.ts](../../server/src/adapters/registry.ts)
-- UI adapter registry: [ui/src/adapters/registry.ts](../../ui/src/adapters/registry.ts)
-- storage provider registry: [server/src/storage/provider-registry.ts](../../server/src/storage/provider-registry.ts)
-- secret provider registry: [server/src/secrets/provider-registry.ts](../../server/src/secrets/provider-registry.ts)
-- pluggable run-log store seam: [server/src/services/run-log-store.ts](../../server/src/services/run-log-store.ts)
-- activity log and live event emission: [server/src/services/activity-log.ts](../../server/src/services/activity-log.ts)
+- server adapter registry: [apps/server/src/adapters/registry.ts](../../apps/server/src/adapters/registry.ts)
+- UI adapter registry: [apps/ui/src/adapters/registry.ts](../../apps/ui/src/adapters/registry.ts)
+- storage provider registry: [apps/server/src/storage/provider-registry.ts](../../apps/server/src/storage/provider-registry.ts)
+- secret provider registry: [apps/server/src/secrets/provider-registry.ts](../../apps/server/src/secrets/provider-registry.ts)
+- activity log and live event emission: [apps/server/src/services/activity-log.ts](../../apps/server/src/services/activity-log.ts)
 
 This is good news.
 Paperclip does not need to invent extensibility from scratch.

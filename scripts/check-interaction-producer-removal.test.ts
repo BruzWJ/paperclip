@@ -48,8 +48,8 @@ function canonicalPipelineSource(): string {
 function fixtureRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "paperclip-producer-gate-"));
   roots.add(root);
-  write(root, "server/src/services/tool-gateway.ts", canonicalGatewaySource());
-  write(root, "server/src/routes/pipelines.ts", canonicalPipelineSource());
+  write(root, "apps/server/src/services/tool-gateway.ts", canonicalGatewaySource());
+  write(root, "apps/server/src/routes/pipelines.ts", canonicalPipelineSource());
   return root;
 }
 
@@ -73,7 +73,7 @@ for (const token of [
 ] as const) {
   test(`rejects retired interaction producer ${token}`, () => {
     const root = fixtureRoot();
-    write(root, "server/src/services/retired-producer.ts", `export const retired = ${JSON.stringify(token)};\n`);
+    write(root, "apps/server/src/services/retired-producer.ts", `export const retired = ${JSON.stringify(token)};\n`);
     assert.ok(
       interactionProducerRemovalViolations(root).some((violation) =>
         violation.includes(token),
@@ -86,7 +86,7 @@ test("rejects approval execution when the canonical claim/check order changes", 
   const root = fixtureRoot();
   write(
     root,
-    "server/src/services/tool-gateway.ts",
+    "apps/server/src/services/tool-gateway.ts",
     [
       "async function executeApprovedAgentInvocation() {",
       "  resolveInvocationToolBinding();",
@@ -116,7 +116,7 @@ for (const token of [
     const root = fixtureRoot();
     write(
       root,
-      "server/src/routes/pipelines.ts",
+      "apps/server/src/routes/pipelines.ts",
       canonicalPipelineSource().replace(token, "removedCanonicalIngress"),
     );
     assert.ok(
