@@ -3,7 +3,7 @@ import type {
   StopReason,
   SessionConfigValueId,
 } from "@agentclientprotocol/sdk";
-import type { ApprovedAcpLaunch } from "./agent-registry.js";
+import type { AcpRegistryLaunch } from "./agent-registry.js";
 
 export const ACP_SUBPROCESS_CONTRACT_VERSION = "acp-subprocess/v1" as const;
 export const ACP_STABLE_WIRE_VERSION = 1 as const;
@@ -17,7 +17,8 @@ export interface AcpSessionConfigSelection {
 
 export interface AcpSubprocessLaunch {
   readonly version: typeof ACP_SUBPROCESS_CONTRACT_VERSION;
-  readonly launch: ApprovedAcpLaunch;
+  /** Runtime-resolved argv from ACPX; never persisted in a Paperclip revision. */
+  readonly launch: AcpRegistryLaunch;
   readonly cwd: string;
   readonly additionalDirectories: readonly string[];
   readonly environment: Readonly<Record<string, string>>;

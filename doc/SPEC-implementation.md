@@ -136,10 +136,11 @@ exposes false-grant surfaces.
 
 Execution workspace services and the issue-execution resolver use
 `issue_execution_workspace_bindings` as the ownership/selection source for one
-issue epoch. Projectless workspaces are valid. The common execution-target
-bridge supplies the resolved workspace to the same worker-supervised ACP
-subprocess path for local, SSH, sandbox, and plugin drivers; adapter definitions
-do not execute or transport provider work.
+issue epoch. Projectless workspaces are valid. The ACPX public-runtime bridge
+supplies the resolved workspace to the same bounded single-prompt ACPX path. ACPX launches
+the local compatible CLI itself; adapter definitions do not execute or
+transport provider work. The current public ACPX runtime is local-only, so
+remote driver selection is not admitted.
 
 ### Creator routing and recovery
 

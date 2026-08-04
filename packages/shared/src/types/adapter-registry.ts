@@ -1,16 +1,16 @@
 /**
- * One declarative agent-harness ("adapter") entry. The same shape is used for
- * local self-hosting and our operator/cloud: it governs both availability (the
- * picker) and, when the run is sandboxed on Kubernetes, the runtime wiring.
+ * One target-local execution-runtime mapping keyed by an ACPX agent name.
+ * This is not an agent catalog and cannot govern picker availability: ACPX
+ * supplies those names at runtime. A target may use the mapping only to bind
+ * an already-selected agent to its image and network configuration.
  *
- * Replace semantics: when a registry is supplied it is the COMPLETE declared
- * set. Adopt (built-in defaults) = no registry at all. Remove = omit the entry.
- * Add = include a new entry. Override = redefine an existing adapterType.
+ * Replace semantics: when a target mapping is supplied it is its complete
+ * declared runtime set. There are no built-in defaults.
  */
 export interface AdapterRegistryEntry {
-  /** The exact registered ACP adapter identity, e.g. "codex". */
+  /** The exact ACPX agent identity selected for the run. */
   adapterType: string;
-  /** Availability (both local + k8s). Default true. */
+  /** Whether this target can execute the exact ACPX agent identity. */
   enabled?: boolean;
   /** k8s-sandbox-only: container image the Job/Sandbox runs. */
   runtimeImage?: string;

@@ -14,12 +14,14 @@ interface AdapterOptions extends BaseClientOptions {
 }
 
 export function registerAdapterCommands(program: Command): void {
-  const adapter = program.command("adapter").description("Adapter management operations");
+  const adapter = program
+    .command("adapter")
+    .description("ACPX-discovered agent operations");
 
   addCommonClientOptions(
     adapter
       .command("list")
-      .description("List registered adapters")
+      .description("List ACPX-discovered agents")
       .action(async (opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -29,8 +31,6 @@ export function registerAdapterCommands(program: Command): void {
         }
       }),
   );
-
-  addJsonPost(adapter, "install", "Install an external adapter", "/api/adapters/install");
 
   addCommonClientOptions(
     adapter
@@ -47,25 +47,7 @@ export function registerAdapterCommands(program: Command): void {
       }),
   );
 
-  addAdapterPatch(adapter, "update", "Update adapter settings", "");
-  addAdapterPatch(adapter, "override", "Pause or resume a built-in adapter override", "/override");
-  addAdapterPost(adapter, "reload", "Reload an adapter", "/reload");
-  addAdapterPost(adapter, "reinstall", "Reinstall an adapter", "/reinstall");
-
-  addCommonClientOptions(
-    adapter
-      .command("delete")
-      .description("Delete an external adapter registration")
-      .argument("<type>", "Adapter type")
-      .action(async (type: string, opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.delete(apiPath`/api/adapters/${type}`), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
+  addAdapterPatch(adapter, "update", "Update discovered-agent visibility", "");
 
   addCommonClientOptions(
     adapter
@@ -107,19 +89,6 @@ export function registerAdapterCommands(program: Command): void {
   addCompanyAdapterGet(adapter, "model-profiles", "List adapter model profiles", "model-profiles");
 }
 
-function addJsonPost(parent: Command, name: string, description: string, path: string): void {
-  addCommonClientOptions(
-    parent.command(name).description(description).requiredOption("--payload-json <json>", "JSON payload").action(async (opts: AdapterOptions) => {
-      try {
-        const ctx = resolveCommandContext(opts);
-        printOutput(await ctx.api.post(path, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-      } catch (err) {
-        handleCommandError(err);
-      }
-    }),
-  );
-}
-
 function addAdapterPatch(parent: Command, name: string, description: string, suffix: string): void {
   addCommonClientOptions(
     parent
@@ -131,24 +100,6 @@ function addAdapterPatch(parent: Command, name: string, description: string, suf
         try {
           const ctx = resolveCommandContext(opts);
           printOutput(await ctx.api.patch(`${apiPath`/api/adapters/${type}`}${suffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-}
-
-function addAdapterPost(parent: Command, name: string, description: string, suffix: string): void {
-  addCommonClientOptions(
-    parent
-      .command(name)
-      .description(description)
-      .argument("<type>", "Adapter type")
-      .option("--payload-json <json>", "JSON payload", "{}")
-      .action(async (type: string, opts: AdapterOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          printOutput(await ctx.api.post(`${apiPath`/api/adapters/${type}`}${suffix}`, parseJson(opts.payloadJson ?? "{}")), { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }

@@ -1,7 +1,6 @@
 import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import {
-  AGENT_ADAPTER_TYPES,
   cancelEnvironmentCustomImageSetupSessionSchema,
   createEnvironmentCustomImageTerminalSessionTokenSchema,
   createEnvironmentSchema,
@@ -50,6 +49,7 @@ import type { BoardActor } from "../http/request-actor.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { environmentService } from "../services/environments.js";
 import { executionWorkspaceService } from "../services/execution-workspaces.js";
+import { listServerAdapters, refreshAcpxAdapters } from "../adapters/index.js";
 
 export function environmentRoutes(
   db: Db,
@@ -377,13 +377,22 @@ export function environmentRoutes(
 
   router.get("/companies/:companyId/environments/capabilities", async (req, res) => {
     assertCanReadInstanceEnvironments(req);
+    await refreshAcpxAdapters();
+    const adapters = listServerAdapters();
     const pluginDrivers = await listReadyPluginEnvironmentDrivers({
       db,
       workerManager: options.pluginWorkerManager,
     });
     res.json(getEnvironmentCapabilities(
-      AGENT_ADAPTER_TYPES,
+      adapters.map((adapter) => adapter.type),
       {
+        // ACPX's admitted adapter definition is the only source of which
+        // Paperclip execution transports that agent can use. Do not project
+        // a globally-supported driver into every agent row.
+        adapterDrivers: Object.fromEntries(adapters.map((adapter) => [
+          adapter.type,
+          adapter.definition.environment.drivers,
+        ])),
         sandboxProviders: Object.fromEntries(pluginDrivers.map((driver) => [
           driver.driverKey,
           {

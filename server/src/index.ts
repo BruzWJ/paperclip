@@ -41,10 +41,6 @@ import {
   routineService,
   toolAccessService,
 } from "./services/index.js";
-import {
-  parseAdapterRegistryEnv,
-  reconcileAdapterAvailability,
-} from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
@@ -413,10 +409,18 @@ export async function startServer(): Promise<StartedServer> {
       });
     },
   };
-  // Adapter declarations must be settled before issue execution starts.
-  const { waitForExternalAdapters } = await import("./adapters/registry.js");
-  await waitForExternalAdapters();
-  reconcileAdapterAvailability(parseAdapterRegistryEnv());
+  // Warm the ACPX catalog without making server availability depend on every
+  // locally configured provider CLI completing a probe. All selectable paths
+  // (catalog reads, configuration, approval, and execution readiness) refresh
+  // ACPX and fail closed before use, so this is only an eager cache fill.
+  void import("./adapters/registry.js")
+    .then(({ refreshAcpxAdapters }) => refreshAcpxAdapters({ force: true }))
+    .catch((error: unknown) => {
+      logger.warn(
+        { err: error },
+        "initial ACPX adapter catalog refresh failed; it will retry on demand",
+      );
+    });
   const composition =
     createPostgresIssueSessionCompositionRuntime(db as any, {
       workerId,

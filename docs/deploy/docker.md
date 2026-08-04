@@ -51,10 +51,11 @@ Application-managed data is persisted under the bind mount (`./data/docker-paper
 
 ## Agent transports in Docker
 
-The Paperclip image contains the canonical `process` and `http` transports. It
-does not install provider CLIs or provider-specific adapter packages. Install
-an external adapter separately and provide its executable in the declared
-execution target.
+The Paperclip image contains the common ACPX public-runtime execution bridge, not a bundled
+provider CLI or a Paperclip-owned adapter catalog. Install an
+ACPX-compatible CLI in the execution target and authenticate it through its
+native flow. ACPX discovery then determines whether that local CLI is
+selectable and supplies its launch/configuration metadata.
 
 Provider credentials are not server-level Docker environment variables.
 Prepare provider-native configuration inside the declared execution target:

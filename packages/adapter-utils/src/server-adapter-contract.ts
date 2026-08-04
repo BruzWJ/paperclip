@@ -28,8 +28,9 @@ function exactKeys(
   value: JsonRecord,
   allowed: readonly string[],
   label: string,
+  optional: readonly string[] = [],
 ): void {
-  const allowedSet = new Set(allowed);
+  const allowedSet = new Set([...allowed, ...optional]);
   const unknown = Object.keys(value).find((key) => !allowedSet.has(key));
   const missing = allowed.find(
     (key) => !Object.prototype.hasOwnProperty.call(value, key),
@@ -60,12 +61,26 @@ function parseConfigValue(value: unknown, label: string): AcpAdapterConfigValue 
 function parseConfigOption(value: unknown, index: number): AcpAdapterConfigOption {
   const label = `ACP config option at index ${index}`;
   if (!isRecord(value)) throw new Error(`${label} must be an object`);
-  exactKeys(value, ["id", "configKey", "label", "required", "values"], label);
+  exactKeys(
+    value,
+    ["id", "configKey", "label", "required", "values"],
+    label,
+    ["freeform"],
+  );
   if (value.required !== true) {
     throw new Error(`${label}.required must be true`);
   }
-  if (!Array.isArray(value.values) || value.values.length === 0) {
-    throw new Error(`${label}.values must be a non-empty array`);
+  if (value.freeform !== undefined && value.freeform !== true) {
+    throw new Error(`${label}.freeform must be true when present`);
+  }
+  const freeform = value.freeform === true;
+  if (!Array.isArray(value.values) || (!freeform && value.values.length === 0)) {
+    throw new Error(
+      `${label}.values must be non-empty unless the ACPX option is freeform`,
+    );
+  }
+  if (freeform && value.values.length !== 0) {
+    throw new Error(`${label}.freeform must not declare closed values`);
   }
   const values = value.values.map((entry, valueIndex) =>
     parseConfigValue(entry, `${label}.values[${valueIndex}]`),
@@ -80,6 +95,7 @@ function parseConfigOption(value: unknown, index: number): AcpAdapterConfigOptio
     label: exactString(value.label, `${label}.label`),
     required: true,
     values,
+    ...(freeform ? { freeform: true as const } : {}),
   };
 }
 
@@ -101,7 +117,7 @@ function assertServerAdapterModule(
       "version",
       "launchProfile",
       "environment",
-      "readiness",
+      "runtime",
       "ui",
       "configSchema",
       "configOptions",
@@ -112,9 +128,9 @@ function assertServerAdapterModule(
     ],
     `Server adapter "${type}" definition`,
   );
-  if (definition.version !== "acp-subprocess/v1") {
+  if (definition.version !== "acpx-runtime/v1") {
     throw new Error(
-      `Server adapter "${type}" must use definition version acp-subprocess/v1`,
+      `Server adapter "${type}" must use definition version acpx-runtime/v1`,
     );
   }
 
@@ -124,57 +140,13 @@ function assertServerAdapterModule(
   const launch = definition.launchProfile;
   exactKeys(
     launch,
-    [
-      "registryName",
-      "targetNativeCli",
-      "command",
-      "args",
-      "frontendPackage",
-      "frontendVersion",
-      "frontendDigest",
-    ],
+    ["registryName"],
     `Server adapter "${type}" launchProfile`,
   );
   exactString(
     launch.registryName,
     `Server adapter "${type}" launchProfile.registryName`,
   );
-  exactString(
-    launch.targetNativeCli,
-    `Server adapter "${type}" launchProfile.targetNativeCli`,
-  );
-  if (
-    typeof launch.command !== "string" ||
-    launch.command.length === 0 ||
-    launch.command !== launch.command.trim() ||
-    !Array.isArray(launch.args) ||
-    launch.args.some(
-      (entry) =>
-        typeof entry !== "string" ||
-        entry.length === 0 ||
-        entry !== entry.trim(),
-    )
-  ) {
-    throw new Error(
-      `Server adapter "${type}" launchProfile contains invalid command argv`,
-    );
-  }
-  exactString(
-    launch.frontendPackage,
-    `Server adapter "${type}" launchProfile.frontendPackage`,
-  );
-  exactString(
-    launch.frontendVersion,
-    `Server adapter "${type}" launchProfile.frontendVersion`,
-  );
-  if (
-    typeof launch.frontendDigest !== "string" ||
-    !/^[0-9a-f]{64}$/.test(launch.frontendDigest)
-  ) {
-    throw new Error(
-      `Server adapter "${type}" launchProfile.frontendDigest must be a lowercase SHA-256 digest`,
-    );
-  }
 
   if (!isRecord(definition.environment)) {
     throw new Error(`Server adapter "${type}" environment must be an object`);
@@ -220,32 +192,27 @@ function assertServerAdapterModule(
     );
   }
 
-  if (!isRecord(definition.readiness)) {
-    throw new Error(`Server adapter "${type}" readiness must be an object`);
+  if (!isRecord(definition.runtime)) {
+    throw new Error(`Server adapter "${type}" runtime must be an object`);
   }
-  const readiness = definition.readiness;
+  const runtime = definition.runtime;
   exactKeys(
-    readiness,
-    [
-      "protocolVersion",
-      "resume",
-      "cancel",
-      "sessionConfig",
-      "sessionScopedMcpReplacement",
-      "cliNativeAuthentication",
-    ],
-    `Server adapter "${type}" readiness`,
+    runtime,
+    ["controls"],
+    `Server adapter "${type}" runtime`,
   );
   if (
-    readiness.protocolVersion !== 1 ||
-    readiness.resume !== true ||
-    readiness.cancel !== true ||
-    readiness.sessionConfig !== true ||
-    readiness.sessionScopedMcpReplacement !== true ||
-    readiness.cliNativeAuthentication !== true
+    !Array.isArray(runtime.controls) ||
+    runtime.controls.some(
+      (control) =>
+        typeof control !== "string" ||
+        control.length === 0 ||
+        control !== control.trim(),
+    ) ||
+    new Set(runtime.controls).size !== runtime.controls.length
   ) {
     throw new Error(
-      `Server adapter "${type}" does not declare every required stable ACP readiness fact`,
+      `Server adapter "${type}" declares invalid ACPX runtime controls`,
     );
   }
 
@@ -270,8 +237,8 @@ function assertServerAdapterModule(
       `Server adapter "${type}" configSchema is invalid: ${parsedSchema.errors.join("; ")}`,
     );
   }
-  if (!Array.isArray(definition.configOptions) || definition.configOptions.length === 0) {
-    throw new Error(`Server adapter "${type}" configOptions must be non-empty`);
+  if (!Array.isArray(definition.configOptions)) {
+    throw new Error(`Server adapter "${type}" configOptions must be an array`);
   }
   const configOptions = definition.configOptions.map(parseConfigOption);
   const optionIds = configOptions.map((option) => option.id);
@@ -292,20 +259,18 @@ function assertServerAdapterModule(
     );
   }
 
-  const modelConfigOptionId = exactString(
-    definition.modelConfigOptionId,
-    `Server adapter "${type}" modelConfigOptionId`,
-  );
-  const modelOption = configOptions.find(
-    (option) => option.id === modelConfigOptionId,
-  );
-  if (!modelOption) {
+  if (
+    definition.modelConfigOptionId !== null &&
+    (typeof definition.modelConfigOptionId !== "string" ||
+      definition.modelConfigOptionId.length === 0 ||
+      definition.modelConfigOptionId !== definition.modelConfigOptionId.trim())
+  ) {
     throw new Error(
-      `Server adapter "${type}" modelConfigOptionId is not declared`,
+      `Server adapter "${type}" modelConfigOptionId must be null or an exact declared option id`,
     );
   }
-  if (!Array.isArray(definition.models) || definition.models.length === 0) {
-    throw new Error(`Server adapter "${type}" models must be non-empty`);
+  if (!Array.isArray(definition.models)) {
+    throw new Error(`Server adapter "${type}" models must be an array`);
   }
   const models = definition.models.map(validateAdapterModel);
   if (
@@ -314,18 +279,34 @@ function assertServerAdapterModule(
   ) {
     throw new Error(`Server adapter "${type}" models contain duplicate ids or values`);
   }
-  const allowedModelValues = new Set(
-    modelOption.values
-      .filter((entry) => typeof entry.value === "string")
-      .map((entry) => entry.value),
-  );
-  if (
-    allowedModelValues.size !== models.length ||
-    models.some((model) => !allowedModelValues.has(model.value))
-  ) {
-    throw new Error(
-      `Server adapter "${type}" model values must exactly match its model config option`,
+  if (definition.modelConfigOptionId === null) {
+    if (models.length > 0) {
+      throw new Error(
+        `Server adapter "${type}" cannot declare models without an ACPX model option`,
+      );
+    }
+  } else {
+    const modelOption = configOptions.find(
+      (option) => option.id === definition.modelConfigOptionId,
     );
+    if (!modelOption) {
+      throw new Error(
+        `Server adapter "${type}" modelConfigOptionId is not declared`,
+      );
+    }
+    const allowedModelValues = new Set(
+      modelOption.values
+        .filter((entry) => typeof entry.value === "string")
+        .map((entry) => entry.value),
+    );
+    if (
+      allowedModelValues.size !== models.length ||
+      models.some((model) => !allowedModelValues.has(model.value))
+    ) {
+      throw new Error(
+        `Server adapter "${type}" model values must exactly match its model config option`,
+      );
+    }
   }
 
   if (!Array.isArray(definition.modelProfiles)) {

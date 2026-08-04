@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
+import type { AcpAgentRegistry } from "acpx/runtime";
 import {
   adapterExecutionTargetIsCommandManaged,
   resolveAdapterExecutionTargetNativeIdentityEnvironment,
@@ -26,10 +27,10 @@ import {
 } from "../selected-company-skills.js";
 import { buildSshSpawnTarget, shellQuote } from "../ssh.js";
 import {
-  readApprovedAcpFrontendArtifact,
-  resolveApprovedAcpLaunch,
-  sameApprovedAcpLaunch,
-  type ApprovedAcpLaunch,
+  loadConfiguredAcpRegistry,
+  resolveAcpRegistryLaunch,
+  sameAcpRegistryLaunch,
+  type AcpRegistryLaunch,
 } from "./agent-registry.js";
 import type { AcpSubprocessStarter } from "./client.js";
 import type { AcpSubprocessLaunch } from "./contract.js";
@@ -42,16 +43,6 @@ import {
 
 const DEFAULT_TARGET_CLEANUP_TIMEOUT_MS = 5_000;
 const DEFAULT_TARGET_PROBE_TIMEOUT_SEC = 15;
-const SAFE_ADAPTER_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const TARGET_FRONTEND_DIGEST_SCRIPT = [
-  'const { createHash } = require("node:crypto");',
-  'const { createReadStream } = require("node:fs");',
-  "const digest = createHash(\"sha256\");",
-  "createReadStream(process.argv[1])",
-  '  .on("data", (chunk) => digest.update(chunk))',
-  '  .on("error", () => process.exit(70))',
-  '  .on("end", () => process.stdout.write(digest.digest("hex")));',
-].join("\n");
 
 type CleanupStep = {
   readonly label: string;
@@ -62,8 +53,10 @@ export interface PrepareAcpExecutionTargetSubprocessInput {
   /** Durable attempt/run-scoped identity used only by the existing target. */
   readonly runId: string;
   readonly target: AdapterExecutionTarget;
-  /** Exact persisted catalog identity; worker-local argv is never target argv. */
-  readonly sourceLaunch: ApprovedAcpLaunch;
+  /** Persisted ACPX registry reference; ACPX resolves argv at execution time. */
+  readonly sourceLaunch: Readonly<{ registryName: string }>;
+  /** Test/host injection; production uses ACPX's installed default registry. */
+  readonly agentRegistry?: AcpAgentRegistry;
   /** Explicit cwd for the local transport wrapper, never an ACP session cwd. */
   readonly hostCwd: string;
   /** Exact target-visible cwd sent later to ACP session/new or session/resume. */
@@ -83,16 +76,16 @@ export interface PrepareAcpExecutionTargetSubprocessInput {
 }
 
 export interface PreparedAcpExecutionTargetSubprocess {
+  /** Exact launch resolved from ACPX's current host-workspace registry. */
+  readonly launch: AcpRegistryLaunch;
   readonly targetCwd: string;
   readonly targetAdditionalDirectories: readonly string[];
   /** Target-local paths only. File contents are never returned. */
   readonly invocationFilePaths: Readonly<Record<string, string>>;
   /** Exact absolute Node executable resolved on the selected target. */
   readonly targetNodeExecutable: string;
-  /** Exact canonical target-native CLI selected by the immutable profile. */
+  /** Exact target executable selected from ACPX's current registry launch. */
   readonly targetNativeExecutable: string;
-  /** Target-local verified copy of the pinned bundled ACP frontend. */
-  readonly targetFrontendEntrypoint: string;
   readonly selectedCompanySkillMaterialization: {
     readonly materializationKey: string;
     collectExact(
@@ -136,6 +129,17 @@ function sameStrings(
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+/**
+ * ACPX registry names are opaque protocol identifiers, not filesystem names.
+ * Derive the target runtime directory key instead of imposing a Paperclip
+ * character allowlist on a dynamically supplied agent name.
+ */
+function acpxRuntimeKey(registryName: string): string {
+  return `acpx-${createHash("sha256")
+    .update(registryName, "utf8")
+    .digest("hex")}`;
 }
 
 function probeTimeoutSec(value: number | null | undefined): number {
@@ -263,52 +267,6 @@ async function resolveTargetReadOnlyBinder(input: {
     "ACP target read-only binder",
     input.target.kind === "remote",
   );
-}
-
-async function verifyTargetFrontendArtifact(input: {
-  readonly target: AdapterExecutionTarget;
-  readonly targetCwd: string;
-  readonly targetNodeExecutable: string;
-  readonly targetFrontendEntrypoint: string;
-  readonly expectedDigest: string;
-  readonly timeoutSec: number;
-}): Promise<void> {
-  const remote = input.target.kind === "remote";
-  const digest = requireSuccessfulProbe(
-    remote
-      ? await runAdapterExecutionTargetShellCommand(
-          randomUUID(),
-          input.target,
-          [
-            shellQuote(input.targetNodeExecutable),
-            "-e",
-            shellQuote(TARGET_FRONTEND_DIGEST_SCRIPT),
-            shellQuote(input.targetFrontendEntrypoint),
-          ].join(" "),
-          {
-            cwd: input.targetCwd,
-            env: {},
-            timeoutSec: input.timeoutSec,
-          },
-        )
-      : await runAdapterExecutionTargetProcess(
-          randomUUID(),
-          input.target,
-          input.targetNodeExecutable,
-          ["-e", TARGET_FRONTEND_DIGEST_SCRIPT, input.targetFrontendEntrypoint],
-          {
-            cwd: input.targetCwd,
-            env: {},
-            timeoutSec: input.timeoutSec,
-            graceSec: 2,
-            onLog: async () => {},
-          },
-        ),
-    "ACP target frontend digest verification",
-  );
-  if (digest !== input.expectedDigest) {
-    throw new Error("ACP target frontend artifact digest drifted");
-  }
 }
 
 function requireCleanupTimeout(value: number | undefined): number {
@@ -445,7 +403,7 @@ function localSandboxOptions(
 
 function validateLaunchAgainstTarget(
   launch: AcpSubprocessLaunch,
-  sourceLaunch: ApprovedAcpLaunch,
+  sourceLaunch: AcpRegistryLaunch,
   targetCwd: string,
   targetAdditionalDirectories: readonly string[],
 ): void {
@@ -464,12 +422,9 @@ function validateLaunchAgainstTarget(
       "ACP launch additional directories do not match the prepared execution target",
     );
   }
-  if (!SAFE_ADAPTER_KEY.test(launch.launch.registryName)) {
-    throw new Error("ACP approved registry name is not a safe target key");
-  }
-  if (!sameApprovedAcpLaunch(launch.launch, sourceLaunch)) {
+  if (!sameAcpRegistryLaunch(launch.launch, sourceLaunch)) {
     throw new Error(
-      "ACP launch identity changed after execution-target preparation",
+      "ACPX launch changed after execution-target preparation",
     );
   }
   if (Object.keys(launch.environment).length !== 0) {
@@ -503,10 +458,7 @@ async function prepareHostLaunch(input: {
   readonly cleanup: CleanupStep | null;
 }> {
   const target = input.target;
-  const targetEnvironment = Object.freeze({
-    ...input.targetNativeIdentityEnvironment,
-    CODEX_PATH: input.targetNativeExecutable,
-  });
+  const targetEnvironment = input.targetNativeIdentityEnvironment;
   let targetCommand = input.targetCommand;
   let targetArgs = [...input.targetArgs];
   if (input.selectedCompanySkillBinding) {
@@ -712,30 +664,13 @@ export async function prepareAcpExecutionTargetSubprocess(
     );
   }
   const cleanupTimeoutMs = requireCleanupTimeout(input.cleanupTimeoutMs);
-  const approvedLaunch = resolveApprovedAcpLaunch(
+  const registry = input.agentRegistry ?? await loadConfiguredAcpRegistry({
+    cwd: hostCwd,
+  });
+  const acpxLaunch = resolveAcpRegistryLaunch(
     input.sourceLaunch.registryName,
+    registry,
   );
-  if (!sameApprovedAcpLaunch(input.sourceLaunch, approvedLaunch)) {
-    throw new Error(
-      "ACP source launch differs from the immutable approved artifact",
-    );
-  }
-  const artifact = await readApprovedAcpFrontendArtifact(approvedLaunch);
-  let artifactContents: string;
-  try {
-    artifactContents = new TextDecoder("utf-8", { fatal: true }).decode(
-      artifact.bytes,
-    );
-  } catch {
-    throw new Error("Approved ACP frontend is not an exact UTF-8 artifact");
-  }
-  if (
-    createHash("sha256")
-      .update(Buffer.from(artifactContents, "utf8"))
-      .digest("hex") !== artifact.sha256
-  ) {
-    throw new Error("Approved ACP frontend UTF-8 round trip changed its bytes");
-  }
   const targetOperationTimeoutSec = probeTimeoutSec(input.timeoutSec);
   const targetNodeExecutable = await resolveTargetNodeExecutable({
     target: input.target,
@@ -746,7 +681,7 @@ export async function prepareAcpExecutionTargetSubprocess(
     await resolveAdapterExecutionTargetExecutable({
       runId: randomUUID(),
       target: input.target,
-      selector: approvedLaunch.targetNativeCli,
+      selector: acpxLaunch.command,
       targetNodeExecutable,
       cwd: targetCwd,
       timeoutSec: targetOperationTimeoutSec,
@@ -765,7 +700,7 @@ export async function prepareAcpExecutionTargetSubprocess(
       targetNodeExecutable,
       targetCwd,
       frontendIdentity:
-        `${approvedLaunch.frontendPackage}@${approvedLaunch.frontendVersion}`,
+        `acpx:${acpxLaunch.registryName}`,
       identity: input.companySkills.identity,
       entries: input.companySkills.entries,
       timeoutSec: targetOperationTimeoutSec,
@@ -793,29 +728,13 @@ export async function prepareAcpExecutionTargetSubprocess(
   const invocationFiles = input.invocationFiles ?? [];
   let materialized: AdapterExecutionTargetMaterializedTextFiles | null = null;
   try {
-    materialized = await materializeAdapterExecutionTargetTextFiles({
-      target: input.target,
-      files: [
-        ...invocationFiles,
-        { fileName: artifact.targetFileName, contents: artifactContents },
-      ],
-      timeoutSec: targetOperationTimeoutSec,
-    });
-    const targetFrontendEntrypoint =
-      materialized.filePaths[artifact.targetFileName];
-    if (!targetFrontendEntrypoint) {
-      throw new Error(
-        "Execution target omitted the approved ACP frontend artifact",
-      );
+    if (invocationFiles.length > 0) {
+      materialized = await materializeAdapterExecutionTargetTextFiles({
+        target: input.target,
+        files: invocationFiles,
+        timeoutSec: targetOperationTimeoutSec,
+      });
     }
-    await verifyTargetFrontendArtifact({
-      target: input.target,
-      targetCwd,
-      targetNodeExecutable,
-      targetFrontendEntrypoint,
-      expectedDigest: artifact.sha256,
-      timeoutSec: targetOperationTimeoutSec,
-    });
   } catch (preparationError) {
     let skillLockCleanupError: unknown | null = null;
     if (selectedCompanySkillBinding) {
@@ -836,31 +755,28 @@ export async function prepareAcpExecutionTargetSubprocess(
           [preparationError, cleanupError, skillLockCleanupError].filter(
             (error) => error !== null,
           ),
-          "ACP artifact preparation and cleanup failed",
+          "ACP invocation-file preparation and cleanup failed",
         );
       }
     }
     if (skillLockCleanupError !== null) {
       throw new AggregateError(
         [preparationError, skillLockCleanupError],
-        "ACP artifact preparation and skills-home lock cleanup failed",
+        "ACP invocation-file preparation and skills-home lock cleanup failed",
       );
     }
     throw preparationError;
   }
-  const targetFrontendEntrypoint =
-    materialized.filePaths[artifact.targetFileName];
-  if (!targetFrontendEntrypoint) {
-    throw new Error("Prepared ACP frontend artifact path is missing");
-  }
   const invocationFilePaths: Record<string, string> = {};
   for (const file of invocationFiles) {
-    const filePath = materialized.filePaths[file.fileName];
+    const filePath = materialized?.filePaths[file.fileName];
     if (!filePath) {
-      await boundedCleanup(
-        { label: "invocation-file cleanup", run: materialized.cleanup },
-        cleanupTimeoutMs,
-      );
+      if (materialized) {
+        await boundedCleanup(
+          { label: "invocation-file cleanup", run: materialized.cleanup },
+          cleanupTimeoutMs,
+        );
+      }
       throw new Error(
         `Prepared invocation file path is missing: ${file.fileName}`,
       );
@@ -900,7 +816,7 @@ export async function prepareAcpExecutionTargetSubprocess(
     try {
       validateLaunchAgainstTarget(
         launch,
-        approvedLaunch,
+        acpxLaunch,
         targetCwd,
         targetAdditionalDirectories,
       );
@@ -914,9 +830,9 @@ export async function prepareAcpExecutionTargetSubprocess(
         timeoutSec: input.timeoutSec,
         localProcessSandbox: input.localProcessSandbox,
         materialized,
-        adapterKey: approvedLaunch.registryName,
-        targetCommand: targetNodeExecutable,
-        targetArgs: [targetFrontendEntrypoint],
+        adapterKey: acpxRuntimeKey(acpxLaunch.registryName),
+        targetCommand: targetNativeExecutable,
+        targetArgs: acpxLaunch.args,
         targetNativeExecutable,
         targetNativeIdentityEnvironment,
         selectedCompanySkillBinding,
@@ -1006,12 +922,12 @@ export async function prepareAcpExecutionTargetSubprocess(
   };
 
   return Object.freeze({
+    launch: acpxLaunch,
     targetCwd,
     targetAdditionalDirectories,
     invocationFilePaths: Object.freeze(invocationFilePaths),
     targetNodeExecutable,
     targetNativeExecutable,
-    targetFrontendEntrypoint,
     selectedCompanySkillMaterialization: selectedCompanySkillBinding
       ? Object.freeze({
           materializationKey:

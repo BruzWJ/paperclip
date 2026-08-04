@@ -47,7 +47,7 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
         );
       }
       const legal = new Set(option.values.map((entry) => valueKey(entry.value)));
-      if (!legal.has(valueKey(value))) {
+      if (option.freeform !== true && !legal.has(valueKey(value))) {
         throw new Error(
           `Adapter ${adapter.type} ACP config value ${option.configKey} is not declared`,
         );
@@ -62,26 +62,39 @@ export function resolveAcpAdapterRevisionConfiguration(input: {
           : 0,
     );
 
-  const modelOption = definition.configOptions.find(
-    (option) => option.id === definition.modelConfigOptionId,
-  );
-  if (!modelOption) {
-    throw new Error(`Adapter ${adapter.type} has no model config option`);
-  }
-  const modelValue = input.config[modelOption.configKey];
-  const model = requireAdapterCatalogModel({
-    adapterType: adapter.type,
-    selection: definition.models.find((entry) => entry.value === modelValue)?.id,
-    models: definition.models,
-  });
+  const model =
+    definition.modelConfigOptionId === null
+      ? null
+      : (() => {
+          const modelOption = definition.configOptions.find(
+            (option) => option.id === definition.modelConfigOptionId,
+          );
+          if (!modelOption) {
+            throw new Error(`Adapter ${adapter.type} has no model config option`);
+          }
+          const modelValue = input.config[modelOption.configKey];
+          return requireAdapterCatalogModel({
+            adapterType: adapter.type,
+            selection: definition.models.find(
+              (entry) => entry.value === modelValue,
+            )?.id,
+            models: definition.models,
+          });
+        })();
 
   return Object.freeze({
     contractVersion: definition.version,
     launchProfile: definition.launchProfile,
     sessionConfigSelections: Object.freeze(selections),
-    model: Object.freeze({
-      ...model,
-      limits: Object.freeze({ ...model.limits }),
-    }),
+    model:
+      model === null
+        ? null
+        : Object.freeze({
+            ...model,
+            limits:
+              model.limits === null
+                ? null
+                : Object.freeze({ ...model.limits }),
+          }),
   });
 }

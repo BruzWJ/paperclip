@@ -47,22 +47,23 @@ issue/epoch workspace bindings.
 
 ### 2. Execution Worker and ACP Agents
 
-Paperclip's existing worker realizes the issue workspace and supervises one
-conformance-approved ACP agent subprocess for each prompt. Every adapter is a
-data-only `acp-subprocess/v1` definition selecting an exact approved launch and
-stable session configuration. The common official-SDK ACP client—not the
-adapter—owns initialize, new/resume, prompt, structured updates, cancellation,
-and cleanup.
+Paperclip's worker realizes the issue workspace and invokes ACPX's public,
+disposable local runtime for each prompt. ACPX supplies the exact local agent
+name, launch, models, and stable session configuration; Paperclip does not
+maintain a separate agent or model catalog. Each discovered agent is represented
+by a data-only `acpx-runtime/v1` definition. The existing `acp-subprocess`
+bridge delegates initialize, new/resume, configuration, prompt, structured
+updates, cancellation, and cleanup to ACPX; Paperclip does not launch raw ACP
+clients or provider CLIs itself.
 
 The selected coding CLI owns provider authentication, provider requests,
 native prompts and post-processing, its model/tool loop, native tools, native
-history, and native compaction. Paperclip owns issue execution, request-scoped
-capabilities, canonical Session projection, and native-target correlation. If a
-correlated target disappears, Paperclip invalidates it and starts a fresh ACP
-session with only the current source message; it never reconstructs provider
-context from the Session log. It has
-no process/HTTP provider transport, provider SDK client, arbitrary-command
-fallback, or separate remote-machine runtime.
+history, and native compaction. ACPX owns its provider-process and ephemeral
+runtime/session state; Paperclip removes its disposable ACPX state after each
+attempt and retains only issue execution, request-scoped capabilities, and the
+canonical Session projection. It has no process/HTTP provider transport,
+provider SDK client, arbitrary-command fallback, or separate remote-machine
+runtime.
 
 ## Core Principle
 

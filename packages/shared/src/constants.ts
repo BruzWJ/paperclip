@@ -21,10 +21,13 @@ export const AGENT_STATUSES = [
 ] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
-export const AGENT_ADAPTER_TYPES = [
-  "codex",
-] as const;
-export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number] | (string & {});
+/**
+ * Agent names are supplied by ACPX at runtime. This empty compatibility export
+ * must never be used as an availability catalog; consumers query the ACPX
+ * catalog through the server instead.
+ */
+export const AGENT_ADAPTER_TYPES = [] as const;
+export type AgentAdapterType = string & {};
 
 export const AGENT_DEFAULT_MAX_CONCURRENT_RUNS = 20;
 export const WORKSPACE_BRANCH_ROUTINE_VARIABLE = "workspaceBranch";

@@ -143,14 +143,12 @@ const plugin = definePlugin({
     }
     const warnings: string[] = [];
     const cfg = parsed.data;
-    const adapterRuntime = requireAdapterRuntime(
-      cfg.adapterType,
-      cfg.adapters,
-    );
-    const totalFqdns = [
-      ...adapterRuntime.allowFqdns,
-      ...cfg.egressAllowFqdns,
-    ];
+    const totalFqdns = cfg.adapterType === undefined
+      ? [...cfg.egressAllowFqdns]
+      : [
+          ...requireAdapterRuntime(cfg.adapterType, cfg.adapters).allowFqdns,
+          ...cfg.egressAllowFqdns,
+        ];
     if (cfg.egressMode === "standard" && totalFqdns.length > 0) {
       if (cfg.egressAllowCidrs.length === 0) {
         warnings.push(
@@ -222,10 +220,10 @@ const plugin = definePlugin({
     const config = kubernetesProviderConfigSchema.parse(params.config);
     const namespace = deriveTenantNamespace(config, params.companyId);
 
-    // The adapter for THIS run is the agent's adapter (params.adapterType) when
-    // supplied, so one environment can serve mixed transports; otherwise use
-    // the environment's configured default. The exact runtime registry remains
-    // authoritative for either selection.
+    // The adapter for THIS run is the ACPX-discovered agent type supplied by
+    // Paperclip. An operator may opt into an explicit target-local fallback
+    // for non-agent calls, but this environment never contributes agents to
+    // Paperclip's selectable catalog.
     const effectiveAdapterType = resolveRunAdapterType(params.adapterType, config.adapterType);
 
     // Emit a runtime warning if FQDNs are configured but egressMode=standard

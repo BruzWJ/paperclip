@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useId } from "react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -23,7 +23,7 @@ export const help: Record<string, string> = {
   title: "Job title shown in the org chart.",
   reportsTo: "The agent this one reports to in the org hierarchy.",
   capabilities: "Describes what this agent can do. Shown in the org chart and used for task routing.",
-  adapterType: "The server-admitted ACP frontend Paperclip launches for this agent.",
+  adapterType: "An exact ACPX-discovered agent name. ACPX supplies its launch, models, and session configuration at runtime.",
   workspaceStrategy: "How Paperclip should realize an execution workspace for this agent. Keep project_primary for normal cwd execution, or use git_worktree for issue-scoped isolated checkouts.",
   workspaceBaseRef: "Base git ref used when creating a worktree branch. Leave blank to use the resolved workspace ref or HEAD.",
   workspaceBranchTemplate: "Template for naming derived branches. Supports {{issue.identifier}}, {{issue.title}}, {{agent.name}}, {{project.id}}, {{workspace.repoRef}}, and {{slug}}.",
@@ -34,17 +34,17 @@ export const help: Record<string, string> = {
   budgetMonthlyAmount: "Monthly spending limit in the company budget currency. 0 means no limit.",
 };
 
-import { getAdapterLabels } from "../adapters/adapter-display-registry";
-
-export const adapterLabels = getAdapterLabels();
-
 /* ---- Primitive components ---- */
 
 export function HintIcon({ text }: { text: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="inline-flex text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+        <button
+          type="button"
+          aria-label="Show field help"
+          className="inline-flex text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+        >
           <HelpCircle className="h-3 w-3" />
         </button>
       </TooltipTrigger>
@@ -121,11 +121,19 @@ export function ToggleWithNumber({
   numberPrefix?: string;
   showNumber: boolean;
 }) {
+  const numberInputId = useId();
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">{label}</span>
+          {showNumber ? (
+            <label htmlFor={numberInputId} className="text-xs text-muted-foreground">
+              {label}
+            </label>
+          ) : (
+            <span className="text-xs text-muted-foreground">{label}</span>
+          )}
           {hint && <HintIcon text={hint} />}
         </div>
         <ToggleSwitch
@@ -137,8 +145,9 @@ export function ToggleWithNumber({
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           {numberPrefix && <span>{numberPrefix}</span>}
           <input
+            id={numberInputId}
             type="number"
-            className="w-16 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center"
+            className="w-16 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center focus-visible:ring-2 focus-visible:ring-ring"
             value={number}
             onChange={(e) => onNumberChange(Number(e.target.value))}
           />
@@ -210,7 +219,8 @@ export function AutoExpandTextarea({
   return (
     <textarea
       ref={textareaRef}
-      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden"
+      aria-label="Configuration text"
+      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden focus-visible:ring-2 focus-visible:ring-ring"
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -241,6 +251,7 @@ export function DraftInput({
 
   return (
     <input
+      aria-label="Configuration value"
       className={className}
       value={draft}
       onChange={(e) => {
@@ -291,7 +302,8 @@ export function DraftTextarea({
   return (
     <textarea
       ref={textareaRef}
-      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden"
+      aria-label="Configuration text"
+      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden focus-visible:ring-2 focus-visible:ring-ring"
       placeholder={placeholder}
       value={draft}
       onChange={(e) => {
@@ -326,6 +338,7 @@ export function DraftNumberInput({
 
   return (
     <input
+      aria-label="Configuration number"
       type="number"
       className={className}
       value={draft}

@@ -85,7 +85,7 @@ pnpm paperclipai agent runtime:update <agent-id> \
   --payload-json '{...}' [--idempotency-key <key>]
 
 pnpm paperclipai agent adapter-revision:create <agent-id> \
-  --payload-json '{"adapterType":"codex","adapterConfig":{"model":"gpt-5.6"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+  --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 

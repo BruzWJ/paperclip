@@ -10,7 +10,6 @@ import { AgentConfigForm } from "./AgentConfigForm";
 
 const mockAgentsApi = vi.hoisted(() => ({
   adapterModelProfiles: vi.fn(),
-  adapterModels: vi.fn(),
   list: vi.fn(),
 }));
 
@@ -26,6 +25,9 @@ const mockInstanceSettingsApi = vi.hoisted(() => ({
 
 const mockSecretsApi = vi.hoisted(() => ({
   list: vi.fn(),
+}));
+const mockAdapterDrivers = vi.hoisted(() => ({
+  value: ["local", "ssh", "sandbox", "plugin"] as string[],
 }));
 
 vi.mock("../api/agents", () => ({
@@ -62,6 +64,7 @@ vi.mock("../adapters", () => ({
   findUIAdapter: (type: string) => ({
     type,
     label: "Codex",
+    drivers: mockAdapterDrivers.value,
     ConfigFields: () => (
       <div data-testid="server-config-fields">Server schema fields</div>
     ),
@@ -74,12 +77,8 @@ vi.mock("../adapters", () => ({
 vi.mock("../adapters/use-adapter-capabilities", () => ({
   useAdapterCapabilities: () => () => ({
     supportsModelProfiles: false,
-    contractVersion: "acp-subprocess/v1",
-    protocolVersion: 1,
-    resume: true,
-    cancel: true,
-    sessionConfig: true,
-    sessionScopedMcpReplacement: true,
+    contractVersion: "acpx-runtime/v1",
+    runtimeControls: ["session/status", "session/set_config_option"],
   }),
 }));
 
@@ -205,8 +204,8 @@ describe("AgentConfigForm environment selector", () => {
   let roots: Root[] = [];
 
   beforeEach(() => {
+    mockAdapterDrivers.value = ["local", "ssh", "sandbox", "plugin"];
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);
-    mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);
     mockInstanceSettingsApi.get.mockResolvedValue({ defaultEnvironmentId: null });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableEnvironments: true });
@@ -279,6 +278,23 @@ describe("AgentConfigForm environment selector", () => {
     expect(text).not.toContain("Environment override");
     expect(text).not.toContain("Fake Sandbox · sandbox");
     expect(result.container.querySelector("select")).toBeNull();
+  });
+
+  it("filters environments to the exact ACPX-admitted driver set", async () => {
+    mockAdapterDrivers.value = ["local"];
+    const result = await renderForm([
+      makeEnvironment({ id: "local-1", name: "Local", driver: "local" }),
+      makeEnvironment({
+        id: "sandbox-1",
+        name: "E2B",
+        driver: "sandbox",
+        config: { provider: "e2b" },
+      }),
+    ]);
+    roots.push(result.root);
+
+    expect(result.container.textContent).not.toContain("Environment override");
+    expect(result.container.textContent).not.toContain("E2B · sandbox");
   });
 
   it("renders server-owned ACP config fields in the Adapter card", async () => {

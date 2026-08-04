@@ -1,311 +1,175 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type {
-  AdapterModel,
-  ServerAdapterModule,
-} from "@paperclipai/adapter-utils";
-import { resolveApprovedAcpLaunch } from "@paperclipai/adapter-utils/acp-subprocess";
-import {
-  findActiveServerAdapter,
-  findSelectableServerAdapterImplementation,
-  findServerAdapter,
-  findServerAdapterImplementation,
-  listAdapterModelProfiles,
-  listAdapterModels,
-  listServerAdapters,
-  registerServerAdapter,
-  requireServerAdapter,
-  requireServerAdapterImplementation,
-  resolveAvailableAdapterModel,
-  unregisterServerAdapter,
-} from "../adapters/index.js";
-import { setOverridePaused } from "../adapters/registry.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AdapterModel, ServerAdapterModule } from "@paperclipai/adapter-utils";
 
-const launchProfile = resolveApprovedAcpLaunch("codex");
-
-function model(input: {
-  id: string;
-  label?: string;
-  value?: string;
-  contextTokenLimit?: number;
-}): AdapterModel {
-  return {
-    id: input.id,
-    label: input.label ?? input.id,
-    value: input.value ?? input.id,
-    limits: {
-      contextTokenLimit: input.contextTokenLimit ?? 200_000,
-      outputTokenLimit: 16_000,
-    },
-  };
-}
-
-function declarativeAdapter(
-  type: string,
-  models: readonly AdapterModel[] = [model({ id: `${type}-model` })],
-): ServerAdapterModule {
-  const modelOptions = models.map((entry) => ({
-    label: entry.label,
-    value: entry.value,
-  }));
-  return {
-    type,
-    definition: {
-      version: "acp-subprocess/v1",
-      launchProfile,
-      environment: {
+const acpxFixture = vi.hoisted(() => {
+  const agentName = "fixture-agent";
+  const model: AdapterModel = Object.freeze({
+    id: "fixture-model",
+    label: "Fixture model",
+    value: "fixture-model",
+    limits: null,
+  });
+  const adapter: ServerAdapterModule = Object.freeze({
+    type: agentName,
+    definition: Object.freeze({
+      version: "acpx-runtime/v1",
+      launchProfile: Object.freeze({ registryName: agentName }),
+      environment: Object.freeze({
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
-        drivers: ["local", "ssh", "sandbox", "plugin"],
-        environmentKeys: [],
-      },
-      readiness: {
-        protocolVersion: 1,
-        resume: true,
-        cancel: true,
-        sessionConfig: true,
-        sessionScopedMcpReplacement: true,
-        cliNativeAuthentication: true,
-      },
-      ui: {
-        label: type,
-        description: `${type} declarative ACP test adapter`,
-      },
-      configSchema: {
-        fields: [{
-          key: "model",
+        drivers: Object.freeze(["local"] as const),
+        environmentKeys: Object.freeze([]),
+      }),
+      runtime: Object.freeze({
+        controls: Object.freeze(["session/status", "session/set_config_option"]),
+      }),
+      ui: Object.freeze({
+        label: agentName,
+        description: "ACPX test discovery fixture.",
+      }),
+      configSchema: Object.freeze({
+        fields: Object.freeze([
+          Object.freeze({
+            key: "model",
+            label: "Model",
+            type: "select" as const,
+            options: Object.freeze([
+              Object.freeze({ label: model.label, value: model.value }),
+            ]),
+            required: true,
+          }),
+        ]),
+      }),
+      configOptions: Object.freeze([
+        Object.freeze({
+          id: "model",
+          configKey: "model",
           label: "Model",
-          type: "select",
-          required: true,
-          options: modelOptions,
-        }],
-      },
-      configOptions: [{
-        id: "model",
-        configKey: "model",
-        label: "Model",
-        required: true,
-        values: modelOptions,
-      }],
-      modelConfigOptionId: "model",
-      models,
-      modelProfiles: [],
-      configurationDoc: "Authenticate through the target CLI.",
-    },
-  };
-}
-
-function externalIdentity(
-  adapterType: string,
-  artifactDigest = "d".repeat(64),
-) {
-  return {
-    adapterType,
-    definitionVersion: "acp-subprocess/v1" as const,
-    protocolVersion: 1 as const,
-    origin: "external" as const,
-    packageName: "@paperclip-test/external",
-    packageVersion: "1.0.0",
-    buildIdentity: "@paperclip-test/external@1.0.0",
-    artifactDigest,
-  };
-}
-
-describe("server adapter registry", () => {
-  beforeEach(() => {
-    unregisterServerAdapter("external_test");
-    unregisterServerAdapter("external_ambiguous");
-    unregisterServerAdapter("codex");
-    setOverridePaused("codex", false);
-  });
-
-  afterEach(() => {
-    unregisterServerAdapter("external_test");
-    unregisterServerAdapter("external_ambiguous");
-    unregisterServerAdapter("codex");
-    setOverridePaused("codex", false);
-  });
-
-  it("registers only the canonical built-in Codex definition", () => {
-    expect(listServerAdapters().map((adapter) => adapter.type)).toEqual([
-      "codex",
-    ]);
-    expect(requireServerAdapter("codex").definition).toMatchObject({
-      version: "acp-subprocess/v1",
-      launchProfile: {
-        registryName: "codex",
-        frontendPackage: "@agentclientprotocol/codex-acp",
-        frontendVersion: "1.1.7",
-        frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
-      },
-    });
-    expect(
-      findSelectableServerAdapterImplementation("codex")?.identity,
-    ).toMatchObject({
-      adapterType: "codex",
-      definitionVersion: "acp-subprocess/v1",
-      protocolVersion: 1,
-      origin: "builtin",
-      packageName: "@paperclipai/server",
-      packageVersion: "0.3.1",
-      buildIdentity: "@paperclipai/server@0.3.1:codex",
-      artifactDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
-    });
-  });
-
-  it("registers and removes a declarative external definition", async () => {
-    const external = declarativeAdapter("external_test");
-    const registered = registerServerAdapter(external);
-
-    expect(requireServerAdapter("external_test")).toBe(external);
-    expect(await listAdapterModels("external_test")).toEqual(
-      external.definition.models,
-    );
-    expect(await listAdapterModelProfiles("external_test")).toEqual([]);
-
-    unregisterServerAdapter("external_test");
-    expect(findServerAdapter("external_test")).toBeNull();
-    expect(
-      findServerAdapterImplementation(
-        "external_test",
-        registered.identity,
-      )?.adapter,
-    ).toBe(external);
-  });
-
-  it("resolves one exact model id and rejects a conflicting catalog", async () => {
-    const selected = model({ id: "external-model", label: "External" });
-    registerServerAdapter(declarativeAdapter("external_test", [selected]));
-
-    await expect(resolveAvailableAdapterModel("external-model")).resolves.toEqual(
-      selected,
-    );
-    await expect(resolveAvailableAdapterModel(" external-model")).rejects.toThrow(
-      /exact non-empty catalog key/,
-    );
-
-    registerServerAdapter(
-      declarativeAdapter("external_ambiguous", [
-        model({
-          id: "external-model",
-          label: "Different",
-          value: "different-value",
+          required: true as const,
+          values: Object.freeze([
+            Object.freeze({ label: model.label, value: model.value }),
+          ]),
         }),
       ]),
-    );
-    await expect(resolveAvailableAdapterModel("external-model")).rejects.toThrow(
-      /ambiguous/,
-    );
+      modelConfigOptionId: "model",
+      models: Object.freeze([model]),
+      modelProfiles: Object.freeze([]),
+      configurationDoc: "Provided by ACPX.",
+    }),
   });
-
-  it("restores built-in Codex after pausing or removing an override", () => {
-    const builtIn = requireServerAdapter("codex");
-    const builtInIdentity =
-      findSelectableServerAdapterImplementation("codex")!.identity;
-    const override = declarativeAdapter("codex", [
-      model({ id: "override-model" }),
-    ]);
-    const registeredOverride = registerServerAdapter(override, {
-      identity: externalIdentity("codex"),
-    });
-
-    expect(findActiveServerAdapter("codex")).toBe(override);
-    expect(setOverridePaused("codex", true)).toBe(true);
-    expect(findActiveServerAdapter("codex")).toBe(builtIn);
-    expect(
-      requireServerAdapterImplementation(
-        "codex",
-        registeredOverride.identity,
-      ),
-    ).toBe(override);
-    expect(requireServerAdapterImplementation("codex", builtInIdentity)).toBe(
-      builtIn,
-    );
-    expect(setOverridePaused("codex", false)).toBe(true);
-    expect(findActiveServerAdapter("codex")).toBe(override);
-    unregisterServerAdapter("codex");
-    expect(findActiveServerAdapter("codex")).toBe(builtIn);
-  });
-
-  it("keeps retained implementations pinned across same-version replacement", () => {
-    const first = declarativeAdapter("external_test", [
-      model({ id: "first-model" }),
-    ]);
-    const second = declarativeAdapter("external_test", [
-      model({ id: "second-model" }),
-    ]);
-    const firstRegistration = registerServerAdapter(first, {
-      identity: externalIdentity("external_test", "1".repeat(64)),
-    });
-    const secondRegistration = registerServerAdapter(second, {
-      identity: externalIdentity("external_test", "2".repeat(64)),
-    });
-
-    expect(requireServerAdapter("external_test")).toBe(second);
-    expect(
-      requireServerAdapterImplementation(
-        "external_test",
-        firstRegistration.identity,
-      ),
-    ).toBe(first);
-    expect(
-      requireServerAdapterImplementation(
-        "external_test",
-        secondRegistration.identity,
-      ),
-    ).toBe(second);
-  });
-
-  it("fails closed for an unavailable pinned implementation", () => {
-    expect(() =>
-      requireServerAdapterImplementation(
-        "external_test",
-        externalIdentity("external_test", "f".repeat(64)),
-      ),
-    ).toThrow(/Unavailable pinned adapter implementation/);
+  return Object.freeze({
+    agentName,
+    registryResolve: vi.fn(() => {
+      throw new Error("Paperclip must not inspect ACPX launch argv");
+    }),
+    adapter,
+    state: {
+      snapshot: [adapter] as ServerAdapterModule[],
+      failDiscovery: false,
+    },
   });
 });
 
-describe("server adapter registration validation", () => {
-  it("rejects executable legacy fields", () => {
-    expect(() =>
-      registerServerAdapter({
-        ...declarativeAdapter("invalid-external"),
-        execute: async () => undefined,
-      } as unknown as ServerAdapterModule),
-    ).toThrow(/unknown field execute/);
+vi.mock("@paperclipai/adapter-utils/acp-subprocess", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("@paperclipai/adapter-utils/acp-subprocess")
+  >();
+  return {
+    ...actual,
+    loadConfiguredAcpRegistry: vi.fn(async () => ({
+      list: () => [acpxFixture.agentName],
+      resolve: acpxFixture.registryResolve,
+    })),
+  };
+});
+
+vi.mock("../adapters/acpx-catalog.js", () => ({
+  discoverLocalAcpxAdapterCatalog: vi.fn(async () => {
+    if (acpxFixture.state.failDiscovery) {
+      throw new Error("ACPX registry reload failed");
+    }
+    return {
+      adapters: Object.freeze([...acpxFixture.state.snapshot]),
+      unavailable: Object.freeze({}),
+    };
+  }),
+}));
+
+const {
+  findSelectableServerAdapterImplementation,
+  findServerAdapter,
+  listAdapterModels,
+  listServerAdapters,
+  refreshAcpxAdapters,
+  registerServerAdapter,
+  requireServerAdapter,
+  resolveAvailableAdapterModel,
+  setOverridePaused,
+  unregisterServerAdapter,
+} = await import("../adapters/registry.js");
+
+describe("ACPX-supplied server adapter registry", () => {
+  beforeEach(async () => {
+    acpxFixture.state.snapshot = [acpxFixture.adapter];
+    acpxFixture.state.failDiscovery = false;
+    acpxFixture.registryResolve.mockClear();
+    await refreshAcpxAdapters({ force: true });
   });
 
-  it("rejects a missing declarative definition", () => {
-    expect(() =>
-      registerServerAdapter({ type: "invalid-external" } as ServerAdapterModule),
-    ).toThrow(/missing required field definition/);
+  it("surfaces only the currently discovered ACPX adapter and its opaque registry name", () => {
+    expect(listServerAdapters()).toEqual([acpxFixture.adapter]);
+    expect(requireServerAdapter(acpxFixture.agentName).definition.launchProfile).toEqual({
+      registryName: acpxFixture.agentName,
+    });
+    expect(
+      findSelectableServerAdapterImplementation(acpxFixture.agentName)?.identity,
+    ).toMatchObject({
+      adapterType: acpxFixture.agentName,
+      origin: "builtin",
+      packageName: "acpx",
+      packageVersion: "runtime",
+      buildIdentity: expect.stringMatching(
+        new RegExp(`^acpx-runtime:${acpxFixture.agentName}:`),
+      ),
+      artifactDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(acpxFixture.registryResolve).not.toHaveBeenCalled();
   });
 
-  it("rejects launch bytes that differ from the approved registry entry", () => {
-    const candidate = declarativeAdapter("invalid-external");
-    expect(() =>
-      registerServerAdapter({
-        ...candidate,
-        definition: {
-          ...candidate.definition,
-          launchProfile: {
-            ...candidate.definition.launchProfile,
-            args: ["unapproved"],
-          },
-        },
-      }),
-    ).toThrow(/launch does not match its approved ACP registry entry/);
-    expect(() =>
-      registerServerAdapter({
-        ...candidate,
-        definition: {
-          ...candidate.definition,
-          launchProfile: {
-            ...candidate.definition.launchProfile,
-            frontendDigest: "f".repeat(64),
-          },
-        },
-      }),
-    ).toThrow(/launch does not match its approved ACP registry entry/);
+  it("uses the discovered model catalog without assigning Paperclip token limits", async () => {
+    const models = await listAdapterModels(acpxFixture.agentName);
+    expect(models).toEqual(acpxFixture.adapter.definition.models);
+    await expect(resolveAvailableAdapterModel("fixture-model")).resolves.toEqual(
+      acpxFixture.adapter.definition.models[0],
+    );
+  });
+
+  it("replaces a stale snapshot when ACPX no longer reports an agent", async () => {
+    acpxFixture.state.snapshot = [];
+    await refreshAcpxAdapters({ force: true });
+
+    expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
+    expect(() => requireServerAdapter(acpxFixture.agentName)).toThrow(
+      /Unknown ACPX adapter type/,
+    );
+  });
+
+  it("fails closed instead of retaining a stale catalog when ACPX reload fails", async () => {
+    acpxFixture.state.failDiscovery = true;
+
+    await expect(refreshAcpxAdapters({ force: true })).rejects.toThrow(
+      "ACPX registry reload failed",
+    );
+    expect(findServerAdapter(acpxFixture.agentName)).toBeNull();
+    expect(findSelectableServerAdapterImplementation(acpxFixture.agentName)).toBeNull();
+  });
+
+  it("does not accept Paperclip-owned adapter registrations or override state", () => {
+    expect(() => registerServerAdapter(acpxFixture.adapter)).toThrow(
+      /supplied exclusively by ACPX/,
+    );
+    expect(setOverridePaused(acpxFixture.agentName, true)).toBe(false);
+    unregisterServerAdapter(acpxFixture.agentName);
+    expect(findServerAdapter(acpxFixture.agentName)).toBe(acpxFixture.adapter);
   });
 });

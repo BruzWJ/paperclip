@@ -1,66 +1,53 @@
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
+import path from "node:path";
+import { promisify } from "node:util";
 import { createAgentRegistry, type AcpAgentRegistry } from "acpx/runtime";
 
-export const ACPX_REGISTRY_VERSION = "0.13.0" as const;
-export const CODEX_ACP_FRONTEND_PACKAGE =
-  "@agentclientprotocol/codex-acp" as const;
-export const CODEX_ACP_FRONTEND_VERSION = "1.1.7" as const;
-export const CODEX_ACP_FRONTEND_SHA256 =
-  "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a" as const;
+export type { AcpAgentRegistry } from "acpx/runtime";
 
-export interface ApprovedAcpLaunch {
+const execFileAsync = promisify(execFile);
+const ACPX_CONFIG_TIMEOUT_MS = 5_000;
+const ACPX_CONFIG_CACHE_MS = 30_000;
+const requireFromHere = createRequire(import.meta.url);
+
+type AcpxRegistryOverride = string | string[];
+
+type CachedConfiguredRegistry = {
+  readonly expiresAt: number;
+  readonly registry: AcpAgentRegistry;
+};
+
+const configuredRegistryCache = new Map<string, CachedConfiguredRegistry>();
+
+/**
+ * ACPX's registry is the sole authority for the available agent names and
+ * their launch form. Paperclip deliberately persists only the exact registry
+ * name; resolving it again at use time keeps ACPX in control of upgrades and
+ * local agent installation details.
+ */
+export interface AcpRegistryLaunch {
   readonly registryName: string;
-  readonly targetNativeCli: string;
   readonly command: string;
   readonly args: readonly string[];
-  readonly frontendPackage: string;
-  readonly frontendVersion: string;
-  readonly frontendDigest: string;
 }
 
-export interface ApprovedAcpFrontendArtifact {
-  readonly bytes: Uint8Array;
-  readonly targetFileName: string;
-  readonly sha256: string;
+export interface LoadConfiguredAcpRegistryInput {
+  /**
+   * ACPX resolves a project `.acpxrc.json` relative to this host workspace.
+   * The global config and all merge/validation semantics remain ACPX-owned.
+   */
+  readonly cwd: string;
+  /** Used only by tests or an explicit caller that needs a shorter deadline. */
+  readonly timeoutMs?: number;
 }
 
-export interface ApprovedAcpNativeAuthentication {
-  /** Exact target-native argv appended to the resolved native executable. */
-  readonly statusArgs: readonly string[];
-  /** Non-secret operator action shown when native authentication is absent. */
-  readonly loginGuidance: string;
+function exactName(value: string): string {
+  if (value.length === 0 || value !== value.trim()) {
+    throw new Error("ACP registry name must be exact and non-empty");
+  }
+  return value;
 }
-
-const require = createRequire(import.meta.url);
-const codexAcpEntrypoint = require.resolve(CODEX_ACP_FRONTEND_PACKAGE);
-const codexLaunchArgv = Object.freeze([process.execPath, codexAcpEntrypoint]);
-
-const APPROVED_ACP_LAUNCHES = Object.freeze({
-  codex: Object.freeze({
-    registryName: "codex",
-    targetNativeCli: "codex",
-    command: process.execPath,
-    args: Object.freeze([codexAcpEntrypoint]),
-    frontendPackage: CODEX_ACP_FRONTEND_PACKAGE,
-    frontendVersion: CODEX_ACP_FRONTEND_VERSION,
-    frontendDigest: CODEX_ACP_FRONTEND_SHA256,
-  }),
-} satisfies Readonly<Record<string, ApprovedAcpLaunch>>);
-
-const APPROVED_ACP_NATIVE_AUTHENTICATION = Object.freeze({
-  codex: Object.freeze({
-    statusArgs: Object.freeze(["login", "status"]),
-    loginGuidance: "codex login",
-  }),
-} satisfies Readonly<Record<string, ApprovedAcpNativeAuthentication>>);
-
-const registry = createAgentRegistry({
-  overrides: {
-    codex: [...codexLaunchArgv],
-  },
-});
 
 function exactStringArray(value: string | string[]): readonly string[] {
   const argv = typeof value === "string" ? [value] : value;
@@ -83,128 +70,206 @@ function sameArgv(left: readonly string[], right: readonly string[]): boolean {
   );
 }
 
-/** Complete equality for the immutable ACP frontend and target-native CLI. */
-export function sameApprovedAcpLaunch(
-  left: ApprovedAcpLaunch,
-  right: ApprovedAcpLaunch,
+function exactString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 && value === value.trim()
+    ? value
+    : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function structuredArgv(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const argv = value.map(exactString);
+  if (argv.some((entry) => entry === undefined)) return undefined;
+  return argv as string[];
+}
+
+/**
+ * ACPX's documented `config show --format json` result contains a resolved
+ * `agents` map. Preserve ACPX's structured argv or legacy command form as an
+ * ACPX registry override. Paperclip never parses or executes that command;
+ * the ACPX runtime remains the sole interpreter and launcher.
+ */
+function configShowOverrides(value: unknown): Record<string, AcpxRegistryOverride> {
+  if (!isRecord(value) || !isRecord(value.agents)) {
+    throw new Error("ACPX config show returned no resolved agents map");
+  }
+  const overrides: Record<string, AcpxRegistryOverride> = {};
+  for (const [name, candidate] of Object.entries(value.agents)) {
+    const exactName = exactString(name);
+    if (!exactName || !isRecord(candidate)) {
+      throw new Error("ACPX config show returned an invalid configured agent");
+    }
+    const argv = structuredArgv(candidate.argv);
+    if (argv) {
+      overrides[exactName] = argv;
+      continue;
+    }
+    // ACPX owns parsing of its historical command form. Passing it back to the
+    // ACPX registry preserves its own compatibility semantics without giving
+    // Paperclip a command parser or executable launch surface.
+    const command = exactString(candidate.command);
+    if (command) {
+      overrides[exactName] = command;
+      continue;
+    }
+    throw new Error(
+      `ACPX configured agent ${exactName} has neither a valid argv nor command`,
+    );
+  }
+  return overrides;
+}
+
+function resolveConfiguredRegistryCwd(value: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error("ACPX configured registry cwd is required");
+  }
+  return path.resolve(value);
+}
+
+function resolveConfigTimeout(value: number | undefined): number {
+  if (value === undefined) return ACPX_CONFIG_TIMEOUT_MS;
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("ACPX config timeout must be a positive integer");
+  }
+  return value;
+}
+
+async function resolvedConfigOverrides(input: {
+  readonly cwd: string;
+  readonly timeoutMs: number;
+}): Promise<Record<string, AcpxRegistryOverride>> {
+  const cliPath = requireFromHere.resolve("acpx/dist/cli.js");
+  let stdout: string;
+  try {
+    const result = await execFileAsync(
+      process.execPath,
+      [cliPath, "--cwd", input.cwd, "config", "show", "--format", "json"],
+      {
+        cwd: input.cwd,
+        encoding: "utf8",
+        timeout: input.timeoutMs,
+        maxBuffer: 1_024 * 1_024,
+        windowsHide: true,
+      },
+    );
+    stdout = result.stdout;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `ACPX config show failed for ${input.cwd}: ${detail}`,
+      { cause: error },
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(
+      `ACPX config show returned invalid JSON for ${input.cwd}`,
+      { cause: error },
+    );
+  }
+  return configShowOverrides(parsed);
+}
+
+/**
+ * Loads the ACPX-resolved global + project configuration through ACPX's own
+ * documented CLI, then creates the public runtime registry with those exact
+ * overrides. Paperclip neither parses ACPX config files nor persists argv.
+ */
+export async function loadConfiguredAcpRegistry(
+  input: LoadConfiguredAcpRegistryInput,
+): Promise<AcpAgentRegistry> {
+  const cwd = resolveConfiguredRegistryCwd(input.cwd);
+  const timeoutMs = resolveConfigTimeout(input.timeoutMs);
+  const now = Date.now();
+  const cached = configuredRegistryCache.get(cwd);
+  if (cached && cached.expiresAt > now) return cached.registry;
+
+  const overrides = await resolvedConfigOverrides({ cwd, timeoutMs });
+  const registry = createAgentRegistry({ overrides });
+  configuredRegistryCache.set(cwd, {
+    registry,
+    expiresAt: now + ACPX_CONFIG_CACHE_MS,
+  });
+  return registry;
+}
+
+/**
+ * Enumerates exact names published by the locally installed ACPX registry.
+ * This does not claim that a candidate is usable; runtime discovery performs
+ * the initialize/session probe before Paperclip presents it to an operator.
+ */
+export function listAcpRegistryAgentNames(
+  candidateRegistry: AcpAgentRegistry = createAgentRegistry(),
+): readonly string[] {
+  const names = candidateRegistry.list();
+  if (
+    !Array.isArray(names) ||
+    names.some(
+      (name) =>
+        typeof name !== "string" || name.length === 0 || name !== name.trim(),
+    )
+  ) {
+    throw new Error("ACPX registry returned invalid agent names");
+  }
+  return Object.freeze([...new Set(names)].sort());
+}
+
+/**
+ * Accept only a byte-exact ACPX-published name without resolving its command.
+ *
+ * ACPX intentionally supports a raw-command fallback for unknown input. The
+ * public Paperclip bridge must prevent that fallback, while leaving the
+ * resolved executable and argv entirely inside ACPX's runtime.
+ */
+export function assertAcpRegistryAgentName(
+  requestedName: string,
+  candidateRegistry: AcpAgentRegistry = createAgentRegistry(),
+): string {
+  const registryName = exactName(requestedName);
+  if (!listAcpRegistryAgentNames(candidateRegistry).includes(registryName)) {
+    throw new Error(`ACP registry name is not published by ACPX: ${registryName}`);
+  }
+  return registryName;
+}
+
+/**
+ * Legacy raw-subprocess helper retained only for private fixture support.
+ * Production Paperclip code must use `assertAcpRegistryAgentName` and hand
+ * the name to ACPX's public runtime without inspecting its launch argv.
+ */
+export function resolveAcpRegistryLaunch(
+  requestedName: string,
+  candidateRegistry: AcpAgentRegistry = createAgentRegistry(),
+): AcpRegistryLaunch {
+  const registryName = assertAcpRegistryAgentName(
+    requestedName,
+    candidateRegistry,
+  );
+  const argv = exactStringArray(candidateRegistry.resolve(registryName));
+  const [command, ...args] = argv;
+  if (!command) {
+    throw new Error(`ACPX registry returned no command for ${registryName}`);
+  }
+  return Object.freeze({
+    registryName,
+    command,
+    args: Object.freeze(args),
+  });
+}
+
+export function sameAcpRegistryLaunch(
+  left: AcpRegistryLaunch,
+  right: AcpRegistryLaunch,
 ): boolean {
   return (
     left.registryName === right.registryName &&
-    left.targetNativeCli === right.targetNativeCli &&
     left.command === right.command &&
-    sameArgv(left.args, right.args) &&
-    left.frontendPackage === right.frontendPackage &&
-    left.frontendVersion === right.frontendVersion &&
-    left.frontendDigest === right.frontendDigest
+    sameArgv(left.args, right.args)
   );
-}
-
-function exactApprovedLaunch(launch: ApprovedAcpLaunch): ApprovedAcpLaunch {
-  const approved = resolveApprovedAcpLaunch(launch.registryName);
-  if (!sameApprovedAcpLaunch(launch, approved)) {
-    throw new Error(
-      `ACP launch does not match its approved artifact: ${launch.registryName}`,
-    );
-  }
-  return approved;
-}
-
-/**
- * Resolves one exact, conformance-approved ACP frontend name.
- *
- * Membership in both ACPX's public registry and Paperclip's immutable catalog
- * is checked before `registry.resolve` so ACPX's raw-command fallback is never
- * reachable for an unknown or normalized spelling.
- */
-export function resolveApprovedAcpLaunch(
-  requestedName: string,
-  candidateRegistry: AcpAgentRegistry = registry,
-): ApprovedAcpLaunch {
-  if (
-    typeof requestedName !== "string" ||
-    requestedName.length === 0 ||
-    requestedName !== requestedName.trim()
-  ) {
-    throw new Error("ACP registry name must be exact and non-empty");
-  }
-
-  const listed = candidateRegistry.list();
-  const approved = Object.prototype.hasOwnProperty.call(
-    APPROVED_ACP_LAUNCHES,
-    requestedName,
-  )
-    ? APPROVED_ACP_LAUNCHES[
-        requestedName as keyof typeof APPROVED_ACP_LAUNCHES
-      ]
-    : undefined;
-
-  if (!listed.includes(requestedName) || !approved) {
-    throw new Error(`ACP registry name is not approved: ${requestedName}`);
-  }
-
-  const resolved = exactStringArray(candidateRegistry.resolve(requestedName));
-  const expected = [approved.command, ...approved.args];
-  if (!sameArgv(resolved, expected)) {
-    throw new Error(`ACP registry launch drifted for ${requestedName}`);
-  }
-
-  return approved;
-}
-
-export function listApprovedAcpLaunchNames(): readonly string[] {
-  return Object.freeze(Object.keys(APPROVED_ACP_LAUNCHES));
-}
-
-/**
- * Resolves catalog-owned native authentication only after the caller's full
- * launch identity is re-admitted. Adapter configuration and modules cannot
- * replace either the status argv or the operator guidance.
- */
-export function resolveApprovedAcpNativeAuthentication(
-  launch: ApprovedAcpLaunch,
-): ApprovedAcpNativeAuthentication {
-  const approved = exactApprovedLaunch(launch);
-  const authentication = Object.prototype.hasOwnProperty.call(
-    APPROVED_ACP_NATIVE_AUTHENTICATION,
-    approved.registryName,
-  )
-    ? APPROVED_ACP_NATIVE_AUTHENTICATION[
-        approved.registryName as keyof typeof APPROVED_ACP_NATIVE_AUTHENTICATION
-      ]
-    : undefined;
-  if (!authentication || approved.targetNativeCli !== approved.registryName) {
-    throw new Error(
-      `ACP native authentication is not approved: ${approved.registryName}`,
-    );
-  }
-  return authentication;
-}
-
-/**
- * Reads the worker-bundled frontend only after the complete immutable catalog
- * identity has been re-admitted, then verifies its bytes before they can be
- * materialized on an execution target.
- */
-export async function readApprovedAcpFrontendArtifact(
-  launch: ApprovedAcpLaunch,
-): Promise<ApprovedAcpFrontendArtifact> {
-  const approved = exactApprovedLaunch(launch);
-  const entrypoint = approved.args[0];
-  if (!entrypoint || approved.args.length !== 1) {
-    throw new Error(
-      `Approved ACP frontend entrypoint is not singular: ${approved.registryName}`,
-    );
-  }
-  const bytes = await readFile(entrypoint);
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (sha256 !== approved.frontendDigest) {
-    throw new Error(
-      `Approved ACP frontend artifact digest drifted: ${approved.registryName}`,
-    );
-  }
-  return Object.freeze({
-    bytes,
-    targetFileName: `${approved.registryName}-acp-${approved.frontendVersion}.mjs`,
-    sha256,
-  });
 }

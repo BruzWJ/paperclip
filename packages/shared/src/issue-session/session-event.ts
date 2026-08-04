@@ -157,7 +157,11 @@ export namespace Step {
       ...Base,
       assistantMessageID: SessionMessage.ID,
       agent: Schema.String,
-      model: Model.Ref,
+      /**
+       * ACP frontends may not expose a portable selected-model identity.
+       * Absence means unknown; callers must not synthesize a provider model.
+       */
+      model: Model.Ref.pipe(optional),
       snapshot: Schema.String.pipe(optional),
     },
   })

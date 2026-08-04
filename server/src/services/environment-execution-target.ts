@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import {
-  isEnvironmentDriverSupportedForAdapter,
   type Environment,
+  type EnvironmentDriver,
   type EnvironmentLease,
 } from "@paperclipai/shared";
 import {
@@ -42,6 +42,8 @@ export async function resolveEnvironmentExecutionTarget(input: {
   db: Db;
   companyId: string;
   adapterType: string;
+  /** Exact driver membership admitted by the immutable ACPX revision. */
+  allowedDrivers: readonly EnvironmentDriver[];
   environment: {
     id?: string;
     driver: string;
@@ -53,6 +55,14 @@ export async function resolveEnvironmentExecutionTarget(input: {
   lease?: EnvironmentLease | null;
   environmentRuntime?: EnvironmentRuntimeService | null;
 }): Promise<AdapterExecutionTarget | null> {
+  if (
+    !input.allowedDrivers.includes(
+      input.environment.driver as EnvironmentDriver,
+    )
+  ) {
+    return null;
+  }
+
   if (input.environment.driver === "local") {
     return {
       kind: "local",
@@ -62,15 +72,6 @@ export async function resolveEnvironmentExecutionTarget(input: {
   }
 
   if (input.environment.driver === "sandbox") {
-    if (
-      !isEnvironmentDriverSupportedForAdapter(
-        input.adapterType,
-        "sandbox",
-      )
-    ) {
-      return null;
-    }
-
     const parsed = await resolveEnvironmentDriverConfigForRuntime(input.db, input.companyId, {
       id: input.environment.id,
       driver: input.environment.driver as "sandbox",
@@ -127,14 +128,6 @@ export async function resolveEnvironmentExecutionTarget(input: {
   }
 
   if (input.environment.driver === "plugin") {
-    if (
-      !isEnvironmentDriverSupportedForAdapter(
-        input.adapterType,
-        "plugin",
-      )
-    ) {
-      return null;
-    }
     const parsed =
       await resolveEnvironmentDriverConfigForRuntime(
         input.db,
@@ -195,13 +188,7 @@ export async function resolveEnvironmentExecutionTarget(input: {
     };
   }
 
-  if (
-    input.environment.driver !== "ssh" ||
-    !isEnvironmentDriverSupportedForAdapter(
-      input.adapterType,
-      "ssh",
-    )
-  ) {
+  if (input.environment.driver !== "ssh") {
     return null;
   }
 

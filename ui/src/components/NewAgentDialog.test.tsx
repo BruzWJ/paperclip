@@ -51,7 +51,7 @@ vi.mock("../api/agents", () => ({
 }));
 
 vi.mock("../adapters", () => ({
-  listUIAdapters: () => [{ type: "codex" }],
+  listUIAdapters: () => [{ type: "fixture-agent", label: "Fixture agent" }],
 }));
 
 vi.mock("../adapters/metadata", () => ({
@@ -66,6 +66,9 @@ vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div>{children}</div> : null,
   DialogContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
+  DialogTitle: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
   ),
 }));
@@ -135,8 +138,8 @@ describe("NewAgentDialog", () => {
       configureButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("Codex");
-    expect(container.textContent).toContain("Codex through the pinned ACP frontend");
+    expect(container.textContent).toContain("Fixture agent");
+    expect(container.textContent).toContain("Discovered from ACPX at runtime");
     expect(container.textContent).not.toContain("HTTP Session");
     expect(container.textContent).not.toContain("Process");
 

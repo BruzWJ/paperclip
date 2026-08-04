@@ -163,7 +163,8 @@ export const Assistant = Schema.Struct({
   ...Base,
   type: Schema.Literal("assistant"),
   agent: Schema.String,
-  model: Model.Ref,
+  /** Absent when ACP did not expose a portable selected-model identity. */
+  model: Model.Ref.pipe(optional),
   content: AssistantContent.pipe(Schema.Array),
   snapshot: Schema.Struct({
     start: Schema.String.pipe(optional),

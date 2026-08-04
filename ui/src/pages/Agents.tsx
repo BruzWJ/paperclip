@@ -90,11 +90,33 @@ function filterAgents(agents: Agent[], tab: FilterTab): Agent[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function getConfiguredModel(agent: Agent): string | null {
-  const value = agent.adapterConfig?.model;
+function nonEmptyDisplayString(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const model = value.trim();
-  return model.length > 0 ? model : null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Prefer the immutable ACP revision's explicit selected model when an agent
+ * response embeds it. Older agent records keep their flat `model` value.
+ * Never infer a model from arbitrary session-config keys: ACPX may use any
+ * config id for its model selector.
+ */
+export function getConfiguredModel(agent: Agent): string | null {
+  const adapterConfig = agent.adapterConfig;
+  if (!adapterConfig) return null;
+
+  const acpConfiguration = adapterConfig.acpConfiguration;
+  if (isRecord(acpConfiguration) && Object.hasOwn(acpConfiguration, "model")) {
+    const model = acpConfiguration.model;
+    return isRecord(model) ? nonEmptyDisplayString(model.value) : null;
+  }
+
+  return nonEmptyDisplayString(adapterConfig.model);
 }
 
 function formatEnvironmentDriver(driver: Environment["driver"]): string {
@@ -366,15 +388,10 @@ export function Agents() {
               <span className="w-20 flex justify-end">
                 <AgentStatusBadge status={agent.status} />
               </span>
-              {/* Row actions mirror the agent detail page; stop the click
-                  from bubbling to the row link so buttons don't navigate.
-                  Hidden on mobile so the agent name keeps room to render. */}
-              <div
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-              >
+              {/* EntityRow renders trailing controls beside its navigation link,
+                  so these native buttons need no event interception. Hidden on
+                  mobile so the agent name keeps room to render. */}
+              <div>
                 <AgentActionButtons
                   agent={agent}
                   companyId={selectedCompanyId}
@@ -459,7 +476,7 @@ export function Agents() {
             </div>
           )}
           <Button size="sm" variant="outline" onClick={openNewAgent}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            <Plus data-icon="inline-start" className="h-3.5 w-3.5 mr-1.5" />
             New Agent
           </Button>
         </div>

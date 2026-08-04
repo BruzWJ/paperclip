@@ -30,21 +30,22 @@ The central nervous system. Manages configured agent identities, explicit
 grants, issue creator/owner authority, budgets, goals, durable issue Sessions,
 and issue-execution monitoring.
 
-### 2. Execution Worker and ACP Agents
+### 2. Execution Worker and ACPX-backed Agents
 
-Paperclip retains one server + worker topology. The worker resolves an approved
-data-only ACP adapter definition, realizes the issue workspace, and supervises
-one ACP agent subprocess per prompt. Paperclip is the stable ACP wire-v1 client
-through the official TypeScript SDK; the selected coding CLI or its pinned
-upstream ACP frontend is the ACP agent.
+Paperclip retains one server + worker topology. The worker resolves an
+ACPX-discovered data-only adapter revision, realizes the issue workspace, and
+uses ACPX's public runtime for one bounded prompt. ACPX resolves and launches
+the compatible local CLI; Paperclip neither supervises a raw ACP subprocess nor
+acts as a provider-specific ACP wire client.
 
 The CLI owns its provider login, native prompts, model/tool loop, native tools,
-history, and native compaction. Paperclip owns issue admission, request-scoped
-tools, exact prompt delivery, cancellation, structured ACP projection, and
-native-target correlation. A missing target restarts fresh with the exact
-current source; Paperclip does not reconstruct its history. There is no
-process/HTTP provider adapter, generic API polling path, or separately connected
-remote-machine runtime in this design.
+history, and native compaction. ACPX owns provider-process and temporary
+runtime state. Paperclip owns issue admission, request-scoped tools, exact
+prompt authority, cancellation requests, structured event projection, and an
+opaque scoped correlation. A rejected ACPX resume fails the frozen attempt;
+Paperclip does not reconstruct history or silently start a new session. There
+is no process/HTTP provider adapter, generic API polling path, or separately
+connected remote-machine runtime in this design.
 
 ## Core Principle
 

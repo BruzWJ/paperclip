@@ -48,7 +48,7 @@ function fixtureRoot(): string {
     [
       "const z = { literal: (value: string) => value };",
       "export const agentAdapterAcpConfigurationSchema =",
-      '  z.literal("acp-subprocess/v1");',
+      '  z.literal("acpx-runtime/v1");',
       "const sessionConfigSelections = [];",
       "const closed = '.strict()';",
     ].join("\n"),
@@ -58,7 +58,7 @@ function fixtureRoot(): string {
     "packages/adapter-utils/src/acp-subprocess/agent-registry.ts",
     [
       'import { createAgentRegistry, type AcpAgentRegistry } from "acpx/runtime";',
-      "export function resolveApprovedAcpLaunch(registry: AcpAgentRegistry) {",
+      "export function assertAcpRegistryAgentName(registry: AcpAgentRegistry) {",
       "  return createAgentRegistry(registry);",
       "}",
     ].join("\n"),
@@ -81,7 +81,7 @@ afterEach(() => {
   roots.clear();
 });
 
-test("accepts the canonical accounting, registry-only, and opaque-correlation owners", () => {
+test("accepts the canonical accounting, dynamic ACPX discovery, and opaque-correlation owners", () => {
   const root = fixtureRoot();
   write(
     root,
@@ -102,6 +102,42 @@ test("accepts the canonical accounting, registry-only, and opaque-correlation ow
     root,
     "server/src/provider-environment.ts",
     "export const env = { CODEX_HOME: operatorEnvironment.CODEX_HOME };\n",
+  );
+  write(
+    root,
+    "packages/adapter-utils/src/acp-subprocess/acpx-discovery.ts",
+    [
+      'import { createAcpRuntime, createRuntimeStore, type AcpRuntimeHandle } from "acpx/runtime";',
+      "export async function probe() {",
+      "  const stateDir = 'temporary';",
+      "  const runtime = createAcpRuntime({ store: createRuntimeStore({ stateDir }) });",
+      "  return runtime.ensureSession({ sessionKey: 'temporary' }) as Promise<AcpRuntimeHandle>;",
+      "}",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts",
+    [
+      'import { createAcpRuntime, createRuntimeStore, type AcpRuntimeOptions } from "acpx/runtime";',
+      "export async function execute() {",
+      "  const stateDir = 'temporary';",
+      "  const runtime = createAcpRuntime({ store: createRuntimeStore({ stateDir }) } as AcpRuntimeOptions);",
+      "  return runtime;",
+      "}",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts",
+    [
+      'import { createAcpRuntime, createRuntimeStore, type AcpRuntimeOptions } from "acpx/runtime";',
+      "export async function probe() {",
+      "  const stateDir = 'temporary';",
+      "  const runtime = createAcpRuntime({ store: createRuntimeStore({ stateDir }) } as AcpRuntimeOptions);",
+      "  return runtime;",
+      "}",
+    ].join("\n"),
   );
   assert.deepEqual(crossIssueMemoryRemovalViolations(root), []);
 });
@@ -146,7 +182,7 @@ test("rejects aliased access to an ACPX stateful runtime export", () => {
   ]);
   assert.ok(
     violations.some((violation) =>
-      violation.reason.includes("stateful runtime import"),
+      violation.reason.includes("forbidden ACPX runtime import"),
     ),
   );
 });

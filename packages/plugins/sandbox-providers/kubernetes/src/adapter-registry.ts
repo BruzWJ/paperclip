@@ -8,8 +8,9 @@ const exactNonBlankString = z
   });
 
 /**
- * One declarative agent-harness ("adapter") entry. Governs picker availability
- * and, for sandboxed (Kubernetes) runs, the runtime wiring.
+ * One target-local runtime mapping keyed by an ACPX agent name. It supplies
+ * Kubernetes wiring only; it cannot govern picker availability or add an
+ * agent to Paperclip's ACPX-supplied catalog.
  *
  * This plugin is standalone-installable, so it owns its boundary parser rather
  * than importing workspace packages. It consumes the common registry fields

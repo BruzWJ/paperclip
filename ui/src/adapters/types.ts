@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import type { EnvironmentDriver } from "@paperclipai/shared";
 
 export type { CreateConfigValues } from "@paperclipai/adapter-utils";
 
@@ -17,8 +18,6 @@ export interface AdapterConfigFieldsProps {
   eff: <T>(group: "adapterConfig", field: string, original: T) => T;
   /** Edit mode: mark field dirty */
   mark: (group: "adapterConfig", field: string, value: unknown) => void;
-  /** Available models for dropdowns */
-  models: { id: string; label: string }[];
   /** Create mode may suppress schema defaults when every value must be explicit. */
   applySchemaDefaults?: boolean;
 }
@@ -26,6 +25,8 @@ export interface AdapterConfigFieldsProps {
 export interface UIAdapterModule {
   type: string;
   label: string;
+  /** Exact driver membership supplied by the current server ACPX catalog. */
+  drivers: readonly EnvironmentDriver[];
   ConfigFields: ComponentType<AdapterConfigFieldsProps>;
   buildAdapterConfig: (values: CreateConfigValues) => Record<string, unknown>;
 }

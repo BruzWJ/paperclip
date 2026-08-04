@@ -552,19 +552,19 @@ export function DesignGuide() {
 
         <SubSection title="Icon buttons">
           <div className="flex items-center gap-2 flex-wrap">
-            <Button variant="ghost" size="icon-xs"><Search /></Button>
-            <Button variant="ghost" size="icon-sm"><Search /></Button>
-            <Button variant="outline" size="icon"><Search /></Button>
-            <Button variant="outline" size="icon-lg"><Search /></Button>
+            <Button variant="ghost" size="icon-xs" aria-label="Search, extra small"><Search /></Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Search, small"><Search /></Button>
+            <Button variant="outline" size="icon" aria-label="Search"><Search /></Button>
+            <Button variant="outline" size="icon-lg" aria-label="Search, large"><Search /></Button>
           </div>
         </SubSection>
 
         <SubSection title="With icons">
           <div className="flex items-center gap-2 flex-wrap">
-            <Button><Plus /> New Issue</Button>
-            <Button variant="outline"><Upload /> Upload</Button>
-            <Button variant="destructive"><Trash2 /> Delete</Button>
-            <Button size="sm"><Plus /> Add</Button>
+            <Button><Plus data-icon="inline-start" /> New Issue</Button>
+            <Button variant="outline"><Upload data-icon="inline-start" /> Upload</Button>
+            <Button variant="destructive"><Trash2 data-icon="inline-start" /> Delete</Button>
+            <Button size="sm"><Plus data-icon="inline-start" /> Add</Button>
           </div>
         </SubSection>
 
@@ -632,7 +632,7 @@ export function DesignGuide() {
           </div>
           <div className="flex items-center gap-2 mt-2">
             <StatusIcon status={status} onChange={setStatus} />
-            <span className="text-sm">Click the icon to change status (current: {status})</span>
+            <span className="text-sm" aria-live="polite">Click the icon to change status (current: {status})</span>
           </div>
         </SubSection>
 
@@ -763,12 +763,21 @@ export function DesignGuide() {
       <Section title="Form Elements">
         <div className="grid gap-6 md:grid-cols-2">
           <SubSection title="Input">
-            <Input placeholder="Default input" />
-            <Input placeholder="Disabled input" disabled className="mt-2" />
+            <Label className="sr-only" htmlFor="design-guide-default-input">
+              Default input
+            </Label>
+            <Input id="design-guide-default-input" placeholder="Default input" />
+            <Label className="sr-only" htmlFor="design-guide-disabled-input">
+              Disabled input
+            </Label>
+            <Input id="design-guide-disabled-input" placeholder="Disabled input" disabled className="mt-2" />
           </SubSection>
 
           <SubSection title="Textarea">
-            <Textarea placeholder="Write something..." />
+            <Label className="sr-only" htmlFor="design-guide-textarea">
+              Example message
+            </Label>
+            <Textarea id="design-guide-textarea" placeholder="Write something..." />
           </SubSection>
 
           <SubSection title="Checkbox & Label">
@@ -831,7 +840,7 @@ export function DesignGuide() {
         <div className="grid gap-6 md:grid-cols-2">
           <SubSection title="Default size">
             <Select value={selectValue} onValueChange={setSelectValue}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger aria-label="Example status" className="w-full">
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
               <SelectContent>
@@ -846,7 +855,7 @@ export function DesignGuide() {
           </SubSection>
           <SubSection title="Small trigger">
             <Select defaultValue="high">
-              <SelectTrigger size="sm" className="w-full">
+              <SelectTrigger aria-label="Example priority" size="sm" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -868,7 +877,7 @@ export function DesignGuide() {
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm">
               Quick Actions
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown data-icon="inline-end" className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
@@ -1316,7 +1325,7 @@ export function DesignGuide() {
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm"><Settings /></Button>
+              <Button variant="ghost" size="icon-sm" aria-label="Settings"><Settings /></Button>
             </TooltipTrigger>
             <TooltipContent>Settings</TooltipContent>
           </Tooltip>
@@ -1340,12 +1349,12 @@ export function DesignGuide() {
             </DialogHeader>
             <div className="space-y-3">
               <div>
-                <Label>Name</Label>
-                <Input placeholder="Enter a name" className="mt-1.5" />
+                <Label htmlFor="design-guide-dialog-name">Name</Label>
+                <Input id="design-guide-dialog-name" placeholder="Enter a name" className="mt-1.5" />
               </div>
               <div>
-                <Label>Description</Label>
-                <Textarea placeholder="Describe..." className="mt-1.5" />
+                <Label htmlFor="design-guide-dialog-description">Description</Label>
+                <Textarea id="design-guide-dialog-description" placeholder="Describe..." className="mt-1.5" />
               </div>
             </div>
             <DialogFooter>
@@ -1537,7 +1546,10 @@ export function DesignGuide() {
             </div>
           </div>
           <div className="space-y-2">
-            <Textarea placeholder="Leave a comment..." rows={3} />
+            <label className="sr-only" htmlFor="design-guide-comment">
+              Add a comment
+            </label>
+            <Textarea id="design-guide-comment" placeholder="Leave a comment..." rows={3} />
             <Button size="sm">Comment</Button>
           </div>
         </div>
@@ -1558,12 +1570,12 @@ export function DesignGuide() {
             </thead>
             <tbody>
               <tr className="border-b border-border">
-                <td className="px-3 py-2">claude-sonnet-4-20250514</td>
+                <td className="px-3 py-2">acpx-model-primary</td>
                 <td className="px-3 py-2 font-mono">1.2M</td>
                 <td className="px-3 py-2 font-mono">$18.00</td>
               </tr>
               <tr className="border-b border-border">
-                <td className="px-3 py-2">claude-haiku-4-20250506</td>
+                <td className="px-3 py-2">acpx-model-secondary</td>
                 <td className="px-3 py-2 font-mono">500k</td>
                 <td className="px-3 py-2 font-mono">$1.25</td>
               </tr>

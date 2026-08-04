@@ -109,7 +109,11 @@ export interface SettledAcpPromptResult {
   readonly accountingId: string;
   readonly costEventId: string;
   readonly budgetCurrency: BudgetCurrency;
-  readonly selectedModelId: string;
+  /**
+   * The model identifier only when ACPX exposed a portable selected model.
+   * ACP does not require every frontend to publish this metadata.
+   */
+  readonly selectedModelId: string | null;
   readonly contextTokenLimit: number;
   readonly cost: AcpCostSettlement;
   readonly stepEndedEventId: string;
@@ -126,8 +130,40 @@ type ProductivePromptOwner = {
   readonly settlementVersion: number;
 };
 
+type AcpPromptAccountingModel = {
+  readonly id: string;
+  readonly limits: { readonly contextTokenLimit: number } | null;
+} | null;
+
 function reject(message: string): never {
   throw new AcpPromptSettlementRejected(message);
+}
+
+/**
+ * ACP reports terminal context occupancy for every settled prompt, but model
+ * and model-limit metadata are optional provider extensions. Known immutable
+ * limits remain a consistency fence; otherwise the observed occupancy window
+ * is the sole canonical accounting limit.
+ */
+export function resolveAcpPromptAccountingModel(
+  model: AcpPromptAccountingModel,
+  occupancySize: number,
+): {
+  readonly selectedModelId: string | null;
+  readonly contextTokenLimit: number;
+} {
+  const selectedModelId = model?.id ?? null;
+  const advertisedContextTokenLimit = model?.limits?.contextTokenLimit;
+  if (
+    advertisedContextTokenLimit !== undefined &&
+    occupancySize !== advertisedContextTokenLimit
+  ) {
+    reject("ACP terminal occupancy size differs from the immutable prompt model");
+  }
+  return {
+    selectedModelId,
+    contextTokenLimit: advertisedContextTokenLimit ?? occupancySize,
+  };
 }
 
 function requireCanonicalReference(value: string, label: string): string {
@@ -711,11 +747,14 @@ export async function settleAcpPromptInTransaction(
     .then((rows) => rows[0] ?? null);
   if (!attempt) reject("ACP prompt attempt is not the exact running attempt");
 
-  const selectedModelId = acpConfiguration.model.id;
-  const contextTokenLimit = acpConfiguration.model.limits.contextTokenLimit;
-  if (settlement.occupancy.size !== contextTokenLimit) {
-    reject("ACP terminal occupancy size differs from the immutable prompt model");
-  }
+  // ACP's terminal occupancy is the only canonical context-window observation
+  // when a frontend does not expose portable model-limit metadata. Persisting
+  // it as the accounting limit preserves the database occupancy invariant
+  // without fabricating a catalog limit.
+  const { selectedModelId, contextTokenLimit } = resolveAcpPromptAccountingModel(
+    acpConfiguration.model,
+    settlement.occupancy.size,
+  );
   const owner = await lockProductivePromptOwner(transaction, identity);
   const productiveCursor = await lockProductiveCostCursor(
     transaction,

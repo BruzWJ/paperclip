@@ -7,24 +7,18 @@ const SKILL_VERSION_B = "00000000-0000-4000-8000-000000000003";
 
 function configuration() {
   return {
-    contractVersion: "acp-subprocess/v1" as const,
+    contractVersion: "acpx-runtime/v1" as const,
     launchProfile: {
-      registryName: "codex",
-      targetNativeCli: "codex",
-      command: "/opt/paperclip/bin/codex-acp",
-      args: ["--acp"],
-      frontendPackage: "@agentclientprotocol/codex-acp",
-      frontendVersion: "1.1.7",
-      frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
+      registryName: "runtime-agent",
     },
     sessionConfigSelections: [
-      { configId: "model", value: "gpt-5.6" },
+      { configId: "model", value: "runtime-model" },
       { configId: "reasoning_effort", value: "high" },
     ],
     model: {
-      id: "gpt-5.6",
-      label: "GPT-5.6",
-      value: "gpt-5.6",
+      id: "runtime-model",
+      label: "Runtime model",
+      value: "runtime-model",
       limits: {
         contextTokenLimit: 1_050_000,
         inputTokenLimit: 922_000,
@@ -54,19 +48,44 @@ describe("agent adapter ACP revision configuration", () => {
     );
   });
 
-  it("requires a nonempty, unique, code-unit-sorted config selection", () => {
+  it("allows a target with no selected model", () => {
+    const expected = {
+      ...configuration(),
+      model: null,
+    };
+    expect(agentAdapterAcpConfigurationSchema.parse(expected)).toEqual(expected);
+  });
+
+  it("preserves explicitly unknown ACP model limits as null", () => {
+    const expected = {
+      ...configuration(),
+      model: {
+        ...configuration().model,
+        limits: null,
+      },
+    };
+    expect(agentAdapterAcpConfigurationSchema.parse(expected)).toEqual(expected);
+    expect(
+      agentAdapterAcpConfigurationSchema.safeParse({
+        ...expected,
+        model: { ...expected.model, limits: undefined },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("allows an empty and requires unique, code-unit-sorted config selections", () => {
     expect(
       agentAdapterAcpConfigurationSchema.safeParse({
         ...configuration(),
         sessionConfigSelections: [],
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       agentAdapterAcpConfigurationSchema.safeParse({
         ...configuration(),
         sessionConfigSelections: [
-          { configId: "model", value: "gpt-5.6" },
-          { configId: "model", value: "gpt-5.6-sol" },
+          { configId: "model", value: "runtime-model" },
+          { configId: "model", value: "other-runtime-model" },
         ],
       }).success,
     ).toBe(false);
@@ -75,7 +94,7 @@ describe("agent adapter ACP revision configuration", () => {
         ...configuration(),
         sessionConfigSelections: [
           { configId: "reasoning_effort", value: "high" },
-          { configId: "model", value: "gpt-5.6" },
+          { configId: "model", value: "runtime-model" },
         ],
       }).success,
     ).toBe(false);
@@ -113,24 +132,12 @@ describe("agent adapter ACP revision configuration", () => {
         }).success,
       ).toBe(false);
     }
-    const {
-      frontendDigest: _frontendDigest,
-      ...launchWithoutDigest
-    } = base.launchProfile;
+    const { registryName: _registryName, ...launchWithoutRegistryName } =
+      base.launchProfile;
     expect(
       agentAdapterAcpConfigurationSchema.safeParse({
         ...base,
-        launchProfile: launchWithoutDigest,
-      }).success,
-    ).toBe(false);
-    const {
-      targetNativeCli: _targetNativeCli,
-      ...launchWithoutTargetNativeCli
-    } = base.launchProfile;
-    expect(
-      agentAdapterAcpConfigurationSchema.safeParse({
-        ...base,
-        launchProfile: launchWithoutTargetNativeCli,
+        launchProfile: launchWithoutRegistryName,
       }).success,
     ).toBe(false);
     expect(
@@ -138,7 +145,7 @@ describe("agent adapter ACP revision configuration", () => {
         ...base,
         launchProfile: {
           ...base.launchProfile,
-          frontendDigest: base.launchProfile.frontendDigest.toUpperCase(),
+          command: "not-admitted-here",
         },
       }).success,
     ).toBe(false);

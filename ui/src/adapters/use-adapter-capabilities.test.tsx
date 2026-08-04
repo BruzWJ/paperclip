@@ -78,21 +78,13 @@ describe("useAdapterCapabilities", () => {
 
     expect(renderedContract()).toEqual({
       keys: [
-        "cancel",
         "contractVersion",
-        "protocolVersion",
-        "resume",
-        "sessionConfig",
-        "sessionScopedMcpReplacement",
+        "runtimeControls",
         "supportsModelProfiles",
       ],
       capabilities: {
-        cancel: false,
-        contractVersion: "acp-subprocess/v1",
-        protocolVersion: 1,
-        resume: false,
-        sessionConfig: false,
-        sessionScopedMcpReplacement: false,
+        contractVersion: "acpx-runtime/v1",
+        runtimeControls: [],
         supportsModelProfiles: false,
       },
     });
@@ -103,19 +95,13 @@ describe("useAdapterCapabilities", () => {
       {
         type: "codex",
         label: "Codex",
+        source: "acpx",
         modelsCount: 2,
         loaded: true,
         registryName: "codex",
-        frontendPackage: "@agentclientprotocol/codex-acp",
-        frontendVersion: "1.1.7",
-        frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
         capabilities: {
-          cancel: true,
-          contractVersion: "acp-subprocess/v1",
-          protocolVersion: 1,
-          resume: true,
-          sessionConfig: true,
-          sessionScopedMcpReplacement: true,
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: ["session/status", "session/set_config_option"],
           supportsModelProfiles: false,
         },
       },
@@ -126,21 +112,13 @@ describe("useAdapterCapabilities", () => {
     await vi.waitFor(() => {
       expect(renderedContract()).toEqual({
         keys: [
-          "cancel",
           "contractVersion",
-          "protocolVersion",
-          "resume",
-          "sessionConfig",
-          "sessionScopedMcpReplacement",
+          "runtimeControls",
           "supportsModelProfiles",
         ],
         capabilities: {
-          cancel: true,
-          contractVersion: "acp-subprocess/v1",
-          protocolVersion: 1,
-          resume: true,
-          sessionConfig: true,
-          sessionScopedMcpReplacement: true,
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: ["session/status", "session/set_config_option"],
           supportsModelProfiles: false,
         },
       });

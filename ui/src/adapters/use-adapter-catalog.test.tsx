@@ -61,25 +61,19 @@ describe("useAdapterCatalogSync", () => {
     expect(mockAdaptersApi.list).not.toHaveBeenCalled();
   });
 
-  it("synchronizes exactly the server-admitted ACP catalog", async () => {
+  it("synchronizes exactly the server-admitted ACPX catalog", async () => {
     mockAdaptersApi.list.mockResolvedValue([
       {
         type: "codex",
         label: "Codex",
+        source: "acpx",
         modelsCount: 2,
         loaded: true,
+        drivers: ["local"],
         registryName: "codex",
-        frontendPackage: "@agentclientprotocol/codex-acp",
-        frontendVersion: "1.1.7",
-        frontendDigest:
-          "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
         capabilities: {
-          contractVersion: "acp-subprocess/v1",
-          protocolVersion: 1,
-          resume: true,
-          cancel: true,
-          sessionConfig: true,
-          sessionScopedMcpReplacement: true,
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: ["session/status", "session/set_config_option"],
           supportsModelProfiles: false,
         },
       },
@@ -98,6 +92,54 @@ describe("useAdapterCatalogSync", () => {
         container.querySelector('[data-testid="adapter-types"]')?.textContent,
       ).toBe("1:codex");
     });
-    expect(listUIAdapters().map((adapter) => adapter.type)).toEqual(["codex"]);
+    expect(listUIAdapters()).toEqual([
+      expect.objectContaining({ type: "codex", drivers: ["local"] }),
+    ]);
+  });
+
+  it("does not synchronize a failed ACPX probe into selectable UI adapters", async () => {
+    mockAdaptersApi.list.mockResolvedValue([
+      {
+        type: "visible-agent",
+        label: "Visible agent",
+        source: "acpx",
+        modelsCount: 0,
+        loaded: true,
+        drivers: ["local"],
+        registryName: "visible-agent",
+        capabilities: {
+          contractVersion: "acpx-runtime/v1",
+          runtimeControls: ["session/status", "session/set_config_option"],
+          supportsModelProfiles: false,
+        },
+      },
+      {
+        type: "failed-agent",
+        label: "failed-agent",
+        source: "acpx",
+        modelsCount: 0,
+        loaded: false,
+        diagnostic: {
+          code: "acpx_probe_failed",
+          message: "fixture local CLI is not authenticated",
+        },
+        registryName: "failed-agent",
+      },
+    ]);
+
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Probe enabled />
+        </QueryClientProvider>,
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector('[data-testid="adapter-types"]')?.textContent,
+      ).toBe("1:visible-agent");
+      expect(listUIAdapters().map((adapter) => adapter.type)).toEqual(["visible-agent"]);
+    });
   });
 });

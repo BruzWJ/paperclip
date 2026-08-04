@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
 import {
   AcpPromptSettlementRejected,
+  resolveAcpPromptAccountingModel,
   settleAcpPromptInTransaction,
   type SettleAcpPromptInTransactionInput,
 } from "./acp-prompt-settlement.js";
@@ -44,6 +45,33 @@ function validInput(): SettleAcpPromptInTransactionInput {
 }
 
 describe("canonical ACP prompt settlement boundary", () => {
+  it("uses terminal occupancy when ACP exposes no portable model limits", () => {
+    expect(
+      resolveAcpPromptAccountingModel(null, 100),
+    ).toEqual({ selectedModelId: null, contextTokenLimit: 100 });
+    expect(
+      resolveAcpPromptAccountingModel(
+        { id: "target-selected", limits: null },
+        100,
+      ),
+    ).toEqual({ selectedModelId: "target-selected", contextTokenLimit: 100 });
+  });
+
+  it("keeps an advertised model limit as an immutable consistency fence", () => {
+    expect(
+      resolveAcpPromptAccountingModel(
+        { id: "target-selected", limits: { contextTokenLimit: 100 } },
+        100,
+      ),
+    ).toEqual({ selectedModelId: "target-selected", contextTokenLimit: 100 });
+    expect(() =>
+      resolveAcpPromptAccountingModel(
+        { id: "target-selected", limits: { contextTokenLimit: 100 } },
+        99,
+      ),
+    ).toThrow("differs from the immutable prompt model");
+  });
+
   it("rejects malformed terminal occupancy before reaching persistence", async () => {
     const input = validInput();
     await expect(

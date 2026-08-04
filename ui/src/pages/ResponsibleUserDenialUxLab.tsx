@@ -53,7 +53,7 @@ function RunLedgerRow({
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="font-medium text-foreground">Run</span>
         <span className="min-w-0 max-w-full truncate font-mono text-foreground">a1b2c3d4</span>
-        <span>by CodexCoder</span>
+        <span>by Engineering Agent</span>
         {onBehalfOf ? (
           <span className="min-w-0 max-w-full truncate text-muted-foreground">
             on behalf of <span className="text-foreground">{onBehalfOf}</span>
@@ -92,9 +92,9 @@ function RunDetailHeader({ onBehalfOf, denial }: { onBehalfOf?: string | null; d
       </div>
       <div className="flex flex-wrap items-center gap-1.5 font-mono text-(length:--text-micro) text-muted-foreground">
         <span className="rounded bg-muted px-1.5 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-wide">
-          codex local
+          acpx-agent · local
         </span>
-        <span>anthropic/claude-opus-4-8</span>
+        <span>model selected by ACPX</span>
       </div>
       {onBehalfOf ? (
         <div className="text-xs text-muted-foreground">

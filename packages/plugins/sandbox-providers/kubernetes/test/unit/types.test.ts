@@ -7,13 +7,13 @@ import {
 
 const adapters = [
   {
-    adapterType: "codex",
+    adapterType: "fixture-acpx-agent",
     runtimeImage: "registry.example/provider-runtime:v1",
   },
 ];
 
 describe("kubernetesProviderConfigSchema", () => {
-  it("accepts inCluster=true with an explicit Codex runtime", () => {
+  it("accepts inCluster=true with an explicit ACPX runtime mapping", () => {
     const parsed = parseKubernetesProviderConfig({
       inCluster: true,
       adapters,
@@ -24,7 +24,7 @@ describe("kubernetesProviderConfigSchema", () => {
     expect(parsed.namespacePrefix).toBe("paperclip-");
     expect(parsed.imageAllowList).toEqual([]);
     expect(parsed.egressMode).toBe("standard");
-    expect(parsed.adapterType).toBe("codex");
+    expect(parsed.adapterType).toBeUndefined();
     expect(parsed.reuseLease).toBe(true);
     expect(parsed.timeoutMs).toBe(600_000);
   });
@@ -74,7 +74,7 @@ describe("kubernetesProviderConfigSchema", () => {
     expect(() =>
       parseKubernetesProviderConfig({
         inCluster: true,
-        adapterType: "codex",
+        adapterType: "fixture-acpx-agent",
         adapters: [
           {
             adapterType: "external-provider",
@@ -89,7 +89,7 @@ describe("kubernetesProviderConfigSchema", () => {
     expect(() =>
       parseKubernetesProviderConfig({
         inCluster: true,
-        adapterType: " codex ",
+        adapterType: " fixture-acpx-agent ",
         adapters,
       })
     ).toThrow(/exact non-blank identifier/);
@@ -99,7 +99,7 @@ describe("kubernetesProviderConfigSchema", () => {
         adapters: [
           ...adapters,
           {
-            adapterType: "codex",
+            adapterType: "fixture-acpx-agent",
             runtimeImage: "registry.example/other-runtime:v1",
           },
         ],
@@ -110,7 +110,7 @@ describe("kubernetesProviderConfigSchema", () => {
         inCluster: true,
         adapters: [
           {
-            adapterType: "codex",
+            adapterType: "fixture-acpx-agent",
             runtimeImage: " registry.example/provider-runtime:v1 ",
           },
         ],

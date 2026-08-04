@@ -119,14 +119,6 @@ export const DIRECT_RETIRED_TOKENS = Object.freeze([
   "agentTaskSessions",
   "taskKey",
   "codexHome",
-  "createAcpRuntime",
-  "AcpxRuntime",
-  "AcpRuntimeHandle",
-  "AcpRuntimeOptions",
-  "AcpSessionRecord",
-  "AcpSessionStore",
-  "createFileSessionStore",
-  "createRuntimeStore",
   "warmHandles",
   "warmHandleIdleMs",
   "DEFAULT_AGENT_NAME",
@@ -139,9 +131,72 @@ export const ACPX_STATE_TERMS = Object.freeze([
   "persistent",
 ] as const);
 
-const ALLOWED_ACPX_RUNTIME_IMPORTS = new Set([
-  "createAgentRegistry",
-  "AcpAgentRegistry",
+const ACPX_REGISTRY_OWNER =
+  "packages/adapter-utils/src/acp-subprocess/agent-registry.ts";
+const ACPX_DISCOVERY_OWNER =
+  "packages/adapter-utils/src/acp-subprocess/acpx-discovery.ts";
+const ACPX_EXECUTION_TARGET_OWNER =
+  "packages/adapter-utils/src/acp-subprocess/execution-target.ts";
+const ACPX_RUNTIME_EXECUTION_OWNER =
+  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-execution.ts";
+const ACPX_RUNTIME_READINESS_OWNER =
+  "packages/adapter-utils/src/acp-subprocess/acpx-runtime-readiness.ts";
+const ACPX_DISPOSABLE_RUNTIME_OWNERS = new Set([
+  ACPX_DISCOVERY_OWNER,
+  ACPX_RUNTIME_EXECUTION_OWNER,
+  ACPX_RUNTIME_READINESS_OWNER,
+]);
+const ALLOWED_ACPX_RUNTIME_IMPORTS = new Map<string, ReadonlySet<string>>([
+  [
+    ACPX_REGISTRY_OWNER,
+    new Set(["createAgentRegistry", "AcpAgentRegistry"]),
+  ],
+  [
+    ACPX_DISCOVERY_OWNER,
+    new Set([
+      "createAcpRuntime",
+      "createAgentRegistry",
+      "createRuntimeStore",
+      "AcpAgentRegistry",
+      "AcpRuntimeCapabilities",
+      "AcpRuntimeEnsureInput",
+      "AcpRuntimeHandle",
+      "AcpRuntimeOptions",
+      "AcpRuntimeStatus",
+      "AcpSessionStore",
+    ]),
+  ],
+  [ACPX_EXECUTION_TARGET_OWNER, new Set(["AcpAgentRegistry"])],
+  [
+    ACPX_RUNTIME_EXECUTION_OWNER,
+    new Set([
+      "createAcpRuntime",
+      "createRuntimeStore",
+      "AcpAgentRegistry",
+      "AcpRuntime",
+      "AcpRuntimeEvent",
+      "AcpRuntimeHandle",
+      "AcpRuntimeOptions",
+      "AcpRuntimeStatus",
+      "AcpRuntimeTurn",
+      "AcpRuntimeTurnResult",
+      "AcpSessionStore",
+    ]),
+  ],
+  [
+    ACPX_RUNTIME_READINESS_OWNER,
+    new Set([
+      "createAcpRuntime",
+      "createRuntimeStore",
+      "AcpAgentRegistry",
+      "AcpRuntime",
+      "AcpRuntimeCapabilities",
+      "AcpRuntimeHandle",
+      "AcpRuntimeOptions",
+      "AcpRuntimeStatus",
+      "AcpSessionStore",
+    ]),
+  ],
 ]);
 const MEMORY_CONTRACT_PATTERNS = [
   /\bmemory[ \t_-]+providers?\b/gi,
@@ -330,6 +385,10 @@ function scanAcpxRuntimeGraph(
   fixtureTerms: ReadonlySet<string>,
   violations: CrossIssueMemoryRemovalViolation[],
 ): void {
+  // ACPX runtime imports in tests exercise both valid temporary discovery and
+  // deliberately invalid boundaries. Only production owners participate in
+  // this repository-wide memory contract.
+  if (isNegativeFixturePath(file.path)) return;
   const importsRuntime = /["']acpx\/runtime["']/.test(file.source);
   const namespaceOrDefaultImport =
     /import\s+(?:\*\s+as\s+\w+|\w+)\s+from\s+["']acpx\/runtime["']/.exec(
@@ -339,18 +398,25 @@ function scanAcpxRuntimeGraph(
     addViolation(violations, file, fixtureTerms, {
       offset: namespaceOrDefaultImport.index,
       term: "acpx-runtime-import",
-      reason: "ACPX runtime may be consumed only through its two registry exports",
+      reason: "ACPX runtime imports must be named and owned by the registry/discovery boundary",
     });
   }
+  const allowedImports = ALLOWED_ACPX_RUNTIME_IMPORTS.get(file.path);
   for (const imported of acpxImports(file.source)) {
-    if (ALLOWED_ACPX_RUNTIME_IMPORTS.has(imported)) continue;
+    if (allowedImports?.has(imported)) continue;
     const offset = file.source.indexOf(imported);
     addViolation(violations, file, fixtureTerms, {
       offset: Math.max(0, offset),
       term: imported,
-      reason: "forbidden ACPX stateful runtime import",
+      reason: "forbidden ACPX runtime import outside the dynamic registry/discovery boundary",
     });
   }
+
+  // Discovery, readiness, and one-shot execution intentionally open a
+  // temporary, discarded ACPX session. They are not Paperclip cross-issue
+  // stores, and their stateful runtime vocabulary must stay confined to these
+  // disposable owners.
+  if (ACPX_DISPOSABLE_RUNTIME_OWNERS.has(file.path)) return;
 
   const hardGraphScope =
     importsRuntime || /(?:^|\/)acpx-engine(?:\/|$)/i.test(file.path);
@@ -621,7 +687,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       "packages/shared/src/validators/agent-adapter-revision.ts",
       [
         "agentAdapterAcpConfigurationSchema",
-        'z.literal("acp-subprocess/v1")',
+        'z.literal("acpx-runtime/v1")',
         "sessionConfigSelections",
         ".strict()",
       ],
@@ -632,7 +698,7 @@ function canonicalOwnershipViolations(repositoryRoot: string): string[] {
       [
         "createAgentRegistry",
         "AcpAgentRegistry",
-        "resolveApprovedAcpLaunch",
+        "assertAcpRegistryAgentName",
       ],
     ),
     ...requireFileTokens(

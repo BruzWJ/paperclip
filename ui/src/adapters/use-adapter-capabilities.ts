@@ -5,19 +5,15 @@ import { queryKeys } from "@/lib/queryKeys";
 
 const UNAVAILABLE: AdapterCapabilities = {
   supportsModelProfiles: false,
-  contractVersion: "acp-subprocess/v1",
-  protocolVersion: 1,
-  resume: false,
-  cancel: false,
-  sessionConfig: false,
-  sessionScopedMcpReplacement: false,
+  contractVersion: "acpx-runtime/v1",
+  runtimeControls: [],
 };
 
 /**
  * Returns a lookup function that resolves adapter capabilities by type.
  *
- * Capabilities come only from the server adapter listing API. Missing catalog
- * state fails closed until the server supplies the exact entry.
+ * Capabilities come only from the server's ACPX catalog API. Missing catalog
+ * state fails closed until ACPX supplies the exact entry.
  */
 export function useAdapterCapabilities(): (type: string) => AdapterCapabilities {
   const { data: adapters } = useQuery({
@@ -30,6 +26,7 @@ export function useAdapterCapabilities(): (type: string) => AdapterCapabilities 
     const map = new Map<string, AdapterCapabilities>();
     if (adapters) {
       for (const a of adapters) {
+        if (!a.loaded) continue;
         map.set(a.type, a.capabilities);
       }
     }

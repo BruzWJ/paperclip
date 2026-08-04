@@ -76,6 +76,7 @@ export function RuntimeServicesJsonField({
   return (
     <Field label="Runtime services JSON" hint={help.runtimeServicesJson}>
       <textarea
+        aria-label="Runtime services JSON"
         className={`${inputClass} min-h-[148px]`}
         value={value}
         onChange={(e) => {

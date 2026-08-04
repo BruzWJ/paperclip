@@ -78,6 +78,10 @@ const mockDeletePluginEnvironmentTemplate = vi.hoisted(() => vi.fn());
 const mockExecutionWorkspaceService = vi.hoisted(() => ({
   clearEnvironmentSelection: vi.fn(),
 }));
+const mockAcpxAdapterCatalog = vi.hoisted(() => ({
+  listServerAdapters: vi.fn(),
+  refreshAcpxAdapters: vi.fn(async () => undefined),
+}));
 
 vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
@@ -120,6 +124,11 @@ vi.mock("../services/plugin-environment-driver.js", () => ({
   deletePluginEnvironmentTemplate: mockDeletePluginEnvironmentTemplate,
   validatePluginEnvironmentDriverConfig: mockValidatePluginEnvironmentDriverConfig,
   validatePluginSandboxProviderConfig: mockValidatePluginSandboxProviderConfig,
+}));
+
+vi.mock("../adapters/index.js", () => ({
+  listServerAdapters: mockAcpxAdapterCatalog.listServerAdapters,
+  refreshAcpxAdapters: mockAcpxAdapterCatalog.refreshAcpxAdapters,
 }));
 
 function createEnvironment() {
@@ -243,6 +252,15 @@ describe("environment routes", () => {
   });
 
   beforeEach(() => {
+    mockAcpxAdapterCatalog.refreshAcpxAdapters.mockClear();
+    mockAcpxAdapterCatalog.listServerAdapters.mockReturnValue([
+      {
+        type: "local-acpx-agent",
+        definition: {
+          environment: { drivers: ["local"] },
+        },
+      },
+    ]);
     mockAccessService.canUser.mockReset();
     mockAccessService.hasPermission.mockReset();
     mockAccessService.decide.mockReset();
@@ -484,12 +502,36 @@ describe("environment routes", () => {
     const res = await request(app).get("/api/companies/company-1/environments/capabilities");
 
     expect(res.status).toBe(200);
-    expect(res.body.drivers.ssh).toBe("supported");
+    // ACPX's current public runtime catalog admits local execution only. The
+    // endpoint must not claim the common Paperclip SSH transport is available
+    // to every discovered agent.
+    expect(res.body.drivers.local).toBe("supported");
+    expect(res.body.drivers.ssh).toBe("unsupported");
+    expect(res.body.adapters).toEqual([
+      expect.objectContaining({
+        adapterType: "local-acpx-agent",
+        drivers: {
+          local: "supported",
+          ssh: "unsupported",
+          sandbox: "unsupported",
+          plugin: "unsupported",
+        },
+      }),
+    ]);
+    expect(mockAcpxAdapterCatalog.refreshAcpxAdapters).toHaveBeenCalledOnce();
     expect(res.body.sandboxProviders.fake.supportsRunExecution).toBe(false);
     expect(res.body.sandboxProviders).not.toHaveProperty("fake-plugin");
   });
 
   it("returns installed plugin-backed sandbox capabilities for environment creation", async () => {
+    mockAcpxAdapterCatalog.listServerAdapters.mockReturnValue([
+      {
+        type: "sandbox-acpx-agent",
+        definition: {
+          environment: { drivers: ["local", "sandbox"] },
+        },
+      },
+    ]);
     mockListReadyPluginEnvironmentDrivers.mockResolvedValue([
       {
         pluginId: "plugin-1",
@@ -550,7 +592,7 @@ describe("environment routes", () => {
         },
       },
     });
-    expect(res.body.adapters.find((row: any) => row.adapterType === "codex").sandboxProviders["secure-plugin"])
+    expect(res.body.adapters.find((row: any) => row.adapterType === "sandbox-acpx-agent").sandboxProviders["secure-plugin"])
       .toBe("supported");
   });
 

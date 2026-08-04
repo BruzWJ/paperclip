@@ -41,6 +41,12 @@ vi.mock("../services/activity-log.js", () => ({
 
 import { createJoinRequestApprovalService } from "../services/join-request-approval.js";
 
+function createApprovalService(db: ReturnType<typeof createMockDb>["db"]) {
+  return createJoinRequestApprovalService(db, {
+    resolveAdapterEnvironmentDrivers: async () => ["local"],
+  });
+}
+
 function approvalFixture() {
   const companyId = randomUUID();
   const requestId = randomUUID();
@@ -126,7 +132,7 @@ describe("join request approval", () => {
     const harness = createMockDb({
       select: [[fixture.joinRequest], [fixture.invite]],
     });
-    const service = createJoinRequestApprovalService(harness.db);
+    const service = createApprovalService(harness.db);
 
     await expect(service.approve({
       companyId: fixture.companyId,
@@ -163,7 +169,7 @@ describe("join request approval", () => {
       ],
       update: [[fixture.approved]],
     });
-    const service = createJoinRequestApprovalService(harness.db);
+    const service = createApprovalService(harness.db);
 
     const approved = await service.approve({
       companyId: fixture.companyId,
@@ -236,5 +242,32 @@ describe("join request approval", () => {
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("update")).toBe(0);
     expect((harness.db.transaction as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects an environment driver absent from the current ACPX adapter definition", async () => {
+    const fixture = approvalFixture();
+    approvalMocks.getEnvironmentById.mockResolvedValue(fixture.environment);
+    const harness = createMockDb({
+      select: [[fixture.joinRequest], [fixture.invite]],
+    });
+    const service = createJoinRequestApprovalService(harness.db, {
+      // The request fixture targets a local environment, but ACPX currently
+      // admits only a different transport for this exact adapter.
+      resolveAdapterEnvironmentDrivers: async () => ["ssh"],
+    });
+
+    await expect(service.approve({
+      companyId: fixture.companyId,
+      requestId: fixture.requestId,
+      actor: fixture.boardActor,
+      defaultEnvironmentId: fixture.environmentId,
+      skillChannel: "operator_native",
+    })).rejects.toMatchObject({
+      status: 422,
+      message: expect.stringContaining('Environment driver "local" is not allowed'),
+    });
+
+    expect(approvalMocks.createRuntimeAgent).not.toHaveBeenCalled();
+    expect(approvalMocks.createAdapterRevision).not.toHaveBeenCalled();
   });
 });

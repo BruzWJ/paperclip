@@ -290,10 +290,6 @@ function OpenOnboardingOnMount({ initialStep }: { initialStep: 1 | 2 }) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    queryClient.setQueryData(queryKeys.agents.adapterModels(companyId, "codex"), [
-      { id: "gpt-5.6", label: "GPT-5.6" },
-      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-    ]);
     openOnboarding(initialStep === 1 ? { initialStep } : { initialStep, companyId });
   }, [initialStep, openOnboarding, queryClient]);
 

@@ -22,6 +22,13 @@
       "when": 1785793647264,
       "tag": "0002_amused_warbird",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785797388294,
+      "tag": "0003_white_dorian_gray",
+      "breakpoints": true
     }
   ]
 }

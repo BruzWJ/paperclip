@@ -97,13 +97,13 @@ const manifest: PaperclipPluginManifestV1 = {
             type: "string",
             minLength: 1,
             description:
-              "Exact default adapter transport for this environment. Defaults to `codex`; per-run external types require their own enabled runtime entry.",
+              "Optional exact operator fallback for non-agent calls. Normal runs use their ACPX-discovered agent name and require a matching runtime entry.",
           },
           adapters: {
             type: "array",
             minItems: 1,
             description:
-              "Authoritative adapter runtime registry. Every selectable built-in or external type requires an explicit image; Kubernetes provides no provider-specific fallback image.",
+              "Target-local runtime mappings keyed by exact ACPX agent name. These mappings do not make agents selectable; each configured runtime image is required for a matching run.",
             items: {
               type: "object",
               properties: {

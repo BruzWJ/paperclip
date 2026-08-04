@@ -44,15 +44,9 @@ const revision = {
   agentId: identity.agentId,
   executionTargetDigest: identity.executionTargetIdentity,
   acpConfiguration: {
-    contractVersion: "acp-subprocess/v1",
+    contractVersion: "acpx-runtime/v1",
     launchProfile: {
-      registryName: "test",
-      targetNativeCli: "test-native",
-      command: "/opt/test-acp",
-      args: [],
-      frontendPackage: "@paperclip-test/test-acp",
-      frontendVersion: "1.0.0",
-      frontendDigest: "b".repeat(64),
+      registryName: "fixture-agent",
     },
     sessionConfigSelections: [
       { configId: "model", value: "provider/model" },

@@ -1,12 +1,12 @@
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  supportedEnvironmentDriversForAdapter,
   type AgentAdapterType,
   type JoinRequestType,
 } from "@paperclipai/shared";
 import { environmentsApi } from "@/api/environments";
 import { queryKeys } from "@/lib/queryKeys";
+import { useAdapterCatalogSync } from "@/adapters/use-adapter-catalog";
 import { Button } from "./ui/button";
 
 export interface JoinRequestApprovalControlsProps {
@@ -44,6 +44,7 @@ export function JoinRequestApprovalControls({
 }: JoinRequestApprovalControlsProps) {
   const [defaultEnvironmentId, setDefaultEnvironmentId] = useState("");
   const isAgentRequest = requestType === "agent";
+  const admittedAdapters = useAdapterCatalogSync({ enabled: isAgentRequest });
   const environmentsQuery = useQuery({
     queryKey: queryKeys.environments.list(companyId),
     queryFn: () => environmentsApi.list(companyId),
@@ -51,19 +52,37 @@ export function JoinRequestApprovalControls({
   });
   const eligibleEnvironments = useMemo(() => {
     if (!isAgentRequest) return [];
+    const adapter = admittedAdapters.find(
+      (candidate) => candidate.type === adapterType,
+    );
     const allowedDrivers = new Set(
-      supportedEnvironmentDriversForAdapter(adapterType ?? ""),
+      adapter?.drivers ?? [],
     );
     return (environmentsQuery.data ?? []).filter(
       (environment) =>
         environment.status === "active" && allowedDrivers.has(environment.driver),
     );
-  }, [adapterType, environmentsQuery.data, isAgentRequest]);
+  }, [adapterType, admittedAdapters, environmentsQuery.data, isAgentRequest]);
+  useEffect(() => {
+    if (!defaultEnvironmentId) return;
+    if (eligibleEnvironments.some((environment) => environment.id === defaultEnvironmentId)) {
+      return;
+    }
+    // A catalog refresh can remove a transport while this control remains
+    // open. Clear the stale choice instead of submitting it as if it were
+    // still ACPX-admitted.
+    setDefaultEnvironmentId("");
+  }, [defaultEnvironmentId, eligibleEnvironments]);
   const environmentRequired = isAgentRequest;
   const approveDisabled =
     isPending ||
     (environmentRequired &&
-      (environmentsQuery.isLoading || !defaultEnvironmentId));
+      (
+        environmentsQuery.isLoading
+        || !eligibleEnvironments.some(
+          (environment) => environment.id === defaultEnvironmentId,
+        )
+      ));
 
   return (
     <div className={className} onClickCapture={onClickCapture}>
@@ -90,6 +109,9 @@ export function JoinRequestApprovalControls({
               </option>
             ))}
           </select>
+          {environmentsQuery.isLoading ? (
+            <span role="status" className="sr-only">Loading eligible environments…</span>
+          ) : null}
         </label>
       ) : null}
       <Button

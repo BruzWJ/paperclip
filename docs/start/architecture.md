@@ -18,8 +18,8 @@ Paperclip is a TypeScript monorepo built around a PostgreSQL control plane.
 │ PostgreSQL + Drizzle                      │
 │ Issues, Sessions, refs, runs, audit       │
 ├───────────────────────────────────────────┤
-│ Worker-supervised ACP subprocess          │
-│ Official SDK client + approved frontend  │
+│ ACPX public-runtime bounded prompt bridge │
+│ Dynamic local CLI discovery + execution  │
 └───────────────────────────────────────────┘
 ```
 
@@ -32,8 +32,8 @@ paperclip/
 ├── packages/
 │   ├── db/                     # Drizzle schema and ordered migrations
 │   ├── shared/                 # Contracts, validators, and constants
-│   ├── adapter-utils/          # Common ACP client and target bridge
-│   ├── adapters/               # Declarative approved ACP backends
+│   ├── adapter-utils/          # ACPX runtime/discovery bridge
+│   ├── adapters/               # Legacy data-only adapter package support
 │   └── plugins/                # Plugin SDK, examples, and first-party plugins
 ├── cli/                        # Board/control-plane CLI
 └── docs/ and doc/              # User and engineering documentation
@@ -51,12 +51,14 @@ paperclip/
    schema for that authenticated ref.
 5. Workspace resolution binds the run to the issue/epoch execution-workspace
    record; projectless work receives an absolute issue-owned cwd.
-6. The worker validates the declarative backend against Paperclip's immutable
-   launch catalog and ACPX's registry, then supervises the approved ACP agent
-   subprocess on the selected execution target.
-7. The common official-SDK client configures the ACP session, supplies the
-   request-scoped MCP server set, sends the exact prompt, and projects
-   structured ACP updates into the issue's Paperclip Session graph.
+6. The worker uses the ACPX-discovered exact registry name to create a
+   disposable ACPX runtime in the selected local execution workspace. ACPX,
+   not Paperclip, supplies availability and launches the compatible CLI.
+7. ACPX configures the provider backend session or performs the frozen resume
+   operation, receives the request-scoped MCP server set and exact prompt, and
+   returns structured updates for Paperclip to project into its Session graph.
+   A rejected ACPX operation fails the attempt; Paperclip does not substitute a
+   provider-specific fresh-session fallback.
    Projectors derive comments, lifecycle outcomes, costs, and audit views.
 8. Process loss or a retryable failure re-leases the existing valid ref. It
    never fabricates a generic wake, agent-wide session, or singleton run link
@@ -79,19 +81,19 @@ model-visible agent memory and never selects a handle from another issue.
 
 ## ACP Backend Model
 
-Every built-in or external adapter is a data-only `acp-subprocess/v1`
-definition selecting an already approved ACP launch and closed stable session
-configuration. It contains no execution callback, provider client, parser,
-session state, authentication hook, or tool implementation.
+Every ACPX-discovered agent becomes a data-only `acpx-runtime/v1` definition
+with its exact registry name and advertised stable session configuration. It
+contains no execution callback, provider client, parser, session state,
+authentication hook, or tool implementation.
 
-Paperclip uses ACPX only for public agent-name-to-launch registry lookup after
-the submitted name passes its immutable approved catalog. The common worker and
-official TypeScript SDK own the one request/control/event path over supervised
-subprocess stdio. The selected CLI or pinned upstream ACP frontend owns
-provider authentication and its native prompt/model/tool/history harness.
-Local, SSH, sandbox, and plugin are execution-target drivers on this same path,
-not alternate adapters. Generic process, HTTP, gateway, raw-provider, or
-provider-specific execution adapters do not exist.
+Paperclip uses ACPX as the sole dynamic agent/model/configuration supplier: it
+probes locally compatible registry entries and does not maintain an approved
+agent catalog of its own. ACPX owns the one request/control/event path to the
+provider CLI and its native prompt/model/tool/history harness. Paperclip owns
+durable authority, request MCP, redacted projection, and accounting.
+The current public ACPX runtime is local-only; SSH, sandbox, and plugin target
+drivers are not alternate ACPX paths. Generic process, HTTP, gateway,
+raw-provider, or provider-specific execution adapters do not exist.
 
 ## Key Invariants
 

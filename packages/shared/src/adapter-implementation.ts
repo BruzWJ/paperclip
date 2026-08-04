@@ -1,4 +1,5 @@
-export const ACP_ADAPTER_DEFINITION_VERSION = "acp-subprocess/v1" as const;
+/** The version of Paperclip's immutable ACPX runtime adapter definition. */
+export const ACPX_RUNTIME_DEFINITION_VERSION = "acpx-runtime/v1" as const;
 export const ACP_PROTOCOL_VERSION = 1 as const;
 
 export const ADAPTER_IMPLEMENTATION_ORIGINS = [
@@ -17,7 +18,7 @@ export type AdapterImplementationOrigin =
  */
 export interface AdapterImplementationIdentity {
   adapterType: string;
-  definitionVersion: typeof ACP_ADAPTER_DEFINITION_VERSION;
+  definitionVersion: typeof ACPX_RUNTIME_DEFINITION_VERSION;
   protocolVersion: typeof ACP_PROTOCOL_VERSION;
   origin: AdapterImplementationOrigin;
   packageName: string;
@@ -44,7 +45,7 @@ export function isAdapterImplementationIdentity(
   return (
     Object.keys(candidate).length === 8 &&
     exactNonEmptyString(candidate.adapterType) &&
-    candidate.definitionVersion === ACP_ADAPTER_DEFINITION_VERSION &&
+    candidate.definitionVersion === ACPX_RUNTIME_DEFINITION_VERSION &&
     candidate.protocolVersion === ACP_PROTOCOL_VERSION &&
     (candidate.origin === "builtin" || candidate.origin === "external") &&
     exactNonEmptyString(candidate.packageName) &&

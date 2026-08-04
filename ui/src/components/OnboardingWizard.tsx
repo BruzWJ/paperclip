@@ -31,7 +31,6 @@ import {
 } from "../lib/onboarding-launch";
 import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plane-payload";
 import {
-  companySkillChannelSchema,
   companySkillPinSchema,
   parseCompanySkillPins,
   type CompanySkillChannel,
@@ -48,7 +47,6 @@ import { resolveSkillSummaryText } from "../lib/company-skill-summary";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
 import { AgentCapsule } from "./AgentCapsule";
-import { Badge } from "@/components/ui/badge";
 import {
   Building2,
   Bot,
@@ -58,7 +56,6 @@ import {
   Sparkles,
   Check,
   Loader2,
-  ChevronDown,
   X
 } from "lucide-react";
 
@@ -183,10 +180,11 @@ function loadSavedCompanySkillPins(
 }
 
 function loadSavedCompanySkillChannel(
-  saved: Record<string, unknown> | null,
+  _saved: Record<string, unknown> | null,
 ): CompanySkillChannel {
-  if (saved === null) return "isolated_skills_home";
-  return companySkillChannelSchema.parse(saved.skillChannel);
+  // ACPX's public local runtime supports only the operator-native channel.
+  // Ignore old browser drafts instead of preserving an invalid creation value.
+  return "operator_native";
 }
 
 function loadSavedState(): Record<string, unknown> | null {
@@ -294,7 +292,6 @@ export function OnboardingWizard() {
     () => loadSavedAdapterConfiguration(saved),
   );
   const adapterType = configValues.adapterType;
-  const [showMoreAdapters, setShowMoreAdapters] = useState(false);
 
   // Created entity IDs — pre-populate from existing company when skipping step 1
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(
@@ -399,17 +396,13 @@ export function OnboardingWizard() {
       && adapterConfigResolution.error === null,
   });
 
-  // Build adapter grids from the exact server-admitted ACP catalog.
-  const { recommendedAdapters, moreAdapters } = useMemo(() => {
-    const all = listUIAdapters()
+  // ACPX is the sole catalog supplier. Do not rank or withhold its currently
+  // admitted agents in onboarding: surface every selectable candidate.
+  const availableAdapters = useMemo(() =>
+    listUIAdapters()
       .filter((a) => isVisualAdapterChoice(a.type))
-      .map((a) => ({ ...getAdapterDisplay(a.type), label: a.label, type: a.type }));
-
-    return {
-      recommendedAdapters: all.filter((a) => a.recommended),
-      moreAdapters: all.filter((a) => !a.recommended),
-    };
-  }, [admittedAdapters]);
+      .map((a) => ({ ...getAdapterDisplay(a.type), label: a.label, type: a.type })),
+  [admittedAdapters]);
 
   function selectAdapterType(nextType: string) {
     const { adapterType: _discard, ...defaults } = defaultCreateValues;
@@ -441,7 +434,7 @@ export function OnboardingWizard() {
     setAgentCapabilities("");
     setRuntimeAccess(createEmptyRuntimeAgentConfigurationValues());
     setCompanySkillPins([]);
-    setSkillChannel("isolated_skills_home");
+    setSkillChannel("operator_native");
     setInitialTaskTitle("");
     setInitialTaskRequest("");
     setAgentCreateIdempotencyKey(crypto.randomUUID());
@@ -808,6 +801,7 @@ export function OnboardingWizard() {
                   <div className="group">
                     <label className="text-xs text-muted-foreground mb-1 block">What does your team work on?</label>
                     <input
+                      aria-label="What does your team work on?"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                       placeholder="e.g. We create educational YouTube content about AI"
                       value={q1}
@@ -817,6 +811,7 @@ export function OnboardingWizard() {
                   <div className="group">
                     <label className="text-xs text-muted-foreground mb-1 block">What are your current workflows?</label>
                     <textarea
+                      aria-label="What are your current workflows?"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
                       placeholder="e.g. Manual content creation, spreadsheet tracking, email outreach"
                       value={growWorkflows}
@@ -826,6 +821,7 @@ export function OnboardingWizard() {
                   <div className="group">
                     <label className="text-xs text-muted-foreground mb-1 block">What pain points would you solve with AI?</label>
                     <textarea
+                      aria-label="What pain points would you solve with AI?"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
                       placeholder="e.g. Can't produce content fast enough, no time for social media"
                       value={growPainPoints}
@@ -835,6 +831,7 @@ export function OnboardingWizard() {
                   <div className="group">
                     <label className="text-xs text-muted-foreground mb-1 block">What would you automate first?</label>
                     <input
+                      aria-label="What would you automate first?"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                       placeholder="e.g. Social media scheduling and content repurposing"
                       value={growAutomate}
@@ -861,6 +858,7 @@ export function OnboardingWizard() {
                         <div className="group">
                           <label className="text-xs text-foreground mb-1 block">Generated mission — edit however you like:</label>
                           <textarea
+                            aria-label="Generated mission"
                             className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
                             value={companyGoal}
                             onChange={(e) => setCompanyGoal(e.target.value)}
@@ -904,6 +902,7 @@ export function OnboardingWizard() {
                       Company name
                     </label>
                     <input
+                      aria-label="Company name"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                       placeholder="Acme Corp"
                       value={companyName}
@@ -996,6 +995,7 @@ export function OnboardingWizard() {
                           Mission
                         </label>
                         <textarea
+                          aria-label="Mission"
                           className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-60px)"
                           placeholder="What is your team trying to achieve?"
                           value={companyGoal}
@@ -1031,6 +1031,7 @@ export function OnboardingWizard() {
                           What does your team work on?
                         </label>
                         <input
+                          aria-label="What does your team work on?"
                           className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                           placeholder="e.g. We create educational YouTube content about AI"
                           value={q1}
@@ -1043,6 +1044,7 @@ export function OnboardingWizard() {
                           Who do you serve?
                         </label>
                         <input
+                          aria-label="Who do you serve?"
                           className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                           placeholder="e.g. Non-technical professionals curious about AI tools"
                           value={q2}
@@ -1054,6 +1056,7 @@ export function OnboardingWizard() {
                           What's your biggest bottleneck right now?
                         </label>
                         <input
+                          aria-label="Biggest bottleneck"
                           className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                           placeholder="e.g. Can't produce content fast enough across multiple channels"
                           value={q3}
@@ -1065,6 +1068,7 @@ export function OnboardingWizard() {
                           What would success look like in 6 months?
                         </label>
                         <input
+                          aria-label="Six-month success"
                           className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                           placeholder="e.g. Publishing daily content across 4 platforms with a team of AI agents"
                           value={q4}
@@ -1094,6 +1098,7 @@ export function OnboardingWizard() {
                           Here's your draft mission — edit it however you like:
                         </label>
                         <textarea
+                          aria-label="Draft mission"
                           className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-(--sz-80px)"
                           value={companyGoal}
                           onChange={(e) => setCompanyGoal(e.target.value)}
@@ -1133,6 +1138,7 @@ export function OnboardingWizard() {
                       Name
                     </label>
                     <input
+                      aria-label="Agent name"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                       placeholder="Agent name"
                       value={agentName}
@@ -1145,6 +1151,7 @@ export function OnboardingWizard() {
                       Title (display only)
                     </label>
                     <input
+                      aria-label="Agent title"
                       className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                       placeholder="Optional title"
                       value={agentTitle}
@@ -1156,6 +1163,7 @@ export function OnboardingWizard() {
                       Capabilities
                     </label>
                     <textarea
+                      aria-label="Agent capabilities"
                       className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
                       placeholder="What work can another agent select this agent to handle?"
                       value={agentCapabilities}
@@ -1178,30 +1186,16 @@ export function OnboardingWizard() {
                         Skills provide content only and grant no authority.
                       </p>
                     </div>
-                    <label className="grid gap-1.5 text-sm">
+                    <div className="grid gap-1.5 text-sm">
                       <span className="font-medium">Skill channel</span>
-                      <select
-                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
-                        value={skillChannel}
-                        onChange={(event) =>
-                          setSkillChannel(
-                            companySkillChannelSchema.parse(event.target.value),
-                          )
-                        }
-                        disabled={loading}
-                      >
-                        <option value="isolated_skills_home">
-                          Paperclip-managed isolated skills home
-                        </option>
-                        <option value="operator_native">
-                          Operator-managed native skills
-                        </option>
-                      </select>
+                      <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                        Operator-managed native skills
+                      </div>
                       <span className="text-xs text-muted-foreground">
-                        Isolated mode materializes pinned versions read-only.
-                        Operator-managed mode performs no Paperclip skill-file access.
+                        ACPX uses the local CLI's native skill handling.
+                        Paperclip performs no isolated skill-home materialization.
                       </span>
-                    </label>
+                    </div>
                     {availableCompanySkills.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
                         No optional company skills installed yet.
@@ -1273,80 +1267,37 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 4: Connect a model — adapter + model + env check (capsule above) */}
+              {/* Step 4: Connect an ACPX agent and its runtime configuration. */}
               {step === 4 && (
                 <div className="space-y-5">
-                  {/* Adapter type radio cards */}
                   <div>
                     <label className="text-xs text-muted-foreground mb-2 block">
-                      Adapter type
+                      ACPX-discovered agent
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {recommendedAdapters.map((opt) => (
-                        <button
-                          key={opt.type}
-                          className={cn(
-                            "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
-                            adapterType === opt.type
-                              ? "border-foreground bg-accent"
-                              : "border-border hover:bg-accent/50"
-                          )}
-                          onClick={() => {
-                            selectAdapterType(opt.type);
-                          }}
-                        >
-                          {opt.recommended && (
-                            <Badge variant="ghost" className="absolute -top-1.5 right-1.5 bg-green-500 text-white text-(length:--text-nano) font-semibold px-1.5 leading-none">
-                              Recommended
-                            </Badge>
-                          )}
-                          <opt.icon className="h-4 w-4" />
-                          <span className="font-medium">{opt.label}</span>
-                          <span className="text-muted-foreground text-(length:--text-nano)">
-                            {opt.description}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      className="flex items-center gap-1.5 mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => setShowMoreAdapters((v) => !v)}
-                    >
-                      <ChevronDown
-                        className={cn(
-                          "h-3 w-3 transition-transform",
-                          showMoreAdapters ? "rotate-0" : "-rotate-90"
-                        )}
-                      />
-                      More Agent Adapter Types
-                    </button>
-
-                    {showMoreAdapters && (
-                      <div className="grid grid-cols-2 gap-2 mt-2">
-                        {moreAdapters.map((opt) => (
-                           <button
-                             key={opt.type}
-                             disabled={!!opt.comingSoon}
-                             className={cn(
-                               "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
-                               opt.comingSoon
-                                 ? "border-border opacity-40 cursor-not-allowed"
-                                 : adapterType === opt.type
-                                 ? "border-foreground bg-accent"
-                                 : "border-border hover:bg-accent/50"
-                             )}
-                             onClick={() => {
-                              if (opt.comingSoon) return;
+                    {availableAdapters.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No compatible ACPX agent is currently available. Install and
+                        authenticate a compatible local CLI, then retry this step.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {availableAdapters.map((opt) => (
+                          <button
+                            key={opt.type}
+                            className={cn(
+                              "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
+                              adapterType === opt.type
+                                ? "border-foreground bg-accent"
+                                : "border-border hover:bg-accent/50"
+                            )}
+                            onClick={() => {
                               selectAdapterType(opt.type);
                             }}
                           >
                             <opt.icon className="h-4 w-4" />
                             <span className="font-medium">{opt.label}</span>
                             <span className="text-muted-foreground text-(length:--text-nano)">
-                              {opt.comingSoon
-                                ? opt.disabledLabel ?? "Coming soon"
-                                : opt.description}
+                              {opt.description}
                             </span>
                           </button>
                         ))}
@@ -1450,7 +1401,8 @@ export function OnboardingWizard() {
                       </p>
                     </div>
                     <input
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+                      aria-label="First issue title"
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       placeholder="Issue title (optional)"
                       value={initialTaskTitle}
                       onChange={(event) =>
@@ -1458,7 +1410,8 @@ export function OnboardingWizard() {
                       }
                     />
                     <textarea
-                      className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+                      aria-label="First issue request"
+                      className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       placeholder={`Describe ${agentName || "the agent"}'s first concrete assignment`}
                       value={initialTaskRequest}
                       onChange={(event) =>
@@ -1486,7 +1439,7 @@ export function OnboardingWizard() {
                       onClick={() => setStep((step - 1) as Step)}
                       disabled={loading}
                     >
-                      <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                      <ArrowLeft data-icon="inline-start" className="h-3.5 w-3.5 mr-1" />
                       Back
                     </Button>
                   )}
@@ -1502,7 +1455,7 @@ export function OnboardingWizard() {
                       }}
                     >
                       Next
-                      <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                      <ArrowRight data-icon="inline-end" className="h-3.5 w-3.5 ml-1" />
                     </Button>
                   )}
                   {step === 2 && (
@@ -1526,7 +1479,7 @@ export function OnboardingWizard() {
                       onClick={() => setStep(4)}
                     >
                       Next
-                      <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                      <ArrowRight data-icon="inline-end" className="h-3.5 w-3.5 ml-1" />
                     </Button>
                   )}
                   {step === 4 && (

@@ -443,6 +443,15 @@ export function deriveAgentAdapterConfigRevision(input: {
       },
     );
   }
+  if (input.skillChannel === "isolated_skills_home") {
+    throw unprocessable(
+      "ACPX public runtime does not expose a generic isolated skills-home contract. Select operator_native skills for this ACPX agent.",
+      {
+        code: "acpx_isolated_skills_home_unsupported",
+        adapterType: input.adapterType,
+      },
+    );
+  }
   let declarativeAcpConfiguration: AcpAdapterRevisionConfiguration;
   try {
     declarativeAcpConfiguration = resolveAcpAdapterRevisionConfiguration({
@@ -529,7 +538,10 @@ async function resolveRegisteredAdapterRuntime(input: {
   let implementationIdentity: AdapterImplementationIdentity | null = null;
   try {
     const registry = await import("../adapters/registry.js");
-    await registry.waitForExternalAdapters();
+    // A direct API caller may not have opened the adapter picker first. Refresh
+    // the ACPX snapshot here as well so configuration never relies on a
+    // Paperclip-maintained agent list.
+    await registry.refreshAcpxAdapters();
     const implementation =
       registry.findSelectableServerAdapterImplementation(input.adapterType);
     adapter = implementation?.adapter ?? null;
@@ -743,12 +755,22 @@ export async function selectAgentAdapterConfigRevision(
     throw unprocessable("Agent current adapter configuration revision is invalid");
   }
 
+  // Resolve the current ACPX-admitted definition before accepting an
+  // environment. This replaces the former all-Paperclip-drivers precheck and
+  // ensures the exact driver list comes from the same runtime metadata later
+  // pinned into the immutable revision.
+  const resolvedRuntime = await resolveRegisteredAdapterRuntime({
+    adapterType: input.adapterType,
+    adapterConfig: input.adapterConfig,
+  });
   await assertEnvironmentSelectionForCompany(
     environmentService(db),
     input.companyId,
     input.defaultEnvironmentId,
     {
-      allowedDrivers: ["local", "ssh", "sandbox", "plugin"],
+      allowedDrivers: [
+        ...resolvedRuntime.runtimeMetadata.definition.environment.drivers,
+      ],
     },
   );
   const executionEnvironment = await environmentService(db).getById(
@@ -782,9 +804,9 @@ export async function selectAgentAdapterConfigRevision(
     input.companyId,
     companySkillPins,
   );
-  const derived = await deriveRegisteredAgentAdapterConfigRevision({
+  const derived = deriveAgentAdapterConfigRevision({
     adapterType: input.adapterType,
-    adapterConfig: input.adapterConfig,
+    adapterConfig: resolvedRuntime.canonicalAdapterConfig,
     executionTarget: {
       environmentId: executionEnvironment.id,
       driver: executionEnvironment.driver,
@@ -792,6 +814,7 @@ export async function selectAgentAdapterConfigRevision(
     },
     companySkillPins,
     skillChannel: input.skillChannel,
+    runtimeMetadata: resolvedRuntime.runtimeMetadata,
   });
   const digest = createHash("sha256")
     .update(canonicalJson({

@@ -53,12 +53,8 @@ function fixtureLaunch(input: {
     version: "acp-subprocess/v1",
     launch: {
       registryName: "fixture",
-      targetNativeCli: "fixture-native",
       command: process.execPath,
       args: [fixtureEntrypoint],
-      frontendPackage: "paperclip-acp-wire-fixture",
-      frontendVersion: "1",
-      frontendDigest: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     },
     cwd: fixtureCwd,
     additionalDirectories: [additionalDirectory],
@@ -146,6 +142,72 @@ function startFixture(input: {
 }
 
 describe("official ACP subprocess wire", () => {
+  it("runs an ACPX agent that exposes no operator-selected session options", async () => {
+    const launch: AcpSubprocessLaunch = {
+      ...fixtureLaunch({ generation: "no-config-selection-generation" }),
+      configOptions: [],
+    };
+    const subprocess = spawnFixtureAcpSubprocess(launch, {
+      redactStderr: (chunk) => chunk,
+    });
+    const client = new PaperclipAcpClient({
+      launch,
+      subprocess,
+      operations: {},
+      hooks: { onSessionEvent() {} },
+    });
+
+    await client.initialize();
+    await client.startSession({ kind: "new" });
+    await client.prompt("no selected config");
+    const trace = await closeAndReap(client, subprocess);
+    expect(trace.map((entry) => entry.method)).toEqual([
+      "initialize",
+      "session/new",
+      "session/prompt",
+    ]);
+  });
+
+  it("applies a persisted ACPX reasoning-effort selection before the prompt", async () => {
+    const launch: AcpSubprocessLaunch = {
+      ...fixtureLaunch({ generation: "reasoning-effort-generation" }),
+      configOptions: [
+        { configId: "reasoning_effort", value: "high" },
+        ...fixtureLaunch({ generation: "reasoning-effort-generation" }).configOptions,
+      ],
+    };
+    const subprocess = spawnFixtureAcpSubprocess(launch, {
+      redactStderr: (chunk) => chunk,
+    });
+    const client = new PaperclipAcpClient({
+      launch,
+      subprocess,
+      operations: {},
+      hooks: { onSessionEvent() {} },
+    });
+
+    await client.initialize();
+    await client.startSession({ kind: "new" });
+    await client.prompt("reasoning setting must be applied first");
+
+    const trace = await closeAndReap(client, subprocess);
+    const setting = trace.find(
+      (entry) =>
+        entry.method === "session/set_config_option"
+        && entry.params.configId === "reasoning_effort",
+    );
+    expect(setting?.params).toEqual({
+      sessionId: "fixture-new-session",
+      configId: "reasoning_effort",
+      value: "high",
+    });
+    expect(
+      trace.findIndex((entry) => entry === setting),
+    ).toBeLessThan(
+      trace.findIndex((entry) => entry.method === "session/prompt"),
+    );
+  });
+
   it("rejects config ids with surrounding whitespace before opening ACP", async () => {
     const launch: AcpSubprocessLaunch = {
       ...fixtureLaunch({ generation: "invalid-config-id-generation" }),

@@ -32,11 +32,7 @@ vi.mock("../services/activity-log.js", () => ({
   logActivity: vi.fn(),
 }));
 
-vi.mock("../adapters/registry.js", async () => {
-  const { resolveApprovedAcpLaunch } = await import(
-    "@paperclipai/adapter-utils/acp-subprocess",
-  );
-  const launchProfile = resolveApprovedAcpLaunch("codex");
+vi.mock("../adapters/registry.js", () => {
   const catalogModel = (id: string) => ({
     id,
     label: id,
@@ -54,21 +50,16 @@ vi.mock("../adapters/registry.js", async () => {
   ) => ({
     type,
     definition: {
-      version: "acp-subprocess/v1",
-      launchProfile,
+      version: "acpx-runtime/v1",
+      launchProfile: { registryName: type },
       environment: {
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
         drivers: ["local", "ssh", "sandbox", "plugin"],
         environmentKeys: [],
       },
-      readiness: {
-        protocolVersion: 1,
-        resume: true,
-        cancel: true,
-        sessionConfig: true,
-        sessionScopedMcpReplacement: true,
-        cliNativeAuthentication: true,
+      runtime: {
+        controls: ["session/status", "session/set_config_option"],
       },
       ui: {
         label: type,
@@ -117,7 +108,7 @@ vi.mock("../adapters/registry.js", async () => {
   });
   const implementationIdentity = (type: string) => ({
     adapterType: type,
-    definitionVersion: "acp-subprocess/v1" as const,
+    definitionVersion: "acpx-runtime/v1" as const,
     protocolVersion: 1 as const,
     origin: "external" as const,
     packageName: `@paperclipai/test-${type}`,
@@ -129,7 +120,7 @@ vi.mock("../adapters/registry.js", async () => {
   const implementationIdentityKey = (type: string) =>
     JSON.stringify([
       type,
-      "acp-subprocess/v1",
+      "acpx-runtime/v1",
       1,
       "external",
       `@paperclipai/test-${type}`,
@@ -149,6 +140,7 @@ vi.mock("../adapters/registry.js", async () => {
   });
   return {
     waitForExternalAdapters: vi.fn(async () => undefined),
+    refreshAcpxAdapters: vi.fn(async () => undefined),
     findActiveServerAdapter: findAdapter,
     findSelectableServerAdapterImplementation: findImplementation,
     listAdapterModelsForImplementation: vi.fn(

@@ -518,12 +518,8 @@ const r = responses;
 
 const publicAdapterCapabilitiesSchema = z.object({
   supportsModelProfiles: z.boolean(),
-  contractVersion: z.literal("acp-subprocess/v1"),
-  protocolVersion: z.literal(1),
-  resume: z.literal(true),
-  cancel: z.literal(true),
-  sessionConfig: z.literal(true),
-  sessionScopedMcpReplacement: z.literal(true),
+  contractVersion: z.literal("acpx-runtime/v1"),
+  runtimeControls: z.array(z.string().min(1)),
 }).strict();
 
 const acpAdapterModelSchema = z.object({
@@ -534,31 +530,41 @@ const acpAdapterModelSchema = z.object({
     contextTokenLimit: z.number().int().positive(),
     inputTokenLimit: z.number().int().positive().optional(),
     outputTokenLimit: z.number().int().positive(),
-  }).strict(),
+  }).strict().nullable(),
 }).strict();
 
-const publicAdapterInfoSchema = z.object({
+const publicReadyAdapterInfoSchema = z.object({
   type: z.string(),
   label: z.string(),
-  source: z.enum(["builtin", "external"]),
+  source: z.literal("acpx"),
   modelsCount: z.number().int().nonnegative(),
-  loaded: z.boolean(),
-  disabled: z.boolean(),
+  loaded: z.literal(true),
   capabilities: publicAdapterCapabilitiesSchema,
+  drivers: z.array(environmentDriverSchema),
   registryName: z.string().min(1),
-  frontendPackage: z.string().min(1),
-  frontendVersion: z.string().min(1),
-  frontendDigest: z.string().regex(/^[0-9a-f]{64}$/),
-  overriddenBuiltin: z.boolean().optional(),
-  overridePaused: z.boolean().optional(),
-  version: z.string().optional(),
-  packageName: z.string().optional(),
-  isLocalPath: z.boolean().optional(),
 }).strict();
+
+const publicUnavailableAdapterInfoSchema = z.object({
+  type: z.string().min(1),
+  label: z.string().min(1),
+  source: z.literal("acpx"),
+  modelsCount: z.literal(0),
+  loaded: z.literal(false),
+  diagnostic: z.object({
+    code: z.literal("acpx_probe_failed"),
+    message: z.string().min(1),
+  }).strict(),
+  registryName: z.string().min(1),
+}).strict();
+
+const publicAdapterInfoSchema = z.discriminatedUnion("loaded", [
+  publicReadyAdapterInfoSchema,
+  publicUnavailableAdapterInfoSchema,
+]);
 
 const adapterImplementationIdentitySchema = z.object({
   adapterType: z.string().min(1),
-  definitionVersion: z.literal("acp-subprocess/v1"),
+  definitionVersion: z.literal("acpx-runtime/v1"),
   protocolVersion: z.literal(1),
   origin: z.enum(["builtin", "external"]),
   packageName: z.string().min(1),
@@ -1017,7 +1023,6 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
 ]);
 
 const CREATED_OPERATIONS = new Set([
-  "POST /api/adapters/install",
   "POST /api/companies/{companyId}/runtime-agents",
   "POST /api/agents/{id}/adapter-config-revisions",
   "POST /api/companies/{companyId}/approvals",
@@ -3963,7 +3968,7 @@ registry.registerPath({
   path: "/api/runs/{runId}/runtime-readiness",
   tags: ["runs"],
   summary:
-    "Inspect the exact persisted run revision, target, native authentication, and ACP initialize capability",
+    "Inspect the exact persisted run revision, target, native authentication, and ACPX-resolved session initialization capability",
   request: {
     params: z.object({ runId: z.string().uuid() }),
   },
@@ -4836,7 +4841,7 @@ registry.registerPath({
   method: "get",
   path: "/api/adapters",
   tags: ["adapters"],
-  summary: "List all adapters",
+  summary: "List selectable ACPX agents and non-selectable local probe diagnostics",
   responses: {
     200: r.ok(z.array(publicAdapterInfoSchema)),
     401: r.unauthorized,
@@ -4847,73 +4852,64 @@ registry.registerPath({
   method: "post",
   path: "/api/adapters/install",
   tags: ["adapters"],
-  summary: "Install an adapter",
-  request: {
-    body: jsonBody(z.object({
-      packageName: z.string(),
-      isLocalPath: z.boolean().optional(),
-      version: z.string().optional(),
-    })),
-  },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  summary: "Retired: ACPX supplies the agent catalog",
+  responses: { 410: { description: "Install or authenticate an ACPX-compatible CLI instead." }, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "patch",
   path: "/api/adapters/{type}",
   tags: ["adapters"],
-  summary: "Enable or disable an adapter",
-  request: {
-    params: z.object({ type: z.string() }),
-    body: jsonBody(z.object({ disabled: z.boolean() })),
+  summary: "Retired: ACPX exclusively decides local agent availability",
+  request: { params: z.object({ type: z.string() }) },
+  responses: {
+    410: { description: "ACPX supplies availability; Paperclip cannot hide or enable agents." },
+    401: r.unauthorized,
+    403: r.forbidden,
   },
-  responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "patch",
   path: "/api/adapters/{type}/override",
   tags: ["adapters"],
-  summary: "Pause or resume an adapter's override of a builtin",
-  request: {
-    params: z.object({ type: z.string() }),
-    body: jsonBody(z.object({ paused: z.boolean() })),
-  },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  summary: "Retired: ACPX has no Paperclip override layer",
+  request: { params: z.object({ type: z.string() }) },
+  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "delete",
   path: "/api/adapters/{type}",
   tags: ["adapters"],
-  summary: "Delete an adapter",
+  summary: "Retired: ACPX supplies the agent catalog",
   request: { params: z.object({ type: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/adapters/{type}/reload",
   tags: ["adapters"],
-  summary: "Reload an adapter",
+  summary: "Retired: ACPX supplies the agent catalog",
   request: { params: z.object({ type: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/adapters/{type}/reinstall",
   tags: ["adapters"],
-  summary: "Reinstall an adapter",
+  summary: "Retired: ACPX supplies the agent catalog",
   request: { params: z.object({ type: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized },
+  responses: { 410: { description: "ACPX supplies the current catalog." }, 401: r.unauthorized },
 });
 
 registry.registerPath({
   method: "get",
   path: "/api/adapters/{type}/config-schema",
   tags: ["adapters"],
-  summary: "Get adapter config schema",
+  summary: "Get ACPX-supplied session settings schema",
   request: { params: z.object({ type: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
@@ -5499,9 +5495,9 @@ registerCurrentRoute({
   method: "get",
   path: "/api/adapters/{type}",
   tags: ["adapters"],
-  summary: "Get adapter registration details",
+  summary: "Get ACPX-discovered agent details",
   responses: {
-    200: r.ok(publicAdapterInfoSchema),
+    200: r.ok(publicReadyAdapterInfoSchema),
     401: r.unauthorized,
     404: r.notFound,
   },

@@ -1,15 +1,12 @@
 /**
  * Single source of truth for adapter display metadata.
  *
- * Known adapters may add richer presentation metadata. Every other entry is
- * still server-admitted and receives neutral ACP presentation metadata.
+ * ACPX supplies every concrete agent label and configuration. This module
+ * contains only neutral presentation for historical references that have no
+ * current catalog snapshot; it deliberately has no per-agent map.
  */
 import type { ComponentType } from "react";
 import { Cpu } from "lucide-react";
-
-// ---------------------------------------------------------------------------
-// Display metadata per adapter type
-// ---------------------------------------------------------------------------
 
 export interface AdapterDisplayInfo {
   label: string;
@@ -22,48 +19,26 @@ export interface AdapterDisplayInfo {
   hideFromVisualSelection?: boolean;
 }
 
-const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
-  codex: {
-    label: "Codex",
-    description: "Codex through the pinned ACP frontend",
-    icon: Cpu,
-    recommended: true,
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 function humanizeType(type: string): string {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function getAdapterLabel(type: string): string {
-  const known = adapterDisplayMap[type];
-  if (known) return known.label;
   return humanizeType(type);
 }
 
 export function getAdapterLabels(): Record<string, string> {
-  const labels: Record<string, string> = {};
-  for (const [type, info] of Object.entries(adapterDisplayMap)) {
-    labels[type] = info.label;
-  }
-  return labels;
+  return {};
 }
 
 export function getAdapterDisplay(type: string): AdapterDisplayInfo {
-  const known = adapterDisplayMap[type];
-  if (known) return known;
-
   return {
     label: humanizeType(type),
-    description: "Server-admitted ACP frontend",
+    description: "Discovered from ACPX at runtime",
     icon: Cpu,
   };
 }
 
-export function isKnownAdapterType(type: string): boolean {
-  return type in adapterDisplayMap;
+export function isKnownAdapterType(_type: string): boolean {
+  return false;
 }

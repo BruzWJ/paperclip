@@ -11,7 +11,7 @@ export type {
   AcpAdapterConfigOption,
   AcpAdapterLaunchProfile,
   AcpAdapterEnvironmentRequirements,
-  AcpAdapterReadinessFacts,
+  AcpAdapterRuntimeContract,
   AcpAdapterUiMetadata,
   AcpSubprocessAdapterDefinition,
   AcpAdapterRevisionConfiguration,

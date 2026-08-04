@@ -46,7 +46,7 @@ function configuredRevision(): AgentAdapterConfigRevision {
     adapterType: "codex",
     implementationIdentity: {
       adapterType: "codex",
-      definitionVersion: "acp-subprocess/v1",
+      definitionVersion: "acpx-runtime/v1",
       protocolVersion: 1,
       origin: "builtin",
       packageName: "@paperclipai/server",
@@ -61,15 +61,9 @@ function configuredRevision(): AgentAdapterConfigRevision {
     normalizedConfig: { model: "gpt-5.6" },
     runtimeConfig: {},
     acpConfiguration: {
-      contractVersion: "acp-subprocess/v1",
+      contractVersion: "acpx-runtime/v1",
       launchProfile: {
         registryName: "codex",
-        targetNativeCli: "codex",
-        command: "codex-acp",
-        args: [],
-        frontendPackage: "@agentclientprotocol/codex-acp",
-        frontendVersion: "1.1.7",
-        frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
       },
       sessionConfigSelections: [{ configId: "model", value: "gpt-5.6" }],
       model: {

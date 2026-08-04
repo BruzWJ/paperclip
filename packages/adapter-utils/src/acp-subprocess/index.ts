@@ -1,22 +1,30 @@
 export {
-  ACPX_REGISTRY_VERSION,
-  CODEX_ACP_FRONTEND_PACKAGE,
-  CODEX_ACP_FRONTEND_SHA256,
-  CODEX_ACP_FRONTEND_VERSION,
-  listApprovedAcpLaunchNames,
-  readApprovedAcpFrontendArtifact,
-  resolveApprovedAcpNativeAuthentication,
-  resolveApprovedAcpLaunch,
-  sameApprovedAcpLaunch,
+  assertAcpRegistryAgentName,
+  listAcpRegistryAgentNames,
+  loadConfiguredAcpRegistry,
 } from "./agent-registry.js";
 export type {
-  ApprovedAcpFrontendArtifact,
-  ApprovedAcpLaunch,
-  ApprovedAcpNativeAuthentication,
+  AcpAgentRegistry,
+  LoadConfiguredAcpRegistryInput,
 } from "./agent-registry.js";
 export {
+  DEFAULT_ACPX_DISCOVERY_TIMEOUT_MS,
+  listAcpxAgentNames,
+  probeAcpxAgent,
+} from "./acpx-discovery.js";
+export type {
+  AcpxAgentDiscovery,
+  AcpxDiscoveredConfigOption,
+  AcpxDiscoveredConfigOptionGroup,
+  AcpxDiscoveredConfigOptionValue,
+  AcpxDiscoveryDependencies,
+  AcpxRuntimeConfigurationInput,
+  AcpxDiscoveryRuntime,
+  ListAcpxAgentsInput,
+  ProbeAcpxAgentInput,
+} from "./acpx-discovery.js";
+export {
   ACP_STABLE_WIRE_VERSION,
-  ACP_SUBPROCESS_CONTRACT_VERSION,
 } from "./contract.js";
 export type {
   AcpPromptRequest,
@@ -25,7 +33,6 @@ export type {
   AcpSessionConfigValue,
   AcpSessionSetupFailureKind,
   AcpSessionStart,
-  AcpSubprocessLaunch,
   AcpTerminalOccupancy,
 } from "./contract.js";
 export {
@@ -51,39 +58,44 @@ export type {
   AcpLivePlanEntry,
   NormalizedAcpSessionEvent,
 } from "./events.js";
-export { spawnPreparedAcpSubprocess } from "./process.js";
+export { executeAcpxOneShotPrompt } from "./acpx-runtime-execution.js";
 export type {
-  AcpSubprocess,
-  AcpSubprocessExit,
-  AcpSubprocessHostLaunch,
-  AcpSubprocessStartOptions,
-} from "./process.js";
+  AcpxRuntimeMcpServer,
+  AcpxOneShotCleanup,
+  AcpxOneShotExecutionDependencies,
+  AcpxOneShotExecutionPhase,
+  AcpxOneShotPromptInput,
+  AcpxOneShotPromptResult,
+  AcpxOneShotRuntime,
+  AcpxRuntimeConfigSelection,
+  AcpxRuntimeSessionStart,
+} from "./acpx-runtime-execution.js";
+export { prepareAcpxRuntimeInvocation } from "./acpx-runtime-invocation.js";
+export type {
+  PreparedAcpxRuntimeInvocation,
+  PrepareAcpxRuntimeInvocationInput,
+} from "./acpx-runtime-invocation.js";
+export { probeAcpxRuntimeReadiness } from "./acpx-runtime-readiness.js";
+export type {
+  AcpxRuntimeReadinessProbeDependencies,
+  AcpxRuntimeReadinessProbeInput,
+  AcpxRuntimeReadinessProbeResult,
+  AcpxRuntimeReadinessRuntime,
+} from "./acpx-runtime-readiness.js";
 export {
-  ACP_AUTHENTICATION_REQUIRED_ERROR_CODE,
-  ACP_TARGET_NOT_FOUND_ERROR_CODE,
-  AcpInitializationCapabilityError,
-  PaperclipAcpClient,
-  executeAcpSubprocessPrompt,
-  isAcpAuthenticationRequiredError,
-  isAcpInitializationCapabilityError,
-  isAcpTargetNotFoundError,
-} from "./client.js";
+  AcpxRuntimeReadinessCapabilityError,
+  AcpxRuntimeReadinessCleanupError,
+} from "./acpx-runtime-readiness.js";
+// The old raw ACP subprocess implementation remains private fixture support
+// inside adapter-utils. Paperclip's public bridge exposes only ACPX discovery,
+// readiness, and one-shot runtime execution; consumers cannot obtain a raw
+// provider launcher from this barrel.
 export type {
-  AcpPromptExecutionInput,
-  AcpInitializationCapabilityFailure,
   AcpPromptClosureOutcome,
   AcpPromptExecutionPhase,
   AcpPromptExecutionResult,
-  AcpSubprocessStarter,
   AcpSubprocessTeardownOutcome,
-  PaperclipAcpClientHooks,
-  PaperclipAcpClientOperations,
 } from "./client.js";
-export { prepareAcpExecutionTargetSubprocess } from "./execution-target.js";
-export type {
-  PrepareAcpExecutionTargetSubprocessInput,
-  PreparedAcpExecutionTargetSubprocess,
-} from "./execution-target.js";
 export {
   createPaperclipRunToolsMcpServer,
   noAcpMcpServers,

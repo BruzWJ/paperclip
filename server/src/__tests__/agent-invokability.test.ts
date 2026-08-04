@@ -13,6 +13,7 @@ import {
 } from "../services/agent-org-graph-lock.ts";
 import {
   CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
+  CANONICAL_TEST_ADAPTER_TYPE,
 } from "./helpers/adapter-implementation.js";
 
 function agent(partial: Partial<AgentOrgRow> & Pick<AgentOrgRow, "id">): AgentOrgRow {
@@ -44,7 +45,7 @@ function ownerRevision(
     id,
     companyId: "company-1",
     agentId,
-    adapterType: "codex",
+    adapterType: CANONICAL_TEST_ADAPTER_TYPE,
     implementationIdentity:
       CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
     implementationAvailable,

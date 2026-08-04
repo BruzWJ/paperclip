@@ -1,5 +1,9 @@
 import type { UIAdapterModule } from "./types";
 import {
+  ENVIRONMENT_DRIVERS,
+  type EnvironmentDriver,
+} from "@paperclipai/shared";
+import {
   SchemaConfigFields,
   buildSchemaAdapterConfig,
 } from "./schema-config-fields";
@@ -27,10 +31,13 @@ export function syncServerAdapters(
   serverAdapters: {
     type: string;
     label: string;
+    /** Absence is treated as no driver rather than an all-driver fallback. */
+    drivers?: readonly string[];
   }[],
 ): void {
   const next = new Map<string, UIAdapterModule>();
   for (const adapter of serverAdapters) {
+    const declaredDrivers = adapter.drivers ?? [];
     if (
       typeof adapter.type !== "string"
       || typeof adapter.label !== "string"
@@ -38,13 +45,24 @@ export function syncServerAdapters(
       || adapter.type !== adapter.type.trim()
       || adapter.label.length === 0
       || adapter.label !== adapter.label.trim()
+      || !Array.isArray(declaredDrivers)
+      || declaredDrivers.some(
+        (driver) =>
+          typeof driver !== "string"
+          || !ENVIRONMENT_DRIVERS.includes(driver as EnvironmentDriver),
+      )
+      || new Set(declaredDrivers).size !== declaredDrivers.length
       || next.has(adapter.type)
     ) {
       throw new Error("Server returned an invalid ACP adapter catalog.");
     }
+    const drivers = Object.freeze(
+      ENVIRONMENT_DRIVERS.filter((driver) => declaredDrivers.includes(driver)),
+    );
     next.set(adapter.type, Object.freeze({
       type: adapter.type,
       label: adapter.label,
+      drivers,
       ConfigFields: SchemaConfigFields,
       buildAdapterConfig: buildSchemaAdapterConfig,
     }));
@@ -54,7 +72,10 @@ export function syncServerAdapters(
     next.size !== adaptersByType.size
     || [...next].some(([type, adapter]) => {
       const current = adaptersByType.get(type);
-      return !current || current.label !== adapter.label;
+      return !current
+        || current.label !== adapter.label
+        || current.drivers.length !== adapter.drivers.length
+        || current.drivers.some((driver, index) => driver !== adapter.drivers[index]);
     });
   if (!changed) return;
 

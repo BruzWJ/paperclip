@@ -37,7 +37,7 @@ export {
 } from "./money.js";
 export {
   ADAPTER_IMPLEMENTATION_ORIGINS,
-  ACP_ADAPTER_DEFINITION_VERSION,
+  ACPX_RUNTIME_DEFINITION_VERSION,
   ACP_PROTOCOL_VERSION,
   adapterImplementationIdentityKey,
   freezeAdapterImplementationIdentity,
@@ -2191,6 +2191,7 @@ export {
 } from "./environment-support.js";
 
 export type {
+  AdapterEnvironmentDriverCatalog,
   AdapterEnvironmentSupport,
   EnvironmentCapabilities,
   EnvironmentProviderCapability,

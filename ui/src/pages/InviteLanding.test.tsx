@@ -129,7 +129,7 @@ describe("InviteLandingPage", () => {
     vi.clearAllMocks();
   });
 
-  it("submits the canonical ACP adapter proposal without legacy transport choices", async () => {
+  it("submits the ACPX agent name without legacy adapter or transport choices", async () => {
     getInviteMock.mockResolvedValue({
       id: "invite-agent-1",
       companyId: "company-1",
@@ -169,27 +169,28 @@ describe("InviteLandingPage", () => {
     await flushReact();
     await flushReact();
 
-    const adapterSelect = container.querySelector("select") as HTMLSelectElement | null;
-    expect(adapterSelect?.value).toBe("codex");
-    expect(
-      Array.from(adapterSelect?.options ?? []).map((option) => ({
-        value: option.value,
-        label: option.textContent,
-      })),
-    ).toEqual([{ value: "codex", label: "Codex" }]);
+    // Agent invitations accept the exact ACPX-discovered agent name rather
+    // than selecting from Paperclip's former adapter catalog.
+    expect(container.querySelector("select")).toBeNull();
     expect(container.textContent).not.toContain("Process");
     expect(container.textContent).not.toContain("HTTP Session");
 
     const agentNameInput = container.querySelector("input") as HTMLInputElement | null;
+    const acpxAgentNameInput = container.querySelector(
+      'input[placeholder="Exact name shown in ACP adapters"]',
+    ) as HTMLInputElement | null;
     const inputValueSetter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",
     )?.set;
     expect(agentNameInput).not.toBeNull();
+    expect(acpxAgentNameInput).not.toBeNull();
     expect(inputValueSetter).toBeTypeOf("function");
     await act(async () => {
       inputValueSetter!.call(agentNameInput, "Acme Ops Agent");
       agentNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      inputValueSetter!.call(acpxAgentNameInput, "codex");
+      acpxAgentNameInput!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find(
@@ -356,8 +357,8 @@ describe("InviteLandingPage", () => {
     expect(emailInput).not.toBeNull();
     expect(passwordInput).not.toBeNull();
 
-    // Default invite mode is sign-up.
-    expect(emailInput.getAttribute("autocomplete")).toBe("username");
+    // Default invite mode is sign-up and identifies the account by email.
+    expect(emailInput.getAttribute("autocomplete")).toBe("email");
     expect(emailInput.getAttribute("type")).toBe("email");
     expect(passwordInput.getAttribute("autocomplete")).toBe("new-password");
     expect(nameInput.getAttribute("autocomplete")).toBe("name");

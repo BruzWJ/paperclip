@@ -15,7 +15,10 @@ import {
   issueSessionMessages,
   type Db,
 } from "@paperclipai/db";
-import { IssueSession } from "@paperclipai/shared";
+import {
+  agentAdapterAcpConfigurationSchema,
+  IssueSession,
+} from "@paperclipai/shared";
 import { and, eq, sql } from "drizzle-orm";
 import { redactSensitiveText } from "../redaction.js";
 import type {
@@ -475,16 +478,22 @@ async function beginPromptPublication(
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!revision) reject("ACP prompt immutable adapter revision is missing");
-  const configuration = revision.acpConfiguration;
+  const configuration = agentAdapterAcpConfigurationSchema.parse(
+    revision.acpConfiguration,
+  );
   await publication.publish(IssueSession.Event.Step.Started.type, {
     timestamp: input.timestamp.getTime(),
     sessionID: input.prompt.sessionId,
     assistantMessageID: assistantMessageId,
     agent: input.prompt.targetAgentId,
-    model: {
-      id: configuration.model.id,
-      providerID: configuration.launchProfile.registryName,
-    },
+    ...(configuration.model === null
+      ? {}
+      : {
+          model: {
+            id: configuration.model.id,
+            providerID: configuration.launchProfile.registryName,
+          },
+        }),
   });
   return publication;
 }

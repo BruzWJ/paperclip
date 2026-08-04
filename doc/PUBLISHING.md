@@ -22,7 +22,6 @@ The CLI package, `paperclipai`, imports code from workspace packages such as:
 - `@paperclipai/server`
 - `@paperclipai/db`
 - `@paperclipai/shared`
-- adapter packages under `packages/adapters/`
 
 Those workspace references are valid in development but not in a publishable npm package. The release flow rewrites versions temporarily, then builds a publishable CLI bundle.
 

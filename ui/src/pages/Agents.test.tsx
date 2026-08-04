@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { canonicalizeMoneyAmount, type Agent, type Environment, type EnvironmentCapabilities } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../context/ToastContext";
-import { Agents } from "./Agents";
+import { Agents, getConfiguredModel } from "./Agents";
 import type { AgentOrgChainHealth } from "@paperclipai/shared";
 
 const mockRouterState = vi.hoisted(() => ({
@@ -274,12 +274,7 @@ describe("Agents", () => {
       defaultOptions: { queries: { retry: false } },
     });
 
-    mockAgentsApi.list.mockResolvedValue([
-      makeAgent({
-        adapterConfig: { model: "gpt-5.6" },
-        // Old enough that relativeTime() falls back to an absolute date string.
-      }),
-    ]);
+    mockAgentsApi.list.mockResolvedValue([makeAgent({})]);
     mockAgentsApi.org.mockResolvedValue([
       {
         id: "agent-1",
@@ -321,7 +316,22 @@ describe("Agents", () => {
     vi.clearAllMocks();
   });
 
-  it("shows the configured model beside the adapter on the all agents page", async () => {
+  it("shows an ACPX-selected model beside its dynamically discovered adapter", async () => {
+    mockAgentsApi.list.mockResolvedValue([
+      makeAgent({
+        adapterType: "claude",
+        adapterConfig: {
+          acpConfiguration: {
+            model: {
+              id: "claude-sonnet-4-5",
+              label: "Claude Sonnet 4.5",
+              value: "claude-sonnet-4-5",
+              limits: null,
+            },
+          },
+        },
+      }),
+    ]);
     root = createRoot(container);
     await act(async () => {
       root!.render(
@@ -335,9 +345,22 @@ describe("Agents", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain("codex");
-    expect(container.textContent).toContain("gpt-5.6");
+    expect(container.textContent).toContain("claude");
+    expect(container.textContent).toContain("claude-sonnet-4-5");
 
+  });
+
+  it("uses a legacy flat model only without embedded ACP configuration", () => {
+    expect(getConfiguredModel(makeAgent({
+      adapterConfig: { model: "legacy-runtime-model" },
+    }))).toBe("legacy-runtime-model");
+    expect(getConfiguredModel(makeAgent({
+      adapterConfig: {
+        model: "stale-legacy-model",
+        acpConfiguration: { model: null },
+      },
+    }))).toBeNull();
+    expect(getConfiguredModel(makeAgent({ adapterConfig: {} }))).toBeNull();
   });
 
   it("gives mobile agent names the full row width after the leading status indicator", async () => {

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   validateAdapterConfigSchema,
@@ -8,6 +9,8 @@ import {
 } from "@paperclipai/adapter-utils";
 
 import type { AdapterConfigFieldsProps } from "./types";
+import { api } from "../api/client";
+import { queryKeys } from "../lib/queryKeys";
 import {
   Field,
   DraftInput,
@@ -23,19 +26,34 @@ function SelectField({
   value,
   options,
   onChange,
+  id,
+  label,
+  invalid,
+  errorId,
 }: {
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
+  id: string;
+  label: string;
+  invalid?: boolean;
+  errorId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selectedOpt = options.find((o) => o.value === value);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
+        <button
+          id={id}
+          type="button"
+          aria-label={label}
+          aria-invalid={invalid || undefined}
+          aria-describedby={errorId}
+          className="inline-flex w-full items-center justify-between gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-invalid:border-destructive"
+        >
           <span className={!value ? "text-muted-foreground" : ""}>
-            {selectedOpt?.label ?? value ?? "Select..."}
+            {selectedOpt?.label ?? (value || "Select...")}
           </span>
           <ChevronDown className="h-3 w-3 text-muted-foreground" />
         </button>
@@ -44,6 +62,7 @@ function SelectField({
         {options.map((opt) => (
           <button
             key={opt.value}
+            type="button"
             className={`flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50 ${opt.value === value ? "bg-accent" : ""}`}
             onMouseDown={(e) => {
               e.preventDefault();
@@ -59,7 +78,7 @@ function SelectField({
   );
 }
 const inputClass =
-  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+  "w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none placeholder:text-muted-foreground/40 aria-invalid:border-destructive";
 
 
 // ---------------------------------------------------------------------------
@@ -71,11 +90,19 @@ function ComboboxField({
   options,
   onChange,
   placeholder,
+  id,
+  label,
+  invalid,
+  errorId,
 }: {
   value: string;
   options: { label: string; value: string; group?: string }[];
   onChange: (val: string) => void;
   placeholder?: string;
+  id: string;
+  label: string;
+  invalid?: boolean;
+  errorId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -139,9 +166,13 @@ function ComboboxField({
     <div className="relative">
       <div className="flex items-center gap-0">
         <input
+          id={id}
           ref={inputRef}
           type="text"
-          className="flex-1 rounded-l-md border border-r-0 border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 focus:z-10"
+          aria-label={label}
+          aria-invalid={invalid || undefined}
+          aria-describedby={errorId}
+          className="flex-1 rounded-l-md border border-r-0 border-border bg-transparent px-2.5 py-1.5 text-sm font-mono placeholder:text-muted-foreground/40 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-invalid:border-destructive"
           value={displayValue}
           placeholder={placeholder ?? "Type or select..."}
           onChange={(e) => {
@@ -159,7 +190,11 @@ function ComboboxField({
         />
         <Popover open={open && filtered.length > 0} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
-            <button className="rounded-r-md border border-border px-2 py-1.5 hover:bg-accent/50 transition-colors">
+            <button
+              type="button"
+              aria-label={`Show ${label} options`}
+              className="rounded-r-md border border-border px-2 py-1.5 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
               <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </button>
           </PopoverTrigger>
@@ -179,6 +214,7 @@ function ComboboxField({
                 {opts.map((opt) => (
                   <button
                     key={opt.value}
+                    type="button"
                     className={`flex items-center w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50 ${
                       opt.value === value ? "bg-accent" : ""
                     }`}
@@ -208,60 +244,18 @@ function ComboboxField({
 // SchemaConfigFields component
 // ---------------------------------------------------------------------------
 
-const schemaCache = new Map<string, AdapterConfigSchema | null>();
-const schemaFetchInflight = new Map<string, Promise<AdapterConfigSchema | null>>();
-const failedSchemaTypes = new Map<string, string>();
-
-async function fetchConfigSchema(adapterType: string): Promise<AdapterConfigSchema | null> {
-  const cached = schemaCache.get(adapterType);
-  if (cached !== undefined) return cached;
-  if (failedSchemaTypes.has(adapterType)) return null;
-
-  const inflight = schemaFetchInflight.get(adapterType);
-  if (inflight) return inflight;
-
-  const promise = (async () => {
-    try {
-      const res = await fetch(`/api/adapters/${encodeURIComponent(adapterType)}/config-schema`);
-      if (!res.ok) {
-        failedSchemaTypes.set(
-          adapterType,
-          `Adapter configuration schema is unavailable (${res.status}).`,
-        );
-        return null;
-      }
-      const payload: unknown = await res.json();
-      const parsedSchema = validateAdapterConfigSchema(payload);
-      if (!parsedSchema.success) {
-        failedSchemaTypes.set(
-          adapterType,
-          `Adapter configuration schema response is invalid. ${parsedSchema.errors.join(" ")}`,
-        );
-        return null;
-      }
-      const schema = parsedSchema.data;
-      schemaCache.set(adapterType, schema);
-      return schema;
-    } catch (error) {
-      failedSchemaTypes.set(
-        adapterType,
-        error instanceof Error
-          ? error.message
-          : "Adapter configuration schema request failed.",
-      );
-      return null;
-    } finally {
-      schemaFetchInflight.delete(adapterType);
-    }
-  })();
-
-  schemaFetchInflight.set(adapterType, promise);
-  return promise;
-}
-
-export function invalidateConfigSchemaCache(adapterType: string): void {
-  schemaCache.delete(adapterType);
-  failedSchemaTypes.delete(adapterType);
+async function fetchConfigSchema(adapterType: string): Promise<AdapterConfigSchema> {
+  const payload = await api.get<unknown>(
+    `/adapters/${encodeURIComponent(adapterType)}/config-schema`,
+  );
+  const parsedSchema = validateAdapterConfigSchema(payload);
+  if (!parsedSchema.success) {
+    const { errors: schemaErrors } = parsedSchema;
+    throw new Error(
+      `Adapter configuration schema response is invalid. ${schemaErrors.join(" ")}`,
+    );
+  }
+  return parsedSchema.data;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,48 +273,27 @@ export function useAdapterConfigSchema(
   const enabled =
     (options.enabled ?? true)
     && adapterType.trim().length > 0;
-  const cached = schemaCache.get(adapterType);
-  const [schema, setSchema] = useState<AdapterConfigSchema | null>(
-    enabled ? cached ?? null : null,
-  );
-  const [isLoading, setIsLoading] = useState(
-    enabled
-    && cached === undefined
-    && !failedSchemaTypes.has(adapterType),
-  );
-  const [error, setError] = useState<string | null>(
-    enabled ? failedSchemaTypes.get(adapterType) ?? null : null,
-  );
+  const query = useQuery({
+    queryKey: queryKeys.adapters.configSchema(adapterType),
+    queryFn: () => fetchConfigSchema(adapterType),
+    enabled,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!enabled) {
-      setSchema(null);
-      setIsLoading(false);
-      setError(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-    const nextCached = schemaCache.get(adapterType);
-    setSchema(nextCached ?? null);
-    setIsLoading(
-      nextCached === undefined && !failedSchemaTypes.has(adapterType),
-    );
-    setError(failedSchemaTypes.get(adapterType) ?? null);
-    fetchConfigSchema(adapterType).then((s) => {
-      if (!cancelled) {
-        setSchema(s);
-        setIsLoading(false);
-        setError(failedSchemaTypes.get(adapterType) ?? null);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [adapterType, enabled]);
-
-  return { schema, isLoading, error };
+  return {
+    schema: enabled ? query.data ?? null : null,
+    isLoading: enabled && query.isPending,
+    error:
+      enabled && query.error
+        ? query.error instanceof Error
+          ? query.error.message
+          : "Adapter configuration schema request failed."
+        : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -328,18 +301,7 @@ export function useAdapterConfigSchema(
 // ---------------------------------------------------------------------------
 
 function getDefaultValue(field: ConfigFieldSchema): unknown {
-  if (field.default !== undefined) return field.default;
-  switch (field.type) {
-    case "toggle":
-      return false;
-    case "number":
-      return 0;
-    case "text":
-    case "textarea":
-      return "";
-    case "select":
-      return field.options?.[0]?.value ?? "";
-  }
+  return field.default;
 }
 
 export function fieldMatchesVisibleWhen(
@@ -399,6 +361,36 @@ export interface AdapterConfigSchemaFieldError {
   message: string;
 }
 
+function SchemaFieldError({
+  id,
+  message,
+}: {
+  id: string;
+  message: string | undefined;
+}) {
+  if (!message) return null;
+
+  return (
+    <p id={id} className="text-xs text-destructive">
+      {message}
+    </p>
+  );
+}
+
+function AdapterConfigEmptyState({
+  message,
+  tone = "status",
+}: {
+  message: string;
+  tone?: "status" | "alert";
+}) {
+  return (
+    <p role={tone} className={tone === "alert" ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
+      {message}
+    </p>
+  );
+}
+
 /**
  * Mirror the server adapter-schema readiness checks without inventing values.
  * The server remains authoritative at preflight; this only keeps the catalog
@@ -410,13 +402,13 @@ export function adapterConfigSchemaFieldErrors(
 ): AdapterConfigSchemaFieldError[] {
   if (!schema) return [];
   const readValue = (field: ConfigFieldSchema) => config[field.key];
-  const errors: AdapterConfigSchemaFieldError[] = [];
+  const validationIssues: AdapterConfigSchemaFieldError[] = [];
   for (const field of schema.fields) {
     if (!fieldMatchesVisibleWhen(field, readValue, schema)) continue;
     const value = config[field.key];
     if (isMissingRequiredConfigValue(value)) {
       if (field.required === true) {
-        errors.push({
+        validationIssues.push({
           field,
           message: `${field.label} is required.`,
         });
@@ -432,14 +424,14 @@ export function adapterConfigSchemaFieldErrors(
       )
       && typeof value !== "string"
     ) {
-      errors.push({
+      validationIssues.push({
         field,
         message: `${field.label} must be a string.`,
       });
       continue;
     }
     if (field.type === "toggle" && typeof value !== "boolean") {
-      errors.push({
+      validationIssues.push({
         field,
         message: `${field.label} must be true or false.`,
       });
@@ -449,7 +441,7 @@ export function adapterConfigSchemaFieldErrors(
       field.type === "number"
       && (typeof value !== "number" || !Number.isFinite(value))
     ) {
-      errors.push({
+      validationIssues.push({
         field,
         message: `${field.label} must be a finite number.`,
       });
@@ -461,13 +453,13 @@ export function adapterConfigSchemaFieldErrors(
       && Array.isArray(field.options)
       && !field.options.some((option) => option.value === value)
     ) {
-      errors.push({
+      validationIssues.push({
         field,
         message: `${field.label} must use an adapter-owned option.`,
       });
     }
   }
-  return errors;
+  return validationIssues;
 }
 
 // ---------------------------------------------------------------------------
@@ -488,23 +480,36 @@ export function SchemaConfigFields({
   /** Reuse a caller's already resolved server schema as the exact editor contract. */
   resolvedSchema?: AdapterConfigSchema | null;
 }) {
-  const { schema: fetchedSchema } = useAdapterConfigSchema(adapterType);
+  const fieldIdPrefix = useId();
+  const {
+    schema: fetchedSchema,
+    isLoading: isSchemaLoading,
+    error: schemaError,
+  } = useAdapterConfigSchema(adapterType, { enabled: resolvedSchema === undefined });
   const schema =
     resolvedSchema === undefined ? fetchedSchema : resolvedSchema;
 
   const [defaultsApplied, setDefaultsApplied] = useState(false);
   useEffect(() => {
+    setDefaultsApplied(false);
+  }, [adapterType, schema]);
+
+  useEffect(() => {
     if (!schema || !isCreate || defaultsApplied || !applySchemaDefaults) return;
     const defaults: Record<string, unknown> = {};
     for (const field of schema.fields) {
       const def = getDefaultValue(field);
-      if (def !== undefined && def !== "") {
+      if (
+        def !== undefined
+        && def !== ""
+        && values?.adapterSchemaValues?.[field.key] === undefined
+      ) {
         defaults[field.key] = def;
       }
     }
     if (Object.keys(defaults).length > 0) {
       set?.({
-        adapterSchemaValues: { ...values?.adapterSchemaValues, ...defaults },
+        adapterSchemaValues: { ...defaults, ...values?.adapterSchemaValues },
       });
     }
     setDefaultsApplied(true);
@@ -517,7 +522,22 @@ export function SchemaConfigFields({
     applySchemaDefaults,
   ]);
 
-  if (!schema || schema.fields.length === 0) return null;
+  if (!schema) {
+    if (isSchemaLoading) {
+      return <AdapterConfigEmptyState message="Loading adapter configuration fields…" />;
+    }
+
+    return (
+      <AdapterConfigEmptyState
+        tone="alert"
+        message={schemaError ?? "No adapter configuration fields are available for this adapter."}
+      />
+    );
+  }
+
+  if (schema.fields.length === 0) {
+    return <AdapterConfigEmptyState message="No additional configuration fields are available for this adapter." />;
+  }
 
   function readValue(field: ConfigFieldSchema): unknown {
     if (isCreate) {
@@ -541,56 +561,100 @@ export function SchemaConfigFields({
     }
   }
 
+  const errorsByFieldKey = new Map(
+    adapterConfigSchemaFieldErrors(
+      schema,
+      Object.fromEntries(schema.fields.map((field) => [field.key, readValue(field)])),
+    ).map(({ field, message }) => [field.key, message]),
+  );
+
   return (
     <>
+      <p className="sr-only" role="status">
+        {errorsByFieldKey.size > 0 ? "Adapter configuration needs attention." : ""}
+      </p>
       {schema.fields
         .filter((field) => fieldMatchesVisibleWhen(field, readValue, schema))
         .map((field) => {
+          const fieldId = `${fieldIdPrefix}-${field.key}`;
+          const errorId = `${fieldId}-error`;
+          const errorMessage = errorsByFieldKey.get(field.key);
+
           switch (field.type) {
             case "select": {
               const currentVal = String(readValue(field) ?? "");
               return (
                 <Field key={field.key} label={field.label} hint={field.hint}>
-                  <SelectField
-                    value={currentVal}
-                    options={[...(field.options ?? [])]}
-                    onChange={(v) => writeValue(field, v)}
-                  />
+                  <div className="space-y-1">
+                    <SelectField
+                      id={fieldId}
+                      label={field.label}
+                      value={currentVal}
+                      options={[...(field.options ?? [])]}
+                      invalid={Boolean(errorMessage)}
+                      errorId={errorMessage ? errorId : undefined}
+                      onChange={(v) => writeValue(field, v)}
+                    />
+                    <SchemaFieldError id={errorId} message={errorMessage} />
+                  </div>
                 </Field>
               );
             }
 
             case "toggle":
               return (
-                <ToggleField
+                <div
                   key={field.key}
-                  label={field.label}
-                  hint={field.hint}
-                  checked={readValue(field) === true}
-                  onChange={(v) => writeValue(field, v)}
-                />
+                  role="group"
+                  aria-label={field.label}
+                  aria-describedby={errorMessage ? errorId : undefined}
+                  className="space-y-1"
+                >
+                  <ToggleField
+                    label={field.label}
+                    hint={field.hint}
+                    checked={readValue(field) === true}
+                    onChange={(v) => writeValue(field, v)}
+                  />
+                  <SchemaFieldError id={errorId} message={errorMessage} />
+                </div>
               );
 
             case "number":
               return (
                 <Field key={field.key} label={field.label} hint={field.hint}>
-                  <DraftNumberInput
-                    value={Number(readValue(field) ?? 0)}
-                    onCommit={(v) => writeValue(field, v)}
-                    immediate
-                    className={inputClass}
-                  />
+                  <div className="space-y-1">
+                    <DraftNumberInput
+                      id={fieldId}
+                      aria-label={field.label}
+                      aria-invalid={Boolean(errorMessage) || undefined}
+                      aria-describedby={errorMessage ? errorId : undefined}
+                      value={Number(readValue(field) ?? 0)}
+                      onCommit={(v) => writeValue(field, v)}
+                      immediate
+                      className={inputClass}
+                    />
+                    <SchemaFieldError id={errorId} message={errorMessage} />
+                  </div>
                 </Field>
               );
 
             case "textarea":
               return (
                 <Field key={field.key} label={field.label} hint={field.hint}>
-                  <DraftTextarea
-                    value={String(readValue(field) ?? "")}
-                    onCommit={(v) => writeValue(field, v || undefined)}
-                    immediate
-                  />
+                  <div
+                    role="group"
+                    aria-label={field.label}
+                    aria-describedby={errorMessage ? errorId : undefined}
+                    className="space-y-1"
+                  >
+                    <DraftTextarea
+                      value={String(readValue(field) ?? "")}
+                      onCommit={(v) => writeValue(field, v || undefined)}
+                      immediate
+                    />
+                    <SchemaFieldError id={errorId} message={errorMessage} />
+                  </div>
                 </Field>
               );
 
@@ -598,12 +662,19 @@ export function SchemaConfigFields({
               const currentVal = String(readValue(field) ?? "");
               return (
                 <Field key={field.key} label={field.label} hint={field.hint}>
-                  <ComboboxField
-                    value={currentVal}
-                    options={[...(field.options ?? [])]}
-                    onChange={(v) => writeValue(field, v || undefined)}
-                    placeholder={field.hint}
-                  />
+                  <div className="space-y-1">
+                    <ComboboxField
+                      id={fieldId}
+                      label={field.label}
+                      value={currentVal}
+                      options={[...(field.options ?? [])]}
+                      invalid={Boolean(errorMessage)}
+                      errorId={errorMessage ? errorId : undefined}
+                      onChange={(v) => writeValue(field, v || undefined)}
+                      placeholder={field.hint}
+                    />
+                    <SchemaFieldError id={errorId} message={errorMessage} />
+                  </div>
                 </Field>
               );
             }
@@ -612,12 +683,19 @@ export function SchemaConfigFields({
             default:
               return (
                 <Field key={field.key} label={field.label} hint={field.hint}>
-                  <DraftInput
-                    value={String(readValue(field) ?? "")}
-                    onCommit={(v) => writeValue(field, v || undefined)}
-                    immediate
-                    className={inputClass}
-                  />
+                  <div className="space-y-1">
+                    <DraftInput
+                      id={fieldId}
+                      aria-label={field.label}
+                      aria-invalid={Boolean(errorMessage) || undefined}
+                      aria-describedby={errorMessage ? errorId : undefined}
+                      value={String(readValue(field) ?? "")}
+                      onCommit={(v) => writeValue(field, v || undefined)}
+                      immediate
+                      className={inputClass}
+                    />
+                    <SchemaFieldError id={errorId} message={errorMessage} />
+                  </div>
                 </Field>
               );
           }

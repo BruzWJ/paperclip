@@ -22,11 +22,6 @@ import type {
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { ApiError, api } from "./client";
 
-export interface AdapterModel {
-  id: string;
-  label: string;
-}
-
 export type { AdapterModelProfileKey };
 export type AdapterModelProfile = AdapterModelProfileDefinition;
 
@@ -191,10 +186,6 @@ export const agentsApi = {
     ),
   runtimeState: (id: string, companyId?: string) =>
     api.get<AgentRuntimeState | null>(agentPath(id, companyId, "/runtime-state")),
-  adapterModels: (companyId: string, type: string) =>
-    api.get<AdapterModel[]>(
-      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`,
-    ),
   adapterModelProfiles: (companyId: string, type: string) =>
     api.get<AdapterModelProfile[]>(
       `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/model-profiles`,

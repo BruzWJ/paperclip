@@ -33,6 +33,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["sandbox"],
       environment: {
         id: "env-1",
         driver: "sandbox",
@@ -71,6 +72,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["sandbox"],
       environment: {
         id: "env-1",
         driver: "sandbox",
@@ -110,6 +112,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["sandbox"],
       environment: {
         id: "env-1",
         driver: "sandbox",
@@ -146,6 +149,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["sandbox"],
       environment: {
         id: "env-1",
         driver: "sandbox",
@@ -215,6 +219,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["sandbox"],
       environment,
       leaseId: "lease-row-1",
       leaseMetadata: {},
@@ -302,6 +307,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["plugin"],
       environment,
       leaseId: "lease-plugin-1",
       leaseMetadata: {},
@@ -374,6 +380,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
         db: {} as never,
         companyId: "company-1",
         adapterType: "codex",
+        allowedDrivers: ["plugin"],
         environment: {
           id: "env-plugin-1",
           driver: "plugin",
@@ -416,6 +423,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
         db: {} as never,
         companyId: "company-1",
         adapterType: "codex",
+        allowedDrivers: ["plugin"],
         environment: {
           id: "env-plugin-1",
           driver: "plugin",
@@ -448,6 +456,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["sandbox"],
       environment: {
         id: "env-1",
         driver: "sandbox",
@@ -483,6 +492,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
       db: {} as never,
       companyId: "company-1",
       adapterType: "codex",
+      allowedDrivers: ["ssh"],
       environment: {
         id: "env-ssh-1",
         driver: "ssh",
@@ -518,6 +528,7 @@ describe("resolveEnvironmentExecutionTarget", () => {
         db: {} as never,
         companyId: "company-1",
         adapterType: "unapproved-adapter",
+        allowedDrivers: [],
         environment: {
           id: `env-${driver}`,
           driver,

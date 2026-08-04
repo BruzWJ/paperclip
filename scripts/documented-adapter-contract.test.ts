@@ -1,53 +1,36 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
-import {
-  resolveAcpAdapterRevisionConfiguration,
-  validateServerAdapterModule,
-} from "../packages/adapter-utils/src/index.ts";
-import {
-  createServerAdapter,
-} from "../docs/adapters/examples/canonical-server-adapter.ts";
 
-describe("documented canonical server adapter", () => {
-  it("is only one closed declarative ACP subprocess definition", () => {
-    const adapter = createServerAdapter();
+const overview = await readFile(
+  new URL("../docs/adapters/overview.md", import.meta.url),
+  "utf8",
+);
+const discoveryGuide = await readFile(
+  new URL("../docs/adapters/creating-an-adapter.md", import.meta.url),
+  "utf8",
+);
+const externalAdapters = await readFile(
+  new URL("../docs/adapters/external-adapters.md", import.meta.url),
+  "utf8",
+);
 
-    assert.equal(validateServerAdapterModule(adapter), adapter);
-    assert.deepEqual(Object.keys(adapter).sort(), ["definition", "type"]);
-    assert.equal(adapter.definition.version, "acp-subprocess/v1");
-    assert.equal(adapter.definition.launchProfile.registryName, "codex");
-  });
-
-  it("resolves exact non-secret ACP configuration and immutable limits", () => {
-    const revision = resolveAcpAdapterRevisionConfiguration({
-      adapter: createServerAdapter(),
-      config: { model: "gpt-5.6" },
-    });
-
-    assert.deepEqual(revision.sessionConfigSelections, [
-      { configId: "model", value: "gpt-5.6" },
-    ]);
-    assert.deepEqual(revision.model.limits, {
-      contextTokenLimit: 1_050_000,
-      inputTokenLimit: 922_000,
-      outputTokenLimit: 128_000,
-    });
-  });
-
-  it("has no executable, parser, prompt, credential, or session callback", () => {
-    const serialized = JSON.stringify(createServerAdapter());
-
-    // PAPERCLIP_REMOVAL_NEGATIVE_FIXTURE: testEnvironment, onHireApproved
-    for (const forbidden of [
-      "execute",
-      "streamStatelessTurn",
-      "parseStdoutLine",
-      "providerInputKind",
-      "nativeCorrelationCodec",
-      "testEnvironment",
-      "onHireApproved",
-    ]) {
-      assert.equal(serialized.includes(forbidden), false);
+describe("documented ACPX adapter contract", () => {
+  it("documents ACPX as the sole dynamic supplier", () => {
+    for (const source of [overview, discoveryGuide, externalAdapters]) {
+      assert.match(source, /ACPX/i);
+      assert.doesNotMatch(source, /@agentclientprotocol\/codex-acp/);
+      assert.doesNotMatch(source, /resolveApprovedAcpLaunch/);
     }
+    assert.match(overview, /sole agent catalog supplier/i);
+    assert.match(discoveryGuide, /does not accept hand-authored, built-in, or external adapter/i);
+  });
+
+  it("documents generic advertised configuration and runtime application", () => {
+    for (const source of [overview, discoveryGuide, externalAdapters]) {
+      assert.match(source, /reasoning/i);
+      assert.match(source, /session\/set_config_option/i);
+    }
+    assert.match(discoveryGuide, /immutable ACP session configuration\s+selections/i);
   });
 });

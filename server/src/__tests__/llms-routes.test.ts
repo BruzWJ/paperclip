@@ -8,6 +8,7 @@ const mockAgentService = vi.hoisted(() => ({
 }));
 
 const mockListServerAdapters = vi.hoisted(() => vi.fn());
+const mockRefreshAcpxAdapters = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("../services/agents.js", () => ({
   agentService: () => mockAgentService,
@@ -15,6 +16,7 @@ vi.mock("../services/agents.js", () => ({
 
 vi.mock("../adapters/index.js", () => ({
   listServerAdapters: mockListServerAdapters,
+  refreshAcpxAdapters: mockRefreshAcpxAdapters,
 }));
 
 function registerModuleMocks() {
@@ -24,6 +26,7 @@ function registerModuleMocks() {
 
   vi.doMock("../adapters/index.js", () => ({
     listServerAdapters: mockListServerAdapters,
+    refreshAcpxAdapters: mockRefreshAcpxAdapters,
   }));
 }
 
@@ -52,9 +55,9 @@ describe("llm routes", () => {
     vi.clearAllMocks();
     mockListServerAdapters.mockReturnValue([
       {
-        type: "codex",
+        type: "fixture-acpx-agent",
         definition: {
-          configurationDoc: "# Codex ACP agent configuration",
+          configurationDoc: "# Fixture ACPX agent configuration",
         },
       },
     ]);
@@ -79,6 +82,7 @@ describe("llm routes", () => {
     expect(res.text).not.toContain("desiredSkills");
     expect(res.text).not.toContain("sourceIssueId");
     expect(res.text).not.toContain("heartbeat");
+    expect(mockRefreshAcpxAdapters).toHaveBeenCalledOnce();
   }, 20_000);
 
   it("serves documentation from the declarative adapter definition", async () => {
@@ -89,11 +93,12 @@ describe("llm routes", () => {
     }));
 
     const res = await request(app).get(
-      "/api/llms/agent-configuration/codex.txt",
+      "/api/llms/agent-configuration/fixture-acpx-agent.txt",
     );
 
     expect(res.status).toBe(200);
-    expect(res.text).toBe("# Codex ACP agent configuration");
+    expect(res.text).toBe("# Fixture ACPX agent configuration");
+    expect(mockRefreshAcpxAdapters).toHaveBeenCalledOnce();
   }, 20_000);
 
 });

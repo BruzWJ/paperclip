@@ -37,8 +37,8 @@ const adapterRuntimeReadinessReadySchema = z
   .object({
     status: z.literal("ready"),
     scope: adapterRuntimeReadinessScopeSchema,
-    protocolVersion: z.literal(1),
-    sessionResume: z.literal(true),
+    /** Exact public ACPX controls observed in this readiness probe. */
+    runtimeControls: z.array(z.string().min(1)),
   })
   .strict();
 

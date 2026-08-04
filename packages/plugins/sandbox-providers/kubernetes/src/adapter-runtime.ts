@@ -26,9 +26,9 @@ function fromRegistryEntry(
 }
 
 /**
- * Resolve one exact operator-declared adapter runtime. Kubernetes owns no
- * provider-specific adapter catalog or image fallback: active built-in and
- * external transports use the same explicit registry contract.
+ * Resolve one exact operator-declared runtime mapping. Kubernetes cannot
+ * advertise agents: it only maps the ACPX-selected agent name for this run to
+ * an image and target-specific network settings.
  */
 export function requireAdapterRuntime(
   adapterType: string,
@@ -53,22 +53,24 @@ export function requireAdapterRuntime(
 }
 
 /**
- * A run may select any exact enabled registry entry. When no per-run type is
- * supplied, use the environment's explicit default transport.
+ * A run normally supplies its exact ACPX-discovered agent name. A target may
+ * have an explicit operator fallback for non-agent calls, but there is never
+ * a provider-specific default in Paperclip or this plugin.
  */
 export function resolveRunAdapterType(
   runAdapterType: string | null | undefined,
-  configAdapterType: string,
+  configAdapterType: string | undefined,
 ): string {
-  if (
-    configAdapterType.length === 0 ||
-    configAdapterType !== configAdapterType.trim()
-  ) {
-    throw new Error(
-      "Kubernetes execution requires an exact default adapter type",
-    );
-  }
   if (runAdapterType === null || runAdapterType === undefined) {
+    if (
+      typeof configAdapterType !== "string" ||
+      configAdapterType.length === 0 ||
+      configAdapterType !== configAdapterType.trim()
+    ) {
+      throw new Error(
+        "Kubernetes execution requires an ACPX-selected agent type or an exact explicit environment default adapter type",
+      );
+    }
     return configAdapterType;
   }
   if (

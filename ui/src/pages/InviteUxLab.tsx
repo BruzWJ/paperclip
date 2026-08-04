@@ -298,11 +298,36 @@ function InlineAuthPreview({
         ) : null}
         <label className="block text-sm">
           <span className="mb-1 block text-zinc-400">Email</span>
-          <input name="email" type="email" className={fieldClassName} defaultValue="jane@example.com" readOnly />
+          <input
+            name="email"
+            type="email"
+            autoComplete="email"
+            className={fieldClassName}
+            defaultValue="jane@example.com"
+            readOnly
+          />
         </label>
         <label className="block text-sm">
           <span className="mb-1 block text-zinc-400">Password</span>
-          <input name="password" type="password" className={fieldClassName} defaultValue="supersecret" readOnly />
+          {mode === "sign_in" ? (
+            <input
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              className={fieldClassName}
+              defaultValue="supersecret"
+              readOnly
+            />
+          ) : (
+            <input
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              className={fieldClassName}
+              defaultValue="supersecret"
+              readOnly
+            />
+          )}
         </label>
         {feedback ? (
           <p className={cn("text-xs", feedback.tone === "info" ? "text-amber-300" : "text-red-400")}>
@@ -337,10 +362,12 @@ function AgentRequestPreview() {
         <input className={fieldClassName} defaultValue="Acme Ops Agent" readOnly />
       </label>
       <label className="block text-sm">
-        <span className="mb-1 block text-zinc-400">Adapter type</span>
-        <select className={fieldClassName} defaultValue="codex" disabled>
-          <option value="codex">Codex</option>
-        </select>
+        <span className="mb-1 block text-zinc-400">ACPX agent name</span>
+        <input
+          className={fieldClassName}
+          defaultValue="acpx-agent-name"
+          readOnly
+        />
       </label>
       <label className="block text-sm">
         <span className="mb-1 block text-zinc-400">Capabilities</span>
@@ -594,7 +621,7 @@ function CompanyInvitesPreview() {
             </button>
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="outline">
-                <ExternalLink className="h-4 w-4" />
+                <ExternalLink data-icon="inline-start" className="h-4 w-4" />
                 Open invite
               </Button>
             </div>

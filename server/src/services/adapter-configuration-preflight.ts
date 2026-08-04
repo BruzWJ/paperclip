@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import {
   adapterRuntimeReadinessSchema,
@@ -10,23 +9,12 @@ import {
   type IssueExecutionRunStatus,
 } from "@paperclipai/shared";
 import {
-  ACP_SUBPROCESS_CONTRACT_VERSION,
-  isAcpInitializationCapabilityError,
-  PaperclipAcpClient,
-  prepareAcpExecutionTargetSubprocess,
-  resolveApprovedAcpNativeAuthentication,
-  resolveApprovedAcpLaunch,
-  sameApprovedAcpLaunch,
-  type AcpSubprocess,
-  type AcpSubprocessLaunch,
-  type ApprovedAcpLaunch,
-  type ApprovedAcpNativeAuthentication,
-  type PreparedAcpExecutionTargetSubprocess,
+  AcpxRuntimeReadinessCapabilityError,
+  AcpxRuntimeReadinessCleanupError,
+  probeAcpxRuntimeReadiness,
+  type AcpxRuntimeReadinessProbeInput,
+  type AcpxRuntimeReadinessProbeResult,
 } from "@paperclipai/adapter-utils/acp-subprocess";
-import {
-  resolveAdapterExecutionTargetNativeIdentityEnvironment,
-  runAdapterExecutionTargetProcess,
-} from "@paperclipai/adapter-utils/execution-target";
 import type { SelectedCompanySkillLaunchChannel } from "@paperclipai/adapter-utils/selected-company-skills";
 import { ZodError } from "zod";
 import { notFound } from "../errors.js";
@@ -40,10 +28,8 @@ import {
   type EnvironmentRunOrchestrator,
 } from "./environment-run-orchestrator.js";
 import {
-  collectCompanySkillMaterializationIfUnreferencedInTransaction,
   CompanySkillMaterializationLifecycleRejected,
   resolveCompanySkillMaterializationRevisionInTransaction,
-  type ReapedCompanySkillMaterialization,
 } from "./company-skill-materialization-lifecycle.js";
 import {
   readIssueExecutionRuntimeReadinessBinding,
@@ -55,9 +41,6 @@ const PREFLIGHTABLE_RUN_STATUSES = new Set<IssueExecutionRunStatus>([
   "scheduled_retry",
   "running",
 ]);
-const READINESS_PROCESS_TIMEOUT_SEC = 15;
-const READINESS_PROCESS_GRACE_SEC = 2;
-const READINESS_PROCESS_REAP_GRACE_MS = 5_000;
 
 export interface AdapterRuntimeReadinessIdentity {
   readonly companyId: string;
@@ -69,34 +52,25 @@ export interface AdapterRuntimeReadinessRepository {
   loadExactBinding(
     identity: AdapterRuntimeReadinessIdentity,
   ): Promise<IssueExecutionRuntimeReadinessBinding | null>;
+  /**
+   * Resolves the immutable skill pin as a revision-integrity check. ACPX owns
+   * its local runtime environment, so readiness does not prepare a
+   * Paperclip-managed skills home for this disposable probe.
+   */
   resolveCompanySkills(
     binding: IssueExecutionRuntimeReadinessBinding,
   ): Promise<SelectedCompanySkillLaunchChannel>;
-  collectMaterialization(
-    candidate: ReapedCompanySkillMaterialization,
-  ): Promise<void>;
-}
-
-interface InitializeOnlyAcpClient {
-  initialize(): Promise<{
-    readonly protocolVersion: number;
-    readonly agentCapabilities?: {
-      readonly sessionCapabilities?: {
-        readonly resume?: unknown;
-      };
-    };
-  }>;
-  close(error?: unknown): void;
 }
 
 export interface AdapterConfigurationPreflightRuntime {
   readonly targetAcquirer: IssueExecutionTargetAcquirer;
-  readonly prepareTarget: typeof prepareAcpExecutionTargetSubprocess;
-  readonly runTargetProcess: typeof runAdapterExecutionTargetProcess;
-  readonly createInitializeOnlyClient: (input: {
-    readonly launch: AcpSubprocessLaunch;
-    readonly subprocess: AcpSubprocess;
-  }) => InitializeOnlyAcpClient;
+  /**
+   * Test seam. Production uses ACPX's public runtime through adapter-utils;
+   * Paperclip does not own a launch catalog or a raw ACP client here.
+   */
+  readonly probeAcpxRuntimeReadiness?: (
+    input: AcpxRuntimeReadinessProbeInput,
+  ) => Promise<AcpxRuntimeReadinessProbeResult>;
 }
 
 export interface AdapterConfigurationPreflightService {
@@ -124,14 +98,6 @@ function createPostgresAdapterRuntimeReadinessRepository(
             },
           );
         return resolved.launchChannel;
-      });
-    },
-    async collectMaterialization(candidate) {
-      await db.transaction(async (transaction) => {
-        await collectCompanySkillMaterializationIfUnreferencedInTransaction(
-          transaction,
-          candidate,
-        );
       });
     },
   };
@@ -165,33 +131,13 @@ function incomplete(
 
 function ready(
   scope: AdapterRuntimeReadinessScope,
+  runtimeControls: readonly string[],
 ): AdapterRuntimeReadiness {
   return adapterRuntimeReadinessSchema.parse({
     status: "ready",
     scope,
-    protocolVersion: 1,
-    sessionResume: true,
+    runtimeControls: [...runtimeControls],
   });
-}
-
-function preparationFailureReason(
-  error: unknown,
-): AdapterRuntimeReadinessIncompleteReason {
-  const message = error instanceof Error ? error.message : "";
-  if (
-    message.includes("required executable") ||
-    message.includes("executable selector") ||
-    message.includes("executable canonicalization")
-  ) {
-    return "target_native_executable_unavailable";
-  }
-  if (
-    message.includes("frontend") ||
-    message.includes("artifact")
-  ) {
-    return "acp_frontend_unavailable";
-  }
-  return "execution_target_unavailable";
 }
 
 function acquisitionFailureReason(
@@ -216,80 +162,14 @@ function acquisitionFailureReason(
   return "execution_target_unavailable";
 }
 
-function exactApprovedLaunch(
-  configuration: AgentAdapterAcpConfiguration,
-): ApprovedAcpLaunch {
-  const approved = resolveApprovedAcpLaunch(
-    configuration.launchProfile.registryName,
-  );
-  if (!sameApprovedAcpLaunch(configuration.launchProfile, approved)) {
-    throw new Error(
-      "Persisted adapter revision does not match its approved launch",
-    );
-  }
-  return approved;
-}
-
-async function closeReadinessResources(input: {
-  readonly acquired: AcquiredIssueExecutionTarget;
-  readonly prepared: PreparedAcpExecutionTargetSubprocess | null;
-  readonly subprocess: AcpSubprocess | null;
-  readonly client: InitializeOnlyAcpClient | null;
-  readonly subprocessLaunchAttempted: boolean;
-  readonly failed: boolean;
-  readonly companySkills: SelectedCompanySkillLaunchChannel;
-  readonly repository: AdapterRuntimeReadinessRepository;
-}): Promise<boolean> {
-  let cleanupFailed = false;
-  if (input.subprocess) {
-    try {
-      input.client?.close();
-    } catch {
-      cleanupFailed = true;
-    }
-    try {
-      await input.subprocess.closeAndReap(
-        READINESS_PROCESS_REAP_GRACE_MS,
-      );
-    } catch {
-      cleanupFailed = true;
-      await input.subprocess
-        .terminateAndReap(READINESS_PROCESS_REAP_GRACE_MS)
-        .catch(() => {
-          cleanupFailed = true;
-        });
-    }
-  } else if (input.prepared && !input.subprocessLaunchAttempted) {
-    await input.prepared.disposeBeforeStart().catch(() => {
-      cleanupFailed = true;
-    });
-  }
-  const materialization =
-    input.prepared?.selectedCompanySkillMaterialization ?? null;
-  if (
-    !cleanupFailed &&
-    materialization &&
-    input.companySkills.channel === "isolated_skills_home"
-  ) {
-    await input.repository
-      .collectMaterialization({
-        identity: input.companySkills.identity,
-        materializationKey: materialization.materializationKey,
-        collectExact: materialization.collectExact,
-      })
-      .catch(() => {
-        cleanupFailed = true;
-      });
-  } else if (
-    materialization &&
-    input.companySkills.channel !== "isolated_skills_home"
-  ) {
-    cleanupFailed = true;
-  }
-  await input.acquired.release(input.failed || cleanupFailed).catch(() => {
-    cleanupFailed = true;
-  });
-  return cleanupFailed;
+async function releaseReadinessTarget(
+  acquired: AcquiredIssueExecutionTarget,
+  failed: boolean,
+): Promise<boolean> {
+  return await acquired
+    .release(failed)
+    .then(() => false)
+    .catch(() => true);
 }
 
 export function createAdapterConfigurationPreflightService(options: {
@@ -304,8 +184,7 @@ export function createAdapterConfigurationPreflightService(options: {
       }
       const scope = readinessScope(binding);
       if (
-        (binding.runKind !== "productive" &&
-          binding.runKind !== "consult") ||
+        (binding.runKind !== "productive" && binding.runKind !== "consult") ||
         !PREFLIGHTABLE_RUN_STATUSES.has(binding.runStatus)
       ) {
         return incomplete(scope, "run_not_preflightable");
@@ -321,22 +200,18 @@ export function createAdapterConfigurationPreflightService(options: {
       }
 
       let acpConfiguration: AgentAdapterAcpConfiguration;
-      let approvedLaunch: ApprovedAcpLaunch;
-      let nativeAuthentication: ApprovedAcpNativeAuthentication;
       try {
         acpConfiguration = agentAdapterAcpConfigurationSchema.parse(
           binding.acpConfiguration,
         );
-        approvedLaunch = exactApprovedLaunch(acpConfiguration);
-        nativeAuthentication =
-          resolveApprovedAcpNativeAuthentication(approvedLaunch);
       } catch {
         return incomplete(scope, "adapter_revision_invalid");
       }
 
-      let companySkills: SelectedCompanySkillLaunchChannel;
       try {
-        companySkills = await options.repository.resolveCompanySkills(binding);
+        // Retain immutable selected-skill revision validation. No skills home
+        // is materialized: ACPX owns the local runtime process and its config.
+        await options.repository.resolveCompanySkills(binding);
       } catch (error) {
         if (
           !(error instanceof ZodError) &&
@@ -354,10 +229,8 @@ export function createAdapterConfigurationPreflightService(options: {
           issueId: binding.issueId,
           runId: binding.runId,
           targetAgentId: binding.agentId,
-          adapterConfigRevisionId:
-            binding.adapterConfigRevisionId,
-          executionWorkspaceBindingId:
-            binding.executionWorkspaceBindingId,
+          adapterConfigRevisionId: binding.adapterConfigRevisionId,
+          executionWorkspaceBindingId: binding.executionWorkspaceBindingId,
           acpConfiguration,
           hostCwd: binding.absoluteCwd,
           localWorkspaceCwd: binding.absoluteCwd,
@@ -367,161 +240,44 @@ export function createAdapterConfigurationPreflightService(options: {
         return incomplete(scope, acquisitionFailureReason(error));
       }
 
-      let prepared: PreparedAcpExecutionTargetSubprocess | null = null;
-      let subprocess: AcpSubprocess | null = null;
-      let client: InitializeOnlyAcpClient | null = null;
-      let subprocessLaunchAttempted = false;
-      let result: AdapterRuntimeReadiness;
-
-      try {
-        try {
-          prepared = await options.runtime.prepareTarget({
-            runId: binding.runId,
-            target: acquired.executionTarget,
-            sourceLaunch: approvedLaunch,
-            hostCwd: acquired.hostCwd,
-            targetCwd: acquired.targetCwd,
-            targetAdditionalDirectories:
-              acquired.targetAdditionalDirectories,
-            companySkills,
-            runtimeRootDir: null,
-            timeoutSec: READINESS_PROCESS_TIMEOUT_SEC,
-          });
-        } catch (error) {
-          result = incomplete(scope, preparationFailureReason(error));
-          const cleanupFailed = await closeReadinessResources({
-            acquired,
-            prepared,
-            subprocess,
-            client,
-            subprocessLaunchAttempted,
-            failed: true,
-            companySkills,
-            repository: options.repository,
-          });
-          return cleanupFailed
-            ? incomplete(scope, "target_cleanup_failed")
-            : result;
-        }
-
-        let authenticationExitCode: number | null;
-        let authenticationTimedOut: boolean;
-        try {
-          ({
-            exitCode: authenticationExitCode,
-            timedOut: authenticationTimedOut,
-          } = await options.runtime.runTargetProcess(
-            randomUUID(),
-            acquired.executionTarget,
-            prepared.targetNativeExecutable,
-            [...nativeAuthentication.statusArgs],
-            {
-              cwd: prepared.targetCwd,
-              env: {
-                ...resolveAdapterExecutionTargetNativeIdentityEnvironment(
-                  acquired.executionTarget,
-                ),
-              },
-              timeoutSec: READINESS_PROCESS_TIMEOUT_SEC,
-              graceSec: READINESS_PROCESS_GRACE_SEC,
-              onLog: async () => {},
-            },
-          ));
-        } catch {
-          result = incomplete(
-            scope,
-            "native_authentication_check_failed",
-            nativeAuthentication.loginGuidance,
-          );
-          const cleanupFailed = await closeReadinessResources({
-            acquired,
-            prepared,
-            subprocess,
-            client,
-            subprocessLaunchAttempted,
-            failed: true,
-            companySkills,
-            repository: options.repository,
-          });
-          return cleanupFailed
-            ? incomplete(scope, "target_cleanup_failed")
-            : result;
-        }
-        if (authenticationTimedOut || authenticationExitCode !== 0) {
-          result = incomplete(
-            scope,
-            "native_authentication_required",
-            nativeAuthentication.loginGuidance,
-          );
-          const cleanupFailed = await closeReadinessResources({
-            acquired,
-            prepared,
-            subprocess,
-            client,
-            subprocessLaunchAttempted,
-            failed: true,
-            companySkills,
-            repository: options.repository,
-          });
-          return cleanupFailed
-            ? incomplete(scope, "target_cleanup_failed")
-            : result;
-        }
-
-        const launch: AcpSubprocessLaunch = Object.freeze({
-          version: ACP_SUBPROCESS_CONTRACT_VERSION,
-          launch: approvedLaunch,
-          cwd: prepared.targetCwd,
-          additionalDirectories:
-            prepared.targetAdditionalDirectories,
-          environment: Object.freeze({}),
-          mcpServers: Object.freeze([]),
-          configOptions: acpConfiguration.sessionConfigSelections,
-        });
-        try {
-          subprocessLaunchAttempted = true;
-          subprocess = await prepared.startSubprocess(launch, {
-            redactStderr: () => "",
-          });
-          client = options.runtime.createInitializeOnlyClient({
-            launch,
-            subprocess,
-          });
-          const initialized = await client.initialize();
-          if (
-            initialized.protocolVersion !== 1 ||
-            initialized.agentCapabilities?.sessionCapabilities?.resume ==
-              null
-          ) {
-            result = incomplete(scope, "acp_capability_incompatible");
-          } else {
-            result = ready(scope);
-          }
-        } catch (error) {
-          result = incomplete(
-            scope,
-            isAcpInitializationCapabilityError(error)
-              ? "acp_capability_incompatible"
-              : "acp_initialization_failed",
-          );
-        }
-      } catch {
-        result = incomplete(scope, "acp_initialization_failed");
+      // ACPX's public runtime executes the locally installed CLI itself. It
+      // cannot acquire an SSH, sandbox, or plugin target on Paperclip's behalf.
+      if (acquired.executionTarget.kind !== "local") {
+        const cleanupFailed = await releaseReadinessTarget(acquired, true);
+        return cleanupFailed
+          ? incomplete(scope, "target_cleanup_failed")
+          : incomplete(scope, "execution_target_unavailable");
       }
 
-      const cleanupFailed = await closeReadinessResources({
+      let result: AdapterRuntimeReadiness;
+      try {
+        const probe = await (options.runtime.probeAcpxRuntimeReadiness ??
+          probeAcpxRuntimeReadiness)({
+          cwd: acquired.targetCwd,
+          // All ACPX catalog/revision validation is resolved relative to the
+          // Paperclip service configuration scope. The acquired workspace is
+          // only the disposable provider-session cwd.
+          registryCwd: process.cwd(),
+          agentName: acpConfiguration.launchProfile.registryName,
+          configSelections: acpConfiguration.sessionConfigSelections,
+        });
+        result = ready(scope, probe.capabilities.controls);
+      } catch (error) {
+        result = incomplete(
+          scope,
+          error instanceof AcpxRuntimeReadinessCleanupError
+            ? "target_cleanup_failed"
+            : error instanceof AcpxRuntimeReadinessCapabilityError
+              ? "acp_capability_incompatible"
+              : "acp_initialization_failed",
+        );
+      }
+
+      const cleanupFailed = await releaseReadinessTarget(
         acquired,
-        prepared,
-        subprocess,
-        client,
-        subprocessLaunchAttempted,
-        failed: result.status !== "ready",
-        companySkills,
-        repository: options.repository,
-      });
-      return cleanupFailed
-        ? incomplete(scope, "target_cleanup_failed")
-        : result;
+        result.status !== "ready",
+      );
+      return cleanupFailed ? incomplete(scope, "target_cleanup_failed") : result;
     },
   };
 }
@@ -541,22 +297,6 @@ export function createPostgresAdapterConfigurationPreflightService(
       targetAcquirer: createIssueExecutionTargetAcquirer({
         environmentOrchestrator: options.environmentOrchestrator,
       }),
-      prepareTarget: prepareAcpExecutionTargetSubprocess,
-      runTargetProcess: runAdapterExecutionTargetProcess,
-      createInitializeOnlyClient({ launch, subprocess }) {
-        return new PaperclipAcpClient({
-          launch,
-          subprocess,
-          operations: Object.freeze({}),
-          hooks: {
-            onSessionEvent() {
-              throw new Error(
-                "ACP readiness initialize emitted a session update",
-              );
-            },
-          },
-        });
-      },
     },
   });
 }

@@ -40,8 +40,8 @@ Common optional fields:
 
 | Field | Default | Purpose |
 |---|---|---|
-| `adapterType` | `"codex"` | Exact default transport. It must have an enabled entry in `adapters`. |
-| `adapters` | required | Authoritative runtime registry. Every built-in or external adapter type requires an explicit image, egress allow-list, and probe command; there are no provider presets. |
+| `adapterType` | (none) | Optional exact target-local fallback for non-agent calls. Normal runs use the agent name ACPX discovered and supplied for that run. |
+| `adapters` | required | Target-local runtime mappings. A mapping supplies the image, egress allow-list, and probe command for an already-selected ACPX agent; it does not make an agent available in Paperclip. |
 | `namespacePrefix` | `"paperclip-"` | Prefix for the per-company tenant namespace. |
 | `companySlug` | derived from companyId | Override the auto-derived company slug. |
 | `imageRegistry` | (none) | Optionally rewrite the registry prefix of explicitly configured runtime images. |

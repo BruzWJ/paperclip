@@ -142,6 +142,37 @@ describe("issue-session shared contracts", () => {
     ).toEqual(message);
   });
 
+  it("preserves ACP assistant steps with no portable model metadata", () => {
+    const assistant = {
+      ...baseMessage,
+      type: "assistant",
+      agent: "agent",
+      content: [],
+    } as const;
+    const event = {
+      id: "evt_model_unknown",
+      type: Event.Step.Started.type,
+      durable: {
+        aggregateID: "ses_contract",
+        seq: 5,
+        version: 1,
+      },
+      data: {
+        timestamp: 1_700_000_000_000,
+        sessionID: "ses_contract",
+        assistantMessageID: "msg_contract",
+        agent: "agent",
+      },
+    } as const;
+
+    expect(
+      encodeIssueSessionMessage(decodeIssueSessionMessage(assistant)),
+    ).toEqual(assistant);
+    expect(
+      encodeIssueSessionEvent(decodeIssueSessionEvent(event)),
+    ).toEqual(event);
+  });
+
   it("derives durable event versions from the canonical definitions", () => {
     expect(versionedIssueSessionEventType(Event.Step.Ended.type)).toBe(
       "session.next.step.ended.3",

@@ -823,38 +823,49 @@ const TARGET_EXECUTABLE_CANONICALIZER = [
 ].join("\n");
 
 /**
- * Resolves one immutable adapter selector inside the selected target. The
- * result is a canonical absolute executable, never an inherited provider
- * override or a host-side fallback.
+ * Resolves one ACPX-supplied command inside the selected target. The result is
+ * a canonical absolute executable, never an inherited provider override or a
+ * host-side fallback. ACPX may publish either a normal PATH command or an
+ * exact absolute command path.
  */
 export async function resolveAdapterExecutionTargetExecutable(
   input: ResolveAdapterExecutionTargetExecutableInput,
 ): Promise<string> {
+  const remote = input.target.kind === "remote";
+  const absoluteSelector = remote
+    ? path.posix.isAbsolute(input.selector)
+    : path.isAbsolute(input.selector);
   if (
     input.selector.length === 0 ||
     input.selector !== input.selector.trim() ||
-    !TARGET_EXECUTABLE_SELECTOR.test(input.selector)
+    (!TARGET_EXECUTABLE_SELECTOR.test(input.selector) && !absoluteSelector)
   ) {
-    throw new Error("Execution-target executable selector must be exact and path-free");
+    throw new Error(
+      "Execution-target executable selector must be an exact PATH command or absolute path",
+    );
   }
   const timeoutSec = input.timeoutSec ?? 15;
   if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
     throw new Error("Execution-target executable probe timeout must be positive");
   }
-  const selected = await runAdapterExecutionTargetShellCommand(
-    input.runId,
-    input.target,
-    `command -v ${input.selector}`,
-    { cwd: input.cwd, env: {}, timeoutSec },
-  );
-  if (selected.timedOut || selected.exitCode !== 0) {
-    throw new Error(
-      `Execution target does not expose required executable ${JSON.stringify(input.selector)}`,
+  let candidate: string;
+  if (absoluteSelector) {
+    candidate = input.selector;
+  } else {
+    const selected = await runAdapterExecutionTargetShellCommand(
+      input.runId,
+      input.target,
+      `command -v ${shellQuote(input.selector)}`,
+      { cwd: input.cwd, env: {}, timeoutSec },
     );
+    if (selected.timedOut || selected.exitCode !== 0) {
+      throw new Error(
+        `Execution target does not expose required executable ${JSON.stringify(input.selector)}`,
+      );
+    }
+    const match = /^([^\r\n]+)\r?\n?$/.exec(selected.stdout);
+    candidate = match?.[1] ?? "";
   }
-  const match = /^([^\r\n]+)\r?\n?$/.exec(selected.stdout);
-  const candidate = match?.[1] ?? "";
-  const remote = input.target.kind === "remote";
   if (
     candidate.length === 0 ||
     candidate !== candidate.trim() ||

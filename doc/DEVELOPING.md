@@ -36,7 +36,7 @@ This starts:
 - API server: `http://localhost:3100`
 - UI: served by the API server in dev middleware mode (same origin as API)
 
-`pnpm dev` runs the server in watch mode and restarts on changes from workspace packages (including adapter packages). Use `pnpm dev:once` to run without file watching.
+`pnpm dev` runs the server in watch mode and restarts on changes from workspace packages. Use `pnpm dev:once` to run without file watching.
 
 `pnpm dev:once` auto-applies pending local migrations by default before starting the dev server.
 
@@ -117,8 +117,9 @@ systemctl restart paperclip.service
 Use `--drain-required` only when the deploy intentionally requires termination
 of active work before restart. Without that flag, the old server verifies that
 the marker targets its own PID, snapshots current issue-execution run IDs and
-ACP subprocess PIDs, and skips the shutdown drain so eligible detached prompts
-can settle without replay. On startup the new server writes
+their durable run facts, and skips the shutdown drain so eligible detached
+prompts can settle without replay. Paperclip does not own ACPX child-process
+PIDs. On startup the new server writes
 `$PAPERCLIP_HOME/hot-restart-report.json` with `previousServerPid`,
 `newServerPid`, `previousServerVersion`, `newServerVersion`, `adoptedRunIds`,
 `finalizedWhileDownRunIds`, `lostRunIds`, and per-run classifications before
@@ -318,15 +319,17 @@ issue fallback.
 Provider-native authentication and configuration remain operator-owned and
 opaque. Paperclip does not create, inspect, seed, copy, reconcile, quota-probe,
 or delete a provider home. The selected CLI must already be authenticated on
-the execution target. Paperclip applies only the immutable adapter revision's
-non-secret choices through stable ACP `session/set_config_option`; it neither
+the local host. Paperclip applies only the immutable adapter revision's
+non-secret choices through ACPX's generic configuration setter; it neither
 passes an arbitrary provider payload to an adapter nor launches an auth probe.
 
-Every adapter is a data-only `acp-subprocess/v1` definition. Its exact registry
-name and pinned frontend revision must be present in Paperclip's immutable
-conformance-approved catalog before the common worker can launch it. The
-initial built-in definition is `codex`; external definitions cannot add a raw
-command, process/HTTP callback, provider SDK, parser, or registry fallback.
+Every ACPX-discovered agent is represented by a data-only
+`acpx-runtime/v1` definition. Paperclip asks ACPX to probe the locally
+available compatible CLIs and uses the exact registry name ACPX returns;
+Paperclip does not maintain a built-in agent or model catalog. A CLI that fails
+the disposable local ACPX probe is not selectable. ACPX owns the underlying
+launch and runtime state; Paperclip creates no raw command, process/HTTP
+callback, provider SDK, parser, or registry fallback.
 
 ## Config Freshness
 
@@ -406,7 +409,7 @@ Create `~/NAME` as a git worktree, then initialize a new Paperclip instance.
 | `--home <path>` | Home root for worktree instances (default: `~/.paperclip-worktrees`) |
 | `--server-port <port>` | Preferred server port |
 
-For project execution worktrees, Paperclip can also run a project-defined provision command after it creates or reuses an isolated git worktree. Configure this on the project's execution workspace policy (`workspaceStrategy.provisionCommand`). The command runs inside the derived worktree as a launcher-side provisioning step. The ACP agent subprocess receives the resolved directory as `cwd`; Paperclip does not serialize caller, issue, or workspace metadata into its environment.
+For project execution worktrees, Paperclip can also run a project-defined provision command after it creates or reuses an isolated git worktree. Configure this on the project's execution workspace policy (`workspaceStrategy.provisionCommand`). The command runs inside the derived worktree as a launcher-side provisioning step. The ACPX public runtime receives the resolved directory as its session `cwd`; Paperclip does not serialize caller, issue, or workspace metadata into its environment.
 
 ## App-Shipped Skills Catalog
 
@@ -662,11 +665,11 @@ The board UI creates the invite from the agent-management surface.
 
 The external runtime submits an agent join request and waits for board approval. Approval creates/configures the ordinary agent; it does not mint or return a Paperclip agent key, claim secret, generic REST bridge, or operational skill.
 
-The submitted adapter type must be an exact installed, conformance-approved ACP
-definition. Adapter configuration contains only its closed non-secret stable
-ACP option values plus the separately selected execution target and skill
+The submitted adapter type must exactly match a currently discovered local ACPX
+agent. Adapter configuration contains only the non-secret stable ACPX options
+that ACPX advertises, plus the separately selected execution target and skill
 channel. Paperclip rejects command/endpoint/provider-payload fields, generic
 bridge credentials, provider secrets, and native-session selectors. When a
 canonical issue-execution ref is dispatched, the worker supplies a fresh
-request-scoped compiled tool interface through that request's complete ACP
-`mcpServers` replacement.
+request-scoped compiled tool interface through that prompt's ACPX `mcpServers`
+input. Paperclip never retains a prior request's tool authority.

@@ -184,11 +184,11 @@ reranking never select escalation authority.
 ## Workspaces and provider boundary
 
 Every run resolves a persisted `(company, issue, ownership epoch)` workspace
-binding before launch, including projectless work. The common execution-target
-bridge realizes the resolved workspace for local, SSH, sandbox, or plugin
-drivers and culminates in the one worker-supervised ACP subprocess. A
-declarative adapter definition receives no process callback or alternate remote
-transport.
+binding before launch, including projectless work. The ACPX public-runtime
+bridge uses that resolved local workspace for the compatible CLI that ACPX
+launches. The current ACPX public runtime has no Paperclip-managed SSH,
+sandbox, or plugin transport; a declarative adapter definition receives no
+process callback or alternate remote transport.
 
 Paperclip does not inject caller identity, issue/workspace metadata, a general
 REST credential, provider instructions, or another issue's cwd/home into a

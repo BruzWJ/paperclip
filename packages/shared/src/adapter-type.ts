@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { AGENT_ADAPTER_TYPES } from "./constants.js";
 
 export const agentAdapterTypeSchema = z
   .string()
   .trim()
   .min(1)
-  .describe(`Known built-in adapters: ${AGENT_ADAPTER_TYPES.join(", ")}. External adapters may register additional non-empty string types at runtime.`);
+  .describe("Exact ACPX registry agent name; availability is checked dynamically by the server.");
 
 export const optionalAgentAdapterTypeSchema = z
   .string()

@@ -10,22 +10,31 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
+  const isReady = adapter.loaded;
   return (
     <li className="space-y-3 px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{adapter.label}</span>
-            <Badge variant="outline">ACP wire v1</Badge>
+            <Badge variant="outline">ACPX-supplied contract</Badge>
             <Badge
               variant="secondary"
-              className={adapter.loaded ? "text-green-700" : "text-destructive"}
+              className={isReady ? "text-green-700" : "text-destructive"}
             >
-              {adapter.loaded ? "Ready" : "Unavailable"}
+              {isReady ? "Ready" : "Probe failed"}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Exact adapter name <code>{adapter.type}</code> · {adapter.modelsCount} models
+            {isReady ? (
+              <>
+                ACPX agent name <code>{adapter.type}</code> · {adapter.modelsCount} selectable models
+              </>
+            ) : (
+              <>
+                ACPX agent name <code>{adapter.type}</code> · not selectable until its local ACPX probe succeeds
+              </>
+            )}
           </p>
         </div>
         <code className="rounded bg-muted px-2 py-1 text-xs">
@@ -33,31 +42,18 @@ function AdapterCatalogRow({ adapter }: { adapter: AdapterInfo }) {
         </code>
       </div>
 
-      <dl className="grid gap-2 text-xs sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">Pinned frontend</dt>
-          <dd className="break-all font-mono">
-            {adapter.frontendPackage}@{adapter.frontendVersion}
-          </dd>
+      {isReady ? (
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="secondary">
+            {adapter.capabilities.runtimeControls.length} ACPX runtime controls
+          </Badge>
         </div>
-        <div>
-          <dt className="text-muted-foreground">Frontend digest</dt>
-          <dd className="break-all font-mono" title={adapter.frontendDigest}>
-            {adapter.frontendDigest}
-          </dd>
+      ) : (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <span className="font-medium">ACPX probe diagnostic:</span>{" "}
+          {adapter.diagnostic.message}
         </div>
-      </dl>
-
-      <div className="flex flex-wrap gap-1.5">
-        {adapter.capabilities.resume && <Badge variant="secondary">Resume</Badge>}
-        {adapter.capabilities.cancel && <Badge variant="secondary">Cancel</Badge>}
-        {adapter.capabilities.sessionConfig && (
-          <Badge variant="secondary">Session config</Badge>
-        )}
-        {adapter.capabilities.sessionScopedMcpReplacement && (
-          <Badge variant="secondary">Request-scoped MCP</Badge>
-        )}
-      </div>
+      )}
     </li>
   );
 }
@@ -72,7 +68,7 @@ export function AdapterManager() {
       { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Instance settings", href: "/company/settings/instance/general" },
-      { label: "ACP adapters" },
+      { label: "ACPX agents" },
     ]);
   }, [selectedCompany?.name, setBreadcrumbs]);
 
@@ -82,7 +78,7 @@ export function AdapterManager() {
   });
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading ACP catalog...</div>;
+    return <div className="p-4 text-sm text-muted-foreground">Loading ACPX catalog...</div>;
   }
 
   return (
@@ -90,25 +86,25 @@ export function AdapterManager() {
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <Cpu className="h-6 w-6 text-muted-foreground" />
-          <h1 className="text-xl font-semibold">ACP adapters</h1>
+          <h1 className="text-xl font-semibold">ACPX agents</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          This immutable catalog is admitted by the server. Each entry resolves
-          to a pinned, conformance-approved ACP frontend and uses the CLI&apos;s
-          native authentication.
+          ACPX supplies compatible local agent names, models, session settings,
+          and the resolved execution contract. Paperclip refreshes the ACPX
+          catalog automatically and supervises those executions.
         </p>
       </div>
 
       {error ? (
         <Card>
           <CardContent className="py-6 text-sm text-destructive">
-            {error instanceof Error ? error.message : "The ACP catalog is unavailable."}
+            {error instanceof Error ? error.message : "The ACPX catalog is unavailable."}
           </CardContent>
         </Card>
       ) : !adapters?.length ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No ACP adapter is admitted by this server.
+            No compatible ACPX agent is currently available on this host.
           </CardContent>
         </Card>
       ) : (

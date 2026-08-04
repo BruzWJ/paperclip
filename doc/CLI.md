@@ -249,7 +249,7 @@ pnpm paperclipai agent get <agent-id>
 pnpm paperclipai agent runtime:create --company-id <company-id> --payload-json '{...}' [--idempotency-key <key>]
 pnpm paperclipai agent runtime:get <agent-id>
 pnpm paperclipai agent runtime:update <agent-id> --payload-json '{"title":"Senior Builder"}' [--idempotency-key <key>]
-pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"codex","adapterConfig":{"model":"gpt-5.6"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
+pnpm paperclipai agent adapter-revision:create <agent-id> --payload-json '{"adapterType":"<acpx-registry-name>","adapterConfig":{"<acpx-option-id>":"<selected-advertised-value>"},"defaultEnvironmentId":"11111111-1111-4111-8111-111111111111","runtimeConfig":{},"companySkillPins":[],"skillChannel":"operator_native"}'
 pnpm paperclipai agent adapter-revisions <agent-id>
 pnpm paperclipai agent adapter-revision:current <agent-id>
 pnpm paperclipai agent operational:update <agent-id> --payload-json '{"budgetMonthlyAmount":"250"}'
@@ -302,8 +302,10 @@ operational display/environment/budget configuration are three non-overlapping
 owners. An agent created through `runtime:create` remains unconfigured and
 cannot dispatch until `adapter-revision:create` succeeds. Adapter revisions
 always state the exact execution environment, sorted immutable company-skill
-pins, and `skillChannel` (`isolated_skills_home` or `operator_native`). Provider
-credentials and CLI-native configuration stay outside Paperclip. Existing runs
+pins, and the ACPX-supported `skillChannel` (`operator_native`). Legacy
+`isolated_skills_home` revisions fail closed because ACPX exposes no generic
+skills-home contract. Provider credentials and CLI-native configuration stay
+outside Paperclip. Existing runs
 stay pinned to the revision they started with; there is no rollback writer, mixed agent update,
 agent-wide session reset, conversational-session API, managed instruction bundle, generic
 wake command, or local agent API-key bridge.
@@ -377,10 +379,10 @@ By default the command creates an ordinary issue whose immutable request is the 
    and `skills scan-projects` do.
 2. **Agent selection** — appends an immutable adapter revision containing the
    exact sorted company-skill version pins and selected skill channel.
-3. **Invocation exposure** — `isolated_skills_home` materializes those exact
-   versions through a read-only skills home; `operator_native` performs no
-   Paperclip skill-file access. Neither channel grants authority or injects
-   skill content into the Paperclip-authored request.
+3. **Invocation exposure** — ACPX runs use `operator_native`; Paperclip does
+   not materialize a skills home or inject skill content into the
+   Paperclip-authored request. A legacy `isolated_skills_home` selection is
+   rejected before ACPX invocation.
 
 Company skill mutations (`skills install`, `skills import`, `skills create`, and
 `skills scan-projects`) are open to same-company actors by default. Missing
@@ -649,17 +651,17 @@ pnpm paperclipai llm agent-icons
 
 ```sh
 pnpm paperclipai adapter list
-pnpm paperclipai adapter install --payload-json '{"packageName":"@scope/adapter","version":"1.2.3"}'
 pnpm paperclipai adapter get <adapter-type>
-pnpm paperclipai adapter update <adapter-type> --payload-json '{"disabled":true}'
-pnpm paperclipai adapter override <adapter-type> --payload-json '{"paused":true}'
-pnpm paperclipai adapter reload <adapter-type>
-pnpm paperclipai adapter reinstall <adapter-type>
-pnpm paperclipai adapter delete <adapter-type>
 pnpm paperclipai adapter config-schema <adapter-type>
 pnpm paperclipai adapter models <adapter-type> --company-id <company-id>
 pnpm paperclipai adapter model-profiles <adapter-type> --company-id <company-id>
 ```
+
+ACPX is the only local-agent availability, identity, model, session-settings,
+and execution-contract authority. Adapter install, update, override, reload,
+reinstall, and delete commands are retired and return `410`; the adapter list
+instead includes non-selectable ACPX probe diagnostics when a registry-listed
+local agent cannot initialize.
 
 ```sh
 pnpm paperclipai asset image:upload --company-id <company-id> --file ./image.png [--namespace docs] [--alt "..."]

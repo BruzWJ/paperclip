@@ -1,6 +1,9 @@
+import { createServer } from "node:http";
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { errorHandler } from "../middleware/error-handler.js";
+import { activityRoutes } from "../routes/activity.js";
 import { denyGenericAgentRest } from "../routes/compiled-interface-only.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
@@ -30,22 +33,13 @@ vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
 }));
 
-async function createApp(
+function createApp(
   actor: Record<string, unknown> = testBoardSessionActor({
     userId: "user-1",
     companyIds: ["company-1"],
     isInstanceAdmin: false,
   }),
 ) {
-  vi.resetModules();
-  const [{ errorHandler }, { activityRoutes }] = await Promise.all([
-    import("../middleware/index.js") as Promise<
-      typeof import("../middleware/index.js")
-    >,
-    import("../routes/activity.js") as Promise<
-      typeof import("../routes/activity.js")
-    >,
-  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -67,9 +61,6 @@ async function requestApp(
   app: express.Express,
   buildRequest: (baseUrl: string) => request.Test,
 ) {
-  const { createServer } = await vi.importActual<typeof import("node:http")>(
-    "node:http",
-  );
   const server = createServer(app);
   try {
     await new Promise<void>((resolve) => {
@@ -104,7 +95,7 @@ describe.sequential("activity routes", () => {
 
   it("limits company activity lists by default", async () => {
     mockActivityService.list.mockResolvedValue([]);
-    const app = await createApp();
+    const app = createApp();
     const response = await requestApp(app, (baseUrl) =>
       request(baseUrl).get("/api/companies/company-1/activity"),
     );
@@ -121,7 +112,7 @@ describe.sequential("activity routes", () => {
 
   it("caps requested company activity list limits", async () => {
     mockActivityService.list.mockResolvedValue([]);
-    const app = await createApp();
+    const app = createApp();
     const response = await requestApp(app, (baseUrl) =>
       request(baseUrl).get(
         "/api/companies/company-1/activity?limit=5000&entityType=issue",
@@ -139,7 +130,7 @@ describe.sequential("activity routes", () => {
   });
 
   it("denies generic agent REST access before activity lookup", async () => {
-    const app = await createApp({
+    const app = createApp({
       type: "agent",
       agentId: "agent-1",
       companyId: "company-1",
@@ -156,7 +147,7 @@ describe.sequential("activity routes", () => {
   });
 
   it("requires company access before creating activity events", async () => {
-    const app = await createApp();
+    const app = createApp();
     const response = await requestApp(app, (baseUrl) =>
       request(baseUrl)
         .post("/api/companies/company-2/activity")

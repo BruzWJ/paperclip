@@ -86,11 +86,11 @@ its issue and ownership epoch. A workspace may be projectless. There is no
 agent-home, adapter-configured working-directory, process-directory, or prior
 session fallback.
 
-The common execution-target bridge carries the closed target and immutable run
-interface through local, SSH, sandbox, or plugin drivers to the one
-worker-supervised ACP subprocess. Declarative adapters do not execute or
-transport provider work. Paperclip never exports a generic API credential or
-identity bridge into the provider process.
+The ACPX public-runtime bridge carries the immutable run interface to one
+locally installed ACPX-compatible CLI. ACPX owns provider launch and session
+lifecycle; Paperclip never exports a generic API credential or identity bridge
+into the provider process. The current public ACPX runtime is local-only, so
+remote target drivers are not advertised for ACPX agents.
 
 ### Tools and Skills
 

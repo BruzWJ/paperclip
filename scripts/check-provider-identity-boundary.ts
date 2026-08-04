@@ -160,7 +160,8 @@ export function providerIdentityBoundaryViolations(
       "...hostLaunch.environment",
     ),
     ...requireFileTokens(repositoryRoot, ATTEMPT_EXECUTOR, [
-      "environment: Object.freeze({})",
+      "executeAcpxOneShotPrompt",
+      "mcpServers: Object.freeze([",
       "message: input.message",
     ]),
     ...requireFileTokens(repositoryRoot, AGENT_ACTION_PORT, [

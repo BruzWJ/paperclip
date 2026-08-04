@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveApprovedAcpLaunch } from "@paperclipai/adapter-utils/acp-subprocess";
 import type { AgentAdapterAcpConfiguration } from "@paperclipai/shared";
 import {
   IssueExecutionTargetAcquisitionRejected,
@@ -8,9 +7,10 @@ import {
 
 const environmentId = "00000000-0000-4000-8000-000000000001";
 const targetDigest = "a".repeat(64);
+const fixtureAgent = "fixture-agent";
 const configuration: AgentAdapterAcpConfiguration = {
-  contractVersion: "acp-subprocess/v1",
-  launchProfile: resolveApprovedAcpLaunch("codex"),
+  contractVersion: "acpx-runtime/v1",
+  launchProfile: { registryName: fixtureAgent },
   sessionConfigSelections: [{ configId: "model", value: "model-1" }],
   model: {
     id: "model",
@@ -77,7 +77,8 @@ describe("canonical issue-execution target acquisition", () => {
       agentId: "agent-1",
       runId: "run-1",
       executionWorkspaceBindingId: "workspace-1",
-      adapterType: "codex",
+      adapterType: fixtureAgent,
+      allowedDrivers: ["local"],
     });
     expect(acquired).toMatchObject({
       adapterConfigRevisionId: "revision-1",

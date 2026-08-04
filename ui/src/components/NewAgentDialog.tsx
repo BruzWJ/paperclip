@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -177,7 +178,9 @@ export function NewAgentDialog() {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <span className="text-sm text-muted-foreground">Add a new agent</span>
+          <DialogTitle className="text-sm font-normal text-muted-foreground">
+            Add a new agent
+          </DialogTitle>
           <Button
             variant="ghost"
             size="icon-xs"
@@ -206,18 +209,18 @@ export function NewAgentDialog() {
               </div>
 
               <Button className="w-full" size="lg" onClick={handleAskAgent}>
-                <Bot className="h-4 w-4 mr-2" />
+                <Bot data-icon="inline-start" className="h-4 w-4 mr-2" />
                 Ask an agent to create a new agent
               </Button>
 
               <div className="grid gap-2">
                 <Button variant="outline" className="w-full" onClick={handleAdvancedConfig}>
-                  <Settings2 className="h-4 w-4 mr-2" />
+                  <Settings2 data-icon="inline-start" className="h-4 w-4 mr-2" />
                   Configure a runtime manually
                 </Button>
                 <div className="space-y-1">
                   <Button variant="outline" className="w-full" onClick={handleInviteExternalAgent}>
-                    <MailPlus className="h-4 w-4 mr-2" />
+                    <MailPlus data-icon="inline-start" className="h-4 w-4 mr-2" />
                     Invite an external agent
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">
@@ -237,7 +240,7 @@ export function NewAgentDialog() {
                   Back
                 </button>
                 <p className="text-sm text-muted-foreground">
-                  Choose the runtime Paperclip should start or resume directly.
+                  Choose the ACPX-discovered runtime Paperclip should use for this agent.
                 </p>
               </div>
 
@@ -309,6 +312,11 @@ export function NewAgentDialog() {
                 >
                   {createAgentInviteMutation.isPending ? "Generating…" : "Generate onboarding prompt"}
                 </Button>
+                {createAgentInviteMutation.isPending ? (
+                  <p role="status" className="mt-2 text-xs text-muted-foreground">
+                    Generating onboarding prompt…
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : (
@@ -340,6 +348,7 @@ export function NewAgentDialog() {
               <Textarea
                 readOnly
                 value={latestAgentPrompt ?? ""}
+                aria-label="Agent onboarding prompt"
                 className="h-(--sz-24rem) resize-y font-mono text-xs"
               />
               <Button

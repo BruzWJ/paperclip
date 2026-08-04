@@ -46,13 +46,6 @@ vi.mock("../services/agent-adapter-config-revisions.js", () => ({
     mockDeriveExecutionTargetDigest,
 }));
 
-// Keep this environment-lifecycle unit isolated from provider package loading.
-// The target digest service normally reaches the built-in adapter catalog,
-// which is outside this test's execution-target boundary.
-vi.mock("../adapters/builtin-adapter-catalog.js", () => ({
-  BUILTIN_ADAPTER_CATALOG: [],
-}));
-
 import {
   EnvironmentRunError,
   environmentRunOrchestrator,
@@ -230,7 +223,8 @@ function acquisitionInput(runId: string) {
     environmentId: environment.id,
     executionTargetDriver: environment.driver,
     executionTargetDigest: "execution-target-digest",
-    adapterType: "codex",
+    adapterType: "fixture-agent-alpha",
+    allowedDrivers: [environment.driver],
     issueId: "issue-1",
     runId: runId,
     agentId: "agent-1",

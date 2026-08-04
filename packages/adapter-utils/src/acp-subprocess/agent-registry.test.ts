@@ -1,95 +1,130 @@
-import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { AcpAgentRegistry } from "acpx/runtime";
 import { describe, expect, it, vi } from "vitest";
 import {
-  CODEX_ACP_FRONTEND_PACKAGE,
-  CODEX_ACP_FRONTEND_SHA256,
-  CODEX_ACP_FRONTEND_VERSION,
-  listApprovedAcpLaunchNames,
-  readApprovedAcpFrontendArtifact,
-  resolveApprovedAcpNativeAuthentication,
-  resolveApprovedAcpLaunch,
+  assertAcpRegistryAgentName,
+  listAcpRegistryAgentNames,
+  loadConfiguredAcpRegistry,
+  resolveAcpRegistryLaunch,
+  sameAcpRegistryLaunch,
 } from "./agent-registry.js";
 
-describe("approved ACP launch registry", () => {
-  it("resolves only the exact pinned codex frontend", () => {
-    const launch = resolveApprovedAcpLaunch("codex");
-    expect(launch.registryName).toBe("codex");
-    expect(launch.targetNativeCli).toBe("codex");
-    expect(launch.frontendPackage).toBe(CODEX_ACP_FRONTEND_PACKAGE);
-    expect(launch.frontendVersion).toBe(CODEX_ACP_FRONTEND_VERSION);
-    expect(launch.frontendDigest).toBe(CODEX_ACP_FRONTEND_SHA256);
-    expect(launch.command).toBe(process.execPath);
-    expect(launch.args).toHaveLength(1);
-    expect(launch.args[0]).toMatch(/codex-acp\/dist\/index\.js$/);
-    expect(listApprovedAcpLaunchNames()).toEqual(["codex"]);
+function registry(input: {
+  readonly names: readonly string[];
+  readonly resolve: (name: string) => string | string[];
+}): AcpAgentRegistry {
+  return {
+    list: () => [...input.names],
+    resolve: input.resolve,
+  };
+}
+
+describe("ACPX launch registry", () => {
+  it("loads a project-configured custom agent through ACPX's resolved config", async () => {
+    const cwd = await mkdtemp(path.join(tmpdir(), "paperclip-acpx-config-"));
+    try {
+      await writeFile(
+        path.join(cwd, ".acpxrc.json"),
+        JSON.stringify({
+          agents: {
+            "custom-runner": {
+              argv: ["./bin/custom-acp", "serve", "--stdio"],
+            },
+          },
+        }),
+        "utf8",
+      );
+      const configured = await loadConfiguredAcpRegistry({ cwd });
+
+      expect(listAcpRegistryAgentNames(configured)).toContain("custom-runner");
+      expect(resolveAcpRegistryLaunch("custom-runner", configured)).toEqual({
+        registryName: "custom-runner",
+        command: "./bin/custom-acp",
+        args: ["serve", "--stdio"],
+      });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
-  it("binds exact native authentication to the complete approved launch", () => {
-    const launch = resolveApprovedAcpLaunch("codex");
-    expect(resolveApprovedAcpNativeAuthentication(launch)).toEqual({
-      statusArgs: ["login", "status"],
-      loginGuidance: "codex login",
+  it("lists exact ACPX-published names without assigning a Paperclip catalog", () => {
+    expect(
+      listAcpRegistryAgentNames(
+        registry({
+          names: ["runner-b", "runner-a", "runner-b"],
+          resolve: () => "not-used",
+        }),
+      ),
+    ).toEqual(["runner-a", "runner-b"]);
+  });
+
+  it("admits only an exact ACPX name without reading its resolved argv", () => {
+    const resolve = vi.fn(() => "must-not-resolve");
+    const candidate = registry({ names: ["runner-a"], resolve });
+
+    expect(assertAcpRegistryAgentName("runner-a", candidate)).toBe("runner-a");
+    expect(resolve).not.toHaveBeenCalled();
+    expect(() => assertAcpRegistryAgentName(" runner-a", candidate)).toThrow(
+      /ACP registry name/,
+    );
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it("resolves argv supplied by ACPX for an exact registry name", () => {
+    const resolve = vi.fn((name: string) => ["npx", "--yes", name]);
+
+    expect(
+      resolveAcpRegistryLaunch(
+        "runner-a",
+        registry({ names: ["runner-a"], resolve }),
+      ),
+    ).toEqual({
+      registryName: "runner-a",
+      command: "npx",
+      args: ["--yes", "runner-a"],
     });
-    expect(() =>
-      resolveApprovedAcpNativeAuthentication({
-        ...launch,
-        targetNativeCli: "codex-other",
-      }),
-    ).toThrow(/approved artifact/);
+    expect(resolve).toHaveBeenCalledExactlyOnceWith("runner-a");
   });
 
-  it("verifies the exact bundled frontend bytes before target materialization", async () => {
-    const artifact = await readApprovedAcpFrontendArtifact(
-      resolveApprovedAcpLaunch("codex"),
-    );
-    expect(artifact.sha256).toBe(CODEX_ACP_FRONTEND_SHA256);
-    expect(createHash("sha256").update(artifact.bytes).digest("hex")).toBe(
-      CODEX_ACP_FRONTEND_SHA256,
-    );
-    expect(artifact.targetFileName).toBe("codex-acp-1.1.7.mjs");
-  });
-
-  it("rejects any persisted artifact identity drift", async () => {
-    const launch = resolveApprovedAcpLaunch("codex");
-    await expect(
-      readApprovedAcpFrontendArtifact({
-        ...launch,
-        frontendDigest: "f".repeat(64),
-      }),
-    ).rejects.toThrow(/approved artifact/);
-  });
-
-  it("rejects target-native selector drift as persisted identity drift", async () => {
-    const launch = resolveApprovedAcpLaunch("codex");
-    await expect(
-      readApprovedAcpFrontendArtifact({
-        ...launch,
-        targetNativeCli: "codex-other",
-      }),
-    ).rejects.toThrow(/approved artifact/);
-  });
-
-  it.each(["unknown", " codex", "codex ", "CODEX", "code-x", ""])(
-    "rejects %j before registry resolution",
+  it.each(["unknown", " runner-a", "runner-a ", "RUNNER-A", ""]) (
+    "rejects %j before ACPX can use its raw-command fallback",
     (name) => {
       const resolve = vi.fn(() => "forbidden-command");
-      const candidate = {
-        list: () => [name, "codex"],
-        resolve,
-      };
-      expect(() => resolveApprovedAcpLaunch(name, candidate)).toThrow();
+
+      expect(() =>
+        resolveAcpRegistryLaunch(
+          name,
+          registry({ names: ["runner-a"], resolve }),
+        ),
+      ).toThrow(/ACP registry name/);
       expect(resolve).not.toHaveBeenCalled();
     },
   );
 
-  it("rejects a drifted registry argv", () => {
-    const resolve = vi.fn(() => [process.execPath, "/tmp/not-codex-acp.js"]);
+  it("rejects malformed argv returned by ACPX", () => {
     expect(() =>
-      resolveApprovedAcpLaunch("codex", {
-        list: () => ["codex"],
-        resolve,
-      }),
-    ).toThrow(/drifted/);
-    expect(resolve).toHaveBeenCalledOnce();
+      resolveAcpRegistryLaunch(
+        "runner-a",
+        registry({ names: ["runner-a"], resolve: () => ["npx", " "] }),
+      ),
+    ).toThrow(/invalid launch argv/);
+  });
+
+  it("compares the complete ACPX-resolved command identity", () => {
+    const launch = {
+      registryName: "runner-a",
+      command: "npx",
+      args: ["--yes", "runner-a"],
+    } as const;
+
+    expect(sameAcpRegistryLaunch(launch, launch)).toBe(true);
+    expect(
+      sameAcpRegistryLaunch(launch, { ...launch, args: ["runner-a"] }),
+    ).toBe(false);
+    expect(
+      sameAcpRegistryLaunch(launch, { ...launch, command: "node" }),
+    ).toBe(false);
   });
 });

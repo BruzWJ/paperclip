@@ -145,8 +145,6 @@
     "server/src/adapters/http/execute.test.ts": 7,
     "server/src/middleware/cloud-tenant-actor.test.ts": 10,
     "server/src/services/adapter-models-env.test.ts": 5,
-    "server/src/services/adapter-registry-bootstrap.reconcile.test.ts": 7,
-    "server/src/services/adapter-registry-bootstrap.test.ts": 7,
     "server/src/services/environment-custom-image-terminal-sessions.test.ts": 11,
     "server/src/services/execution-allowlist.test.ts": 6,
     "server/src/services/execution-policy-bootstrap.test.ts": 15,

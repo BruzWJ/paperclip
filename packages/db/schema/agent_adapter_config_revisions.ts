@@ -120,83 +120,62 @@ export const agentAdapterConfigRevisions = pgTable(
           'companySkillPins',
           'skillChannel'
         ]::text[] = '{}'::jsonb
-        and ${table.acpConfiguration} ->> 'contractVersion' = 'acp-subprocess/v1'
+        and ${table.acpConfiguration} ->> 'contractVersion' = 'acpx-runtime/v1'
         and jsonb_typeof(${table.acpConfiguration} -> 'launchProfile') = 'object'
         and (${table.acpConfiguration} -> 'launchProfile') ?& array[
-          'registryName',
-          'targetNativeCli',
-          'command',
-          'args',
-          'frontendPackage',
-          'frontendVersion',
-          'frontendDigest'
+          'registryName'
         ]::text[]
         and (${table.acpConfiguration} -> 'launchProfile') - array[
-          'registryName',
-          'targetNativeCli',
-          'command',
-          'args',
-          'frontendPackage',
-          'frontendVersion',
-          'frontendDigest'
+          'registryName'
         ]::text[] = '{}'::jsonb
         and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,registryName}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,targetNativeCli}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,command}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,args}') = 'array'
-        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,frontendPackage}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,frontendVersion}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{launchProfile,frontendDigest}') = 'string'
         and ${table.acpConfiguration} #>> '{launchProfile,registryName}' = btrim(${table.acpConfiguration} #>> '{launchProfile,registryName}')
         and ${table.acpConfiguration} #>> '{launchProfile,registryName}' <> ''
-        and ${table.acpConfiguration} #>> '{launchProfile,targetNativeCli}' = btrim(${table.acpConfiguration} #>> '{launchProfile,targetNativeCli}')
-        and ${table.acpConfiguration} #>> '{launchProfile,targetNativeCli}' <> ''
-        and ${table.acpConfiguration} #>> '{launchProfile,command}' = btrim(${table.acpConfiguration} #>> '{launchProfile,command}')
-        and ${table.acpConfiguration} #>> '{launchProfile,command}' <> ''
-        and ${table.acpConfiguration} #>> '{launchProfile,frontendPackage}' = btrim(${table.acpConfiguration} #>> '{launchProfile,frontendPackage}')
-        and ${table.acpConfiguration} #>> '{launchProfile,frontendPackage}' <> ''
-        and ${table.acpConfiguration} #>> '{launchProfile,frontendVersion}' = btrim(${table.acpConfiguration} #>> '{launchProfile,frontendVersion}')
-        and ${table.acpConfiguration} #>> '{launchProfile,frontendVersion}' <> ''
-        and ${table.acpConfiguration} #>> '{launchProfile,frontendDigest}' ~ '^[0-9a-f]{64}$'
-        and case
-          when jsonb_typeof(${table.acpConfiguration} -> 'sessionConfigSelections') = 'array'
-          then jsonb_array_length(${table.acpConfiguration} -> 'sessionConfigSelections') > 0
-          else false
-        end
-        and jsonb_typeof(${table.acpConfiguration} -> 'model') = 'object'
-        and (${table.acpConfiguration} -> 'model') ?& array[
-          'id', 'label', 'value', 'limits'
-        ]::text[]
-        and (${table.acpConfiguration} -> 'model') - array[
-          'id', 'label', 'value', 'limits'
-        ]::text[] = '{}'::jsonb
-        and jsonb_typeof(${table.acpConfiguration} #> '{model,id}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{model,label}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{model,value}') = 'string'
-        and jsonb_typeof(${table.acpConfiguration} #> '{model,limits}') = 'object'
-        and ${table.acpConfiguration} #>> '{model,id}' = btrim(${table.acpConfiguration} #>> '{model,id}')
-        and ${table.acpConfiguration} #>> '{model,id}' <> ''
-        and ${table.acpConfiguration} #>> '{model,label}' = btrim(${table.acpConfiguration} #>> '{model,label}')
-        and ${table.acpConfiguration} #>> '{model,label}' <> ''
-        and ${table.acpConfiguration} #>> '{model,value}' = btrim(${table.acpConfiguration} #>> '{model,value}')
-        and ${table.acpConfiguration} #>> '{model,value}' <> ''
-        and (${table.acpConfiguration} #> '{model,limits}') ?& array[
-          'contextTokenLimit', 'outputTokenLimit'
-        ]::text[]
-        and (${table.acpConfiguration} #> '{model,limits}') - array[
-          'contextTokenLimit', 'inputTokenLimit', 'outputTokenLimit'
-        ]::text[] = '{}'::jsonb
-        and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,contextTokenLimit}') = 'number'
-        and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,outputTokenLimit}') = 'number'
-        and ${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}' ~ '^[1-9][0-9]*$'
-        and ${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}' ~ '^[1-9][0-9]*$'
-        and (${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
+        and jsonb_typeof(${table.acpConfiguration} -> 'sessionConfigSelections') = 'array'
         and (
-          not (${table.acpConfiguration} #> '{model,limits}') ? 'inputTokenLimit'
+          jsonb_typeof(${table.acpConfiguration} -> 'model') = 'null'
           or (
-            jsonb_typeof(${table.acpConfiguration} #> '{model,limits,inputTokenLimit}') = 'number'
-            and ${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}' ~ '^[1-9][0-9]*$'
-            and (${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
+            jsonb_typeof(${table.acpConfiguration} -> 'model') = 'object'
+            and (${table.acpConfiguration} -> 'model') ?& array[
+              'id', 'label', 'value', 'limits'
+            ]::text[]
+            and (${table.acpConfiguration} -> 'model') - array[
+              'id', 'label', 'value', 'limits'
+            ]::text[] = '{}'::jsonb
+            and jsonb_typeof(${table.acpConfiguration} #> '{model,id}') = 'string'
+            and jsonb_typeof(${table.acpConfiguration} #> '{model,label}') = 'string'
+            and jsonb_typeof(${table.acpConfiguration} #> '{model,value}') = 'string'
+            and ${table.acpConfiguration} #>> '{model,id}' = btrim(${table.acpConfiguration} #>> '{model,id}')
+            and ${table.acpConfiguration} #>> '{model,id}' <> ''
+            and ${table.acpConfiguration} #>> '{model,label}' = btrim(${table.acpConfiguration} #>> '{model,label}')
+            and ${table.acpConfiguration} #>> '{model,label}' <> ''
+            and ${table.acpConfiguration} #>> '{model,value}' = btrim(${table.acpConfiguration} #>> '{model,value}')
+            and ${table.acpConfiguration} #>> '{model,value}' <> ''
+            and (
+              jsonb_typeof(${table.acpConfiguration} #> '{model,limits}') = 'null'
+              or (
+                jsonb_typeof(${table.acpConfiguration} #> '{model,limits}') = 'object'
+                and (${table.acpConfiguration} #> '{model,limits}') ?& array[
+                  'contextTokenLimit', 'outputTokenLimit'
+                ]::text[]
+                and (${table.acpConfiguration} #> '{model,limits}') - array[
+                  'contextTokenLimit', 'inputTokenLimit', 'outputTokenLimit'
+                ]::text[] = '{}'::jsonb
+                and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,contextTokenLimit}') = 'number'
+                and jsonb_typeof(${table.acpConfiguration} #> '{model,limits,outputTokenLimit}') = 'number'
+                and ${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}' ~ '^[1-9][0-9]*$'
+                and ${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}' ~ '^[1-9][0-9]*$'
+                and (${table.acpConfiguration} #>> '{model,limits,outputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
+                and (
+                  not (${table.acpConfiguration} #> '{model,limits}') ? 'inputTokenLimit'
+                  or (
+                    jsonb_typeof(${table.acpConfiguration} #> '{model,limits,inputTokenLimit}') = 'number'
+                    and ${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}' ~ '^[1-9][0-9]*$'
+                    and (${table.acpConfiguration} #>> '{model,limits,inputTokenLimit}')::numeric <= (${table.acpConfiguration} #>> '{model,limits,contextTokenLimit}')::numeric
+                  )
+                )
+              )
+            )
           )
         )
         and jsonb_typeof(${table.acpConfiguration} -> 'executionTargetSelector') = 'object'

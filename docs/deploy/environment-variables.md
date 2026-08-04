@@ -34,7 +34,7 @@ an unsupported alias is present.
 
 ## Provider Runtime Boundary
 
-Paperclip injects no caller identity, issue metadata, workspace metadata, general REST credential, or wake payload through provider-child environment variables. A local provider receives only its resolved execution directory as the process working directory, operator-authored provider-native environment/configuration, and the run-scoped compiled-tools transport supplied by the adapter runtime.
+Paperclip injects no caller identity, issue metadata, workspace metadata, general REST credential, or wake payload through ACPX-owned provider-process environment variables. A local provider receives only its resolved execution directory as the process working directory, operator-authored provider-native environment/configuration, and the run-scoped compiled-tools transport supplied by the ACPX runtime.
 
 Provider-native authentication and configuration stay operator-owned and target-scoped. Paperclip does not infer, seed, copy, or reconcile a provider home or credential store.
 

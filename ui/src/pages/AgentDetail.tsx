@@ -17,7 +17,8 @@ import { queryKeys } from "../lib/queryKeys";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
-import { adapterLabels, help } from "../components/agent-config-primitives";
+import { help } from "../components/agent-config-primitives";
+import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { MembershipAction } from "../components/MembershipAction";
@@ -420,9 +421,17 @@ export function AgentDetail() {
   const agentStarred = isStarred(membershipsQuery.data, "agent", agent.id);
   const agentStarPending = agentMembershipPending && membershipMutation.variables?.starred !== undefined;
   const agentJoinLeavePending = agentMembershipPending && membershipMutation.variables?.starred === undefined;
+  const pendingAgentStatus = configSaving
+    ? "Saving agent configuration…"
+    : adoptPluginManagement.isPending
+      ? "Adopting plugin-managed agent…"
+      : terminatePluginTriage.isPending
+        ? "Terminating plugin-managed agent…"
+        : null;
 
   return (
     <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
+      {pendingAgentStatus ? <p className="sr-only" role="status">{pendingAgentStatus}</p> : null}
       {showLeftAgentNotice ? (
         <div className="flex items-center gap-3 border border-yellow-300/35 bg-yellow-300/10 px-3 py-2 text-sm text-yellow-900 dark:text-yellow-100">
           <p className="min-w-0 flex-1">
@@ -485,7 +494,11 @@ export function AgentDetail() {
             value={agent.icon}
             onChange={(icon) => updateIcon.mutate(icon)}
           >
-            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
+            <button
+              type="button"
+              className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors"
+              aria-label="Change agent icon"
+            >
               <AgentIcon icon={agent.icon} className="h-6 w-6" />
             </button>
           </AgentIconPicker>
@@ -560,13 +573,13 @@ export function AgentDetail() {
         </Tabs>
       )}
 
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {actionError && <p className="text-sm text-destructive" role="alert">{actionError}</p>}
       {isPendingApproval && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/30 dark:text-amber-200">
           <span>This agent is pending board approval and cannot be invoked yet.</span>
           <Button variant="outline" size="sm" asChild>
             <Link to="/approvals">
-              <CheckCircle2 className="h-3.5 w-3.5 sm:mr-1" />
+              <CheckCircle2 data-icon="inline-start" className="h-3.5 w-3.5 sm:mr-1" />
               <span>Review approval</span>
             </Link>
           </Button>
@@ -1030,7 +1043,7 @@ function AgentConfigurePage({
                         <Badge variant="outline">Current</Badge>
                       ) : null}
                       <span className="mx-1">·</span>
-                      <span>{adapterLabels[revision.adapterType] ?? revision.adapterType}</span>
+                      <span>{getAdapterLabel(revision.adapterType)}</span>
                       <span className="mx-1">·</span>
                       <span>{formatDate(revision.createdAt)}</span>
                     </div>
@@ -1076,17 +1089,6 @@ function ConfigurationTab({
   const [formCancelAction, setFormCancelAction] = useState<(() => void) | null>(null);
   const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] = useState(false);
   const lastAgentRef = useRef(agent);
-  const { data: adapterModels } = useQuery({
-    queryKey: ["agents", agent.id, "adapter-models", agent.adapterType],
-    queryFn: () => {
-      if (!companyId || !agent.adapterType || !agent.adapterConfig) {
-        throw new Error("Agent adapter configuration is absent.");
-      }
-      return agentsApi.adapterModels(companyId, agent.adapterType);
-    },
-    enabled: Boolean(companyId && agent.adapterType && agent.adapterConfig),
-  });
-
   const updateConfiguration = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
       const partitioned = partitionAgentConfigurationPatch(data);
@@ -1205,22 +1207,33 @@ function ConfigurationTab({
 
   return (
     <div className="space-y-6">
-      <AgentConfigForm
-        mode="edit"
-        agent={agent}
-        onSave={(patch) => updateConfiguration.mutateAsync(patch)}
-        isSaving={isConfigSaving}
-        adapterModels={adapterModels}
-        onDirtyChange={setFormDirty}
-        onSaveActionChange={(action) =>
-          setFormSaveAction(() => action)
-        }
-        onCancelActionChange={(action) =>
-          setFormCancelAction(() => action)
-        }
-        hideInlineSave
-        sectionLayout="cards"
-      />
+      {updateConfiguration.isPending ? (
+        <p aria-live="polite" role="status" className="text-xs text-muted-foreground">
+          Saving agent configuration…
+        </p>
+      ) : null}
+      <fieldset
+        aria-busy={isConfigSaving}
+        aria-label="Agent configuration"
+        className="m-0 min-w-0 border-0 p-0"
+        disabled={updateConfiguration.isPending}
+      >
+        <AgentConfigForm
+          mode="edit"
+          agent={agent}
+          onSave={(patch) => updateConfiguration.mutateAsync(patch)}
+          isSaving={isConfigSaving}
+          onDirtyChange={setFormDirty}
+          onSaveActionChange={(action) =>
+            setFormSaveAction(() => action)
+          }
+          onCancelActionChange={(action) =>
+            setFormCancelAction(() => action)
+          }
+          hideInlineSave
+          sectionLayout="cards"
+        />
+      </fieldset>
       <p className="text-xs text-muted-foreground">
         Saved adapter config affects the next run. Active runs keep the config they started with, and config changes may start a fresh adapter session.
       </p>

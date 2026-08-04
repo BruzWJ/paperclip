@@ -25,8 +25,8 @@ import type {
   CompanyPortabilityCollisionStrategy,
   CompanySkillChannel,
   Environment,
+  EnvironmentDriver,
 } from "@paperclipai/shared";
-import { supportedEnvironmentDriversForAdapter } from "@paperclipai/shared";
 import type {
   AdapterConfigSchema,
   CreateConfigValues,
@@ -34,7 +34,6 @@ import type {
 import { teamCatalogApi } from "../api/teamCatalog";
 import { agentsApi } from "../api/agents";
 import { environmentsApi } from "../api/environments";
-import { listVisibleUIAdapters } from "../adapters/metadata";
 import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import {
   adapterConfigSchemaFieldErrors,
@@ -870,8 +869,10 @@ const STEP_LABELS: Record<WizardStep, string> = {
   preview: "Preview",
 };
 
-function catalogAdapterOptions(): Array<{ type: string; label: string }> {
-  return listVisibleUIAdapters()
+function catalogAdapterOptions(
+  adapters: readonly { type: string; label: string }[],
+): Array<{ type: string; label: string }> {
+  return adapters
     .map((adapter) => ({ type: adapter.type, label: adapter.label }));
 }
 
@@ -907,6 +908,8 @@ export function catalogAdapterConfigurationIsReady(input: {
   schemaError: string | null;
   adapterConfig: Record<string, unknown>;
   defaultEnvironmentId: string;
+  /** When supplied, reject stale selections that ACPX no longer admits. */
+  executionEnvironmentIds?: readonly string[];
 }): boolean {
   return Boolean(
     !input.isLoading
@@ -917,6 +920,10 @@ export function catalogAdapterConfigurationIsReady(input: {
       input.adapterConfig,
     ).length === 0
     && input.defaultEnvironmentId
+    && (
+      !input.executionEnvironmentIds
+      || input.executionEnvironmentIds.includes(input.defaultEnvironmentId)
+    )
   );
 }
 
@@ -944,7 +951,7 @@ type ApplyPhase = "form" | "applying" | "done" | "error";
 // Install hook — the onboarding seam (design §6 + §12.5).
 //
 // `useInstallTeamCatalogEntry` owns the preview/install engine: option building,
-// the two API mutations, and the resolved result/phase state. The installer
+// the two API actions, and the resolved result/phase state. The installer
 // dialog drives it with operator-entered form state; a future onboarding step
 // can drive the same hook with `{ simplified: true }` and default form state to
 // run the collapsed, no-target-manager flow without any UI rework.
@@ -1017,6 +1024,9 @@ export function useInstallTeamCatalogEntry({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [installResult, setInstallResult] = useState<CatalogTeamInstallResult | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const previewInFlightRef = useRef(false);
+  const installInFlightRef = useRef(false);
 
   const steps = useMemo(() => computeSteps(team, simplified), [team, simplified]);
 
@@ -1068,35 +1078,43 @@ export function useInstallTeamCatalogEntry({
     [buildPreviewOptions],
   );
 
-  const previewMutation = useMutation({
-    mutationFn: (form: TeamInstallFormState) =>
-      teamCatalogApi.preview(companyId, team.id, buildPreviewOptions(form)),
-    onSuccess: (result) => {
-      setPreviewResult(result);
-      setPreviewError(null);
-    },
-    onError: (error) => {
-      setPreviewError(error instanceof Error ? error.message : "Failed to load install preview.");
-    },
-  });
+  const runPreview = useCallback((form: TeamInstallFormState) => {
+    if (previewInFlightRef.current) return;
+    previewInFlightRef.current = true;
+    setIsPreviewing(true);
+    void (async () => {
+      try {
+        const result = await teamCatalogApi.preview(companyId, team.id, buildPreviewOptions(form));
+        setPreviewResult(result);
+        setPreviewError(null);
+      } catch (error) {
+        setPreviewError(error instanceof Error ? error.message : "Failed to load install preview.");
+      } finally {
+        previewInFlightRef.current = false;
+        setIsPreviewing(false);
+      }
+    })();
+  }, [buildPreviewOptions, companyId, team.id]);
 
-  const installMutation = useMutation({
-    mutationFn: (form: TeamInstallFormState) =>
-      teamCatalogApi.install(companyId, team.id, buildInstallOptions(form)),
-    onMutate: () => {
-      setPhase("applying");
-      setApplyError(null);
-    },
-    onSuccess: (result) => {
-      setInstallResult(result);
-      setPhase("done");
-      onInstalled?.(result);
-    },
-    onError: (error) => {
-      setPhase("error");
-      setApplyError(error instanceof Error ? error.message : "Install failed.");
-    },
-  });
+  const runInstall = useCallback((form: TeamInstallFormState) => {
+    if (installInFlightRef.current) return;
+    installInFlightRef.current = true;
+    setPhase("applying");
+    setApplyError(null);
+    void (async () => {
+      try {
+        const result = await teamCatalogApi.install(companyId, team.id, buildInstallOptions(form));
+        setInstallResult(result);
+        setPhase("done");
+        onInstalled?.(result);
+      } catch (error) {
+        setPhase("error");
+        setApplyError(error instanceof Error ? error.message : "Install failed.");
+      } finally {
+        installInFlightRef.current = false;
+      }
+    })();
+  }, [buildInstallOptions, companyId, onInstalled, team.id]);
 
   const reset = useCallback(() => {
     setPhase("form");
@@ -1113,11 +1131,11 @@ export function useInstallTeamCatalogEntry({
     setPhase,
     previewResult,
     previewError,
-    isPreviewing: previewMutation.isPending,
+    isPreviewing,
     installResult,
     applyError,
-    runPreview: previewMutation.mutate,
-    runInstall: installMutation.mutate,
+    runPreview,
+    runInstall,
     buildPreviewOptions,
     buildInstallOptions,
     reset,
@@ -1274,20 +1292,6 @@ function TeamInstallerDialog({
     }));
   }
 
-  function handleSkillChannelChange(
-    slug: string,
-    skillChannel: CompanySkillChannel,
-  ) {
-    setAdapterOverrides((current) => {
-      const override = current[slug];
-      if (!override) return current;
-      return {
-        ...current,
-        [slug]: { ...override, skillChannel },
-      };
-    });
-  }
-
   const previewMutation = useMutation({
     mutationFn: () => teamCatalogApi.preview(companyId, team.id, buildPreviewOptions()),
     onSuccess: (result) => {
@@ -1315,6 +1319,8 @@ function TeamInstallerDialog({
       setApplyError(error instanceof Error ? error.message : "Install failed.");
     },
   });
+  const isPreviewing = previewMutation.isPending;
+  const isPending = isPreviewing || installMutation.isPending;
 
   // Auto-load preview when reaching the preview step.
   const previewRequested = useRef(false);
@@ -1356,13 +1362,16 @@ function TeamInstallerDialog({
   const needsScriptsConfirm = team.trustLevel === "scripts_executables";
 
   function goNext() {
+    if (isPending) return;
     if (stepIndex < steps.length - 1) setStepIndex((i) => i + 1);
   }
   function goBack() {
+    if (isPending) return;
     if (stepIndex > 0) setStepIndex((i) => i - 1);
   }
 
   function submitInstall() {
+    if (isPending) return;
     if (needsScriptsConfirm && !confirmScripts) {
       setConfirmScripts(true);
       return;
@@ -1400,7 +1409,17 @@ function TeamInstallerDialog({
     ) : null;
 
   const body = (
-    <>
+    <div aria-busy={isPending}>
+        {isPreviewing ? (
+          <p className="mb-3 text-sm text-muted-foreground" role="status">
+            Refreshing install preview…
+          </p>
+        ) : null}
+      <fieldset
+        aria-label="Team installation settings"
+        className="contents"
+        disabled={isPending}
+      >
         {phase === "form" && (
           <div className="space-y-4 overflow-auto pr-1 md:max-h-(--sz-60vh)">
             {currentStep === "target_manager" && (
@@ -1441,7 +1460,6 @@ function TeamInstallerDialog({
                 configValues={adapterConfigValues}
                 onAdapterChange={handleAdapterChange}
                 onConfigChange={handleAdapterConfigChange}
-                onSkillChannelChange={handleSkillChannelChange}
                 onConfigurationReadyChange={(slug, ready) =>
                   setAdapterConfigurationReady((current) =>
                     current[slug] === ready
@@ -1459,14 +1477,21 @@ function TeamInstallerDialog({
                 error={previewError}
                 result={previewResult}
                 collisionStrategy={collisionStrategy}
-                onCollisionStrategyChange={(s) => { setCollisionStrategy(s); previewRequested.current = false; previewMutation.mutate(); }}
+                onCollisionStrategyChange={(s) => {
+                  if (isPending) return;
+                  setCollisionStrategy(s);
+                  previewRequested.current = false;
+                  previewMutation.mutate();
+                }}
                 nameOverrides={nameOverrides}
                 onRename={(slug, name) => setNameOverrides((cur) => ({ ...cur, [slug]: name }))}
                 secretValues={secretValues}
                 visibleSecretKeys={visibleSecretKeys}
                 onSecretChange={(key, value) => setSecretValues((cur) => ({ ...cur, [key]: value }))}
                 onToggleSecretVisibility={(key) => setVisibleSecretKeys((cur) => ({ ...cur, [key]: !cur[key] }))}
-                onRetry={() => previewMutation.mutate()}
+                onRetry={() => {
+                  if (!isPending) previewMutation.mutate();
+                }}
               />
             )}
           </div>
@@ -1488,7 +1513,8 @@ function TeamInstallerDialog({
             </div>
           </div>
         )}
-    </>
+      </fieldset>
+    </div>
   );
 
   const footer =
@@ -1496,9 +1522,9 @@ function TeamInstallerDialog({
       <div className="flex items-center justify-between gap-3">
         <div>
           {stepIndex > 0 ? (
-            <Button variant="ghost" onClick={goBack}>Back</Button>
+            <Button variant="ghost" onClick={goBack} disabled={isPending}>Back</Button>
           ) : (
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="ghost" onClick={onClose} disabled={isPending}>Cancel</Button>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -1514,18 +1540,18 @@ function TeamInstallerDialog({
           )}
           {currentStep === "preview" ? (
             needsScriptsConfirm && confirmScripts ? (
-              <Button variant="destructive" onClick={submitInstall} disabled={installBlocked || previewMutation.isPending}>
-                <AlertTriangle className="h-4 w-4" />
+              <Button variant="destructive" onClick={submitInstall} disabled={isPending || installBlocked}>
+                <AlertTriangle data-icon="inline-start" className="h-4 w-4" />
                 Confirm — install with executables
               </Button>
             ) : (
-              <Button onClick={submitInstall} disabled={installBlocked || previewMutation.isPending || !previewResult}>
+              <Button onClick={submitInstall} disabled={isPending || installBlocked || !previewResult}>
                 {needsScriptsConfirm ? <AlertTriangle className="h-4 w-4" /> : <Download className="h-4 w-4" />}
                 {needsScriptsConfirm ? "Install with executables" : "Install team"}
               </Button>
             )
           ) : (
-            <Button onClick={goNext} disabled={!canContinue(currentStep)}>Continue</Button>
+            <Button onClick={goNext} disabled={isPending || !canContinue(currentStep)}>Continue</Button>
           )}
         </div>
       </div>
@@ -1535,13 +1561,19 @@ function TeamInstallerDialog({
       </div>
     ) : null;
 
+  // A preview is read-only, so an operator must be able to leave if its request
+  // stalls. Installation remains non-dismissible because it mutates company data.
   const dismissable = phase !== "applying";
 
   // <768px → full-height Sheet with sticky footer (design §11); otherwise Dialog.
   if (isMobileSheet) {
     return (
       <Sheet open={open} onOpenChange={(next) => { if (!next && dismissable) onClose(); }}>
-        <SheetContent side="bottom" className="flex h-(--sz-100dvh) flex-col gap-0 p-0">
+        <SheetContent
+          side="bottom"
+          className="flex h-(--sz-100dvh) flex-col gap-0 p-0"
+          showCloseButton={dismissable}
+        >
           <SheetHeader className="border-b border-border">
             <SheetTitle>{headerTitle}</SheetTitle>
             {headerDescription && <SheetDescription>{headerDescription}</SheetDescription>}
@@ -1555,7 +1587,7 @@ function TeamInstallerDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && dismissable) onClose(); }}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl" showCloseButton={dismissable}>
         <DialogHeader>
           <DialogTitle>{headerTitle}</DialogTitle>
           {headerDescription && <DialogDescription>{headerDescription}</DialogDescription>}
@@ -1834,7 +1866,6 @@ export function StepAgentAdapters({
   configValues,
   onAdapterChange,
   onConfigChange,
-  onSkillChannelChange,
   onConfigurationReadyChange,
 }: {
   companyId: string;
@@ -1846,17 +1877,23 @@ export function StepAgentAdapters({
     slug: string,
     patch: Partial<CreateConfigValues>,
   ) => void;
-  onSkillChannelChange: (
-    slug: string,
-    skillChannel: CompanySkillChannel,
-  ) => void;
   onConfigurationReadyChange: (slug: string, ready: boolean) => void;
 }) {
   const admittedAdapters = useAdapterCatalogSync();
   const missingCount = team.agentSlugs.filter(
     (slug) => !adapterOverrides[slug]?.adapterType,
   ).length;
-  const adapterOptions = useMemo(catalogAdapterOptions, [admittedAdapters]);
+  const adapterOptions = useMemo(
+    () => catalogAdapterOptions(admittedAdapters),
+    [admittedAdapters],
+  );
+  const adapterDriversByType = useMemo(
+    () => new Map(admittedAdapters.map((adapter) => [
+      adapter.type,
+      adapter.drivers,
+    ])),
+    [admittedAdapters],
+  );
   return (
     <div className="space-y-4">
       <div
@@ -1907,8 +1944,8 @@ export function StepAgentAdapters({
                     )
                   }
                   onConfigChange={onConfigChange}
-                  onSkillChannelChange={onSkillChannelChange}
                   onConfigurationReadyChange={onConfigurationReadyChange}
+                  drivers={adapterDriversByType.get(adapterType) ?? []}
                 />
               )}
             </li>
@@ -1930,8 +1967,8 @@ function CatalogAgentAdapterConfiguration({
   override,
   values,
   onConfigChange,
-  onSkillChannelChange,
   onConfigurationReadyChange,
+  drivers,
 }: {
   companyId: string;
   slug: string;
@@ -1941,22 +1978,16 @@ function CatalogAgentAdapterConfiguration({
     slug: string,
     patch: Partial<CreateConfigValues>,
   ) => void;
-  onSkillChannelChange: (
-    slug: string,
-    skillChannel: CompanySkillChannel,
-  ) => void;
   onConfigurationReadyChange: (slug: string, ready: boolean) => void;
+  drivers: readonly EnvironmentDriver[];
 }) {
   const { data: environments = [] } = useQuery<Environment[]>({
     queryKey: queryKeys.environments.list(companyId),
     queryFn: () => environmentsApi.list(companyId),
   });
   const allowedDrivers = useMemo(
-    () =>
-      new Set(
-        supportedEnvironmentDriversForAdapter(override.adapterType),
-      ),
-    [override.adapterType],
+    () => new Set(drivers),
+    [drivers],
   );
   const executionEnvironments = useMemo(
     () =>
@@ -1987,6 +2018,7 @@ function CatalogAgentAdapterConfiguration({
     schemaError,
     adapterConfig: override.adapterConfig,
     defaultEnvironmentId: override.defaultEnvironmentId,
+    executionEnvironmentIds: executionEnvironments.map((environment) => environment.id),
   });
 
   useEffect(() => {
@@ -1995,30 +2027,15 @@ function CatalogAgentAdapterConfiguration({
 
   return (
     <div className="space-y-3 rounded-md border border-border bg-accent/10 p-3">
-      <label className="grid gap-1.5 text-xs">
+      <div className="grid gap-1.5 text-xs">
         <span className="font-medium">Skill channel</span>
-        <Select
-          value={override.skillChannel}
-          onValueChange={(skillChannel) =>
-            onSkillChannelChange(
-              slug,
-              skillChannel as CompanySkillChannel,
-            )
-          }
-        >
-          <SelectTrigger aria-label={`${slug} skill channel`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="isolated_skills_home">
-              Paperclip-managed isolated skills home
-            </SelectItem>
-            <SelectItem value="operator_native">
-              Operator-managed native skills
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </label>
+        <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs">
+          Operator-managed native skills
+        </div>
+        <span className="text-muted-foreground">
+          ACPX uses the local CLI's native skill handling.
+        </span>
+      </div>
       <label className="grid gap-1.5 text-xs">
         <span className="font-medium">Execution environment</span>
         <Select
@@ -2049,7 +2066,6 @@ function CatalogAgentAdapterConfiguration({
           config={{}}
           eff={(_group, _field, original) => original}
           mark={() => undefined}
-          models={[]}
           applySchemaDefaults={false}
           resolvedSchema={schema}
         />
@@ -2110,6 +2126,7 @@ function PlanRow({
       <ArrowRight className="h-3 w-3 text-muted-foreground" />
       {canRename && onRename ? (
         <Input
+          aria-label="Imported item name"
           value={override ?? plannedName}
           onChange={(e) => onRename(slug, e.target.value)}
           className="h-7 max-w-(--sz-14rem) font-mono text-xs"
@@ -2166,7 +2183,7 @@ export function StepPreview({
           {error}
         </div>
         <Button variant="outline" onClick={onRetry}>
-          <RotateCcw className="h-4 w-4" /> Retry
+          <RotateCcw data-icon="inline-start" className="h-4 w-4" /> Retry
         </Button>
       </div>
     );
@@ -2194,7 +2211,7 @@ export function StepPreview({
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium">Collision strategy</span>
         <Select value={collisionStrategy} onValueChange={(v) => onCollisionStrategyChange(v as CompanyPortabilityCollisionStrategy)}>
-          <SelectTrigger className="h-8 w-40">
+          <SelectTrigger aria-label="Collision strategy" className="h-8 w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -2273,6 +2290,7 @@ export function StepPreview({
             const formKey = envInputFormKey(input);
             const visible = Boolean(visibleSecretKeys[formKey]);
             const missingRequired = input.requirement === "required" && (secretValues[formKey] ?? "").trim().length === 0;
+            const requiredErrorId = `${formKey}-required-error`;
             return (
               <li key={formKey} className="grid gap-2 px-3 py-2 text-sm sm:grid-cols-(--gtc-56) sm:items-center">
                 <div className="flex min-w-0 items-center gap-2">
@@ -2289,31 +2307,39 @@ export function StepPreview({
                     {input.kind}
                   </Badge>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    type={visible ? "text" : "password"}
-                    value={secretValues[formKey] ?? ""}
-                    onChange={(event) => onSecretChange(formKey, event.target.value)}
-                    placeholder={input.requirement === "required" ? "Required" : "Optional"}
-                    aria-label={`${input.key} value`}
-                    aria-invalid={missingRequired || undefined}
-                    className={cn("h-8 min-w-0", missingRequired && "border-rose-500/60 focus-visible:ring-rose-500/30")}
-                  />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        className="h-8 w-8"
-                        onClick={() => onToggleSecretVisibility(formKey)}
-                        aria-label={visible ? `Hide ${input.key}` : `Show ${input.key}`}
-                      >
-                        {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{visible ? "Hide value" : "Show value"}</TooltipContent>
-                  </Tooltip>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type={visible ? "text" : "password"}
+                      value={secretValues[formKey] ?? ""}
+                      onChange={(event) => onSecretChange(formKey, event.target.value)}
+                      placeholder={input.requirement === "required" ? "Required" : "Optional"}
+                      aria-label={`${input.key} value`}
+                      aria-invalid={missingRequired || undefined}
+                      aria-describedby={missingRequired ? requiredErrorId : undefined}
+                      className={cn("h-8 min-w-0", missingRequired && "border-rose-500/60 focus-visible:ring-rose-500/30")}
+                    />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="h-8 w-8"
+                          onClick={() => onToggleSecretVisibility(formKey)}
+                          aria-label={visible ? `Hide ${input.key}` : `Show ${input.key}`}
+                        >
+                          {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{visible ? "Hide value" : "Show value"}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  {missingRequired ? (
+                    <p id={requiredErrorId} role="alert" className="text-xs text-destructive">
+                      {input.key} is required.
+                    </p>
+                  ) : null}
                 </div>
               </li>
             );
@@ -2713,6 +2739,7 @@ export function TeamCatalog() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label="Search teams"
             value={q}
             onChange={(e) => setFilterParam("search", e.target.value)}
             placeholder="Search teams"
@@ -2815,7 +2842,7 @@ export function TeamCatalog() {
                 Failed to load team catalog.
               </div>
               <Button variant="outline" size="sm" className="mt-3" onClick={() => catalogQuery.refetch()}>
-                <RotateCcw className="h-3.5 w-3.5" /> Retry
+                <RotateCcw data-icon="inline-start" className="h-3.5 w-3.5" /> Retry
               </Button>
             </div>
           ) : teams.length === 0 ? (

@@ -7,7 +7,7 @@ import {
 
 const registry: AdapterRegistryEntry[] = [
   {
-    adapterType: "codex",
+    adapterType: "fixture-acpx-agent",
     enabled: true,
     runtimeImage: "registry.example/provider-runtime:v1",
     allowFqdns: ["provider.example"],
@@ -21,8 +21,8 @@ const registry: AdapterRegistryEntry[] = [
 ];
 
 describe("requireAdapterRuntime", () => {
-  it("resolves the exact operator-declared Codex runtime", () => {
-    expect(requireAdapterRuntime("codex", registry)).toEqual({
+  it("resolves the exact operator-declared ACPX runtime mapping", () => {
+    expect(requireAdapterRuntime("fixture-acpx-agent", registry)).toEqual({
       runtimeImage: "registry.example/provider-runtime:v1",
       allowFqdns: ["provider.example"],
       probeCommand: ["provider", "--version"],
@@ -41,13 +41,13 @@ describe("requireAdapterRuntime", () => {
 
   it("rejects missing, absent, and disabled registry entries", () => {
     expect(() =>
-      requireAdapterRuntime("codex", undefined)
+      requireAdapterRuntime("fixture-acpx-agent", undefined)
     ).toThrow(/requires an explicit adapter runtime registry/);
     expect(() =>
       requireAdapterRuntime("missing", registry)
     ).toThrow(/not an enabled entry/);
     expect(() =>
-      requireAdapterRuntime("codex", [
+      requireAdapterRuntime("fixture-acpx-agent", [
         {
           ...registry[0]!,
           enabled: false,
@@ -58,9 +58,9 @@ describe("requireAdapterRuntime", () => {
 
   it("rejects a registry entry without an exact runtime image", () => {
     expect(() =>
-      requireAdapterRuntime("codex", [
+      requireAdapterRuntime("fixture-acpx-agent", [
         {
-          adapterType: "codex",
+          adapterType: "fixture-acpx-agent",
           enabled: true,
           runtimeImage: " ",
         },
@@ -74,29 +74,29 @@ describe("resolveRunAdapterType", () => {
     expect(
       resolveRunAdapterType(
         "external-provider",
-        "codex",
+        "fixture-acpx-agent",
       ),
     ).toBe("external-provider");
   });
 
   it("uses the explicit environment default for an absent run type", () => {
-    expect(resolveRunAdapterType(undefined, "codex")).toBe(
-      "codex",
+    expect(resolveRunAdapterType(undefined, "fixture-acpx-agent")).toBe(
+      "fixture-acpx-agent",
     );
-    expect(resolveRunAdapterType(null, "codex")).toBe(
-      "codex",
+    expect(resolveRunAdapterType(null, "fixture-acpx-agent")).toBe(
+      "fixture-acpx-agent",
     );
   });
 
   it("rejects blank or whitespace-normalized identifiers instead of rewriting them", () => {
-    expect(() => resolveRunAdapterType(undefined, " ")).toThrow(
-      /exact default adapter type/,
+    expect(() => resolveRunAdapterType(undefined, undefined)).toThrow(
+      /ACPX-selected agent type/,
     );
     expect(() =>
-      resolveRunAdapterType(" external-provider ", "codex")
+      resolveRunAdapterType(" external-provider ", "fixture-acpx-agent")
     ).toThrow(/exact per-run adapter type/);
     expect(() =>
-      resolveRunAdapterType("", "codex")
+      resolveRunAdapterType("", "fixture-acpx-agent")
     ).toThrow(/exact per-run adapter type/);
   });
 });

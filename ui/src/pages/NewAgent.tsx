@@ -19,7 +19,6 @@ import { useAdapterCatalogSync } from "../adapters/use-adapter-catalog";
 import { isValidAdapterType } from "../adapters/metadata";
 import { buildNewAgentControlPlanePayloads } from "../lib/new-agent-control-plane-payload";
 import { useStructuralAdapterConfiguration } from "../adapters/use-structural-adapter-configuration";
-import type { CompanySkillChannel } from "@paperclipai/shared";
 import {
   RuntimeAgentConfigurationFields,
   createEmptyRuntimeAgentConfigurationValues,
@@ -52,8 +51,10 @@ export function NewAgent() {
     );
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [selectedSkillKeys, setSelectedSkillKeys] = useState<string[]>([]);
-  const [skillChannel, setSkillChannel] =
-    useState<CompanySkillChannel>("isolated_skills_home");
+  // ACPX's public local runtime accepts the operator-native skill channel;
+  // Paperclip must not offer the legacy isolated-home mode that execution
+  // rejects before it reaches ACPX.
+  const skillChannel = "operator_native" as const;
   const [formError, setFormError] = useState<string | null>(null);
   const createIdempotencyKeyRef = useRef(crypto.randomUUID());
   const admittedAdapters = useAdapterCatalogSync();
@@ -205,7 +206,8 @@ export function NewAgent() {
         {/* Name */}
         <div className="px-4 pt-4 pb-2">
           <input
-            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
+            aria-label="Agent name"
+            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring"
             placeholder="Agent name"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -216,7 +218,8 @@ export function NewAgent() {
         {/* Title */}
         <div className="px-4 pb-2">
           <input
-            className="w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40"
+            aria-label="Agent title"
+            className="w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring"
             placeholder="Title (display only)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -231,7 +234,7 @@ export function NewAgent() {
               choose this agent as a target.
             </span>
             <textarea
-              className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+              className="min-h-24 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={capabilities}
               onChange={(event) => setCapabilities(event.target.value)}
               placeholder="What work is this agent equipped to handle?"
@@ -306,28 +309,16 @@ export function NewAgent() {
                 Paperclip does not add a hidden runtime skill bundle.
               </p>
             </div>
-            <label className="grid gap-1.5 text-sm">
+            <div className="grid gap-1.5 text-sm">
               <span className="font-medium">Skill channel</span>
-              <select
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
-                value={skillChannel}
-                onChange={(event) =>
-                  setSkillChannel(event.target.value as CompanySkillChannel)
-                }
-                disabled={createAgent.isPending}
-              >
-                <option value="isolated_skills_home">
-                  Paperclip-managed isolated skills home
-                </option>
-                <option value="operator_native">
-                  Operator-managed native skills
-                </option>
-              </select>
+              <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+                Operator-managed native skills
+              </div>
               <span className="text-xs text-muted-foreground">
-                Isolated mode materializes the pinned versions read-only.
-                Operator-managed mode performs no Paperclip skill-file access.
+                ACPX uses the local CLI's native skill handling. Paperclip
+                performs no isolated skill-home materialization.
               </span>
-            </label>
+            </div>
             {availableSkills.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 No optional company skills installed yet.
@@ -367,13 +358,15 @@ export function NewAgent() {
               </p>
             </div>
             <input
-              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+              aria-label="Initial issue title"
+              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="Issue title (optional)"
               value={initialIssueTitle}
               onChange={(event) => setInitialIssueTitle(event.target.value)}
             />
             <textarea
-              className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none"
+              aria-label="Initial issue request"
+              className="min-h-28 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="Describe the first concrete assignment"
               value={initialRequest}
               onChange={(event) => setInitialRequest(event.target.value)}

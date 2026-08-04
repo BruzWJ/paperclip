@@ -126,6 +126,10 @@ export function createIssueExecutionTargetAcquirer(options: {
           runId: input.runId,
           executionWorkspaceBindingId: input.executionWorkspaceBindingId,
           adapterType: acpConfiguration.launchProfile.registryName,
+          // This selector was derived from the exact ACPX definition when the
+          // revision was persisted; issue-session admission pins the same
+          // implementation identity before this acquisition begins.
+          allowedDrivers: [selector.executionTargetDriver],
         });
       const target = acquired.executionTarget;
       if (

@@ -8,7 +8,7 @@ import {
 
 const identity: AdapterImplementationIdentity = {
   adapterType: "codex",
-  definitionVersion: "acp-subprocess/v1",
+  definitionVersion: "acpx-runtime/v1",
   protocolVersion: 1,
   origin: "builtin",
   packageName: "@paperclipai/server",

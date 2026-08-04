@@ -230,23 +230,18 @@ const storybookSecrets: CompanySecret[] = [
 
 const adapterFixtures: AdapterInfo[] = [
   {
-    type: "codex",
-    label: "Codex",
-    modelsCount: 2,
+    type: "fixture-agent",
+    label: "ACPX fixture agent",
+    source: "acpx",
+    modelsCount: 0,
     loaded: true,
     capabilities: {
       supportsModelProfiles: false,
-      contractVersion: "acp-subprocess/v1",
-      protocolVersion: 1,
-      resume: true,
-      cancel: true,
-      sessionConfig: true,
-      sessionScopedMcpReplacement: true,
+      contractVersion: "acpx-runtime/v1",
+      runtimeControls: ["session/status", "session/set_config_option"],
     },
-    registryName: "codex",
-    frontendPackage: "@agentclientprotocol/codex-acp",
-    frontendVersion: "1.1.7",
-    frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
+    drivers: ["local"],
+    registryName: "fixture-agent",
   },
 ];
 
@@ -294,11 +289,6 @@ function StorybookQueryFixtures({ children }: { children: ReactNode }) {
     { items: activeRuns, nextCursor: null },
   );
   queryClient.setQueryData(queryKeys.instance.generalSettings, { censorUsernameInLogs: false });
-  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex"), [
-    { id: "gpt-5.6", label: "GPT-5.6" },
-    { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-  ]);
-
   return children;
 }
 
@@ -655,11 +645,6 @@ function ForcedKubernetesFixtures({
     executionMode: "kubernetes",
   });
   queryClient.setQueryData(queryKeys.environments.list(COMPANY_ID), environmentFixtures);
-  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex"), [
-    { id: "gpt-5.4", label: "GPT-5.4" },
-    { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
-  ]);
-
   return children;
 }
 

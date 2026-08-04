@@ -26,8 +26,7 @@ Before making changes, read in this order:
 - `ui/`: React + Vite board UI
 - `packages/db/`: Drizzle schema, migrations, DB clients
 - `packages/shared/`: shared types, constants, validators, API path constants
-- `packages/adapters/`: declarative, conformance-approved ACP backend definitions
-- `packages/adapter-utils/`: common official-SDK ACP client and execution-target bridge
+- `packages/adapter-utils/`: ACPX public-runtime discovery and execution bridge
 - `packages/plugins/`: plugin system packages
 - `doc/`: operational and product docs
 
@@ -184,18 +183,20 @@ A change is done when all are true:
 
 ## 12. Adapter ownership
 
-Paperclip has one AI execution path: the worker-supervised ACP subprocess
-bridge implemented with the official TypeScript SDK. Adapter packages are
-data-only `acp-subprocess/v1` definitions; they cannot implement execution,
-HTTP/provider calls, parsers, session state, authentication, or tools.
+Paperclip has one AI execution path: the ACPX public-runtime bounded
+single-prompt bridge.
+ACPX is the sole supplier of exact agent names, local availability, models, and
+stable session settings. Paperclip probes ACPX's configured local registry and
+admits only candidates whose disposable ACPX session succeeds.
 
-An adapter may select only a byte-exact name admitted by both ACPX's public
-agent registry and Paperclip's immutable conformance-approved launch catalog.
-ACPX contributes registry lookup only. The common worker owns launch,
-initialize, new/resume, stable configuration, request-scoped MCP replacement,
-prompt/update/stop, cancellation, projection, and cleanup. The target CLI or
-its pinned upstream ACP frontend owns provider authentication and its native
-harness.
+Paperclip must not add an agent/model/configuration catalog, aliases, launch
+argv, provider-specific parser, ACPX runtime/session state, authentication, or
+tools. ACPX owns resolution and lifecycle of the local provider CLI; Paperclip
+owns durable authority fences, request-scoped MCP, safe event projection,
+cancellation requests, and cleanup of its own request files. ACPX's temporary
+state store is deleted after each bounded prompt; only an opaque provider backend
+session id may be retained in Paperclip's scoped correlation record for an
+eligible resume.
 
 ### Local Dev
 
@@ -215,13 +216,14 @@ These are local modifications in the fork's UI. If re-copying source, these must
 
 ### External adapter packages
 
-- External packages may contribute only the closed declarative definition.
-- They cannot widen the approved launch catalog or replace its executable,
-  argv, frontend package/version, or digest.
-- `createServerAdapter()` returns exactly `type` and `definition`; unknown or
-  executable fields fail registration.
-- A newly supported frontend requires its own pinned launch entry and common
-  real-frontend ACP conformance suite before any definition can select it.
+External adapter packages cannot add a Paperclip agent. Install and
+authenticate an ACPX-compatible CLI locally instead; ACPX discovery supplies
+its name, models, and settings dynamically. A generic advertised option,
+including a reasoning setting when the agent exposes one, is persisted as an
+immutable ACPX session configuration selection and applied through ACPX before
+the prompt. The current ACPX public runtime advertises only local execution
+targets and `operator_native` skills; unsupported remote targets and isolated
+skills homes fail closed.
 
 ## Design system
 

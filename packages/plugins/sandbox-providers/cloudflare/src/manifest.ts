@@ -51,7 +51,7 @@ const manifest: PaperclipPluginManifestV1 = {
             type: "string",
             default: "1h",
             description:
-              "Idle timeout passed to getSandbox() on lease creation. Defaults to 1 hour so a fresh sandbox survives normal Claude/Codex heartbeats. Ignored when keepAlive is true.",
+              "Idle timeout passed to getSandbox() on lease creation. Defaults to 1 hour so a fresh sandbox survives normal agent heartbeats. Ignored when keepAlive is true.",
           },
           normalizeId: {
             type: "boolean",

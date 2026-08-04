@@ -75,34 +75,25 @@ describe("admin, asset, and skill parity commands", () => {
     ]);
   });
 
-  it("wraps adapter management and company adapter endpoints", async () => {
+  it("wraps ACPX-discovered agent and company model endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
+    const agentType = "fixture-agent";
 
     await run(["adapter", "list"]);
-    await run(["adapter", "install", "--payload-json", "{\"packageName\":\"adapter\"}"]);
-    await run(["adapter", "get", "codex"]);
-    await run(["adapter", "update", "codex", "--payload-json", "{\"disabled\":true}"]);
-    await run(["adapter", "override", "codex", "--payload-json", "{\"paused\":true}"]);
-    await run(["adapter", "reload", "codex"]);
-    await run(["adapter", "reinstall", "codex"]);
-    await run(["adapter", "config-schema", "codex"]);
-    await run(["adapter", "models", "codex", "--company-id", COMPANY_ID]);
-    await run(["adapter", "model-profiles", "codex", "--company-id", COMPANY_ID]);
-    await run(["adapter", "delete", "codex"]);
+    await run(["adapter", "get", agentType]);
+    await run(["adapter", "update", agentType, "--payload-json", "{\"disabled\":true}"]);
+    await run(["adapter", "config-schema", agentType]);
+    await run(["adapter", "models", agentType, "--company-id", COMPANY_ID]);
+    await run(["adapter", "model-profiles", agentType, "--company-id", COMPANY_ID]);
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", "http://localhost:3100/api/adapters"],
-      ["POST", "http://localhost:3100/api/adapters/install"],
-      ["GET", "http://localhost:3100/api/adapters/codex"],
-      ["PATCH", "http://localhost:3100/api/adapters/codex"],
-      ["PATCH", "http://localhost:3100/api/adapters/codex/override"],
-      ["POST", "http://localhost:3100/api/adapters/codex/reload"],
-      ["POST", "http://localhost:3100/api/adapters/codex/reinstall"],
-      ["GET", "http://localhost:3100/api/adapters/codex/config-schema"],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex/models`],
-      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/codex/model-profiles`],
-      ["DELETE", "http://localhost:3100/api/adapters/codex"],
+      ["GET", `http://localhost:3100/api/adapters/${agentType}`],
+      ["PATCH", `http://localhost:3100/api/adapters/${agentType}`],
+      ["GET", `http://localhost:3100/api/adapters/${agentType}/config-schema`],
+      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/${agentType}/models`],
+      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/adapters/${agentType}/model-profiles`],
     ]);
   });
 

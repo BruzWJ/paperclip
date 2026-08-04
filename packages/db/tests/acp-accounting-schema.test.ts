@@ -128,6 +128,14 @@ describe("canonical ACP prompt accounting schema", () => {
       '"context_window_tokens" = "acp_prompt_accounting"."context_token_limit"',
     );
 
+    const selectedModelId = getTableConfig(acpPromptAccounting).columns.find(
+      (column) => column.name === "selected_model_id",
+    );
+    expect(selectedModelId?.notNull).toBe(false);
+    expect(
+      checkSql(acpPromptAccounting, "acp_prompt_accounting_references_check"),
+    ).toContain('"selected_model_id" is null');
+
     expect(foreignKeyNames(acpPromptAccounting)).toEqual(
       expect.arrayContaining([
         "acp_prompt_accounting_session_fk",

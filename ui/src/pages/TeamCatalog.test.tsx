@@ -180,6 +180,18 @@ describe("TeamCatalog adapter-schema readiness", () => {
     ).toBe(true);
   });
 
+  it("fails closed when the selected environment is no longer in the ACPX-filtered list", () => {
+    expect(
+      catalogAdapterConfigurationIsReady({
+        ...base,
+        adapterConfig: { model: "gpt-5.6" },
+        executionEnvironmentIds: [
+          "22222222-2222-4222-8222-222222222222",
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it("materializes only the explicit server-schema values", () => {
     expect(
       materializeCatalogAdapterOverride(

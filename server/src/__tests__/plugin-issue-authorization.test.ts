@@ -6,18 +6,34 @@ import {
   plugins,
   type Db,
 } from "@paperclipai/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { AdapterImplementationIdentity } from "@paperclipai/shared";
+
+const ACP_ADAPTER_TYPE = "fixture-agent";
+const ACP_IMPLEMENTATION_IDENTITY: AdapterImplementationIdentity = Object.freeze({
+  adapterType: ACP_ADAPTER_TYPE,
+  definitionVersion: "acpx-runtime/v1",
+  protocolVersion: 1,
+  origin: "builtin",
+  packageName: "acpx",
+  packageVersion: "test-runtime",
+  buildIdentity: "acpx-test-runtime:fixture-agent",
+  artifactDigest: "a".repeat(64),
+});
+
+vi.mock("../adapters/registry.js", () => ({
+  isServerAdapterImplementationAvailable: (
+    adapterType: string,
+    identity: AdapterImplementationIdentity,
+  ) =>
+    adapterType === ACP_ADAPTER_TYPE &&
+    identity.artifactDigest === ACP_IMPLEMENTATION_IDENTITY.artifactDigest,
+}));
 import {
   resolveInvokableIssueOwnerCatalog,
   type InvokableIssueOwnerAgent,
   type InvokableIssueOwnerRevision,
 } from "../services/agent-invokability.js";
-import {
-  registerServerAdapter,
-  type RegisteredServerAdapterImplementation,
-  unregisterServerAdapter,
-} from "../adapters/registry.js";
-import { createDeclarativeTestAdapter } from "./helpers/declarative-adapter.js";
 import type { IssueSessionDbTransaction } from "../services/issue-session/event-store.js";
 import { lockPluginCompanySettingScopeInTransaction } from "../services/plugin-authorization-locks.js";
 import { pluginRegistryService } from "../services/plugin-registry.js";
@@ -32,19 +48,6 @@ import {
 const COMPANY_ID = "00000000-0000-4000-8000-000000000001";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000002";
 const PLUGIN_KEY = "example.plugin";
-const ACP_ADAPTER_TYPE = "plugin_issue_authorization_test";
-let ACP_IMPLEMENTATION: RegisteredServerAdapterImplementation;
-
-beforeAll(() => {
-  unregisterServerAdapter(ACP_ADAPTER_TYPE);
-  ACP_IMPLEMENTATION = registerServerAdapter(
-    createDeclarativeTestAdapter({ type: ACP_ADAPTER_TYPE }),
-  );
-});
-
-afterAll(() => {
-  unregisterServerAdapter(ACP_ADAPTER_TYPE);
-});
 
 function installation(
   overrides: Partial<typeof plugins.$inferSelect> = {},
@@ -114,7 +117,7 @@ function canonicalInvokableCatalog() {
       companyId: COMPANY_ID,
       agentId: agents[0]!.id,
       adapterType: ACP_ADAPTER_TYPE,
-      implementationIdentity: ACP_IMPLEMENTATION.identity,
+      implementationIdentity: ACP_IMPLEMENTATION_IDENTITY,
       implementationAvailable: true,
     },
     {
@@ -122,7 +125,7 @@ function canonicalInvokableCatalog() {
       companyId: COMPANY_ID,
       agentId: agents[1]!.id,
       adapterType: ACP_ADAPTER_TYPE,
-      implementationIdentity: ACP_IMPLEMENTATION.identity,
+      implementationIdentity: ACP_IMPLEMENTATION_IDENTITY,
       implementationAvailable: true,
     },
   ];
@@ -417,7 +420,7 @@ describe("plugin issue owner authorization", () => {
       companyId: COMPANY_ID,
       agentId: owner.id,
       adapterType: ACP_ADAPTER_TYPE,
-      implementationIdentity: ACP_IMPLEMENTATION.identity,
+      implementationIdentity: ACP_IMPLEMENTATION_IDENTITY,
     } as typeof agentAdapterConfigRevisions.$inferSelect;
     const lockOrder: unknown[] = [];
     const rows = new Map<unknown, unknown[]>([

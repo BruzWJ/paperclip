@@ -35,6 +35,7 @@ import { authorizationDeniedDetails } from "../services/authorization.js";
 import {
   findServerAdapter,
   listAdapterModelProfiles,
+  refreshAcpxAdapters,
 } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
@@ -459,6 +460,7 @@ export function agentRoutes(
   router.get("/companies/:companyId/adapters/:type/models", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    await refreshAcpxAdapters();
     const type = assertKnownAdapterType(req.params.type as string);
     res.json(
       await companyModelCatalog.listModels({
@@ -471,6 +473,7 @@ export function agentRoutes(
   router.get("/companies/:companyId/adapters/:type/model-profiles", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    await refreshAcpxAdapters();
     const type = assertKnownAdapterType(req.params.type as string);
     const profiles = await listAdapterModelProfiles(type);
     res.json(profiles);

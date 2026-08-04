@@ -4,8 +4,6 @@ import type {
   Agent,
   Environment,
 } from "@paperclipai/shared";
-import { supportedEnvironmentDriversForAdapter } from "@paperclipai/shared";
-import type { AdapterModel } from "../api/agents";
 import { agentsApi } from "../api/agents";
 import { environmentsApi } from "../api/environments";
 import { instanceSettingsApi } from "../api/instanceSettings";
@@ -42,7 +40,6 @@ import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 /* ---- Props ---- */
 
 type AgentConfigFormProps = {
-  adapterModels?: AdapterModel[];
   onDirtyChange?: (dirty: boolean) => void;
   onSaveActionChange?: (save: (() => void) | null) => void;
   onCancelActionChange?: (cancel: (() => void) | null) => void;
@@ -91,7 +88,7 @@ const inputClass =
 /* ---- Form ---- */
 
 export function AgentConfigForm(props: AgentConfigFormProps) {
-  const { mode, adapterModels: externalModels } = props;
+  const { mode } = props;
   const isCreate = mode === "create";
   const cards = props.sectionLayout === "cards";
   const showAdapterTypeField = props.showAdapterTypeField ?? true;
@@ -218,8 +215,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const requiresExplicitExecutionEnvironment =
     isCreate && (props.requireExplicitExecutionEnvironment ?? true);
   const supportedEnvironmentDrivers = useMemo(
-    () => new Set(supportedEnvironmentDriversForAdapter(adapterType)),
-    [adapterType],
+    () => new Set(uiAdapter?.drivers ?? []),
+    [uiAdapter],
   );
   const val = isCreate ? props.values : null;
   const set = isCreate
@@ -302,18 +299,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? `${instanceDefaultEnvironment.name} (${instanceDefaultEnvironment.driver})`
     : "Local";
 
-  // Fetch adapter models for the effective adapter type
-  const modelQueryKey = selectedCompanyId
-    ? queryKeys.agents.adapterModels(selectedCompanyId, adapterType)
-    : ["agents", "none", "adapter-models", adapterType];
-  const {
-    data: fetchedModels,
-  } = useQuery({
-    queryKey: modelQueryKey,
-    queryFn: () => agentsApi.adapterModels(selectedCompanyId!, adapterType),
-    enabled: Boolean(selectedCompanyId && hasAdapterType),
-  });
-  const models = fetchedModels ?? externalModels ?? [];
   const { data: companyAgents = [] } = useQuery({
     queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "none", "list"],
     queryFn: () => agentsApi.list(selectedCompanyId!),
@@ -330,7 +315,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     config,
     eff: eff as <T>(group: "adapterConfig", field: string, original: T) => T,
     mark: mark as (group: "adapterConfig", field: string, value: unknown) => void,
-    models,
     applySchemaDefaults: props.applyAdapterSchemaDefaults ?? true,
   };
 
@@ -389,19 +373,30 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               />
             </Field>
             <Field label="Capabilities" hint={help.capabilities}>
-              <MarkdownEditor
-                value={eff("identity", "capabilities", props.agent.capabilities ?? "") ?? ""}
-                onChange={(v) => mark("identity", "capabilities", v || null)}
-                placeholder="Describe what this agent can do..."
-                contentClassName="min-h-(--sz-44px) text-sm font-mono"
-                imageUploadHandler={async (file) => {
-                  const asset = await uploadMarkdownImage.mutateAsync({
-                    file,
-                    namespace: `agents/${props.agent.id}/capabilities`,
-                  });
-                  return asset.contentPath;
-                }}
-              />
+              <div aria-busy={uploadMarkdownImage.isPending}>
+                <fieldset disabled={uploadMarkdownImage.isPending} className="min-w-0 border-0 p-0">
+                  <legend className="sr-only">Capabilities</legend>
+                  <MarkdownEditor
+                    value={eff("identity", "capabilities", props.agent.capabilities ?? "") ?? ""}
+                    onChange={(v) => mark("identity", "capabilities", v || null)}
+                    placeholder="Describe what this agent can do..."
+                    contentClassName="min-h-(--sz-44px) text-sm font-mono"
+                    readOnly={uploadMarkdownImage.isPending}
+                    imageUploadHandler={async (file) => {
+                      const asset = await uploadMarkdownImage.mutateAsync({
+                        file,
+                        namespace: `agents/${props.agent.id}/capabilities`,
+                      });
+                      return asset.contentPath;
+                    }}
+                  />
+                </fieldset>
+                {uploadMarkdownImage.isPending ? (
+                  <p role="status" className="mt-1 text-xs text-muted-foreground">
+                    Uploading image…
+                  </p>
+                ) : null}
+              </div>
             </Field>
           </div>
         </div>
@@ -458,6 +453,11 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <div className="space-y-2">
                 <select
                   className={inputClass}
+                  aria-label={
+                    requiresExplicitExecutionEnvironment
+                      ? "Execution environment"
+                      : "Environment override"
+                  }
                   value={currentDefaultEnvironmentId}
                   onChange={(event) => {
                     const nextValue = event.target.value;
@@ -529,8 +529,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
           {!hasAdapterType && (
             <p className="text-xs text-muted-foreground">
-              This agent has no adapter configuration yet. Select an adapter
-              to create its first immutable configuration revision.
+                Nothing to show yet. Select an adapter to create this agent's
+                first immutable configuration revision.
             </p>
           )}
 

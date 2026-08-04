@@ -41,7 +41,7 @@ function fixtureRoot(): string {
     "const child = { ...sanitizeInheritedProviderChildEnv(process.env), ...opts.env };",
   ].join("\n"));
   write(root, "packages/adapter-utils/src/acp-subprocess/process.ts", "const child = { ...sanitizeInheritedProviderChildEnv(process.env), ...hostLaunch.environment };\n");
-  write(root, "server/src/services/issue-execution-attempt-executor.ts", "environment: Object.freeze({}),\nmessage: input.message,\n");
+  write(root, "server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\n");
   write(root, "server/src/services/runtime-agent-action-port.ts", [
     "type Options = { requestChangeConsent?: (input: unknown) => Promise<void> };",
     "export function create(service: any, options: Options) {",
@@ -137,7 +137,7 @@ test("rejects explicit configuration layered before inherited state", () => {
 
 test("rejects a Paperclip-authored setup prompt override", () => {
   const root = fixtureRoot();
-  write(root, "server/src/services/issue-execution-attempt-executor.ts", "environment: Object.freeze({}),\nmessage: input.message,\nsystemPrompt: generated,\n");
+  write(root, "server/src/services/issue-execution-attempt-executor.ts", "executeAcpxOneShotPrompt({\nmcpServers: Object.freeze([\nmessage: input.message,\nsystemPrompt: generated,\n");
   assert.ok(providerIdentityBoundaryViolations(root).some((entry) => entry.includes("prompt override")));
 });
 

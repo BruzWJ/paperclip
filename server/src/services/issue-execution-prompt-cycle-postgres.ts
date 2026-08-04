@@ -774,10 +774,14 @@ async function ensureAssistantStarted(
         sessionID: prompt.sessionId,
         assistantMessageID: assistantMessageId,
         agent: prompt.targetAgentId,
-        model: {
-          id: configuration.model.id,
-          providerID: configuration.launchProfile.registryName,
-        },
+        ...(configuration.model === null
+          ? {}
+          : {
+              model: {
+                id: configuration.model.id,
+                providerID: configuration.launchProfile.registryName,
+              },
+            }),
       },
     },
     envelope: {

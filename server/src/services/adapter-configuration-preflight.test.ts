@@ -1,16 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  AcpInitializationCapabilityError,
-  resolveApprovedAcpLaunch,
-  type AcpSubprocess,
-  type AcpSubprocessLaunch,
-  type PreparedAcpExecutionTargetSubprocess,
+  AcpxRuntimeReadinessCapabilityError,
+  AcpxRuntimeReadinessCleanupError,
+  type AcpxRuntimeReadinessProbeInput,
+  type AcpxRuntimeReadinessProbeResult,
 } from "@paperclipai/adapter-utils/acp-subprocess";
-import {
-  resolveAdapterExecutionTargetNativeIdentityEnvironment,
-  type AdapterExecutionTarget,
-} from "@paperclipai/adapter-utils/execution-target";
-import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
+import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
 import type {
   SelectedCompanySkillLaunchChannel,
 } from "@paperclipai/adapter-utils/selected-company-skills";
@@ -34,18 +29,16 @@ const ENVIRONMENT_ID = "00000000-0000-4000-8000-000000000006";
 const BINDING_ID = "00000000-0000-4000-8000-000000000007";
 const WORKSPACE = "/workspace/exact";
 const TARGET_WORKSPACE = "/target/workspace/exact";
-const TARGET_NATIVE_EXECUTABLE = "/target/bin/codex";
-const SECRET_OUTPUT = "provider-secret-must-not-escape";
-
-const APPROVED_LAUNCH = resolveApprovedAcpLaunch("codex");
+const ACPX_AGENT_NAME = "fixture-agent";
 const ACP_CONFIGURATION: AgentAdapterAcpConfiguration = {
-  contractVersion: "acp-subprocess/v1",
+  contractVersion: "acpx-runtime/v1",
   launchProfile: {
-    ...APPROVED_LAUNCH,
-    args: [...APPROVED_LAUNCH.args],
+    registryName: ACPX_AGENT_NAME,
   },
   sessionConfigSelections: [
+    { configId: "fast_mode", value: true },
     { configId: "model", value: "gpt-5" },
+    { configId: "reasoning_effort", value: "high" },
   ],
   model: {
     id: "gpt-5",
@@ -72,16 +65,6 @@ const TARGET: AdapterExecutionTarget = Object.freeze({
   kind: "local",
   environmentId: ENVIRONMENT_ID,
   leaseId: "readiness-lease",
-});
-
-const PROCESS_SUCCESS: RunProcessResult = Object.freeze({
-  exitCode: 0,
-  signal: null,
-  timedOut: false,
-  stdout: SECRET_OUTPUT,
-  stderr: SECRET_OUTPUT,
-  pid: 42,
-  startedAt: new Date(0).toISOString(),
 });
 
 const OPERATOR_NATIVE: SelectedCompanySkillLaunchChannel = Object.freeze({
@@ -111,73 +94,16 @@ interface HarnessOptions {
   readonly companySkills?: SelectedCompanySkillLaunchChannel;
   readonly companySkillsError?: unknown;
   readonly acquisitionError?: unknown;
-  readonly preparationError?: unknown;
-  readonly processResult?: RunProcessResult;
-  readonly processError?: unknown;
-  readonly initializeResult?: {
-    readonly protocolVersion: number;
-    readonly agentCapabilities?: {
-      readonly sessionCapabilities?: { readonly resume?: unknown };
-    };
-  };
-  readonly initializeError?: unknown;
-  readonly closeAndReapError?: unknown;
+  readonly acquiredTarget?: AdapterExecutionTarget;
+  readonly probeError?: unknown;
   readonly releaseError?: unknown;
-  readonly selectedMaterialization?:
-    PreparedAcpExecutionTargetSubprocess["selectedCompanySkillMaterialization"];
 }
 
 function createHarness(options: HarnessOptions = {}) {
   const binding = options.binding ?? persistedBinding();
   const acquisitionInputs: unknown[] = [];
-  const preparationInputs: unknown[] = [];
-  const authenticationCalls: Parameters<
-    AdapterConfigurationPreflightRuntime["runTargetProcess"]
-  >[] = [];
-  const subprocessLaunches: AcpSubprocessLaunch[] = [];
-  const initializeClients: unknown[] = [];
+  const probeInputs: AcpxRuntimeReadinessProbeInput[] = [];
   const releases: boolean[] = [];
-  const collections: unknown[] = [];
-  let clientCloseCount = 0;
-  let closeAndReapCount = 0;
-  let terminateAndReapCount = 0;
-  let disposeBeforeStartCount = 0;
-
-  const subprocess = {
-    child: {},
-    stream: {},
-    stderr: () => "",
-    exited: Promise.resolve({ exitCode: 0, signal: null }),
-    cancel() {},
-    async closeAndReap() {
-      closeAndReapCount += 1;
-      if (options.closeAndReapError) throw options.closeAndReapError;
-      return { exitCode: 0, signal: null };
-    },
-    async terminateAndReap() {
-      terminateAndReapCount += 1;
-      return { exitCode: 0, signal: null };
-    },
-    closeInput() {},
-  } as unknown as AcpSubprocess;
-
-  const prepared: PreparedAcpExecutionTargetSubprocess = Object.freeze({
-    targetCwd: TARGET_WORKSPACE,
-    targetAdditionalDirectories: Object.freeze([]),
-    invocationFilePaths: Object.freeze({}),
-    targetNodeExecutable: "/target/bin/node",
-    targetNativeExecutable: TARGET_NATIVE_EXECUTABLE,
-    targetFrontendEntrypoint: "/target/pinned/codex-acp.mjs",
-    selectedCompanySkillMaterialization:
-      options.selectedMaterialization ?? null,
-    async startSubprocess(launch: AcpSubprocessLaunch) {
-      subprocessLaunches.push(launch);
-      return subprocess;
-    },
-    async disposeBeforeStart() {
-      disposeBeforeStartCount += 1;
-    },
-  });
 
   const repository: AdapterRuntimeReadinessRepository = {
     async loadExactBinding() {
@@ -186,9 +112,6 @@ function createHarness(options: HarnessOptions = {}) {
     async resolveCompanySkills() {
       if (options.companySkillsError) throw options.companySkillsError;
       return options.companySkills ?? OPERATOR_NATIVE;
-    },
-    async collectMaterialization(candidate) {
-      collections.push(candidate);
     },
   };
 
@@ -200,7 +123,7 @@ function createHarness(options: HarnessOptions = {}) {
         return {
           adapterConfigRevisionId: input.adapterConfigRevisionId,
           acpConfiguration: input.acpConfiguration,
-          executionTarget: TARGET,
+          executionTarget: options.acquiredTarget ?? TARGET,
           hostCwd: WORKSPACE,
           targetCwd: TARGET_WORKSPACE,
           targetAdditionalDirectories: Object.freeze([]),
@@ -212,35 +135,13 @@ function createHarness(options: HarnessOptions = {}) {
         };
       },
     },
-    async prepareTarget(input) {
-      preparationInputs.push(input);
-      if (options.preparationError) throw options.preparationError;
-      return prepared;
-    },
-    async runTargetProcess(...args) {
-      authenticationCalls.push(args);
-      if (options.processError) throw options.processError;
-      await args[4].onLog("stdout", SECRET_OUTPUT);
-      await args[4].onLog("stderr", SECRET_OUTPUT);
-      return options.processResult ?? PROCESS_SUCCESS;
-    },
-    createInitializeOnlyClient() {
-      const client = Object.freeze({
-        async initialize() {
-          if (options.initializeError) throw options.initializeError;
-          return options.initializeResult ?? {
-            protocolVersion: 1,
-            agentCapabilities: {
-              sessionCapabilities: { resume: true },
-            },
-          };
-        },
-        close() {
-          clientCloseCount += 1;
-        },
-      });
-      initializeClients.push(client);
-      return client;
+    async probeAcpxRuntimeReadiness(input) {
+      probeInputs.push(input);
+      if (options.probeError) throw options.probeError;
+      return Object.freeze({
+        capabilities: Object.freeze({ controls: ["session/status"] }),
+        status: Object.freeze({ backendSessionId: "provider-session" }),
+      }) as AcpxRuntimeReadinessProbeResult;
     },
   };
 
@@ -250,18 +151,8 @@ function createHarness(options: HarnessOptions = {}) {
       runtime,
     }),
     acquisitionInputs,
-    preparationInputs,
-    authenticationCalls,
-    subprocessLaunches,
-    initializeClients,
+    probeInputs,
     releases,
-    collections,
-    counts: () => ({
-      clientCloseCount,
-      closeAndReapCount,
-      terminateAndReapCount,
-      disposeBeforeStartCount,
-    }),
   };
 }
 
@@ -288,38 +179,12 @@ describe("adapter runtime readiness", () => {
         reason,
       });
       expect(harness.acquisitionInputs).toEqual([]);
+      expect(harness.probeInputs).toEqual([]);
     },
   );
 
-  it("binds the exact persisted scope, checks native auth, and initializes only the prepared frontend", async () => {
-    const isolatedConfiguration: AgentAdapterAcpConfiguration = {
-      ...ACP_CONFIGURATION,
-      skillChannel: "isolated_skills_home",
-    };
-    const isolatedSkills: SelectedCompanySkillLaunchChannel = Object.freeze({
-      channel: "isolated_skills_home",
-      identity: Object.freeze({
-        companyId: COMPANY_ID,
-        agentId: AGENT_ID,
-        executionTargetIdentity: "a".repeat(64),
-        adapterConfigRevisionId: REVISION_ID,
-      }),
-      entries: Object.freeze([]),
-    });
-    const collectExact = async () => ({
-      materializationKey: "materialization-key",
-      outcome: "collected" as const,
-    });
-    const harness = createHarness({
-      binding: persistedBinding({
-        acpConfiguration: isolatedConfiguration,
-      }),
-      companySkills: isolatedSkills,
-      selectedMaterialization: Object.freeze({
-        materializationKey: "materialization-key",
-        collectExact,
-      }),
-    });
+  it("binds the exact persisted scope and delegates generic settings to ACPX", async () => {
+    const harness = createHarness();
 
     const result = await harness.service.inspect(IDENTITY);
 
@@ -332,8 +197,7 @@ describe("adapter runtime readiness", () => {
         environmentId: ENVIRONMENT_ID,
         executionWorkspaceBindingId: BINDING_ID,
       },
-      protocolVersion: 1,
-      sessionResume: true,
+      runtimeControls: ["session/status"],
     });
     expect(harness.acquisitionInputs).toEqual([{
       companyId: COMPANY_ID,
@@ -342,58 +206,21 @@ describe("adapter runtime readiness", () => {
       targetAgentId: AGENT_ID,
       adapterConfigRevisionId: REVISION_ID,
       executionWorkspaceBindingId: BINDING_ID,
-      acpConfiguration: isolatedConfiguration,
+      acpConfiguration: ACP_CONFIGURATION,
       hostCwd: WORKSPACE,
       localWorkspaceCwd: WORKSPACE,
       targetAdditionalDirectories: [],
     }]);
-    expect(harness.preparationInputs).toEqual([expect.objectContaining({
-      runId: RUN_ID,
-      target: TARGET,
-      sourceLaunch: APPROVED_LAUNCH,
-      hostCwd: WORKSPACE,
-      targetCwd: TARGET_WORKSPACE,
-      companySkills: isolatedSkills,
-    })]);
-    expect(harness.authenticationCalls).toHaveLength(1);
-    const auth = harness.authenticationCalls[0]!;
-    expect(auth[1]).toBe(TARGET);
-    expect(auth[2]).toBe(TARGET_NATIVE_EXECUTABLE);
-    expect(auth[3]).toEqual(["login", "status"]);
-    expect(auth[4]).toMatchObject({
+    expect(harness.probeInputs).toEqual([{
       cwd: TARGET_WORKSPACE,
-      env: resolveAdapterExecutionTargetNativeIdentityEnvironment(TARGET),
-      timeoutSec: 15,
-      graceSec: 2,
-    });
-    expect(JSON.stringify(result)).not.toContain(SECRET_OUTPUT);
-    expect(harness.subprocessLaunches).toEqual([expect.objectContaining({
-      launch: APPROVED_LAUNCH,
-      cwd: TARGET_WORKSPACE,
-      environment: {},
-      mcpServers: [],
-      configOptions: isolatedConfiguration.sessionConfigSelections,
-    })]);
-    expect(harness.initializeClients).toHaveLength(1);
-    expect(Object.keys(harness.initializeClients[0] as object).sort()).toEqual([
-      "close",
-      "initialize",
-    ]);
-    expect(harness.releases).toEqual([false]);
-    expect(harness.counts()).toEqual({
-      clientCloseCount: 1,
-      closeAndReapCount: 1,
-      terminateAndReapCount: 0,
-      disposeBeforeStartCount: 0,
-    });
-    expect(harness.collections).toEqual([{
-      identity: isolatedSkills.identity,
-      materializationKey: "materialization-key",
-      collectExact,
+      registryCwd: process.cwd(),
+      agentName: ACPX_AGENT_NAME,
+      configSelections: ACP_CONFIGURATION.sessionConfigSelections,
     }]);
+    expect(harness.releases).toEqual([false]);
   });
 
-  it("maps a rejected skill revision to typed configuration-incomplete after establishing scope", async () => {
+  it("maps a rejected skill revision to typed configuration-incomplete before the ACPX probe", async () => {
     const harness = createHarness({
       companySkillsError: new CompanySkillMaterializationLifecycleRejected(
         "immutable company skill revision pin cannot be resolved",
@@ -413,6 +240,7 @@ describe("adapter runtime readiness", () => {
       remediationCommand: null,
     });
     expect(harness.acquisitionInputs).toEqual([]);
+    expect(harness.probeInputs).toEqual([]);
   });
 
   it("does not disguise an unexpected skill repository failure as invalid configuration", async () => {
@@ -421,54 +249,29 @@ describe("adapter runtime readiness", () => {
     await expect(harness.service.inspect(IDENTITY)).rejects.toBe(failure);
   });
 
-  it("returns non-secret login guidance when native authentication is absent", async () => {
-    const harness = createHarness({
-      processResult: { ...PROCESS_SUCCESS, exitCode: 1 },
-    });
-
-    const result = await harness.service.inspect(IDENTITY);
-
-    expect(result).toMatchObject({
-      status: "incomplete",
-      reason: "native_authentication_required",
-      remediationCommand: "codex login",
-    });
-    expect(JSON.stringify(result)).not.toContain(SECRET_OUTPUT);
-    expect(harness.subprocessLaunches).toEqual([]);
-    expect(harness.releases).toEqual([true]);
-    expect(harness.counts().disposeBeforeStartCount).toBe(1);
-  });
-
   it.each([
     [
-      "initialization failure",
-      { initializeError: new Error("initialize rejected") },
+      "generic ACPX setup failure",
+      { probeError: new Error("ACPX session rejected") },
       "acp_initialization_failed",
     ],
     [
-      "typed initialize capability rejection",
+      "missing ACPX control",
       {
-        initializeError: new AcpInitializationCapabilityError(
-          "session_resume_unavailable",
-          "resume is unavailable",
+        probeError: new AcpxRuntimeReadinessCapabilityError(
+          "session/set_config_option unavailable",
         ),
       },
       "acp_capability_incompatible",
     ],
     [
-      "protocol mismatch",
-      { initializeResult: { protocolVersion: 2 } },
-      "acp_capability_incompatible",
-    ],
-    [
-      "missing resume capability",
+      "disposable ACPX state cleanup failure",
       {
-        initializeResult: {
-          protocolVersion: 1,
-          agentCapabilities: { sessionCapabilities: {} },
-        },
+        probeError: new AcpxRuntimeReadinessCleanupError({
+          cleanupErrors: [new Error("state cleanup failed")],
+        }),
       },
-      "acp_capability_incompatible",
+      "target_cleanup_failed",
     ],
   ] as const)("fails closed for %s", async (_label, options, reason) => {
     const harness = createHarness(options);
@@ -478,7 +281,6 @@ describe("adapter runtime readiness", () => {
       remediationCommand: null,
     });
     expect(harness.releases).toEqual([true]);
-    expect(harness.counts().closeAndReapCount).toBe(1);
   });
 
   it.each([
@@ -499,39 +301,45 @@ describe("adapter runtime readiness", () => {
       status: "incomplete",
       reason,
     });
-    expect(harness.preparationInputs).toEqual([]);
+    expect(harness.probeInputs).toEqual([]);
   });
 
-  it.each([
-    [
-      new Error("required executable is unavailable"),
-      "target_native_executable_unavailable",
-    ],
-    [new Error("approved frontend artifact is missing"), "acp_frontend_unavailable"],
-    [new Error("target preparation failed"), "execution_target_unavailable"],
-  ] as const)("types preparation failures", async (error, reason) => {
-    const harness = createHarness({ preparationError: error });
+  it("rejects a non-local acquired target without attempting an ACPX process", async () => {
+    const harness = createHarness({
+      acquiredTarget: {
+        kind: "remote",
+        transport: "ssh",
+        remoteCwd: "/remote/workspace",
+        spec: {
+          host: "example.test",
+          port: 22,
+          username: "agent",
+          remoteWorkspacePath: "/remote/workspace",
+          privateKey: null,
+          knownHosts: null,
+          strictHostKeyChecking: true,
+          remoteCwd: "/remote/workspace",
+        },
+      },
+    });
+
     await expect(harness.service.inspect(IDENTITY)).resolves.toMatchObject({
       status: "incomplete",
-      reason,
+      reason: "execution_target_unavailable",
     });
-    expect(harness.authenticationCalls).toEqual([]);
+    expect(harness.probeInputs).toEqual([]);
     expect(harness.releases).toEqual([true]);
   });
 
-  it("lets deterministic cleanup failure override a successful initialize", async () => {
+  it("lets target lease cleanup failure override a successful ACPX probe", async () => {
     const harness = createHarness({
-      closeAndReapError: new Error("reap failed"),
+      releaseError: new Error("release failed"),
     });
 
     await expect(harness.service.inspect(IDENTITY)).resolves.toMatchObject({
       status: "incomplete",
       reason: "target_cleanup_failed",
     });
-    expect(harness.counts()).toMatchObject({
-      closeAndReapCount: 1,
-      terminateAndReapCount: 1,
-    });
-    expect(harness.releases).toEqual([true]);
+    expect(harness.releases).toEqual([false]);
   });
 });

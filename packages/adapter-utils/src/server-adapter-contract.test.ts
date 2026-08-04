@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { resolveApprovedAcpLaunch } from "./acp-subprocess/agent-registry.js";
 import { resolveAcpAdapterRevisionConfiguration } from "./adapter-configuration.js";
 import { validateServerAdapterModule } from "./server-adapter-contract.js";
 import type { ServerAdapterModule } from "./types.js";
@@ -17,21 +16,16 @@ function fixture(): ServerAdapterModule {
   return {
     type: "fixture",
     definition: {
-      version: "acp-subprocess/v1",
-      launchProfile: resolveApprovedAcpLaunch("codex"),
+      version: "acpx-runtime/v1",
+      launchProfile: { registryName: "fixture-agent" },
       environment: {
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
         drivers: ["local"],
         environmentKeys: [],
       },
-      readiness: {
-        protocolVersion: 1,
-        resume: true,
-        cancel: true,
-        sessionConfig: true,
-        sessionScopedMcpReplacement: true,
-        cliNativeAuthentication: true,
+      runtime: {
+        controls: ["session/status", "session/set_config_option"],
       },
       ui: {
         label: "Fixture",
@@ -66,7 +60,7 @@ function fixture(): ServerAdapterModule {
 }
 
 describe("declarative ACP adapter contract", () => {
-  it("accepts only the closed acp-subprocess/v1 shape", () => {
+  it("accepts only the closed acpx-runtime/v1 shape", () => {
     const adapter = fixture();
     expect(validateServerAdapterModule(adapter)).toBe(adapter);
     expect(() =>
@@ -80,7 +74,7 @@ describe("declarative ACP adapter contract", () => {
     ).toThrow(/unknown field providerInputKind/);
   });
 
-  it("rejects malformed launch profiles before registry admission", () => {
+  it("keeps the persisted launch profile to an exact ACPX registry name", () => {
     const adapter = fixture();
     expect(() =>
       validateServerAdapterModule({
@@ -101,24 +95,11 @@ describe("declarative ACP adapter contract", () => {
           ...adapter.definition,
           launchProfile: {
             ...adapter.definition.launchProfile,
-            args: [" /tmp/unpinned.js"],
+            command: "npx",
           },
         },
       }),
-    ).toThrow(/invalid command argv/);
-    expect(() =>
-      validateServerAdapterModule({
-        ...adapter,
-        definition: {
-          ...adapter.definition,
-          launchProfile: {
-            ...adapter.definition.launchProfile,
-            frontendDigest:
-              adapter.definition.launchProfile.frontendDigest.toUpperCase(),
-          },
-        },
-      }),
-    ).toThrow(/lowercase SHA-256 digest/);
+    ).toThrow(/unknown field command/);
   });
 
   it("derives sorted, nonempty stable ACP config selections and model limits", () => {
@@ -157,7 +138,7 @@ describe("declarative ACP adapter contract", () => {
       config: { model: "fixture-model", enabled: true },
     });
     expect(resolved).toMatchObject({
-      contractVersion: "acp-subprocess/v1",
+      contractVersion: "acpx-runtime/v1",
       sessionConfigSelections: [
         { configId: "Z", value: true },
         { configId: "a", value: "fixture-model" },

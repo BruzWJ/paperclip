@@ -3,7 +3,7 @@ import plugin from "../../src/plugin.js";
 
 const adapters = [
   {
-    adapterType: "codex",
+    adapterType: "fixture-acpx-agent",
     runtimeImage: "registry.example/provider-runtime:v1",
     allowFqdns: ["provider.example"],
     probeCommand: ["provider", "--version"],
@@ -44,10 +44,10 @@ describe("plugin", () => {
         namespacePrefix: "paperclip-",
         egressMode: "standard",
         podActivityDeadlineSec: 3600,
-        adapterType: "codex",
         adapters: expect.any(Array),
       }),
     );
+    expect(result.normalizedConfig).not.toHaveProperty("adapterType");
   });
 
   it("validateConfig rejects the removed backend selector", async () => {
@@ -73,7 +73,7 @@ describe("plugin", () => {
       driverKey: "kubernetes",
       config: {
         inCluster: true,
-        adapterType: "codex",
+        adapterType: "fixture-acpx-agent",
         adapters,
       },
     });
@@ -91,7 +91,7 @@ describe("plugin", () => {
       driverKey: "kubernetes",
       config: {
         inCluster: true,
-        adapterType: "codex",
+        adapterType: "fixture-acpx-agent",
         adapters,
         egressMode: "cilium",
       },

@@ -44,7 +44,7 @@ export const acpPromptAccounting = pgTable(
     segmentOrdinal: integer("segment_ordinal"),
     attemptId: uuid("attempt_id").notNull(),
     adapterConfigRevisionId: uuid("adapter_config_revision_id").notNull(),
-    selectedModelId: text("selected_model_id").notNull(),
+    selectedModelId: text("selected_model_id"),
     contextTokenLimit: bigint("context_token_limit", { mode: "number" }).notNull(),
     contextUsedTokens: bigint("context_used_tokens", { mode: "number" }).notNull(),
     contextWindowTokens: bigint("context_window_tokens", {
@@ -91,7 +91,10 @@ export const acpPromptAccounting = pgTable(
     ),
     check(
       "acp_prompt_accounting_references_check",
-      sql`length(btrim(${table.selectedModelId})) between 1 and 500
+      sql`(
+          ${table.selectedModelId} is null
+          or length(btrim(${table.selectedModelId})) between 1 and 500
+        )
         and length(btrim(${table.terminalUsageReference})) between 1 and 500
         and length(btrim(${table.terminalStopReference})) between 1 and 500`,
     ),

@@ -35,8 +35,9 @@ export const kubernetesProviderConfigSchema = z
     podActivityDeadlineSec: z.number().int().positive().default(3600),
 
     /**
-     * Exact default transport for this environment. A per-run external type
-     * may override it only when that type has an enabled registry entry.
+     * Optional operator-selected fallback for non-agent calls. Normal issue
+     * execution always supplies the exact ACPX-discovered agent type for its
+     * run, so this field cannot create or advertise an agent catalog.
      */
     adapterType: z
       .string()
@@ -44,7 +45,7 @@ export const kubernetesProviderConfigSchema = z
       .refine((value) => value === value.trim(), {
         message: "adapterType must be an exact non-blank identifier",
       })
-      .default("codex"),
+      .optional(),
 
     /**
      * Authoritative runtime declaration. Kubernetes has no built-in
@@ -67,18 +68,20 @@ export const kubernetesProviderConfigSchema = z
       }
       seenAdapterTypes.add(entry.adapterType);
     }
-    const defaultRuntime = config.adapters.find(
-      (entry) =>
-        entry.adapterType === config.adapterType &&
-        entry.enabled !== false,
-    );
-    if (!defaultRuntime) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["adapters"],
-        message:
-          "adapters must contain an enabled runtime for adapterType",
-      });
+    if (config.adapterType !== undefined) {
+      const defaultRuntime = config.adapters.find(
+        (entry) =>
+          entry.adapterType === config.adapterType &&
+          entry.enabled !== false,
+      );
+      if (!defaultRuntime) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["adapters"],
+          message:
+            "adapters must contain an enabled runtime for adapterType",
+        });
+      }
     }
   })
   .refine(

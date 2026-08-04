@@ -5,9 +5,9 @@ import {
   deriveAgentAdapterConfigRevision,
   deriveAgentExecutionTargetDigest,
 } from "../../services/agent-adapter-config-revisions.js";
-import { codexAdapter } from "../../adapters/codex.js";
 import { environmentService } from "../../services/environments.js";
 import {
+  CANONICAL_TEST_ADAPTER_DEFINITION,
   CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
   CANONICAL_TEST_ADAPTER_TYPE,
   canonicalTestAdapterConfig,
@@ -80,7 +80,7 @@ export function canonicalTestAgentAdapterRevision(
     runtimeMetadata: {
       implementationIdentity:
         CANONICAL_TEST_ADAPTER_IMPLEMENTATION_IDENTITY,
-      definition: codexAdapter.definition,
+      definition: CANONICAL_TEST_ADAPTER_DEFINITION,
     },
   });
 }

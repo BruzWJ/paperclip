@@ -85,21 +85,15 @@ describe("parseExecutionPolicyBootstrapEnv", () => {
     ).toThrow(/PAPERCLIP_EXECUTION_MODE/);
   });
 
-  it("attaches the declared adapter registry to the kubernetes config", () => {
+  it("does not treat PAPERCLIP_ADAPTERS as an agent catalog input", () => {
     const parsed = parseExecutionPolicyBootstrapEnv(
       env({
         PAPERCLIP_EXECUTION_MODE: "kubernetes",
         PAPERCLIP_ADAPTERS: JSON.stringify([
-          { adapterType: "codex", runtimeImage: "img", allowFqdns: [], probeCommand: ["codex-acp", "--version"] },
+          { adapterType: "fixture-agent", runtimeImage: "img" },
         ]),
       }),
     );
-    expect(parsed?.kubernetesConfig.adapters).toHaveLength(1);
-    expect(parsed?.kubernetesConfig.adapters?.[0].adapterType).toBe("codex");
-  });
-
-  it("leaves adapters undefined when PAPERCLIP_ADAPTERS is absent", () => {
-    const parsed = parseExecutionPolicyBootstrapEnv(env({ PAPERCLIP_EXECUTION_MODE: "kubernetes" }));
     expect(parsed?.kubernetesConfig.adapters).toBeUndefined();
   });
 

@@ -27,17 +27,16 @@ Create agents from the Agents page. Each agent requires:
 - **Name** — unique identifier (used for @-mentions)
 - **Title** — optional display text with no authorization meaning
 - **Reports to** — the agent's direct parent in the org chart
-- **Adapter type** — how the agent runs
-- **Adapter config** — runtime-specific provider and model settings
+- **ACPX-discovered agent** — the locally compatible CLI ACPX has probed
+- **Adapter config** — only the model and session settings that ACPX advertises
 - **Capabilities** — verbatim description shown when another agent selects an owner
 - **Context and action grants** — independent, explicit per-agent permissions
 - **Company tools and skills** — explicit selections only
 
-Common adapter choices:
-
-- `process` for an explicitly configured command that implements the ordered provider ABI
-- `http` for a service that implements the structured Session turn contract
-- an installed external adapter whose complete schema and runtime declaration match the intended provider
+The agent picker is dynamic. Install and authenticate a compatible local CLI;
+when ACPX can initialize it, Paperclip surfaces its exact name and its
+advertised settings. Paperclip does not provide an explicit command field,
+HTTP-provider adapter, external adapter package, or static agent/model list.
 
 ## Agent Hiring via Governance
 
@@ -51,7 +50,9 @@ permissions.
 Edit an agent's configuration from the agent detail page:
 
 - **Identity** — name, display title, icon, capabilities, and direct reporting edge
-- **Adapter config** — change provider, model, and provider-native settings
+- **Adapter config** — change only the model and session choices currently
+  advertised by ACPX (including reasoning effort when the selected agent
+  advertises it)
 - **Runtime settings** — cooldown and concurrent-run limits
 - **Context and action grants** — explicit booleans; absent means denied
 - **Selected tools and skills** — explicit company catalog entries

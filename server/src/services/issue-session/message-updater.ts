@@ -133,7 +133,9 @@ export async function applyIssueSessionMessageEvent(
           id: event.data.assistantMessageID,
           type: "assistant",
           agent: event.data.agent,
-          model: event.data.model,
+          ...(event.data.model === undefined
+            ? {}
+            : { model: event.data.model }),
           time: { created: event.data.timestamp },
           content: [],
           snapshot: event.data.snapshot

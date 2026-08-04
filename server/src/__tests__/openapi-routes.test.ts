@@ -238,7 +238,11 @@ describe("openapi routes", () => {
       res.body.paths["/api/adapters/{type}"].get.responses["200"].content[
         "application/json"
       ].schema;
-    expect(adapterInfoSchema).toMatchObject({
+    const [readyAdapterInfoSchema, unavailableAdapterInfoSchema] =
+      res.body.paths["/api/adapters"].get.responses["200"].content[
+        "application/json"
+      ].schema.items.oneOf;
+    expect(readyAdapterInfoSchema).toMatchObject({
       type: "object",
       additionalProperties: false,
       required: expect.arrayContaining([
@@ -247,12 +251,8 @@ describe("openapi routes", () => {
         "source",
         "modelsCount",
         "loaded",
-        "disabled",
         "capabilities",
         "registryName",
-        "frontendPackage",
-        "frontendVersion",
-        "frontendDigest",
       ]),
       properties: {
         capabilities: {
@@ -261,35 +261,55 @@ describe("openapi routes", () => {
           required: [
             "supportsModelProfiles",
             "contractVersion",
-            "protocolVersion",
-            "resume",
-            "cancel",
-            "sessionConfig",
-            "sessionScopedMcpReplacement",
+            "runtimeControls",
           ],
           properties: {
             supportsModelProfiles: { type: "boolean" },
             contractVersion: {
               type: "string",
-              enum: ["acp-subprocess/v1"],
+              enum: ["acpx-runtime/v1"],
             },
-            protocolVersion: { type: "number", enum: [1] },
-            resume: { type: "boolean", enum: [true] },
-            cancel: { type: "boolean", enum: [true] },
-            sessionConfig: { type: "boolean", enum: [true] },
-            sessionScopedMcpReplacement: {
-              type: "boolean",
-              enum: [true],
+            runtimeControls: {
+              type: "array",
+              items: {
+                type: "string",
+                minLength: 1,
+              },
             },
           },
         },
       },
     });
     expect(
-      res.body.paths["/api/adapters"].get.responses["200"].content[
-        "application/json"
-      ].schema.items,
-    ).toEqual(adapterInfoSchema);
+      readyAdapterInfoSchema.required,
+    ).not.toContain("disabled");
+    expect(unavailableAdapterInfoSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: expect.arrayContaining([
+        "type",
+        "label",
+        "source",
+        "modelsCount",
+        "loaded",
+        "diagnostic",
+        "registryName",
+      ]),
+      properties: {
+        loaded: { type: "boolean", enum: [false] },
+        diagnostic: {
+          type: "object",
+          additionalProperties: false,
+          required: ["code", "message"],
+          properties: {
+            code: { type: "string", enum: ["acpx_probe_failed"] },
+            message: { type: "string" },
+          },
+        },
+      },
+    });
+    // Individual lookup routes admit only a successful, executable probe.
+    expect(adapterInfoSchema).toEqual(readyAdapterInfoSchema);
 
     const adapterRevisionSchema =
       res.body.paths[

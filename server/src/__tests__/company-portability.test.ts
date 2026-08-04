@@ -194,21 +194,18 @@ function sourceAcpConfiguration(agent: Record<string, any>) {
     typeof agent.adapterConfig?.model === "string"
       ? agent.adapterConfig.model
       : "gpt-5.6";
+  const registryName =
+    typeof agent.adapterType === "string" && agent.adapterType.length > 0
+      ? agent.adapterType
+      : "fixture-agent";
   const selection = sourceCompanySkillSelectionByAgentId.get(agent.id) ?? {
     entries: [],
     skillChannel: "operator_native" as const,
   };
   return {
-    contractVersion: "acp-subprocess/v1" as const,
+    contractVersion: "acpx-runtime/v1" as const,
     launchProfile: {
-      registryName: "codex",
-      targetNativeCli: "codex",
-      command: "/opt/paperclip/bin/codex-acp",
-      args: [],
-      frontendPackage: "@agentclientprotocol/codex-acp",
-      frontendVersion: "1.1.7",
-      frontendDigest:
-        "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
+      registryName,
     },
     sessionConfigSelections: [{ configId: "model", value: model }],
     model: {

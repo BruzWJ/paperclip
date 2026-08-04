@@ -8,9 +8,16 @@ const environments = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
 
+const adapterRegistry = vi.hoisted(() => ({
+  refreshAcpxAdapters: vi.fn(),
+  findSelectableServerAdapterImplementation: vi.fn(),
+}));
+
 vi.mock("../services/environments.js", () => ({
   environmentService: vi.fn(() => environments),
 }));
+
+vi.mock("../adapters/registry.js", () => adapterRegistry);
 
 const companyId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -22,6 +29,81 @@ const noCompanySkills = {
   companySkillPins: [],
   skillChannel: "operator_native" as const,
 };
+
+const TEST_ADAPTER = Object.freeze({
+  type: "codex",
+  definition: Object.freeze({
+    version: "acpx-runtime/v1" as const,
+    launchProfile: Object.freeze({ registryName: "codex" }),
+    environment: Object.freeze({
+      cwd: "execution-workspace" as const,
+      additionalDirectories: "authorized-workspace-only" as const,
+      drivers: Object.freeze(["local"] as const),
+      environmentKeys: Object.freeze([]),
+    }),
+    runtime: Object.freeze({
+      controls: Object.freeze(["session/status", "session/set_config_option"]),
+    }),
+    ui: Object.freeze({
+      label: "Codex fixture",
+      description: "Test-only ACPX registry fixture.",
+    }),
+    configSchema: Object.freeze({
+      fields: Object.freeze([
+        Object.freeze({
+          key: "model",
+          label: "Model",
+          type: "select" as const,
+          required: true,
+          options: Object.freeze([
+            Object.freeze({ label: "GPT-5.6", value: "gpt-5.6" }),
+            Object.freeze({ label: "GPT-5.6 Sol", value: "gpt-5.6-sol" }),
+          ]),
+        }),
+      ]),
+    }),
+    configOptions: Object.freeze([
+      Object.freeze({
+        id: "model",
+        configKey: "model",
+        label: "Model",
+        required: true as const,
+        values: Object.freeze([
+          Object.freeze({ label: "GPT-5.6", value: "gpt-5.6" }),
+          Object.freeze({ label: "GPT-5.6 Sol", value: "gpt-5.6-sol" }),
+        ]),
+      }),
+    ]),
+    modelConfigOptionId: "model",
+    models: Object.freeze([
+      Object.freeze({
+        id: "gpt-5.6",
+        label: "GPT-5.6",
+        value: "gpt-5.6",
+        limits: null,
+      }),
+      Object.freeze({
+        id: "gpt-5.6-sol",
+        label: "GPT-5.6 Sol",
+        value: "gpt-5.6-sol",
+        limits: null,
+      }),
+    ]),
+    modelProfiles: Object.freeze([]),
+    configurationDoc: "Supplied by the ACPX test registry.",
+  }),
+});
+
+const TEST_IMPLEMENTATION_IDENTITY = Object.freeze({
+  adapterType: "codex",
+  definitionVersion: "acpx-runtime/v1" as const,
+  protocolVersion: 1 as const,
+  origin: "builtin" as const,
+  packageName: "acpx",
+  packageVersion: "test-runtime",
+  buildIdentity: "acpx-test-runtime:codex",
+  artifactDigest: "a".repeat(64),
+});
 
 function adapterConfig(model: "gpt-5.6" | "gpt-5.6-sol") {
   return { model };
@@ -147,9 +229,35 @@ beforeEach(() => {
     status: "active",
     config: {},
   });
+  adapterRegistry.refreshAcpxAdapters.mockResolvedValue(undefined);
+  adapterRegistry.findSelectableServerAdapterImplementation.mockReturnValue({
+    adapter: TEST_ADAPTER,
+    identity: TEST_IMPLEMENTATION_IDENTITY,
+  });
 });
 
 describe("agent adapter configuration revisions", () => {
+  it("rejects a driver absent from the exact current ACPX definition before writing a revision", async () => {
+    environments.getById.mockResolvedValue({
+      id: environmentId,
+      driver: "ssh",
+      status: "active",
+      config: {},
+    });
+    const harness = appendHarness({
+      revisionId: "44444444-4444-4444-8444-444444444444",
+      revisionNumber: 1,
+    });
+
+    await expect(createRevision(harness)).rejects.toThrow(
+      'Environment driver "ssh" is not allowed here. Allowed drivers: local',
+    );
+
+    expect(adapterRegistry.findSelectableServerAdapterImplementation)
+      .toHaveBeenCalledWith("codex");
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+  });
+
   it("appends immutable A to B to A lineage instead of reviving history", async () => {
     const first = await createRevision(appendHarness({
       revisionId: "44444444-4444-4444-8444-444444444444",
@@ -256,15 +364,9 @@ describe("agent adapter configuration revisions", () => {
         currentAdapterConfigRevisionId: "revision-1",
         revisionId: "revision-1",
         acpConfiguration: {
-          contractVersion: "acp-subprocess/v1",
+          contractVersion: "acpx-runtime/v1",
           launchProfile: {
-            registryName: "codex",
-            targetNativeCli: "codex",
-            command: "/opt/paperclip/bin/codex-acp",
-            args: ["--acp"],
-            frontendPackage: "@agentclientprotocol/codex-acp",
-            frontendVersion: "1.1.7",
-            frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
+            registryName: "fixture-agent",
           },
           sessionConfigSelections: [{ configId: "model", value: "gpt-5.6" }],
           model: {

@@ -204,7 +204,7 @@ describe("ssh env-lab fixture", () => {
         knownHosts: null,
         strictHostKeyChecking: false,
       },
-      command: "/opt/paperclip/bin/codex-acp",
+      command: "/opt/paperclip/bin/acpx-agent",
       args: ["--stdio"],
       env: { SAFE_VALUE: "visible" },
       cwd: "/srv/paperclip/issues/ISSUE-42",
@@ -216,7 +216,7 @@ describe("ssh env-lab fixture", () => {
       expect(remoteCommand).not.toContain(
         "/srv/paperclip/environment-root",
       );
-      expect(remoteCommand).toContain("/opt/paperclip/bin/codex-acp");
+      expect(remoteCommand).toContain("/opt/paperclip/bin/acpx-agent");
       expect(remoteCommand).toContain("SAFE_VALUE");
     } finally {
       await target.cleanup();

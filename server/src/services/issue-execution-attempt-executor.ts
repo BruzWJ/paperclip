@@ -1,24 +1,18 @@
 import {
-  ACP_SUBPROCESS_CONTRACT_VERSION,
   createPaperclipRunToolsMcpServer,
-  executeAcpSubprocessPrompt,
-  prepareAcpExecutionTargetSubprocess,
-  resolveApprovedAcpLaunch,
-  sameApprovedAcpLaunch,
+  executeAcpxOneShotPrompt,
+  prepareAcpxRuntimeInvocation,
   type AcpPromptClosureOutcome,
   type AcpPromptExecutionPhase,
   type AcpPromptExecutionResult,
   type AcpPromptSettlement,
-  type AcpSubprocess,
-  type AcpSubprocessLaunch,
+  type AcpSessionConfigSelection,
+  type AcpxRuntimeMcpServer,
   type NormalizedAcpSessionEvent,
 } from "@paperclipai/adapter-utils/acp-subprocess";
 import { RUN_TOOLS_STDIO_PROXY_SOURCE } from "@paperclipai/adapter-utils/run-tools-stdio-proxy";
 import type { LocalProcessSandboxOptions } from "@paperclipai/adapter-utils/local-process-sandbox";
-import {
-  selectedCompanySkillMaterializationKey,
-  type SelectedCompanySkillLaunchChannel,
-} from "@paperclipai/adapter-utils/selected-company-skills";
+import type { SelectedCompanySkillLaunchChannel } from "@paperclipai/adapter-utils/selected-company-skills";
 import {
   agentAdapterAcpConfigurationSchema,
   type AgentAdapterAcpConfiguration,
@@ -357,8 +351,53 @@ export class IssueExecutionAttemptRejected extends Error {
   }
 }
 
-type ExecutePrompt = typeof executeAcpSubprocessPrompt;
-type PrepareTarget = typeof prepareAcpExecutionTargetSubprocess;
+/**
+ * The worker delegates the provider lifecycle to ACPX. This intentionally
+ * retains the established Paperclip closure shape so durable prompt authority
+ * and accounting remain unchanged while Paperclip no longer speaks raw ACP
+ * to a provider frontend itself.
+ */
+/**
+ * The only production provider invocation shape. It contains ACPX runtime
+ * inputs and durable Paperclip fences, never an argv, subprocess, or raw ACP
+ * starter.
+ */
+export interface AcpxRuntimePromptExecutionInput {
+  readonly cwd: string;
+  /** ACPX configuration scope; the session itself still uses `cwd`. */
+  readonly registryCwd?: string;
+  readonly agentName: string;
+  readonly configSelections: readonly AcpSessionConfigSelection[];
+  readonly mcpServers: readonly AcpxRuntimeMcpServer[];
+  readonly timeoutMs?: number;
+  readonly request: {
+    readonly start: { readonly kind: "new" } | {
+      readonly kind: "resume";
+      readonly sessionId: string;
+    };
+    readonly message: string;
+  };
+  readonly signal: AbortSignal;
+  readonly redactStderr: (chunk: string) => string;
+  readonly activatePrompt: (input: {
+    readonly sessionId: string;
+  }) => Promise<void>;
+  readonly beginPromptTransmission: (input: {
+    readonly sessionId: string;
+  }) => Promise<void>;
+  readonly releasePreparedResources: () => Promise<void>;
+  readonly closePrompt: (outcome: AcpPromptClosureOutcome) => Promise<void>;
+  readonly onSessionEvent: (
+    event: NormalizedAcpSessionEvent,
+  ) => Promise<void> | void;
+  readonly validatePromptEvents?: () => Promise<void> | void;
+  readonly onProtocolViolation?: (error: Error) => Promise<void> | void;
+}
+
+type ExecutePrompt = (
+  input: AcpxRuntimePromptExecutionInput,
+) => Promise<AcpPromptExecutionResult>;
+type PrepareTarget = typeof prepareAcpxRuntimeInvocation;
 
 function exactIdentity(value: string, label: string): void {
   if (value.length === 0 || value !== value.trim()) {
@@ -423,19 +462,11 @@ function sameCorrelationLogicalKey(
 function validatePrompt(prompt: ResolvedIssueExecutionPrompt): void {
   const identity = prompt.identity;
   if (
-    prompt.companySkills.channel !==
-      prompt.acpConfiguration.skillChannel ||
-    (prompt.companySkills.channel === "isolated_skills_home" &&
-      (prompt.companySkills.identity.companyId !== identity.companyId ||
-        prompt.companySkills.identity.agentId !== identity.targetAgentId ||
-        prompt.companySkills.identity.adapterConfigRevisionId !==
-          identity.adapterConfigRevisionId ||
-        prompt.companySkills.identity.executionTargetIdentity !==
-          prompt.acpConfiguration.executionTargetSelector
-            .executionTargetDigest))
+    prompt.acpConfiguration.skillChannel !== "operator_native" ||
+    prompt.companySkills.channel !== "operator_native"
   ) {
     throw new IssueExecutionAttemptRejected(
-      "selected company skill channel crossed the immutable ACP revision",
+      "ACPX public runtime requires operator_native skills; isolated_skills_home is not supported",
     );
   }
   for (const [label, value] of [
@@ -611,21 +642,6 @@ function validateLeaseResolution(
   }
 }
 
-function exactLaunch(
-  configuration: AgentAdapterAcpConfiguration,
-): AcpSubprocessLaunch["launch"] {
-  const approved = resolveApprovedAcpLaunch(
-    configuration.launchProfile.registryName,
-  );
-  const configured = configuration.launchProfile;
-  if (!sameApprovedAcpLaunch(configured, approved)) {
-    throw new IssueExecutionAttemptRejected(
-      "immutable ACP launch profile differs from the approved registry launch",
-    );
-  }
-  return approved;
-}
-
 function exactCapability(
   capability: MintedIssueExecutionPromptCapability,
 ): void {
@@ -710,9 +726,11 @@ function canonicalClosure(
         : `ACP execution failed during ${outcome.phase}`,
     };
   }
+  const knownContextLimit =
+    prompt.acpConfiguration.model?.limits?.contextTokenLimit;
   if (
-    outcome.settlement.occupancy.size !==
-    prompt.acpConfiguration.model.limits.contextTokenLimit
+    knownContextLimit !== undefined &&
+    outcome.settlement.occupancy.size !== knownContextLimit
   ) {
     return {
       kind: "error",
@@ -811,6 +829,211 @@ function failedExecutionResult(input: {
   };
 }
 
+function acpxRuntimeConfigSelections(
+  selections: readonly AcpSessionConfigSelection[],
+) {
+  return Object.freeze(
+    selections.map((selection) =>
+      Object.freeze({
+        configId: selection.configId,
+        // ACPX's public runtime exposes one canonical string setter. Boolean
+        // form values remain useful UI state, but the immutable runtime
+        // invocation is always the exact textual value ACPX accepts.
+        value:
+          typeof selection.value === "boolean"
+            ? String(selection.value)
+            : selection.value,
+      }),
+    ),
+  );
+}
+
+function acpxRuntimeTimeoutMs(
+  timeoutSec: number | null | undefined,
+): number | undefined {
+  if (
+    typeof timeoutSec !== "number" ||
+    !Number.isFinite(timeoutSec) ||
+    timeoutSec <= 0
+  ) {
+    return undefined;
+  }
+  const milliseconds = Math.ceil(timeoutSec * 1_000);
+  return Number.isSafeInteger(milliseconds) && milliseconds > 0
+    ? milliseconds
+    : undefined;
+}
+
+function acpxRuntimePhase(
+  phase: "session_setup" | "configuration" | "prompt_activation" | "prompt_transmission" | "prompt",
+): AcpPromptExecutionPhase {
+  switch (phase) {
+    case "prompt_activation":
+    case "prompt_transmission":
+    case "prompt":
+      return phase;
+    case "session_setup":
+    case "configuration":
+      return "session_setup";
+  }
+}
+
+function redactAcpxRuntimeError(
+  cause: unknown,
+  redact: (value: string) => string,
+): Error {
+  const raw = errorMessage(cause);
+  try {
+    const redacted = redact(raw);
+    return new Error(
+      typeof redacted === "string"
+        ? redacted
+        : "[ACPX runtime redaction failed]",
+    );
+  } catch {
+    return new Error("[ACPX runtime redaction failed]");
+  }
+}
+
+/**
+ * Executes exactly one prompt through ACPX's public runtime. ACPX owns the
+ * provider CLI process, session setup, configuration setters, prompt
+ * invocation, cancellation, and cleanup; Paperclip retains only durable
+ * activation and closure fences.
+ */
+export async function executeAcpxRuntimePrompt(
+  input: AcpxRuntimePromptExecutionInput,
+): Promise<AcpPromptExecutionResult> {
+  let outcome: AcpPromptClosureOutcome;
+  try {
+    const result = await executeAcpxOneShotPrompt({
+      cwd: input.cwd,
+      ...(input.registryCwd === undefined
+        ? {}
+        : { registryCwd: input.registryCwd }),
+      agentName: input.agentName,
+      start: input.request.start,
+      message: input.request.message,
+      configSelections: acpxRuntimeConfigSelections(input.configSelections),
+      // Paperclip approval gates are settled before the run reaches this
+      // worker. ACPX therefore receives the non-interactive execution policy,
+      // rather than a provider-specific Paperclip permission shim.
+      permissionMode: "approve-all",
+      nonInteractivePermissions: "fail",
+      mcpServers: input.mcpServers,
+      timeoutMs: input.timeoutMs,
+      signal: input.signal,
+      activatePrompt: input.activatePrompt,
+      beginPromptTransmission: input.beginPromptTransmission,
+      onSessionEvent: input.onSessionEvent,
+    });
+
+    if (!result.cleanup.stateRemoved) {
+      outcome = {
+        kind: "error",
+        failure: "runtime",
+        phase: result.kind === "error"
+          ? acpxRuntimePhase(result.phase)
+          : "prompt",
+        promptTransmitted:
+          result.kind === "error"
+            ? result.promptTransmitted
+            : true,
+        cause: new Error(
+          "ACPX temporary runtime state could not be removed after the prompt",
+        ),
+      };
+    } else if (result.kind === "completed" || result.kind === "cancelled") {
+      if (!result.settlement) {
+        outcome = {
+          kind: "error",
+          failure: "runtime",
+          phase: "prompt",
+          promptTransmitted: true,
+          cause: new Error(
+            "ACPX prompt ended without an exact terminal stop reason and usage occupancy",
+          ),
+        };
+      } else {
+        try {
+          await input.validatePromptEvents?.();
+          outcome = {
+            kind: "settled",
+            sessionId: result.sessionId,
+            settlement: result.settlement,
+            cancellationNotificationError: null,
+          };
+        } catch (cause) {
+          await input.onProtocolViolation?.(
+            redactAcpxRuntimeError(cause, input.redactStderr),
+          );
+          outcome = {
+            kind: "error",
+            failure: "runtime",
+            phase: "prompt",
+            promptTransmitted: true,
+            cause: redactAcpxRuntimeError(cause, input.redactStderr),
+          };
+        }
+      }
+    } else if (result.kind === "failed") {
+      outcome = {
+        kind: "error",
+        failure: "runtime",
+        phase: "prompt",
+        promptTransmitted: true,
+        cause: redactAcpxRuntimeError(result.turnResult.error, input.redactStderr),
+      };
+    } else {
+      outcome = {
+        kind: "error",
+        failure: "runtime",
+        phase: acpxRuntimePhase(result.phase),
+        promptTransmitted: result.promptTransmitted,
+        cause: redactAcpxRuntimeError(result.cause, input.redactStderr),
+      };
+    }
+  } catch (cause) {
+    outcome = {
+      kind: "error",
+      failure: "runtime",
+      phase: "session_setup",
+      promptTransmitted: false,
+      cause: redactAcpxRuntimeError(cause, input.redactStderr),
+    };
+  }
+
+  try {
+    await input.releasePreparedResources?.();
+  } catch (cause) {
+    const promptTransmitted =
+      outcome.kind === "settled" ||
+      (outcome.kind === "error" && outcome.promptTransmitted);
+    outcome = {
+      kind: "error",
+      failure: "runtime",
+      phase: promptTransmitted ? "prompt" : "session_setup",
+      promptTransmitted,
+      cause: redactAcpxRuntimeError(cause, input.redactStderr),
+    };
+  }
+
+  let closureError: unknown | null = null;
+  try {
+    await input.closePrompt(outcome);
+  } catch (cause) {
+    closureError = cause;
+  }
+  return {
+    ...outcome,
+    closureError,
+    // ACPX internally owns and closes its provider subprocess. Paperclip
+    // intentionally retains no PID or ACPX runtime record to reap.
+    teardown: { kind: "not_started" },
+    stderr: "",
+  };
+}
+
 function verifyEchoChunk(input: {
   readonly event: Extract<
     NormalizedAcpSessionEvent,
@@ -878,37 +1101,19 @@ export function createIssueExecutionAttemptExecutor(options: {
   readonly executePrompt?: ExecutePrompt;
   readonly prepareTarget?: PrepareTarget;
 }): IssueExecutionAttemptExecutor {
-  const executePrompt = options.executePrompt ?? executeAcpSubprocessPrompt;
-  const prepareTarget =
-    options.prepareTarget ?? prepareAcpExecutionTargetSubprocess;
+  const executePrompt = options.executePrompt ?? executeAcpxRuntimePrompt;
+  const prepareTarget = options.prepareTarget ?? prepareAcpxRuntimeInvocation;
 
   function collectionCandidate(
-    prompt: ResolvedIssueExecutionPrompt,
-    prepared: Awaited<ReturnType<PrepareTarget>> | null,
-    teardown: AcpPromptExecutionResult["teardown"],
+    _prompt: ResolvedIssueExecutionPrompt,
+    _prepared: Awaited<ReturnType<PrepareTarget>> | null,
+    _teardown: AcpPromptExecutionResult["teardown"],
   ): ReapedCompanySkillMaterialization | null {
-    const targetCollection =
-      prepared?.selectedCompanySkillMaterialization ?? null;
-    if (!targetCollection || teardown.kind === "failed") return null;
-    if (prompt.companySkills.channel !== "isolated_skills_home") {
-      throw new IssueExecutionAttemptRejected(
-        "operator_native produced a selected-skill materialization",
-      );
-    }
-    const expected = selectedCompanySkillMaterializationKey({
-      identity: prompt.companySkills.identity,
-      entries: prompt.companySkills.entries,
-    });
-    if (targetCollection.materializationKey !== expected.materializationKey) {
-      throw new IssueExecutionAttemptRejected(
-        "prepared selected-skill materialization crossed its complete key",
-      );
-    }
-    return Object.freeze({
-      identity: prompt.companySkills.identity,
-      materializationKey: expected.materializationKey,
-      collectExact: targetCollection.collectExact,
-    });
+    // ACPX's public local runtime has no generic isolated-skills-home or
+    // additional-directory contract. Incompatible revisions are rejected at
+    // admission; a successful ACPX invocation never creates a Paperclip skill
+    // materialization to collect.
+    return null;
   }
 
   async function runCycle(input: {
@@ -944,10 +1149,8 @@ export function createIssueExecutionAttemptExecutor(options: {
     let prepared:
       | Awaited<ReturnType<PrepareTarget>>
       | null = null;
-    let startedSubprocess: AcpSubprocess | null = null;
-    let subprocessLaunchAttempted = false;
-    let subprocessFactRecorded = false;
-    let retainedTeardown: AcpPromptExecutionResult["teardown"] | null = null;
+    let promptTransmissionRecorded = false;
+    let preparedResourcesReleased = false;
     let decision: IssueExecutionPromptClosureDecision | null = null;
     let unexpectedClosureAttempted = false;
     let unexpectedClosureError: unknown | null = null;
@@ -975,33 +1178,10 @@ export function createIssueExecutionAttemptExecutor(options: {
       }
     }
 
-    async function reapRetainedSubprocess(): Promise<
-      AcpPromptExecutionResult["teardown"]
-    > {
-      if (retainedTeardown) return retainedTeardown;
-      if (startedSubprocess) {
-        const subprocess = startedSubprocess;
-        startedSubprocess = null;
-        try {
-          retainedTeardown = {
-            kind: "reaped",
-            processExit: await subprocess.terminateAndReap(),
-          };
-        } catch (cause) {
-          retainedTeardown = { kind: "failed", cause };
-        }
-        return retainedTeardown;
-      }
-      if (prepared && !subprocessLaunchAttempted) {
-        try {
-          await prepared.disposeBeforeStart();
-        } catch (cause) {
-          retainedTeardown = { kind: "failed", cause };
-          return retainedTeardown;
-        }
-      }
-      retainedTeardown = { kind: "not_started" };
-      return retainedTeardown;
+    async function releasePreparedResources(): Promise<void> {
+      if (!prepared || preparedResourcesReleased) return;
+      preparedResourcesReleased = true;
+      await prepared.disposeBeforeStart();
     }
 
     async function closeUnexpectedFailure(
@@ -1011,23 +1191,30 @@ export function createIssueExecutionAttemptExecutor(options: {
       readonly decision: IssueExecutionPromptClosureDecision;
       readonly materialization: ReapedCompanySkillMaterialization | null;
     }> {
-      // An unexpected throw after process start has unknown wire progress. Mark
-      // it conservatively post-send so the DB owner cannot replay the prompt.
-      const promptTransmitted = subprocessFactRecorded;
+      // ACPX owns its subprocess, so the durable transmission fence is the
+      // sole authority for whether an external prompt may have been sent.
+      const promptTransmitted = promptTransmissionRecorded;
       const phase: AcpPromptExecutionPhase = promptTransmitted
         ? "prompt"
-        : "spawn";
+        : "session_setup";
+      let cleanupError: unknown | null = null;
       try {
         await closeUnexpectedCapability(phase, promptTransmitted);
       } finally {
-        await reapRetainedSubprocess();
+        try {
+          await releasePreparedResources();
+        } catch (error) {
+          cleanupError = error;
+        }
       }
       const result = failedExecutionResult({
         cause,
         phase,
         promptTransmitted,
         closureError: unexpectedClosureError,
-        teardown: retainedTeardown ?? { kind: "not_started" },
+        teardown: cleanupError === null
+          ? { kind: "not_started" }
+          : { kind: "failed", cause: cleanupError },
       });
       let teardownRecordError: unknown | null = null;
       try {
@@ -1067,19 +1254,15 @@ export function createIssueExecutionAttemptExecutor(options: {
     }
 
     try {
-      const approvedLaunch = exactLaunch(input.prompt.acpConfiguration);
+      if (input.target.targetAdditionalDirectories.length > 0) {
+        throw new IssueExecutionAttemptRejected(
+          "ACPX public runtime does not support Paperclip-managed additional directories",
+        );
+      }
       prepared = await prepareTarget({
-        runId: input.prompt.identity.runId,
         target: input.target.executionTarget,
-        sourceLaunch: approvedLaunch,
-        hostCwd: input.target.hostCwd,
         targetCwd: input.target.targetCwd,
-        targetAdditionalDirectories:
-          input.target.targetAdditionalDirectories,
         companySkills: input.prompt.companySkills,
-        runtimeRootDir: input.prompt.runtimeRootDir,
-        timeoutSec: input.prompt.timeoutSec,
-        localProcessSandbox: input.prompt.localProcessSandbox,
         invocationFiles: [
           {
             fileName: RUN_TOOLS_PROXY_FILE,
@@ -1100,68 +1283,27 @@ export function createIssueExecutionAttemptExecutor(options: {
           "execution target omitted request-scoped run-tools files",
         );
       }
-      const launch: AcpSubprocessLaunch = {
-        version: ACP_SUBPROCESS_CONTRACT_VERSION,
-        launch: approvedLaunch,
-        cwd: prepared.targetCwd,
-        additionalDirectories: prepared.targetAdditionalDirectories,
-        environment: Object.freeze({}),
-        mcpServers: Object.freeze([
-          createPaperclipRunToolsMcpServer({
-            nodeExecutable: prepared.targetNodeExecutable,
-            proxyEntrypoint,
-            secretFile,
-          }),
-        ]),
-        configOptions:
-          input.prompt.acpConfiguration.sessionConfigSelections,
-      };
       let echoedText = "";
       let result: AcpPromptExecutionResult;
+      const timeoutMs = acpxRuntimeTimeoutMs(input.prompt.timeoutSec);
       try {
         result = await executePrompt({
-          launch,
+          cwd: prepared.targetCwd,
+          registryCwd: process.cwd(),
+          agentName: input.prompt.acpConfiguration.launchProfile.registryName,
+          configSelections:
+            input.prompt.acpConfiguration.sessionConfigSelections,
+          mcpServers: Object.freeze([
+            createPaperclipRunToolsMcpServer({
+              nodeExecutable: prepared.targetNodeExecutable,
+              proxyEntrypoint,
+              secretFile,
+            }),
+          ]),
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
           request: {
             start: input.start,
             message: input.message,
-          },
-          async startSubprocess(subprocessLaunch, subprocessOptions) {
-            if (input.signal.aborted) {
-              throw input.signal.reason ?? new IssueExecutionAttemptRejected(
-                "ACP subprocess launch was cancelled before spawn",
-              );
-            }
-            subprocessLaunchAttempted = true;
-            const subprocess = await prepared!.startSubprocess(
-              subprocessLaunch,
-              subprocessOptions,
-            );
-            startedSubprocess = subprocess;
-            try {
-              const processId = subprocess.child.pid;
-              if (!Number.isSafeInteger(processId) || Number(processId) < 1) {
-                throw new IssueExecutionAttemptRejected(
-                  "ACP subprocess did not expose a valid supervised process identity",
-                );
-              }
-              await options.repository.recordSubprocessStarted({
-                prompt: input.prompt,
-                capability: capabilityIdentity,
-                processId: Number(processId),
-                processGroupId: Number(processId),
-                supervisorLocator:
-                  `paperclip-worker/${input.prompt.identity.attemptId}/${processId}`,
-              });
-              subprocessFactRecorded = true;
-              return subprocess;
-            } catch (cause) {
-              try {
-                await closeUnexpectedCapability("spawn", false);
-              } finally {
-                await reapRetainedSubprocess();
-              }
-              throw cause;
-            }
           },
           signal: input.signal,
           redactStderr: redactRuntimeText,
@@ -1179,10 +1321,18 @@ export function createIssueExecutionAttemptExecutor(options: {
             });
           },
           beginPromptTransmission: () =>
-            options.repository.beginPromptTransmission({
-              prompt: input.prompt,
-              capability: capabilityIdentity,
-            }),
+            options.repository
+              .beginPromptTransmission({
+                prompt: input.prompt,
+                capability: capabilityIdentity,
+              })
+              .then(() => {
+                // ACPX owns the opaque provider process, so there is no
+                // Paperclip child-PID fact. This fence is the authoritative
+                // proof that a provider prompt may have been transmitted.
+                promptTransmissionRecorded = true;
+              }),
+          releasePreparedResources,
           async closePrompt(outcome) {
             if (decision !== null) return;
             decision = await options.repository.closePrompt({
@@ -1232,18 +1382,6 @@ export function createIssueExecutionAttemptExecutor(options: {
               message: "ACP protocol violation",
             }),
         });
-        if (unexpectedClosureError !== null && result.closureError !== null) {
-          result = {
-            ...result,
-            closureError: new AggregateError(
-              [unexpectedClosureError, result.closureError],
-              "prompt capability closure failed before and after subprocess reap",
-            ),
-          };
-        }
-        if (retainedTeardown) {
-          result = { ...result, teardown: retainedTeardown };
-        }
       } catch (cause) {
         return closeUnexpectedFailure(cause);
       }
@@ -1288,11 +1426,7 @@ export function createIssueExecutionAttemptExecutor(options: {
         ),
       };
     } catch (cause) {
-      if (
-        unexpectedClosureAttempted ||
-        decision !== null ||
-        startedSubprocess !== null
-      ) throw cause;
+      if (unexpectedClosureAttempted || decision !== null) throw cause;
       return closeUnexpectedFailure(cause);
     }
   }
@@ -1409,46 +1543,25 @@ export function createIssueExecutionAttemptExecutor(options: {
             message,
             signal: executionController.signal,
           });
-          if (cycle.result.kind === "target_not_found") {
-            if (
-              start.kind !== "resume" ||
-              (prompt.sessionOperation !== "resume" &&
-                prompt.sessionOperation !== "steer_resume") ||
-              cycle.decision.result.kind !== "retry" ||
-              cycle.decision.result.reason !== "target_not_found_new_session"
-            ) {
-              throw new IssueExecutionAttemptRejected(
-                "ACP target_not_found did not close as an exact successor-attempt transition",
-              );
-            }
-            await stopRenewal(true);
-            await settle({
-              result: cycle.decision.result,
-              materialization: cycle.materialization,
-            });
-            targetFailed = false;
-            dispatchResult = cycle.decision.result;
-          } else {
-            if (
-              cycle.decision.result.kind === "retry" &&
-              cycle.decision.result.reason === "target_not_found_new_session"
-            ) {
-              throw new IssueExecutionAttemptRejected(
-                "target_not_found restart was requested without exact ACP target_not_found",
-              );
-            }
-            const failed =
-              (cycle.decision.result.kind === "terminal" &&
-                cycle.decision.result.outcome === "failed") ||
-              cycle.decision.result.kind === "retry";
-            await stopRenewal(true);
-            await settle({
-              result: cycle.decision.result,
-              materialization: cycle.materialization,
-            });
-            targetFailed = failed;
-            dispatchResult = cycle.decision.result;
+          if (
+            cycle.decision.result.kind === "retry" &&
+            cycle.decision.result.reason === "target_not_found_new_session"
+          ) {
+            throw new IssueExecutionAttemptRejected(
+              "ACPX runtime never emits a target_not_found successor transition",
+            );
           }
+          const failed =
+            (cycle.decision.result.kind === "terminal" &&
+              cycle.decision.result.outcome === "failed") ||
+            cycle.decision.result.kind === "retry";
+          await stopRenewal(true);
+          await settle({
+            result: cycle.decision.result,
+            materialization: cycle.materialization,
+          });
+          targetFailed = failed;
+          dispatchResult = cycle.decision.result;
         } finally {
           await target.release(targetFailed);
         }

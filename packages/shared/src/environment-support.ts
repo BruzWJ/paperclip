@@ -1,8 +1,21 @@
-import type { AgentAdapterType, EnvironmentDriver } from "./constants.js";
+import {
+  ENVIRONMENT_DRIVERS,
+  type AgentAdapterType,
+  type EnvironmentDriver,
+} from "./constants.js";
 import type { SandboxEnvironmentProvider } from "./types/environment.js";
 import type { JsonSchema, PluginEnvironmentTemplateConfigBinding } from "./types/plugin.js";
 
 export type EnvironmentSupportStatus = "supported" | "unsupported";
+
+/**
+ * The exact environment transports admitted for each live adapter. This is a
+ * runtime catalog projection supplied by ACPX through the server; it is not a
+ * static statement that every Paperclip transport works for every agent.
+ */
+export type AdapterEnvironmentDriverCatalog = Readonly<
+  Record<string, readonly EnvironmentDriver[]>
+>;
 
 export interface AdapterEnvironmentSupport {
   adapterType: AgentAdapterType;
@@ -36,44 +49,36 @@ export interface EnvironmentCapabilities {
   sandboxProviders: Record<SandboxEnvironmentProvider, EnvironmentProviderCapability>;
 }
 
-/**
- * Closed execution-mechanics capabilities for Paperclip's active transports.
- * An external module overriding an exact transport type inherits that
- * transport boundary; a distinct external type remains local-only until the
- * adapter ABI gains an explicit execution-target capability.
- */
-export const ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES = {
-  codex: ["local", "ssh", "sandbox", "plugin"],
-} as const satisfies Record<string, readonly EnvironmentDriver[]>;
-
-const LOCAL_ONLY_ENVIRONMENT_DRIVERS = ["local"] as const;
-
-export function adapterSupportsRemoteManagedEnvironments(adapterType: string): boolean {
-  const drivers = supportedEnvironmentDriversForAdapter(adapterType);
+export function adapterSupportsRemoteManagedEnvironments(
+  adapterType: string,
+  adapterDrivers: AdapterEnvironmentDriverCatalog = {},
+): boolean {
+  const drivers = supportedEnvironmentDriversForAdapter(adapterType, adapterDrivers);
   return drivers.includes("ssh") && drivers.includes("sandbox");
 }
 
-export function supportedEnvironmentDriversForAdapter(adapterType: string): EnvironmentDriver[] {
-  if (
-    Object.hasOwn(
-      ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES,
-      adapterType,
-    )
-  ) {
-    return [
-      ...ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES[
-        adapterType as keyof typeof ADAPTER_ENVIRONMENT_DRIVER_CAPABILITIES
-      ],
-    ];
-  }
-  return [...LOCAL_ONLY_ENVIRONMENT_DRIVERS];
+/**
+ * Return only transports declared for this exact live ACPX adapter. Missing
+ * catalog data deliberately means no supported driver: callers must refresh
+ * ACPX rather than falling back to a Paperclip-maintained transport list.
+ */
+export function supportedEnvironmentDriversForAdapter(
+  adapterType: string,
+  adapterDrivers: AdapterEnvironmentDriverCatalog = {},
+): EnvironmentDriver[] {
+  const declared = adapterDrivers[adapterType] ?? [];
+  // Preserve the platform's stable driver ordering and discard malformed or
+  // future values until the shared environment contract explicitly supports
+  // them. ACPX remains the only source of the membership decision.
+  return ENVIRONMENT_DRIVERS.filter((driver) => declared.includes(driver));
 }
 
 export function supportedSandboxProvidersForAdapter(
   adapterType: string,
   additionalProviders: readonly string[] = [],
+  adapterDrivers: AdapterEnvironmentDriverCatalog = {},
 ): SandboxEnvironmentProvider[] {
-  return adapterSupportsRemoteManagedEnvironments(adapterType)
+  return supportedEnvironmentDriversForAdapter(adapterType, adapterDrivers).includes("sandbox")
     ? Array.from(new Set(additionalProviders)) as SandboxEnvironmentProvider[]
     : [];
 }
@@ -81,17 +86,19 @@ export function supportedSandboxProvidersForAdapter(
 export function isEnvironmentDriverSupportedForAdapter(
   adapterType: string,
   driver: string,
+  adapterDrivers: AdapterEnvironmentDriverCatalog = {},
 ): boolean {
-  return supportedEnvironmentDriversForAdapter(adapterType).includes(driver as EnvironmentDriver);
+  return supportedEnvironmentDriversForAdapter(adapterType, adapterDrivers).includes(driver as EnvironmentDriver);
 }
 
 export function isSandboxProviderSupportedForAdapter(
   adapterType: string,
   provider: string | null | undefined,
   additionalProviders: readonly string[] = [],
+  adapterDrivers: AdapterEnvironmentDriverCatalog = {},
 ): boolean {
   if (!provider) return false;
-  return supportedSandboxProvidersForAdapter(adapterType, additionalProviders).includes(
+  return supportedSandboxProvidersForAdapter(adapterType, additionalProviders, adapterDrivers).includes(
     provider as SandboxEnvironmentProvider,
   );
 }
@@ -99,9 +106,18 @@ export function isSandboxProviderSupportedForAdapter(
 export function getAdapterEnvironmentSupport(
   adapterType: AgentAdapterType,
   additionalSandboxProviders: readonly string[] = [],
+  adapterDrivers: AdapterEnvironmentDriverCatalog = {},
 ): AdapterEnvironmentSupport {
-  const supportedDrivers = new Set(supportedEnvironmentDriversForAdapter(adapterType));
-  const supportedProviders = new Set(supportedSandboxProvidersForAdapter(adapterType, additionalSandboxProviders));
+  const supportedDrivers = new Set(
+    supportedEnvironmentDriversForAdapter(adapterType, adapterDrivers),
+  );
+  const supportedProviders = new Set(
+    supportedSandboxProvidersForAdapter(
+      adapterType,
+      additionalSandboxProviders,
+      adapterDrivers,
+    ),
+  );
   const sandboxProviders: Record<SandboxEnvironmentProvider, EnvironmentSupportStatus> = {
     fake: "unsupported",
   };
@@ -125,6 +141,7 @@ export function getAdapterEnvironmentSupport(
 export function getEnvironmentCapabilities(
   adapterTypes: readonly AgentAdapterType[],
   options: {
+    adapterDrivers?: AdapterEnvironmentDriverCatalog;
     sandboxProviders?: Record<string, Partial<EnvironmentProviderCapability>>;
   } = {},
 ): EnvironmentCapabilities {
@@ -165,13 +182,28 @@ export function getEnvironmentCapabilities(
       configSchema: capability.configSchema,
     };
   }
+  const adapters = adapterTypes.map((adapterType) =>
+    getAdapterEnvironmentSupport(
+      adapterType,
+      pluginProviderKeys,
+      options.adapterDrivers,
+    ),
+  );
+  const supportedDrivers = new Set<EnvironmentDriver>();
+  for (const adapter of adapters) {
+    for (const driver of ENVIRONMENT_DRIVERS) {
+      if (adapter.drivers[driver] === "supported") {
+        supportedDrivers.add(driver);
+      }
+    }
+  }
   return {
-    adapters: adapterTypes.map((adapterType) => getAdapterEnvironmentSupport(adapterType, pluginProviderKeys)),
+    adapters,
     drivers: {
-      local: "supported",
-      ssh: "supported",
-      sandbox: "supported",
-      plugin: "supported",
+      local: supportedDrivers.has("local") ? "supported" : "unsupported",
+      ssh: supportedDrivers.has("ssh") ? "supported" : "unsupported",
+      sandbox: supportedDrivers.has("sandbox") ? "supported" : "unsupported",
+      plugin: supportedDrivers.has("plugin") ? "supported" : "unsupported",
     },
     sandboxProviders,
   };

@@ -134,4 +134,20 @@ describe("generated PostgreSQL migration contract", () => {
       `DROP TABLE "issue_session_source_user_executions"`,
     );
   });
+
+  it("normalizes persisted ACP launch facts to the ACPX registry identity before enforcing the new shape", () => {
+    const source = migrationSql("0003_white_dorian_gray.sql");
+    const normalizeLaunchProfile = source.indexOf(
+      `UPDATE "agent_adapter_config_revisions"`,
+    );
+    const enforceNewShape = source.indexOf(
+      `ADD CONSTRAINT "agent_adapter_config_revisions_acp_configuration_shape_check"`,
+    );
+
+    expect(normalizeLaunchProfile).toBeGreaterThanOrEqual(0);
+    expect(enforceNewShape).toBeGreaterThan(normalizeLaunchProfile);
+    expect(source).toContain(`jsonb_build_object(`);
+    expect(source).toContain(`'registryName'`);
+  });
+
 });

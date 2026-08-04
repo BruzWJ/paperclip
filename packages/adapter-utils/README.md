@@ -1,13 +1,15 @@
 # @paperclipai/adapter-utils
 
-Shared utilities for Paperclip adapters: process spawning, environment
-injection, sandbox/SSH transport, workspace sync, and the round-trip helpers
-that move code between the local execution-workspace cwd and wherever the
-agent actually runs.
+Shared utilities for Paperclip's ACPX-discovered agents and generic workspace
+helpers. ACPX agent discovery/execution uses only ACPX's public local runtime;
+it does not use Paperclip process spawning, environment injection, sandbox/SSH
+transport, or remote workspace sync.
 
-For the adapter-author guide see
-[`docs/adapters/creating-an-adapter.md`](../../docs/adapters/creating-an-adapter.md)
-and the in-repo notes at [`packages/adapters/AUTHORING.md`](../adapters/AUTHORING.md).
+The SSH and workspace round-trip helpers below remain generic utilities for
+non-ACPX callers. They are not an alternate ACPX agent execution path.
+
+For the ACPX discovery contract, see
+[`docs/adapters/creating-an-adapter.md`](../../docs/adapters/creating-an-adapter.md).
 
 ## No-remote-git contract
 

@@ -3,9 +3,6 @@ import type {
   AdapterModelProfileDefinition,
   ServerAdapterModule,
 } from "@paperclipai/adapter-utils";
-import { resolveApprovedAcpLaunch } from "@paperclipai/adapter-utils/acp-subprocess";
-
-const launchProfile = resolveApprovedAcpLaunch("codex");
 
 export function createDeclarativeTestAdapter(input: {
   type: string;
@@ -29,21 +26,19 @@ export function createDeclarativeTestAdapter(input: {
   return {
     type: input.type,
     definition: {
-      version: "acp-subprocess/v1",
-      launchProfile,
+      version: "acpx-runtime/v1",
+      // Test fixtures deliberately model only ACPX's public registry name.
+      // Paperclip must not inject a provider-specific command, package, or
+      // model catalog into declarative adapter definitions.
+      launchProfile: { registryName: input.type },
       environment: {
         cwd: "execution-workspace",
         additionalDirectories: "authorized-workspace-only",
         drivers: ["local", "ssh", "sandbox", "plugin"],
         environmentKeys: [],
       },
-      readiness: {
-        protocolVersion: 1,
-        resume: true,
-        cancel: true,
-        sessionConfig: true,
-        sessionScopedMcpReplacement: true,
-        cliNativeAuthentication: true,
+      runtime: {
+        controls: ["session/status", "session/set_config_option"],
       },
       ui: {
         label: input.label ?? input.type,

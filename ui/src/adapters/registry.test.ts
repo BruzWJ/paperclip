@@ -21,6 +21,7 @@ describe("server-admitted UI adapter catalog", () => {
     expect(findUIAdapter("codex")).toMatchObject({
       type: "codex",
       label: "Codex",
+      drivers: [],
       ConfigFields: SchemaConfigFields,
     });
   });
@@ -55,5 +56,18 @@ describe("server-admitted UI adapter catalog", () => {
         { type: "codex", label: "Duplicate" },
       ]),
     ).toThrow("invalid ACP adapter catalog");
+    expect(() =>
+      syncServerAdapters([{ type: "codex", label: "Codex", drivers: ["not-a-driver"] }]),
+    ).toThrow("invalid ACP adapter catalog");
+  });
+
+  it("keeps only the exact driver set supplied by the server catalog", () => {
+    syncServerAdapters([{
+      type: "local-only-agent",
+      label: "Local only",
+      drivers: ["local"],
+    }]);
+
+    expect(findUIAdapter("local-only-agent")?.drivers).toEqual(["local"]);
   });
 });

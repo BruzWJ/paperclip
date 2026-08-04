@@ -141,15 +141,9 @@ function createTransaction(input: {
               agentId: "agent-1",
               executionTargetDigest: "a".repeat(64),
               acpConfiguration: {
-                contractVersion: "acp-subprocess/v1",
+                contractVersion: "acpx-runtime/v1",
                 launchProfile: {
-                  registryName: "fixture",
-                  targetNativeCli: "fixture-native",
-                  command: "/opt/fixture-acp",
-                  args: [],
-                  frontendPackage: "@paperclip-test/fixture-acp",
-                  frontendVersion: "1.0.0",
-                  frontendDigest: "b".repeat(64),
+                  registryName: "fixture-agent",
                 },
                 sessionConfigSelections: [
                   { configId: "model", value: "fixture/model" },

@@ -22,12 +22,10 @@ import {
 } from "@paperclipai/db";
 import type {
   Environment,
+  EnvironmentDriver,
   EnvironmentLease,
   EnvironmentLeaseStatus,
   ExecutionWorkspace,
-} from "@paperclipai/shared";
-import {
-  isEnvironmentDriverSupportedForAdapter,
 } from "@paperclipai/shared";
 import { environmentService } from "./environments.js";
 import {
@@ -171,6 +169,7 @@ export function environmentRunOrchestrator(
     executionTargetDriver: string;
     executionTargetDigest: string;
     adapterType: string;
+    allowedDrivers: readonly EnvironmentDriver[];
   }): Promise<Environment> {
     if (
       input.environmentId.length === 0 ||
@@ -198,11 +197,15 @@ export function environmentRunOrchestrator(
         driver: environment.driver,
       });
     }
+    // `executionTargetDriver` is validated against the exact ACPX adapter
+    // definition when the immutable revision is created, and execution
+    // admission pins that definition identity again. Do not reintroduce a
+    // shared all-driver fallback here; this layer only verifies that the
+    // selected live environment still matches that ACPX-derived revision.
     if (
-      environment.driver !== input.executionTargetDriver ||
-      !isEnvironmentDriverSupportedForAdapter(
-        input.adapterType,
-        environment.driver,
+      environment.driver !== input.executionTargetDriver
+      || !input.allowedDrivers.includes(
+        environment.driver as EnvironmentDriver,
       )
     ) {
       throw new EnvironmentRunError(
@@ -350,6 +353,8 @@ export function environmentRunOrchestrator(
     executionTargetDriver: string;
     executionTargetDigest: string;
     adapterType: string;
+    /** Exact drivers carried forward from the ACPX-admitted revision. */
+    allowedDrivers: readonly EnvironmentDriver[];
     issueId: string;
     runId: string;
     agentId: string;
@@ -360,6 +365,7 @@ export function environmentRunOrchestrator(
       executionTargetDriver: input.executionTargetDriver,
       executionTargetDigest: input.executionTargetDigest,
       adapterType: input.adapterType,
+      allowedDrivers: input.allowedDrivers,
     });
     const workspace = await resolveExecutionWorkspaceBinding({
       companyId: input.companyId,
@@ -403,6 +409,7 @@ export function environmentRunOrchestrator(
         environment,
         lease: acquired.lease,
         adapterType: input.adapterType,
+        allowedDrivers: input.allowedDrivers,
         companyId: input.companyId,
         issueId: input.issueId,
         runId: input.runId,
@@ -486,6 +493,7 @@ export function environmentRunOrchestrator(
     environment: Environment;
     lease: EnvironmentLease;
     adapterType: string;
+    allowedDrivers: readonly EnvironmentDriver[];
     companyId: string;
     issueId: string | null;
     runId: string;
@@ -646,6 +654,7 @@ export function environmentRunOrchestrator(
         db,
         companyId,
         adapterType,
+        allowedDrivers: input.allowedDrivers,
         environment,
         leaseId: lease.id,
         leaseMetadata: (lease.metadata as Record<string, unknown> | null) ?? null,

@@ -7,46 +7,69 @@ import {
 } from "./environment-support.js";
 
 describe("isSandboxProviderSupportedForAdapter", () => {
-  it("accepts additional sandbox providers for the declarative codex adapter", () => {
+  const adapterDrivers = {
+    claude: ["local", "ssh", "sandbox", "plugin"],
+    "runtime-discovered-agent": ["local"],
+  } as const;
+
+  it("accepts additional sandbox providers only when ACPX advertises the sandbox transport", () => {
     expect(
-      isSandboxProviderSupportedForAdapter("codex", "fake-plugin", ["fake-plugin"]),
+      isSandboxProviderSupportedForAdapter(
+        "claude",
+        "fake-plugin",
+        ["fake-plugin"],
+        adapterDrivers,
+      ),
+    ).toBe(true);
+    expect(
+      isSandboxProviderSupportedForAdapter(
+        "runtime-discovered-agent",
+        "fake-plugin",
+        ["fake-plugin"],
+        adapterDrivers,
+      ),
+    ).toBe(false);
+    expect(
+      isSandboxProviderSupportedForAdapter(
+        "sandbox-only-agent",
+        "fake-plugin",
+        ["fake-plugin"],
+        { "sandbox-only-agent": ["sandbox"] },
+      ),
     ).toBe(true);
   });
 
-  it("rejects providers for adapters without remote-managed environment support", () => {
-    expect(
-      isSandboxProviderSupportedForAdapter("unapproved-adapter", "fake-plugin", ["fake-plugin"]),
-    ).toBe(false);
+  it("fails closed until the ACPX catalog supplies drivers", () => {
+    expect(adapterSupportsRemoteManagedEnvironments("codex")).toBe(false);
+    expect(supportedEnvironmentDriversForAdapter("codex")).toEqual([]);
   });
 
-  it("advertises every command-capable target for the admitted declarative adapter", () => {
-    expect(adapterSupportsRemoteManagedEnvironments("codex")).toBe(true);
-    expect(supportedEnvironmentDriversForAdapter("codex")).toEqual([
+  it("uses the exact driver membership supplied by the ACPX catalog", () => {
+    const expectedDrivers = [
       "local",
       "ssh",
       "sandbox",
       "plugin",
-    ]);
+    ] as const;
+    const catalog = {
+      codex: expectedDrivers,
+      claude: expectedDrivers,
+      "runtime-discovered-agent": ["local"],
+    } as const;
+    expect(adapterSupportsRemoteManagedEnvironments("codex", catalog)).toBe(true);
+    expect(adapterSupportsRemoteManagedEnvironments("claude", catalog)).toBe(true);
+    expect(adapterSupportsRemoteManagedEnvironments("runtime-discovered-agent", catalog)).toBe(false);
+    expect(supportedEnvironmentDriversForAdapter("codex", catalog)).toEqual(expectedDrivers);
+    expect(supportedEnvironmentDriversForAdapter("claude", catalog)).toEqual(expectedDrivers);
+    expect(supportedEnvironmentDriversForAdapter("runtime-discovered-agent", catalog)).toEqual(["local"]);
   });
 
-  it("keeps an unapproved adapter local-only", () => {
-    expect(
-      adapterSupportsRemoteManagedEnvironments("unapproved-adapter"),
-    ).toBe(false);
-    expect(
-      supportedEnvironmentDriversForAdapter("unapproved-adapter"),
-    ).toEqual(["local"]);
-    expect(
-      isSandboxProviderSupportedForAdapter(
-        "unapproved-adapter",
-        "fake-plugin",
-        ["fake-plugin"],
-      ),
-    ).toBe(false);
-  });
-
-  it("reports closed active transport capabilities", () => {
-    const capabilities = getEnvironmentCapabilities(["codex", "unapproved-adapter"], {
+  it("reports only ACPX-admitted transport capabilities for each runtime agent", () => {
+    const capabilities = getEnvironmentCapabilities(["codex", "runtime-discovered-agent"], {
+      adapterDrivers: {
+        codex: ["local", "ssh", "sandbox", "plugin"],
+        "runtime-discovered-agent": ["local"],
+      },
       sandboxProviders: {
         "fake-plugin": { displayName: "Fake Plugin" },
       },
@@ -66,7 +89,7 @@ describe("isSandboxProviderSupportedForAdapter", () => {
         }),
       }),
       expect.objectContaining({
-        adapterType: "unapproved-adapter",
+        adapterType: "runtime-discovered-agent",
         drivers: expect.objectContaining({
           local: "supported",
           plugin: "unsupported",

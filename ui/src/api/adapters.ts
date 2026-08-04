@@ -1,32 +1,50 @@
 /**
- * @fileoverview Frontend client for the immutable server-admitted ACP catalog.
+ * @fileoverview Frontend client for the immutable ACPX-supplied agent catalog.
  */
 
 import { api } from "./client";
+import type { EnvironmentDriver } from "@paperclipai/shared";
 
 export interface AdapterCapabilities {
   supportsModelProfiles: boolean;
-  contractVersion: "acp-subprocess/v1";
-  protocolVersion: 1;
-  resume: boolean;
-  cancel: boolean;
-  sessionConfig: boolean;
-  sessionScopedMcpReplacement: boolean;
+  contractVersion: "acpx-runtime/v1";
+  /** Exact public ACPX controls observed by the server's local probe. */
+  runtimeControls: readonly string[];
 }
 
-export interface AdapterInfo {
+export interface ReadyAdapterInfo {
   type: string;
   label: string;
+  source: "acpx";
   modelsCount: number;
-  loaded: boolean;
+  loaded: true;
   capabilities: AdapterCapabilities;
+  /** Exact execution transports admitted for this agent by ACPX. */
+  drivers: readonly EnvironmentDriver[];
   registryName: string;
-  frontendPackage: string;
-  frontendVersion: string;
-  frontendDigest: string;
 }
 
+/**
+ * A name listed by ACPX whose disposable local ACPX session probe failed. It is
+ * intentionally visible for operator diagnosis but never becomes a picker
+ * option or executable adapter in Paperclip.
+ */
+export interface UnavailableAdapterInfo {
+  type: string;
+  label: string;
+  source: "acpx";
+  modelsCount: 0;
+  loaded: false;
+  diagnostic: {
+    code: "acpx_probe_failed";
+    message: string;
+  };
+  registryName: string;
+}
+
+export type AdapterInfo = ReadyAdapterInfo | UnavailableAdapterInfo;
+
 export const adaptersApi = {
-  /** List the exact declarative ACP entries admitted by the server. */
+  /** List the exact ACPX-supplied entries admitted by the server. */
   list: () => api.get<AdapterInfo[]>("/adapters"),
 };

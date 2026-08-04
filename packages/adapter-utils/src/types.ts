@@ -48,7 +48,11 @@ export interface AdapterModel {
   id: string;
   label: string;
   value: string;
-  limits: AdapterModelLimits;
+  /**
+   * `null` preserves the target's explicit absence of token-limit metadata.
+   * Paperclip must not infer limits from a model name or another catalog.
+   */
+  limits: AdapterModelLimits | null;
 }
 
 export type AdapterModelProfileKey = "cheap";
@@ -100,18 +104,20 @@ export interface AcpAdapterConfigOption {
   readonly label: string;
   readonly required: true;
   readonly values: readonly AcpAdapterConfigValue[];
+  /**
+   * ACPX advertised a string setting without a closed value list. Paperclip
+   * preserves its generic value verbatim and lets ACPX validate it at
+   * readiness/execution time; it never invents provider-specific choices.
+   */
+  readonly freeform?: true;
 }
 
-/** Immutable command facts admitted by the ACPX registry wrapper. */
+/**
+ * Durable ACPX reference. Command argv belongs to ACPX and is resolved only
+ * when a target is prepared, never copied into Paperclip configuration.
+ */
 export interface AcpAdapterLaunchProfile {
   readonly registryName: string;
-  /** Exact executable name resolved natively on the selected target. */
-  readonly targetNativeCli: string;
-  readonly command: string;
-  readonly args: readonly string[];
-  readonly frontendPackage: string;
-  readonly frontendVersion: string;
-  readonly frontendDigest: string;
 }
 
 export interface AcpAdapterEnvironmentRequirements {
@@ -122,13 +128,9 @@ export interface AcpAdapterEnvironmentRequirements {
   readonly environmentKeys: readonly string[];
 }
 
-export interface AcpAdapterReadinessFacts {
-  readonly protocolVersion: 1;
-  readonly resume: true;
-  readonly cancel: true;
-  readonly sessionConfig: true;
-  readonly sessionScopedMcpReplacement: true;
-  readonly cliNativeAuthentication: true;
+/** Exact public ACPX controls observed during this agent's disposable probe. */
+export interface AcpAdapterRuntimeContract {
+  readonly controls: readonly string[];
 }
 
 export interface AcpAdapterUiMetadata {
@@ -142,14 +144,21 @@ export interface AcpAdapterUiMetadata {
  * prompt builder, parser, session codec, credential hook, or provider SDK.
  */
 export interface AcpSubprocessAdapterDefinition {
-  readonly version: "acp-subprocess/v1";
+  /**
+   * Paperclip's durable contract is supplied and executed by ACPX. The
+   * historical ACP subprocess wire fixtures remain private implementation
+   * details and are not this public revision ABI.
+   */
+  readonly version: "acpx-runtime/v1";
   readonly launchProfile: AcpAdapterLaunchProfile;
   readonly environment: AcpAdapterEnvironmentRequirements;
-  readonly readiness: AcpAdapterReadinessFacts;
+  /** Dynamic ACPX runtime controls; never a Paperclip capability declaration. */
+  readonly runtime: AcpAdapterRuntimeContract;
   readonly ui: AcpAdapterUiMetadata;
   readonly configSchema: AdapterConfigSchema;
   readonly configOptions: readonly AcpAdapterConfigOption[];
-  readonly modelConfigOptionId: string;
+  /** Null when the ACPX target does not expose a configurable model option. */
+  readonly modelConfigOptionId: string | null;
   readonly models: readonly AdapterModel[];
   readonly modelProfiles: readonly AdapterModelProfileDefinition[];
   readonly configurationDoc: string;
@@ -157,10 +166,11 @@ export interface AcpSubprocessAdapterDefinition {
 
 /** Canonical immutable adapter/config portion of one execution revision. */
 export interface AcpAdapterRevisionConfiguration {
-  readonly contractVersion: "acp-subprocess/v1";
+  readonly contractVersion: "acpx-runtime/v1";
   readonly launchProfile: AcpAdapterLaunchProfile;
   readonly sessionConfigSelections: readonly AcpSessionConfigSelection[];
-  readonly model: AdapterModel;
+  /** Null when ACPX does not report a selected model for this agent. */
+  readonly model: AdapterModel | null;
 }
 
 /** The adapter ABI contains one closed declarative ACP definition and nothing else. */

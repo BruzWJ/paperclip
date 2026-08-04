@@ -76,9 +76,8 @@ curl -s -X POST -H "Content-Type: application/json" \
       \"provider\": \"kubernetes\",
       \"kubeconfig\": $KUBECONFIG_CONTENT,
       \"companySlug\": \"smoke\",
-      \"adapterType\": \"codex\",
       \"adapters\": [{
-        \"adapterType\": \"codex\",
+        \"adapterType\": \"your-acpx-agent-name\",
         \"runtimeImage\": \"ghcr.io/paperclipai/agent-runtime-base:v1\",
         \"allowFqdns\": [],
         \"probeCommand\": [\"paperclip-agent-shim\", \"-h\"]

@@ -22,13 +22,21 @@ Each lease receives a `paperclip.run-tools/v1` descriptor compiled from live con
 
 ## Session
 
-The canonical record is the issue's Paperclip Session log. Effective `carry_context` permits a codec-validated provider-native handle only for the same issue, ownership epoch, agent, and adapter configuration identity. False-carry, consult, reassignment, reset, and revision changes run fresh.
+The canonical record is the issue's Paperclip Session log. Effective
+`carry_context` permits an encrypted opaque provider-native correlation only
+for the same issue, ownership epoch, agent, and adapter configuration identity.
+False-carry, consult, reassignment, reset, and revision changes run fresh.
 
 Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across issues.
 
 ## Workspace
 
-The execution workspace is selected only by the persisted issue/epoch binding. The common execution-target bridge realizes its absolute workspace for local, SSH, sandbox, or plugin drivers and culminates in the one worker-supervised ACP subprocess; declarative adapters do not receive a process callback or alternate remote transport. No agent-home, adapter-configured cwd, process cwd, prior conversational session, or workspace environment metadata is a fallback.
+The execution workspace is selected only by the persisted issue/epoch binding.
+The ACPX public-runtime bridge uses that absolute workspace for its bounded
+single-prompt local session; ACPX owns the underlying CLI process and no declarative adapter
+receives a process callback or alternate remote transport. No agent-home,
+adapter-configured cwd, process cwd, prior conversational session, or workspace
+environment metadata is a fallback.
 
 ## Output
 
@@ -40,7 +48,6 @@ A productive final always yields the canonical assistant turn. The outcome trans
 
 Process loss and retry re-lease the original persisted reference and resume its persisted execution view. They never create a replacement wake, prompt, session, or idempotency identity. Stale authority, epoch, revision, lease, input, or source causes terminal rejection.
 
-A missing provider-native target is the narrow exception for transport
-continuity: Paperclip invalidates the dead correlation and starts a fresh ACP
-session for the same persisted prompt identity, sending only the exact current
-source message. It does not replay or summarize the canonical Session log.
+ACPX receives a frozen resume operation when that eligible correlation exists.
+If its frontend rejects the operation, the attempt fails closed; Paperclip does
+not interpret provider-specific errors or replace it with a fresh session.

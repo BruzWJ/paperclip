@@ -130,7 +130,7 @@ function agent(overrides: Record<string, unknown> = {}) {
     reportsTo: null,
     capabilities: null,
     adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-    adapterConfig: { model: "gpt-5.6" },
+    adapterConfig: { model: "fixture-model" },
     currentAdapterConfigRevisionId: revisionId,
     runtimeConfig: {},
     defaultEnvironmentId: environmentId,
@@ -353,7 +353,7 @@ describe("agent control-plane routes", () => {
   it("appends and reads redacted first-class adapter revisions", async () => {
     const configuration = {
       adapterType: CANONICAL_TEST_ADAPTER_TYPE,
-      adapterConfig: { model: "gpt-5.6" },
+      adapterConfig: { model: "fixture-model" },
       defaultEnvironmentId: environmentId,
       runtimeConfig: {},
       companySkillPins: [],

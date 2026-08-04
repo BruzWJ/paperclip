@@ -3,9 +3,9 @@ title: Agents
 summary: Board-operated agent identity, grants, ACP configuration, lifecycle, and run readiness
 ---
 
-Agent endpoints are board/operator control-plane routes. Productive ACP
-subprocesses cannot call them and have no self-profile route or generic
-Paperclip credential.
+Agent endpoints are board/operator control-plane routes. Productive
+ACPX-backed provider runs cannot call them and have no self-profile route or
+generic Paperclip credential.
 
 ## List and get
 
@@ -91,13 +91,14 @@ GET /api/agents/{agentId}/adapter-config-revisions/current
 POST /api/agents/{agentId}/adapter-config-revisions
 ```
 
-Example for the initial conformance-approved built-in adapter:
+Example template; obtain the exact `adapterType` and `adapterConfig` fields from
+the live ACPX-backed adapter catalog before creating a revision:
 
 ```json
 {
-  "adapterType": "codex",
+  "adapterType": "<acpx-registry-name>",
   "adapterConfig": {
-    "model": "gpt-5.6"
+    "<acpx-option-id>": "<selected-advertised-value>"
   },
   "defaultEnvironmentId": "00000000-0000-4000-8000-000000000002",
   "runtimeConfig": {},
@@ -106,12 +107,17 @@ Example for the initial conformance-approved built-in adapter:
 }
 ```
 
-The server resolves this data through the exact installed declarative
-`acp-subprocess/v1` definition and stores an immutable non-secret revision.
-The adapter definition selects an approved ACPX registry launch; Paperclip's
-common official-SDK client owns all ACP process/session/event behavior. A
+The server resolves this data through the current ACPX-discovered declarative
+`acpx-runtime/v1` definition and stores an immutable non-secret revision.
+ACPX supplies the exact registry name and advertised option values, then owns
+the local CLI process/session/event behavior through its public runtime. A
 request cannot supply a command, argv, endpoint, provider payload, response
 parser, native-session selector, or provider credential.
+
+If ACPX advertises a reasoning-effort configuration option, include its exact
+option id and one advertised value in `adapterConfig`. Paperclip stores that
+selection in the revision and applies it at session setup; it never creates a
+provider-specific reasoning field on its own.
 
 Provider authentication stays in the selected CLI's native login state on the
 execution target. Paperclip neither stores nor probes it. There is no default
@@ -149,9 +155,9 @@ canonical issue-execution source.
 GET /api/companies/{companyId}/adapters/{adapterType}/models
 ```
 
-The response is the exact model catalog declared by that registered data-only
-ACP adapter. Structural readiness requires the approved registry entry and
-frontend revision, execution-target/workspace binding, legal stable ACP
-configuration selections, selected-tool/skill integrity, and the agent's live
-eligibility/budget state. It never starts a model conversation or tests login
-by sending a prompt.
+The response is the exact model catalog currently discovered through ACPX for
+that data-only adapter revision. Structural readiness requires the current
+ACPX registry membership, execution-target/workspace binding, legal stable
+ACPX configuration selections, selected-tool/skill integrity, and the agent's
+live eligibility/budget state. It uses a disposable no-prompt ACPX probe and
+never sends a model conversation.

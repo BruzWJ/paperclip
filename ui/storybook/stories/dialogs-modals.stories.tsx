@@ -374,26 +374,18 @@ function hydrateDialogQueries(queryClient: ReturnType<typeof useQueryClient>) {
     {
       type: "codex",
       label: "Codex",
+      source: "acpx",
       modelsCount: 2,
       loaded: true,
+      disabled: false,
       registryName: "codex",
-      frontendPackage: "@agentclientprotocol/codex-acp",
-      frontendVersion: "1.1.7",
-      frontendDigest: "0deb6b820dfed8804cd76b16a50210fe12202e5e339b5edaa23f6987f1742e0a",
       capabilities: {
         supportsModelProfiles: false,
-        contractVersion: "acp-subprocess/v1",
-        protocolVersion: 1,
-        resume: true,
-        cancel: true,
-        sessionConfig: true,
-        sessionScopedMcpReplacement: true,
+        contractVersion: "acpx-runtime/v1",
+        runtimeControls: ["session/status", "session/set_config_option"],
       },
+      drivers: ["local"],
     },
-  ]);
-  queryClient.setQueryData(queryKeys.agents.adapterModels(COMPANY_ID, "codex"), [
-    { id: "gpt-5.6", label: "GPT-5.6" },
-    { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
   ]);
   queryClient.setQueryData(
     queryKeys.agents.adapterModelProfiles(COMPANY_ID, "codex"),

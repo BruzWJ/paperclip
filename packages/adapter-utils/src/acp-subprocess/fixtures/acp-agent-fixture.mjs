@@ -36,6 +36,17 @@ function configOptions(values = {}) {
       currentValue: values["zeta-enabled"] ?? false,
     },
     {
+      type: "select",
+      id: "reasoning_effort",
+      name: "Reasoning effort",
+      currentValue: values.reasoning_effort ?? "medium",
+      options: [
+        { value: "low", name: "Low" },
+        { value: "medium", name: "Medium" },
+        { value: "high", name: "High" },
+      ],
+    },
+    {
       type: "boolean",
       id: "omega-observer",
       name: "Observer",
@@ -85,6 +96,10 @@ app.onRequest(methods.agent.session.new, async ({ params, client }) => {
   record(methods.agent.session.new, params);
   sessionConfig(fixtureSessionId);
   if (fixtureMode === "early-setup-controls") {
+    await notify(client, fixtureSessionId, {
+      sessionUpdate: "current_mode_update",
+      currentModeId: "normal",
+    });
     await notify(client, fixtureSessionId, {
       sessionUpdate: "available_commands_update",
       availableCommands: [],

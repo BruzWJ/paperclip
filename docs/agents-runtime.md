@@ -14,14 +14,14 @@ For each productive prompt, the worker:
 1. selects one current persisted issue-execution ref or steering segment;
 2. resolves its ownership epoch, immutable adapter revision, execution
    workspace, context dial, and action grants;
-3. launches one conformance-approved ACP agent subprocess;
-4. connects with stable ACP wire version 1 through the official TypeScript SDK;
-5. creates or resumes the eligible native ACP session with a complete
-   request-scoped Paperclip MCP capability binding;
+3. starts one disposable ACPX public-runtime session for the discovered local
+   compatible CLI;
+4. lets ACPX create or resume the eligible provider backend session;
+5. supplies a complete request-scoped Paperclip MCP capability binding;
 6. sends exactly one prompt and consumes structured ACP updates plus its stop
    result; and
-7. revokes the request capability and reaps the subprocess before another
-   prompt can start.
+7. revokes the request capability, closes ACPX, and deletes its temporary
+   runtime state before another prompt can start.
 
 The issue Session log is the canonical durable conversation and audit record.
 The run row is only the control envelope around that work; it is not a second
@@ -54,22 +54,22 @@ rejected without mutation.
 
 ### 3.1 ACP adapter choice
 
-Every AI adapter is a data-only `acp-subprocess/v1` definition. A definition
-selects an exact conformance-approved ACP launch, declares supported execution
-targets, and maps operator choices to stable ACP session configuration. It does
-not execute a provider request or parse provider output.
+Every AI adapter is an ephemeral data-only `acpx-runtime/v1` definition
+derived from ACPX. It retains the exact ACPX registry name, declares the
+ACPX-admitted local execution context, and maps ACPX-advertised choices to
+stable ACPX session configuration. It does not execute a provider request or
+parse provider output.
 
-Paperclip uses ACPX only for its public agent-name-to-launch registry. Paperclip
-checks the requested name against its own immutable approved catalog before
-registry resolution, then its common official-SDK client launches the resolved
-ACP endpoint. ACPX owns no Paperclip process, session, queue, prompt, tool, or
-event state.
+ACPX is the sole supplier of Paperclip's agent catalog. Paperclip reads the
+locally installed ACPX registry, temporarily probes each exact listed candidate,
+and surfaces only candidates that initialize an ACPX session successfully. ACPX
+supplies the agent name, model choices, configuration choices, and defaults;
+Paperclip owns no parallel list of agents, models, frontends, or provider flags.
 
-The initial built-in adapter is exact `codex`, backed by the pinned upstream
-Codex ACP frontend. Other ACPX names are not selectable until their exact
-frontend revision passes the same real-frontend conformance suite and enters the
-approved catalog. Paperclip never infers an adapter, accepts a per-CLI alias, or
-falls through to an arbitrary command.
+Paperclip checks the unchanged registry name before ACPX resolution, so it
+never accepts an alias or arbitrary command fallback. ACPX owns the provider
+process and its ephemeral runtime/session state; Paperclip owns the durable
+issue session, queue, prompt authority, tools, and event projection.
 
 ### 3.2 Authentication and model configuration
 
@@ -77,11 +77,14 @@ Authenticate the selected AI CLI with that CLI's native login flow on the
 execution target. Paperclip does not accept, store, copy, refresh, or probe AI
 provider credentials.
 
-Choose a model/profile and other supported values through the adapter's closed
-configuration form. After every `session/new` or `session/resume`, the common
-ACP client applies each required value through stable
-`session/set_config_option`. There are no model flags, provider payload fields,
-prompt overrides, environment-secret fallbacks, or default-adapter inference.
+Choose from the values ACPX advertises for that local agent. The generic form
+can include a model, mode, reasoning effort, or other stable session option;
+it shows none of those fields when ACPX does not advertise them. Paperclip saves
+the choices as immutable ACPX session configuration selections with the adapter
+revision. Before every prompt, ACPX validates and applies every saved value
+through its generic configuration setter. There are no model flags, provider
+payload fields, prompt overrides, environment-secret fallbacks, or
+default-adapter inference.
 
 ### 3.3 Runtime policy
 
@@ -91,17 +94,18 @@ Configure eligibility and limits as control-plane policy:
 - all nine context-dial cells, including `carry_context`;
 - the six issue-action grants and explicit mention reach;
 - explicitly selected company tools; and
-- explicitly selected company skills through their one supported channel.
+- explicitly selected company skills through the `operator_native` channel.
 
 All context grants default to false. Tool presence is the model-visible
 attention boundary; the server still reauthorizes every call.
 
 ### 3.4 Working directory and execution limits
 
-- The issue-execution workspace binding supplies the validated ACP `cwd` and
-  any explicitly authorized additional directories.
-- The configured execution target owns local, SSH, sandbox, or plugin process
-  mechanics.
+- The issue-execution workspace binding supplies the validated ACPX session
+  `cwd`. ACPX registry configuration is resolved at the Paperclip service
+  scope, not from a per-issue workspace.
+- The current ACPX public runtime owns local process mechanics only; Paperclip
+  does not advertise SSH, sandbox, or plugin targets for ACPX agents.
 - Runtime timeout and cancellation policy remain control-plane limits.
 - Provider-native CLI configuration stays operator-owned and opaque.
 
@@ -122,14 +126,21 @@ native continuity:
 
 - **False:** every ordinary request uses `session/new`; its exact source text is
   the entire prompt and Paperclip performs no history composition.
-- **True with an eligible target:** the worker uses stable `session/resume` and
-  still sends only the exact new source text.
-- **True with no resumable target:** the worker uses `session/new` and sends
-  only the exact current source text. The canonical Session log remains
-  available for inspection but is not replayed, summarized, or injected.
+- **True with an eligible stored target:** the worker asks ACPX to perform the
+  frozen resume operation and still sends only the exact new source text.
+- **True with no stored target:** the worker selects `session/new` before
+  launch and sends only the exact current source text. The canonical Session
+  log remains available for inspection but is not replayed, summarized, or
+  injected.
 
-The selected CLI owns its native history and native compaction while that ACP
-session remains resumable. Paperclip has no Session-history compactor.
+If ACPX rejects a frozen resume because its frontend cannot resume that
+provider session, the attempt fails through ACPX's normal runtime result.
+Paperclip does not parse provider errors or silently replace a frozen resume
+with a fresh session.
+
+The selected CLI owns its native history and native compaction while its
+provider backend session remains resumable. Paperclip has no Session-history
+compactor and does not retain ACPX runtime records.
 Operators cannot manually reset or rotate native continuity; epoch, target,
 workspace, and authorization eligibility decide it automatically.
 
@@ -142,8 +153,9 @@ exposes its id through REST, UI, CLI, logs, tools, or environment variables.
 Every productive prompt gets a distinct request-scoped Paperclip MCP
 connection. Its `tools/list` result is compiled from that run's effective
 context dial, action grants, explicit company-tool selections, lifecycle
-authority, and current target catalogs. A later resume receives a complete
-replacement connection; it never accumulates a prior request's authority.
+authority, and current target catalogs. Paperclip supplies that MCP server set
+when it creates the bounded ACPX runtime for the prompt; it never accumulates
+a prior request's authority.
 
 The AI CLI keeps its own built-in shell, file, browser, and other native tools.
 Paperclip owns and audits only the dynamically supplied Paperclip/company-tool
@@ -151,13 +163,12 @@ catalog. A tool-free productive prompt still receives an isolated Paperclip MCP
 server whose list is empty.
 
 An authorized reply to an active run-progress comment steers that exact run.
-Paperclip revokes the old capability, sends ACP `session/cancel`, settles and
-reaps the current prompt, then starts a fresh subprocess and resumes the same
-native session with the new exact message. If that target is no longer
-resumable, the selected run invalidates the dead correlation and starts a fresh
-ACP session for the same prompt identity with only the new exact message. It
-does not create another Paperclip run. The UI uses the comment's
-producing run; users never select or see a raw ACP session id.
+Paperclip revokes the old capability, requests cancellation through ACPX,
+settles the current prompt, then invokes the frozen ACPX operation for the new
+exact message. ACPX decides whether that operation can resume the opaque
+provider backend session; a rejected operation fails closed rather than
+silently changing context semantics. The UI uses the comment's producing run;
+users never select or see a provider session id.
 
 ## 6. Logs, status, and run history
 
@@ -218,28 +229,32 @@ directly.
 
 If runs fail repeatedly:
 
-1. Confirm the exact adapter is registered and conformance-approved.
-2. Confirm its pinned ACP frontend and target Node executable are available.
+1. Refresh the ACPX-backed agent catalog and confirm the exact compatible CLI
+   is still listed and passes its temporary session probe.
+2. Confirm the exact ACPX candidate remains available on the local Paperclip
+   host.
 3. Run the selected CLI's native login on that execution target.
-4. Verify every required stable ACP configuration value and model limit.
+4. Verify every saved stable ACPX configuration value is still advertised by the
+   selected CLI; Paperclip does not infer model limits ACPX does not provide.
 5. Verify the issue-execution workspace and execution target are ready.
 6. Inspect the typed setup, protocol, process, and terminal-settlement error.
 7. Pause the agent if repeated failures would consume budget or mutate work.
 
 Typical failures include an unavailable executable, unauthenticated native CLI,
-unsupported stable resume or MCP replacement, invalid session configuration,
+an ACPX session setup/resume/control failure, invalid session configuration,
 stale workspace binding, protocol framing failure, or a stop result without the
 required terminal occupancy.
 
-Paperclip never converts an arbitrary resume error into a fresh session. Only a
-missing local target or ACP `Resource not found` enters the documented
-fresh-session branch; other errors fail the current attempt.
+Paperclip never retains or reconstructs ACPX runtime state. Each run uses a
+bounded, single-prompt ACPX runtime; a setup, resume, or turn error fails that
+attempt and any later retry re-evaluates the current immutable request.
 
 ## 10. Minimal setup checklist
 
-1. Install the conformance-approved CLI/frontend on the execution target.
+1. Install an ACPX-compatible CLI on the execution target and let the ACPX
+   probe confirm it is selectable.
 2. Authenticate the AI CLI through its native login flow.
-3. Select an exact registered adapter and complete its required stable ACP
+3. Select an exact registered adapter and complete its required stable ACPX
    configuration.
 4. Configure an execution-workspace policy.
 5. Set explicit context dials, issue-action grants, and selected company

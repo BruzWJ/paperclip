@@ -1,174 +1,45 @@
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerAdapterModule } from "../adapters/index.js";
+import type { ServerAdapterModule } from "@paperclipai/adapter-utils";
 import { createDeclarativeTestAdapter } from "./helpers/declarative-adapter.js";
 import { testBoardSessionActor } from "./helpers/request-actor.js";
 
-const mocks = vi.hoisted(() => {
-  const externalRecords = new Map<string, any>();
+const FIXTURE_AGENT_TYPE = "fixture-agent-alpha";
 
-  return {
-    externalRecords,
-    execFile: vi.fn((_file: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: unknown) => {
-      const callback = typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback;
-      if (typeof callback === "function") {
-        callback(null, "", "");
-      }
-      return {
-        kill: vi.fn(),
-        on: vi.fn(),
-      };
-    }),
-    listAdapterPlugins: vi.fn(),
-    addAdapterPlugin: vi.fn((record: any) => {
-      externalRecords.set(record.type, record);
-    }),
-    removeAdapterPlugin: vi.fn((type: string) => {
-      externalRecords.delete(type);
-    }),
-    getAdapterPluginByType: vi.fn((type: string) => externalRecords.get(type)),
-    getAdapterPluginsDir: vi.fn(),
-    getDisabledAdapterTypes: vi.fn(),
-    setAdapterDisabled: vi.fn(),
-    loadExternalAdapterPackage: vi.fn(),
-    buildExternalAdapters: vi.fn(async () => []),
-    buildRetainedExternalAdapters: vi.fn(async () => []),
-    reloadExternalAdapter: vi.fn(),
-  };
-});
-
-vi.mock("node:child_process", () => ({
-  execFile: mocks.execFile,
-}));
-
-vi.mock("../services/adapter-plugin-store.js", () => ({
-  listAdapterPlugins: mocks.listAdapterPlugins,
-  addAdapterPlugin: mocks.addAdapterPlugin,
-  removeAdapterPlugin: mocks.removeAdapterPlugin,
-  getAdapterPluginByType: mocks.getAdapterPluginByType,
-  getAdapterPluginsDir: mocks.getAdapterPluginsDir,
-  getDisabledAdapterTypes: mocks.getDisabledAdapterTypes,
-  setAdapterDisabled: mocks.setAdapterDisabled,
-}));
-
-vi.mock("../adapters/plugin-loader.js", () => ({
-  buildExternalAdapters: mocks.buildExternalAdapters,
-  buildRetainedExternalAdapters: mocks.buildRetainedExternalAdapters,
-  loadExternalAdapterPackage: mocks.loadExternalAdapterPackage,
-  reloadExternalAdapter: mocks.reloadExternalAdapter,
+const catalog = vi.hoisted(() => ({
+  adapter: null as ServerAdapterModule | null,
+  refreshAcpxAdapters: vi.fn(async () => undefined),
 }));
 
 function registerRouteMocks() {
-  vi.doMock("node:child_process", () => ({
-    execFile: mocks.execFile,
-  }));
-
-  vi.doMock("../services/adapter-plugin-store.js", () => ({
-    listAdapterPlugins: mocks.listAdapterPlugins,
-    addAdapterPlugin: mocks.addAdapterPlugin,
-    removeAdapterPlugin: mocks.removeAdapterPlugin,
-    getAdapterPluginByType: mocks.getAdapterPluginByType,
-    getAdapterPluginsDir: mocks.getAdapterPluginsDir,
-    getDisabledAdapterTypes: mocks.getDisabledAdapterTypes,
-    setAdapterDisabled: mocks.setAdapterDisabled,
-  }));
-
-  vi.doMock("../adapters/plugin-loader.js", () => ({
-    buildExternalAdapters: mocks.buildExternalAdapters,
-    buildRetainedExternalAdapters: mocks.buildRetainedExternalAdapters,
-    loadExternalAdapterPackage: mocks.loadExternalAdapterPackage,
-    reloadExternalAdapter: mocks.reloadExternalAdapter,
+  vi.doMock("../adapters/index.js", () => ({
+    findActiveServerAdapter: (type: string) =>
+      catalog.adapter?.type === type ? catalog.adapter : null,
+    findServerAdapter: (type: string) =>
+      catalog.adapter?.type === type ? catalog.adapter : null,
+    listServerAdapters: () => (catalog.adapter ? [catalog.adapter] : []),
+    listAcpxAdapterProbeDiagnostics: () => [],
+    refreshAcpxAdapters: catalog.refreshAcpxAdapters,
   }));
 }
 
-const EXTERNAL_ADAPTER_TYPE = "external_admin_test";
-const EXTERNAL_PACKAGE_NAME = "paperclip-external-adapter";
-let adapterRoutes: typeof import("../routes/adapters.js").adapterRoutes;
-let errorHandler: typeof import("../middleware/index.js").errorHandler;
-let registerServerAdapter: typeof import("../adapters/registry.js").registerServerAdapter;
-let unregisterServerAdapter: typeof import("../adapters/registry.js").unregisterServerAdapter;
-let setOverridePaused: typeof import("../adapters/registry.js").setOverridePaused;
-
-function createAdapter(type = EXTERNAL_ADAPTER_TYPE): ServerAdapterModule {
-  return createDeclarativeTestAdapter({ type });
-}
-
-function installedRecord(type = EXTERNAL_ADAPTER_TYPE) {
-  return {
-    packageName: EXTERNAL_PACKAGE_NAME,
-    type,
-    installedAt: new Date(0).toISOString(),
-  };
-}
-
-function createApp(actor: Express.Request["actor"]) {
-  if (!adapterRoutes || !errorHandler) {
-    throw new Error("adapter route test dependencies were not loaded");
-  }
-
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    req.actor = {
-      ...actor,
-      companyIds: Array.isArray(actor.companyIds) ? [...actor.companyIds] : actor.companyIds,
-      memberships: Array.isArray(actor.memberships)
-        ? actor.memberships.map((membership) => ({ ...membership }))
-        : actor.memberships,
-    } as Express.Request["actor"];
-    next();
-  });
-  app.use("/api", adapterRoutes());
-  app.use(errorHandler);
-  return app;
-}
-
-async function requestApp(
-  app: express.Express,
-  buildRequest: (baseUrl: string) => request.Test,
-) {
-  const { createServer } = await vi.importActual<typeof import("node:http")>("node:http");
-  const server = createServer(app);
-  try {
-    await new Promise<void>((resolve) => {
-      server.listen(0, "127.0.0.1", resolve);
-    });
-    const address = server.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Expected HTTP server to listen on a TCP port");
-    }
-    return await buildRequest(`http://127.0.0.1:${address.port}`);
-  } finally {
-    if (server.listening) {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-    }
-  }
-}
-
-function boardMember(membershipRole: "admin" | "operator" | "viewer"): Express.Request["actor"] {
+function boardMember(membershipRole: "admin" | "operator" | "viewer") {
   return testBoardSessionActor({
     userId: `${membershipRole}-user`,
     userName: null,
     userEmail: null,
     isInstanceAdmin: false,
     companyIds: ["company-1"],
-    memberships: [
-      {
-        companyId: "company-1",
-        membershipRole,
-        status: "active",
-      },
-    ],
+    memberships: [{
+      companyId: "company-1",
+      membershipRole,
+      status: "active",
+    }],
   });
 }
 
-const instanceAdmin: Express.Request["actor"] = testBoardSessionActor({
+const instanceAdmin = testBoardSessionActor({
   userId: "instance-admin",
   userName: null,
   userEmail: null,
@@ -177,93 +48,77 @@ const instanceAdmin: Express.Request["actor"] = testBoardSessionActor({
   memberships: [],
 });
 
-function sendMutatingRequest(app: express.Express, name: string) {
+function createApp(
+  actor: ReturnType<typeof testBoardSessionActor>,
+  adapterRoutes: typeof import("../routes/adapters.js").adapterRoutes,
+  errorHandler: typeof import("../middleware/index.js").errorHandler,
+) {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.actor = actor;
+    next();
+  });
+  app.use("/api", adapterRoutes());
+  app.use(errorHandler);
+  return app;
+}
+
+function sendMutatingRequest(
+  app: express.Express,
+  name: "install" | "disable" | "override" | "delete" | "reload" | "reinstall",
+) {
   switch (name) {
     case "install":
-      return requestApp(app, (baseUrl) =>
-        request(baseUrl)
-          .post("/api/adapters/install")
-          .send({ packageName: EXTERNAL_PACKAGE_NAME }),
-      );
+      return request(app)
+        .post("/api/adapters/install")
+        .send({ packageName: "irrelevant-adapter-package" });
     case "disable":
-      return requestApp(app, (baseUrl) =>
-        request(baseUrl)
-          .patch(`/api/adapters/${EXTERNAL_ADAPTER_TYPE}`)
-          .send({ disabled: true }),
-      );
+      return request(app)
+        .patch(`/api/adapters/${FIXTURE_AGENT_TYPE}`)
+        .send({ disabled: true });
     case "override":
-      return requestApp(app, (baseUrl) =>
-        request(baseUrl)
-          .patch("/api/adapters/codex/override")
-          .send({ paused: true }),
-      );
+      return request(app)
+        .patch(`/api/adapters/${FIXTURE_AGENT_TYPE}/override`)
+        .send({ paused: true });
     case "delete":
-      return requestApp(app, (baseUrl) => request(baseUrl).delete(`/api/adapters/${EXTERNAL_ADAPTER_TYPE}`));
+      return request(app).delete(`/api/adapters/${FIXTURE_AGENT_TYPE}`);
     case "reload":
-      return requestApp(app, (baseUrl) => request(baseUrl).post(`/api/adapters/${EXTERNAL_ADAPTER_TYPE}/reload`));
+      return request(app).post(`/api/adapters/${FIXTURE_AGENT_TYPE}/reload`);
     case "reinstall":
-      return requestApp(app, (baseUrl) => request(baseUrl).post(`/api/adapters/${EXTERNAL_ADAPTER_TYPE}/reinstall`));
-    default:
-      throw new Error(`Unknown mutating adapter route: ${name}`);
+      return request(app).post(`/api/adapters/${FIXTURE_AGENT_TYPE}/reinstall`);
   }
 }
 
-function seedInstalledExternalAdapter() {
-  mocks.externalRecords.set(EXTERNAL_ADAPTER_TYPE, installedRecord());
-  unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-  registerServerAdapter(createAdapter());
-}
+describe.sequential("ACPX adapter route authorization", () => {
+  let adapterRoutes: typeof import("../routes/adapters.js").adapterRoutes;
+  let errorHandler: typeof import("../middleware/index.js").errorHandler;
 
-function resetInstalledExternalAdapterState() {
-  mocks.externalRecords.clear();
-  unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-  setOverridePaused("codex", false);
-}
-
-describe.sequential("adapter management route authorization", () => {
   beforeEach(async () => {
     vi.resetModules();
-    vi.doUnmock("node:child_process");
-    vi.doUnmock("../services/adapter-plugin-store.js");
-    vi.doUnmock("../adapters/plugin-loader.js");
+    vi.doUnmock("../adapters/index.js");
     vi.doUnmock("../routes/adapters.js");
     vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
-    vi.doUnmock("../adapters/registry.js");
+    catalog.adapter = createDeclarativeTestAdapter({
+      type: FIXTURE_AGENT_TYPE,
+    });
+    catalog.refreshAcpxAdapters.mockClear();
     registerRouteMocks();
-    vi.doMock("../routes/authz.js", async () => vi.importActual("../routes/authz.js"));
 
-    const [routes, middleware, registry] = await Promise.all([
-      vi.importActual<typeof import("../routes/adapters.js")>("../routes/adapters.js"),
-      vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
-      vi.importActual<typeof import("../adapters/registry.js")>("../adapters/registry.js"),
+    const [routes, middleware] = await Promise.all([
+      import("../routes/adapters.js"),
+      import("../middleware/index.js"),
     ]);
     adapterRoutes = routes.adapterRoutes;
     errorHandler = middleware.errorHandler;
-    registerServerAdapter = registry.registerServerAdapter;
-    unregisterServerAdapter = registry.unregisterServerAdapter;
-    setOverridePaused = registry.setOverridePaused;
-    vi.clearAllMocks();
-    mocks.externalRecords.clear();
-
-    unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-    setOverridePaused("codex", false);
-    mocks.listAdapterPlugins.mockImplementation(() => [...mocks.externalRecords.values()]);
-    mocks.getAdapterPluginsDir.mockReturnValue("/tmp/paperclip-adapter-route-authz-test");
-    mocks.getDisabledAdapterTypes.mockReturnValue([]);
-    mocks.setAdapterDisabled.mockReturnValue(true);
-    mocks.buildExternalAdapters.mockResolvedValue([]);
-    mocks.buildRetainedExternalAdapters.mockResolvedValue([]);
-    mocks.loadExternalAdapterPackage.mockResolvedValue(createAdapter());
-    mocks.reloadExternalAdapter.mockImplementation(async (type: string) => createAdapter(type));
-  }, 20_000);
-
-  afterEach(() => {
-    unregisterServerAdapter(EXTERNAL_ADAPTER_TYPE);
-    setOverridePaused("codex", false);
   });
 
-  it("rejects mutating adapter routes for a non-instance-admin board user with company membership", async () => {
+  afterEach(() => {
+    catalog.adapter = null;
+  });
+
+  it("rejects every adapter mutation for a non-instance-admin board user", async () => {
     for (const routeName of [
       "install",
       "disable",
@@ -271,59 +126,56 @@ describe.sequential("adapter management route authorization", () => {
       "delete",
       "reload",
       "reinstall",
-    ]) {
-      resetInstalledExternalAdapterState();
-      seedInstalledExternalAdapter();
-      const app = createApp(boardMember("admin"));
-
-      const res = await sendMutatingRequest(app, routeName);
+    ] as const) {
+      const res = await sendMutatingRequest(
+        createApp(boardMember("admin"), adapterRoutes, errorHandler),
+        routeName,
+      );
 
       expect(res.status, `${routeName}: ${JSON.stringify(res.body)}`).toBe(403);
     }
   });
 
-  it("allows instance admins to reach mutating adapter routes", async () => {
-    for (const [routeName, expectedStatus] of [
-      ["install", 201],
-      ["disable", 200],
-      ["override", 200],
-      ["delete", 200],
-      ["reload", 200],
-      ["reinstall", 200],
-    ] as const) {
-      resetInstalledExternalAdapterState();
-      if (routeName !== "install") {
-        seedInstalledExternalAdapter();
-      }
-      const app = createApp(instanceAdmin);
+  it("lets instance admins receive retirement guidance but not replace ACPX's catalog", async () => {
+    const expectedStatuses = {
+      install: 410,
+      disable: 410,
+      override: 410,
+      delete: 410,
+      reload: 410,
+      reinstall: 410,
+    } as const;
 
-      const res = await sendMutatingRequest(app, routeName);
+    for (const [routeName, expectedStatus] of Object.entries(expectedStatuses) as Array<[
+      keyof typeof expectedStatuses,
+      number,
+    ]>) {
+      const res = await sendMutatingRequest(
+        createApp(instanceAdmin, adapterRoutes, errorHandler),
+        routeName,
+      );
 
       expect(res.status, `${routeName}: ${JSON.stringify(res.body)}`).toBe(expectedStatus);
     }
   });
 
   it.each(["viewer", "operator"] as const)(
-    "does not let a company %s trigger adapter npm install or reload",
+    "does not let a company %s manage or refresh ACPX agents",
     async (membershipRole) => {
-      seedInstalledExternalAdapter();
-      const installApp = createApp(boardMember(membershipRole));
-      const reloadApp = createApp(boardMember(membershipRole));
+      const app = createApp(
+        boardMember(membershipRole),
+        adapterRoutes,
+        errorHandler,
+      );
 
-      const install = await requestApp(installApp, (baseUrl) =>
-        request(baseUrl)
-          .post("/api/adapters/install")
-          .send({ packageName: EXTERNAL_PACKAGE_NAME }),
-      );
-      const reload = await requestApp(reloadApp, (baseUrl) =>
-        request(baseUrl).post(`/api/adapters/${EXTERNAL_ADAPTER_TYPE}/reload`),
-      );
+      const [install, reload] = await Promise.all([
+        sendMutatingRequest(app, "install"),
+        sendMutatingRequest(app, "reload"),
+      ]);
 
       expect(install.status, JSON.stringify(install.body)).toBe(403);
       expect(reload.status, JSON.stringify(reload.body)).toBe(403);
-      expect(mocks.execFile).not.toHaveBeenCalled();
-      expect(mocks.loadExternalAdapterPackage).not.toHaveBeenCalled();
-      expect(mocks.reloadExternalAdapter).not.toHaveBeenCalled();
+      expect(catalog.refreshAcpxAdapters).not.toHaveBeenCalled();
     },
   );
 });

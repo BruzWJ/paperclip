@@ -117,8 +117,6 @@ export const queryKeys = {
         agentId,
         revisionId ?? "__unconfigured__",
       ] as const,
-    adapterModels: (companyId: string, adapterType: string) =>
-      ["agents", companyId, "adapter-models", adapterType] as const,
     adapterModelProfiles: (companyId: string, adapterType: string) =>
       ["agents", companyId, "adapter-model-profiles", adapterType] as const,
   },
@@ -405,5 +403,8 @@ export const queryKeys = {
   },
   adapters: {
     all: ["adapters"] as const,
+    configSchemas: ["adapters", "config-schema"] as const,
+    configSchema: (adapterType: string) =>
+      ["adapters", "config-schema", adapterType] as const,
   },
 };

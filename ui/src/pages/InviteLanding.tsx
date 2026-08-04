@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
 import type { AgentAdapterType, JoinRequest } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
 import { CompanyPatternIcon } from "@/components/CompanyPatternIcon";
@@ -10,7 +9,6 @@ import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { companiesListQueryOptions } from "../api/companies-query";
 import { healthApi } from "../api/health";
-import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import {
   clearPendingInviteToken,
   rememberPendingInviteToken,
@@ -20,8 +18,6 @@ import { formatDate } from "../lib/utils";
 
 type AuthMode = "sign_in" | "sign_up";
 type AuthFeedback = { tone: "error" | "info"; message: string };
-
-const joinAdapterOptions: AgentAdapterType[] = [...AGENT_ADAPTER_TYPES];
 
 function readNestedString(value: unknown, path: string[]): string | null {
   let current: unknown = value;
@@ -213,8 +209,7 @@ export function InviteLandingPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [agentName, setAgentName] = useState("");
-  const [adapterType, setAdapterType] =
-    useState<AgentAdapterType>(AGENT_ADAPTER_TYPES[0]);
+  const [adapterType, setAdapterType] = useState<AgentAdapterType>("");
   const [capabilities, setCapabilities] = useState("");
   const [result, setResult] = useState<{
     kind: "bootstrap" | "join";
@@ -328,7 +323,7 @@ export function InviteLandingPage() {
       return accessApi.acceptInvite(token, {
         requestType: "agent",
         agentName: agentName.trim(),
-        adapterType,
+        adapterType: adapterType.trim(),
         capabilities: capabilities.trim() || null,
         agentDefaultsPayload: {},
       });
@@ -686,20 +681,18 @@ export function InviteLandingPage() {
                   />
                 </label>
                 <label className="block text-sm">
-                  <span className="mb-1 block text-zinc-400">Adapter type</span>
-                  <select
+                  <span className="mb-1 block text-zinc-400">ACPX agent name</span>
+                  <input
                     className={fieldClassName}
                     value={adapterType}
                     onChange={(event) =>
                       setAdapterType(event.target.value as AgentAdapterType)
                     }
-                  >
-                    {joinAdapterOptions.map((type) => (
-                      <option key={type} value={type}>
-                        {getAdapterLabel(type)}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Exact name shown in ACP adapters"
+                  />
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    The approver&apos;s Paperclip server validates this against its current ACPX catalog.
+                  </span>
                 </label>
                 <label className="block text-sm">
                   <span className="mb-1 block text-zinc-400">Capabilities</span>
@@ -714,7 +707,9 @@ export function InviteLandingPage() {
                 <Button
                   className="w-full rounded-none"
                   disabled={
-                    acceptMutation.isPending || agentName.trim().length === 0
+                    acceptMutation.isPending ||
+                    agentName.trim().length === 0 ||
+                    adapterType.trim().length === 0
                   }
                   onClick={() => acceptMutation.mutate()}
                 >
@@ -826,7 +821,7 @@ export function InviteLandingPage() {
                         setEmail(event.target.value);
                         setAuthFeedback(null);
                       }}
-                      autoComplete="username"
+                      autoComplete="email"
                       required
                       aria-required="true"
                       aria-invalid={

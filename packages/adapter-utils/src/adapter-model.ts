@@ -90,7 +90,8 @@ export function validateAdapterModel(value: unknown): AdapterModel {
       value.value,
       "Adapter model catalog entry value",
     ),
-    limits: validateAdapterModelLimits(value.limits),
+    limits:
+      value.limits === null ? null : validateAdapterModelLimits(value.limits),
   };
 }
 
@@ -116,10 +117,17 @@ export function sameAdapterModel(
   left: AdapterModel,
   right: AdapterModel,
 ): boolean {
+  if (
+    left.id !== right.id ||
+    left.label !== right.label ||
+    left.value !== right.value
+  ) {
+    return false;
+  }
+  if (left.limits === null || right.limits === null) {
+    return left.limits === right.limits;
+  }
   return (
-    left.id === right.id &&
-    left.label === right.label &&
-    left.value === right.value &&
     left.limits.contextTokenLimit === right.limits.contextTokenLimit &&
     left.limits.inputTokenLimit === right.limits.inputTokenLimit &&
     left.limits.outputTokenLimit === right.limits.outputTokenLimit

@@ -42,7 +42,11 @@ The provider sees none of those correlation fields. It receives only the lowered
 
 ## Continuity
 
-Provider-native continuity is retained only for the exact true-carry owner scope. Its envelope version is `issue-execution-native/v1`; its payload is validated and lowered only by the registered adapter codec. A first run, false-carry run, consult, ownership-epoch change, board/user fresh-session command, or adapter revision change cannot resume an earlier provider conversation.
+Provider-native continuity is retained only for the exact true-carry owner
+scope. Its encrypted opaque correlation is handed only to ACPX's public
+runtime. A first run, false-carry run, consult, ownership-epoch change,
+board/user fresh-session command, or adapter revision change cannot resume an
+earlier provider conversation.
 
 No agent-wide or issue-key session state exists.
 
@@ -64,11 +68,10 @@ Cancellation invalidates the matching lease/view/input disposition and signals t
 
 Transient/process-loss recovery may re-lease only the original valid ref. It preserves the same admitted source and execution view. An invalid or stale ref terminalizes with audit evidence and does not create replacement work.
 
-If a valid native resume reports `target_not_found`, Paperclip invalidates the
-dead correlation and creates an immediate successor attempt for the same run,
-ref, and segment. That attempt starts a fresh ACP session with the exact current
-source text only; Session history is retained for inspection and is not
-injected into the prompt.
+If ACPX rejects a frozen native resume, the attempt fails through the canonical
+ACPX runtime path. Paperclip does not parse a provider-specific
+`target_not_found` signal or silently create a fresh session, because that
+would change the immutable attempt's continuity semantics.
 
 ## API surface
 

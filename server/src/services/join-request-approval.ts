@@ -10,8 +10,8 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   AGENT_MENTION_REACH_GRANT_KEYS,
   PAPERCLIP_ACTION_KEYS,
-  supportedEnvironmentDriversForAdapter,
   type CompanySkillChannel,
+  type EnvironmentDriver,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { assertEnvironmentSelectionForCompany } from "../routes/environment-selection.js";
@@ -44,6 +44,37 @@ export interface JoinRequestApprovalInput {
   skillChannel?: CompanySkillChannel | null;
 }
 
+export interface JoinRequestApprovalDependencies {
+  /**
+   * Resolves only the current ACPX-admitted transports for an exact adapter.
+   * This seam keeps join approval testable without inventing a local catalog.
+   */
+  resolveAdapterEnvironmentDrivers?: (
+    adapterType: string,
+  ) => Promise<readonly EnvironmentDriver[]>;
+}
+
+async function resolveCurrentAcpxEnvironmentDrivers(
+  adapterType: string,
+): Promise<readonly EnvironmentDriver[]> {
+  const registry = await import("../adapters/registry.js");
+  // A join request can outlive the board catalog page. Refresh before the
+  // environment is selected so this approval cannot revive a removed ACPX
+  // transport from a stale Paperclip snapshot.
+  await registry.refreshAcpxAdapters();
+  const adapter = registry.findServerAdapter(adapterType);
+  if (!adapter) {
+    throw unprocessable(
+      `Agent adapter "${adapterType}" is not currently supplied by ACPX.`,
+      {
+        code: "agent_join_adapter_unavailable",
+        adapterType,
+      },
+    );
+  }
+  return adapter.definition.environment.drivers;
+}
+
 /**
  * The sole owner of board approval for an invite-backed join request.
  *
@@ -52,7 +83,13 @@ export interface JoinRequestApprovalInput {
  * transaction. A partial agent cannot escape if an initial revision or a
  * downstream membership/grant write fails.
  */
-export function createJoinRequestApprovalService(db: Db) {
+export function createJoinRequestApprovalService(
+  db: Db,
+  dependencies: JoinRequestApprovalDependencies = {},
+) {
+  const resolveAdapterEnvironmentDrivers =
+    dependencies.resolveAdapterEnvironmentDrivers
+    ?? resolveCurrentAcpxEnvironmentDrivers;
   async function approveInTransaction(
     tx: JoinApprovalTransaction,
     input: JoinRequestApprovalInput,
@@ -165,14 +202,15 @@ export function createJoinRequestApprovalService(db: Db) {
         );
       }
 
+      const allowedDrivers = await resolveAdapterEnvironmentDrivers(
+        joinRequest.adapterType,
+      );
       await assertEnvironmentSelectionForCompany(
         environmentService(txDb),
         input.companyId,
         input.defaultEnvironmentId,
         {
-          allowedDrivers: supportedEnvironmentDriversForAdapter(
-            joinRequest.adapterType,
-          ),
+          allowedDrivers: [...allowedDrivers],
         },
       );
       const environment = await tx

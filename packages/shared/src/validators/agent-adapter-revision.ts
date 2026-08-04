@@ -27,7 +27,6 @@ const acpSessionConfigSelectionSchema = z
 
 const acpSessionConfigSelectionsSchema = z
   .array(acpSessionConfigSelectionSchema)
-  .min(1)
   .superRefine((selections, ctx) => {
     for (let index = 0; index < selections.length; index += 1) {
       const current = selections[index]!;
@@ -91,16 +90,10 @@ const canonicalCompanySkillPinsSchema = companySkillPinsSchema.superRefine(
  */
 export const agentAdapterAcpConfigurationSchema = z
   .object({
-    contractVersion: z.literal("acp-subprocess/v1"),
+    contractVersion: z.literal("acpx-runtime/v1"),
     launchProfile: z
       .object({
         registryName: exactNonemptyStringSchema,
-        targetNativeCli: exactNonemptyStringSchema,
-        command: exactNonemptyStringSchema,
-        args: z.array(z.string()),
-        frontendPackage: exactNonemptyStringSchema,
-        frontendVersion: exactNonemptyStringSchema,
-        frontendDigest: z.string().regex(/^[0-9a-f]{64}$/),
       })
       .strict(),
     sessionConfigSelections: acpSessionConfigSelectionsSchema,
@@ -109,9 +102,10 @@ export const agentAdapterAcpConfigurationSchema = z
         id: exactNonemptyStringSchema,
         label: exactNonemptyStringSchema,
         value: exactNonemptyStringSchema,
-        limits: acpModelLimitsSchema,
+        limits: acpModelLimitsSchema.nullable(),
       })
-      .strict(),
+      .strict()
+      .nullable(),
     executionTargetSelector: z
       .object({
         defaultEnvironmentId: z.string().uuid(),

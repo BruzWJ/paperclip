@@ -104,9 +104,6 @@ function exactAbsolutePaths(values: readonly string[], label: string): string[] 
 function sortedConfigOptions(
   values: readonly AcpSessionConfigSelection[],
 ): readonly AcpSessionConfigSelection[] {
-  if (values.length === 0) {
-    throw new Error("ACP session config selections must be non-empty");
-  }
   const sorted = [...values].sort((left, right) =>
     left.configId < right.configId
       ? -1
@@ -308,6 +305,7 @@ export class PaperclipAcpClient {
   readonly #configSelections: readonly AcpSessionConfigSelection[];
   readonly #connection: ClientConnection;
   #initialConfigOptions: AcpSessionConfigSnapshot | null = null;
+  #sessionConfigOptions: readonly SessionConfigOption[] | null = null;
   #state: ClientState = "created";
   #initializeResponse: InitializeResponse | null = null;
   #sessionId: string | null = null;
@@ -341,6 +339,14 @@ export class PaperclipAcpClient {
 
   get initializeResponse(): InitializeResponse | null {
     return this.#initializeResponse;
+  }
+
+  /**
+   * Exact options returned by the successful session/new or session/resume
+   * response. They remain protocol data; callers must not mutate them.
+   */
+  get sessionConfigOptions(): readonly SessionConfigOption[] | null {
+    return this.#sessionConfigOptions;
   }
 
   async initialize(): Promise<InitializeResponse> {
@@ -459,6 +465,9 @@ export class PaperclipAcpClient {
         this.#configSelections,
         0,
       );
+      this.#sessionConfigOptions = Object.freeze([
+        ...(initialConfigOptions ?? []),
+      ]);
       for (let index = 0; index < this.#configSelections.length; index += 1) {
         const selection = this.#configSelections[index]!;
         const response = await this.#connection.agent.request(
@@ -549,6 +558,7 @@ export class PaperclipAcpClient {
       (this.#state === "session_setup" || this.#state === "session_ready") &&
       (notification.update.sessionUpdate === "available_commands_update" ||
         notification.update.sessionUpdate === "session_info_update" ||
+        notification.update.sessionUpdate === "current_mode_update" ||
         notification.update.sessionUpdate === "config_option_update");
     if (setupMetadata && this.#state === "session_setup") {
       if (
@@ -763,6 +773,12 @@ export interface AcpPromptExecutionInput {
   readonly onSessionEvent: (
     event: NormalizedAcpSessionEvent,
   ) => Promise<void> | void;
+  /**
+   * Releases request-scoped workspace resources that were prepared for an
+   * ACPX-owned runtime invocation. The legacy raw subprocess executor ignores
+   * this because its subprocess teardown owns those resources instead.
+   */
+  readonly releasePreparedResources?: () => Promise<void>;
   /**
    * Final request-local event validation after the prompt response and its
    * immediately preceding updates, but before protocol settlement is exposed.
