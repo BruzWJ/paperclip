@@ -50,19 +50,9 @@ const REQUIRED_ADDED_PROJECT_PATHS = [
   "packages/google-sheets-mcp-server",
   "packages/kv-demo-mcp-server",
   "packages/teams-catalog",
-  "packages/plugins/paperclip-plugin-fake-sandbox",
-  "packages/plugins/plugin-llm-wiki",
-  "packages/plugins/plugin-workspace-diff",
   "packages/plugins/examples/plugin-authoring-smoke-example",
   "packages/plugins/examples/plugin-orchestration-smoke-example",
-  "packages/plugins/sandbox-providers/cloudflare",
-  "packages/plugins/sandbox-providers/cloudflare/bridge-template",
-  "packages/plugins/sandbox-providers/daytona",
-  "packages/plugins/sandbox-providers/e2b",
-  "packages/plugins/sandbox-providers/exe-dev",
-  "packages/plugins/sandbox-providers/kubernetes",
-  "packages/plugins/sandbox-providers/modal",
-  "packages/plugins/sandbox-providers/novita",
+  "packages/plugins/agentmemory-plugin",
 ];
 const RAW_CENSUS_ROOTS = ["apps", "packages"];
 const RAW_CENSUS_IGNORED_DIRECTORIES = new Set([
@@ -179,11 +169,11 @@ test("watch mode uses the same zero-database environment builder", () => {
   assert.doesNotMatch(source, /env:\s*process\.env/);
 });
 
-test("standalone projects use isolated pnpm installation and existing SDK linking", () => {
+test("standalone plugin projects use isolated pnpm installation and SDK linking", () => {
   const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-standalone-"));
   const project = {
-    name: "@paperclipai/plugin-fixture-sandbox",
-    path: "packages/plugins/sandbox-providers/fixture",
+    name: "@paperclipai/plugin-standalone-fixture",
+    path: "packages/plugins/standalone-fixture",
     requiresStandaloneInstall: true,
   };
   const spawned = [];
@@ -401,24 +391,6 @@ test("the project manifest assigns the independent raw Vitest census exactly onc
     "the canonical manifest must cover every raw first-party Vitest suite",
   );
 
-  const sandboxAssignments = dry.testFileAssignments.filter((assignment) =>
-    assignment.file.startsWith("packages/plugins/sandbox-providers/"),
-  );
-  const rawSandboxFiles = rawFiles.filter((file) =>
-    file.startsWith("packages/plugins/sandbox-providers/"),
-  );
-  assert.ok(rawSandboxFiles.length >= 26, "expected the complete sandbox-provider census");
-  assert.deepEqual(
-    sandboxAssignments.map((assignment) => assignment.file).sort(),
-    rawSandboxFiles,
-  );
-  assert.ok(
-    sandboxAssignments.every(
-      (assignment) => assignment.lane === "general-workspaces-b",
-    ),
-    "every sandbox-provider suite must belong to the workspace-b lane",
-  );
-
   const laneProjectNames = [
     "@paperclipai/server",
     ...dry.generalWorkspacesAProjects,
@@ -507,44 +479,6 @@ test("root Vitest configuration uses the same discovered project manifest", () =
       ),
     /discoverVitestProjectManifest/,
   );
-});
-
-test("sandbox configs execute nested and opt-in suites through one project each", () => {
-  const cloudflareConfig = readFileSync(
-    path.join(
-      repoRoot,
-      "packages/plugins/sandbox-providers/cloudflare/vitest.config.ts",
-    ),
-    "utf8",
-  );
-  const bridgeConfig = readFileSync(
-    path.join(
-      repoRoot,
-      "packages/plugins/sandbox-providers/cloudflare/bridge-template/vitest.config.ts",
-    ),
-    "utf8",
-  );
-  const daytonaConfig = readFileSync(
-    path.join(
-      repoRoot,
-      "packages/plugins/sandbox-providers/daytona/vitest.config.ts",
-    ),
-    "utf8",
-  );
-  const kubernetesConfig = readFileSync(
-    path.join(
-      repoRoot,
-      "packages/plugins/sandbox-providers/kubernetes/vitest.config.ts",
-    ),
-    "utf8",
-  );
-
-  assert.match(cloudflareConfig, /include:\s*\["src\/\*\*\/\*\.test\.ts"\]/);
-  assert.doesNotMatch(cloudflareConfig, /bridge-template\/src/);
-  assert.match(bridgeConfig, /include:\s*\["src\/\*\*\/\*\.test\.ts"\]/);
-  assert.doesNotMatch(daytonaConfig, /\broot\s*:/);
-  assert.match(daytonaConfig, /include:\s*\["src\/\*\*\/\*\.test\.ts"\]/);
-  assert.match(kubernetesConfig, /"test\/integration\/\*\*\/\*\.test\.ts"/);
 });
 
 test("shard flags are rejected for the parallel workspace groups", () => {
