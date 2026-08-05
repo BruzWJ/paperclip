@@ -112,10 +112,6 @@ export function resolveMentionReach(input: {
         eligible.has(agent.id),
     )
     .map((agent) => agent.id);
-  const directParent =
-    source.reportsTo && eligible.has(source.reportsTo)
-      ? source.reportsTo
-      : null;
 
   const root = input.issueTree.find((issue) => issue.parentId === null) ?? null;
   const treeOwnerIds = new Set(
@@ -148,7 +144,6 @@ export function resolveMentionReach(input: {
 
   const activatesTool =
     directChildren.length > 0 ||
-    directParent !== null ||
     dynamicTargets.size > 0;
   if (!activatesTool) {
     return { targetAgentIds: new Set(), activatesTool: false };
@@ -158,7 +153,6 @@ export function resolveMentionReach(input: {
     ...directChildren,
     ...dynamicTargets,
   ]);
-  if (directParent) targetAgentIds.add(directParent);
   targetAgentIds.delete(source.id);
   return { targetAgentIds, activatesTool: true };
 }

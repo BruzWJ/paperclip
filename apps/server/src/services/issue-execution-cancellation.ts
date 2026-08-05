@@ -61,11 +61,6 @@ export interface IssueExecutionCancelledRunSettlementPort {
       readonly finishedAt: Date;
     },
   ): Promise<boolean>;
-  consumeFinalizationOutboxForRun(input: {
-    readonly companyId: string;
-    readonly issueId: string;
-    readonly runId: string;
-  }): Promise<void>;
   fenceRevokedExecutionAuthorityInTransaction(
     transaction: IssueSessionDbTransaction,
     input: {
@@ -314,6 +309,137 @@ export function createIssueExecutionCancellationService(
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? randomUUID;
 
+  /**
+   * Shared per-run cancellation step used by the locked-run and agent-fence
+   * paths. Returns the request entry the caller records for this run.
+   */
+  async function processCancellableRun(
+    transaction: IssueSessionDbTransaction,
+    run: {
+      readonly companyId: string;
+      readonly issueId: string;
+      readonly runId: string;
+      readonly cancellationIntentId: string | null;
+      readonly currentAttemptId: string | null;
+      readonly currentLeaseId: string | null;
+    },
+    params: {
+      readonly reason: string;
+      readonly at: Date;
+      readonly reasonKind: "authority" | "lifecycle";
+      readonly actor: ReturnType<typeof cancellationActorColumns>;
+    },
+  ): Promise<RequestedRunCancellation> {
+    if (run.cancellationIntentId !== null) {
+      return {
+        companyId: run.companyId,
+        issueId: run.issueId,
+        runId: run.runId,
+        cancellationIntentId: run.cancellationIntentId,
+        state: "intent_requested",
+      };
+    }
+    if (run.currentAttemptId === null && run.currentLeaseId === null) {
+      await options.settlement.terminalizeDetachedCancelledRunInTransaction(
+        transaction,
+        {
+          companyId: run.companyId,
+          issueId: run.issueId,
+          runId: run.runId,
+          reason: params.reason,
+          finishedAt: params.at,
+        },
+      );
+      return {
+        companyId: run.companyId,
+        issueId: run.issueId,
+        runId: run.runId,
+        cancellationIntentId: null,
+        state: "terminalized",
+      };
+    }
+    if (run.currentAttemptId === null || run.currentLeaseId === null) {
+      reject("active run has a partial prompt-attempt attachment");
+    }
+    const [attemptRows, leaseRows, processRows] = await Promise.all([
+      transaction
+        .select()
+        .from(issueExecutionAttempts)
+        .where(eq(issueExecutionAttempts.id, run.currentAttemptId))
+        .limit(2)
+        .for("update"),
+      transaction
+        .select()
+        .from(issueExecutionLeases)
+        .where(eq(issueExecutionLeases.id, run.currentLeaseId))
+        .limit(2)
+        .for("update"),
+      transaction
+        .select()
+        .from(issueExecutionProcessFacts)
+        .where(eq(issueExecutionProcessFacts.attemptId, run.currentAttemptId))
+        .limit(2)
+        .for("update"),
+    ]);
+    if (
+      attemptRows.length !== 1 ||
+      leaseRows.length !== 1 ||
+      processRows.length > 1
+    ) {
+      reject("active run has an ambiguous attempt, lease, or process");
+    }
+    const attempt = attemptRows[0]!;
+    const lease = leaseRows[0]!;
+    if (
+      attempt.runId !== run.runId ||
+      lease.runId !== run.runId ||
+      lease.attemptId !== attempt.id ||
+      lease.id !== run.currentLeaseId ||
+      attempt.id !== run.currentAttemptId ||
+      lease.state !== "active"
+    ) {
+      reject("active run cancellation crossed its exact attempt lease");
+    }
+    const cancellationIntentId = idFactory();
+    await transaction.insert(issueExecutionCancellationIntents).values({
+      id: cancellationIntentId,
+      companyId: run.companyId,
+      issueId: run.issueId,
+      runId: run.runId,
+      attemptId: attempt.id,
+      leaseId: lease.id,
+      processFactId: processRows[0]?.id ?? null,
+      reasonKind: params.reasonKind,
+      ...params.actor,
+      state: "requested",
+      requestedAt: params.at,
+      acknowledgedAt: null,
+      sessionCancelSentAt: null,
+      processTerminationRequestedAt: processRows[0] ? params.at : null,
+      processTerminatedAt: null,
+      completedAt: null,
+      failedAt: null,
+      failureCode: null,
+      createdAt: params.at,
+    });
+    await options.runService.attachCancellation(transaction, {
+      companyId: run.companyId,
+      issueId: run.issueId,
+      runId: run.runId,
+      expectedAttemptId: attempt.id,
+      expectedLeaseId: lease.id,
+      cancellationIntentId,
+      at: params.at,
+    });
+    return {
+      companyId: run.companyId,
+      issueId: run.issueId,
+      runId: run.runId,
+      cancellationIntentId,
+      state: "intent_requested",
+    };
+  }
+
   async function requestLockedRunCancellationsInTransaction(
     transaction: IssueSessionDbTransaction,
     input: {
@@ -327,116 +453,14 @@ export function createIssueExecutionCancellationService(
     const actor = cancellationActorColumns(input.actor);
     const requests: RequestedRunCancellation[] = [];
     for (const run of input.runs) {
-      if (run.cancellationIntentId !== null) {
-        requests.push({
-          companyId: run.companyId,
-          issueId: run.issueId,
-          runId: run.runId,
-          cancellationIntentId: run.cancellationIntentId,
-          state: "intent_requested",
-        });
-        continue;
-      }
-      if (run.currentAttemptId === null && run.currentLeaseId === null) {
-        await options.settlement.terminalizeDetachedCancelledRunInTransaction(
-          transaction,
-          {
-            companyId: run.companyId,
-            issueId: run.issueId,
-            runId: run.runId,
-            reason: input.reason,
-            finishedAt: input.at,
-          },
-        );
-        requests.push({
-          companyId: run.companyId,
-          issueId: run.issueId,
-          runId: run.runId,
-          cancellationIntentId: null,
-          state: "terminalized",
-        });
-        continue;
-      }
-      if (run.currentAttemptId === null || run.currentLeaseId === null) {
-        reject("active run has a partial prompt-attempt attachment");
-      }
-      const [attemptRows, leaseRows, processRows] = await Promise.all([
-        transaction
-          .select()
-          .from(issueExecutionAttempts)
-          .where(eq(issueExecutionAttempts.id, run.currentAttemptId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionLeases)
-          .where(eq(issueExecutionLeases.id, run.currentLeaseId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionProcessFacts)
-          .where(eq(issueExecutionProcessFacts.attemptId, run.currentAttemptId))
-          .limit(2)
-          .for("update"),
-      ]);
-      if (
-        attemptRows.length !== 1 ||
-        leaseRows.length !== 1 ||
-        processRows.length > 1
-      ) {
-        reject("active run has an ambiguous attempt, lease, or process");
-      }
-      const attempt = attemptRows[0]!;
-      const lease = leaseRows[0]!;
-      if (
-        attempt.runId !== run.runId ||
-        lease.runId !== run.runId ||
-        lease.attemptId !== attempt.id ||
-        lease.id !== run.currentLeaseId ||
-        attempt.id !== run.currentAttemptId ||
-        lease.state !== "active"
-      ) {
-        reject("active run cancellation crossed its exact attempt lease");
-      }
-      const cancellationIntentId = idFactory();
-      await transaction.insert(issueExecutionCancellationIntents).values({
-        id: cancellationIntentId,
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        attemptId: attempt.id,
-        leaseId: lease.id,
-        processFactId: processRows[0]?.id ?? null,
-        reasonKind: input.reasonKind ?? "authority",
-        ...actor,
-        state: "requested",
-        requestedAt: input.at,
-        acknowledgedAt: null,
-        sessionCancelSentAt: null,
-        processTerminationRequestedAt: processRows[0] ? input.at : null,
-        processTerminatedAt: null,
-        completedAt: null,
-        failedAt: null,
-        failureCode: null,
-        createdAt: input.at,
-      });
-      await options.runService.attachCancellation(transaction, {
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        expectedAttemptId: attempt.id,
-        expectedLeaseId: lease.id,
-        cancellationIntentId,
-        at: input.at,
-      });
-      requests.push({
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        cancellationIntentId,
-        state: "intent_requested",
-      });
+      requests.push(
+        await processCancellableRun(transaction, run, {
+          reason: input.reason,
+          at: input.at,
+          reasonKind: input.reasonKind ?? "authority",
+          actor,
+        }),
+      );
     }
     return Object.freeze(requests);
   }
@@ -493,116 +517,14 @@ export function createIssueExecutionCancellationService(
       });
     const requests: RequestedRunCancellation[] = [];
     for (const run of runRows) {
-      if (run.cancellationIntentId !== null) {
-        requests.push({
-          companyId: run.companyId,
-          issueId: run.issueId,
-          runId: run.runId,
-          cancellationIntentId: run.cancellationIntentId,
-          state: "intent_requested",
-        });
-        continue;
-      }
-      if (run.currentAttemptId === null && run.currentLeaseId === null) {
-        await options.settlement.terminalizeDetachedCancelledRunInTransaction(
-          transaction,
-          {
-            companyId: run.companyId,
-            issueId: run.issueId,
-            runId: run.runId,
-            reason,
-            finishedAt: at,
-          },
-        );
-        requests.push({
-          companyId: run.companyId,
-          issueId: run.issueId,
-          runId: run.runId,
-          cancellationIntentId: null,
-          state: "terminalized",
-        });
-        continue;
-      }
-      if (run.currentAttemptId === null || run.currentLeaseId === null) {
-        reject("active run has a partial prompt-attempt attachment");
-      }
-      const [attemptRows, leaseRows, processRows] = await Promise.all([
-        transaction
-          .select()
-          .from(issueExecutionAttempts)
-          .where(eq(issueExecutionAttempts.id, run.currentAttemptId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionLeases)
-          .where(eq(issueExecutionLeases.id, run.currentLeaseId))
-          .limit(2)
-          .for("update"),
-        transaction
-          .select()
-          .from(issueExecutionProcessFacts)
-          .where(eq(issueExecutionProcessFacts.attemptId, run.currentAttemptId))
-          .limit(2)
-          .for("update"),
-      ]);
-      if (
-        attemptRows.length !== 1 ||
-        leaseRows.length !== 1 ||
-        processRows.length > 1
-      ) {
-        reject("active run has an ambiguous attempt, lease, or process");
-      }
-      const attempt = attemptRows[0]!;
-      const lease = leaseRows[0]!;
-      if (
-        attempt.runId !== run.runId ||
-        lease.runId !== run.runId ||
-        lease.attemptId !== attempt.id ||
-        lease.id !== run.currentLeaseId ||
-        attempt.id !== run.currentAttemptId ||
-        lease.state !== "active"
-      ) {
-        reject("active run cancellation crossed its exact attempt lease");
-      }
-      const cancellationIntentId = idFactory();
-      await transaction.insert(issueExecutionCancellationIntents).values({
-        id: cancellationIntentId,
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        attemptId: attempt.id,
-        leaseId: lease.id,
-        processFactId: processRows[0]?.id ?? null,
-        reasonKind: "authority",
-        ...actor,
-        state: "requested",
-        requestedAt: at,
-        acknowledgedAt: null,
-        sessionCancelSentAt: null,
-        processTerminationRequestedAt: processRows[0] ? at : null,
-        processTerminatedAt: null,
-        completedAt: null,
-        failedAt: null,
-        failureCode: null,
-        createdAt: at,
-      });
-      await options.runService.attachCancellation(transaction, {
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        expectedAttemptId: attempt.id,
-        expectedLeaseId: lease.id,
-        cancellationIntentId,
-        at,
-      });
-      requests.push({
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-        cancellationIntentId,
-        state: "intent_requested",
-      });
+      requests.push(
+        await processCancellableRun(transaction, run, {
+          reason,
+          at,
+          reasonKind: "authority",
+          actor,
+        }),
+      );
     }
     return Object.freeze({
       companyId: input.companyId,
@@ -797,11 +719,6 @@ export function createIssueExecutionCancellationService(
         if (request.cancellationIntentId !== null) {
           reject("terminalized cancellation unexpectedly owns an intent");
         }
-        await options.settlement.consumeFinalizationOutboxForRun({
-          companyId: request.companyId,
-          issueId: request.issueId,
-          runId: request.runId,
-        });
         results.push({
           runId: request.runId,
           alreadyTerminal: true,
@@ -941,11 +858,6 @@ export function createIssueExecutionCancellationService(
         if (request.cancellationIntentId !== null) {
           reject("terminalized cancellation unexpectedly owns an intent");
         }
-        await options.settlement.consumeFinalizationOutboxForRun({
-          companyId: request.companyId,
-          issueId: request.issueId,
-          runId: request.runId,
-        });
         results.push({
           runId: request.runId,
           alreadyTerminal: true,

@@ -302,8 +302,6 @@ export interface AttachIssueExecutionRunFinalizationInput
   readonly status: IssueExecutionRunTerminalClassification;
   readonly terminalReasonCode: string;
   readonly finishedAt: Date;
-  readonly processExitCode: number | null;
-  readonly processSignal: string | null;
   readonly at: Date;
 }
 
@@ -677,30 +675,11 @@ function projectRunEnvelope(
 }
 
 /**
- * Resolves and locks the exact successful agent-authored steering action used
- * by the closed P15 action-source recorder. The run service owns the join
- * because the action is valid only in the canonical run's company/issue/epoch
- * scope; the Session comment and event prove that it was agent-authored.
+ * Shared select/join base for the two steering-liveness lookups below. The
+ * caller chains its own where/orderBy/limit/for tail.
  */
-export async function lockResumedAgentSteeringLivenessSourceInTransaction(
-  transaction: IssueSessionDbTransaction,
-  input: {
-    readonly runId: string;
-    readonly refId: string;
-    readonly segmentOrdinal: number;
-  },
-): Promise<ResumedAgentSteeringLivenessSource | null> {
-  assertExactRunIdentifier(input.runId, "steering liveness run id");
-  assertExactRunIdentifier(input.refId, "steering liveness ref id");
-  if (
-    !Number.isSafeInteger(input.segmentOrdinal) ||
-    input.segmentOrdinal < 1
-  ) {
-    throw new IssueExecutionRunInvariantViolation(
-      "steering liveness segment ordinal must be positive",
-    );
-  }
-  const rows = await transaction
+function steeringLivenessBaseQuery(transaction: IssueSessionDbTransaction) {
+  return transaction
     .select({
       companyId: issueExecutionRuns.companyId,
       issueId: issueExecutionRuns.issueId,
@@ -735,6 +714,34 @@ export async function lockResumedAgentSteeringLivenessSourceInTransaction(
         eq(issueSessionEvents.sourceId, issueComments.canonicalSourceId),
       ),
     )
+    .$dynamic();
+}
+
+/**
+ * Resolves and locks the exact successful agent-authored steering action used
+ * by the closed P15 action-source recorder. The run service owns the join
+ * because the action is valid only in the canonical run's company/issue/epoch
+ * scope; the Session comment and event prove that it was agent-authored.
+ */
+export async function lockResumedAgentSteeringLivenessSourceInTransaction(
+  transaction: IssueSessionDbTransaction,
+  input: {
+    readonly runId: string;
+    readonly refId: string;
+    readonly segmentOrdinal: number;
+  },
+): Promise<ResumedAgentSteeringLivenessSource | null> {
+  assertExactRunIdentifier(input.runId, "steering liveness run id");
+  assertExactRunIdentifier(input.refId, "steering liveness ref id");
+  if (
+    !Number.isSafeInteger(input.segmentOrdinal) ||
+    input.segmentOrdinal < 1
+  ) {
+    throw new IssueExecutionRunInvariantViolation(
+      "steering liveness segment ordinal must be positive",
+    );
+  }
+  const rows = await steeringLivenessBaseQuery(transaction)
     .where(
       and(
         eq(issueExecutionPromptSegments.runId, input.runId),
@@ -794,41 +801,7 @@ async function listResumedAgentSteeringLivenessActionsInTransaction(
       "steering liveness admission time is invalid",
     );
   }
-  const rows = await transaction
-    .select({
-      companyId: issueExecutionRuns.companyId,
-      issueId: issueExecutionRuns.issueId,
-      ownershipEpoch: issueExecutionRuns.ownershipEpoch,
-      runId: issueExecutionPromptSegments.runId,
-      refId: issueExecutionPromptSegments.refId,
-      segmentOrdinal: issueExecutionPromptSegments.segmentOrdinal,
-      committedAt: issueExecutionPromptSegments.resumedAt,
-    })
-    .from(issueExecutionPromptSegments)
-    .innerJoin(
-      issueExecutionRuns,
-      and(
-        eq(
-          issueExecutionRuns.companyId,
-          issueExecutionPromptSegments.companyId,
-        ),
-        eq(issueExecutionRuns.issueId, issueExecutionPromptSegments.issueId),
-        eq(issueExecutionRuns.id, issueExecutionPromptSegments.runId),
-      ),
-    )
-    .innerJoin(
-      issueComments,
-      eq(issueComments.id, issueExecutionPromptSegments.sourceCommentId),
-    )
-    .innerJoin(
-      issueSessionEvents,
-      and(
-        eq(issueSessionEvents.companyId, issueComments.companyId),
-        eq(issueSessionEvents.issueId, issueComments.issueId),
-        eq(issueSessionEvents.sessionId, issueComments.sessionId),
-        eq(issueSessionEvents.sourceId, issueComments.canonicalSourceId),
-      ),
-    )
+  const rows = await steeringLivenessBaseQuery(transaction)
     .where(
       and(
         eq(issueExecutionPromptSegments.companyId, input.companyId),
@@ -2413,20 +2386,6 @@ export async function attachIssueExecutionRunFinalizationInTransaction(
       "run terminal reason or time is invalid",
     );
   }
-  if (
-    (input.processExitCode !== null &&
-      (!Number.isSafeInteger(input.processExitCode) ||
-        input.processExitCode < 0 ||
-        input.processExitCode > 255 ||
-        input.processSignal !== null)) ||
-    (input.processSignal !== null &&
-      (input.processExitCode !== null ||
-        !/^SIG[A-Z0-9]+$/.test(input.processSignal)))
-  ) {
-    throw new IssueExecutionRunInvariantViolation(
-      "run terminal process classification is invalid",
-    );
-  }
   const finalizations = await transaction
     .select({
       id: issueExecutionFinalizations.id,
@@ -2455,8 +2414,6 @@ export async function attachIssueExecutionRunFinalizationInTransaction(
       finishedAt: input.finishedAt,
       terminalClassification: input.status,
       terminalReasonCode: input.terminalReasonCode,
-      processExitCode: input.processExitCode,
-      processSignal: input.processSignal,
       updatedAt: input.at,
     })
     .where(

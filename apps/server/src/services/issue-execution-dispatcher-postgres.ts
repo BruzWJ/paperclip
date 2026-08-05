@@ -17,6 +17,7 @@ import {
   issueExecutionRefs,
   issueExecutionRunControls,
   issueExecutionRunRefs,
+  issueExecutionRuns,
   issueExecutionSessions,
   issueExecutionWorkspaceBindings,
   issueSessions,
@@ -42,6 +43,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   notInArray,
   or,
   sql,
@@ -57,7 +59,6 @@ import type {
   IssueExecutionRetry,
   IssueExecutionTerminal,
   IssueExecutionTargetLaneIdentity,
-  LeasedIssueExecutionConsultRun,
   LeasedIssueExecutionRef,
 } from "./issue-execution-dispatcher.js";
 import {
@@ -65,10 +66,6 @@ import {
   scheduleIssueExecutionAttemptRetryInTransaction,
 } from "./issue-execution-attempt-retry-schedule-postgres.js";
 import type { PostgresIssueExecutionFinalizationWriter } from "./issue-execution-finalization-postgres.js";
-import {
-  attachIssueLivenessFollowupRunInTransaction,
-  transferIssueLivenessFollowupRetryRunInTransaction,
-} from "./issue-liveness-reconciliation.js";
 import {
   lockActiveProductiveRunForLaneInTransaction,
   readActiveIssueExecutionRefRunAvailability,
@@ -129,22 +126,6 @@ type LeaseForLaneResult =
       readonly run: RunRow;
     };
 
-type ConsultAuthorityLossRecoveryResult =
-  | { readonly kind: "not_recoverable" }
-  | { readonly kind: "scheduled"; readonly retryAt: Date }
-  | {
-      readonly kind: "leased";
-      readonly lease: LeasedIssueExecutionRef;
-      readonly run: LeasedIssueExecutionConsultRun;
-    }
-  | {
-      readonly kind: "terminal";
-      readonly runId: string;
-      readonly outcome: IssueExecutionTerminal["outcome"];
-      readonly reason: string | null;
-      readonly finalText: string;
-    };
-
 const DEFAULT_LEASE_TTL_MS = 15 * 60_000;
 const MAX_CREATOR_UPDATE_BATCH = 32;
 
@@ -191,7 +172,6 @@ export interface PostgresIssueExecutionDispatcherRepositoryOptions {
     PostgresIssueExecutionFinalizationWriter,
     | "finalize"
     | "finalizeInTransaction"
-    | "consumeFinalizationOutboxForRun"
   >;
   readonly leaseTtlMs?: number;
   readonly now?: () => Date;
@@ -480,45 +460,6 @@ function leaseProjection(
     leaseGeneration,
     attemptNumber: attempt.attemptGeneration,
     batch: Object.freeze(members),
-  });
-}
-
-function consultRunProjection(
-  run: RunRow,
-  lease: LeasedIssueExecutionRef,
-): LeasedIssueExecutionConsultRun {
-  if (
-    run.companyId !== lease.companyId ||
-    run.issueId !== lease.issueId ||
-    run.runId !== lease.runId ||
-    run.kind !== "consult" ||
-    run.executionMode !== "consult" ||
-    run.issueExecutionAuthorityId !== null ||
-    run.consultExecutionId === null ||
-    run.parentRunId === null ||
-    run.currentAttemptId !== lease.attemptId ||
-    run.currentLeaseId !== lease.leaseId
-  ) {
-    reject("consult lease crossed its exact canonical run projection");
-  }
-  return Object.freeze({
-    companyId: run.companyId,
-    issueId: run.issueId,
-    runId: run.runId,
-    retryOfRunId: run.retryOfRunId,
-    sessionId: run.sessionId,
-    kind: run.kind,
-    executionScopeId: run.executionScopeId,
-    ownershipEpoch: run.ownershipEpoch,
-    targetAgentId: run.targetAgentId,
-    adapterConfigRevisionId: run.adapterConfigRevisionId,
-    executionWorkspaceBindingId: run.executionWorkspaceBindingId,
-    executionMode: run.executionMode,
-    issueExecutionAuthorityId: run.issueExecutionAuthorityId,
-    consultExecutionId: run.consultExecutionId,
-    parentRunId: run.parentRunId,
-    currentAttemptId: run.currentAttemptId,
-    currentLeaseId: run.currentLeaseId,
   });
 }
 
@@ -979,6 +920,9 @@ async function assertRefDispatchable(
   transaction: IssueSessionDbTransaction,
   ref: RefRow,
 ): Promise<void> {
+  if (ref.sourceKind === "agent_liveness_followup") {
+    reject("legacy liveness follow-up refs are retired");
+  }
   const [companyRows, issueRows, sessionRows, viewRows, lifecycleRows] =
     await Promise.all([
       transaction
@@ -1060,10 +1004,13 @@ async function assertRefDispatchable(
     reject("execution ref is no longer current and dispatchable");
   }
   if (ref.mode === "consult") {
+    if (!(await consultSourceRunIsFinalized(transaction, ref))) {
+      reject("consult source run is not finalized");
+    }
     try {
       await lockAndValidateIssueConsultChain(transaction, {
         ref,
-        requireLiveAncestors: ref.sourceKind === "consult_mention",
+        requireLiveAncestors: false,
         leafState: "active",
       });
     } catch (error) {
@@ -1073,6 +1020,35 @@ async function assertRefDispatchable(
       throw error;
     }
   }
+}
+
+async function consultSourceRunIsFinalized(
+  transaction: IssueSessionDbTransaction,
+  ref: Pick<RefRow, "companyId" | "issueId" | "mode" | "consultExecutionId">,
+): Promise<boolean> {
+  if (ref.mode === "owner") return true;
+  if (ref.consultExecutionId === null) return false;
+  const rows = await transaction
+    .select({ terminalFinalizationId: issueExecutionRuns.terminalFinalizationId })
+    .from(issueConsultExecutions)
+    .innerJoin(
+      issueExecutionRuns,
+      and(
+        eq(issueExecutionRuns.companyId, issueConsultExecutions.companyId),
+        eq(issueExecutionRuns.issueId, issueConsultExecutions.issueId),
+        eq(issueExecutionRuns.id, issueConsultExecutions.sourceRunId),
+      ),
+    )
+    .where(
+      and(
+        eq(issueConsultExecutions.id, ref.consultExecutionId),
+        eq(issueConsultExecutions.companyId, ref.companyId),
+        eq(issueConsultExecutions.issueId, ref.issueId),
+      ),
+    )
+    .limit(2)
+    .for("share");
+  return rows.length === 1 && rows[0]!.terminalFinalizationId !== null;
 }
 
 async function createRunningLease(
@@ -1484,24 +1460,6 @@ async function createRunForRef(
       "released-run retry could not freeze its pending successor attempt",
     );
   }
-  const progressReply = ref.sourceKind !== "agent_liveness_followup"
-    ? null
-    : exactRetry
-      ? await transferIssueLivenessFollowupRetryRunInTransaction(transaction, {
-          companyId: ref.companyId,
-          issueId: ref.issueId,
-          ownershipEpoch: ref.ownershipEpoch,
-          refId: ref.id,
-          fromRunId: exactRetry.retryOfRunId,
-          toRunId: created.run.runId,
-        })
-      : await attachIssueLivenessFollowupRunInTransaction(transaction, {
-          companyId: ref.companyId,
-          issueId: ref.issueId,
-          ownershipEpoch: ref.ownershipEpoch,
-          refId: ref.id,
-          runId: created.run.runId,
-        });
   const admission = createIssueSessionAdmissionService(options.database);
   await admission.appendNonDispatchSyntheticComment({
     companyId: ref.companyId,
@@ -1522,7 +1480,7 @@ async function createRunForRef(
         runId: created.run.runId,
         adapterConfigRevisionId: ref.adapterConfigRevisionId,
       },
-      replyToCommentId: progressReply?.replyToCommentId ?? null,
+      replyToCommentId: null,
       steeringSegment: null,
     },
   }, transaction);
@@ -1734,6 +1692,7 @@ async function completeTerminalPromptInTransaction(
     readonly finishedAt: Date;
   } | null;
   readonly laneReleased: boolean;
+  readonly dispatchRefIds: readonly string[];
 }> {
   if (
     input.attempt.refId !== input.lease.ref.id ||
@@ -1818,7 +1777,7 @@ async function completeTerminalPromptInTransaction(
         leaseId: input.lease.leaseId,
         at: input.at,
       });
-      return { finalization: null, laneReleased: true };
+      return { finalization: null, laneReleased: true, dispatchRefIds: [] };
     }
   } else {
     await settleUnsentSuffix(
@@ -1859,7 +1818,10 @@ async function completeTerminalPromptInTransaction(
     terminalReasonCode: (input.reason?.trim() || input.outcome).slice(0, 200),
     finishedAt: input.at,
   } as const;
-  await options.finalizer.finalizeInTransaction(transaction, finalization);
+  const finalized = await options.finalizer.finalizeInTransaction(
+    transaction,
+    finalization,
+  );
   await clearExactLaneClaim(transaction, {
     ref: input.lease.ref,
     laneOrdinal: input.lease.ref.laneOrdinal,
@@ -1867,7 +1829,11 @@ async function completeTerminalPromptInTransaction(
     leaseId: input.lease.leaseId,
     at: input.at,
   });
-  return { finalization, laneReleased: true };
+  return {
+    finalization,
+    laneReleased: true,
+    dispatchRefIds: finalized.dispatchRefIds,
+  };
 }
 
 async function createTargetNotFoundSuccessorAttempt(
@@ -1914,21 +1880,6 @@ async function createTargetNotFoundSuccessorAttempt(
 export function createPostgresIssueExecutionDispatcherRepository(
   options: PostgresIssueExecutionDispatcherRepositoryOptions,
 ): IssueExecutionDispatcherRepository & {
-  readonly recoverConsultAfterAuthorityLoss: (input: {
-    readonly lease: LeasedIssueExecutionRef;
-    readonly workerId: string;
-  }) => Promise<ConsultAuthorityLossRecoveryResult>;
-  readonly leasePersistedConsultRef: (input: {
-    readonly refId: string;
-    readonly workerId: string;
-  }) => Promise<
-    | { readonly kind: "queued" }
-    | {
-        readonly kind: "leased";
-        readonly lease: LeasedIssueExecutionRef;
-        readonly run: LeasedIssueExecutionConsultRun;
-      }
-  >;
   readonly terminalizeCancelledRun: (input: {
     readonly companyId: string;
     readonly issueId: string;
@@ -1946,11 +1897,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       readonly finishedAt: Date;
     },
   ) => Promise<boolean>;
-  readonly consumeFinalizationOutboxForRun: (input: {
-    readonly companyId: string;
-    readonly issueId: string;
-    readonly runId: string;
-  }) => Promise<void>;
   readonly fenceRevokedExecutionAuthorityInTransaction: (
     transaction: IssueSessionDbTransaction,
     input: {
@@ -1990,26 +1936,14 @@ export function createPostgresIssueExecutionDispatcherRepository(
     | { readonly kind: "retry_same_run"; readonly run: RunRow }
     | {
         readonly kind: "released_run";
-        readonly finalized: {
-          readonly companyId: string;
-          readonly issueId: string;
-          readonly runId: string;
-        };
         readonly retryRun: RunRow | null;
-        readonly releasedConsultRefId: string | null;
         readonly terminal: IssueExecutionTerminal;
       };
-
-  type ExpiredLeaseRecoveryScope =
-    | "owner_lane"
-    | "global_scan"
-    | "synchronous_consult";
 
   async function recoverExpiredRunInTransaction(
     transaction: IssueSessionDbTransaction,
     run: RunRow,
     at: Date,
-    scope: ExpiredLeaseRecoveryScope,
   ): Promise<ExpiredRunRecovery> {
     if (run.currentAttemptId === null && run.currentLeaseId === null) {
       return { kind: "current", run };
@@ -2115,9 +2049,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       return { kind: "current", run };
     }
     if (
-      (scope === "owner_lane" && run.executionMode !== "owner") ||
-      (scope === "synchronous_consult" &&
-        run.executionMode !== "consult") ||
       attempt.companyId !== run.companyId ||
       attempt.issueId !== run.issueId ||
       attempt.sessionId !== run.sessionId ||
@@ -2227,19 +2158,12 @@ export function createPostgresIssueExecutionDispatcherRepository(
       try {
         await lockAndValidateIssueConsultChain(transaction, {
           ref: member.ref,
-          requireLiveAncestors: member.ref.sourceKind === "consult_mention",
+          requireLiveAncestors: false,
           leafState: "active",
         });
         consultChainRemainsLive = true;
       } catch (error) {
         if (!(error instanceof IssueConsultChainInvalid)) throw error;
-      }
-      if (
-        (scope === "global_scan" && consultChainRemainsLive) ||
-        (scope === "synchronous_consult" &&
-          !consultChainRemainsLive)
-      ) {
-        return { kind: "current", run };
       }
     }
     const correlationIds = [
@@ -2470,9 +2394,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
         }
         return {
           kind: "released_run",
-          finalized: completed.finalization,
           retryRun: null,
-          releasedConsultRefId: member.ref.id,
           terminal,
         };
       }
@@ -2544,10 +2466,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
       }
       return {
         kind: "released_run",
-        finalized: completed.finalization,
         retryRun: null,
-        releasedConsultRefId:
-          run.executionMode === "consult" ? member.ref.id : null,
         terminal,
       };
     }
@@ -2911,16 +2830,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
         ).run;
     return {
       kind: "released_run",
-      finalized: {
-        companyId: run.companyId,
-        issueId: run.issueId,
-        runId: run.runId,
-      },
       retryRun,
-      releasedConsultRefId:
-        run.executionMode === "consult" && retryRun === null
-          ? member.ref.id
-          : null,
       terminal: {
         kind: "terminal",
         outcome: "failed",
@@ -2944,8 +2854,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       readonly workerId: string;
       readonly at: Date;
       readonly mode: "owner" | "consult";
-      readonly exactRefId?: string;
-      readonly expectedPredecessor?: AttemptRow;
     },
   ): Promise<ExistingRunLeaseResult> {
     if (
@@ -2973,12 +2881,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
         scheduleRows,
         "scheduled retry lost its exact due-time owner",
       );
-      if (
-        input.expectedPredecessor !== undefined &&
-        schedule.predecessorAttemptId !== input.expectedPredecessor.id
-      ) {
-        reject("scheduled retry crossed its exact predecessor attempt");
-      }
       if (schedule.retryAt > input.at) {
         return { kind: "scheduled", retryAt: schedule.retryAt };
       }
@@ -2992,12 +2894,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
           at: input.at,
           successorAttemptId: idFactory(),
           revalidate: async ({ predecessor }) => {
-            if (
-              input.expectedPredecessor !== undefined &&
-              predecessor.id !== input.expectedPredecessor.id
-            ) {
-              reject("retry claim crossed its exact predecessor attempt");
-            }
             const ref = exactlyOne(
               await transaction
                 .select()
@@ -3065,24 +2961,11 @@ export function createPostgresIssueExecutionDispatcherRepository(
       "active run lost its prompt control",
     );
     const current = refs.find((ref) => ref.id === control.currentRefId);
-    if (!current || (input.exactRefId && current.id !== input.exactRefId)) {
+    if (!current) {
       return { kind: "queued" };
     }
-    if (
-      input.expectedPredecessor !== undefined &&
-      pendingAttempt !== undefined &&
-      (pendingAttempt.refId !== input.expectedPredecessor.refId ||
-        pendingAttempt.refOrdinal !== input.expectedPredecessor.refOrdinal ||
-        pendingAttempt.segmentOrdinal !==
-          input.expectedPredecessor.segmentOrdinal ||
-        pendingAttempt.promptKind !== input.expectedPredecessor.promptKind ||
-        (run.runId === input.expectedPredecessor.runId
-          ? pendingAttempt.attemptGeneration !==
-            input.expectedPredecessor.attemptGeneration + 1
-          : run.retryOfRunId !== input.expectedPredecessor.runId ||
-            pendingAttempt.attemptGeneration !== 1))
-    ) {
-      reject("recovered retry lost its successor attempt generation");
+    if (!(await consultSourceRunIsFinalized(transaction, current))) {
+      return { kind: "queued" };
     }
     const laneClaim = await lockLaneLeaseClaim(transaction, current, {
       existingRun: true,
@@ -3124,29 +3007,20 @@ export function createPostgresIssueExecutionDispatcherRepository(
     readonly lane: IssueExecutionTargetLaneIdentity;
     readonly workerId: string;
     readonly at: Date;
-    readonly mode: "owner" | "consult";
-    readonly exactRefId?: string;
   }): Promise<LeaseForLaneResult> {
-    let recoveredFinalization: {
-      readonly companyId: string;
-      readonly issueId: string;
-      readonly runId: string;
-    } | null = null;
     const result: LeaseForLaneResult = await options.database.transaction(
       async (transaction) => {
       let existing = await findExistingRunForLane(
         transaction,
         input.lane,
       );
-      if (existing && input.mode === "owner") {
+      if (existing) {
         const recovered = await recoverExpiredRunInTransaction(
           transaction,
           existing,
           input.at,
-          "owner_lane",
         );
         if (recovered.kind === "released_run") {
-          recoveredFinalization = recovered.finalized;
           existing = recovered.retryRun;
         } else {
           existing = recovered.run;
@@ -3157,8 +3031,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
           run: existing,
           workerId: input.workerId,
           at: input.at,
-          mode: input.mode,
-          ...(input.exactRefId ? { exactRefId: input.exactRefId } : {}),
+          mode: existing.executionMode,
         });
         return leased.kind === "scheduled" ? { kind: "queued" } : leased;
       }
@@ -3186,10 +3059,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
               input.lane.ownershipEpoch,
             ),
             eq(issueExecutionRefs.targetAgentId, input.lane.targetAgentId),
-            eq(issueExecutionRefs.mode, input.mode),
             eq(issueExecutionRefs.disposition, "active"),
             issueExecutionRefDeliveryEligibilitySql("dispatch"),
-            input.exactRefId ? eq(issueExecutionRefs.id, input.exactRefId) : undefined,
             occupiedRefIds.length === 0
               ? undefined
               : notInArray(issueExecutionRefs.id, [...occupiedRefIds]),
@@ -3199,6 +3070,9 @@ export function createPostgresIssueExecutionDispatcherRepository(
         .limit(1);
       const ref = refRows[0];
       if (!ref) return { kind: "queued" };
+      if (!(await consultSourceRunIsFinalized(transaction, ref))) {
+        return { kind: "queued" };
+      }
       const laneClaim = await lockLaneLeaseClaim(transaction, ref, {
         existingRun: false,
       });
@@ -3240,11 +3114,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
       return { kind: "leased", lease, run: leasedRun };
       },
     );
-    if (recoveredFinalization) {
-      await options.finalizer.consumeFinalizationOutboxForRun(
-        recoveredFinalization,
-      );
-    }
     return result;
   }
 
@@ -4074,14 +3943,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
           asc(issueExecutionLeases.id),
         )
         .limit(limit);
-      const ownerRefIds: string[] = [];
-      const releasedConsultRefIds: string[] = [];
+      const refIds: string[] = [];
       for (const candidate of candidates) {
-        let finalization: {
-          readonly companyId: string;
-          readonly issueId: string;
-          readonly runId: string;
-        } | null = null;
         const recovered = await options.database.transaction(
           async (transaction) => {
             const run = await findExistingRunForLane(
@@ -4097,14 +3960,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
               transaction,
               run,
               at,
-              "global_scan",
             );
             if (result.kind === "current") return null;
-            if (result.kind === "released_run") {
-              finalization = result.finalized;
-            }
-            const owner = await transaction
-              .select({ id: issueExecutionRefs.id })
+            const next = await transaction
+              .select()
               .from(issueExecutionRefs)
               .where(
                 and(
@@ -4118,39 +3977,23 @@ export function createPostgresIssueExecutionDispatcherRepository(
                     issueExecutionRefs.targetAgentId,
                     candidate.ref.targetAgentId,
                   ),
-                  eq(issueExecutionRefs.mode, "owner"),
                   eq(issueExecutionRefs.disposition, "active"),
                 ),
               )
               .orderBy(asc(issueExecutionRefs.laneOrdinal), asc(issueExecutionRefs.id))
               .limit(1)
-              .then((rows) => rows[0]?.id ?? null);
-            return {
-              ownerRefId: owner,
-              releasedConsultRefId:
-                result.kind === "released_run"
-                  ? result.releasedConsultRefId
-                  : null,
-            };
+              .then((rows) => rows[0] ?? null);
+            return next && await consultSourceRunIsFinalized(transaction, next)
+              ? next.id
+              : null;
           },
         );
-        if (finalization) {
-          await options.finalizer.consumeFinalizationOutboxForRun(
-            finalization,
-          );
-        }
-        if (recovered?.ownerRefId) ownerRefIds.push(recovered.ownerRefId);
-        if (recovered?.releasedConsultRefId) {
-          releasedConsultRefIds.push(recovered.releasedConsultRefId);
-        }
+        if (recovered) refIds.push(recovered);
       }
-      return {
-        ownerRefIds: [...new Set(ownerRefIds)],
-        releasedConsultRefIds: [...new Set(releasedConsultRefIds)],
-      };
+      return { refIds: [...new Set(refIds)] };
     },
 
-    async listDispatchableOwnerRefIds(input: { now: Date; limit: number }) {
+    async listDispatchableRefIds(input: { now: Date; limit: number }) {
       validDate(input.now, "dispatch discovery time");
       const limit = Math.max(1, Math.min(1_000, Math.trunc(input.limit)));
       const blockedRefIds = await readBlockedActiveIssueExecutionRefIds(
@@ -4166,8 +4009,8 @@ export function createPostgresIssueExecutionDispatcherRepository(
         .innerJoin(companies, eq(companies.id, issueExecutionRefs.companyId))
         .where(
           and(
-            eq(issueExecutionRefs.mode, "owner"),
             eq(issueExecutionRefs.disposition, "active"),
+            ne(issueExecutionRefs.sourceKind, "agent_liveness_followup"),
             issueExecutionRefDeliveryEligibilitySql("dispatch"),
             inArray(issueExecutionHistoryViews.state, ["empty", "current"]),
             eq(issueSessions.integrityState, "ready"),
@@ -4177,9 +4020,33 @@ export function createPostgresIssueExecutionDispatcherRepository(
             eq(companies.status, "active"),
             eq(companies.sessionIntegrityState, "ready"),
             inArray(issues.lifecycleStatus, ["open", "blocked"]),
-            eq(issues.ownerKind, "agent"),
-            sql`${issues.ownerAgentId} = ${issueExecutionRefs.targetAgentId}`,
             sql`${issues.ownershipEpoch} = ${issueExecutionRefs.ownershipEpoch}`,
+            or(
+              and(
+                eq(issueExecutionRefs.mode, "owner"),
+                eq(issues.ownerKind, "agent"),
+                sql`${issues.ownerAgentId} = ${issueExecutionRefs.targetAgentId}`,
+                isNotNull(issueExecutionRefs.issueExecutionAuthorityId),
+              ),
+              and(
+                eq(issueExecutionRefs.mode, "consult"),
+                isNull(issueExecutionRefs.issueExecutionAuthorityId),
+                isNotNull(issueExecutionRefs.consultExecutionId),
+                sql`exists (
+                  select 1
+                  from ${issueConsultExecutions}
+                  join ${issueExecutionRuns}
+                    on ${issueExecutionRuns.companyId} = ${issueConsultExecutions.companyId}
+                   and ${issueExecutionRuns.issueId} = ${issueConsultExecutions.issueId}
+                   and ${issueExecutionRuns.id} = ${issueConsultExecutions.sourceRunId}
+                  where ${issueConsultExecutions.id} = ${issueExecutionRefs.consultExecutionId}
+                    and ${issueConsultExecutions.companyId} = ${issueExecutionRefs.companyId}
+                    and ${issueConsultExecutions.issueId} = ${issueExecutionRefs.issueId}
+                    and ${issueConsultExecutions.state} = 'active'
+                    and ${issueExecutionRuns.terminalFinalizationId} is not null
+                )`,
+              ),
+            ),
             sql`not exists (
               select 1 from company_session_lifecycle_operations lifecycle
               where lifecycle.company_id = ${issueExecutionRefs.companyId}
@@ -4247,7 +4114,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
       };
     },
 
-    async leaseNextOwnerRef(input: {
+    async leaseNextRef(input: {
       lane: IssueExecutionTargetLaneIdentity;
       workerId: string;
       now: Date;
@@ -4256,7 +4123,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
         lane: input.lane,
         workerId: input.workerId,
         at: validDate(input.now, "lease time"),
-        mode: "owner",
       });
       return result.kind === "leased" ? result.lease : null;
     },
@@ -4415,6 +4281,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
           completed = {
             finalization: null,
             laneReleased: false,
+            dispatchRefIds: [],
           };
         } else {
           const attempt = exactlyOne(
@@ -4445,231 +4312,9 @@ export function createPostgresIssueExecutionDispatcherRepository(
         );
         return completed;
       });
-      if (settlement.finalization) {
-        await options.finalizer.consumeFinalizationOutboxForRun(
-          settlement.finalization,
-        );
-      }
-      return { laneReleased: settlement.laneReleased };
-    },
-
-    async recoverConsultAfterAuthorityLoss(input: {
-      lease: LeasedIssueExecutionRef;
-      workerId: string;
-    }) {
-      exactIdentifier(input.workerId, "consult recovery worker id");
-      const priorLease = input.lease;
-      if (
-        priorLease.ref.mode !== "consult" ||
-        priorLease.ref.consultExecutionId === null ||
-        priorLease.ref.issueExecutionAuthorityId !== null ||
-        priorLease.companyId !== priorLease.ref.companyId ||
-        priorLease.issueId !== priorLease.ref.issueId ||
-        priorLease.batch.length !== 1 ||
-        priorLease.batch[0]!.ref.id !== priorLease.ref.id ||
-        priorLease.batch[0]!.leaseGeneration !== priorLease.leaseGeneration ||
-        priorLease.batch[0]!.attemptNumber !== priorLease.attemptNumber
-      ) {
-        return { kind: "not_recoverable" as const };
-      }
-      const at = validDate(now(), "consult authority-loss recovery time");
-      let finalization: {
-        readonly companyId: string;
-        readonly issueId: string;
-        readonly runId: string;
-      } | null = null;
-      const result = await options.database.transaction(async (transaction) => {
-        await lockLaneParents(transaction, priorLease.ref);
-        await lockLane(transaction, priorLease.ref);
-        const predecessor = exactlyOne(
-          await transaction
-            .select()
-            .from(issueExecutionAttempts)
-            .where(eq(issueExecutionAttempts.id, priorLease.attemptId))
-            .limit(2)
-            .for("update"),
-          "consult recovery lost its predecessor attempt",
-        );
-        const expiredLease = exactlyOne(
-          await transaction
-            .select()
-            .from(issueExecutionLeases)
-            .where(eq(issueExecutionLeases.id, priorLease.leaseId))
-            .limit(2)
-            .for("update"),
-          "consult recovery lost its predecessor lease",
-        );
-        const originalRun = await options.runService.lockRun(transaction, {
-          companyId: priorLease.companyId,
-          issueId: priorLease.issueId,
-          runId: priorLease.runId,
-        });
-        if (
-          predecessor.companyId !== priorLease.companyId ||
-          predecessor.issueId !== priorLease.issueId ||
-          predecessor.sessionId !== priorLease.ref.sessionId ||
-          predecessor.runId !== priorLease.runId ||
-          predecessor.runKind !== "consult" ||
-          predecessor.promptKind !== priorLease.promptKind ||
-          predecessor.sessionOperation !== priorLease.sessionOperation ||
-          predecessor.refId !== priorLease.ref.id ||
-          predecessor.refOrdinal !== priorLease.refOrdinal ||
-          predecessor.segmentOrdinal !== priorLease.segmentOrdinal ||
-          predecessor.attemptGeneration !== priorLease.attemptNumber ||
-          expiredLease.companyId !== priorLease.companyId ||
-          expiredLease.issueId !== priorLease.issueId ||
-          expiredLease.runId !== priorLease.runId ||
-          expiredLease.attemptId !== priorLease.attemptId ||
-          expiredLease.leaseGeneration !== priorLease.leaseGeneration ||
-          expiredLease.workerId !== input.workerId ||
-          originalRun.kind !== "consult" ||
-          originalRun.executionMode !== "consult" ||
-          originalRun.sessionId !== priorLease.ref.sessionId ||
-          originalRun.ownershipEpoch !== priorLease.ref.ownershipEpoch ||
-          originalRun.targetAgentId !== priorLease.ref.targetAgentId ||
-          originalRun.consultExecutionId !==
-            priorLease.ref.consultExecutionId ||
-          originalRun.issueExecutionAuthorityId !== null
-        ) {
-          return { kind: "not_recoverable" as const };
-        }
-
-        let successor: RunRow | null = null;
-        if (
-          originalRun.currentAttemptId === predecessor.id &&
-          originalRun.currentLeaseId === expiredLease.id &&
-          predecessor.state === "running" &&
-          expiredLease.state === "active" &&
-          expiredLease.expiresAt <= at
-        ) {
-          const recovered = await recoverExpiredRunInTransaction(
-            transaction,
-            originalRun,
-            at,
-            "synchronous_consult",
-          );
-          if (recovered.kind === "current") {
-            return { kind: "not_recoverable" as const };
-          }
-          if (recovered.kind === "released_run") {
-            finalization = recovered.finalized;
-            if (recovered.retryRun === null) {
-              return {
-                kind: "terminal" as const,
-                runId: originalRun.runId,
-                outcome: recovered.terminal.outcome,
-                reason: recovered.terminal.reason,
-                finalText: recovered.terminal.finalText ?? "",
-              };
-            }
-            successor = recovered.retryRun;
-          } else {
-            successor = recovered.run;
-          }
-        } else if (
-          originalRun.currentAttemptId === null &&
-          originalRun.currentLeaseId === null &&
-          predecessor.state === "failed" &&
-          expiredLease.state === "expired" &&
-          expiredLease.releasedAt !== null
-        ) {
-          successor = await findExistingRunForLane(
-            transaction,
-            targetLaneIdentity(priorLease.ref),
-          );
-        } else {
-          return { kind: "not_recoverable" as const };
-        }
-        if (
-          successor === null ||
-          successor.kind !== "consult" ||
-          successor.executionMode !== "consult" ||
-          successor.consultExecutionId !== originalRun.consultExecutionId ||
-          successor.parentRunId !== originalRun.parentRunId ||
-          successor.sessionId !== originalRun.sessionId ||
-          successor.executionScopeId !== originalRun.executionScopeId ||
-          successor.ownershipEpoch !== originalRun.ownershipEpoch ||
-          successor.targetAgentId !== originalRun.targetAgentId ||
-          successor.adapterConfigRevisionId !==
-            originalRun.adapterConfigRevisionId ||
-          successor.executionWorkspaceBindingId !==
-            originalRun.executionWorkspaceBindingId ||
-          (successor.runId !== originalRun.runId &&
-            successor.retryOfRunId !== originalRun.runId)
-        ) {
-          return { kind: "not_recoverable" as const };
-        }
-        const acquired = await leaseExistingRunInTransaction(transaction, {
-          run: successor,
-          workerId: input.workerId,
-          at,
-          mode: "consult",
-          exactRefId: priorLease.ref.id,
-          expectedPredecessor: predecessor,
-        });
-        if (acquired.kind === "scheduled") return acquired;
-        if (acquired.kind !== "leased") {
-          return { kind: "not_recoverable" as const };
-        }
-        return {
-          kind: "leased" as const,
-          lease: acquired.lease,
-          run: consultRunProjection(acquired.run, acquired.lease),
-        };
-      });
-      if (finalization) {
-        await options.finalizer.consumeFinalizationOutboxForRun(finalization);
-      }
-      return result;
-    },
-
-    async leasePersistedConsultRef(input: { refId: string; workerId: string }) {
-      exactIdentifier(input.refId, "consult ref id");
-      const persisted = exactlyOne(
-        await options.database
-          .select({
-            companyId: issueExecutionRefs.companyId,
-            issueId: issueExecutionRefs.issueId,
-            sessionId: issueExecutionRefs.sessionId,
-            ownershipEpoch: issueExecutionRefs.ownershipEpoch,
-            targetAgentId: issueExecutionRefs.targetAgentId,
-            mode: issueExecutionRefs.mode,
-            disposition: issueExecutionRefs.disposition,
-          })
-          .from(issueExecutionRefs)
-          .where(eq(issueExecutionRefs.id, input.refId))
-          .limit(2),
-        "consult ref does not exist",
-      );
-      if (persisted.mode !== "consult") reject("selected ref is not a consult");
-      if (persisted.disposition !== "active") {
-        reject("selected consult ref is already terminal or invalidated");
-      }
-      const result = await leaseForLane({
-        lane: targetLaneIdentity(persisted),
-        workerId: input.workerId,
-        at: validDate(now(), "consult lease time"),
-        mode: "consult",
-        exactRefId: input.refId,
-      });
-      if (result.kind === "queued") {
-        const disposition = exactlyOne(
-          await options.database
-            .select({ disposition: issueExecutionRefs.disposition })
-            .from(issueExecutionRefs)
-            .where(eq(issueExecutionRefs.id, input.refId))
-            .limit(2),
-          "consult ref disappeared while waiting for its lane",
-        ).disposition;
-        if (disposition !== "active") {
-          reject("selected consult ref was terminalized during lane recovery");
-        }
-        return result;
-      }
       return {
-        kind: "leased" as const,
-        lease: result.lease,
-        run: consultRunProjection(result.run, result.lease),
+        laneReleased: settlement.laneReleased,
+        dispatchRefIds: settlement.dispatchRefIds,
       };
     },
 
@@ -4682,32 +4327,14 @@ export function createPostgresIssueExecutionDispatcherRepository(
     }) {
       await options.database.transaction((transaction) =>
         terminalizeDetachedCancelledRunInTransaction(transaction, input));
-      await options.finalizer.consumeFinalizationOutboxForRun(input);
     },
 
     terminalizeDetachedCancelledRunInTransaction,
-    consumeFinalizationOutboxForRun:
-      options.finalizer.consumeFinalizationOutboxForRun,
     fenceRevokedExecutionAuthorityInTransaction,
     releaseSuspendedAgentDeliveriesInTransaction,
     releaseBudgetScopeDeliveriesInTransaction,
 
   } satisfies IssueExecutionDispatcherRepository & {
-    recoverConsultAfterAuthorityLoss(input: {
-      lease: LeasedIssueExecutionRef;
-      workerId: string;
-    }): Promise<ConsultAuthorityLossRecoveryResult>;
-    leasePersistedConsultRef(input: {
-      refId: string;
-      workerId: string;
-    }): Promise<
-      | { kind: "queued" }
-      | {
-          kind: "leased";
-          lease: LeasedIssueExecutionRef;
-          run: LeasedIssueExecutionConsultRun;
-        }
-    >;
     terminalizeCancelledRun(input: {
       companyId: string;
       issueId: string;
@@ -4725,11 +4352,6 @@ export function createPostgresIssueExecutionDispatcherRepository(
         finishedAt: Date;
       },
     ): Promise<boolean>;
-    consumeFinalizationOutboxForRun(input: {
-      companyId: string;
-      issueId: string;
-      runId: string;
-    }): Promise<void>;
     fenceRevokedExecutionAuthorityInTransaction(
       transaction: IssueSessionDbTransaction,
       input: {

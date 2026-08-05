@@ -88,12 +88,15 @@ function harness(
   };
   let available = true;
   const retryable = vi.fn();
-  const terminal = vi.fn(async () => ({ laneReleased: true }));
+  const terminal = vi.fn(async () => ({
+    laneReleased: true,
+    dispatchRefIds: [],
+  }));
   const repository: IssueExecutionDispatcherRepository = {
     async recoverExpiredLeases() {
-      return { ownerRefIds: [], releasedConsultRefIds: [] };
+      return { refIds: [] };
     },
-    async listDispatchableOwnerRefIds() {
+    async listDispatchableRefIds() {
       return [];
     },
     async resolveLaneForPersistedRef(refId) {
@@ -113,7 +116,7 @@ function harness(
           }
         : null;
     },
-    async leaseNextOwnerRef() {
+    async leaseNextRef() {
       if (!available) return null;
       available = false;
       return lease;
@@ -365,7 +368,7 @@ describe("issue execution dispatcher", () => {
     });
     const repository: IssueExecutionDispatcherRepository = {
       ...first.repository,
-      async leaseNextOwnerRef() {
+      async leaseNextRef() {
         return queue.shift() ?? null;
       },
     };
@@ -441,7 +444,7 @@ describe("issue execution dispatcher", () => {
 
     await expect(
       dispatcher.runPersistedRef("ref"),
-    ).rejects.toThrow(/outside one active owner execution batch/);
+    ).rejects.toThrow(/outside one active execution batch/);
     expect(execute).not.toHaveBeenCalled();
     expect(current.terminal).not.toHaveBeenCalled();
   });
@@ -472,7 +475,7 @@ describe("issue execution dispatcher", () => {
     expect(terminal).not.toHaveBeenCalled();
   });
 
-  it("rejects unknown and consult refs at the top-level queue", async () => {
+  it("rejects unknown refs and dispatches a persisted consult", async () => {
     const owner = harness();
     const dispatcher = createIssueExecutionDispatcher({
       repository: owner.repository,
@@ -493,15 +496,23 @@ describe("issue execution dispatcher", () => {
         consultChainToken: "chain",
       }),
     );
+    const executeConsult = vi.fn(async (
+      _lease: LeasedIssueExecutionRef,
+      _signal: AbortSignal,
+      settle: AttemptSettlement,
+    ) => settleResult(settle, {
+      kind: "terminal" as const,
+      outcome: "succeeded" as const,
+      reason: null,
+    }));
     const consultDispatcher = createIssueExecutionDispatcher({
       repository: consult.repository,
-      executor: { execute: vi.fn() },
+      executor: { execute: executeConsult },
       steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
-    await expect(
-      consultDispatcher.runPersistedRef("ref"),
-    ).rejects.toThrow(/synchronously/);
+    await consultDispatcher.runPersistedRef("ref");
+    expect(executeConsult).toHaveBeenCalledOnce();
   });
 
   it("treats running and settled refs as idempotent notification success", async () => {
@@ -546,105 +557,111 @@ describe("issue execution dispatcher", () => {
     ).rejects.toThrow(/Invalidated refs/);
   });
 
-  it("wakes the exact owner lane only after a persisted consult is settled", async () => {
-    const owner = ref({ id: "owner-successor" });
-    const current = harness(owner);
-    const consult = ref({
-      id: "settled-consult",
+  it("wakes every finalization handoff after source release even when another wake fails", async () => {
+    const source = harness(ref({ id: "source-ref", targetAgentId: "source-agent" }));
+    const failedWakeRefId = "failed-wake-ref";
+    const handoffRef = ref({
+      id: "handoff-ref",
       mode: "consult",
-      disposition: "terminal",
+      targetAgentId: "handoff-agent",
+      executionScopeId: "handoff-scope",
+      executionLineageId: "handoff-lineage",
+      historyViewId: "handoff-view",
       issueExecutionAuthorityId: null,
-      consultExecutionId: "consult-execution",
-      consultCallerRefId: "caller-ref",
-      consultChainToken: "consult-chain",
+      consultExecutionId: "consult",
+      consultCallerRefId: source.lease.ref.id,
+      consultChainToken: "chain",
     });
-    let completeExecution!: () => void;
-    const executionCompleted = new Promise<void>((resolve) => {
-      completeExecution = resolve;
-    });
+    const handoff = harness(handoffRef);
+    handoff.lease.runId = "handoff-run";
+    handoff.lease.attemptId = "handoff-attempt";
+    handoff.lease.leaseId = "handoff-lease";
+    const refs = new Map([
+      [source.lease.ref.id, source.lease.ref],
+      [handoffRef.id, handoffRef],
+    ]);
+    const leases = new Map([
+      [source.lease.ref.targetAgentId, source.lease],
+      [handoffRef.targetAgentId, handoff.lease],
+    ]);
     const repository: IssueExecutionDispatcherRepository = {
-      ...current.repository,
+      ...source.repository,
       async resolveLaneForPersistedRef(refId) {
-        if (refId !== consult.id) return null;
+        if (refId === failedWakeRefId) {
+          throw new Error("handoff wake failed");
+        }
+        const value = refs.get(refId);
+        return value
+          ? {
+              lane: {
+                companyId: value.companyId,
+                issueId: value.issueId,
+                sessionId: value.sessionId,
+                ownershipEpoch: value.ownershipEpoch,
+                targetAgentId: value.targetAgentId,
+              },
+              mode: value.mode,
+              disposition: value.disposition,
+              leaseState: "available" as const,
+              leaseExpiresAt: null,
+            }
+          : null;
+      },
+      async leaseNextRef({ lane }) {
+        const lease = leases.get(lane.targetAgentId) ?? null;
+        leases.delete(lane.targetAgentId);
+        return lease;
+      },
+      async markTerminal({ lease }) {
         return {
-          lane: {
-            companyId: consult.companyId,
-            issueId: consult.issueId,
-            sessionId: consult.sessionId,
-            ownershipEpoch: consult.ownershipEpoch,
-            targetAgentId: consult.targetAgentId,
-          },
-          mode: consult.mode,
-          disposition: consult.disposition,
-          leaseState: "completed",
-          leaseExpiresAt: null,
+          laneReleased: true,
+          dispatchRefIds:
+            lease.ref.id === source.lease.ref.id
+              ? [failedWakeRefId, handoffRef.id]
+              : [],
         };
       },
     };
-    const execute = vi.fn(async (
-      leased: LeasedIssueExecutionRef,
-      _signal: AbortSignal,
-      settle: AttemptSettlement,
-    ) => {
-      expect(leased.ref.id).toBe(owner.id);
-      const result = await settleResult(settle, {
-        kind: "terminal" as const,
-        outcome: "succeeded" as const,
-        reason: null,
-      });
-      completeExecution();
-      return result;
+    let activeProcesses = 0;
+    let maxActiveProcesses = 0;
+    let finishHandoff!: () => void;
+    const handoffFinished = new Promise<void>((resolve) => {
+      finishHandoff = resolve;
     });
     const dispatcher = createIssueExecutionDispatcher({
       repository,
-      executor: { execute },
-      steeringResults: { publish: vi.fn() },
-      workerId: "worker",
-    });
-
-    await dispatcher.notifyReleasedConsultRef(consult.id);
-    await executionCompleted;
-
-    expect(execute).toHaveBeenCalledOnce();
-    await dispatcher.shutdown();
-  });
-
-  it("rejects released-lane notification before the consult is terminal and settled", async () => {
-    const consult = harness(
-      ref({
-        mode: "consult",
-        issueExecutionAuthorityId: null,
-        consultExecutionId: "consult-execution",
-        consultCallerRefId: "caller-ref",
-        consultChainToken: "consult-chain",
-      }),
-      "leased",
-    );
-    const dispatcher = createIssueExecutionDispatcher({
-      repository: consult.repository,
-      executor: { execute: vi.fn() },
+      executor: {
+        async execute(lease, _signal, settle) {
+          activeProcesses += 1;
+          maxActiveProcesses = Math.max(maxActiveProcesses, activeProcesses);
+          const result = await settleResult(settle, {
+            kind: "terminal",
+            outcome: "succeeded",
+            reason: null,
+          });
+          activeProcesses -= 1;
+          if (lease.ref.id === handoffRef.id) finishHandoff();
+          return result;
+        },
+      },
       steeringResults: { publish: vi.fn() },
       workerId: "worker",
     });
 
     await expect(
-      dispatcher.notifyReleasedConsultRef("ref"),
-    ).rejects.toThrow(/terminal and settled/);
+      dispatcher.runPersistedRef(source.lease.ref.id),
+    ).rejects.toThrow(/handoff notification/);
+    await handoffFinished;
+
+    expect(maxActiveProcesses).toBe(1);
+    await dispatcher.shutdown();
   });
 
-  it("reconciles expired leases before waking each recovered owner and released consult lane", async () => {
+  it("reconciles expired leases before waking each recovered ref", async () => {
     const recoveredOwner = ref({ id: "recovered-owner" });
-    const discoveredOwner = ref({
-      id: "discovered-owner",
-      targetAgentId: "discovered-agent",
-      executionScopeId: "discovered-scope",
-      executionLineageId: "discovered-lineage",
-      historyViewId: "discovered-view",
-    });
-    const releasedConsult = ref({
-      id: "released-consult",
+    const recoveredConsult = ref({
+      id: "recovered-consult",
       mode: "consult",
-      disposition: "terminal",
       targetAgentId: "consult-agent",
       issueExecutionAuthorityId: null,
       consultExecutionId: "consult-execution",
@@ -654,23 +671,21 @@ describe("issue execution dispatcher", () => {
     const current = harness(recoveredOwner);
     const recoveredAt = new Date("2026-08-01T12:00:00.000Z");
     const recoverExpiredLeases = vi.fn(async () => ({
-      ownerRefIds: [recoveredOwner.id],
-      releasedConsultRefIds: [releasedConsult.id],
+      refIds: [recoveredConsult.id],
     }));
-    const listDispatchableOwnerRefIds = vi.fn(async () => [
+    const listDispatchableRefIds = vi.fn(async () => [
+      recoveredConsult.id,
       recoveredOwner.id,
-      discoveredOwner.id,
     ]);
-    const leaseNextOwnerRef = vi.fn(async () => null);
+    const leaseNextRef = vi.fn(async () => null);
     const persisted = new Map([
       [recoveredOwner.id, recoveredOwner],
-      [discoveredOwner.id, discoveredOwner],
-      [releasedConsult.id, releasedConsult],
+      [recoveredConsult.id, recoveredConsult],
     ]);
     const repository: IssueExecutionDispatcherRepository = {
       ...current.repository,
       recoverExpiredLeases,
-      listDispatchableOwnerRefIds,
+      listDispatchableRefIds,
       async resolveLaneForPersistedRef(refId) {
         const value = persisted.get(refId);
         if (!value) return null;
@@ -684,12 +699,11 @@ describe("issue execution dispatcher", () => {
           },
           mode: value.mode,
           disposition: value.disposition,
-          leaseState:
-            value.mode === "consult" ? "completed" : "available",
+          leaseState: "available",
           leaseExpiresAt: null,
         };
       },
-      leaseNextOwnerRef,
+      leaseNextRef,
     };
     const dispatcher = createIssueExecutionDispatcher({
       repository,
@@ -702,7 +716,7 @@ describe("issue execution dispatcher", () => {
     await expect(dispatcher.reconcilePersistedRefs(2)).resolves.toEqual({
       discovered: 2,
       notified: 2,
-      refIds: [recoveredOwner.id, discoveredOwner.id],
+      refIds: [recoveredConsult.id, recoveredOwner.id],
     });
     await dispatcher.shutdown();
 
@@ -711,18 +725,17 @@ describe("issue execution dispatcher", () => {
       now: recoveredAt,
       limit: 2,
     });
-    expect(listDispatchableOwnerRefIds).toHaveBeenCalledWith({
+    expect(listDispatchableRefIds).toHaveBeenCalledWith({
       now: recoveredAt,
       limit: 2,
     });
-    expect(leaseNextOwnerRef).toHaveBeenCalledTimes(3);
+    expect(leaseNextRef).toHaveBeenCalledTimes(2);
     expect(
-      leaseNextOwnerRef.mock.calls.map(([input]) => input.lane.targetAgentId),
+      leaseNextRef.mock.calls.map(([input]) => input.lane.targetAgentId),
     ).toEqual(
       expect.arrayContaining([
-        releasedConsult.targetAgentId,
+        recoveredConsult.targetAgentId,
         recoveredOwner.targetAgentId,
-        discoveredOwner.targetAgentId,
       ]),
     );
   });
@@ -806,7 +819,7 @@ describe("issue execution dispatcher", () => {
           leaseExpiresAt: null,
         };
       },
-      async leaseNextOwnerRef(input: {
+      async leaseNextRef(input: {
         lane: IssueExecutionTargetLaneIdentity;
       }) {
         const lease = available.get(input.lane.targetAgentId) ?? null;
@@ -814,7 +827,10 @@ describe("issue execution dispatcher", () => {
         return lease;
       },
       markRetryable: vi.fn(),
-      markTerminal: vi.fn(async () => ({ laneReleased: true })),
+      markTerminal: vi.fn(async () => ({
+        laneReleased: true,
+        dispatchRefIds: [],
+      })),
     };
     const entered = new Map<string, () => void>();
     const released = new Map<string, Promise<void>>();

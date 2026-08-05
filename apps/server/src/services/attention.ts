@@ -616,7 +616,6 @@ export function attentionService(db: Db) {
           id: issueBoardMentions.id,
           issueId: issueBoardMentions.issueId,
           message: boardMentionComments.body,
-          reason: issueBoardMentions.reason,
           createdAt: issueBoardMentions.createdAt,
         })
         .from(issueBoardMentions)
@@ -694,7 +693,7 @@ export function attentionService(db: Db) {
           relatedIssue: null,
           ...issueContext(issue),
           detail: genericDetail(
-            [mention.reason, mention.message].filter(Boolean).join(" — "),
+            mention.message,
             issueImages(boardMentionImageMap, mention.issueId),
           ),
         }));

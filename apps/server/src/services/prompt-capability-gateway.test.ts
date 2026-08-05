@@ -23,12 +23,14 @@ import {
   PromptCapabilityAuthorityError,
   type PromptCapabilityBinding,
   type PromptCapabilityGatewayRepository,
+  type PromptCapabilityToolExecutor,
 } from "./prompt-capability-gateway.js";
 import {
   createPostgresPromptCapabilityGatewayRepository,
   lockActivePromptCapabilityBinding,
 } from "./prompt-capability-gateway-postgres.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import type { RuntimeInterfaceCompileInput } from "./runtime-interface-compiler.js";
 
 const now = new Date("2026-07-31T12:00:00.000Z");
 const capability: PromptCapabilityBinding = Object.freeze({
@@ -301,7 +303,7 @@ function postgresGatewayRepository(
   );
 }
 
-function compileInput() {
+function compileInput(): RuntimeInterfaceCompileInput {
   return {
     mode: "owner" as const,
     contextDial: resolveContextDial({ agent: {} }).effective,
@@ -317,7 +319,7 @@ function compileInput() {
   };
 }
 
-function setup() {
+function setup(compile = compileInput()) {
   const authenticateIngressBearerHash = vi.fn(async () => ({
     kind: "authenticated" as const,
     capability,
@@ -330,24 +332,36 @@ function setup() {
     kind: "authenticated" as const,
     capability,
   }));
+  const writeAudit = vi.fn(async (
+    _event: unknown,
+    _transaction?: IssueSessionDbTransaction,
+  ) => undefined);
   const repository: PromptCapabilityGatewayRepository = {
     authenticateIngressBearerHash,
     authenticateBearerHash,
     revalidate,
-    resolveCompileInput: vi.fn(async () => compileInput()),
+    resolveCompileInput: vi.fn(async () => compile),
     resolvePluginCompanyTool: vi.fn(async () => null),
     createPluginRunContext: vi.fn(async () => undefined),
     resolvePluginRunContextHash: vi.fn(async () => null),
-    writeAudit: vi.fn(async () => undefined),
+    writeAudit,
   };
   const registerTerminalInvalid = vi.fn(async () => undefined);
-  const execute = vi.fn(async () => ({ accepted: true }));
+  const terminalAuditTransaction = {} as IssueSessionDbTransaction;
+  const execute = vi.fn(async (
+    input: Parameters<PromptCapabilityToolExecutor["execute"]>[0],
+  ) => {
+    await input.commitTerminalAudit?.(terminalAuditTransaction);
+    return { accepted: true };
+  });
   return {
     authenticateIngressBearerHash,
     authenticateBearerHash,
     execute,
     registerTerminalInvalid,
     revalidate,
+    terminalAuditTransaction,
+    writeAudit,
     gateway: createPromptCapabilityGateway({
       repository,
       executor: { execute, registerTerminalInvalid },
@@ -381,6 +395,27 @@ describe("prompt-capability gateway", () => {
     expect(runtime.revalidate).toHaveBeenCalledTimes(2);
     expect(runtime.execute).toHaveBeenCalledWith(
       expect.objectContaining({ capability }),
+    );
+  });
+
+  it("commits a terminal mention audit through the action transaction", async () => {
+    const runtime = setup({
+      ...compileInput(),
+      actionGrants: { mention_board: true },
+    });
+    const bearer = mintPromptCapabilityBearer(new Uint8Array(32).fill(8));
+
+    await expect(runtime.gateway.callTool({
+      bearer,
+      toolName: "mention_board",
+      arguments: { message: "Need Board direction" },
+      callIdentity: { source: "jsonrpc", id: 8 },
+      ingressOrdinal: 0,
+    })).resolves.toEqual({ accepted: true });
+
+    expect(runtime.writeAudit).toHaveBeenCalledOnce();
+    expect(runtime.writeAudit.mock.calls[0]![1]).toBe(
+      runtime.terminalAuditTransaction,
     );
   });
 

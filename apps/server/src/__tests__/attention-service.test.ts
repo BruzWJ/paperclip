@@ -122,7 +122,6 @@ describe("attention service", () => {
       agentId: "00000000-0000-4000-8000-000000000031",
       ownershipEpoch: 1,
       message: "Which rollout should I use?",
-      reason: "clarification" as const,
       createdAt: new Date("2026-07-09T12:04:00.000Z"),
     };
     const harness = createMockDb({
@@ -217,7 +216,7 @@ describe("attention service", () => {
     });
     expect(feed.items.find((item) => item.sourceKind === "mention_board")?.detail).toMatchObject({
       kind: "generic",
-      summaryExcerpt: "clarification — Which rollout should I use?",
+      summaryExcerpt: "Which rollout should I use?",
     });
     expect(harness.remaining("select")).toBe(0);
   });

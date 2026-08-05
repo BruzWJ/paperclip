@@ -57,13 +57,16 @@ function setup(options: {
   agentDial?: Parameters<typeof resolveContextDial>[0]["agent"];
   enableRunTrace?: boolean;
 } = {}) {
+  const terminalTransaction = {} as never;
   const issueUpdate = vi.fn(async () => ({ ok: true }));
   const agentConfigure = vi.fn(async () => ({ configured: true }));
   const mentionAgent = vi.fn(
-    async (_input: RuntimeActionInvocation) => ({ consulted: true }),
+    async (input: RuntimeActionInvocation) =>
+      input.commitTerminalAction(terminalTransaction, { consulted: true }),
   );
   const mentionBoard = vi.fn(
-    async (_input: RuntimeActionInvocation) => ({ requested: true }),
+    async (input: RuntimeActionInvocation) =>
+      input.commitTerminalAction(terminalTransaction, { requested: true }),
   );
   const no = vi.fn(async () => null);
   const actions: RuntimeActionPort = {
@@ -103,8 +106,8 @@ function setup(options: {
     }),
   );
   const classify = vi.fn(async () => undefined);
-  const withMentionAdmission = vi.fn(
-    async (input: { prepare(): Promise<unknown> }) => input.prepare(),
+  const commitTerminalAction = vi.fn(
+    async (input: { result: unknown }) => input.result,
   );
   const retrieval = createContextRetrievalService({
     cursorSecret: "secret",
@@ -162,7 +165,7 @@ function setup(options: {
       },
       async registerTerminalInvalid() {},
       classify,
-      withMentionAdmission,
+      commitTerminalAction,
       async complete() {},
       async fail() {},
     },
@@ -174,9 +177,10 @@ function setup(options: {
     mentionAgent,
     mentionBoard,
     classify,
-    withMentionAdmission,
+    commitTerminalAction,
     executeCompany,
     readCanonicalRunTrace,
+    terminalTransaction,
   };
 }
 
@@ -249,7 +253,7 @@ describe("runtime tool executor", () => {
         invocationId: expect.stringMatching(/^call_[0-9a-f]{64}$/),
         runInterfaceToolCallId: "ledger-call-1",
         ingressOrdinal: 0,
-        withMentionAdmission: expect.any(Function),
+        commitTerminalAction: expect.any(Function),
       }),
     );
   });
@@ -292,8 +296,10 @@ describe("runtime tool executor", () => {
       executor,
       mentionAgent,
       classify,
-      withMentionAdmission,
+      commitTerminalAction,
+      terminalTransaction,
     } = setup();
+    const commitTerminalAudit = vi.fn(async () => undefined);
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       contextDial: resolveContextDial({ agent: {} }).effective,
@@ -317,6 +323,7 @@ describe("runtime tool executor", () => {
       callIdentity: { source: "jsonrpc", id: "mention-1" },
       ingressOrdinal: 7,
       mintPluginRunContext,
+      commitTerminalAudit,
     });
 
     expect(classify).toHaveBeenCalledWith({
@@ -331,22 +338,21 @@ describe("runtime tool executor", () => {
       runInterfaceToolCallId: "ledger-call-1",
       ingressOrdinal: 7,
     }));
-    await invocation.withMentionAdmission(
-      "mentioned-agent",
-      async () => "prepared",
-    );
-    expect(withMentionAdmission).toHaveBeenCalledWith(
+    expect(commitTerminalAction).toHaveBeenCalledWith(
       expect.objectContaining({
         capability,
         id: "ledger-call-1",
         ingressOrdinal: 7,
+        toolName: "mention_agent",
         targetAgentId: "mentioned-agent",
+        result: { consulted: true },
       }),
     );
+    expect(commitTerminalAudit).toHaveBeenCalledWith(terminalTransaction);
   });
 
   it("routes a Board request as a non-mention ledger action", async () => {
-    const { executor, mentionBoard, classify, withMentionAdmission } = setup();
+    const { executor, mentionBoard, classify, commitTerminalAction } = setup();
     const descriptor = compileRuntimeInterface({
       mode: "owner",
       contextDial: resolveContextDial({ agent: {} }).effective,
@@ -365,7 +371,7 @@ describe("runtime tool executor", () => {
       executor.execute({
         capability,
         descriptor,
-        arguments: { message: "Please choose a rollout", reason: "decision_request" },
+        arguments: { message: "Please choose a rollout" },
         callIdentity: { source: "jsonrpc", id: "board-request-1" },
         ingressOrdinal: 8,
         mintPluginRunContext,
@@ -379,9 +385,18 @@ describe("runtime tool executor", () => {
       classification: "non_mention",
     });
     expect(mentionBoard).toHaveBeenCalledWith(expect.objectContaining({
-      arguments: { message: "Please choose a rollout", reason: "decision_request" },
+      arguments: { message: "Please choose a rollout" },
     }));
-    expect(withMentionAdmission).not.toHaveBeenCalled();
+    expect(commitTerminalAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability,
+        id: "ledger-call-1",
+        ingressOrdinal: 8,
+        toolName: "mention_board",
+        targetAgentId: null,
+        result: { requested: true },
+      }),
+    );
   });
 
   it("rejects broad or malformed retrieval arguments", async () => {

@@ -97,9 +97,7 @@ type CausalRuntimeStartupAssembly = Pick<
   PostgresRuntimeIssueActionServiceOptions,
   | "dispatchPersistedRef"
   | "notifyCreatorDelivery"
-  | "executeMention"
   | "issueExecutionCancellation"
-  | "runService"
 >;
 
 /**
@@ -303,10 +301,6 @@ export async function startServer(): Promise<StartedServer> {
         const runtime = await causalRuntimeStartup.ready;
         await runtime.notifyCreatorDelivery(deliveryId);
       },
-      async executeMention(input) {
-        const runtime = await causalRuntimeStartup.ready;
-        return runtime.executeMention(input);
-      },
       issueExecutionCancellation: {
         async requestScopeCancellationsInTransaction(transaction, input) {
           const runtime = await causalRuntimeStartup.ready;
@@ -319,30 +313,6 @@ export async function startServer(): Promise<StartedServer> {
             .reconcileRequestedScopeCancellations(requested);
         },
       },
-      runService: {
-        async readRun(input) {
-          const runtime = await causalRuntimeStartup.ready;
-          return runtime.runService.readRun(input);
-        },
-        async lockRun(transaction, input) {
-          const runtime = await causalRuntimeStartup.ready;
-          return runtime.runService.lockRun(transaction, input);
-        },
-        async requestSteeringInTransaction(transaction, input) {
-          const runtime = await causalRuntimeStartup.ready;
-          return runtime.runService.requestSteeringInTransaction(
-            transaction,
-            input,
-          );
-        },
-        async continuePendingSteeringForSource(input) {
-          const runtime = await causalRuntimeStartup.ready;
-          return runtime.runService.continuePendingSteeringForSource(
-            input,
-          );
-        },
-      },
-      issueExecutionSteeringResults,
     }),
   );
   const changeConsents = changeConsentGateService(db);
@@ -454,12 +424,6 @@ export async function startServer(): Promise<StartedServer> {
         actions,
         companyTools: promptCapabilityCompanyTools,
         steeringResults: issueExecutionSteeringResults,
-        async prepareAndNotifyPersistedRef(refId, dispatcher) {
-          await composition.prepareAndNotifyPersistedRef(
-            refId,
-            dispatcher,
-          );
-        },
       },
     );
   const feedback = feedbackService(db as any, {
@@ -500,11 +464,7 @@ export async function startServer(): Promise<StartedServer> {
   causalRuntimeStartup.complete({
     dispatchPersistedRef,
     notifyCreatorDelivery,
-    executeMention(input) {
-      return issueExecution.mentionExecutor.executeMention(input);
-    },
     issueExecutionCancellation: issueExecution.cancellation,
-    runService: issueExecution.runService,
   });
   const ordinaryIssues = createOrdinaryIssueRuntime(db as any, {
     issueExecutionRunService: issueExecution.runService,
@@ -883,7 +843,6 @@ export async function startServer(): Promise<StartedServer> {
 
       try {
         await Promise.all([
-          issueExecution.mentionExecutor.shutdown(),
           issueExecution.dispatcher.shutdown(),
           issueExecution.cancellation.drainRunningRunsForShutdown(signal),
         ]);

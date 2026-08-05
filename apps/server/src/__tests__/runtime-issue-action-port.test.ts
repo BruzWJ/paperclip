@@ -37,14 +37,12 @@ const ownerCapability: PromptCapabilityBinding = {
   createdAt: new Date("2026-07-25T00:00:00.000Z"),
 };
 
-const withMentionAdmission = <T>(
-  _targetAgentId: string,
-  prepare: () => Promise<T>,
-) => prepare();
+const commitTerminalAction = <T>(_transaction: unknown, result: T) =>
+  Promise.resolve(result);
 const actionInvocationIdentity = {
   runInterfaceToolCallId: "00000000-0000-4000-8000-000000000001",
   ingressOrdinal: 0,
-  withMentionAdmission,
+  commitTerminalAction,
 } as const;
 
 function setup() {
@@ -264,7 +262,7 @@ describe("runtime issue action port", () => {
     ).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
   });
 
-  it("lowers only the canonical optional mentionRunId selector", async () => {
+  it("lowers only the canonical terminal mention message", async () => {
     const { service, port } = setup();
     await port.mentionAgent({
       ...actionInvocationIdentity,
@@ -273,7 +271,6 @@ describe("runtime issue action port", () => {
       arguments: {
         agentId: "agent-2",
         message: "Use this exact added context",
-        mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
       },
     });
     expect(service.mention).toHaveBeenCalledWith({
@@ -282,10 +279,9 @@ describe("runtime issue action port", () => {
       runInterfaceToolCallId:
         actionInvocationIdentity.runInterfaceToolCallId,
       ingressOrdinal: actionInvocationIdentity.ingressOrdinal,
-      withMentionAdmission,
+      commitTerminalAction,
       targetAgentId: "agent-2",
       message: "Use this exact added context",
-      mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
     });
 
     for (const argumentsValue of [
@@ -298,6 +294,11 @@ describe("runtime issue action port", () => {
         agentId: "agent-2",
         message: "x",
         sessionId: "ses_private",
+      },
+      {
+        agentId: "agent-2",
+        message: "x",
+        mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
       },
       {
         agentId: "agent-2",
@@ -324,23 +325,23 @@ describe("runtime issue action port", () => {
       invocationId: "board-request",
       arguments: {
         message: "Which release plan should I follow?",
-        reason: "clarification",
       },
     });
     expect(service.mentionBoard).toHaveBeenCalledWith({
       capability: ownerCapability,
       invocationId: "board-request",
+      runInterfaceToolCallId:
+        actionInvocationIdentity.runInterfaceToolCallId,
+      ingressOrdinal: actionInvocationIdentity.ingressOrdinal,
+      commitTerminalAction,
       message: "Which release plan should I follow?",
-      reason: "clarification",
     });
 
     for (const argumentsValue of [
       {},
       { message: "" },
       { message: "   " },
-      { message: "x", reason: "" },
-      { message: "x", reason: "   " },
-      { message: "x", reason: 42 },
+      { message: "x", reason: "clarification" },
       { message: "x", agentId: "forged-target" },
     ]) {
       await expect(

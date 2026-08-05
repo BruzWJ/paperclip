@@ -361,19 +361,16 @@ describe("Postgres runtime-interface compile snapshot", () => {
     );
   });
 
-  it("includes direct parent and child without widening reach", () => {
+  it("includes direct children without implicit parent reach", () => {
     const compiled = buildRuntimeInterfaceCompileInput(
       snapshot({
         mentionReachGrantKeys: [],
       }),
     );
-    expect(compiled.mentionTargets.map((agent) => agent.id)).toEqual([
-      "ancestor",
-      "child",
-    ]);
+    expect(compiled.mentionTargets.map((agent) => agent.id)).toEqual(["child"]);
   });
 
-  it("includes the direct parent for a childless agent and bounds extended ancestors at the root owner", () => {
+  it("omits mention_agent for a childless agent until bounded ancestor reach is granted", () => {
     const childless = snapshot({
       capability: capability({
         targetAgentId: "grandchild",
@@ -389,7 +386,10 @@ describe("Postgres runtime-interface compile snapshot", () => {
       buildRuntimeInterfaceCompileInput(childless);
     expect(
       withoutDynamicReach.mentionTargets.map((agent) => agent.id),
-    ).toEqual(["child"]);
+    ).toEqual([]);
+    expect(
+      compileRuntimeInterface(withoutDynamicReach).byName.has("mention_agent"),
+    ).toBe(false);
 
     const withBoundedAncestorReach = buildRuntimeInterfaceCompileInput({
       ...childless,
@@ -403,7 +403,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
     ).not.toContain("above-root");
   });
 
-  it("keeps a childless root owner's reach at its exact direct parent even when ancestor reach is enabled", () => {
+  it("keeps a childless root owner's mention reach empty", () => {
     const rootOwner = snapshot({
       capability: capability({
         targetAgentId: "grandchild",
@@ -432,15 +432,13 @@ describe("Postgres runtime-interface compile snapshot", () => {
         ...rootOwner,
         mentionReachGrantKeys: [...mentionReachGrantKeys],
       });
-      expect(compileInput.mentionTargets.map((agent) => agent.id)).toEqual([
-        "child",
-      ]);
+      expect(compileInput.mentionTargets.map((agent) => agent.id)).toEqual([]);
       expect(compileInput.mentionTargets.map((agent) => agent.id)).not.toContain(
         "owner",
       );
       expect(
         compileRuntimeInterface(compileInput).byName.has("mention_agent"),
-      ).toBe(true);
+      ).toBe(false);
     }
   });
 
@@ -459,7 +457,7 @@ describe("Postgres runtime-interface compile snapshot", () => {
 
     expect(
       withoutGrandchildOwnership.mentionTargets.map((agent) => agent.id),
-    ).toEqual(["ancestor", "child"]);
+    ).toEqual(["child"]);
   });
 
   it("fails closed when issue scope or target invokability changes", () => {

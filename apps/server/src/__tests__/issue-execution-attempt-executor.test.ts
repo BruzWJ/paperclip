@@ -284,6 +284,8 @@ function createHarness(input: {
   ) => Promise<void> | void;
   executePromptFailureAfterTransmission?: Error;
   closePromptFailure?: Error;
+  teardownFailure?: Error;
+  targetReleaseFailure?: Error;
 }) {
   const order: string[] = [];
   const starts: AcpxRuntimePromptExecutionInput["request"]["start"][] = [];
@@ -403,6 +405,7 @@ function createHarness(input: {
           },
           async release(failed = false) {
             order.push(`release:${failed}`);
+            if (input.targetReleaseFailure) throw input.targetReleaseFailure;
           },
         };
       },
@@ -495,6 +498,12 @@ function createHarness(input: {
         cancellationNotificationError: null,
       });
       const result = settledResult(null, input.resultStderr);
+      if (input.teardownFailure) {
+        return {
+          ...result,
+          teardown: { kind: "failed", cause: input.teardownFailure },
+        };
+      }
       return input.occupancySize === undefined
         ? result
         : {
@@ -676,7 +685,85 @@ describe("canonical productive/consult ACP attempt executor", () => {
       kind: "error",
       phase: "prompt",
       promptTransmitted: true,
-      teardown: { kind: "not_started" },
+      teardown: { kind: "failed" },
+    });
+    expect(closePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "error",
+      promptTransmitted: true,
+    }));
+  });
+
+  it("reports ACPX runtime-close cleanup errors as failed teardown", async () => {
+    acpxFixture.executeAcpxOneShotPrompt.mockReset();
+    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
+      kind: "completed",
+      sessionId: "provider-session-2",
+      turnResult: { status: "completed", stopReason: "end_turn" },
+      settlement: {
+        kind: "protocol_settled",
+        stopReason: "end_turn",
+        occupancy: { used: 12, size: 128, cost: null },
+      },
+      cleanup: { stateRemoved: true, errors: [new Error("close failed")] },
+    });
+
+    const result = await executeAcpxRuntimePrompt({
+      cwd: "/workspace",
+      agentName: acpxFixture.agentName,
+      configSelections: [],
+      mcpServers: [],
+      request: { start: { kind: "new" }, message: "do the work" },
+      signal: new AbortController().signal,
+      activatePrompt: async () => {},
+      beginPromptTransmission: async () => {},
+      closePrompt: async () => {},
+      redactStderr: (value) => value,
+      onSessionEvent: async () => {},
+    });
+
+    expect(result).toMatchObject({
+      kind: "settled",
+      teardown: { kind: "failed" },
+    });
+  });
+
+  it("reports request-scoped resource cleanup errors as failed teardown", async () => {
+    acpxFixture.executeAcpxOneShotPrompt.mockReset();
+    acpxFixture.executeAcpxOneShotPrompt.mockResolvedValue({
+      kind: "completed",
+      sessionId: "provider-session-2",
+      turnResult: { status: "completed", stopReason: "end_turn" },
+      settlement: {
+        kind: "protocol_settled",
+        stopReason: "end_turn",
+        occupancy: { used: 12, size: 128, cost: null },
+      },
+      cleanup: { stateRemoved: true, errors: [] },
+    });
+    const closePrompt = vi.fn(async () => {});
+
+    const result = await executeAcpxRuntimePrompt({
+      cwd: "/workspace",
+      agentName: acpxFixture.agentName,
+      configSelections: [],
+      mcpServers: [],
+      request: { start: { kind: "new" }, message: "do the work" },
+      signal: new AbortController().signal,
+      activatePrompt: async () => {},
+      beginPromptTransmission: async () => {},
+      releasePreparedResources: async () => {
+        throw new Error("request files remained");
+      },
+      closePrompt,
+      redactStderr: (value) => value,
+      onSessionEvent: async () => {},
+    });
+
+    expect(result).toMatchObject({
+      kind: "error",
+      phase: "prompt",
+      promptTransmitted: true,
+      teardown: { kind: "failed" },
     });
     expect(closePrompt).toHaveBeenCalledWith(expect.objectContaining({
       kind: "error",
@@ -980,6 +1067,65 @@ describe("canonical productive/consult ACP attempt executor", () => {
         teardown: { kind: "not_started" },
       }),
     ]);
+  });
+
+  it("does not settle a run when ACPX reports failed teardown", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const teardownFailure = new Error("provider process was not reaped");
+    const harness = createHarness({ prompt, teardownFailure });
+    const settle = vi.fn();
+
+    const failure = await executeAttempt(harness, prompt, settle).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toContain(teardownFailure);
+    expect(settle).not.toHaveBeenCalled();
+    expect(harness.order).toEqual([
+      "mint:1",
+      "activate:1",
+      "transmit:1",
+      "event:message_chunk",
+      "close:settled:1",
+      "teardown:1",
+      "release:true",
+    ]);
+  });
+
+  it("releases the execution target before terminal settlement", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const harness = createHarness({ prompt });
+    const settle = vi.fn(async () => {
+      harness.order.push("settle");
+    });
+
+    await expect(executeAttempt(harness, prompt, settle)).resolves.toMatchObject({
+      kind: "terminal",
+      outcome: "succeeded",
+    });
+
+    expect(harness.order.slice(-3)).toEqual([
+      "teardown:1",
+      "release:false",
+      "settle",
+    ]);
+    expect(settle).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not settle when execution-target release fails", async () => {
+    const prompt = resolvedPrompt({ carryContext: false });
+    const targetReleaseFailure = new Error("target release failed");
+    const harness = createHarness({ prompt, targetReleaseFailure });
+    const settle = vi.fn();
+
+    await expect(executeAttempt(harness, prompt, settle)).rejects.toBe(
+      targetReleaseFailure,
+    );
+
+    expect(settle).not.toHaveBeenCalled();
+    expect(harness.order.slice(-2)).toEqual(["teardown:1", "release:false"]);
   });
 
   it("preserves ACPX setup and durable closure failures after fencing closure first", async () => {

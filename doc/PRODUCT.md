@@ -56,7 +56,7 @@ An ordinary issue has:
 - parent/sub-issue links, comments, documents, attachments, and work products.
 
 Board users administer titles, ownership, reopen, and fresh-session requests
-through distinct audited commands. Provider actors receive only the six
+through distinct audited commands. Provider actors receive only the seven
 dynamically compiled Paperclip actions allowed by their exact active execution;
 generic REST issue mutation is not an agent tool.
 
@@ -97,7 +97,7 @@ target drivers are not advertised for ACPX agents.
 
 Paperclip actions and company tools are separate:
 
-- Paperclip actions are the exhaustive six-action catalog dynamically compiled
+- Paperclip actions are the exhaustive seven-action catalog dynamically compiled
   from the current execution's authority.
 - Company tools are concrete enabled catalog entries explicitly selected for an
   agent and further reduced by safety and approval policy.

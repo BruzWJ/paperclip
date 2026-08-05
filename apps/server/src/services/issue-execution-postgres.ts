@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import type { EnvironmentRunOrchestrator } from "./environment-run-orchestrator.js";
-import {
-  createIssueExecutionAttemptExecutor,
-  createIssueExecutionMentionExecutor,
-  type IssueExecutionMentionExecutor,
-} from "./issue-execution-attempt-executor.js";
+import { createIssueExecutionAttemptExecutor } from "./issue-execution-attempt-executor.js";
 import { createPostgresIssueExecutionAcpEventSink } from "./issue-execution-acp-events-postgres.js";
 import { createIssueExecutionCancellationService } from "./issue-execution-cancellation.js";
 import {
@@ -14,10 +10,8 @@ import {
 } from "./issue-execution-dispatcher.js";
 import {
   createPostgresIssueExecutionDispatcherRepository,
-  projectPersistedIssueExecutionRef,
 } from "./issue-execution-dispatcher-postgres.js";
 import { createPostgresIssueExecutionFinalizationWriter } from "./issue-execution-finalization-postgres.js";
-import { createIssueLivenessReconciliationService } from "./issue-liveness-reconciliation.js";
 import { createPostgresIssueExecutionPromptCycleRepository } from "./issue-execution-prompt-cycle-postgres.js";
 import { createIssueExecutionTargetAcquirer } from "./issue-execution-provider-configuration.js";
 import { createPostgresIssueExecutionSteeringRepository } from "./issue-execution-run-postgres.js";
@@ -48,10 +42,6 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly actions: RuntimeActionPort;
   readonly companyTools: RuntimeCompanyToolPort;
   readonly steeringResults: IssueExecutionSteeringResultBroker;
-  readonly prepareAndNotifyPersistedRef: (
-    refId: string,
-    dispatcher: IssueExecutionDispatcher,
-  ) => Promise<void>;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
   readonly leaseTtlMs?: number;
@@ -73,15 +63,11 @@ export interface PostgresIssueExecutionProductionRuntime {
   readonly eventProjector: ReturnType<
     typeof createPostgresIssueExecutionAcpEventSink
   >;
-  readonly mentionExecutor: IssueExecutionMentionExecutor;
   readonly cancellation: ReturnType<
     typeof createIssueExecutionCancellationService
   >;
   readonly finalizer: ReturnType<
     typeof createPostgresIssueExecutionFinalizationWriter
-  >;
-  readonly liveness: ReturnType<
-    typeof createIssueLivenessReconciliationService
   >;
 }
 
@@ -100,7 +86,6 @@ export function createPostgresIssueExecutionProductionRuntime(
   const now = options.now ?? (() => new Date());
   const idFactory = options.idFactory ?? randomUUID;
   let dispatcher: IssueExecutionDispatcher | null = null;
-  let mentionExecutor: IssueExecutionMentionExecutor | null = null;
   let cancellation: ReturnType<
     typeof createIssueExecutionCancellationService
   > | null = null;
@@ -116,8 +101,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     cancellation: {
       signalAttemptCancellation(input) {
         return Boolean(
-          dispatcher?.signalAttemptCancellation(input) ||
-            mentionExecutor?.signalAttemptCancellation(input),
+          dispatcher?.signalAttemptCancellation(input),
         );
       },
     },
@@ -136,16 +120,7 @@ export function createPostgresIssueExecutionProductionRuntime(
         ) {
           throw new Error("Steering resume lost its canonical active run");
         }
-        if (run.executionMode === "consult") {
-          if (!mentionExecutor) {
-            throw new Error("Issue-execution mention executor is not initialized");
-          }
-          if (!mentionExecutor.notifySteeringResumed(input)) {
-            throw new Error("Steering resume lost its active consult executor");
-          }
-          return;
-        }
-        if (run.executionMode !== "owner" || !dispatcher) {
+        if (!dispatcher) {
           throw new Error("Issue-execution dispatcher is not initialized");
         }
         await dispatcher.notifyPersistedRef(input.refId);
@@ -160,46 +135,9 @@ export function createPostgresIssueExecutionProductionRuntime(
     companyTools: options.companyTools,
     now,
   });
-  const liveness = createIssueLivenessReconciliationService(database, {
-    runService,
-    now,
-    idFactory,
-    postCommit: {
-      async dispatchFollowup(work) {
-        if (work.kind === "owner_followup") {
-          if (!dispatcher) {
-            throw new Error("Issue-execution dispatcher is not initialized");
-          }
-          await options.prepareAndNotifyPersistedRef(
-            work.refId,
-            dispatcher,
-          );
-          return;
-        }
-        if (!mentionExecutor) {
-          throw new Error("Issue-execution mention executor is not initialized");
-        }
-        await mentionExecutor.executeMention({
-          companyId: work.consult.companyId,
-          issueId: work.consult.issueId,
-          sessionId: work.consult.sessionId,
-          ownershipEpoch: work.consult.ownershipEpoch,
-          consultExecutionId: work.consult.id,
-          sourceRunId: work.consult.sourceRunId,
-          sourceRefId: work.consult.sourceRefId,
-          targetAgentId: work.consult.targetAgentId,
-          adapterConfigRevisionId:
-            work.consult.adapterConfigRevisionId,
-          chainToken: work.consult.chainToken,
-          ref: projectPersistedIssueExecutionRef(work.ref),
-        });
-      },
-    },
-  });
   const finalizer = createPostgresIssueExecutionFinalizationWriter({
     database,
     runService,
-    liveness,
   });
   const repository = createPostgresIssueExecutionDispatcherRepository({
     database,
@@ -253,19 +191,6 @@ export function createPostgresIssueExecutionProductionRuntime(
     workerId: options.workerId,
     now,
   });
-  mentionExecutor = createIssueExecutionMentionExecutor({
-    workerId: options.workerId,
-    repository,
-    executor: attemptExecutor,
-    steeringResults: options.steeringResults,
-    async notifyReleasedConsultRef(refId) {
-      if (!dispatcher) {
-        throw new Error("Issue-execution dispatcher is not initialized");
-      }
-      await dispatcher.notifyReleasedConsultRef(refId);
-    },
-    now,
-  });
   cancellation = createIssueExecutionCancellationService({
     database,
     runService,
@@ -283,9 +208,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     dispatcher,
     targetSessionAcquirer,
     eventProjector,
-    mentionExecutor,
     cancellation,
     finalizer,
-    liveness,
   });
 }

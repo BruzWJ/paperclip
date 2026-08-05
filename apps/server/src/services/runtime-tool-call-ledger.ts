@@ -4,7 +4,7 @@ import {
   runInterfaceToolCalls,
   type Db,
 } from "@paperclipai/db";
-import { and, asc, eq, gt, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import {
   PromptCapabilityAuthorityError,
   type PromptCapabilityBinding,
@@ -18,8 +18,8 @@ import type {
 type ToolCallRow = typeof runInterfaceToolCalls.$inferSelect;
 type CapabilityRow =
   typeof issueExecutionPromptCapabilities.$inferSelect;
-
-const DEFAULT_ADMISSION_POLL_INTERVAL_MS = 10;
+export type RuntimeToolCallTransaction =
+  Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 function canonicalJson(value: unknown): string {
   if (value === null) return "null";
@@ -178,6 +178,10 @@ function sameBinding(
     && row.argumentsDigest === digest;
 }
 
+function isTurnTerminalTool(name: string): boolean {
+  return name === "mention_agent" || name === "mention_board";
+}
+
 function scopeWhere(capability: PromptCapabilityIngressBinding) {
   return and(
     eq(runInterfaceToolCalls.companyId, capability.companyId),
@@ -223,12 +227,14 @@ export interface RuntimeToolCallLedger {
         targetAgentId: string;
       }
   ): Promise<void>;
-  withMentionAdmission<T>(input: {
+  commitTerminalAction<T>(input: {
+    transaction: RuntimeToolCallTransaction;
     capability: PromptCapabilityBinding;
     id: string;
     ingressOrdinal: number;
-    targetAgentId: string;
-    prepare: () => Promise<T>;
+    toolName: "mention_agent" | "mention_board";
+    targetAgentId: string | null;
+    result: T;
   }): Promise<T>;
   complete(input: {
     capability: PromptCapabilityBinding;
@@ -246,18 +252,9 @@ export function createRuntimeToolCallLedger(
   db: Db,
   options: {
     now?: () => Date;
-    admissionPollIntervalMs?: number;
   } = {},
 ): RuntimeToolCallLedger {
   const now = options.now ?? (() => new Date());
-  const admissionPollIntervalMs =
-    options.admissionPollIntervalMs ?? DEFAULT_ADMISSION_POLL_INTERVAL_MS;
-  if (
-    !Number.isSafeInteger(admissionPollIntervalMs)
-    || admissionPollIntervalMs < 0
-  ) {
-    throw new Error("Admission poll interval must be a nonnegative integer");
-  }
 
   async function lockCapability(
     tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
@@ -458,6 +455,53 @@ export function createRuntimeToolCallLedger(
       throw new RuntimeToolCallIdentityConflict(
         "Tool-call ingress ordinal was reused by a different call identity",
       );
+    }
+
+    const turnCalls = await input.tx
+      .select({
+        ingressOrdinal: runInterfaceToolCalls.ingressOrdinal,
+        toolName: runInterfaceToolCalls.toolName,
+        status: runInterfaceToolCalls.status,
+      })
+      .from(runInterfaceToolCalls)
+      .where(scopeWhere(input.capability));
+    const terminalCall = turnCalls.find((call) =>
+      isTurnTerminalTool(call.toolName)
+    );
+    if (terminalCall) {
+      throw new RuntimeToolCallIdentityConflict(
+        "This turn already reserved a terminal mention handoff",
+      );
+    }
+    if (isTurnTerminalTool(input.binding.name)) {
+      if (
+        input.lockedCapability.ingressHighWater !==
+          input.ingressOrdinal - 1
+      ) {
+        throw new RuntimeToolCallIdentityConflict(
+          "A mention handoff cannot overtake a missing earlier tool call",
+        );
+      }
+      if (
+        turnCalls.some(
+          (call) => call.ingressOrdinal > input.ingressOrdinal,
+        )
+      ) {
+        throw new RuntimeToolCallIdentityConflict(
+          "A mention handoff must be the final tool call in its turn",
+        );
+      }
+      if (
+        turnCalls.some(
+          (call) =>
+            call.ingressOrdinal < input.ingressOrdinal &&
+            call.status === "executing",
+        )
+      ) {
+        throw new RuntimeToolCallIdentityConflict(
+          "A mention handoff cannot race an earlier unfinished tool call",
+        );
+      }
     }
 
     const inserted = await input.tx
@@ -708,152 +752,70 @@ export function createRuntimeToolCallLedger(
 
     classify: markClassification,
 
-    async withMentionAdmission(input) {
+    async commitTerminalAction(input) {
       assertIngressOrdinal(input.ingressOrdinal);
-      for (;;) {
-        const decision = await db.transaction(async (tx) => {
-          const lockedCapability = await lockCapability(
-            tx,
-            input.capability,
-          );
-          const row = await tx
-            .select()
-            .from(runInterfaceToolCalls)
-            .where(
-              and(
-                scopeWhere(input.capability),
-                eq(runInterfaceToolCalls.id, input.id),
-              ),
-            )
-            .limit(1)
-            .for("update")
-            .then((rows) => rows[0] ?? null);
-          if (
-            !row
-            || row.ingressOrdinal !== input.ingressOrdinal
-            || row.classification !== "validated_mention"
-            || row.mentionTargetAgentId !== input.targetAgentId
-          ) {
-            throw new RuntimeToolCallIdentityConflict(
-              "Mention admission did not match its immutable classified ledger row",
-            );
-          }
-          if (
-            lockedCapability.classificationHighWater <
-            input.ingressOrdinal
-          ) {
-            return "wait" as const;
-          }
-          if (row.mentionAdmissionState === "admitted") {
-            throw new RuntimeToolCallIdentityConflict(
-              "Mention admission callback cannot be executed twice",
-            );
-          }
-          if (row.mentionAdmissionState === "preparing") {
-            return "wait" as const;
-          }
-          const lower = await tx
-            .select({ id: runInterfaceToolCalls.id })
-            .from(runInterfaceToolCalls)
-            .where(
-              and(
-                scopeWhere(input.capability),
-                eq(
-                  runInterfaceToolCalls.classification,
-                  "validated_mention",
-                ),
-                eq(
-                  runInterfaceToolCalls.mentionTargetAgentId,
-                  input.targetAgentId,
-                ),
-                lt(
-                  runInterfaceToolCalls.ingressOrdinal,
-                  input.ingressOrdinal,
-                ),
-                ne(
-                  runInterfaceToolCalls.mentionAdmissionState,
-                  "admitted",
-                ),
-              ),
-            )
-            .limit(1)
-            .then((rows) => rows[0] ?? null);
-          if (lower) return "wait" as const;
-          const at = now();
-          await tx
-            .update(runInterfaceToolCalls)
-            .set({
-              mentionAdmissionState: "preparing",
-              mentionAdmissionStartedAt: at,
-              updatedAt: at,
-            })
-            .where(
-              and(
-                eq(runInterfaceToolCalls.id, row.id),
-                eq(
-                  runInterfaceToolCalls.mentionAdmissionState,
-                  "pending",
-                ),
-              ),
-            );
-          return "prepare" as const;
-        });
-        if (decision === "wait") {
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, admissionPollIntervalMs);
-          });
-          continue;
-        }
-        try {
-          const result = await input.prepare();
-          await db.transaction(async (tx) => {
-            await lockCapability(tx, input.capability);
-            const updated = await tx
-              .update(runInterfaceToolCalls)
-              .set({
-                mentionAdmissionState: "admitted",
-                mentionAdmittedAt: now(),
-                updatedAt: now(),
-              })
-              .where(
-                and(
-                  scopeWhere(input.capability),
-                  eq(runInterfaceToolCalls.id, input.id),
-                  eq(
-                    runInterfaceToolCalls.ingressOrdinal,
-                    input.ingressOrdinal,
-                  ),
-                  eq(
-                    runInterfaceToolCalls.classification,
-                    "validated_mention",
-                  ),
-                  eq(
-                    runInterfaceToolCalls.mentionTargetAgentId,
-                    input.targetAgentId,
-                  ),
-                  eq(
-                    runInterfaceToolCalls.mentionAdmissionState,
-                    "preparing",
-                  ),
-                ),
-              )
-              .returning({ id: runInterfaceToolCalls.id });
-            if (updated.length !== 1) {
-              throw new RuntimeToolCallIdentityConflict(
-                "Mention admission state changed before durable admission",
-              );
-            }
-          });
-          return result;
-        } catch (error) {
-          await failCall({
-            capability: input.capability,
-            id: input.id,
-            error,
-          });
-          throw error;
-        }
+      const tx = input.transaction;
+      const lockedCapability = await lockCapability(tx, input.capability);
+      const row = await tx
+        .select()
+        .from(runInterfaceToolCalls)
+        .where(
+          and(
+            scopeWhere(input.capability),
+            eq(runInterfaceToolCalls.id, input.id),
+          ),
+        )
+        .limit(1)
+        .for("update")
+        .then((rows) => rows[0] ?? null);
+      const mentionAgent = input.toolName === "mention_agent";
+      if (
+        !row ||
+        row.ingressOrdinal !== input.ingressOrdinal ||
+        row.toolName !== input.toolName ||
+        row.status !== "executing" ||
+        lockedCapability.classificationHighWater < input.ingressOrdinal ||
+        (mentionAgent
+          ? row.classification !== "validated_mention" ||
+            row.mentionTargetAgentId !== input.targetAgentId ||
+            row.mentionAdmissionState !== "pending"
+          : row.classification !== "non_mention" ||
+            input.targetAgentId !== null)
+      ) {
+        throw new RuntimeToolCallIdentityConflict(
+          "Terminal action did not match its immutable classified ledger row",
+        );
       }
+      const at = now();
+      const updated = await tx
+        .update(runInterfaceToolCalls)
+        .set({
+          ...(mentionAgent
+            ? {
+                mentionAdmissionState: "admitted" as const,
+                mentionAdmissionStartedAt: at,
+                mentionAdmittedAt: at,
+              }
+            : {}),
+          status: "completed",
+          result: input.result,
+          completedAt: at,
+          updatedAt: at,
+        })
+        .where(
+          and(
+            scopeWhere(input.capability),
+            eq(runInterfaceToolCalls.id, input.id),
+            eq(runInterfaceToolCalls.status, "executing"),
+          ),
+        )
+        .returning({ id: runInterfaceToolCalls.id });
+      if (updated.length !== 1) {
+        throw new RuntimeToolCallIdentityConflict(
+          "Terminal action ledger commitment lost its executing call",
+        );
+      }
+      return input.result;
     },
 
     async complete(input) {

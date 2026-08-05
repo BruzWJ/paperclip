@@ -42,27 +42,6 @@ export interface LeasedIssueExecutionRef {
   }[];
 }
 
-/** Exact consult-run provenance returned with a newly attached consult lease. */
-export interface LeasedIssueExecutionConsultRun {
-  readonly companyId: string;
-  readonly issueId: string;
-  readonly runId: string;
-  readonly retryOfRunId: string | null;
-  readonly sessionId: string;
-  readonly kind: "consult";
-  readonly executionScopeId: string;
-  readonly ownershipEpoch: number;
-  readonly targetAgentId: string;
-  readonly adapterConfigRevisionId: string;
-  readonly executionWorkspaceBindingId: string;
-  readonly executionMode: "consult";
-  readonly issueExecutionAuthorityId: null;
-  readonly consultExecutionId: string;
-  readonly parentRunId: string;
-  readonly currentAttemptId: string;
-  readonly currentLeaseId: string;
-}
-
 export interface IssueExecutionAttemptCancellationSignal {
   companyId: string;
   issueId: string;
@@ -101,6 +80,8 @@ export type IssueExecutionDispatchResult =
 
 export interface IssueExecutionLaneSettlement {
   readonly laneReleased: boolean;
+  /** Persisted post-finalization handoffs admitted by the same transaction. */
+  readonly dispatchRefIds: readonly string[];
 }
 
 /** One durable per-target execution lane inside an issue ownership epoch. */
@@ -119,11 +100,8 @@ export interface IssueExecutionDispatcherRepository {
   recoverExpiredLeases(input: {
     now: Date;
     limit: number;
-  }): Promise<{
-    ownerRefIds: string[];
-    releasedConsultRefIds: string[];
-  }>;
-  listDispatchableOwnerRefIds(input: {
+  }): Promise<{ refIds: string[] }>;
+  listDispatchableRefIds(input: {
     now: Date;
     limit: number;
   }): Promise<string[]>;
@@ -139,7 +117,7 @@ export interface IssueExecutionDispatcherRepository {
       | "failed";
     leaseExpiresAt: Date | null;
   } | null>;
-  leaseNextOwnerRef(input: {
+  leaseNextRef(input: {
     lane: IssueExecutionTargetLaneIdentity;
     workerId: string;
     now: Date;
@@ -186,7 +164,7 @@ export type PersistedRefNotificationOutcome =
   | "running"
   | "settled";
 
-function assertOwnerLeaseBatch(
+function assertLeaseBatch(
   lease: LeasedIssueExecutionRef,
   lane: IssueExecutionTargetLaneIdentity,
 ): void {
@@ -203,7 +181,7 @@ function assertOwnerLeaseBatch(
     members.some(
       (member) =>
         !sameTargetLane(member.ref, lane) ||
-        member.ref.mode !== "owner" ||
+        member.ref.mode !== lease.ref.mode ||
         member.ref.disposition !== "active" ||
         member.ref.companyId !== lease.ref.companyId ||
         member.ref.issueId !== lease.ref.issueId ||
@@ -218,10 +196,11 @@ function assertOwnerLeaseBatch(
         member.ref.adapterConfigRevisionId !==
           lease.ref.adapterConfigRevisionId ||
         member.ref.contextEpoch !== lease.ref.contextEpoch,
-    )
+    ) ||
+    (lease.ref.mode === "consult" && members.length !== 1)
   ) {
     throw new IssueExecutionDispatchRejected(
-      "Repository leased refs outside one active owner execution batch",
+      "Repository leased refs outside one active execution batch",
     );
   }
 }
@@ -295,7 +274,7 @@ export function createIssueExecutionDispatcher(options: {
     keyOf: targetLaneCoordinatorKey,
     async drain(lane, _force, signal) {
       while (!signal.aborted) {
-        const lease = await options.repository.leaseNextOwnerRef({
+        const lease = await options.repository.leaseNextRef({
           lane,
           workerId: options.workerId,
           now: now(),
@@ -303,14 +282,13 @@ export function createIssueExecutionDispatcher(options: {
         if (!lease) return;
         if (
           !sameTargetLane(lease.ref, lane) ||
-          lease.ref.mode !== "owner" ||
           lease.ref.disposition !== "active"
         ) {
           throw new IssueExecutionDispatchRejected(
-            "Repository leased a non-active owner ref into the target-lane drain",
+            "Repository leased a non-active ref into the target-lane drain",
           );
         }
-        assertOwnerLeaseBatch(lease, lane);
+        assertLeaseBatch(lease, lane);
         await options.repository.assertLeaseCurrent(lease);
         if (activeAttempts.has(lease.attemptId)) {
           throw new IssueExecutionDispatchRejected(
@@ -329,6 +307,7 @@ export function createIssueExecutionDispatcher(options: {
         const activeAttempt = { lease, controller };
         activeAttempts.set(lease.attemptId, activeAttempt);
         try {
+          let dispatchRefIds: readonly string[] = [];
           const result = await options.executor.execute(
             lease,
             controller.signal,
@@ -343,13 +322,14 @@ export function createIssueExecutionDispatcher(options: {
                 });
                 return;
               }
-              await options.repository.markTerminal({
+              const settlement = await options.repository.markTerminal({
                 lease,
                 outcome: settled.outcome,
                 reason: settled.reason,
                 finishedAt: now(),
                 materialization,
               });
+              dispatchRefIds = settlement.dispatchRefIds;
             },
           );
           if (lease.promptKind === "steering" && result.kind === "terminal") {
@@ -364,6 +344,23 @@ export function createIssueExecutionDispatcher(options: {
               response: result.finalText ?? "",
               reason: result.reason,
             });
+          }
+          // The source attempt has crossed ACPX's public close boundary and
+          // released its Paperclip execution target before a finalizer-admitted
+          // handoff can start another target-lane attempt.
+          const notificationResults = await Promise.allSettled(
+            dispatchRefIds.map((refId) => notifyPersistedRef(refId)),
+          );
+          const postCommitFailures = notificationResults.flatMap(
+            (notification) => notification.status === "rejected"
+              ? [notification.reason]
+              : [],
+          );
+          if (postCommitFailures.length > 0) {
+            throw new AggregateError(
+              postCommitFailures,
+              "Issue execution settled, but handoff notification did not complete",
+            );
           }
           if (result.kind === "retry") {
             // A target-not-found resume probe is an already-closed pre-send
@@ -383,7 +380,7 @@ export function createIssueExecutionDispatcher(options: {
     },
   });
 
-  async function resolveOwnerLane(refId: string): Promise<{
+  async function resolvePersistedLane(refId: string): Promise<{
     lane: IssueExecutionTargetLaneIdentity;
     disposition: IssueExecutionRef["disposition"];
     leaseState:
@@ -401,44 +398,13 @@ export function createIssueExecutionDispatcher(options: {
         "Dispatcher accepts only a persisted IssueExecutionRef",
       );
     }
-    if (persisted.mode !== "owner") {
-      throw new IssueExecutionDispatchRejected(
-        "Consult refs execute synchronously inside their caller-owned execution path",
-      );
-    }
     return persisted;
-  }
-
-  async function resolveReleasedConsultLane(
-    refId: string,
-  ): Promise<IssueExecutionTargetLaneIdentity> {
-    const persisted =
-      await options.repository.resolveLaneForPersistedRef(refId);
-    if (!persisted) {
-      throw new IssueExecutionDispatchRejected(
-        "Dispatcher accepts only a persisted IssueExecutionRef",
-      );
-    }
-    if (persisted.mode !== "consult") {
-      throw new IssueExecutionDispatchRejected(
-        "Released-lane notification accepts only a consult ref",
-      );
-    }
-    if (
-      persisted.disposition !== "terminal" ||
-      !["completed", "failed"].includes(persisted.leaseState)
-    ) {
-      throw new IssueExecutionDispatchRejected(
-        "Released consult ref must already be terminal and settled",
-      );
-    }
-    return persisted.lane;
   }
 
   async function notifyPersistedRef(
     refId: string,
   ): Promise<PersistedRefNotificationOutcome> {
-    const persisted = await resolveOwnerLane(refId);
+    const persisted = await resolvePersistedLane(refId);
     if (
       persisted.disposition === "terminal" ||
       persisted.leaseState === "completed" ||
@@ -463,10 +429,6 @@ export function createIssueExecutionDispatcher(options: {
     return alreadyScheduled ? "already_scheduled" : "notified";
   }
 
-  async function notifyReleasedConsultRef(refId: string): Promise<void> {
-    coordinator.wake(await resolveReleasedConsultLane(refId));
-  }
-
   return {
     /**
      * Internal causal-source hook. There is intentionally no prompt, agent,
@@ -474,15 +436,8 @@ export function createIssueExecutionDispatcher(options: {
      */
     notifyPersistedRef,
 
-    /**
-     * Post-settlement signal from the synchronous consult executor. It can
-     * wake only the exact persisted target lane after that consult released
-     * its durable lane claim; consult execution remains caller-owned.
-     */
-    notifyReleasedConsultRef,
-
     async runPersistedRef(refId: string): Promise<void> {
-      const persisted = await resolveOwnerLane(refId);
+      const persisted = await resolvePersistedLane(refId);
       if (
         persisted.disposition !== "active" ||
         !(
@@ -516,16 +471,13 @@ export function createIssueExecutionDispatcher(options: {
         now: now(),
         limit: boundedLimit,
       });
-      for (const refId of recovered.releasedConsultRefIds) {
-        await notifyReleasedConsultRef(refId);
-      }
       const discovered =
-        await options.repository.listDispatchableOwnerRefIds({
+        await options.repository.listDispatchableRefIds({
           now: now(),
           limit: boundedLimit,
         });
       const refIds = [
-        ...new Set([...recovered.ownerRefIds, ...discovered]),
+        ...new Set([...recovered.refIds, ...discovered]),
       ].slice(0, boundedLimit);
       for (const refId of refIds) {
         await notifyPersistedRef(refId);

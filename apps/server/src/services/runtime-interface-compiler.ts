@@ -212,8 +212,11 @@ const runtimeMentionArgumentsSchema = z
   .object({
     agentId: z.string().min(1),
     message: z.string().min(1),
-    mentionRunId: z.string().uuid().optional(),
   })
+  .strict();
+
+const runtimeMentionBoardArgumentsSchema = z
+  .object({ message: z.string().min(1) })
   .strict();
 
 export type RuntimeMentionArguments = z.infer<
@@ -224,17 +227,6 @@ export type RuntimeMentionArguments = z.infer<
 export function parseRuntimeMentionArguments(
   value: unknown,
 ): RuntimeMentionArguments {
-  if (
-    value !== null
-    && typeof value === "object"
-    && !Array.isArray(value)
-    && Object.prototype.hasOwnProperty.call(value, "mentionRunId")
-    && (value as { mentionRunId?: unknown }).mentionRunId === undefined
-  ) {
-    throw new RuntimeDescriptorArgumentsInvalid(
-      "mentionRunId must be omitted or a UUID",
-    );
-  }
   const parsed = runtimeMentionArgumentsSchema.safeParse(value);
   if (!parsed.success) {
     throw new RuntimeDescriptorArgumentsInvalid(
@@ -848,19 +840,13 @@ function mentionDescriptor(
   const targetIds = new Set(targets.map((target) => target.id));
   return {
     name: "mention_agent",
-    title: "Consult agent",
+    title: "Mention agent",
     description:
-      "Synchronously consult an authorized agent on this same issue. The consult has no owner or creator lifecycle authority.",
+      "Terminal durable handoff to an authorized agent on this same issue. End your turn after calling; any response is delivered through a future run, never this tool result. The recipient gets no owner or creator lifecycle authority.",
     inputSchema: objectSchema(
       {
         agentId: descriptiveAgentChoiceSchema(targets),
         message: MESSAGE,
-        mentionRunId: {
-          type: "string",
-          format: "uuid",
-          description:
-            "Optional canonical active run id for explicit same-run continuation.",
-        },
       },
       ["agentId", "message"],
     ),
@@ -887,19 +873,22 @@ function mentionBoardDescriptor(): CompiledRunToolDescriptor {
     name: "mention_board",
     title: "Mention Board",
     description:
-      "Request information or direction from the collective Board. This does not change issue lifecycle, approvals, or review.",
+      "Terminal durable handoff requesting information or direction from the collective Board. End your turn after calling; any response is delivered through a future run, never this tool result. This does not change issue lifecycle, approvals, or review.",
     inputSchema: objectSchema(
       {
         message: MESSAGE,
-        reason: {
-          type: "string",
-          minLength: 1,
-          description:
-            "Optional presentation hint for the Board; it has no governance effect.",
-        },
       },
       ["message"],
     ),
+    validateArguments(value) {
+      const parsed = runtimeMentionBoardArgumentsSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new RuntimeDescriptorArgumentsInvalid(
+          zodValidationMessage(parsed.error),
+        );
+      }
+      return parsed.data;
+    },
     source: "paperclip",
   };
 }

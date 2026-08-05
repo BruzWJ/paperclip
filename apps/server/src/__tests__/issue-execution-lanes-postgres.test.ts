@@ -110,7 +110,6 @@ function repositoryOptions(db: ReturnType<typeof createMockDb>["db"]) {
     finalizer: {
       finalize: vi.fn(),
       finalizeInTransaction: vi.fn(),
-      consumeFinalizationOutboxForRun: vi.fn(),
     } as never,
     now: () => now,
     idFactory: () => "00000000-0000-4000-8000-000000000809",
@@ -393,9 +392,9 @@ describe("issue-execution target lanes", () => {
     const releaseB1 = deferred();
     const repository: IssueExecutionDispatcherRepository = {
       async recoverExpiredLeases() {
-        return { ownerRefIds: [], releasedConsultRefIds: [] };
+        return { refIds: [] };
       },
-      async listDispatchableOwnerRefIds() {
+      async listDispatchableRefIds() {
         return [];
       },
       async resolveLaneForPersistedRef(refId) {
@@ -416,13 +415,13 @@ describe("issue-execution target lanes", () => {
             }
           : null;
       },
-      async leaseNextOwnerRef(input: { lane: IssueExecutionTargetLaneIdentity }) {
+      async leaseNextRef(input: { lane: IssueExecutionTargetLaneIdentity }) {
         return queues.get(input.lane.targetAgentId)?.shift() ?? null;
       },
       async assertLeaseCurrent() {},
       async markRetryable() {},
       async markTerminal() {
-        return { laneReleased: true };
+        return { laneReleased: true, dispatchRefIds: [] };
       },
     };
     const dispatcher = createIssueExecutionDispatcher({

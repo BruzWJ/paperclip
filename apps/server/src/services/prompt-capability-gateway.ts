@@ -7,6 +7,9 @@ import {
   type CompiledRunToolDescriptor,
   type RuntimeInterfaceCompileInput,
 } from "./runtime-interface-compiler.js";
+import type {
+  IssueSessionDbTransaction,
+} from "./issue-session/event-store.js";
 
 const PROMPT_CAPABILITY_BEARER_PREFIX = "pc_run_v1_";
 const PLUGIN_RUN_CONTEXT_HANDLE_PREFIX = "pc_plugin_ctx_v1_";
@@ -151,7 +154,10 @@ export interface PromptCapabilityGatewayRepository {
     handleHash: string,
     at: Date,
   ): Promise<PromptCapabilityPluginContext | null>;
-  writeAudit(event: PromptCapabilityAudit): Promise<void>;
+  writeAudit(
+    event: PromptCapabilityAudit,
+    transaction?: IssueSessionDbTransaction,
+  ): Promise<void>;
 }
 
 export interface PromptCapabilityToolExecutor {
@@ -179,6 +185,9 @@ export interface PromptCapabilityToolExecutor {
       companyToolSelectionId: string;
       pluginInstallationId: string;
     }): Promise<string>;
+    commitTerminalAudit?(
+      transaction: IssueSessionDbTransaction,
+    ): Promise<void>;
   }): Promise<unknown>;
 }
 
@@ -468,6 +477,18 @@ export function createPromptCapabilityGateway(options: {
         throw unavailable;
       }
       const current = await requireStillAuthoritative(capability);
+      const terminalMention =
+        input.toolName === "mention_agent" ||
+        input.toolName === "mention_board";
+      const callAudit: PromptCapabilityAudit = {
+        capability: current,
+        occurredAt: now(),
+        event: "call",
+        outcome: "allowed",
+        toolName: input.toolName,
+        dialDigest: contextDialDigest(compileInput.contextDial),
+        grantSnapshot: grantSnapshot(compileInput),
+      };
       const result = await options.executor.execute({
         capability: current,
         descriptor,
@@ -476,14 +497,14 @@ export function createPromptCapabilityGateway(options: {
         ingressOrdinal: input.ingressOrdinal,
         mintPluginRunContext: (pluginInput) =>
           mintPluginRunContext({ capability: current, ...pluginInput }),
+        ...(terminalMention
+          ? {
+              commitTerminalAudit: (transaction: IssueSessionDbTransaction) =>
+                options.repository.writeAudit(callAudit, transaction),
+            }
+          : {}),
       });
-      await audit(current, {
-        event: "call",
-        outcome: "allowed",
-        toolName: input.toolName,
-        dialDigest: contextDialDigest(compileInput.contextDial),
-        grantSnapshot: grantSnapshot(compileInput),
-      });
+      if (!terminalMention) await options.repository.writeAudit(callAudit);
       return result;
     },
 

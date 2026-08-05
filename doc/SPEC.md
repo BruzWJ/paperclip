@@ -116,10 +116,13 @@ Provider-native continuity is represented only by a fixed, encrypted
 
 `(company, issue, ownership epoch, agent, adapter configuration identity)`
 
-It is retained only for effective-true-carry owner work. Reassignment, adapter
-revision change, board/user fresh execution, false-carry work, and consult work
-cannot reuse it. The opaque handle is never shown in API, UI, CLI, logs, prompt
-text, workspace metadata, or generic adapter context.
+It is retained only for effective-true-carry work. A handoff always creates a
+fresh Paperclip run, but the receiving agent may resume its own compatible ACP
+backend session when `carry_context` and this exact scope match; it never
+receives the caller's handle. Reassignment, adapter revision change, board/user
+fresh execution, and false-carry work cannot reuse it. The opaque handle is
+never shown in API, UI, CLI, logs, prompt text, workspace metadata, or generic
+adapter context.
 
 The Session log remains complete for audit and inspection. Paperclip does not
 summarize, prune, or replay it as provider context when a native session is
@@ -141,8 +144,9 @@ The seven possible issue actions are:
 The runtime compiler derives the exact interface from the leased issue
 reference, live owner/creator authority, context/action/mention grants, and
 selected company tools. Dynamic catalogs contain only eligible direct children,
-valid mention targets, and permitted configuration targets. A missing grant
-means false.
+valid mention targets, and permitted configuration targets. A direct parent is
+an implicit response route, not an implicit outgoing mention target; explicit
+upward mentions require the ancestor grant. A missing grant means false.
 
 The provider receives a `paperclip.run-tools/v1` endpoint/bearer bound to the
 run, issue, epoch, agent, adapter revision, reference, and lease. It is accepted
@@ -160,17 +164,22 @@ Creator-form updates are message-only and cannot mutate lifecycle or metadata.
 An ordinary human comment is durable and non-dispatching by default. A typed
 mention may invoke only the exact current agent owner and ownership epoch. Prose
 is never parsed as a mention, assignment, approval, or lifecycle operation.
-Same-issue assistance through `mention_agent` executes as an isolated nested
-provider view in the same issue Session.
+`mention_agent` atomically admits a durable same-issue handoff and returns only
+an admission acknowledgement. It is terminal for the caller's turn; the caller
+ends normally, and the recipient is dispatched only after caller finalization.
+The recipient's final response is admitted as a fresh message and run for its
+direct parent, continuing one hop at a time until the current issue owner/root
+receives it. The route never skips an unavailable direct parent and never
+auto-notifies the Board. Each hop is a fresh Paperclip run, while a compatible
+ACP backend session may resume under the exact effective-true-carry scope.
 
 An owner agent with the explicit `mention_board` action grant may publish a
-message, plus an optional advisory reason, to collective Board Attention. It
-does not change issue lifecycle or create an approval, review, or execution
-reference. A later typed Board comment mention to that exact owner and ownership
-epoch supplies the response and removes the request from Board Attention. The
-request also counts as an explicit liveness action, so completion does not queue
-or dispatch a stale-owner follow-up when the standard finalization check is
-consumed.
+message to collective Board Attention. It
+atomically commits its terminal acknowledgement with that request and ends the
+caller's turn. It does not change issue lifecycle or create an approval, review,
+or execution reference. A later typed Board comment mention to that exact owner
+and ownership epoch supplies the response in a fresh run and removes the request
+from Board Attention.
 
 Provider-producing sources—creation, reassignment, the invokable-agent branch
 of audited reopen, typed mention/update, routine/plugin creation, and typed
@@ -279,8 +288,8 @@ Repository validation must prove:
   bridge
 - general REST and selector-session interfaces deny or omit provider access
 - ownership, epoch, revision, reference, lease, and idempotency races fail closed
-- reassignment/reset/false-carry/consult work cannot inherit another provider
-  conversation
+- reassignment/reset/false-carry work and handoffs outside an exact
+  effective-true-carry scope cannot inherit another provider conversation
 - complete manifested disaster recovery rejects every invalid source or target
   before mutation
 - focused PostgreSQL suites, typecheck, tests, and build pass

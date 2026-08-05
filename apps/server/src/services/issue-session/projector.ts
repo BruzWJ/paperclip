@@ -9,7 +9,6 @@ import {
   issueSessionMessages,
   issueSessions,
   issues,
-  type Db,
 } from "@paperclipai/db";
 import * as IssueSession from "@paperclipai/shared/issue-session";
 import type {
@@ -19,10 +18,8 @@ import type {
   SourceTrustMetadata,
 } from "@paperclipai/shared";
 import {
-  encodeIssueSessionEvent,
   encodeIssueSessionMessage,
   isIssueSessionEvent,
-  isIssueSessionMessage,
   versionedIssueSessionEventType,
 } from "@paperclipai/shared/issue-session";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -33,7 +30,6 @@ import {
   decodeStoredIssueSessionMessage,
   encodeIssueSessionMessageData,
   isSettledIssueSessionMessage,
-  type IssueSessionStore,
 } from "./store.js";
 import {
   revokeIssueExecutionPromptCapabilitiesForSessionInTransaction,
@@ -72,7 +68,6 @@ function canonicalJson(value: unknown): string {
     .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
     .join(",")}}`;
 }
-
 export interface IssueSessionCommentProjectionInput {
   phase: "admitted" | "promoted" | "direct";
   sourceKind: ProjectionSourceKind;
@@ -273,63 +268,9 @@ export function assertDurableIssueSessionEvent(
   }
 }
 
-export function persistedIssueSessionEvent(input: {
-  id: string;
-  sessionId: string;
-  seq: number;
-  version: number;
-  type: string;
-  data: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-}): Record<string, unknown> {
-  const event = {
-    id: input.id,
-    type: input.type,
-    ...(input.metadata === undefined
-      ? {}
-      : { metadata: input.metadata }),
-    durable: {
-      aggregateID: input.sessionId,
-      seq: input.seq,
-      version: input.version,
-    },
-    data: input.data,
-  } as PersistedIssueSessionEvent;
-  assertDurableIssueSessionEvent(event);
-  if (event.data.sessionID !== input.sessionId) {
-    throw new IssueSessionLifecycleConflict(
-      "Durable Session event data changed aggregate identity",
-      { eventId: input.id, sessionId: input.sessionId },
-    );
-  }
-  return encodeIssueSessionEvent(event) as Record<string, unknown>;
-}
-
 type DurableEventRow = ProjectableIssueSessionEvent;
 type SessionMessageRow = typeof issueSessionMessages.$inferSelect;
 type SessionMessage = IssueSession.IssueSessionMessage;
-
-export function persistedIssueSessionMessage(
-  message: SessionMessage,
-): Record<string, unknown> {
-  const candidate: unknown = message;
-  if (!isIssueSessionMessage(candidate)) {
-    const invalid =
-      typeof candidate === "object" && candidate !== null
-        ? (candidate as { id?: unknown; type?: unknown })
-        : {};
-    throw new IssueSessionLifecycleConflict(
-      `Session message ${String(invalid.id ?? "<missing>")} does not satisfy the Issue Session schema`,
-      { messageId: invalid.id, messageType: invalid.type },
-    );
-  }
-  const encoded = encodeIssueSessionMessage(candidate) as Record<
-    string,
-    unknown
-  >;
-  const { id: _id, type: _type, ...data } = encoded;
-  return data;
-}
 
 export function issueSessionMessageFromRow(
   row: SessionMessageRow,
@@ -347,12 +288,6 @@ function sessionTimestamp(value: unknown, label: string): Date {
     );
   }
   return new Date(value);
-}
-
-export function durableSessionEventFromRow(
-  row: DurableEventRow,
-): IssueSession.DurableEvent {
-  return row.event;
 }
 
 async function findMessage(
@@ -1530,63 +1465,4 @@ export async function projectIssueSessionFinalCommentInTx(
     body: text,
     presentation,
   });
-}
-
-export async function rebuildIssueSessionProjectionInTx(
-  transaction: IssueSessionDbTransaction,
-  scope: { companyId: string; issueId: string; sessionId: string },
-  issueSessionStore: IssueSessionStore,
-): Promise<void> {
-  const readStore = issueSessionStore.bindReadDatabase(
-    transaction as unknown as Db,
-  );
-  await transaction.execute(sql`
-    UPDATE issue_sessions
-    SET projected_event_seq = -1
-    WHERE company_id = ${scope.companyId}
-      AND issue_id = ${scope.issueId}
-      AND id = ${scope.sessionId}
-  `);
-  const touched = new Set<string>();
-  let eventCursor: string | null = null;
-  do {
-    const eventPage = await readStore.pageEvents(
-      {
-        ...scope,
-        direction: "asc",
-        projection: "rebuild",
-      },
-      { cursor: eventCursor },
-    );
-    for (const { row: storedEvent } of eventPage.items) {
-      const event = projectableIssueSessionEvent(storedEvent);
-      await projectEvent(
-        transaction,
-        event,
-        {},
-        true,
-        touched,
-      );
-    }
-    eventCursor = eventPage.nextCursor;
-  } while (eventCursor);
-  let messageCursor: string | null = null;
-  do {
-    const messagePage = await readStore.pageMessages(
-      {
-        ...scope,
-        direction: "asc",
-        projection: "rebuild",
-      },
-      { cursor: messageCursor },
-    );
-    for (const { row } of messagePage.items) {
-      if (!touched.has(row.id)) {
-        await transaction
-          .delete(issueSessionMessages)
-          .where(eq(issueSessionMessages.id, row.id));
-      }
-    }
-    messageCursor = messagePage.nextCursor;
-  } while (messageCursor);
 }

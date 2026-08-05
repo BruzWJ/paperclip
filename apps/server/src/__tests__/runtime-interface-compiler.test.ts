@@ -5,6 +5,7 @@ import {
   PAPERCLIP_ACTION_KEYS,
 } from "@paperclipai/shared";
 import {
+  RuntimeDescriptorArgumentsInvalid,
   RuntimeRetrievalArgumentsInvalid,
   RuntimeToolUnavailable,
   buildRuntimeRetrievalAbi,
@@ -407,6 +408,37 @@ describe("runtime interface compiler", () => {
     expect(result.descriptors).toEqual([]);
   });
 
+  it("compiles mention_agent as a terminal durable handoff", () => {
+    const descriptor = compileRuntimeInterface(
+      compileInput({
+        actionGrants: { mention_agent: true },
+        mentionTargets: [
+          { id: "agent-2", name: "Reviewer", capabilities: "Review" },
+        ],
+      }),
+    ).byName.get("mention_agent")!;
+
+    expect(descriptor.description).toContain(
+      "response is delivered through a future run, never this tool result",
+    );
+    expect(descriptor.inputSchema.required).toEqual(["agentId", "message"]);
+    expect(descriptor.inputSchema.properties).not.toHaveProperty(
+      "mentionRunId",
+    );
+    expect(descriptor.validateArguments?.({
+      agentId: "agent-2",
+      message: "Please review",
+    })).toEqual({
+      agentId: "agent-2",
+      message: "Please review",
+    });
+    expect(() => descriptor.validateArguments?.({
+      agentId: "agent-2",
+      message: "Please review",
+      mentionRunId: "8710c164-9694-42cf-9538-2f17fd665891",
+    })).toThrow(RuntimeDescriptorArgumentsInvalid);
+  });
+
   it("compiles an owner-only collective Board request without a target catalog", () => {
     const descriptor = compileRuntimeInterface(
       compileInput({
@@ -418,20 +450,20 @@ describe("runtime interface compiler", () => {
       name: "mention_board",
       title: "Mention Board",
       description:
-        "Request information or direction from the collective Board. This does not change issue lifecycle, approvals, or review.",
+        "Terminal durable handoff requesting information or direction from the collective Board. End your turn after calling; any response is delivered through a future run, never this tool result. This does not change issue lifecycle, approvals, or review.",
       inputSchema: {
         type: "object",
         required: ["message"],
         additionalProperties: false,
         properties: {
           message: { type: "string", minLength: 1 },
-          reason: {
-            type: "string",
-            minLength: 1,
-          },
         },
       },
     });
+    expect(() => descriptor?.validateArguments?.({
+      message: "Need direction",
+      reason: "clarification",
+    })).toThrow(RuntimeDescriptorArgumentsInvalid);
     expect(
       compileRuntimeInterface(
         compileInput({ mode: "consult", actionGrants: { mention_board: true } }),

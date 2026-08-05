@@ -883,9 +883,9 @@ export function createPostgresPromptCapabilityGatewayRepository(
       };
     },
 
-    async writeAudit(event) {
+    async writeAudit(event, transaction) {
       if (!event.capability) return;
-      await db.insert(toolAccessAuditEvents).values({
+      await (transaction ?? db).insert(toolAccessAuditEvents).values({
         companyId: event.capability.companyId,
         actorType: "agent",
         actorId: event.capability.targetAgentId,

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { PromptCapabilityBinding } from "../services/prompt-capability-gateway.js";
 import {
   createRuntimeToolCallLedger,
@@ -50,6 +50,14 @@ const nonMentionDescriptor: CompiledRunToolDescriptor = {
 const mentionDescriptor: CompiledRunToolDescriptor = {
   name: "mention_agent",
   title: "Mention agent",
+  description: "",
+  inputSchema: { type: "object" },
+  source: "paperclip",
+};
+
+const boardMentionDescriptor: CompiledRunToolDescriptor = {
+  name: "mention_board",
+  title: "Mention Board",
   description: "",
   inputSchema: { type: "object" },
   source: "paperclip",
@@ -109,13 +117,12 @@ describe("runtime tool-call ledger", () => {
       classification: "unclassified",
     };
     const harness = createMockDb({
-      select: [[locked], [], [], [unclassified], [unclassified]],
+      select: [[locked], [], [], [], [unclassified], [unclassified]],
       insert: [[{ id: toolCallId }]],
       update: [[]],
     });
     const ledger = createRuntimeToolCallLedger(harness.db, {
       now: () => now,
-      admissionPollIntervalMs: 0,
     });
 
     await expect(ledger.claim({
@@ -202,6 +209,7 @@ describe("runtime tool-call ledger", () => {
         [locked],
         [],
         [],
+        [],
         [unclassified],
         [unclassified],
         [row],
@@ -259,7 +267,7 @@ describe("runtime tool-call ledger", () => {
     });
   });
 
-  it("waits for lower classification and same-target admission before preparing a mention", async () => {
+  it("commits a mention effect and its terminal ledger result atomically", async () => {
     const row = toolCallRow({
       toolName: mentionDescriptor.name,
       ingressOrdinal: 1,
@@ -269,54 +277,73 @@ describe("runtime tool-call ledger", () => {
       mentionTargetAgentId: mentionTarget,
       mentionAdmissionState: "pending",
     });
-    const lowCapability = capabilityRow({
-      ingressHighWater: 1,
-      classificationHighWater: 0,
-    });
     const readyCapability = capabilityRow({
       ingressHighWater: 1,
       classificationHighWater: 1,
     });
     const harness = createMockDb({
-      select: [
-        [lowCapability],
-        [row],
-        [readyCapability],
-        [row],
-        [],
-        [readyCapability],
-      ],
-      update: [[], [{ id: toolCallId }]],
+      select: [[readyCapability], [row]],
+      update: [[{ id: toolCallId }]],
     });
     const ledger = createRuntimeToolCallLedger(harness.db, {
       now: () => now,
-      admissionPollIntervalMs: 0,
     });
-    const prepare = vi.fn(async () => ({ admitted: true }));
 
-    await expect(ledger.withMentionAdmission({
+    await expect(ledger.commitTerminalAction({
+      transaction: harness.db as never,
       capability,
       id: toolCallId,
       ingressOrdinal: 1,
+      toolName: "mention_agent",
       targetAgentId: mentionTarget,
-      prepare,
+      result: { admitted: true },
     })).resolves.toEqual({ admitted: true });
-    expect(prepare).toHaveBeenCalledTimes(1);
-    const states = harness.calls
+    const state = harness.calls
       .filter((call) => call.operation === "update" && call.method === "set")
-      .map((call) => call.args[0]);
-    expect(states).toEqual([
-      {
-        mentionAdmissionState: "preparing",
-        mentionAdmissionStartedAt: now,
-        updatedAt: now,
-      },
-      {
-        mentionAdmissionState: "admitted",
-        mentionAdmittedAt: now,
-        updatedAt: now,
-      },
-    ]);
+      .map((call) => call.args[0])[0];
+    expect(state).toMatchObject({
+      mentionAdmissionState: "admitted",
+      mentionAdmissionStartedAt: now,
+      mentionAdmittedAt: now,
+      status: "completed",
+      result: { admitted: true },
+      completedAt: now,
+      updatedAt: now,
+    });
+  });
+
+  it("atomically completes a Board mention without agent-admission state", async () => {
+    const row = toolCallRow({
+      toolName: boardMentionDescriptor.name,
+      classification: "non_mention",
+    });
+    const harness = createMockDb({
+      select: [[capabilityRow({ ingressHighWater: 0, classificationHighWater: 0 })], [row]],
+      update: [[{ id: toolCallId }]],
+    });
+    const ledger = createRuntimeToolCallLedger(harness.db, {
+      now: () => now,
+    });
+
+    await expect(ledger.commitTerminalAction({
+      transaction: harness.db as never,
+      capability,
+      id: toolCallId,
+      ingressOrdinal: 0,
+      toolName: "mention_board",
+      targetAgentId: null,
+      result: { requested: true },
+    })).resolves.toEqual({ requested: true });
+    const state = harness.calls
+      .filter((call) => call.operation === "update" && call.method === "set")
+      .map((call) => call.args[0])[0] as Record<string, unknown>;
+    expect(state).toMatchObject({
+      status: "completed",
+      result: { requested: true },
+      completedAt: now,
+      updatedAt: now,
+    });
+    expect(state).not.toHaveProperty("mentionAdmissionState");
   });
 
   it("requires durable classification and admission before completion", async () => {
@@ -341,11 +368,117 @@ describe("runtime tool-call ledger", () => {
     expect(harness.calls.some((call) => call.operation === "update")).toBe(false);
   });
 
-  it("rejects invalid ordinals, mention targets, and poll configuration without touching persistence", async () => {
+  it.each([
+    [mentionDescriptor, "completed"],
+    [mentionDescriptor, "executing"],
+    [mentionDescriptor, "failed"],
+    [boardMentionDescriptor, "completed"],
+    [boardMentionDescriptor, "executing"],
+    [boardMentionDescriptor, "failed"],
+  ] as const)("fences later tools after terminal %s in %s state", async (
+    descriptor,
+    status,
+  ) => {
+    const terminalMention = toolCallRow({
+      toolName: descriptor.name,
+      status,
+      ...(descriptor.name === "mention_agent"
+        ? {
+            classification: "validated_mention",
+            mentionTargetAgentId: mentionTarget,
+            mentionAdmissionState: "admitted",
+          }
+        : { classification: "non_mention" }),
+    });
+    const harness = createMockDb({
+      select: [[capabilityRow()], [], [], [terminalMention]],
+    });
+    const ledger = createRuntimeToolCallLedger(harness.db, {
+      now: () => now,
+    });
+
+    await expect(ledger.claim({
+      capability,
+      descriptor: nonMentionDescriptor,
+      callIdentity: { source: "jsonrpc", id: "call-after-mention" },
+      ingressOrdinal: 1,
+      arguments: {},
+    })).rejects.toThrow("terminal mention handoff");
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("admits a terminal handoff as the first and only tool call", async () => {
+    const unclassified = {
+      ingressOrdinal: 0,
+      classification: "unclassified",
+    };
+    const harness = createMockDb({
+      select: [
+        [capabilityRow()],
+        [],
+        [],
+        [],
+        [unclassified],
+        [unclassified],
+      ],
+      insert: [[{ id: toolCallId }]],
+      update: [[]],
+    });
+    const ledger = createRuntimeToolCallLedger(harness.db, {
+      now: () => now,
+    });
+
+    await expect(ledger.claim({
+      capability,
+      descriptor: boardMentionDescriptor,
+      callIdentity: { source: "jsonrpc", id: "first-terminal-mention" },
+      ingressOrdinal: 0,
+      arguments: { message: "Need direction" },
+    })).resolves.toEqual({ state: "claimed", id: toolCallId });
+  });
+
+  it("does not admit a terminal mention while an earlier call is unfinished", async () => {
+    const unfinished = toolCallRow({
+      status: "executing",
+      ingressOrdinal: 0,
+    });
+    const harness = createMockDb({
+      select: [[capabilityRow({ ingressHighWater: 0 })], [], [], [unfinished]],
+    });
+    const ledger = createRuntimeToolCallLedger(harness.db, {
+      now: () => now,
+    });
+
+    await expect(ledger.claim({
+      capability,
+      descriptor: mentionDescriptor,
+      callIdentity: { source: "jsonrpc", id: "terminal-mention" },
+      ingressOrdinal: 1,
+      arguments: {},
+    })).rejects.toThrow("earlier unfinished tool call");
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("does not let an out-of-order terminal mention strand a missing lower ordinal", async () => {
+    const harness = createMockDb({
+      select: [[capabilityRow()], [], [], []],
+    });
+    const ledger = createRuntimeToolCallLedger(harness.db, {
+      now: () => now,
+    });
+
+    await expect(ledger.claim({
+      capability,
+      descriptor: mentionDescriptor,
+      callIdentity: { source: "jsonrpc", id: "early-terminal-mention" },
+      ingressOrdinal: 1,
+      arguments: {},
+    })).rejects.toThrow("missing earlier tool call");
+    expect(harness.calls.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("rejects invalid ordinals and mention targets without touching persistence", async () => {
     const harness = createMockDb();
-    expect(() => createRuntimeToolCallLedger(harness.db, {
-      admissionPollIntervalMs: -1,
-    })).toThrow("Admission poll interval must be a nonnegative integer");
     const ledger = createRuntimeToolCallLedger(harness.db);
     await expect(ledger.claim({
       capability,

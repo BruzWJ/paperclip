@@ -7,7 +7,6 @@ import {
   instanceSettings,
   issueComments,
   issueBoardMentions,
-  issueCommentProjectionSources,
   issueCreateIdempotencyKeys,
   issueCreatorEdgeReceivability,
   issueConsultExecutions,
@@ -29,7 +28,6 @@ import {
   AGENT_CONTEXT_GRANT_KEYS,
   type AgentContextGrantKey,
   type AgentVisibleIssueStatus,
-  type IssueExecutionRef,
   type PaperclipActionKey,
   isUuidLike,
   normalizeContextAccess,
@@ -72,18 +70,9 @@ import type {
   RequestedScopedRunCancellations,
 } from "./issue-execution-cancellation.js";
 import {
-  projectPersistedIssueExecutionRef,
-} from "./issue-execution-dispatcher-postgres.js";
-import {
   IssueConsultChainInvalid,
   lockAndValidateIssueConsultChain,
 } from "./issue-consult-chain-postgres.js";
-import type {
-  IssueExecutionRunService,
-} from "./issue-execution-run-service.js";
-import type {
-  IssueExecutionSteeringResultBroker,
-} from "./issue-execution-steering-results.js";
 import {
   applyIssueExecutionPolicyTransition,
   issueExecutionPolicyPersistencePatch,
@@ -121,7 +110,7 @@ const CREATOR_UPDATE_KEYS = [
   "creatorTargetIssueId",
   "message",
 ] as const;
-const BOARD_MENTION_KEYS = ["message", "reason"] as const;
+const BOARD_MENTION_KEYS = ["message"] as const;
 const PRIORITIES = new Set(["critical", "high", "medium", "low"]);
 const STATUSES = new Set<AgentVisibleIssueStatus>([
   "open",
@@ -181,19 +170,17 @@ export interface RuntimeIssueActionService {
     invocationId: string;
     runInterfaceToolCallId: string;
     ingressOrdinal: number;
-    withMentionAdmission<T>(
-      targetAgentId: string,
-      prepare: () => Promise<T>,
-    ): Promise<T>;
+    commitTerminalAction: RuntimeActionInvocation["commitTerminalAction"];
     targetAgentId: string;
     message: string;
-    mentionRunId?: string;
   }): Promise<unknown>;
   mentionBoard(input: {
     capability: RuntimeActionInvocation["capability"];
     invocationId: string;
+    runInterfaceToolCallId: string;
+    ingressOrdinal: number;
+    commitTerminalAction: RuntimeActionInvocation["commitTerminalAction"];
     message: string;
-    reason?: string;
   }): Promise<unknown>;
 }
 
@@ -231,37 +218,10 @@ async function withRuntimeWorkspaceReservationErrors<T>(
   }
 }
 
-export interface RuntimeMentionExecutionInput {
-  companyId: string;
-  issueId: string;
-  sessionId: string;
-  ownershipEpoch: number;
-  consultExecutionId: string;
-  sourceRunId: string;
-  sourceRefId: string;
-  targetAgentId: string;
-  adapterConfigRevisionId: string;
-  chainToken: string;
-  ref: IssueExecutionRef;
-}
-
-export interface RuntimeMentionExecutionResult {
-  runId: string;
-  response: string;
-}
-
 export type RuntimeIssueScopeCancellationPort = Pick<
   IssueExecutionCancellationService,
   | "requestScopeCancellationsInTransaction"
   | "reconcileRequestedScopeCancellations"
->;
-
-export type RuntimeIssueRunPort = Pick<
-  IssueExecutionRunService,
-  | "readRun"
-  | "lockRun"
-  | "requestSteeringInTransaction"
-  | "continuePendingSteeringForSource"
 >;
 
 export interface PostgresRuntimeIssueActionServiceOptions {
@@ -279,23 +239,8 @@ export interface PostgresRuntimeIssueActionServiceOptions {
    * directly.
    */
   notifyCreatorDelivery(deliveryId: string): Promise<void>;
-  /**
-   * Runs the nested consult ref synchronously in the caller's active drain.
-   * The executor owns provider launch/stream normalization and must return the
-   * durable nested productive run id with the exact normalized final bytes.
-   */
-  executeMention(
-    input: RuntimeMentionExecutionInput,
-  ): Promise<RuntimeMentionExecutionResult>;
   /** Canonical transactional authority fence plus post-commit cancellation. */
   issueExecutionCancellation: RuntimeIssueScopeCancellationPort;
-  /** Canonical run/steering authority; production action code never owns runs. */
-  runService: RuntimeIssueRunPort;
-  /** Worker-local synchronous result rendezvous for selector-bearing mentions. */
-  issueExecutionSteeringResults: Pick<
-    IssueExecutionSteeringResultBroker,
-    "expect"
-  >;
 }
 
 type CompanyRow = typeof companies.$inferSelect;
@@ -1477,7 +1422,9 @@ function creatorSourceIdentity(
 function executionActorForCapability(
   capability: RuntimeActionInvocation["capability"],
 ): Extract<IssueSessionExecutionActor, { kind: "agent-execution" }> {
-  if (!capability.issueExecutionAuthorityId) {
+  const executionAuthorityId =
+    capability.issueExecutionAuthorityId ?? capability.consultExecutionId;
+  if (!executionAuthorityId) {
     throw new RuntimeIssueActionConflict(
       "Agent harness delivery requires immutable execution authority",
     );
@@ -1485,7 +1432,7 @@ function executionActorForCapability(
   return {
     kind: "agent-execution",
     agentId: capability.targetAgentId,
-    authorityId: capability.issueExecutionAuthorityId,
+    authorityId: executionAuthorityId,
   };
 }
 
@@ -1961,7 +1908,12 @@ export function createIssueFormCommitRuntime(
         retried: false as const,
       };
     });
-    await options.notifyCreatorDelivery(committed.delivery.id);
+    // The delivery row is the durable authority. Notification only wakes its
+    // worker and must never extend the provider tool call through a recipient
+    // plugin/agent lifecycle.
+    void options.notifyCreatorDelivery(committed.delivery.id).catch(() => {
+      // The creator-delivery drain retries committed queued work.
+    });
     return committed;
   }
 
@@ -2372,7 +2324,9 @@ export function createIssueFormCommitRuntime(
         retried: false as const,
       };
     });
-    await options.notifyCreatorDelivery(committed.delivery.id);
+    void options.notifyCreatorDelivery(committed.delivery.id).catch(() => {
+      // The creator-delivery drain retries committed queued work.
+    });
     return committed;
   }
 
@@ -2761,12 +2715,9 @@ export function createRuntimeIssueActionPort(
         invocationId: input.invocationId,
         runInterfaceToolCallId: input.runInterfaceToolCallId,
         ingressOrdinal: input.ingressOrdinal,
-        withMentionAdmission: input.withMentionAdmission,
+        commitTerminalAction: input.commitTerminalAction,
         targetAgentId: mention.agentId,
         message: mention.message,
-        ...(mention.mentionRunId === undefined
-          ? {}
-          : { mentionRunId: mention.mentionRunId }),
       });
     },
 
@@ -2776,11 +2727,10 @@ export function createRuntimeIssueActionPort(
       return service.mentionBoard({
         capability: input.capability,
         invocationId: input.invocationId,
+        runInterfaceToolCallId: input.runInterfaceToolCallId,
+        ingressOrdinal: input.ingressOrdinal,
+        commitTerminalAction: input.commitTerminalAction,
         message: nonBlankString(input.arguments.message, "message"),
-        reason:
-          input.arguments.reason === undefined
-            ? undefined
-            : nonBlankString(input.arguments.reason, "reason"),
       });
     },
   };
@@ -3372,7 +3322,7 @@ export function createPostgresRuntimeIssueActionService(
         promptCapabilityGenerationIdentity(input.capability),
         input.invocationId,
       );
-      const committed = await db.transaction(async (tx) => {
+      return db.transaction(async (tx) => {
         const now = clock();
         await lockRuntimeActionAuthority(
           tx,
@@ -3424,7 +3374,6 @@ export function createPostgresRuntimeIssueActionService(
             agentId: input.capability.targetAgentId,
             runId: input.capability.runId,
             idempotencyKey: key,
-            reason: input.reason ?? null,
             commentId: admission.comment.id,
             createdAt: now,
           })
@@ -3448,8 +3397,7 @@ export function createPostgresRuntimeIssueActionService(
           .then((rows) => rows[0] ?? null);
         if (
           !mention ||
-          mention.commentId !== admission.comment.id ||
-          mention.reason !== (input.reason ?? null)
+          mention.commentId !== admission.comment.id
         ) {
           throw new RuntimeIssueActionConflict(
             "mention_board invocation was retried with different immutable arguments",
@@ -3459,13 +3407,14 @@ export function createPostgresRuntimeIssueActionService(
           tx,
           `issue_board_mention:${mention.id}`,
         );
-        return { mention, retried: admission.retried };
+        return input.commitTerminalAction(tx, {
+          accepted: true,
+          terminal: true,
+          id: mention.id,
+          commentId: mention.commentId,
+          retried: admission.retried,
+        });
       });
-      return {
-        id: committed.mention.id,
-        commentId: committed.mention.commentId,
-        retried: committed.retried,
-      };
     },
 
     async mention(input) {
@@ -3491,12 +3440,90 @@ export function createPostgresRuntimeIssueActionService(
         promptCapabilityGenerationIdentity(input.capability),
         input.invocationId,
       )}:tool-call:${input.runInterfaceToolCallId}:ingress:${input.ingressOrdinal}`;
-      if (input.mentionRunId !== undefined) {
-        const mentionRunId = input.mentionRunId;
-        const steering = await input.withMentionAdmission(
-          input.targetAgentId,
-          () => db.transaction(async (tx) => {
+      return db.transaction(async (tx) => {
           const now = clock();
+          await lockRuntimeActionHierarchy(tx, input.capability, now, {
+            additionalLaneTargetAgentId: input.targetAgentId,
+          });
+          const priorEvent = await tx
+            .select()
+            .from(issueSessionEvents)
+            .where(
+              and(
+                eq(issueSessionEvents.companyId, input.capability.companyId),
+                eq(issueSessionEvents.issueId, input.capability.issueId),
+                eq(issueSessionEvents.sessionId, input.capability.sessionId),
+                eq(
+                  issueSessionEvents.ownershipEpoch,
+                  input.capability.ownershipEpoch,
+                ),
+                eq(issueSessionEvents.sourceKind, "consult_mention"),
+                eq(issueSessionEvents.immutableSourceKey, key),
+              ),
+            )
+            .limit(1)
+            .then((rows) => rows[0] ?? null);
+          if (priorEvent) {
+            const priorRef = await tx
+              .select()
+              .from(issueExecutionRefs)
+              .where(
+                and(
+                  eq(issueExecutionRefs.companyId, input.capability.companyId),
+                  eq(issueExecutionRefs.issueId, input.capability.issueId),
+                  eq(issueExecutionRefs.sessionId, input.capability.sessionId),
+                  eq(
+                    issueExecutionRefs.ownershipEpoch,
+                    input.capability.ownershipEpoch,
+                  ),
+                  eq(issueExecutionRefs.sourceId, priorEvent.sourceId!),
+                ),
+              )
+              .limit(1)
+              .for("update")
+              .then((rows) => rows[0] ?? null);
+            const consult = priorRef?.consultExecutionId
+              ? await tx
+                  .select()
+                  .from(issueConsultExecutions)
+                  .where(
+                    eq(
+                      issueConsultExecutions.id,
+                      priorRef.consultExecutionId,
+                    ),
+                  )
+                  .limit(1)
+                  .for("update")
+                  .then((rows) => rows[0] ?? null)
+              : null;
+            if (
+              !priorRef ||
+              priorRef.mode !== "consult" ||
+              priorRef.sourceKind !== "consult_mention" ||
+              priorRef.consultCallerRefId !== input.capability.refId ||
+              priorRef.targetAgentId !== input.targetAgentId ||
+              priorRef.exactMessage !== input.message ||
+              !consult ||
+              consult.state !== "active" ||
+              consult.sourceRunId !== input.capability.runId ||
+              consult.sourceRefId !== input.capability.refId ||
+              consult.targetAgentId !== input.targetAgentId ||
+              priorEvent.sourceRecordId !== consult.id
+            ) {
+              throw new RuntimeIssueActionConflict(
+                "mention invocation was retried with different immutable arguments",
+              );
+            }
+            return input.commitTerminalAction(tx, {
+              accepted: true,
+              terminal: true,
+              consultExecutionId: consult.id,
+              refId: priorRef.id,
+              commentId: null,
+              retried: true,
+            });
+          }
+
           const authorized = await lockRuntimeActionAuthority(
             tx,
             input.capability,
@@ -3505,6 +3532,7 @@ export function createPostgresRuntimeIssueActionService(
             {
               requireOwner: false,
               additionalLaneTargetAgentId: input.targetAgentId,
+              hierarchyAlreadyLocked: true,
             },
           );
           if (
@@ -3517,22 +3545,19 @@ export function createPostgresRuntimeIssueActionService(
               "mention_catalog_changed",
             );
           }
+          const targetRevisionId = await assertTargetAdapterRevision(
+            tx,
+            input.capability.companyId,
+            input.targetAgentId,
+          );
+          let chain;
           try {
-            const chain = await lockAndValidateIssueConsultChain(tx, {
+            chain = await lockAndValidateIssueConsultChain(tx, {
               ref: authorized.ref,
-              requireLiveAncestors:
-                authorized.ref.mode === "consult" &&
-                authorized.ref.sourceKind === "consult_mention",
+              requireLiveAncestors: false,
               leafState: "active",
             });
-            if (chain.agentIds.has(input.targetAgentId)) {
-              throw new RuntimeIssueActionDenied(
-                "Mention target would loop within the active consult chain",
-                "mention_chain_loop",
-              );
-            }
           } catch (error) {
-            if (error instanceof RuntimeIssueActionDenied) throw error;
             if (error instanceof IssueConsultChainInvalid) {
               throw new RuntimeIssueActionDenied(
                 error.message,
@@ -3543,76 +3568,57 @@ export function createPostgresRuntimeIssueActionService(
             }
             throw error;
           }
-          const selectedRun = await options.runService.lockRun(tx, {
-            companyId: input.capability.companyId,
-            issueId: input.capability.issueId,
-            runId: mentionRunId,
-          });
-          if (
-            (selectedRun.kind !== "productive" &&
-              selectedRun.kind !== "consult") ||
-            selectedRun.status !== "running" ||
-            selectedRun.sessionId !== input.capability.sessionId ||
-            selectedRun.ownershipEpoch !== input.capability.ownershipEpoch ||
-            selectedRun.targetAgentId !== input.targetAgentId ||
-            selectedRun.terminalFinalizationId !== null ||
-            selectedRun.finishedAt !== null ||
-            selectedRun.runId === input.capability.runId
-          ) {
+          if (chain.agentIds.has(input.targetAgentId)) {
             throw new RuntimeIssueActionDenied(
-              "mentionRunId does not identify the exact active target-agent run",
-              "mention_run_invalid",
+              "Mention target would loop within its durable handoff chain",
+              "mention_chain_loop",
             );
           }
-          const progressRows = await tx
-            .select({
-              source: issueCommentProjectionSources,
-              comment: issueComments,
+
+          const consultId = deterministicUuid("issue-consult", key);
+          const consult = await tx
+            .insert(issueConsultExecutions)
+            .values({
+              id: consultId,
+              companyId: input.capability.companyId,
+              issueId: input.capability.issueId,
+              sessionId: input.capability.sessionId,
+              ownershipEpoch: input.capability.ownershipEpoch,
+              sourceRunId: input.capability.runId,
+              sourceRefId: input.capability.refId,
+              callerExecutionScopeId: authorized.ref.executionScopeId,
+              targetAgentId: input.targetAgentId,
+              adapterConfigRevisionId: targetRevisionId,
+              chainToken: chain.chainToken,
+              state: "active",
+              createdAt: now,
             })
-            .from(issueCommentProjectionSources)
-            .innerJoin(
-              issueComments,
-              eq(issueComments.id, issueCommentProjectionSources.commentId),
-            )
-            .where(
-              and(
-                eq(
-                  issueCommentProjectionSources.companyId,
-                  input.capability.companyId,
-                ),
-                eq(
-                  issueCommentProjectionSources.issueId,
-                  input.capability.issueId,
-                ),
-                eq(
-                  issueCommentProjectionSources.sessionId,
-                  input.capability.sessionId,
-                ),
-                eq(issueCommentProjectionSources.sourceKind, "run_progress"),
-                eq(issueCommentProjectionSources.runId, selectedRun.runId),
-              ),
-            )
-            .limit(2)
-            .for("update");
-          if (
-            progressRows.length !== 1 ||
-            progressRows[0]!.comment.authorType !== "agent" ||
-            progressRows[0]!.comment.authorAgentId !== input.targetAgentId ||
-            progressRows[0]!.comment.runId !== selectedRun.runId
-          ) {
+            .returning()
+            .then((rows) => rows[0] ?? null);
+          if (!consult) {
             throw new RuntimeIssueActionConflict(
-              "Selected run has no exact stable target-agent progress comment",
+              "Mention handoff binding was not persisted",
             );
           }
-          const admission = await sessionAdmission.admitSteeringComment(
+          const admission = await sessionAdmission.admitExecutionSource(
             {
               companyId: input.capability.companyId,
               issueId: input.capability.issueId,
               sessionId: input.capability.sessionId,
-              sourceKind: "agent_active_run_steering",
+              ownershipEpoch: input.capability.ownershipEpoch,
+              targetAgentId: input.targetAgentId,
+              issueExecutionAuthorityId: null,
+              consultExecutionId: consult.id,
+              adapterConfigRevisionId: targetRevisionId,
+              contextEpoch: authorized.contextGeneration,
+              mode: "consult",
+              executionLineageId: authorized.ref.executionLineageId,
+              consultCallerRefId: authorized.ref.id,
+              consultChainToken: chain.chainToken,
+              sourceKind: "consult_mention",
               actor: executionActorForCapability(input.capability),
               immutableSourceKey: key,
-              sourceRecordId: deterministicUuid("issue-steering", key),
+              sourceRecordId: consult.id,
               exactText: input.message,
               comment: {
                 author: {
@@ -3624,701 +3630,28 @@ export function createPostgresRuntimeIssueActionService(
                   adapterConfigRevisionId:
                     input.capability.adapterConfigIdentity,
                 },
-                replyToCommentId: progressRows[0]!.comment.id,
-                steeringSegment: null,
               },
+              idempotencyKey: key,
             },
             tx,
           );
-          if (!admission.comment || admission.input || admission.ref) {
+          if (!admission.ref || !admission.comment) {
             throw new RuntimeIssueActionConflict(
-              "Agent steering did not persist its canonical synthetic Session message/comment",
+              "Mention did not reserve its durable handoff ref and comment",
             );
           }
-          let resultIdentity: {
-            companyId: string;
-            issueId: string;
-            runId: string;
-            refId: string;
-            refOrdinal: number;
-            segmentOrdinal: number;
-          };
-          if (!admission.retried) {
-            const requested =
-              await options.runService.requestSteeringInTransaction(
-              tx,
-              {
-                companyId: input.capability.companyId,
-                issueId: input.capability.issueId,
-                ownershipEpoch: input.capability.ownershipEpoch,
-                runId: selectedRun.runId,
-                targetAgentId: input.targetAgentId,
-                exactMessage: input.message,
-                sourceCommentId: admission.comment.id,
-                sourceMessageId: admission.source.messageId,
-                sourceInputId: null,
-                actor: {
-                  kind: "agent",
-                  agentId: input.capability.targetAgentId,
-                },
-              },
-            );
-            resultIdentity = {
-              companyId: requested.companyId,
-              issueId: requested.issueId,
-              runId: requested.runId,
-              refId: requested.refId,
-              refOrdinal: requested.refOrdinal,
-              segmentOrdinal: requested.segmentOrdinal,
-            };
-          } else {
-            const reboundSource = await tx
-              .select()
-              .from(issueCommentProjectionSources)
-              .where(
-                and(
-                  eq(
-                    issueCommentProjectionSources.companyId,
-                    input.capability.companyId,
-                  ),
-                  eq(
-                    issueCommentProjectionSources.issueId,
-                    input.capability.issueId,
-                  ),
-                  eq(
-                    issueCommentProjectionSources.commentId,
-                    admission.comment.id,
-                  ),
-                ),
-              )
-              .limit(2)
-              .for("update");
-            const bound = reboundSource.length === 1
-              ? reboundSource[0]!
-              : null;
-            if (
-              !bound ||
-              bound.steeringTargetRunId !== selectedRun.runId ||
-              bound.refId === null ||
-              bound.refOrdinal === null ||
-              bound.segmentOrdinal === null ||
-              bound.segmentOrdinal < 1
-            ) {
-              throw new RuntimeIssueActionConflict(
-                "Retried agent steering lost its exact prompt segment",
-              );
-            }
-            resultIdentity = {
-              companyId: input.capability.companyId,
-              issueId: input.capability.issueId,
-              runId: selectedRun.runId,
-              refId: bound.refId,
-              refOrdinal: bound.refOrdinal,
-              segmentOrdinal: bound.segmentOrdinal,
-            };
-          }
-          return {
-            runId: selectedRun.runId,
-            sourceCommentId: admission.comment.id,
-            resultIdentity,
-            retried: admission.retried,
-          };
-          }),
-        );
-        const expectation =
-          options.issueExecutionSteeringResults.expect(
-            steering.resultIdentity,
+          await recordIssueLivenessActionInTransaction(
+            tx,
+            `issue_execution_ref:${admission.ref.id}`,
           );
-        try {
-          const continued =
-            await options.runService.continuePendingSteeringForSource({
-              companyId: input.capability.companyId,
-              issueId: input.capability.issueId,
-              sourceCommentId: steering.sourceCommentId,
-            });
-          const result = continued.kind === "already_settled"
-            ? continued.result
-            : await expectation.result;
-          if (continued.kind === "already_settled") {
-            expectation.cancel();
-          }
-          if (result.outcome !== "succeeded") {
-            throw new RuntimeIssueActionConflict(
-              result.reason ??
-                `mentionRunId continuation ended with ${result.outcome}`,
-            );
-          }
-          return {
-            runId: result.runId,
-            response: result.response,
-            retried: steering.retried,
-          };
-        } catch (error) {
-          expectation.cancel();
-          throw error;
-        }
-      }
-      const prepared = await input.withMentionAdmission(
-        input.targetAgentId,
-        () => db.transaction(async (tx) => {
-            const now = clock();
-            await lockRuntimeActionHierarchy(tx, input.capability, now, {
-              additionalLaneTargetAgentId: input.targetAgentId,
-            });
-            const priorEvent = await tx
-              .select()
-              .from(issueSessionEvents)
-              .where(
-                and(
-                  eq(issueSessionEvents.companyId, input.capability.companyId),
-                  eq(issueSessionEvents.issueId, input.capability.issueId),
-                  eq(issueSessionEvents.sessionId, input.capability.sessionId),
-                  eq(
-                    issueSessionEvents.ownershipEpoch,
-                    input.capability.ownershipEpoch,
-                  ),
-                  eq(issueSessionEvents.sourceKind, "consult_mention"),
-                  eq(issueSessionEvents.immutableSourceKey, key),
-                ),
-              )
-              .limit(1)
-              .then((rows) => rows[0] ?? null);
-            if (priorEvent) {
-              const priorRef = await tx
-                .select()
-                .from(issueExecutionRefs)
-                .where(
-                  and(
-                    eq(issueExecutionRefs.companyId, input.capability.companyId),
-                    eq(issueExecutionRefs.issueId, input.capability.issueId),
-                    eq(issueExecutionRefs.sessionId, input.capability.sessionId),
-                    eq(
-                      issueExecutionRefs.ownershipEpoch,
-                      input.capability.ownershipEpoch,
-                    ),
-                    eq(issueExecutionRefs.sourceId, priorEvent.sourceId!),
-                  ),
-                )
-                .limit(1)
-                .for("update")
-                .then((rows) => rows[0] ?? null);
-              if (
-                !priorRef ||
-                !priorRef.consultExecutionId ||
-                priorRef.mode !== "consult" ||
-                priorRef.sourceKind !== "consult_mention" ||
-                priorRef.consultCallerRefId !==
-                  input.capability.refId ||
-                priorRef.targetAgentId !== input.targetAgentId ||
-                priorRef.exactMessage !== input.message
-              ) {
-                throw new RuntimeIssueActionConflict(
-                  "mention invocation was retried with different immutable arguments",
-                );
-              }
-              const consult = await tx
-                .select()
-                .from(issueConsultExecutions)
-                .where(
-                  and(
-                    eq(issueConsultExecutions.id, priorRef.consultExecutionId),
-                    eq(
-                      issueConsultExecutions.companyId,
-                      input.capability.companyId,
-                    ),
-                    eq(issueConsultExecutions.issueId, input.capability.issueId),
-                    eq(
-                      issueConsultExecutions.sessionId,
-                      input.capability.sessionId,
-                    ),
-                    eq(
-                      issueConsultExecutions.ownershipEpoch,
-                      input.capability.ownershipEpoch,
-                    ),
-                    eq(issueConsultExecutions.sourceRunId, input.capability.runId),
-                    eq(
-                      issueConsultExecutions.sourceRefId,
-                      input.capability.refId,
-                    ),
-                    eq(
-                      issueConsultExecutions.targetAgentId,
-                      input.targetAgentId,
-                    ),
-                  ),
-                )
-                .limit(1)
-                .for("update")
-                .then((rows) => rows[0] ?? null);
-              if (!consult) {
-                throw new RuntimeIssueActionConflict(
-                  "Accepted mention is missing its consult execution",
-                );
-              }
-              if (
-                priorEvent.sourceRecordId !== consult.id ||
-                priorEvent.runId !== input.capability.runId ||
-                priorEvent.agentId !== input.capability.targetAgentId ||
-                priorEvent.adapterConfigRevisionId !==
-                  input.capability.adapterConfigIdentity ||
-                priorRef.consultChainToken !== consult.chainToken ||
-                priorRef.adapterConfigRevisionId !==
-                  consult.adapterConfigRevisionId
-              ) {
-                throw new RuntimeIssueActionConflict(
-                  "Accepted mention no longer matches its immutable consult evidence",
-                );
-              }
-              if (consult.state === "active") {
-                const authorized = await lockRuntimeActionAuthority(
-                  tx,
-                  input.capability,
-                  "mention_agent",
-                  now,
-                  {
-                    requireOwner: false,
-                    additionalLaneTargetAgentId: input.targetAgentId,
-                    hierarchyAlreadyLocked: true,
-                  },
-                );
-                if (
-                  !authorized.catalog.mentionTargets.some(
-                    (candidate) => candidate.id === input.targetAgentId,
-                  )
-                ) {
-                  throw new RuntimeIssueActionDenied(
-                    "Mention target is no longer in the current reach catalog",
-                    "mention_catalog_changed",
-                  );
-                }
-              }
-              try {
-                await lockAndValidateIssueConsultChain(tx, {
-                  ref: priorRef,
-                  requireLiveAncestors: consult.state === "active",
-                  leafState: consult.state === "completed"
-                    ? "active_or_completed"
-                    : "active",
-                });
-              } catch (error) {
-                if (error instanceof IssueConsultChainInvalid) {
-                  if (consult.state === "active") {
-                    throw new RuntimeIssueActionDenied(
-                      error.message,
-                      error.reason === "cycle"
-                        ? "mention_chain_cycle"
-                        : "mention_chain_invalid",
-                    );
-                  }
-                  throw new RuntimeIssueActionConflict(error.message);
-                }
-                throw error;
-              }
-              const responseEvent = await tx
-                .select()
-                .from(issueSessionEvents)
-                .where(
-                  and(
-                    eq(issueSessionEvents.companyId, input.capability.companyId),
-                    eq(issueSessionEvents.issueId, input.capability.issueId),
-                    eq(issueSessionEvents.sessionId, input.capability.sessionId),
-                    eq(
-                      issueSessionEvents.ownershipEpoch,
-                      input.capability.ownershipEpoch,
-                    ),
-                    eq(issueSessionEvents.sourceKind, "consult_response"),
-                    eq(
-                      issueSessionEvents.immutableSourceKey,
-                      `${key}:response`,
-                    ),
-                  ),
-                )
-                .limit(1)
-                .then((rows) => rows[0] ?? null);
-              if (consult.state === "completed" && responseEvent) {
-                const payload = responseEvent.data as { text?: unknown };
-                if (
-                  typeof payload.text !== "string" ||
-                  !responseEvent.runId ||
-                  responseEvent.sourceRecordId !== consult.id ||
-                  responseEvent.agentId !== consult.targetAgentId ||
-                  responseEvent.adapterConfigRevisionId !==
-                    consult.adapterConfigRevisionId
-                ) {
-                  throw new RuntimeIssueActionConflict(
-                    "Completed mention is missing its normalized response",
-                  );
-                }
-                return {
-                  kind: "completed" as const,
-                  result: {
-                    consultExecutionId: consult.id,
-                    runId: responseEvent.runId,
-                    response: payload.text,
-                    retried: true,
-                  },
-                };
-              }
-              if (consult.state !== "active") {
-                throw new RuntimeIssueActionConflict(
-                  `Mention consult is already ${consult.state}`,
-                );
-              }
-              return {
-                kind: "execute" as const,
-                execution: {
-                  companyId: consult.companyId,
-                  issueId: consult.issueId,
-                  sessionId: consult.sessionId,
-                  ownershipEpoch: consult.ownershipEpoch,
-                  consultExecutionId: consult.id,
-                  sourceRunId: consult.sourceRunId,
-                  sourceRefId: consult.sourceRefId,
-                  targetAgentId: consult.targetAgentId,
-                  adapterConfigRevisionId: consult.adapterConfigRevisionId,
-                  chainToken: consult.chainToken,
-                  ref: projectPersistedIssueExecutionRef(priorRef),
-                } satisfies RuntimeMentionExecutionInput,
-                key,
-                retried: true,
-              };
-            }
-
-            const authorized = await lockRuntimeActionAuthority(
-              tx,
-              input.capability,
-              "mention_agent",
-              now,
-              {
-                requireOwner: false,
-                additionalLaneTargetAgentId: input.targetAgentId,
-                hierarchyAlreadyLocked: true,
-              },
-            );
-            if (
-              !authorized.catalog.mentionTargets.some(
-                (candidate) => candidate.id === input.targetAgentId,
-              )
-            ) {
-              throw new RuntimeIssueActionDenied(
-                "Mention target is no longer in the current reach catalog",
-                "mention_catalog_changed",
-              );
-            }
-            const targetRevisionId = await assertTargetAdapterRevision(
-              tx,
-              input.capability.companyId,
-              input.targetAgentId,
-            );
-
-            let chain;
-            try {
-              chain = await lockAndValidateIssueConsultChain(tx, {
-                ref: authorized.ref,
-                requireLiveAncestors:
-                  authorized.ref.mode === "consult" &&
-                  authorized.ref.sourceKind === "consult_mention",
-                leafState: "active",
-              });
-            } catch (error) {
-              if (error instanceof IssueConsultChainInvalid) {
-                throw new RuntimeIssueActionDenied(
-                  error.message,
-                  error.reason === "cycle"
-                    ? "mention_chain_cycle"
-                    : "mention_chain_invalid",
-                );
-              }
-              throw error;
-            }
-            if (chain.agentIds.has(input.targetAgentId)) {
-              throw new RuntimeIssueActionDenied(
-                "Mention target would loop within the active consult chain",
-                "mention_chain_loop",
-              );
-            }
-            const chainToken = chain.chainToken;
-
-            const consultId = deterministicUuid("issue-consult", key);
-            const consult = await tx
-              .insert(issueConsultExecutions)
-              .values({
-                id: consultId,
-                companyId: input.capability.companyId,
-                issueId: input.capability.issueId,
-                sessionId: input.capability.sessionId,
-                ownershipEpoch: input.capability.ownershipEpoch,
-                sourceRunId: input.capability.runId,
-                sourceRefId: input.capability.refId,
-                callerExecutionScopeId: authorized.ref.executionScopeId,
-                targetAgentId: input.targetAgentId,
-                adapterConfigRevisionId: targetRevisionId,
-                chainToken,
-                state: "active",
-                createdAt: now,
-              })
-              .returning()
-              .then((rows) => rows[0] ?? null);
-            if (!consult) {
-              throw new RuntimeIssueActionConflict(
-                "Mention consult binding was not persisted",
-              );
-            }
-            const admission =
-              await sessionAdmission.admitExecutionSource(
-                {
-                  companyId: input.capability.companyId,
-                  issueId: input.capability.issueId,
-                  sessionId: input.capability.sessionId,
-                  ownershipEpoch: input.capability.ownershipEpoch,
-                  targetAgentId: input.targetAgentId,
-                  issueExecutionAuthorityId: null,
-                  consultExecutionId: consult.id,
-                  adapterConfigRevisionId: targetRevisionId,
-                  contextEpoch: authorized.contextGeneration,
-                  mode: "consult",
-                  executionLineageId: authorized.ref.executionLineageId,
-                  consultCallerRefId: authorized.ref.id,
-                  consultChainToken: chainToken,
-                  sourceKind: "consult_mention",
-                  actor: executionActorForCapability(input.capability),
-                  immutableSourceKey: key,
-                  sourceRecordId: consult.id,
-                  exactText: input.message,
-                  comment: {
-                    author: {
-                      kind: "agent",
-                      agentId: input.capability.targetAgentId,
-                    },
-                    producingRun: {
-                      runId: input.capability.runId,
-                      adapterConfigRevisionId:
-                        input.capability.adapterConfigIdentity,
-                    },
-                  },
-                  idempotencyKey: key,
-                },
-                tx,
-              );
-            if (!admission.ref || !admission.comment) {
-              throw new RuntimeIssueActionConflict(
-                "Mention did not reserve its consult ref and request comment",
-              );
-            }
-            return {
-              kind: "execute" as const,
-              execution: {
-                companyId: consult.companyId,
-                issueId: consult.issueId,
-                sessionId: consult.sessionId,
-                ownershipEpoch: consult.ownershipEpoch,
-                consultExecutionId: consult.id,
-                sourceRunId: consult.sourceRunId,
-                sourceRefId: consult.sourceRefId,
-                targetAgentId: consult.targetAgentId,
-                adapterConfigRevisionId: consult.adapterConfigRevisionId,
-                chainToken: consult.chainToken,
-                ref: projectPersistedIssueExecutionRef(admission.ref),
-              } satisfies RuntimeMentionExecutionInput,
-              key,
-              retried: false,
-            };
-        }),
-      );
-
-      if (prepared.kind === "completed") return prepared.result;
-
-      let nested: RuntimeMentionExecutionResult;
-      try {
-        nested = await options.executeMention(prepared.execution);
-        if (
-          !nested ||
-          typeof nested.runId !== "string" ||
-          nested.runId.length === 0 ||
-          typeof nested.response !== "string"
-        ) {
-          throw new RuntimeIssueActionConflict(
-            "Nested mention executor returned an invalid normalized result",
-          );
-        }
-      } catch (error) {
-        const cancellations = await db.transaction(async (tx) => {
-          const now = clock();
-          await lockRuntimeActionHierarchy(tx, input.capability, now, {
-            additionalLaneTargetAgentId:
-              prepared.execution.targetAgentId,
+          return input.commitTerminalAction(tx, {
+            accepted: true,
+            terminal: true,
+            consultExecutionId: consult.id,
+            refId: admission.ref.id,
+            commentId: admission.comment.id,
+            retried: false,
           });
-          await tx.execute(
-            sql`select ${issueConsultExecutions.id} from ${issueConsultExecutions} where ${issueConsultExecutions.id} = ${prepared.execution.consultExecutionId} for update`,
-          );
-          await tx
-            .update(issueConsultExecutions)
-            .set({
-              state: "cancelled",
-              closeReason:
-                error instanceof Error
-                  ? `nested_execution_failed:${error.message}`
-                  : "nested_execution_failed",
-              closedAt: now,
-            })
-            .where(
-              and(
-                eq(
-                  issueConsultExecutions.id,
-                  prepared.execution.consultExecutionId,
-                ),
-                eq(issueConsultExecutions.state, "active"),
-              ),
-            );
-          return options.issueExecutionCancellation
-            .requestScopeCancellationsInTransaction(tx, {
-              companyId: prepared.execution.companyId,
-              issueId: prepared.execution.issueId,
-              selector: {
-                kind: "refs",
-                refIds: [prepared.execution.ref.id],
-              },
-              reason: "consult_execution_failed",
-              actor: {
-                kind: "agent",
-                agentId: input.capability.targetAgentId,
-              },
-              now,
-            });
-        });
-        await options.issueExecutionCancellation
-          .reconcileRequestedScopeCancellations(cancellations);
-        throw error;
-      }
-
-      const nestedRun = await options.runService.readRun({
-        companyId: prepared.execution.companyId,
-        issueId: prepared.execution.issueId,
-        runId: nested.runId,
-      });
-      return db.transaction(async (tx) => {
-        const now = clock();
-        await lockRuntimeActionHierarchy(tx, input.capability, now, {
-          additionalLaneTargetAgentId: prepared.execution.targetAgentId,
-        });
-        await tx.execute(
-          sql`select ${issueConsultExecutions.id} from ${issueConsultExecutions} where ${issueConsultExecutions.id} = ${prepared.execution.consultExecutionId} for update`,
-        );
-        const [consult, issue, currentRef] = await Promise.all([
-          tx
-            .select()
-            .from(issueConsultExecutions)
-            .where(
-              eq(
-                issueConsultExecutions.id,
-                prepared.execution.consultExecutionId,
-              ),
-            )
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          tx
-            .select()
-            .from(issues)
-            .where(eq(issues.id, prepared.execution.issueId))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          tx
-            .select()
-            .from(issueExecutionRefs)
-            .where(eq(issueExecutionRefs.id, prepared.execution.ref.id))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-        ]);
-        if (
-          !consult ||
-          consult.state !== "active" ||
-          !issue ||
-          issue.companyId !== prepared.execution.companyId ||
-          issue.ownershipEpoch !== prepared.execution.ownershipEpoch ||
-          (issue.lifecycleStatus !== "open" &&
-            issue.lifecycleStatus !== "blocked") ||
-          !nestedRun ||
-          nestedRun.companyId !== prepared.execution.companyId ||
-          nestedRun.issueId !== prepared.execution.issueId ||
-          nestedRun.sessionId !== prepared.execution.sessionId ||
-          nestedRun.ownershipEpoch !== prepared.execution.ownershipEpoch ||
-          nestedRun.targetAgentId !== prepared.execution.targetAgentId ||
-          nestedRun.kind !== "consult" ||
-          nestedRun.consultExecutionId !==
-            prepared.execution.consultExecutionId ||
-          nestedRun.status !== "succeeded" ||
-          !currentRef ||
-          currentRef.disposition !== "terminal" ||
-          currentRef.consultExecutionId !==
-            prepared.execution.consultExecutionId
-        ) {
-          throw new RuntimeIssueActionConflict(
-            "Mention scope changed before its normalized response committed",
-          );
-        }
-        const response =
-          await sessionAdmission.appendNonDispatchSyntheticComment(
-            {
-              companyId: prepared.execution.companyId,
-              issueId: prepared.execution.issueId,
-              sessionId: prepared.execution.sessionId,
-              sourceKind: "consult_response",
-              immutableSourceKey: `${prepared.key}:response`,
-              sourceRecordId: prepared.execution.consultExecutionId,
-              exactText: nested.response,
-              projectionKind: "harness_delivery",
-              ownershipEpoch: prepared.execution.ownershipEpoch,
-              agentId: prepared.execution.targetAgentId,
-              adapterConfigRevisionId:
-                prepared.execution.adapterConfigRevisionId,
-              runId: nested.runId,
-              comment: {
-                author: {
-                  kind: "agent",
-                  agentId: prepared.execution.targetAgentId,
-                },
-                producingRun: {
-                  runId: nested.runId,
-                  adapterConfigRevisionId:
-                    prepared.execution.adapterConfigRevisionId,
-                },
-              },
-            },
-            tx,
-          );
-        const completedConsult = await tx
-          .update(issueConsultExecutions)
-          .set({
-            state: "completed",
-            closeReason: "nested_execution_completed",
-            closedAt: now,
-          })
-          .where(
-            and(
-              eq(
-                issueConsultExecutions.id,
-                prepared.execution.consultExecutionId,
-              ),
-              eq(issueConsultExecutions.state, "active"),
-            ),
-          )
-          .returning({ id: issueConsultExecutions.id });
-        if (completedConsult.length !== 1) {
-          throw new RuntimeIssueActionConflict(
-            "Mention consult was not active when its response committed",
-          );
-        }
-        await recordIssueLivenessActionInTransaction(
-          tx,
-          `issue_consult_execution:${completedConsult[0]!.id}`,
-        );
-        return {
-          consultExecutionId: prepared.execution.consultExecutionId,
-          runId: nested.runId,
-          response: nested.response,
-          requestComment: null,
-          responseComment: response.comment,
-          retried: prepared.retried,
-        };
       });
     },
   };

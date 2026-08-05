@@ -166,12 +166,6 @@ const SOURCE_USER_EXECUTION_KEYS = new Set([
   "variant",
   "createdAt",
 ]);
-const SCOPED_SOURCE_USER_EXECUTION_KEYS = new Set([
-  "companyId",
-  "issueId",
-  "sessionId",
-  ...SOURCE_USER_EXECUTION_KEYS,
-]);
 const NUMERIC_SESSION_ACCOUNTING_KEYS = new Set([
   "maxOutputTokens",
   "outputTokenMax",
@@ -615,53 +609,6 @@ async function persistCompanions(
       ...companions.sourceUserExecution,
     });
   }
-}
-
-/**
- * Publishes a source-user companion for an already-projected canonical user
- * message. It uses the same closed validation entrance as event companions.
- */
-export async function publishIssueSessionSourceUserExecutionInTx(
-  transaction: IssueSessionDbTransaction,
-  input: IssueSessionSourceUserExecutionInput,
-  redactor?: IssueSessionPublicationRedactor,
-): Promise<void> {
-  assertExactKeys(
-    input,
-    SCOPED_SOURCE_USER_EXECUTION_KEYS,
-    "Scoped Session source-user publication",
-  );
-  const scope = {
-    companyId: requireNonEmptyString(
-      input.companyId,
-      "Session source-user company id",
-    ),
-    issueId: requireNonEmptyString(
-      input.issueId,
-      "Session source-user issue id",
-    ),
-    sessionId: requireNonEmptyString(
-      input.sessionId,
-      "Session source-user Session id",
-    ),
-  };
-  const companions = prepareCompanions(
-    {
-      sourceUserExecution: {
-        messageId: input.messageId,
-        sourceAgentId: input.sourceAgentId,
-        providerId: input.providerId,
-        modelId: input.modelId,
-        variant: input.variant,
-        ...(input.createdAt === undefined
-          ? {}
-          : { createdAt: input.createdAt }),
-      },
-    },
-    { messageID: input.messageId },
-    redactor,
-  );
-  await persistCompanions(transaction, scope, companions);
 }
 
 /**

@@ -430,11 +430,6 @@ function fixtureRoot(): string {
       "  });",
       "  const finalization = { runLivenessFactId: livenessId };",
       "}",
-      "transaction.insert(issueExecutionFinalizationStaleCheckOutbox).values({ finalizationId });",
-      "async function consumeFinalizationOutbox(input: any) {",
-      "  if (input) await options.liveness.consumeFinalizationOutbox(input);",
-      "}",
-      "async function consumeFinalizationOutboxForRun() { return consumeFinalizationOutbox(row); }",
       "",
     ].join("\n"),
   );
@@ -442,9 +437,7 @@ function fixtureRoot(): string {
     root,
     "apps/server/src/services/issue-execution-postgres.ts",
     [
-      "const liveness = createIssueLivenessReconciliationService(database, {});",
       "const finalizer = createPostgresIssueExecutionFinalizationWriter({",
-      "  liveness,",
       "});",
       "",
     ].join("\n"),
@@ -454,12 +447,10 @@ function fixtureRoot(): string {
     "apps/server/src/services/issue-execution-dispatcher-postgres.ts",
     [
       "async function assertRefDispatchable(issue: any) {",
+      '  if (ref.sourceKind === "agent_liveness_followup") throw new Error();',
       '  if (!["open", "blocked"].includes(issue.lifecycleStatus)) throw new Error();',
       "}",
-      "async function recover() {",
-      "  await options.finalizer.consumeFinalizationOutboxForRun(input);",
-      "}",
-      "const consumeFinalizationOutboxForRun = options.finalizer.consumeFinalizationOutboxForRun;",
+      'const discoverable = ne(issueExecutionRefs.sourceKind, "agent_liveness_followup");',
       "",
     ].join("\n"),
   );
@@ -467,16 +458,6 @@ function fixtureRoot(): string {
     root,
     "apps/server/src/services/issue-execution-cancellation.ts",
     [
-      "interface TypedCancellationSettlement {",
-      "  consumeFinalizationOutboxForRun(input: {",
-      "    companyId: string; issueId: string; runId: string;",
-      "  }): Promise<void>;",
-      "}",
-      "async function reconcileTerminalizedCancellation(options: { settlement: TypedCancellationSettlement }) {",
-      "  await options.settlement.consumeFinalizationOutboxForRun({",
-      '    companyId: "company", issueId: "issue", runId: "run",',
-      "  });",
-      "}",
       "",
     ].join("\n"),
   );
@@ -492,7 +473,7 @@ function fixtureRoot(): string {
     ].join("\n"),
     "apps/server/src/services/runtime-issue-action-port.ts": [
       "recordIssueLivenessActionInTransaction(tx, `issue_update:${update.id}`);",
-      "recordIssueLivenessActionInTransaction(tx, `issue_consult_execution:${completedConsult[0]!.id}`);",
+      "recordIssueLivenessActionInTransaction(tx, `issue_execution_ref:${admission.ref.id}`);",
       "recordIssueLivenessActionInTransaction(tx, `issue_board_mention:${mention.id}`);",
       "",
     ].join("\n"),

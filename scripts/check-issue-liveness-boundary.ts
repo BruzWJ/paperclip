@@ -32,8 +32,6 @@ const FINALIZATION_OWNER =
 const CANONICAL_ASSEMBLY = "apps/server/src/services/issue-execution-postgres.ts";
 const DISPATCHER =
   "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
-const CANCELLATION_RECONCILER =
-  "apps/server/src/services/issue-execution-cancellation.ts";
 const ATTENTION_OWNER = "apps/server/src/services/attention.ts";
 // Keep the lifecycle gate's production-table allowlist honest: this boundary
 // names the separate fact owner only through a structural symbol assembled at
@@ -143,7 +141,7 @@ const SETTLEMENT_PRODUCERS = new Map<string, readonly string[]>([
     [
       "recordIssueLivenessActionInTransaction(",
       "`issue_update:${update.id}`",
-      "`issue_consult_execution:${completedConsult[0]!.id}`",
+      "`issue_execution_ref:${admission.ref.id}`",
       "`issue_board_mention:${",
     ],
   ],
@@ -1037,10 +1035,7 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
       "issueExecutionFinalizationStaleCheckOutbox",
     )) {
       if (kind === "insert") outboxInserts += 1;
-      if (
-        (kind === "insert" && path !== FINALIZATION_OWNER) ||
-        (kind !== "insert" && path !== LIVENESS_SERVICE)
-      ) {
+      if (kind === "insert" || path !== LIVENESS_SERVICE) {
         violations.push(`${path}: noncanonical ${kind} of the liveness outbox`);
       }
     }
@@ -1066,7 +1061,6 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
 
     if (
       source.includes("issueExecutionFinalizationStaleCheckOutbox") &&
-      path !== FINALIZATION_OWNER &&
       path !== LIVENESS_SERVICE
     ) {
       violations.push(`${path}: direct access to the finalization liveness outbox`);
@@ -1087,24 +1081,21 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
     }
     if (
       /\.consumeFinalizationOutbox\s*\(/.test(source) &&
-      path !== LIVENESS_SERVICE &&
-      path !== FINALIZATION_OWNER
+      path !== LIVENESS_SERVICE
     ) {
       violations.push(`${path}: alternate direct liveness outbox consumer`);
     }
     if (
       /\.consumeFinalizationOutboxForRun\s*\(/.test(source) &&
-      path !== DISPATCHER &&
-      path !== CANCELLATION_RECONCILER
+      path !== LIVENESS_SERVICE
     ) {
       violations.push(
-        `${path}: per-run stale-check consumption is not a dispatcher settlement/recovery or typed cancellation trigger`,
+        `${path}: retired per-run stale-check consumption is forbidden`,
       );
     }
     if (
       source.includes("createIssueLivenessReconciliationService") &&
       path !== LIVENESS_SERVICE &&
-      path !== CANONICAL_ASSEMBLY &&
       path !== "apps/server/src/services/index.ts"
     ) {
       violations.push(`${path}: alternate liveness processor assembly`);
@@ -1121,9 +1112,9 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
     }
   }
 
-  if (outboxInserts !== 1) {
+  if (outboxInserts !== 0) {
     violations.push(
-      `${FINALIZATION_OWNER}: stale-check outbox must have one insert owner (found ${outboxInserts})`,
+      `${FINALIZATION_OWNER}: retired stale-check outbox must have no insert owner (found ${outboxInserts})`,
     );
   }
   if (reconciliationInserts !== 1) {
@@ -1139,17 +1130,11 @@ function writerAndCallerViolations(repositoryRoot: string): string[] {
 
   violations.push(
     ...requireFileTokens(repositoryRoot, CANONICAL_ASSEMBLY, [
-      "createIssueLivenessReconciliationService(database, {",
       "createPostgresIssueExecutionFinalizationWriter({",
-      "liveness,",
     ]),
     ...requireFileTokens(repositoryRoot, DISPATCHER, [
-      "consumeFinalizationOutboxForRun",
-      "options.finalizer.consumeFinalizationOutboxForRun",
-    ]),
-    ...requireFileTokens(repositoryRoot, CANCELLATION_RECONCILER, [
-      "consumeFinalizationOutboxForRun(input: {",
-      "await options.settlement.consumeFinalizationOutboxForRun({",
+      'ref.sourceKind === "agent_liveness_followup"',
+      'ne(issueExecutionRefs.sourceKind, "agent_liveness_followup")',
     ]),
   );
   return violations;
@@ -1213,7 +1198,6 @@ function sameAgentBoundaryViolations(repositoryRoot: string): string[] {
 
   for (const token of [
     "run.terminalFinalizationId !== finalization.id",
-    "run.targetAgentId === null",
     "staleTargetAgentId: run.targetAgentId",
     "sourceRunId: run.runId",
     "sourceCommentId: finalization.progressCommentId",

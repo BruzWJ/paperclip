@@ -36,7 +36,8 @@ The run links to:
 - source/session input and execution-history view
 - execution workspace binding
 - issue-execution ref and current lease generation
-- optional validated native correlation for effective-true-carry owner work
+- optional validated native correlation for effective-true-carry owner or
+  consult work in the exact same scope
 
 The provider sees none of those correlation fields. It receives only the exact
 admitted source text, ACPX-applied generic session configuration, and the
@@ -44,11 +45,11 @@ request-scoped compiled run-tools descriptor.
 
 ## Continuity
 
-Provider-native continuity is retained only for the exact true-carry owner
-scope. Its encrypted opaque correlation is handed only to ACPX's public
-runtime. A first run, false-carry run, consult, ownership-epoch change,
-board/user fresh-session command, or adapter revision change cannot resume an
-earlier provider conversation.
+Provider-native continuity is retained only for an exact true-carry owner or
+consult scope. Its encrypted opaque correlation is handed only to ACPX's
+public runtime. A first run, false-carry run, ownership-epoch change,
+board/user fresh-session command, agent/lane/workspace/context mismatch, or
+adapter revision change cannot resume an earlier provider conversation.
 
 No agent-wide or issue-key session state exists.
 

@@ -46,7 +46,7 @@ const ACTION_LABELS: Record<
   },
   mention_agent: {
     label: "Mention agents",
-    description: "Consult an eligible agent on the same issue.",
+    description: "End the turn with a same-issue handoff to an eligible agent.",
   },
   mention_board: {
     label: "Can mention Board",
@@ -68,11 +68,11 @@ const MENTION_LABELS: Record<
 > = {
   mention_any_descendant: {
     label: "Mention any descendant",
-    description: "Extend consult candidates down the reporting chain.",
+    description: "Add eligible descendants that own work in the current issue tree.",
   },
   mention_any_ancestor: {
     label: "Mention any ancestor",
-    description: "Extend consult candidates up the reporting chain.",
+    description: "Add ancestors up to the current root issue owner.",
   },
 };
 

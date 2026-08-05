@@ -18,8 +18,8 @@ issue PATCH, release, or out-of-band dispatch step.
 Use the immutable request and composed context supplied by the runtime. Do not
 look for another assignment or infer authority over a related issue.
 
-An owner execution may publish owner lifecycle/disposition. A consult
-execution is advisory and cannot do so.
+An owner execution may publish owner lifecycle/disposition. A non-owner
+handoff execution is advisory and cannot do so.
 
 ### 2. Inspect the compiled interface
 
@@ -32,7 +32,7 @@ Possible Paperclip tools include:
 - bounded context reads: `list_company_issues`, `list_sub_issues`,
   `read_issue_comments`, and `read_issue_agent_run`
 - issue actions: `issue_update`, `issue_create`, and `issue_assign`
-- same-issue consultation: `mention_agent`
+- terminal same-issue handoff: `mention_agent`
 - collective Board requests: `mention_board`
 - separately granted agent or company tools
 
@@ -57,8 +57,17 @@ For parallel work, use `issue_create` when present. It creates a direct child
 with an immutable request and explicit owner, then dispatches from a persisted
 reference. Do not poll the child or dispatch it separately.
 
-For a bounded second opinion, use `mention_agent` when present. Consultation is
-synchronous and does not transfer ownership.
+For a bounded handoff, use `mention_agent` when present. The tool durably admits
+the request and returns only an acknowledgement. It is terminal for the
+caller's turn: end normally rather than waiting for a response. Paperclip
+starts the recipient after the caller finalizes.
+
+The recipient's final response becomes a fresh message and run for its direct
+parent, one hop at a time, until the current issue owner/root receives it. The
+route stops rather than skipping an unavailable parent and never auto-notifies
+the Board. The implicit direct-parent return does not make that parent an
+outgoing tool target; explicit upward mentions require
+`mention_any_ancestor`.
 
 ### 5. Publish progress or disposition
 
@@ -93,7 +102,8 @@ When blocked:
 ```
 
 `open`, `blocked`, `done`, and `cancelled` are the canonical owner lifecycle
-values. The message is required. A consult run cannot publish this form.
+values. The message is required. A non-owner handoff run cannot publish this
+form.
 
 If `issue_update` is absent, the run does not hold owner or creator update
 authority.
@@ -120,8 +130,11 @@ provider-free board lifecycle commit and therefore creates no execution ref.
 
 For an effective true-carry owner, eligible inputs may coalesce at safe turn
 boundaries and the validated provider-native handle may resume within the exact
-issue/epoch/agent/revision scope. False-carry, consult, reassignment, reset,
-changed-agent, and changed-revision executions start fresh.
+issue/epoch/agent/revision scope. Every handoff creates a fresh Paperclip run,
+but its recipient may resume its own compatible ACP backend session when
+`carry_context` and that exact scope match; the caller's session is never
+shared. False-carry, reassignment, reset, changed-agent, and changed-revision
+executions start with a fresh backend session.
 
 No provider-visible endpoint creates a Session, selects a run, or dispatches an
 agent outside a committed canonical operation.
@@ -146,5 +159,7 @@ blocked, or reopened.
 - Never invent a target omitted from a compiled schema.
 - Never infer a dispatch from prose. Human dispatch requires an explicit typed
   current-owner agent and ownership-epoch tuple.
+- After `mention_agent` acknowledges admission, end the caller turn normally;
+  do not wait for or poll the recipient.
 - Always leave a durable owner update when the compiled interface grants that
   authority and the work changes lifecycle or disposition.

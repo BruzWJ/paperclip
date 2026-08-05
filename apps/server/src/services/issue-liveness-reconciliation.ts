@@ -529,23 +529,35 @@ async function resolveIssueLivenessActionSourceInTransaction(
             ownershipEpoch: issueExecutionRefs.ownershipEpoch,
             previousOwnershipEpoch:
               issueExecutionRefs.previousOwnershipEpoch,
+            mode: issueExecutionRefs.mode,
+            sourceKind: issueExecutionRefs.sourceKind,
             createdAt: issueExecutionRefs.createdAt,
           })
           .from(issueExecutionRefs)
-          .where(
-            and(
-              eq(issueExecutionRefs.id, reference.sourceId),
-              eq(issueExecutionRefs.mode, "owner"),
-              eq(issueExecutionRefs.sourceKind, "issue_reassignment"),
-              isNotNull(issueExecutionRefs.previousOwnershipEpoch),
-            ),
-          )
+          .where(eq(issueExecutionRefs.id, reference.sourceId))
           .limit(2)
           .for("update"),
-        "Assignment liveness action has no exact reassignment ref",
+        "Agent liveness action has no exact execution ref",
       );
+      if (source.sourceKind === "consult_mention") {
+        return {
+          companyId: source.companyId,
+          issueId: source.issueId,
+          kind: "mention_agent",
+          referenceId: sourceReference,
+          committedAt: source.createdAt,
+          ownershipEpoch: source.ownershipEpoch,
+          resultingOwnershipEpoch: source.ownershipEpoch,
+        };
+      }
       if (source.previousOwnershipEpoch === null) {
         reject("Assignment liveness action has no preceding issue epoch");
+      }
+      if (
+        source.mode !== "owner" ||
+        source.sourceKind !== "issue_reassignment"
+      ) {
+        reject("Assignment liveness action is not an exact reassignment ref");
       }
       return {
         companyId: source.companyId,
@@ -919,56 +931,50 @@ async function findExplicitAction(
 
   const mentions = await transaction
     .select({
-      id: issueConsultExecutions.id,
-      closedAt: issueConsultExecutions.closedAt,
+      id: issueExecutionRefs.id,
+      createdAt: issueExecutionRefs.createdAt,
     })
-    .from(issueConsultExecutions)
+    .from(issueExecutionRefs)
     .innerJoin(
       issueSessionEvents,
       and(
         eq(
           issueSessionEvents.companyId,
-          issueConsultExecutions.companyId,
+          issueExecutionRefs.companyId,
         ),
-        eq(issueSessionEvents.issueId, issueConsultExecutions.issueId),
-        eq(issueSessionEvents.sessionId, issueConsultExecutions.sessionId),
+        eq(issueSessionEvents.issueId, issueExecutionRefs.issueId),
+        eq(issueSessionEvents.sessionId, issueExecutionRefs.sessionId),
         eq(
           issueSessionEvents.ownershipEpoch,
-          issueConsultExecutions.ownershipEpoch,
+          issueExecutionRefs.ownershipEpoch,
         ),
-        eq(issueSessionEvents.sourceKind, "consult_response"),
+        eq(issueSessionEvents.sourceKind, "consult_mention"),
         eq(
-          issueSessionEvents.sourceRecordId,
-          issueConsultExecutions.id,
+          issueSessionEvents.sourceId,
+          issueExecutionRefs.sourceId,
         ),
       ),
     )
     .where(
       and(
-        eq(issueConsultExecutions.companyId, scope.companyId),
-        eq(issueConsultExecutions.issueId, scope.issueId),
-        eq(issueConsultExecutions.ownershipEpoch, scope.ownershipEpoch),
-        eq(issueConsultExecutions.state, "completed"),
-        eq(
-          issueConsultExecutions.closeReason,
-          "nested_execution_completed",
-        ),
-        isNotNull(issueConsultExecutions.closedAt),
+        eq(issueExecutionRefs.companyId, scope.companyId),
+        eq(issueExecutionRefs.issueId, scope.issueId),
+        eq(issueExecutionRefs.ownershipEpoch, scope.ownershipEpoch),
+        eq(issueExecutionRefs.sourceKind, "consult_mention"),
         search.kind === "run"
-          ? eq(issueConsultExecutions.sourceRunId, search.runId)
-          : gt(issueConsultExecutions.closedAt, search.row.admittedAt),
+          ? eq(issueSessionEvents.runId, search.runId)
+          : gt(issueExecutionRefs.createdAt, search.row.admittedAt),
       ),
     )
     .orderBy(
-      asc(issueConsultExecutions.closedAt),
-      asc(issueConsultExecutions.id),
+      asc(issueExecutionRefs.createdAt),
+      asc(issueExecutionRefs.id),
     );
   for (const mention of mentions) {
-    if (!mention.closedAt) continue;
     actions.push({
       kind: "mention_agent",
-      referenceId: `issue_consult_execution:${mention.id}`,
-      committedAt: mention.closedAt,
+      referenceId: `issue_execution_ref:${mention.id}`,
+      committedAt: mention.createdAt,
     });
   }
 

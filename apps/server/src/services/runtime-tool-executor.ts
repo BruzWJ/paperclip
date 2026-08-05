@@ -15,6 +15,7 @@ import {
   RuntimeToolCallIdentityConflict,
   RuntimeToolCallInProgress,
   type RuntimeToolCallLedger,
+  type RuntimeToolCallTransaction,
 } from "./runtime-tool-call-ledger.js";
 
 type ContextRetrievalService = ReturnType<
@@ -27,9 +28,9 @@ export interface RuntimeActionInvocation {
   runInterfaceToolCallId: string;
   ingressOrdinal: number;
   arguments: Readonly<Record<string, unknown>>;
-  withMentionAdmission<T>(
-    targetAgentId: string,
-    prepare: () => Promise<T>,
+  commitTerminalAction<T>(
+    transaction: RuntimeToolCallTransaction,
+    result: T,
   ): Promise<T>;
 }
 
@@ -195,6 +196,7 @@ export function createRuntimeToolExecutor(options: {
       callIdentity,
       ingressOrdinal,
       mintPluginRunContext,
+      commitTerminalAudit,
     }) {
       const claim = await options.callLedger.claim({
         capability,
@@ -266,6 +268,7 @@ export function createRuntimeToolExecutor(options: {
               },
         );
         let result: unknown;
+        let terminalActionCommitted = false;
         if (
           descriptor.name === "list_company_issues" ||
           descriptor.name === "list_sub_issues" ||
@@ -313,22 +316,46 @@ export function createRuntimeToolExecutor(options: {
             runInterfaceToolCallId: claim.id,
             ingressOrdinal,
             arguments: record(validatedArguments),
-            withMentionAdmission(targetAgentId, prepare) {
-              return options.callLedger.withMentionAdmission({
+            async commitTerminalAction(transaction, result) {
+              if (
+                descriptor.name !== "mention_agent" &&
+                descriptor.name !== "mention_board"
+              ) {
+                throw new RuntimeToolCallIdentityConflict(
+                  "Only a terminal mention can commit through the terminal action boundary",
+                );
+              }
+              const committed = await options.callLedger.commitTerminalAction({
+                transaction,
                 capability,
                 id: claim.id,
                 ingressOrdinal,
-                targetAgentId,
-                prepare,
+                toolName: descriptor.name,
+                targetAgentId: mentionTargetAgentId,
+                result,
               });
+              await commitTerminalAudit?.(transaction);
+              terminalActionCommitted = true;
+              return committed;
             },
           });
         }
-        await options.callLedger.complete({
-          capability,
-          id: claim.id,
-          result,
-        });
+        if (
+          descriptor.name === "mention_agent" ||
+          descriptor.name === "mention_board"
+        ) {
+          if (!terminalActionCommitted) {
+            throw new RuntimeToolCallIdentityConflict(
+              "Terminal mention returned without its atomic ledger commitment",
+            );
+          }
+        } else {
+          await options.callLedger.complete({
+            capability,
+            id: claim.id,
+            result,
+          });
+        }
         return result;
       } catch (error) {
         await options.callLedger.fail({

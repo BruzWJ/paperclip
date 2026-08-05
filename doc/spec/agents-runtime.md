@@ -25,7 +25,10 @@ Each lease receives a `paperclip.run-tools/v1` descriptor compiled from live con
 The canonical record is the issue's Paperclip Session log. Effective
 `carry_context` permits an encrypted opaque provider-native correlation only
 for the same issue, ownership epoch, agent, and adapter configuration identity.
-False-carry, consult, reassignment, reset, and revision changes run fresh.
+The workspace, owner/consult lane, execution target, and authorized context
+exposure must also match exactly. False-carry, reassignment, reset, or any
+scope/revision change runs fresh; one agent's correlation is never shared with
+another agent.
 
 Provider-native storage is opaque. Paperclip does not read, display, delete, derive, or migrate it, and never carries it across issues.
 

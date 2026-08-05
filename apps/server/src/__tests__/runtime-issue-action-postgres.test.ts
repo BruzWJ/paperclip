@@ -56,17 +56,17 @@ function invocation(
   args: Record<string, unknown>,
   overrides: Record<string, unknown> = {},
 ) {
-  const withMentionAdmission = vi.fn(async <T>(
-    _targetAgentId: string,
-    prepare: () => Promise<T>,
-  ) => prepare());
+  const commitTerminalAction = vi.fn(async <T>(
+    _transaction: unknown,
+    result: T,
+  ) => result);
   return {
     capability,
     invocationId: "invocation-1",
     runInterfaceToolCallId: "tool-call-1",
     ingressOrdinal: 4,
     arguments: args,
-    withMentionAdmission,
+    commitTerminalAction,
     ...overrides,
   };
 }
@@ -162,14 +162,12 @@ describe("runtime issue action contracts", () => {
     });
   });
 
-  it("passes mention admission identity and an optional mentionRunId unchanged", async () => {
+  it("passes mention admission identity with the canonical terminal message", async () => {
     const port = createRuntimeIssueActionPort(service);
     const targetAgentId = "00000000-0000-4000-8000-00000000070e";
-    const mentionRunId = "00000000-0000-4000-8000-00000000070f";
     const call = invocation({
       agentId: targetAgentId,
-      message: "Continue this exact run",
-      mentionRunId,
+      message: "Send this durable handoff",
     });
 
     await port.mentionAgent(call);
@@ -179,10 +177,9 @@ describe("runtime issue action contracts", () => {
       invocationId: "invocation-1",
       runInterfaceToolCallId: "tool-call-1",
       ingressOrdinal: 4,
-      withMentionAdmission: call.withMentionAdmission,
+      commitTerminalAction: call.commitTerminalAction,
       targetAgentId,
-      message: "Continue this exact run",
-      mentionRunId,
+      message: "Send this durable handoff",
     });
   });
 
@@ -246,7 +243,7 @@ describe("runtime issue action contracts", () => {
     await expect(port.mentionAgent(invocation({
       agentId: capability.targetAgentId,
       message: "Bad selector",
-      mentionRunId: undefined,
+      mentionRunId: "00000000-0000-4000-8000-00000000070f",
     }))).rejects.toBeInstanceOf(RuntimeToolArgumentsInvalid);
   });
 

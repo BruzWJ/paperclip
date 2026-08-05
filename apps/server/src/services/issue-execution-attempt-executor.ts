@@ -16,15 +16,8 @@ import type { SelectedCompanySkillLaunchChannel } from "@paperclipai/adapter-uti
 import {
   agentAdapterAcpConfigurationSchema,
   type AgentAdapterAcpConfiguration,
-  type IssueExecutionRef,
   type IssueExecutionSessionOperation,
 } from "@paperclipai/shared";
-import type {
-  IssueExecutionAttemptCancellationSignal,
-  IssueExecutionLaneSettlement,
-  LeasedIssueExecutionConsultRun,
-  LeasedIssueExecutionRef,
-} from "./issue-execution-dispatcher.js";
 import type {
   AcpCorrelationScope,
   NativeCorrelationService,
@@ -40,10 +33,6 @@ import type {
 import type {
   ReapedCompanySkillMaterialization,
 } from "./company-skill-materialization-lifecycle.js";
-import type {
-  IssueExecutionSteeringResultBroker,
-  IssueExecutionSteeringResultIdentity,
-} from "./issue-execution-steering-results.js";
 
 const RUN_TOOLS_PROXY_FILE = "run-tools-proxy.mjs";
 const RUN_TOOLS_SECRET_FILE = "run-tools.json";
@@ -254,93 +243,6 @@ export interface IssueExecutionAttemptSettlementInput {
 export type IssueExecutionAttemptSettlement = (
   input: IssueExecutionAttemptSettlementInput,
 ) => Promise<void>;
-
-export interface IssueExecutionMentionInput {
-  readonly companyId: string;
-  readonly issueId: string;
-  readonly sessionId: string;
-  readonly ownershipEpoch: number;
-  readonly consultExecutionId: string;
-  readonly sourceRunId: string;
-  readonly sourceRefId: string;
-  readonly targetAgentId: string;
-  readonly adapterConfigRevisionId: string;
-  readonly chainToken: string;
-  readonly ref: IssueExecutionRef;
-}
-
-export interface IssueExecutionMentionResult {
-  readonly runId: string;
-  readonly response: string;
-}
-
-export interface IssueExecutionConsultLeaseRepository {
-  leasePersistedConsultRef(input: {
-    readonly refId: string;
-    readonly workerId: string;
-  }): Promise<
-    | { readonly kind: "queued" }
-    | {
-        readonly kind: "leased";
-        readonly lease: LeasedIssueExecutionRef;
-        readonly run: LeasedIssueExecutionConsultRun;
-      }
-  >;
-  recoverConsultAfterAuthorityLoss(input: {
-    readonly lease: LeasedIssueExecutionRef;
-    readonly workerId: string;
-  }): Promise<
-    | { readonly kind: "not_recoverable" }
-    | { readonly kind: "scheduled"; readonly retryAt: Date }
-    | {
-        readonly kind: "leased";
-        readonly lease: LeasedIssueExecutionRef;
-        readonly run: LeasedIssueExecutionConsultRun;
-      }
-    | {
-        readonly kind: "terminal";
-        readonly runId: string;
-        readonly outcome: "succeeded" | "failed" | "cancelled";
-        readonly reason: string | null;
-        readonly finalText: string;
-      }
-  >;
-  markRetryable(input: {
-    readonly lease: LeasedIssueExecutionRef;
-    readonly reason: Extract<IssueExecutionDispatchResult, { kind: "retry" }>["reason"];
-    readonly retryAt: Date;
-    readonly materialization: ReapedCompanySkillMaterialization | null;
-  }): Promise<void>;
-  markTerminal(input: {
-    readonly lease: LeasedIssueExecutionRef;
-    readonly outcome: Extract<IssueExecutionDispatchResult, { kind: "terminal" }>["outcome"];
-    readonly reason: string | null;
-    readonly finishedAt: Date;
-    readonly materialization: ReapedCompanySkillMaterialization | null;
-  }): Promise<IssueExecutionLaneSettlement>;
-}
-
-type IssueExecutionConsultLeaseAcquisition = Awaited<
-  ReturnType<IssueExecutionConsultLeaseRepository["leasePersistedConsultRef"]>
->;
-
-type IssueExecutionConsultAuthorityLossRecovery = Awaited<
-  ReturnType<
-    IssueExecutionConsultLeaseRepository["recoverConsultAfterAuthorityLoss"]
-  >
->;
-
-export interface IssueExecutionScopeCancellationSignal {
-  readonly companyId: string;
-  readonly issueId: string;
-  readonly sessionId: string;
-  readonly executionScopeId: string;
-  readonly ownershipEpoch: number;
-  readonly mode: "owner" | "consult";
-  readonly authorityId: string | null;
-  readonly consultExecutionId: string | null;
-  readonly reason: string;
-}
 
 export class IssueExecutionAttemptRejected extends Error {
   readonly code = "issue_execution_attempt_rejected";
@@ -905,6 +807,7 @@ export async function executeAcpxRuntimePrompt(
   input: AcpxRuntimePromptExecutionInput,
 ): Promise<AcpPromptExecutionResult> {
   let outcome: AcpPromptClosureOutcome;
+  let teardownFailure: Error | null = null;
   try {
     const result = await executeAcpxOneShotPrompt({
       cwd: input.cwd,
@@ -927,6 +830,11 @@ export async function executeAcpxRuntimePrompt(
       beginPromptTransmission: input.beginPromptTransmission,
       onSessionEvent: input.onSessionEvent,
     });
+    if (!result.cleanup.stateRemoved || result.cleanup.errors.length > 0) {
+      teardownFailure = new Error(
+        "ACPX one-shot runtime cleanup did not complete",
+      );
+    }
 
     if (!result.cleanup.stateRemoved) {
       outcome = {
@@ -1006,6 +914,8 @@ export async function executeAcpxRuntimePrompt(
   try {
     await input.releasePreparedResources?.();
   } catch (cause) {
+    const cleanupFailure = redactAcpxRuntimeError(cause, input.redactStderr);
+    teardownFailure = cleanupFailure;
     const promptTransmitted =
       outcome.kind === "settled" ||
       (outcome.kind === "error" && outcome.promptTransmitted);
@@ -1014,7 +924,7 @@ export async function executeAcpxRuntimePrompt(
       failure: "runtime",
       phase: promptTransmitted ? "prompt" : "session_setup",
       promptTransmitted,
-      cause: redactAcpxRuntimeError(cause, input.redactStderr),
+      cause: cleanupFailure,
     };
   }
 
@@ -1029,7 +939,9 @@ export async function executeAcpxRuntimePrompt(
     closureError,
     // ACPX internally owns and closes its provider subprocess. Paperclip
     // intentionally retains no PID or ACPX runtime record to reap.
-    teardown: { kind: "not_started" },
+    teardown: teardownFailure
+      ? { kind: "failed", cause: teardownFailure }
+      : { kind: "not_started" },
     stderr: "",
   };
 }
@@ -1229,6 +1141,7 @@ export function createIssueExecutionAttemptExecutor(options: {
       if (
         unexpectedClosureError !== null ||
         decision === null ||
+        result.teardown.kind === "failed" ||
         teardownRecordError !== null
       ) {
         const failures: unknown[] = [
@@ -1398,6 +1311,7 @@ export function createIssueExecutionAttemptExecutor(options: {
       if (
         result.closureError !== null ||
         decision === null ||
+        result.teardown.kind === "failed" ||
         teardownRecordError !== null
       ) {
         const failures: unknown[] = [
@@ -1511,6 +1425,12 @@ export function createIssueExecutionAttemptExecutor(options: {
         const target = await options.targetAcquirer.acquire(prompt.target);
         assertTargetMatchesPrompt(prompt, target);
         let targetFailed = true;
+        let targetReleased = false;
+        const releaseTarget = async (): Promise<void> => {
+          if (targetReleased) return;
+          targetReleased = true;
+          await target.release(targetFailed);
+        };
         try {
           if (renewalFailed) throw renewalFailure;
           let start:
@@ -1556,14 +1476,19 @@ export function createIssueExecutionAttemptExecutor(options: {
               cycle.decision.result.outcome === "failed") ||
             cycle.decision.result.kind === "retry";
           await stopRenewal(true);
+          targetFailed = failed;
+          // runCycle returns only after ACPX's public close boundary and the
+          // disposable runtime-state cleanup. Paperclip owns no provider PID
+          // or legacy process fact. Release the Paperclip-owned execution
+          // target before terminal settlement can publish a durable handoff.
+          await releaseTarget();
           await settle({
             result: cycle.decision.result,
             materialization: cycle.materialization,
           });
-          targetFailed = failed;
           dispatchResult = cycle.decision.result;
         } finally {
-          await target.release(targetFailed);
+          await releaseTarget();
         }
       } catch (error) {
         operationFailed = true;
@@ -1613,640 +1538,3 @@ export function createIssueExecutionAttemptExecutor(options: {
     },
   };
 }
-
-function mentionLeaseMatchesAttemptCancellation(
-  lease: LeasedIssueExecutionRef,
-  input: IssueExecutionAttemptCancellationSignal,
-): boolean {
-  if (
-    input.attemptId === null ||
-    input.attemptId !== lease.attemptId ||
-    input.runId !== lease.runId ||
-    input.companyId !== lease.ref.companyId ||
-    input.issueId !== lease.ref.issueId ||
-    input.sessionId !== lease.ref.sessionId ||
-    input.executionScopeId !== lease.ref.executionScopeId
-  ) {
-    return false;
-  }
-  return lease.batch.some(
-    (member) =>
-      member.ref.id === input.refId &&
-      member.leaseGeneration === input.leaseGeneration,
-  );
-}
-
-function assertMentionLease(
-  input: IssueExecutionMentionInput,
-  lease: LeasedIssueExecutionRef,
-): void {
-  if (
-    lease.ref.id !== input.ref.id ||
-    lease.ref.companyId !== input.companyId ||
-    lease.ref.issueId !== input.issueId ||
-    lease.ref.sessionId !== input.sessionId ||
-    lease.ref.ownershipEpoch !== input.ownershipEpoch ||
-    lease.ref.previousOwnershipEpoch !== input.ref.previousOwnershipEpoch ||
-    lease.ref.executionScopeId !== input.ref.executionScopeId ||
-    lease.ref.executionLineageId !== input.ref.executionLineageId ||
-    lease.ref.mode !== "consult" ||
-    lease.ref.sourceKind !== input.ref.sourceKind ||
-    lease.ref.sourceId !== input.ref.sourceId ||
-    lease.ref.sourceRecordId !== input.ref.sourceRecordId ||
-    lease.ref.messageKind !== input.ref.messageKind ||
-    lease.ref.messageId !== input.ref.messageId ||
-    lease.ref.exactMessage !== input.ref.exactMessage ||
-    lease.ref.deliveryIdempotencyKey !== input.ref.deliveryIdempotencyKey ||
-    lease.ref.disposition !== "active" ||
-    lease.ref.consultExecutionId !== input.consultExecutionId ||
-    lease.ref.consultCallerRefId !== input.sourceRefId ||
-    lease.ref.targetAgentId !== input.targetAgentId ||
-    lease.ref.laneOrdinal !== input.ref.laneOrdinal ||
-    lease.ref.issueExecutionAuthorityId !== null ||
-    lease.ref.adapterConfigRevisionId !== input.adapterConfigRevisionId ||
-    lease.ref.contextEpoch !== input.ref.contextEpoch ||
-    lease.ref.historyViewId !== input.ref.historyViewId ||
-    lease.ref.admissionHighWaterSeq !== input.ref.admissionHighWaterSeq ||
-    lease.ref.inputId !== input.ref.inputId ||
-    lease.ref.admittedSeq !== input.ref.admittedSeq ||
-    lease.ref.promotedSeq !== input.ref.promotedSeq ||
-    lease.ref.counterpartIssueId !== input.ref.counterpartIssueId ||
-    lease.ref.counterpartAuthorityId !== input.ref.counterpartAuthorityId ||
-    lease.ref.counterpartOwnershipEpoch !==
-      input.ref.counterpartOwnershipEpoch ||
-    lease.ref.consultChainToken !== input.chainToken ||
-    !lease.runId ||
-    !lease.attemptId ||
-    !lease.leaseId ||
-    lease.leaseGeneration < 1 ||
-    lease.attemptNumber < 1
-  ) {
-    throw new IssueExecutionAttemptRejected(
-      "Consult repository leased a different canonical mention",
-    );
-  }
-}
-
-function authorityLossMatchesLease(
-  loss: IssueExecutionPromptAuthorityLost,
-  lease: LeasedIssueExecutionRef,
-): boolean {
-  return loss.lease.companyId === lease.companyId &&
-    loss.lease.issueId === lease.issueId &&
-    loss.lease.runId === lease.runId &&
-    loss.lease.attemptId === lease.attemptId &&
-    loss.lease.leaseId === lease.leaseId &&
-    loss.lease.leaseGeneration === lease.leaseGeneration;
-}
-
-function consultMembership(lease: LeasedIssueExecutionRef): readonly string[] {
-  const members = lease.batch;
-  if (
-    members.length === 0 ||
-    members[0]?.ref.id !== lease.ref.id ||
-    members.some(
-      (member) =>
-        member.leaseGeneration !== lease.leaseGeneration ||
-        member.attemptNumber !== lease.attemptNumber,
-    )
-  ) {
-    throw new IssueExecutionAttemptRejected(
-      "Consult lease lost its first canonical run member",
-    );
-  }
-  return Object.freeze(members.map(({ ref }) => ref.id));
-}
-
-function sameMembership(
-  prior: readonly string[],
-  next: readonly string[],
-): boolean {
-  return prior.length === next.length &&
-    prior.every((refId, index) => next[index] === refId);
-}
-
-function sameConsultRunScope(
-  prior: LeasedIssueExecutionConsultRun,
-  next: LeasedIssueExecutionConsultRun,
-): boolean {
-  return prior.companyId === next.companyId &&
-    prior.issueId === next.issueId &&
-    prior.sessionId === next.sessionId &&
-    prior.executionScopeId === next.executionScopeId &&
-    prior.kind === "consult" &&
-    next.kind === "consult" &&
-    prior.ownershipEpoch === next.ownershipEpoch &&
-    prior.targetAgentId === next.targetAgentId &&
-    prior.adapterConfigRevisionId === next.adapterConfigRevisionId &&
-    prior.executionWorkspaceBindingId === next.executionWorkspaceBindingId &&
-    prior.executionMode === "consult" &&
-    next.executionMode === "consult" &&
-    prior.issueExecutionAuthorityId === null &&
-    next.issueExecutionAuthorityId === null &&
-    prior.consultExecutionId === next.consultExecutionId &&
-    prior.parentRunId === next.parentRunId;
-}
-
-function assertConsultRunBinding(
-  input: IssueExecutionMentionInput,
-  lease: LeasedIssueExecutionRef,
-  run: LeasedIssueExecutionConsultRun,
-): void {
-  if (
-    run.runId !== lease.runId ||
-    run.companyId !== input.companyId ||
-    run.issueId !== input.issueId ||
-    run.sessionId !== input.sessionId ||
-    run.executionScopeId !== input.ref.executionScopeId ||
-    run.kind !== "consult" ||
-    run.ownershipEpoch !== input.ownershipEpoch ||
-    run.targetAgentId !== input.targetAgentId ||
-    run.adapterConfigRevisionId !== input.adapterConfigRevisionId ||
-    run.executionMode !== "consult" ||
-    run.issueExecutionAuthorityId !== null ||
-    run.consultExecutionId !== input.consultExecutionId ||
-    run.parentRunId !== input.sourceRunId ||
-    run.currentAttemptId !== lease.attemptId ||
-    run.currentLeaseId !== lease.leaseId
-  ) {
-    throw new IssueExecutionAttemptRejected(
-      "Consult lease crossed its canonical run projection",
-    );
-  }
-}
-
-function waitForMentionRetry(
-  retryAt: Date,
-  signal: AbortSignal,
-): Promise<void> {
-  if (Number.isNaN(retryAt.getTime())) {
-    throw new IssueExecutionAttemptRejected(
-      "Consult retry time is invalid",
-    );
-  }
-  if (signal.aborted) {
-    throw new IssueExecutionAttemptRejected(
-      "Synchronous consult was cancelled",
-    );
-  }
-  const delay = Math.max(0, retryAt.getTime() - Date.now());
-  if (delay === 0) return Promise.resolve();
-  return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, delay);
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", onAbort);
-      reject(
-        new IssueExecutionAttemptRejected(
-          "Synchronous consult was cancelled",
-        ),
-      );
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-/**
- * Executes a no-selector mention synchronously while retaining the same
- * durable consult ref across retries. Cancellation is fenced either to the
- * exact active attempt or to the exact consult execution scope; no Session-
- * wide or target-agent-wide interrupt is exposed.
- */
-export function createIssueExecutionMentionExecutor(options: {
-  readonly workerId: string;
-  readonly repository: IssueExecutionConsultLeaseRepository;
-  readonly executor: IssueExecutionAttemptExecutor;
-  readonly steeringResults: Pick<IssueExecutionSteeringResultBroker, "publish">;
-  readonly notifyReleasedConsultRef: (refId: string) => Promise<void>;
-  readonly now?: () => Date;
-}) {
-  if (!options.workerId) {
-    throw new IssueExecutionAttemptRejected(
-      "Mention executor worker identity is required",
-    );
-  }
-  const now = options.now ?? (() => new Date());
-  const active = new Set<{
-    readonly input: IssueExecutionMentionInput;
-    controller: AbortController | null;
-    lease: LeasedIssueExecutionRef | null;
-    runId: string | null;
-    refOrdinal: number | null;
-    segmentOrdinal: number | null;
-    operation: Promise<IssueExecutionMentionResult> | null;
-    stopped: boolean;
-    steeringCancellationRequested: boolean;
-    steeringResumeReady: boolean;
-    steeringResumeWaiter: (() => void) | null;
-  }>();
-  let shuttingDown = false;
-
-  return {
-    async executeMention(
-      input: IssueExecutionMentionInput,
-    ): Promise<IssueExecutionMentionResult> {
-      if (shuttingDown) {
-        throw new IssueExecutionAttemptRejected(
-          "Mention executor is shutting down",
-        );
-      }
-      if (
-        input.ref.mode !== "consult" ||
-        input.ref.id.length === 0 ||
-        input.ref.companyId !== input.companyId ||
-        input.ref.issueId !== input.issueId ||
-        input.ref.sessionId !== input.sessionId ||
-        input.ref.ownershipEpoch !== input.ownershipEpoch ||
-        input.ref.consultExecutionId !== input.consultExecutionId ||
-        input.ref.consultCallerRefId !== input.sourceRefId ||
-        input.ref.targetAgentId !== input.targetAgentId ||
-        input.ref.adapterConfigRevisionId !== input.adapterConfigRevisionId ||
-        input.ref.consultChainToken !== input.chainToken
-      ) {
-        throw new IssueExecutionAttemptRejected(
-          "Mention input does not match its canonical consult ref",
-        );
-      }
-      const state = {
-        input,
-        controller: null as AbortController | null,
-        lease: null as LeasedIssueExecutionRef | null,
-        runId: null as string | null,
-        continuityRun: null as LeasedIssueExecutionConsultRun | null,
-        continuityLease: null as LeasedIssueExecutionRef | null,
-        refOrdinal: null as number | null,
-        segmentOrdinal: null as number | null,
-        operation: null as Promise<IssueExecutionMentionResult> | null,
-        stopped: false,
-        steeringCancellationRequested: false,
-        steeringResumeReady: false,
-        steeringResumeWaiter: null as (() => void) | null,
-      };
-      const operation = (async () => {
-        let recoveredLease:
-          | {
-              readonly kind: "leased";
-              readonly lease: LeasedIssueExecutionRef;
-              readonly run: LeasedIssueExecutionConsultRun;
-            }
-          | null = null;
-        while (!state.stopped) {
-          const controller = new AbortController();
-          state.controller = controller;
-          const acquisition: IssueExecutionConsultLeaseAcquisition =
-            recoveredLease ??
-            (await options.repository.leasePersistedConsultRef({
-              refId: input.ref.id,
-              workerId: options.workerId,
-            }));
-          recoveredLease = null;
-          if (acquisition.kind === "queued") {
-            await waitForMentionRetry(
-              new Date(now().getTime() + 25),
-              controller.signal,
-            );
-            continue;
-          }
-          const leased: Extract<
-            IssueExecutionConsultLeaseAcquisition,
-            { readonly kind: "leased" }
-          > = acquisition;
-          assertMentionLease(input, leased.lease);
-          assertConsultRunBinding(input, leased.lease, leased.run);
-          const nextMembership = consultMembership(leased.lease);
-          if (state.continuityRun === null || state.continuityLease === null) {
-            if (leased.run.retryOfRunId !== null) {
-              throw new IssueExecutionAttemptRejected(
-                "Initial consult lease unexpectedly entered a retry lineage",
-              );
-            }
-          } else if (state.continuityRun.runId === leased.run.runId) {
-            if (
-              !sameConsultRunScope(state.continuityRun, leased.run) ||
-              state.continuityRun.retryOfRunId !== leased.run.retryOfRunId ||
-              !sameMembership(
-                consultMembership(state.continuityLease),
-                nextMembership,
-              ) ||
-              state.refOrdinal !== leased.lease.refOrdinal ||
-              state.segmentOrdinal === null ||
-              leased.lease.segmentOrdinal < state.segmentOrdinal ||
-              leased.lease.segmentOrdinal > state.segmentOrdinal + 1
-            ) {
-              throw new IssueExecutionAttemptRejected(
-                "Consult continuation crossed its canonical run member",
-              );
-            }
-          } else if (
-            leased.run.retryOfRunId !== state.continuityRun.runId ||
-            !sameConsultRunScope(state.continuityRun, leased.run) ||
-            !sameMembership(
-              consultMembership(state.continuityLease),
-              nextMembership,
-            ) ||
-            leased.lease.refOrdinal !== 0 ||
-            leased.lease.segmentOrdinal !== 0 ||
-            leased.lease.promptKind !== state.continuityLease.promptKind ||
-            leased.lease.sessionOperation !==
-              state.continuityLease.sessionOperation
-          ) {
-            throw new IssueExecutionAttemptRejected(
-              "Consult continuation crossed its exact retry lineage",
-            );
-          }
-          state.runId = leased.run.runId;
-          state.continuityRun = leased.run;
-          state.continuityLease = leased.lease;
-          state.refOrdinal = leased.lease.refOrdinal;
-          state.segmentOrdinal = leased.lease.segmentOrdinal;
-          state.lease = leased.lease;
-          let releasedConsultRefId: string | null = null;
-          let result: IssueExecutionDispatchResult | undefined;
-          let executionError: unknown;
-          let executionFailed = false;
-          try {
-            result = await options.executor.execute(
-              {
-                companyId: leased.lease.ref.companyId,
-                issueId: leased.lease.ref.issueId,
-                runId: leased.lease.runId,
-                attemptId: leased.lease.attemptId,
-                leaseId: leased.lease.leaseId,
-                leaseGeneration: leased.lease.leaseGeneration,
-              },
-              controller.signal,
-              async ({ result: settled, materialization }) => {
-                if (settled.kind === "retry") {
-                  await options.repository.markRetryable({
-                    lease: leased.lease,
-                    reason: settled.reason,
-                    retryAt: settled.retryAt,
-                    materialization,
-                  });
-                  return;
-                }
-                const settlement =
-                  await options.repository.markTerminal({
-                    lease: leased.lease,
-                    outcome: settled.outcome,
-                    reason: settled.reason,
-                    finishedAt: now(),
-                    materialization,
-                  });
-                if (settlement.laneReleased) {
-                  releasedConsultRefId = leased.lease.ref.id;
-                }
-              },
-            );
-          } catch (error) {
-            executionFailed = true;
-            executionError = error;
-          }
-          if (releasedConsultRefId !== null) {
-            try {
-              await options.notifyReleasedConsultRef(
-                releasedConsultRefId,
-              );
-            } catch (notificationError) {
-              if (!executionFailed) throw notificationError;
-            }
-          }
-          if (executionFailed) {
-            if (
-              !(executionError instanceof IssueExecutionPromptAuthorityLost) ||
-              !authorityLossMatchesLease(executionError, leased.lease) ||
-              state.stopped ||
-              state.steeringCancellationRequested
-            ) {
-              throw executionError;
-            }
-            let recovery: IssueExecutionConsultAuthorityLossRecovery;
-            const recoverExact = async (): Promise<IssueExecutionConsultAuthorityLossRecovery> => {
-              try {
-                return await options.repository.recoverConsultAfterAuthorityLoss({
-                  lease: leased.lease,
-                  workerId: options.workerId,
-                });
-              } catch (recoveryError) {
-                throw new AggregateError(
-                  [executionError, recoveryError],
-                  "exact consult authority-loss recovery failed",
-                );
-              }
-            };
-            recovery = await recoverExact();
-            if (recovery.kind === "scheduled") {
-              await waitForMentionRetry(recovery.retryAt, controller.signal);
-              recovery = await recoverExact();
-              if (recovery.kind === "scheduled") {
-                throw new IssueExecutionAttemptRejected(
-                  "Exact consult authority-loss recovery remained scheduled after its durable due time",
-                );
-              }
-            }
-            if (recovery.kind === "not_recoverable") {
-              throw executionError;
-            }
-            state.lease = null;
-            state.controller = null;
-            if (recovery.kind === "leased") {
-              recoveredLease = recovery;
-              continue;
-            }
-            if (recovery.runId !== leased.run.runId) {
-              throw new IssueExecutionAttemptRejected(
-                "Consult terminal recovery crossed its canonical run",
-              );
-            }
-            await options.notifyReleasedConsultRef(leased.lease.ref.id);
-            if (leased.lease.promptKind === "steering") {
-              options.steeringResults.publish({
-                companyId: leased.lease.companyId,
-                issueId: leased.lease.issueId,
-                runId: recovery.runId,
-                refId: leased.lease.ref.id,
-                refOrdinal: leased.lease.refOrdinal,
-                segmentOrdinal: leased.lease.segmentOrdinal,
-                outcome: recovery.outcome,
-                response: recovery.finalText,
-                reason: recovery.reason,
-              });
-            }
-            if (recovery.outcome !== "succeeded") {
-              throw new IssueExecutionAttemptRejected(
-                recovery.reason ??
-                  `Synchronous consult ended with ${recovery.outcome}`,
-              );
-            }
-            return {
-              runId: recovery.runId,
-              response: recovery.finalText,
-            };
-          }
-          if (!result) {
-            throw new IssueExecutionAttemptRejected(
-              "Consult execution returned no settlement result",
-            );
-          }
-          if (
-            leased.lease.promptKind === "steering" &&
-            result.kind === "terminal"
-          ) {
-            options.steeringResults.publish({
-              companyId: leased.lease.companyId,
-              issueId: leased.lease.issueId,
-              runId: leased.lease.runId,
-              refId: leased.lease.ref.id,
-              refOrdinal: leased.lease.refOrdinal,
-              segmentOrdinal: leased.lease.segmentOrdinal,
-              outcome: result.outcome,
-              response: result.finalText ?? "",
-              reason: result.reason,
-            });
-          }
-          if (result.kind === "retry") {
-            state.lease = null;
-            await waitForMentionRetry(
-              result.retryAt,
-              controller.signal,
-            );
-            continue;
-          }
-          state.lease = null;
-          state.controller = null;
-          if (
-            result.outcome === "cancelled" &&
-            state.steeringCancellationRequested &&
-            !state.stopped
-          ) {
-            if (!state.steeringResumeReady) {
-              await new Promise<void>((resolve) => {
-                state.steeringResumeWaiter = resolve;
-              });
-            }
-            state.steeringResumeWaiter = null;
-            if (state.stopped) break;
-            state.steeringResumeReady = false;
-            state.steeringCancellationRequested = false;
-            continue;
-          }
-          if (result.outcome !== "succeeded") {
-            throw new IssueExecutionAttemptRejected(
-              result.reason ??
-                `Synchronous consult ended with ${result.outcome}`,
-            );
-          }
-          return {
-            runId: leased.run.runId,
-            response: result.finalText ?? "",
-          };
-        }
-        throw new IssueExecutionAttemptRejected(
-          "Synchronous consult was cancelled",
-        );
-      })();
-      state.operation = operation;
-      active.add(state);
-      try {
-        return await operation;
-      } finally {
-        state.stopped = true;
-        state.controller = null;
-        state.steeringResumeWaiter?.();
-        active.delete(state);
-      }
-    },
-
-    signalAttemptCancellation(
-      input: IssueExecutionAttemptCancellationSignal,
-    ): boolean {
-      for (const state of active) {
-        if (
-          state.lease &&
-          mentionLeaseMatchesAttemptCancellation(state.lease, input)
-        ) {
-          state.steeringCancellationRequested = true;
-          state.controller?.abort("issue_execution_attempt_cancelled");
-          return true;
-        }
-      }
-      return false;
-    },
-
-    notifySteeringResumed(
-      input: IssueExecutionSteeringResultIdentity,
-    ): boolean {
-      for (const state of active) {
-        if (
-          !state.steeringCancellationRequested ||
-          state.input.companyId !== input.companyId ||
-          state.input.issueId !== input.issueId ||
-          state.input.ref.id !== input.refId ||
-          state.runId !== input.runId ||
-          state.refOrdinal !== input.refOrdinal ||
-          state.segmentOrdinal === null ||
-          input.segmentOrdinal !== state.segmentOrdinal + 1
-        ) {
-          continue;
-        }
-        state.steeringResumeReady = true;
-        state.steeringResumeWaiter?.();
-        return true;
-      }
-      return false;
-    },
-
-    signalExecutionScopeCancellation(
-      input: IssueExecutionScopeCancellationSignal,
-    ): boolean {
-      if (
-        input.mode !== "consult" ||
-        input.authorityId !== null ||
-        input.consultExecutionId === null
-      ) {
-        return false;
-      }
-      for (const state of active) {
-        const ref = state.input.ref;
-        if (
-          state.input.companyId === input.companyId &&
-          state.input.issueId === input.issueId &&
-          state.input.sessionId === input.sessionId &&
-          state.input.ownershipEpoch === input.ownershipEpoch &&
-          state.input.consultExecutionId === input.consultExecutionId &&
-          ref.executionScopeId === input.executionScopeId
-        ) {
-          state.stopped = true;
-          state.controller?.abort(input.reason);
-          state.steeringResumeWaiter?.();
-          return true;
-        }
-      }
-      return false;
-    },
-
-    async shutdown(): Promise<void> {
-      shuttingDown = true;
-      for (const state of active) {
-        state.stopped = true;
-        state.controller?.abort("paperclip_worker_shutdown");
-        state.steeringResumeWaiter?.();
-      }
-      await Promise.allSettled(
-        [...active]
-          .map((state) => state.operation)
-          .filter(
-            (operation): operation is Promise<IssueExecutionMentionResult> =>
-              operation !== null,
-          ),
-      );
-    },
-  };
-}
-
-export type IssueExecutionMentionExecutor = ReturnType<
-  typeof createIssueExecutionMentionExecutor
->;

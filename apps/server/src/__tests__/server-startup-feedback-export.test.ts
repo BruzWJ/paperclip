@@ -182,9 +182,6 @@ vi.mock("../services/index.js", () => ({
   createPostgresSystemEscalationService: vi.fn(() => ({
     reconcile: vi.fn(async () => ({ terminalized: 0, ensured: 0 })),
   })),
-  createPostgresIssueExecutionMentionExecutor: vi.fn(() => ({
-    executeMention: vi.fn(async () => undefined),
-  })),
   createIssueExecutionCancellationService: vi.fn(() => ({
     reconcileIntent: vi.fn(async () => "confirmed"),
     reconcilePending: vi.fn(async () => ({
@@ -203,10 +200,6 @@ vi.mock("../services/index.js", () => ({
     },
     dispatcher: {
       reconcilePersistedRefs: vi.fn(async () => ({ discovered: 0 })),
-      shutdown: vi.fn(async () => undefined),
-    },
-    mentionExecutor: {
-      executeMention: vi.fn(async () => undefined),
       shutdown: vi.fn(async () => undefined),
     },
     cancellation: {

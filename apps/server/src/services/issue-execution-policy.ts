@@ -226,23 +226,6 @@ function buildScheduledMonitorState(
   };
 }
 
-function buildTriggeredMonitorState(input: {
-  previous: IssueExecutionMonitorState | null;
-  triggeredAt: Date;
-}): IssueExecutionMonitorState {
-  return {
-    status: "triggered",
-    nextCheckAt: null,
-    lastTriggeredAt: input.triggeredAt.toISOString(),
-    attemptCount: (input.previous?.attemptCount ?? 0) + 1,
-    notes: input.previous?.notes ?? null,
-    scheduledBy: input.previous?.scheduledBy ?? null,
-    ...monitorMetadataFromState(input.previous),
-    clearedAt: null,
-    clearReason: null,
-  };
-}
-
 function buildClearedMonitorState(input: {
   previous: IssueExecutionMonitorState | null;
   clearReason: IssueExecutionMonitorClearReason;
@@ -1004,67 +987,11 @@ export function buildInitialIssueMonitorFields(input: {
   };
 }
 
-export function buildIssueMonitorTriggeredPatch(input: {
-  issue: IssueLike;
-  policy: IssueExecutionPolicy | null;
-  triggeredAt: Date;
-}) {
-  const existingState = parseIssueExecutionState(input.issue.executionState);
-  const currentMonitorState = derivePersistedMonitorState({
-    issue: input.issue,
-    state: existingState,
-    policy: input.policy,
-  });
-  const nextMonitorState = buildTriggeredMonitorState({
-    previous: currentMonitorState,
-    triggeredAt: input.triggeredAt,
-  });
-
-  return {
-    executionPolicy: stripMonitorFromExecutionPolicy(input.policy) as Record<string, unknown> | null,
-    executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
-    monitorNextCheckAt: null,
-    monitorLastTriggeredAt: input.triggeredAt,
-    monitorAttemptCount: nextMonitorState.attemptCount,
-    monitorNotes: nextMonitorState.notes,
-    monitorScheduledBy: nextMonitorState.scheduledBy,
-  };
-}
-
-export function buildIssueMonitorClearedPatch(input: {
-  issue: IssueLike;
-  policy: IssueExecutionPolicy | null;
-  clearReason: IssueExecutionMonitorClearReason;
-  clearedAt?: Date;
-}) {
-  const existingState = parseIssueExecutionState(input.issue.executionState);
-  const currentMonitorState = derivePersistedMonitorState({
-    issue: input.issue,
-    state: existingState,
-    policy: input.policy,
-  });
-  const nextMonitorState = buildClearedMonitorState({
-    previous: currentMonitorState,
-    clearReason: input.clearReason,
-    clearedAt: input.clearedAt ?? new Date(),
-  });
-
-  return {
-    executionPolicy: stripMonitorFromExecutionPolicy(input.policy) as Record<string, unknown> | null,
-    executionState: executionStateWithMonitor(existingState, nextMonitorState) as Record<string, unknown> | null,
-    monitorNextCheckAt: null,
-  };
-}
-
 export function applyIssueExecutionPolicyTransition(input: TransitionInput): TransitionResult {
   const stageResult = applyIssueExecutionStageTransition(input);
   const monitorPatch = applyMonitorTransition(input, stageResult.patch);
   Object.assign(stageResult.patch, monitorPatch);
   return stageResult;
-}
-
-export function applyIssueMonitorPolicyTransition(input: TransitionInput): TransitionResult {
-  return { patch: applyMonitorTransition(input, {}) };
 }
 
 type IssueExecutionPolicyActor = {

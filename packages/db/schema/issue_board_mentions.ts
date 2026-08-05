@@ -33,7 +33,6 @@ export const issueBoardMentions = pgTable(
     agentId: uuid("agent_id").notNull(),
     runId: uuid("run_id").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
-    reason: text("reason"),
     commentId: uuid("comment_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -43,10 +42,6 @@ export const issueBoardMentions = pgTable(
     check(
       "issue_board_mentions_epoch_check",
       sql`${table.ownershipEpoch} > 0`,
-    ),
-    check(
-      "issue_board_mentions_reason_check",
-      sql`${table.reason} is null or length(btrim(${table.reason})) > 0`,
     ),
     foreignKey({
       columns: [table.companyId, table.issueId],

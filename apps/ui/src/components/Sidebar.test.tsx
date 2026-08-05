@@ -299,11 +299,15 @@ describe("Sidebar", () => {
     });
   });
 
-  it("does not poll attention until Decisions is enabled", async () => {
+  it("polls canonical Board mentions even when Decisions is disabled", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
+    mockAttentionApi.list.mockResolvedValue({
+      items: [{ sourceKind: "mention_board" }],
+    });
     const root = await renderSidebar();
 
-    expect(mockAttentionApi.list).not.toHaveBeenCalled();
+    expect(mockAttentionApi.list).toHaveBeenCalledWith("company-1");
+    expect(container.textContent).toContain("Decisions");
 
     flushSync(() => {
       root.unmount();

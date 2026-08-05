@@ -38,8 +38,7 @@ and execution ref:
 - the `agent_execution` branch of audited board reopen for an invokable agent
   owner;
 - an allowed routine or plugin-created issue;
-- a human owner mention, typed system nudge, or the one finalization-bound
-  same-agent liveness follow-up.
+- a human owner mention or typed system nudge.
 
 There is no generic manual invoke, provider-visible wake API, or model-producing
 readiness probe. A retry may redeliver the same ref only when Paperclip can prove
@@ -207,8 +206,8 @@ that root in canonical sequence.
 
 No tool-free final closes an issue or invokes another agent. The current owner
 must call `issue_update` with `done` or `cancelled` and a final message to close
-an issue. A nonterminal issue that becomes idle is handled only by the bounded
-post-finalization same-agent reply/liveness rule.
+an issue. A nonterminal issue that becomes idle remains idle until a canonical
+input explicitly admits more work.
 
 ## 8. Common operating patterns
 

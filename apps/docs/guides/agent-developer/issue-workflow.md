@@ -1,6 +1,6 @@
 ---
 title: Issue Workflow
-summary: Work, disposition, delegation, and consultation through the compiled run interface
+summary: Work, disposition, delegation, and agent handoff through the compiled run interface
 ---
 
 Paperclip admits agent work from a persisted issue-execution reference. The
@@ -67,8 +67,8 @@ If progress cannot continue:
 
 The owner form accepts the canonical lifecycle values `open`, `blocked`,
 `done`, and `cancelled`, plus a required message. It is present only for the
-current owner execution. Consult runs cannot change owner lifecycle or
-disposition.
+current owner execution. Non-owner handoff runs cannot change owner lifecycle
+or disposition.
 
 ## Delegate direct child work
 
@@ -107,7 +107,7 @@ An exact creator execution may receive two separate capabilities:
 Both tools enumerate the only allowed targets in their compiled schema.
 Creator authority does not grant arbitrary issue mutation.
 
-## Consult another agent
+## Hand off to another agent
 
 When `mention_agent` is present, use an agent ID from its compiled catalog:
 
@@ -118,17 +118,29 @@ When `mention_agent` is present, use an agent ID from its compiled catalog:
 }
 ```
 
-A consultation is synchronous, issue-scoped, and fresh. It does not transfer
-ownership and the consulted run has no owner or creator lifecycle authority.
+`mention_agent` is a durable, same-issue handoff that is terminal for the
+caller's turn. A successful call returns only an admission acknowledgement;
+the caller then ends normally instead of waiting for the recipient's output.
+Paperclip starts the recipient only after the caller finalizes.
+
+The recipient's final response becomes a fresh one-hop message and run for its
+direct parent. This repeats until the current issue owner/root receives it. An
+unavailable direct parent stops the route; Paperclip never skips to a higher
+ancestor and never auto-notifies the Board. Each hop is a fresh Paperclip run,
+although a compatible ACP backend session may resume when `carry_context` and
+the exact issue, epoch, agent, and adapter-revision scope match.
+
+The implicit return route does not add the direct parent to the outgoing target
+catalog. Explicit upward mentions require the `mention_any_ancestor` grant.
 
 ## Human decisions and reopen
 
 Use `issue_update(status: "blocked")` to record blocked lifecycle and notify the
 issue creator. When `mention_board` is present, use it to request information or
-direction from the collective Board. Formal approvals remain board-controlled
-durable decisions.
+direction from the collective Board, then end the turn after its durable
+acknowledgement. Formal approvals remain board-controlled durable decisions.
 
-An agent comment, creator message, or consultation never implicitly reopens a
+An agent comment, creator message, or handoff never implicitly reopens a
 terminal issue. Reopen is a separate audited board command that preserves the
 current owner, ownership epoch, Session, and workspace binding. It invokes a
 provider only when that preserved owner is an invokable agent; reopening a
@@ -141,7 +153,7 @@ named-user or collective-board-owned system escalation is provider-free.
 - Preserve the immutable request as the issue's work boundary.
 - Publish progress and final disposition with the owner form of `issue_update`.
 - Create only direct children through `issue_create`.
-- Use `mention_agent` for bounded consultation, not ownership transfer.
+- Use `mention_agent` as a terminal durable handoff, not ownership transfer.
 - Use `mention_board` for explicit Board direction, not lifecycle or approval.
 - Never call generic agent, issue, comment, or activity REST from a provider
   execution.

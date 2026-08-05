@@ -4,6 +4,9 @@ import {
   IssueExecutionFinalizationRejected,
   type BuildIssueExecutionFinalizationPlanInput,
 } from "./issue-execution-finalization.js";
+import {
+  resolveMentionResponseDirectParent,
+} from "./issue-execution-finalization-postgres.js";
 
 const base = {
   kind: "base" as const,
@@ -46,6 +49,28 @@ function productive(
 }
 
 describe("issue-execution finalization frontier", () => {
+  it("routes mention responses exactly one parent hop toward the issue owner", () => {
+    const hierarchy = [
+      { id: "owner", reportsTo: null },
+      { id: "manager", reportsTo: "owner" },
+      { id: "leaf", reportsTo: "manager" },
+      { id: "other-root", reportsTo: null },
+    ];
+
+    expect(
+      resolveMentionResponseDirectParent(hierarchy, "leaf", "owner"),
+    ).toBe("manager");
+    expect(
+      resolveMentionResponseDirectParent(hierarchy, "manager", "owner"),
+    ).toBe("owner");
+    expect(
+      resolveMentionResponseDirectParent(hierarchy, "owner", "owner"),
+    ).toBeNull();
+    expect(
+      resolveMentionResponseDirectParent(hierarchy, "leaf", "other-root"),
+    ).toBeNull();
+  });
+
   it("derives a stable text-free digest and ordered dependency rows", () => {
     const first = buildIssueExecutionFinalizationPlan(productive());
     const second = buildIssueExecutionFinalizationPlan(productive());

@@ -57,7 +57,12 @@ Failure is terminal or held according to the typed source policy; the dispatcher
 
 ## Input ordering and continuity
 
-The issue-session input inbox preserves causal admission order. Eligible true-carry steers coalesce only at copied safe turn boundaries. False-carry refs, consults, new epochs, reset generations, and adapter revisions each use independent fresh views and never join a live native carrier.
+The issue-session input inbox preserves causal admission order. Eligible
+true-carry steers coalesce only at copied safe turn boundaries. False-carry
+refs, new epochs, reset generations, adapter revisions, or any
+agent/lane/workspace/context mismatch use independent fresh views. A consult
+may resume only that recipient's own exact compatible true-carry correlation;
+it never joins or inherits the caller's native carrier.
 
 A fresh execution lowers:
 
