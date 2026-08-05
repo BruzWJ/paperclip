@@ -210,6 +210,42 @@ export interface PluginLocalFolderDeclaration {
   requiredFiles?: string[];
 }
 
+/** A single problem the host found while validating a configured local folder. */
+export interface PluginLocalFolderProblem {
+  code:
+    | "not_configured"
+    | "not_absolute"
+    | "missing"
+    | "not_directory"
+    | "not_readable"
+    | "not_writable"
+    | "missing_directory"
+    | "missing_file"
+    | "path_traversal"
+    | "symlink_escape"
+    | "atomic_write_failed";
+  message: string;
+  path?: string;
+}
+
+/** Host-computed health snapshot for a configured plugin local folder. */
+export interface PluginLocalFolderStatus {
+  folderKey: string;
+  configured: boolean;
+  path: string | null;
+  realPath: string | null;
+  access: "read" | "readWrite";
+  readable: boolean;
+  writable: boolean;
+  requiredDirectories: string[];
+  requiredFiles: string[];
+  missingDirectories: string[];
+  missingFiles: string[];
+  healthy: boolean;
+  problems: PluginLocalFolderProblem[];
+  checkedAt: string;
+}
+
 /**
  * Declares a normal Paperclip project that a plugin can provision and later
  * resolve by stable key within each company.

@@ -9,20 +9,17 @@ export const upstreamTransferSchema = {
 
 export type NormalizedSha256 = `sha256:${string}`;
 
-export interface SourceEntityKey {
-  sourceInstanceId: string;
-  sourceCompanyId: string;
-  sourceEntityType: string;
-  sourceEntityId: string;
-  sourceNaturalKey?: string;
-}
+import type {
+  LocalUpstreamExportEntityInput,
+  SourceEntityKey,
+  UpstreamTransferWarning,
+} from "@paperclipai/shared/cloud-transfer-entities";
 
-export interface UpstreamTransferWarning {
-  code: string;
-  severity: "info" | "warning" | "blocker";
-  message: string;
-  entity?: SourceEntityKey;
-}
+export type {
+  LocalUpstreamExportEntityInput,
+  SourceEntityKey,
+  UpstreamTransferWarning,
+};
 
 export interface UpstreamTransferEntityRecord {
   key: SourceEntityKey;
@@ -67,14 +64,6 @@ export interface UpstreamTransferManifest {
   warnings: UpstreamTransferWarning[];
   featureFlags: string[];
   manifestHash: NormalizedSha256;
-}
-
-export interface LocalUpstreamExportEntityInput {
-  key: SourceEntityKey;
-  body: Record<string, unknown>;
-  dependencies?: SourceEntityKey[];
-  warnings?: UpstreamTransferWarning[];
-  conflictKeys?: string[];
 }
 
 export interface LocalUpstreamExportEntity {

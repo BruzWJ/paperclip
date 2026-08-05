@@ -5,9 +5,9 @@ import { Command } from "commander";
 import pc from "picocolors";
 import type {
   CompanyPortabilityExportResult,
-  CompanyPortabilityFileEntry,
   InstanceExperimentalSettings,
 } from "@paperclipai/shared";
+import { buildEntitiesFromPortableExport } from "@paperclipai/shared/cloud-transfer-entities";
 import { openUrl } from "../../client/board-auth.js";
 import { resolvePaperclipInstanceId } from "../../config/home.js";
 import {
@@ -302,7 +302,7 @@ export async function buildBundleFromLocalCompany(input: {
     targetOrigin: input.discovery.stack.origin,
     supportedSchemaMajor: input.discovery.transfer.supportedSchemaMajor,
   };
-  const entities = buildEntitiesFromPortableExport(input.localCompanyId, input.connection.sourceInstanceId, exported);
+  const entities = buildEntitiesFromPortableExport(input.localCompanyId, input.connection.sourceInstanceId, exported, shortHash);
   const idempotencyKey = [
     input.mode,
     input.connection.sourceInstanceId,
@@ -433,60 +433,6 @@ async function authorizeWithDeviceCode(
     }
   }
   throw new Error("Device-code authorization expired before it was approved.");
-}
-
-function buildEntitiesFromPortableExport(
-  localCompanyId: string,
-  sourceInstanceId: string,
-  exported: CompanyPortabilityExportResult,
-): LocalUpstreamExportEntityInput[] {
-  const companyKey: SourceEntityKey = {
-    sourceInstanceId,
-    sourceCompanyId: localCompanyId,
-    sourceEntityType: "company",
-    sourceEntityId: localCompanyId,
-    sourceNaturalKey: exported.manifest.company?.name ?? localCompanyId,
-  };
-  const entities: LocalUpstreamExportEntityInput[] = [
-    {
-      key: companyKey,
-      body: {
-        kind: "paperclip_company_portability_manifest",
-        manifest: exported.manifest,
-        rootPath: exported.rootPath,
-        paperclipExtensionPath: exported.paperclipExtensionPath,
-        fileCount: Object.keys(exported.files).length,
-      },
-      conflictKeys: [`company:${companyKey.sourceNaturalKey ?? localCompanyId}`],
-    },
-  ];
-
-  for (const [filePath, entry] of Object.entries(exported.files).sort(([left], [right]) => left.localeCompare(right))) {
-    entities.push({
-      key: {
-        sourceInstanceId,
-        sourceCompanyId: localCompanyId,
-        sourceEntityType: "company_setting",
-        sourceEntityId: shortHash(filePath),
-        sourceNaturalKey: filePath,
-      },
-      body: {
-        kind: "paperclip_portable_file",
-        path: filePath,
-        entry: normalizePortableFileEntry(entry),
-      },
-      dependencies: [companyKey],
-      conflictKeys: [`portable_file:${filePath}`],
-    });
-  }
-  return entities;
-}
-
-function normalizePortableFileEntry(entry: CompanyPortabilityFileEntry): Record<string, unknown> {
-  if (typeof entry === "string") {
-    return { encoding: "utf8", data: entry };
-  }
-  return { ...entry };
 }
 
 async function assertCloudSyncEnabled(settingsPromise: Promise<InstanceExperimentalSettings | null>): Promise<void> {

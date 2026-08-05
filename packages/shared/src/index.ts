@@ -1295,6 +1295,8 @@ export type {
   PluginManagedSkillDeclaration,
   PluginManagedSkillFileDeclaration,
   PluginLocalFolderDeclaration,
+  PluginLocalFolderProblem,
+  PluginLocalFolderStatus,
   PluginManagedAgentResolution,
   PluginManagedProjectResolution,
   PluginManagedRoutineResolution,
