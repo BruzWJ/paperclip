@@ -35,8 +35,12 @@ import {
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
+import { AGENT_FILTER_TABS } from "../lib/agent-filter-tabs";
 
-export const AGENT_FILTER_TABS = ["all", "active", "paused", "error"] as const;
+// Lives in lib/agent-filter-tabs so App.tsx can register the tab routes
+// without pulling this (lazily loaded) page into the eager entry graph.
+// Re-exported here so existing importers keep working.
+export { AGENT_FILTER_TABS };
 type FilterTab = (typeof AGENT_FILTER_TABS)[number];
 
 const AGENT_FILTER_TAB_ITEMS: { value: FilterTab; label: string }[] = [

@@ -28,7 +28,6 @@ import {
   routinesApi,
   type RestoreRoutineRevisionResponse,
 } from "../api/routines";
-import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { buildLineDiff, type DiffRow } from "../lib/line-diff";
 import { relativeTime } from "../lib/utils";
@@ -1357,10 +1356,4 @@ function compareTriggers(
   }
 }
 
-export function isUpdateConflictError(error: unknown): error is ApiError {
-  return error instanceof ApiError && error.status === 409;
-}
-
 export type RoutineHistoryDirtyFieldDescriptor = DirtyFieldDescriptor;
-export type RoutineHistoryAgentLookup = AgentLookup;
-export type RoutineHistoryProjectLookup = ProjectLookup;

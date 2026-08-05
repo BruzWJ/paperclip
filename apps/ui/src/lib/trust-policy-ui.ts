@@ -15,17 +15,6 @@ export type LowTrustBoundaryTarget =
   | { type: "root_issue"; id: string }
   | { type: "issue"; id: string };
 
-export const TRUST_PRESET_LABELS: Record<TrustPreset, string> = {
-  standard: "Standard",
-  low_trust_review: "Low-trust review",
-};
-
-export const TRUST_PRESET_DESCRIPTIONS: Record<TrustPreset, string> = {
-  standard: "Company-visible collaboration. This is the default for normal work.",
-  low_trust_review:
-    "Contained for hostile or untrusted input. Narrow Paperclip API, quarantined output. Use for PR review and external-content triage.",
-};
-
 export function getTrustPreset(governance: Partial<AgentGovernancePolicy> | null | undefined): TrustPreset {
   return governance?.trustPreset === LOW_TRUST_REVIEW_PRESET ? LOW_TRUST_REVIEW_PRESET : DEFAULT_TRUST_PRESET;
 }
@@ -164,10 +153,6 @@ export function summarizeLowTrustBoundaryTarget(
   if (target?.type === "issue") return `Issue ${target.id.slice(0, 8)}`;
   if (!boundary || countBoundaryTargets(boundary) === 0) return "No boundary selected";
   return `${countBoundaryTargets(boundary)} boundaries`;
-}
-
-export function lowTrustBoundaryHasScope(boundary: LowTrustBoundary | null | undefined) {
-  return countBoundaryTargets(boundary) > 0;
 }
 
 export function sourceTrustLabel(sourceTrust: SourceTrustMetadata | null | undefined) {

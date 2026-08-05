@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useId } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -14,8 +14,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { HelpCircle, ChevronDown, ChevronRight } from "lucide-react";
-import { cn } from "../lib/utils";
+import { HelpCircle } from "lucide-react";
 
 /* ---- Help text for (?) tooltips ---- */
 export const help: Record<string, string> = {
@@ -95,138 +94,6 @@ export function ToggleField({
         onCheckedChange={onChange}
       />
     </div>
-  );
-}
-
-export function ToggleWithNumber({
-  label,
-  hint,
-  checked,
-  onCheckedChange,
-  number,
-  onNumberChange,
-  numberLabel,
-  numberHint,
-  numberPrefix,
-  showNumber,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onCheckedChange: (v: boolean) => void;
-  number: number;
-  onNumberChange: (v: number) => void;
-  numberLabel: string;
-  numberHint?: string;
-  numberPrefix?: string;
-  showNumber: boolean;
-}) {
-  const numberInputId = useId();
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5">
-          {showNumber ? (
-            <label htmlFor={numberInputId} className="text-xs text-muted-foreground">
-              {label}
-            </label>
-          ) : (
-            <span className="text-xs text-muted-foreground">{label}</span>
-          )}
-          {hint && <HintIcon text={hint} />}
-        </div>
-        <ToggleSwitch
-          checked={checked}
-          onCheckedChange={onCheckedChange}
-        />
-      </div>
-      {showNumber && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {numberPrefix && <span>{numberPrefix}</span>}
-          <input
-            id={numberInputId}
-            type="number"
-            className="w-16 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center focus-visible:ring-2 focus-visible:ring-ring"
-            value={number}
-            onChange={(e) => onNumberChange(Number(e.target.value))}
-          />
-          <span>{numberLabel}</span>
-          {numberHint && <HintIcon text={numberHint} />}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function CollapsibleSection({
-  title,
-  icon,
-  open,
-  onToggle,
-  bordered,
-  children,
-}: {
-  title: string;
-  icon?: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  bordered?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={cn(bordered && "border-t border-border")}>
-      <button
-        className="flex items-center gap-2 w-full px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent/30 transition-colors"
-        onClick={onToggle}
-      >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        {icon}
-        {title}
-      </button>
-      {open && <div className="px-4 pb-3">{children}</div>}
-    </div>
-  );
-}
-
-export function AutoExpandTextarea({
-  value,
-  onChange,
-  onBlur,
-  placeholder,
-  minRows,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onBlur?: () => void;
-  placeholder?: string;
-  minRows?: number;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const rows = minRows ?? 3;
-  const lineHeight = 20;
-  const minHeight = rows * lineHeight;
-
-  const adjustHeight = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.max(minHeight, el.scrollHeight)}px`;
-  }, [minHeight]);
-
-  useEffect(() => { adjustHeight(); }, [value, adjustHeight]);
-
-  return (
-    <textarea
-      ref={textareaRef}
-      aria-label="Configuration text"
-      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden focus-visible:ring-2 focus-visible:ring-ring"
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={onBlur}
-      style={{ minHeight }}
-    />
   );
 }
 

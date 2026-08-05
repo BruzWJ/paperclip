@@ -18,8 +18,6 @@ export interface FolderTreeNode {
   children: FolderTreeNode[];
 }
 
-export type ReservedRootKey = "my" | "projects" | "bundled";
-
 export interface SkillFolderTreeModel {
   /** "My Skills" reserved root, or null when it hasn't been provisioned yet. */
   my: FolderTreeNode | null;
@@ -35,12 +33,6 @@ export interface SkillFolderTreeModel {
   childrenById: Map<string, FolderTreeNode[]>;
   /** All top-level nodes in reserved-then-company order (for move pickers). */
   roots: FolderTreeNode[];
-}
-
-const RESERVED_ROOT_SYSTEM_KEYS = new Set<string>(["my", "projects", "bundled"]);
-
-export function isReservedRootSystemKey(systemKey: string | null | undefined): boolean {
-  return Boolean(systemKey && RESERVED_ROOT_SYSTEM_KEYS.has(systemKey));
 }
 
 /** True for the Bundled root or anything nested inside it (read-only subtree). */
@@ -191,10 +183,6 @@ export function skillFolderPathDisplayFallback(folderPath: string | null | undef
   else if (root === "bundled") labels[0] = "Bundled";
   else labels.unshift("Company");
   return labels.join(" / ");
-}
-
-export function emptySkillFolderTree(): SkillFolderTreeModel {
-  return buildSkillFolderTree([]);
 }
 
 export function treeFromResult(result: FolderListResult | null | undefined): SkillFolderTreeModel {

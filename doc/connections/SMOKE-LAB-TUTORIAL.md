@@ -44,7 +44,7 @@ the URL bar, e.g. `PAP`). Replace it in the example paths.
 
 ## 1. Turn on the flag
 
-1. Open **Instance settings → Experimental** (`/{PREFIX}/settings/experimental`).
+1. Open **Instance settings → Experimental** (`/{PREFIX}/company/settings/instance/experimental`).
 2. Find the **Smoke Lab** card and toggle it **on**.
 3. **You should see:** the toggle stays on after a refresh.
 

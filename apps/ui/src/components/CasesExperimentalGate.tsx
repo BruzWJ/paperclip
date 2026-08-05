@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
-import { Link, Navigate } from "@/lib/router";
+import { Link, Navigate, Outlet } from "@/lib/router";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { queryKeys } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,9 @@ import { Card } from "@/components/ui/card";
 /**
  * Route guard for the experimental Cases feature (PAP-12947). Redirects to the
  * dashboard when `enableCases` is off, mirroring {@link PipelinesExperimentalGate}.
+ * Renders `children` when used as a wrapper, or an `<Outlet />` as a layout route.
  */
-export function CasesExperimentalGate({ children }: { children: ReactNode }) {
+export function CasesExperimentalGate({ children }: { children?: ReactNode }) {
   const {
     data: experimentalSettings,
     isError,
@@ -35,7 +36,7 @@ export function CasesExperimentalGate({ children }: { children: ReactNode }) {
   if (experimentalSettings?.enableCases !== true) {
     return <Navigate to="/dashboard" replace />;
   }
-  return <>{children}</>;
+  return <>{children ?? <Outlet />}</>;
 }
 
 function CasesAvailabilityEmptyState({

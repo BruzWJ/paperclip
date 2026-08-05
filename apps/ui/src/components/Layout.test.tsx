@@ -820,32 +820,35 @@ describe("Layout", () => {
     });
   });
 
+  /** Fresh page + routeSidebar slot pair for the wiki plugin (new objects per test). */
+  const wikiPluginSlots = () => [
+    {
+      type: "page",
+      id: "wiki-page",
+      displayName: "Wiki Page",
+      exportName: "WikiPage",
+      routePath: "wiki",
+      pluginId: "plugin-1",
+      pluginKey: "wiki-plugin",
+      pluginDisplayName: "Wiki Plugin",
+      pluginVersion: "1.0.0",
+    },
+    {
+      type: "routeSidebar",
+      id: "wiki-route-sidebar",
+      displayName: "Wiki Sidebar",
+      exportName: "WikiSidebar",
+      routePath: "wiki",
+      pluginId: "plugin-1",
+      pluginKey: "wiki-plugin",
+      pluginDisplayName: "Wiki Plugin",
+      pluginVersion: "1.0.0",
+    },
+  ];
+
   it("renders a route-scoped plugin sidebar for a matching plugin page route", async () => {
     currentPathname = "/PAP/wiki";
-    mockPluginSlots.slots = [
-      {
-        type: "page",
-        id: "wiki-page",
-        displayName: "Wiki Page",
-        exportName: "WikiPage",
-        routePath: "wiki",
-        pluginId: "plugin-1",
-        pluginKey: "wiki-plugin",
-        pluginDisplayName: "Wiki Plugin",
-        pluginVersion: "1.0.0",
-      },
-      {
-        type: "routeSidebar",
-        id: "wiki-route-sidebar",
-        displayName: "Wiki Sidebar",
-        exportName: "WikiSidebar",
-        routePath: "wiki",
-        pluginId: "plugin-1",
-        pluginKey: "wiki-plugin",
-        pluginDisplayName: "Wiki Plugin",
-        pluginVersion: "1.0.0",
-      },
-    ];
+    mockPluginSlots.slots = wikiPluginSlots();
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -881,30 +884,7 @@ describe("Layout", () => {
 
   it("keeps the route-scoped plugin sidebar on nested plugin page routes", async () => {
     currentPathname = "/PAP/wiki/page/templates";
-    mockPluginSlots.slots = [
-      {
-        type: "page",
-        id: "wiki-page",
-        displayName: "Wiki Page",
-        exportName: "WikiPage",
-        routePath: "wiki",
-        pluginId: "plugin-1",
-        pluginKey: "wiki-plugin",
-        pluginDisplayName: "Wiki Plugin",
-        pluginVersion: "1.0.0",
-      },
-      {
-        type: "routeSidebar",
-        id: "wiki-route-sidebar",
-        displayName: "Wiki Sidebar",
-        exportName: "WikiSidebar",
-        routePath: "wiki",
-        pluginId: "plugin-1",
-        pluginKey: "wiki-plugin",
-        pluginDisplayName: "Wiki Plugin",
-        pluginVersion: "1.0.0",
-      },
-    ];
+    mockPluginSlots.slots = wikiPluginSlots();
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -948,30 +928,7 @@ describe("Layout", () => {
       name: "Paperclip",
     };
     mockCompanyState.selectedCompanyId = "company-1";
-    mockPluginSlots.slots = [
-      {
-        type: "page",
-        id: "wiki-page",
-        displayName: "Wiki Page",
-        exportName: "WikiPage",
-        routePath: "wiki",
-        pluginId: "plugin-1",
-        pluginKey: "wiki-plugin",
-        pluginDisplayName: "Wiki Plugin",
-        pluginVersion: "1.0.0",
-      },
-      {
-        type: "routeSidebar",
-        id: "wiki-route-sidebar",
-        displayName: "Wiki Sidebar",
-        exportName: "WikiSidebar",
-        routePath: "wiki",
-        pluginId: "plugin-1",
-        pluginKey: "wiki-plugin",
-        pluginDisplayName: "Wiki Plugin",
-        pluginVersion: "1.0.0",
-      },
-    ];
+    mockPluginSlots.slots = wikiPluginSlots();
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },

@@ -412,7 +412,7 @@ export function Routines() {
           : "Draft saved. Add a default agent before enabling automation.",
         tone: "success",
       });
-      navigate(`/routines/${routine.id}?tab=triggers`);
+      navigate(`/routines/${routine.id}/triggers`);
     },
   });
   const createFolder = useMutation({

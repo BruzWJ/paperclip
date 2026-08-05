@@ -241,12 +241,6 @@ export function createIssueDetailPath(issuePathId: string): string {
   return `/issues/${issuePathId}`;
 }
 
-export function hasLegacyIssueDetailQuery(search?: string): boolean {
-  if (!search) return false;
-  const params = new URLSearchParams(search);
-  return params.has(ISSUE_DETAIL_SOURCE_QUERY_PARAM) || params.has(ISSUE_DETAIL_BREADCRUMB_HREF_QUERY_PARAM);
-}
-
 export function readIssueDetailLocationState(
   issuePathId: string | null | undefined,
   state: unknown,

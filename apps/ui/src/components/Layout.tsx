@@ -1,4 +1,5 @@
 import {
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -22,9 +23,6 @@ import { AppDetailSidebar } from "./AppConnectionSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
-import { NewIssueDialog } from "./NewIssueDialog";
-import { NewProjectDialog } from "./NewProjectDialog";
-import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
@@ -53,6 +51,7 @@ import {
   resetNavigationScroll,
   shouldResetScrollOnNavigation,
 } from "../lib/navigation-scroll";
+import { lazyPage } from "../lib/lazy-page";
 import { queryKeys } from "../lib/queryKeys";
 import { scheduleMainContentFocus } from "../lib/main-content-focus";
 import { pinDocumentScrollToZero } from "../lib/pin-document-scroll";
@@ -63,6 +62,23 @@ import {
   resolveRouteSidebarSlot,
   usePluginSlots,
 } from "../plugins/slots";
+
+// These dialogs statically import MarkdownEditor (MDXEditor + lexical, over a
+// megabyte minified), so they are code-split out of the entry chunk. They stay
+// mounted like before — each renders null while closed — so the Suspense
+// fallback of null is never user-visible and open/close behavior is unchanged.
+const NewIssueDialog = lazyPage(
+  () => import("./NewIssueDialog"),
+  "NewIssueDialog",
+);
+const NewProjectDialog = lazyPage(
+  () => import("./NewProjectDialog"),
+  "NewProjectDialog",
+);
+const NewGoalDialog = lazyPage(
+  () => import("./NewGoalDialog"),
+  "NewGoalDialog",
+);
 
 function getCompanyRouteSegment(
   pathname: string,
@@ -725,7 +741,19 @@ export function Layout() {
                   />
                 ) : (
                   <RouteErrorBoundary>
-                    <Outlet />
+                    {/* Route-level code splitting (see App.tsx): page chunks
+                        load lazily, so the routed page suspends here while the
+                        shell (sidebar, top bar) stays mounted. Inside the
+                        error boundary so chunk-load failures surface there. */}
+                    <Suspense
+                      fallback={
+                        <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+                          Loading...
+                        </div>
+                      }
+                    >
+                      <Outlet />
+                    </Suspense>
                   </RouteErrorBoundary>
                 )}
               </main>
@@ -735,9 +763,11 @@ export function Layout() {
         </div>
         {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
         <CommandPalette />
-        <NewIssueDialog />
-        <NewProjectDialog />
-        <NewGoalDialog />
+        <Suspense fallback={null}>
+          <NewIssueDialog />
+          <NewProjectDialog />
+          <NewGoalDialog />
+        </Suspense>
         <NewAgentDialog />
         <KeyboardShortcutsCheatsheet
           open={shortcutsOpen}

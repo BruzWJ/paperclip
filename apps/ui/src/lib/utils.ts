@@ -7,12 +7,7 @@ import {
   normalizeProjectUrlKey,
   serializeMoneyAmount,
 } from "@paperclipai/shared";
-import type {
-  BudgetCurrency,
-  FinanceDirection,
-  FinanceEventKind,
-  MoneyAmount,
-} from "@paperclipai/shared";
+import type { BudgetCurrency, MoneyAmount } from "@paperclipai/shared";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -38,10 +33,6 @@ export function asObject(value: unknown): Record<string, unknown> {
 
 export function asBoolean(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
-}
-
-export function asFiniteNumber(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 /** Preserve the exact decimal string while making its denomination explicit. */
@@ -130,30 +121,6 @@ export function formatDurationMs(ms: number): string {
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-}
-
-export function financeEventKindDisplayName(eventKind: FinanceEventKind): string {
-  const map: Record<FinanceEventKind, string> = {
-    inference_charge: "Inference charge",
-    platform_fee: "Platform fee",
-    credit_purchase: "Credit purchase",
-    credit_refund: "Credit refund",
-    credit_expiry: "Credit expiry",
-    byok_fee: "BYOK fee",
-    gateway_overhead: "Gateway overhead",
-    log_storage_charge: "Log storage",
-    logpush_charge: "Logpush",
-    provisioned_capacity_charge: "Provisioned capacity",
-    training_charge: "Training",
-    custom_model_import_charge: "Custom model import",
-    custom_model_storage_charge: "Custom model storage",
-    manual_adjustment: "Manual adjustment",
-  };
-  return map[eventKind];
-}
-
-export function financeDirectionDisplayName(direction: FinanceDirection): string {
-  return direction === "credit" ? "Credit" : "Debit";
 }
 
 /** Build an issue URL using the human-readable identifier when available. */

@@ -652,7 +652,6 @@ export function loadLastInboxTab(): InboxTab {
       || raw === "mine"
       || raw === "blocked"
     ) return raw;
-    if (raw === "new") return "mine";
     return "mine";
   } catch {
     return "mine";

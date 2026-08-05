@@ -63,15 +63,6 @@ describe("plugin host navigation", () => {
     expect(resolveHostNavigationHref("/pap/wiki", "PAP")).toBe("/pap/wiki");
   });
 
-  it("rewrites legacy instance settings paths into the active company settings scope", () => {
-    expect(resolveHostNavigationHref("/instance/settings/plugins", "PAP")).toBe(
-      "/PAP/company/settings/instance/plugins",
-    );
-    expect(resolveHostNavigationHref("/settings/experimental?x=1#auto", "pap")).toBe(
-      "/PAP/company/settings/instance/experimental?x=1#auto",
-    );
-  });
-
   it("intercepts only same-origin plain left-click navigation", () => {
     expect(shouldHandleHostNavigationClick(clickEvent(), "/PAP/wiki")).toBe(true);
     expect(

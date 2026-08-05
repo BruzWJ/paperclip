@@ -2,26 +2,15 @@ import type { Project } from "@paperclipai/shared";
 
 export const PROJECT_ORDER_UPDATED_EVENT = "paperclip:project-order-updated";
 export const PROJECT_SORT_MODE_UPDATED_EVENT = "paperclip:project-sort-mode-updated";
-const PROJECT_ORDER_STORAGE_PREFIX = "paperclip.projectOrder";
 const PROJECT_SORT_MODE_STORAGE_PREFIX = "paperclip.projectSortMode";
 const ANONYMOUS_USER_ID = "anonymous";
 
 export type ProjectSidebarSortMode = "top" | "alphabetical" | "recent";
 
-type ProjectOrderUpdatedDetail = {
-  storageKey: string;
-  orderedIds: string[];
-};
-
 export type ProjectSortModeUpdatedDetail = {
   storageKey: string;
   sortMode: ProjectSidebarSortMode;
 };
-
-function normalizeIdList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && item.length > 0);
-}
 
 function normalizeSortMode(value: unknown): ProjectSidebarSortMode {
   return value === "alphabetical" || value === "recent" || value === "top" ? value : "top";
@@ -33,22 +22,8 @@ function resolveUserId(userId: string | null | undefined): string {
   return trimmed.length > 0 ? trimmed : ANONYMOUS_USER_ID;
 }
 
-export function getProjectOrderStorageKey(companyId: string, userId: string | null | undefined): string {
-  return `${PROJECT_ORDER_STORAGE_PREFIX}:${companyId}:${resolveUserId(userId)}`;
-}
-
 export function getProjectSortModeStorageKey(companyId: string, userId: string | null | undefined): string {
   return `${PROJECT_SORT_MODE_STORAGE_PREFIX}:${companyId}:${resolveUserId(userId)}`;
-}
-
-export function readProjectOrder(storageKey: string): string[] {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return [];
-    return normalizeIdList(JSON.parse(raw));
-  } catch {
-    return [];
-  }
 }
 
 export function readProjectSortMode(storageKey: string): ProjectSidebarSortMode {
@@ -56,22 +31,6 @@ export function readProjectSortMode(storageKey: string): ProjectSidebarSortMode 
     return normalizeSortMode(localStorage.getItem(storageKey));
   } catch {
     return "top";
-  }
-}
-
-export function writeProjectOrder(storageKey: string, orderedIds: string[]) {
-  const normalized = normalizeIdList(orderedIds);
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(normalized));
-  } catch {
-    // Ignore storage write failures in restricted browser contexts.
-  }
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent<ProjectOrderUpdatedDetail>(PROJECT_ORDER_UPDATED_EVENT, {
-        detail: { storageKey, orderedIds: normalized },
-      }),
-    );
   }
 }
 

@@ -309,6 +309,57 @@ function InboxRowSurface({
   );
 }
 
+/** Shared unread-dot / mark-read / dismiss slot for non-issue inbox rows. */
+function InboxRowUnreadSlot({
+  unreadState,
+  onMarkRead,
+  onArchive,
+  archiveDisabled,
+}: {
+  unreadState: NonIssueUnreadState;
+  onMarkRead?: () => void;
+  onArchive?: () => void;
+  archiveDisabled?: boolean;
+}) {
+  const showUnreadDot = unreadState === "visible" || unreadState === "fading";
+
+  return (
+    <span className="hidden sm:inline-flex h-4 w-4 shrink-0 items-center justify-center self-center">
+      {showUnreadDot ? (
+        <button
+          type="button"
+          onClick={onMarkRead}
+          className={cn(
+            "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
+            "hover:bg-blue-500/20",
+          )}
+          aria-label="Mark as read"
+        >
+          <span
+            className={cn(
+              "block h-2 w-2 rounded-full transition-opacity duration-300",
+              "bg-blue-600 dark:bg-blue-400",
+              unreadState === "fading" ? "opacity-0" : "opacity-100",
+            )}
+          />
+        </button>
+      ) : onArchive ? (
+        <button
+          type="button"
+          onClick={onArchive}
+          disabled={archiveDisabled}
+          className="inline-flex h-4 w-4 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+          aria-label="Dismiss from inbox"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : (
+        <span className="inline-flex h-4 w-4" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
 export function FailedRunInboxRow({
   run,
   issueById,
@@ -338,7 +389,6 @@ export function FailedRunInboxRow({
   const issue = issueId ? (issueById.get(issueId) ?? null) : null;
   const displayError = runFailureMessage(run);
   const showUnreadSlot = unreadState !== null;
-  const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
   return (
     <div
@@ -349,39 +399,12 @@ export function FailedRunInboxRow({
     >
       <div className="flex items-start gap-2 sm:items-center">
         {showUnreadSlot ? (
-          <span className="hidden sm:inline-flex h-4 w-4 shrink-0 items-center justify-center self-center">
-            {showUnreadDot ? (
-              <button
-                type="button"
-                onClick={onMarkRead}
-                className={cn(
-                  "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                  "hover:bg-blue-500/20",
-                )}
-                aria-label="Mark as read"
-              >
-                <span
-                  className={cn(
-                    "block h-2 w-2 rounded-full transition-opacity duration-300",
-                    "bg-blue-600 dark:bg-blue-400",
-                    unreadState === "fading" ? "opacity-0" : "opacity-100",
-                  )}
-                />
-              </button>
-            ) : onArchive ? (
-              <button
-                type="button"
-                onClick={onArchive}
-                disabled={archiveDisabled}
-                className="inline-flex h-4 w-4 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
-                aria-label="Dismiss from inbox"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <span className="inline-flex h-4 w-4" aria-hidden="true" />
-            )}
-          </span>
+          <InboxRowUnreadSlot
+            unreadState={unreadState}
+            onMarkRead={onMarkRead}
+            onArchive={onArchive}
+            archiveDisabled={archiveDisabled}
+          />
         ) : null}
         <Link
           to={`/agents/${run.targetAgentId}/runs/${run.id}`}
@@ -489,7 +512,6 @@ function ApprovalInboxRow({
     approval.type !== "budget_override_required" &&
     ACTIONABLE_APPROVAL_STATUSES.has(approval.status);
   const showUnreadSlot = unreadState !== null;
-  const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
   return (
     <div
@@ -500,39 +522,12 @@ function ApprovalInboxRow({
     >
       <div className="flex items-start gap-2 sm:items-center">
         {showUnreadSlot ? (
-          <span className="hidden sm:inline-flex h-4 w-4 shrink-0 items-center justify-center self-center">
-            {showUnreadDot ? (
-              <button
-                type="button"
-                onClick={onMarkRead}
-                className={cn(
-                  "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                  "hover:bg-blue-500/20",
-                )}
-                aria-label="Mark as read"
-              >
-                <span
-                  className={cn(
-                    "block h-2 w-2 rounded-full transition-opacity duration-300",
-                    "bg-blue-600 dark:bg-blue-400",
-                    unreadState === "fading" ? "opacity-0" : "opacity-100",
-                  )}
-                />
-              </button>
-            ) : onArchive ? (
-              <button
-                type="button"
-                onClick={onArchive}
-                disabled={archiveDisabled}
-                className="inline-flex h-4 w-4 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
-                aria-label="Dismiss from inbox"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <span className="inline-flex h-4 w-4" aria-hidden="true" />
-            )}
-          </span>
+          <InboxRowUnreadSlot
+            unreadState={unreadState}
+            onMarkRead={onMarkRead}
+            onArchive={onArchive}
+            archiveDisabled={archiveDisabled}
+          />
         ) : null}
         <Link
           to={`/approvals/${approval.id}`}
@@ -641,7 +636,6 @@ function JoinRequestInboxRow({
 }) {
   const label = formatJoinRequestInboxLabel(joinRequest);
   const showUnreadSlot = unreadState !== null;
-  const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
   return (
     <div
@@ -652,39 +646,12 @@ function JoinRequestInboxRow({
     >
       <div className="flex items-start gap-2 sm:items-center">
         {showUnreadSlot ? (
-          <span className="hidden sm:inline-flex h-4 w-4 shrink-0 items-center justify-center self-center">
-            {showUnreadDot ? (
-              <button
-                type="button"
-                onClick={onMarkRead}
-                className={cn(
-                  "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
-                  "hover:bg-blue-500/20",
-                )}
-                aria-label="Mark as read"
-              >
-                <span
-                  className={cn(
-                    "block h-2 w-2 rounded-full transition-opacity duration-300",
-                    "bg-blue-600 dark:bg-blue-400",
-                    unreadState === "fading" ? "opacity-0" : "opacity-100",
-                  )}
-                />
-              </button>
-            ) : onArchive ? (
-              <button
-                type="button"
-                onClick={onArchive}
-                disabled={archiveDisabled}
-                className="inline-flex h-4 w-4 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
-                aria-label="Dismiss from inbox"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <span className="inline-flex h-4 w-4" aria-hidden="true" />
-            )}
-          </span>
+          <InboxRowUnreadSlot
+            unreadState={unreadState}
+            onMarkRead={onMarkRead}
+            onArchive={onArchive}
+            archiveDisabled={archiveDisabled}
+          />
         ) : null}
         <div className="flex min-w-0 flex-1 items-start gap-2">
           {!showUnreadSlot && (

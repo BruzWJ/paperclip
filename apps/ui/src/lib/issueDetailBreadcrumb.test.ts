@@ -3,7 +3,6 @@ import {
   armIssueDetailInboxQuickArchive,
   createIssueDetailLocationState,
   createIssueDetailPath,
-  hasLegacyIssueDetailQuery,
   readIssueDetailHeaderSeed,
   readIssueDetailLocationState,
   readIssueDetailBreadcrumb,
@@ -112,11 +111,6 @@ describe("issueDetailBreadcrumb", () => {
       label: "Inbox",
       href: "/inbox",
     });
-  });
-
-  it("can detect legacy query-based breadcrumb links", () => {
-    expect(hasLegacyIssueDetailQuery("?from=inbox&fromHref=%2Finbox%2Fmine")).toBe(true);
-    expect(hasLegacyIssueDetailQuery("?q=test")).toBe(false);
   });
 
   it("restores the exact breadcrumb href from the query fallback", () => {

@@ -43,8 +43,8 @@ These are the current user-facing UI surfaces for the feature, now intentionally
   - defaulting issue execution workspace settings when project changes
 
 - agent/runtime settings:
-  - `apps/ui/src/adapters/runtime-json-fields.tsx`
-  - runtime services JSON field, which is part of the broader workspace-runtime support surface
+  - the former runtime services JSON field has been retired with its unsupported UI surface
+  - a future re-enable requires a newly approved configuration surface rather than restoring that field
 
 ## Why the UI is hidden
 

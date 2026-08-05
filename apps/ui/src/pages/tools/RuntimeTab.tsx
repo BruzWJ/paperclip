@@ -409,7 +409,7 @@ export function RuntimeTab({ companyId }: { companyId: string }) {
                   </Button>
                 ) : action === "reviewApps" ? (
                   <Button size="sm" asChild>
-                    <Link to="/apps/attention">Review apps</Link>
+                    <Link to="/apps">Review apps</Link>
                   </Button>
                 ) : (
                   <Button size="sm" asChild>

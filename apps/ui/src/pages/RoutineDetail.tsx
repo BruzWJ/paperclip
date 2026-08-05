@@ -111,15 +111,6 @@ function writeLastSection(routineId: string, section: RoutineSectionKey) {
   }
 }
 
-/** Back-compat: `?tab=x` query param maps to the new section sub-routes. */
-const LEGACY_TAB_TO_SECTION: Record<string, RoutineSectionKey> = {
-  triggers: "triggers",
-  runs: "runs",
-  activity: "activity",
-  secrets: "secrets",
-  history: "history",
-};
-
 function autoResizeTextarea(element: HTMLTextAreaElement | null) {
   if (!element) return;
   element.style.height = "auto";
@@ -674,12 +665,6 @@ export function RoutineDetail() {
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Repeat} message="Select a company to view routines." />;
-  }
-
-  // Back-compat redirect: `?tab=x` → `/routines/:id/x`.
-  const legacyTab = new URLSearchParams(window.location.search).get("tab");
-  if (routineId && legacyTab && LEGACY_TAB_TO_SECTION[legacyTab]) {
-    return <Navigate to={`/routines/${routineId}/${LEGACY_TAB_TO_SECTION[legacyTab]}`} replace />;
   }
 
   // Bare /routines/:id → remembered section or overview.

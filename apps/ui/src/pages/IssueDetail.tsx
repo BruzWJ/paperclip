@@ -29,7 +29,6 @@ import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
 import {
-  hasLegacyIssueDetailQuery,
   createIssueDetailPath,
   readIssueDetailLocationState,
   readIssueDetailBreadcrumb,
@@ -2358,14 +2357,6 @@ export function IssueDetail() {
         state: nextState,
       });
       return;
-    }
-
-    if (issueId && hasLegacyIssueDetailQuery(location.search)) {
-      rememberIssueDetailLocationState(issueId, nextState, location.search);
-      navigate(createIssueDetailPath(issueId), {
-        replace: true,
-        state: nextState,
-      });
     }
   }, [issue, issueId, navigate, location.state, location.search, resolvedIssueDetailState]);
 

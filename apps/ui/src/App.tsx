@@ -1,6 +1,6 @@
+import { Suspense } from "react";
 import {
   Navigate,
-  Outlet,
   Route,
   Routes,
   useLocation,
@@ -13,96 +13,257 @@ import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { AppsExperimentalGate } from "./components/AppsExperimentalGate";
-import { Cases } from "./pages/Cases";
-import { CaseDetail } from "./pages/CaseDetail";
-import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
 import { AuthenticatedAppGate } from "./components/AuthenticatedAppGate";
-import { Dashboard } from "./pages/Dashboard";
-import { DashboardLive } from "./pages/DashboardLive";
-import { Timeline } from "./pages/Timeline";
-import { Companies } from "./pages/Companies";
-import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
-import { AgentDetail } from "./pages/AgentDetail";
-import { Projects } from "./pages/Projects";
-import { ProjectDetail } from "./pages/ProjectDetail";
-import { ProjectWorkspaceDetail } from "./pages/ProjectWorkspaceDetail";
-import { Workspaces } from "./pages/Workspaces";
-import { Issues } from "./pages/Issues";
-import { Search } from "./pages/Search";
-import { IssueDetail } from "./pages/IssueDetail";
-import { IssueChatLongThreadPerf } from "./pages/IssueChatLongThreadPerf";
-import { Routines } from "./pages/Routines";
-import {
-  Learnings,
-  PipelineItemDetail,
-  PipelineItemLegacyRedirect,
-  Pipelines,
-  ReviewQueue,
-} from "./pages/Pipelines";
-import { PipelineSettings } from "./pages/PipelineSettings";
-import { RoutineDetail } from "./pages/RoutineDetail";
-import { UserProfile } from "./pages/UserProfile";
-import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
-import { Goals } from "./pages/Goals";
-import { Artifacts } from "./pages/Artifacts";
-import { GoalDetail } from "./pages/GoalDetail";
-import { Approvals } from "./pages/Approvals";
-import { ApprovalDetail } from "./pages/ApprovalDetail";
-import { Costs } from "./pages/Costs";
-import { Activity } from "./pages/Activity";
-import { Inbox } from "./pages/Inbox";
-import { WhatNeedsMe } from "./pages/WhatNeedsMe";
-import { TrainingInspector, TrainingLibrary } from "./pages/Training";
-import { BoardChat } from "./pages/BoardChat";
-import { CompanySettings } from "./pages/CompanySettings";
-import { CompanyEnvironments } from "./pages/CompanyEnvironments";
-import { CloudUpstream } from "./pages/CloudUpstream";
-import { CloudUpstreamUxLab } from "./pages/CloudUpstreamUxLab";
-import { BootstrapSetupUxLab } from "./pages/BootstrapSetupUxLab";
-import { ResponsibleUserDenialUxLab } from "./pages/ResponsibleUserDenialUxLab";
-import { CompanySettingsPluginPage } from "./pages/CompanySettingsPluginPage";
-import { CompanyAccess, CompanyAccessLegacyRoute } from "./pages/CompanyAccess";
-import { AdvancedToolsRoute } from "./pages/tools/AdvancedToolsRoute";
-import { ProfileWizardRoute } from "./pages/tools/profiles/ProfileWizardRoute";
-import { ProfileDetailRoute } from "./pages/tools/profiles/ProfileDetailRoute";
-import { Connections } from "./pages/apps/Connections";
-import { Browse } from "./pages/apps/Browse";
-import { AppsConnect } from "./pages/apps/AppsConnect";
-import { AppsReview } from "./pages/apps/AppsReview";
-import { AppDetail } from "./pages/apps/AppDetail";
-import { AppNotConnected } from "./pages/apps/AppNotConnected";
-import { GatewaysList } from "./pages/apps/gateways/GatewaysList";
-import { GatewayDetail } from "./pages/apps/gateways/GatewayDetail";
-import { CompanyInvites } from "./pages/CompanyInvites";
-import { CompanySkills } from "./pages/CompanySkills";
-import { SkillStudio } from "./pages/SkillStudio";
-import { Secrets } from "./pages/Secrets";
-import { CompanyExport } from "./pages/CompanyExport";
-import { CompanyImport } from "./pages/CompanyImport";
-import { DesignGuide } from "./pages/DesignGuide";
-import { InstanceGeneralSettings } from "./pages/InstanceGeneralSettings";
-import { InstanceAccess } from "./pages/InstanceAccess";
-import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettings";
-import { ProfileSettings } from "./pages/ProfileSettings";
-import { PluginManager } from "./pages/PluginManager";
-import { PluginSettings } from "./pages/PluginSettings";
-import { AdapterManager } from "./pages/AdapterManager";
-import { PluginPage } from "./pages/PluginPage";
-import { OrgChart } from "./pages/OrgChart";
-import { NewAgent } from "./pages/NewAgent";
-import { AuthPage } from "./pages/Auth";
-import { CliAuthPage } from "./pages/CliAuth";
-import { InviteLandingPage } from "./pages/InviteLanding";
-import { JoinRequestQueue } from "./pages/JoinRequestQueue";
+// NotFoundPage stays eager on purpose: Layout already imports it statically for
+// the invalid-company-prefix state, so it is in the entry graph either way.
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
+import { AGENT_FILTER_TABS } from "./lib/agent-filter-tabs";
 import { loadLastInboxTab } from "./lib/inbox";
+import { lazyPage } from "./lib/lazy-page";
 import {
   isOnboardingWizardActive,
   shouldRedirectCompanylessRouteToOnboarding,
 } from "./lib/onboarding-route";
-import { normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
+
+// Route-level code splitting: every page loads its own chunk on first visit
+// instead of riding in the entry bundle (PAP entry chunk was 5.7 MB with all
+// pages eager). Named exports from the same module (e.g. ./pages/Pipelines,
+// ./pages/Training) share a single chunk. Chunk-load failures after a redeploy
+// go through the stale-chunk reload guard in lib/lazy-page.
+const Cases = lazyPage(() => import("./pages/Cases"), "Cases");
+const CaseDetail = lazyPage(() => import("./pages/CaseDetail"), "CaseDetail");
+const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
+const DashboardLive = lazyPage(
+  () => import("./pages/DashboardLive"),
+  "DashboardLive",
+);
+const Timeline = lazyPage(() => import("./pages/Timeline"), "Timeline");
+const Companies = lazyPage(() => import("./pages/Companies"), "Companies");
+const Agents = lazyPage(() => import("./pages/Agents"), "Agents");
+const AgentDetail = lazyPage(
+  () => import("./pages/AgentDetail"),
+  "AgentDetail",
+);
+const Projects = lazyPage(() => import("./pages/Projects"), "Projects");
+const ProjectDetail = lazyPage(
+  () => import("./pages/ProjectDetail"),
+  "ProjectDetail",
+);
+const ProjectWorkspaceDetail = lazyPage(
+  () => import("./pages/ProjectWorkspaceDetail"),
+  "ProjectWorkspaceDetail",
+);
+const Workspaces = lazyPage(() => import("./pages/Workspaces"), "Workspaces");
+const Issues = lazyPage(() => import("./pages/Issues"), "Issues");
+const Search = lazyPage(() => import("./pages/Search"), "Search");
+const IssueDetail = lazyPage(
+  () => import("./pages/IssueDetail"),
+  "IssueDetail",
+);
+const IssueChatLongThreadPerf = lazyPage(
+  () => import("./pages/IssueChatLongThreadPerf"),
+  "IssueChatLongThreadPerf",
+);
+const Routines = lazyPage(() => import("./pages/Routines"), "Routines");
+const Learnings = lazyPage(() => import("./pages/Pipelines"), "Learnings");
+const PipelineItemDetail = lazyPage(
+  () => import("./pages/Pipelines"),
+  "PipelineItemDetail",
+);
+const PipelineItemLegacyRedirect = lazyPage(
+  () => import("./pages/Pipelines"),
+  "PipelineItemLegacyRedirect",
+);
+const Pipelines = lazyPage(() => import("./pages/Pipelines"), "Pipelines");
+const ReviewQueue = lazyPage(() => import("./pages/Pipelines"), "ReviewQueue");
+const PipelineSettings = lazyPage(
+  () => import("./pages/PipelineSettings"),
+  "PipelineSettings",
+);
+const RoutineDetail = lazyPage(
+  () => import("./pages/RoutineDetail"),
+  "RoutineDetail",
+);
+const UserProfile = lazyPage(
+  () => import("./pages/UserProfile"),
+  "UserProfile",
+);
+const ExecutionWorkspaceDetail = lazyPage(
+  () => import("./pages/ExecutionWorkspaceDetail"),
+  "ExecutionWorkspaceDetail",
+);
+const Goals = lazyPage(() => import("./pages/Goals"), "Goals");
+const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
+const GoalDetail = lazyPage(() => import("./pages/GoalDetail"), "GoalDetail");
+const Approvals = lazyPage(() => import("./pages/Approvals"), "Approvals");
+const ApprovalDetail = lazyPage(
+  () => import("./pages/ApprovalDetail"),
+  "ApprovalDetail",
+);
+const Costs = lazyPage(() => import("./pages/Costs"), "Costs");
+const Activity = lazyPage(() => import("./pages/Activity"), "Activity");
+const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
+const WhatNeedsMe = lazyPage(
+  () => import("./pages/WhatNeedsMe"),
+  "WhatNeedsMe",
+);
+const TrainingInspector = lazyPage(
+  () => import("./pages/Training"),
+  "TrainingInspector",
+);
+const TrainingLibrary = lazyPage(
+  () => import("./pages/Training"),
+  "TrainingLibrary",
+);
+const BoardChat = lazyPage(() => import("./pages/BoardChat"), "BoardChat");
+const CompanySettings = lazyPage(
+  () => import("./pages/CompanySettings"),
+  "CompanySettings",
+);
+const CompanyEnvironments = lazyPage(
+  () => import("./pages/CompanyEnvironments"),
+  "CompanyEnvironments",
+);
+const CloudUpstream = lazyPage(
+  () => import("./pages/CloudUpstream"),
+  "CloudUpstream",
+);
+const CompanySettingsPluginPage = lazyPage(
+  () => import("./pages/CompanySettingsPluginPage"),
+  "CompanySettingsPluginPage",
+);
+const CompanyAccess = lazyPage(
+  () => import("./pages/CompanyAccess"),
+  "CompanyAccess",
+);
+const CompanyAccessLegacyRoute = lazyPage(
+  () => import("./pages/CompanyAccess"),
+  "CompanyAccessLegacyRoute",
+);
+const AdvancedToolsRoute = lazyPage(
+  () => import("./pages/tools/AdvancedToolsRoute"),
+  "AdvancedToolsRoute",
+);
+const ProfileWizardRoute = lazyPage(
+  () => import("./pages/tools/profiles/ProfileWizardRoute"),
+  "ProfileWizardRoute",
+);
+const ProfileDetailRoute = lazyPage(
+  () => import("./pages/tools/profiles/ProfileDetailRoute"),
+  "ProfileDetailRoute",
+);
+const Connections = lazyPage(
+  () => import("./pages/apps/Connections"),
+  "Connections",
+);
+const Browse = lazyPage(() => import("./pages/apps/Browse"), "Browse");
+const AppsConnect = lazyPage(
+  () => import("./pages/apps/AppsConnect"),
+  "AppsConnect",
+);
+const AppsReview = lazyPage(
+  () => import("./pages/apps/AppsReview"),
+  "AppsReview",
+);
+const AppDetail = lazyPage(
+  () => import("./pages/apps/AppDetail"),
+  "AppDetail",
+);
+const AppNotConnected = lazyPage(
+  () => import("./pages/apps/AppNotConnected"),
+  "AppNotConnected",
+);
+const GatewaysList = lazyPage(
+  () => import("./pages/apps/gateways/GatewaysList"),
+  "GatewaysList",
+);
+const GatewayDetail = lazyPage(
+  () => import("./pages/apps/gateways/GatewayDetail"),
+  "GatewayDetail",
+);
+const CompanyInvites = lazyPage(
+  () => import("./pages/CompanyInvites"),
+  "CompanyInvites",
+);
+const CompanySkills = lazyPage(
+  () => import("./pages/CompanySkills"),
+  "CompanySkills",
+);
+const SkillStudio = lazyPage(
+  () => import("./pages/SkillStudio"),
+  "SkillStudio",
+);
+const Secrets = lazyPage(() => import("./pages/Secrets"), "Secrets");
+const CompanyExport = lazyPage(
+  () => import("./pages/CompanyExport"),
+  "CompanyExport",
+);
+const CompanyImport = lazyPage(
+  () => import("./pages/CompanyImport"),
+  "CompanyImport",
+);
+const DesignGuide = lazyPage(
+  () => import("./pages/DesignGuide"),
+  "DesignGuide",
+);
+const InstanceGeneralSettings = lazyPage(
+  () => import("./pages/InstanceGeneralSettings"),
+  "InstanceGeneralSettings",
+);
+const InstanceAccess = lazyPage(
+  () => import("./pages/InstanceAccess"),
+  "InstanceAccess",
+);
+const InstanceExperimentalSettings = lazyPage(
+  () => import("./pages/InstanceExperimentalSettings"),
+  "InstanceExperimentalSettings",
+);
+const ProfileSettings = lazyPage(
+  () => import("./pages/ProfileSettings"),
+  "ProfileSettings",
+);
+const PluginManager = lazyPage(
+  () => import("./pages/PluginManager"),
+  "PluginManager",
+);
+const PluginSettings = lazyPage(
+  () => import("./pages/PluginSettings"),
+  "PluginSettings",
+);
+const AdapterManager = lazyPage(
+  () => import("./pages/AdapterManager"),
+  "AdapterManager",
+);
+const PluginPage = lazyPage(() => import("./pages/PluginPage"), "PluginPage");
+const OrgChart = lazyPage(() => import("./pages/OrgChart"), "OrgChart");
+const NewAgent = lazyPage(() => import("./pages/NewAgent"), "NewAgent");
+const AuthPage = lazyPage(() => import("./pages/Auth"), "AuthPage");
+const CliAuthPage = lazyPage(() => import("./pages/CliAuth"), "CliAuthPage");
+const InviteLandingPage = lazyPage(
+  () => import("./pages/InviteLanding"),
+  "InviteLandingPage",
+);
+const JoinRequestQueue = lazyPage(
+  () => import("./pages/JoinRequestQueue"),
+  "JoinRequestQueue",
+);
+// Modal overlay rendered unconditionally at the bottom of <App>; lazy so its
+// (large) wizard graph stays out of the entry chunk. Suspense fallback is null
+// because nothing is visible until the wizard opens.
+const OnboardingWizardVariant = lazyPage(
+  () => import("./components/OnboardingWizardVariant"),
+  "OnboardingWizardVariant",
+);
+
+function RouteLoadingFallback() {
+  return (
+    <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+      Loading...
+    </div>
+  );
+}
 
 function boardRoutes() {
   return (
@@ -114,12 +275,6 @@ function boardRoutes() {
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
       <Route path="company/settings" element={<CompanySettings />} />
-      <Route
-        path="company/settings/environments"
-        element={
-          <Navigate to="/company/settings/instance/environments" replace />
-        }
-      />
       <Route
         path="company/settings/cloud-upstream"
         element={<CloudUpstream />}
@@ -133,34 +288,11 @@ function boardRoutes() {
       <Route path="company/export/*" element={<CompanyExport />} />
       <Route path="company/import" element={<CompanyImport />} />
       <Route path="company/settings/secrets" element={<Secrets />} />
-      <Route
-        path="company/settings/tools"
-        element={<LegacyToolsSettingsRedirect />}
-      />
-      <Route
-        path="company/settings/tools/:tab"
-        element={<LegacyToolsSettingsRedirect />}
-      />
-      <Route path="tools" element={<LegacyToolsRedirect />} />
-      <Route path="tools/:tab" element={<LegacyToolsRedirect />} />
       <Route element={<AppsExperimentalGate />}>
         <Route path="apps" element={<Connections />} />
         <Route path="apps/browse" element={<Browse />} />
         <Route path="apps/connect" element={<AppsConnectEntryRoute />} />
-        <Route
-          path="apps/connect/:appKey"
-          element={<Navigate to="/apps/browse" replace />}
-        />
-        <Route
-          path="apps/connect/:appKey/:stage"
-          element={<Navigate to="/apps/browse" replace />}
-        />
         <Route path="apps/review" element={<AppsReview />} />
-        {/* Needs attention folded into Connections (PAP-13254); keep legacy links working. */}
-        <Route
-          path="apps/attention"
-          element={<Navigate to="/apps" replace />}
-        />
         <Route path="apps/gateways" element={<GatewaysList />} />
         <Route
           path="apps/gateways/:gatewayId"
@@ -246,13 +378,7 @@ function boardRoutes() {
       <Route path="skills/studio" element={<SkillStudio />} />
       <Route path="skills/studio/new" element={<SkillStudio />} />
       <Route path="skills/studio/:skillId" element={<SkillStudio />} />
-      <Route
-        path="skills/:skillId/studio"
-        element={<LegacySkillStudioRedirect />}
-      />
       <Route path="skills/*" element={<CompanySkills />} />
-      <Route path="settings" element={<LegacySettingsRedirect />} />
-      <Route path="settings/*" element={<LegacySettingsRedirect />} />
       <Route path="plugins/:pluginId" element={<PluginPage />} />
       <Route path="org" element={<OrgChart />} />
       <Route path="agents" element={<Navigate to="/agents/all" replace />} />
@@ -265,36 +391,27 @@ function boardRoutes() {
       <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
       <Route path="projects" element={<Projects />} />
       <Route path="projects/:projectId" element={<ProjectDetail />} />
-      <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
-      <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
-      <Route
-        path="projects/:projectId/issues/:filter"
-        element={<ProjectDetail />}
-      />
+      {[
+        "overview",
+        "issues",
+        "issues/:filter",
+        "workspaces",
+        "configuration",
+        "budget",
+      ].map((tab) => (
+        <Route
+          key={tab}
+          path={`projects/:projectId/${tab}`}
+          element={<ProjectDetail />}
+        />
+      ))}
       <Route
         path="projects/:projectId/workspaces/:workspaceId"
         element={<ProjectWorkspaceDetail />}
       />
-      <Route
-        path="projects/:projectId/workspaces"
-        element={<ProjectDetail />}
-      />
-      <Route
-        path="projects/:projectId/configuration"
-        element={<ProjectDetail />}
-      />
-      <Route path="projects/:projectId/budget" element={<ProjectDetail />} />
       <Route path="workspaces" element={<Workspaces />} />
       <Route path="issues" element={<Issues />} />
       <Route path="search" element={<Search />} />
-      <Route path="issues/all" element={<Navigate to="/issues" replace />} />
-      <Route path="issues/active" element={<Navigate to="/issues" replace />} />
-      <Route
-        path="issues/backlog"
-        element={<Navigate to="/issues" replace />}
-      />
-      <Route path="issues/done" element={<Navigate to="/issues" replace />} />
-      <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       {import.meta.env.DEV ? (
         <Route
@@ -303,112 +420,44 @@ function boardRoutes() {
         />
       ) : null}
       <Route path="routines" element={<Routines />} />
-      <Route
-        path="cases"
-        element={
-          <CasesExperimentalGate>
-            <Cases />
-          </CasesExperimentalGate>
-        }
-      />
-      <Route
-        path="cases/:caseIdentifier"
-        element={
-          <CasesExperimentalGate>
-            <CaseDetail />
-          </CasesExperimentalGate>
-        }
-      />
-      <Route
-        path="review-queue"
-        element={
-          <PipelinesExperimentalGate>
-            <ReviewQueue />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="learnings"
-        element={
-          <PipelinesExperimentalGate>
-            <Learnings />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="pipelines"
-        element={
-          <PipelinesExperimentalGate>
-            <Pipelines />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="pipelines/:pipelineId"
-        element={
-          <PipelinesExperimentalGate>
-            <Pipelines />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="pipelines/:pipelineId/add"
-        element={
-          <PipelinesExperimentalGate>
-            <Pipelines />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="pipelines/:pipelineId/settings"
-        element={
-          <PipelinesExperimentalGate>
-            <PipelineSettings />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="pipelines/:pipelineId/items/:caseId"
-        element={
-          <PipelinesExperimentalGate>
-            <PipelineItemDetail />
-          </PipelinesExperimentalGate>
-        }
-      />
-      <Route
-        path="pipelines/:pipelineId/cases/:caseId"
-        element={
-          <PipelinesExperimentalGate>
-            <PipelineItemLegacyRedirect />
-          </PipelinesExperimentalGate>
-        }
-      />
+      <Route element={<CasesExperimentalGate />}>
+        <Route path="cases" element={<Cases />} />
+        <Route path="cases/:caseIdentifier" element={<CaseDetail />} />
+      </Route>
+      <Route element={<PipelinesExperimentalGate />}>
+        <Route path="review-queue" element={<ReviewQueue />} />
+        <Route path="learnings" element={<Learnings />} />
+        <Route path="pipelines" element={<Pipelines />} />
+        <Route path="pipelines/:pipelineId" element={<Pipelines />} />
+        <Route path="pipelines/:pipelineId/add" element={<Pipelines />} />
+        <Route
+          path="pipelines/:pipelineId/settings"
+          element={<PipelineSettings />}
+        />
+        <Route
+          path="pipelines/:pipelineId/items/:caseId"
+          element={<PipelineItemDetail />}
+        />
+        <Route
+          path="pipelines/:pipelineId/cases/:caseId"
+          element={<PipelineItemLegacyRedirect />}
+        />
+      </Route>
       <Route path="routines/:routineId" element={<RoutineDetail />} />
       <Route path="routines/:routineId/:section" element={<RoutineDetail />} />
       <Route
         path="execution-workspaces/:workspaceId"
         element={<ExecutionWorkspaceDetail />}
       />
-      <Route
-        path="execution-workspaces/:workspaceId/services"
-        element={<ExecutionWorkspaceDetail />}
-      />
-      <Route
-        path="execution-workspaces/:workspaceId/configuration"
-        element={<ExecutionWorkspaceDetail />}
-      />
-      <Route
-        path="execution-workspaces/:workspaceId/runtime-logs"
-        element={<ExecutionWorkspaceDetail />}
-      />
-      <Route
-        path="execution-workspaces/:workspaceId/issues"
-        element={<ExecutionWorkspaceDetail />}
-      />
-      <Route
-        path="execution-workspaces/:workspaceId/routines"
-        element={<ExecutionWorkspaceDetail />}
-      />
+      {["services", "configuration", "runtime-logs", "issues", "routines"].map(
+        (tab) => (
+          <Route
+            key={tab}
+            path={`execution-workspaces/:workspaceId/${tab}`}
+            element={<ExecutionWorkspaceDetail />}
+          />
+        ),
+      )}
       <Route path="goals" element={<Goals />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
@@ -434,13 +483,10 @@ function boardRoutes() {
       <Route path="training" element={<TrainingLibrary />} />
       <Route path="training/:id" element={<TrainingInspector />} />
       <Route path="inbox" element={<InboxRootRedirect />} />
-      <Route path="inbox/mine" element={<Inbox />} />
-      <Route path="inbox/recent" element={<Inbox />} />
-      <Route path="inbox/unread" element={<Inbox />} />
-      <Route path="inbox/blocked" element={<Inbox />} />
-      <Route path="inbox/all" element={<Inbox />} />
+      {["mine", "recent", "unread", "blocked", "all"].map((tab) => (
+        <Route key={tab} path={`inbox/${tab}`} element={<Inbox />} />
+      ))}
       <Route path="inbox/requests" element={<JoinRequestQueue />} />
-      <Route path="inbox/new" element={<Navigate to="/inbox/mine" replace />} />
       <Route path="u/:userSlug" element={<UserProfile />} />
       <Route path="design-guide" element={<DesignGuide />} />
       <Route path="instance/settings/adapters" element={<AdapterManager />} />
@@ -462,108 +508,6 @@ function AppsConnectEntryRoute() {
 
 function InboxRootRedirect() {
   return <Navigate to={`/inbox/${loadLastInboxTab()}`} replace />;
-}
-
-function LegacySkillStudioRedirect() {
-  const location = useLocation();
-  const { companies, selectedCompany, loading } = useCompany();
-  const { companyPrefix, skillId } = useParams<{
-    companyPrefix?: string;
-    skillId?: string;
-  }>();
-
-  if (loading) return null;
-
-  const targetCompany =
-    (companyPrefix
-      ? companies.find(
-          (company) =>
-            company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase(),
-        )
-      : null) ??
-    selectedCompany ??
-    companies[0] ??
-    null;
-
-  if (!targetCompany || !skillId) {
-    return <Navigate to="/skills/studio" replace />;
-  }
-
-  return (
-    <Navigate
-      to={`/${targetCompany.issuePrefix}/skills/studio/${encodeURIComponent(skillId)}${location.search}${location.hash}`}
-      replace
-    />
-  );
-}
-
-function LegacySettingsRedirect() {
-  const location = useLocation();
-  const { companies, selectedCompany, loading } = useCompany();
-  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
-
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
-        Loading...
-      </div>
-    );
-  }
-
-  const targetCompany =
-    (companyPrefix
-      ? companies.find(
-          (company) =>
-            company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase(),
-        )
-      : null) ??
-    selectedCompany ??
-    companies[0] ??
-    null;
-
-  if (!targetCompany) {
-    if (
-      shouldRedirectCompanylessRouteToOnboarding({
-        pathname: location.pathname,
-        hasCompanies: false,
-      })
-    ) {
-      return <Navigate to="/onboarding" replace />;
-    }
-    return <NoCompaniesStartPage />;
-  }
-
-  const normalizedPath = normalizeRememberedInstanceSettingsPath(
-    `${location.pathname}${location.search}${location.hash}`,
-  );
-
-  return (
-    <Navigate to={`/${targetCompany.issuePrefix}${normalizedPath}`} replace />
-  );
-}
-
-function LegacyToolsSettingsRedirect() {
-  const { tab } = useParams<{ tab?: string }>();
-  return <Navigate to={legacyToolsRedirectTarget(tab)} replace />;
-}
-
-// The developer "Tools" surface moved under the Apps "Advanced setup" door
-// (PAP-10862). `/tools` and `/tools/:tab` redirect to their new home.
-function LegacyToolsRedirect() {
-  const { tab } = useParams<{ tab?: string }>();
-  return <Navigate to={legacyToolsRedirectTarget(tab)} replace />;
-}
-
-function legacyToolsRedirectTarget(tab?: string) {
-  if (!tab) return "/apps/advanced/profiles";
-  if (
-    tab === "applications" ||
-    tab === "connections" ||
-    tab === "overview" ||
-    tab === "examples"
-  )
-    return "/apps";
-  return `/apps/advanced/${tab}`;
 }
 
 function OnboardingRoutePage() {
@@ -627,29 +571,28 @@ function OnboardingRoutePage() {
   );
 }
 
+/** Companyless fallback shared by the unprefixed redirects below. */
+function CompanylessRouteFallback({ pathname }: { pathname: string }) {
+  if (
+    shouldRedirectCompanylessRouteToOnboarding({
+      pathname,
+      hasCompanies: false,
+    })
+  ) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return <NoCompaniesStartPage />;
+}
+
 function CompanyRootRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
   const location = useLocation();
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
-        Loading...
-      </div>
-    );
-  }
+  if (loading) return <RouteLoadingFallback />;
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
   if (!targetCompany) {
-    if (
-      shouldRedirectCompanylessRouteToOnboarding({
-        pathname: location.pathname,
-        hasCompanies: false,
-      })
-    ) {
-      return <Navigate to="/onboarding" replace />;
-    }
-    return <NoCompaniesStartPage />;
+    return <CompanylessRouteFallback pathname={location.pathname} />;
   }
 
   return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
@@ -659,25 +602,11 @@ function UnprefixedBoardRedirect() {
   const location = useLocation();
   const { companies, selectedCompany, loading } = useCompany();
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
-        Loading...
-      </div>
-    );
-  }
+  if (loading) return <RouteLoadingFallback />;
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
   if (!targetCompany) {
-    if (
-      shouldRedirectCompanylessRouteToOnboarding({
-        pathname: location.pathname,
-        hasCompanies: false,
-      })
-    ) {
-      return <Navigate to="/onboarding" replace />;
-    }
-    return <NoCompaniesStartPage />;
+    return <CompanylessRouteFallback pathname={location.pathname} />;
   }
 
   return (
@@ -715,173 +644,94 @@ function NoCompaniesStartPage() {
   );
 }
 
+/**
+ * Unprefixed board paths that redirect to their company-prefixed twin via
+ * {@link UnprefixedBoardRedirect}. Matching is ranked by path specificity, so
+ * the order of this list is irrelevant.
+ */
+const UNPREFIXED_BOARD_PATHS = [
+  "companies",
+  "issues",
+  "issues/:issueId",
+  "routines",
+  "routines/:routineId",
+  "review-queue",
+  "learnings",
+  "cases",
+  "cases/:caseIdentifier",
+  "pipelines",
+  "pipelines/:pipelineId",
+  "pipelines/:pipelineId/add",
+  "pipelines/:pipelineId/settings",
+  "pipelines/:pipelineId/items/:caseId",
+  "pipelines/:pipelineId/cases/:caseId",
+  "artifacts",
+  "decisions",
+  "u/:userSlug",
+  "skills/studio",
+  "skills/studio/new",
+  "skills/studio/:skillId",
+  "skills/*",
+  "agents",
+  ...AGENT_FILTER_TABS.map((tab) => `agents/${tab}`),
+  "agents/new",
+  "agents/:agentId",
+  "agents/:agentId/:tab",
+  "agents/:agentId/runs/:runId",
+  "projects",
+  "projects/:projectId",
+  "projects/:projectId/overview",
+  "projects/:projectId/issues",
+  "projects/:projectId/issues/:filter",
+  "projects/:projectId/workspaces",
+  "projects/:projectId/workspaces/:workspaceId",
+  "projects/:projectId/configuration",
+  "workspaces",
+  "execution-workspaces/:workspaceId",
+  "execution-workspaces/:workspaceId/services",
+  "execution-workspaces/:workspaceId/configuration",
+  "execution-workspaces/:workspaceId/runtime-logs",
+  "execution-workspaces/:workspaceId/issues",
+  "execution-workspaces/:workspaceId/routines",
+];
+
 export function App() {
   return (
     <>
-      <Routes>
-        <Route path="auth" element={<AuthPage />} />
-        <Route path="cli-auth/:id" element={<CliAuthPage />} />
-        <Route path="invite/:token" element={<InviteLandingPage />} />
-        <Route
-          path="tests/perf/long-thread"
-          element={<IssueChatLongThreadPerf />}
-        />
-        <Route path="ux-lab/cloud-upstream" element={<CloudUpstreamUxLab />} />
-        <Route
-          path="ux-lab/bootstrap-setup"
-          element={<BootstrapSetupUxLab />}
-        />
-        <Route
-          path="ux-lab/responsible-user-denial"
-          element={<ResponsibleUserDenialUxLab />}
-        />
-
-        <Route element={<AuthenticatedAppGate />}>
-          <Route index element={<CompanyRootRedirect />} />
-          <Route path="onboarding" element={<OnboardingRoutePage />} />
-          <Route path="instance" element={<LegacySettingsRedirect />} />
+      {/* Covers lazy routes that render OUTSIDE <Layout /> (auth, cli-auth,
+          invite, perf harness). Board pages under <Layout /> suspend
+          into the closer Suspense boundary around Layout's <Outlet />, so the
+          app shell stays mounted while a page chunk loads. */}
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          <Route path="auth" element={<AuthPage />} />
+          <Route path="cli-auth/:id" element={<CliAuthPage />} />
+          <Route path="invite/:token" element={<InviteLandingPage />} />
           <Route
-            path="instance/settings"
-            element={<LegacySettingsRedirect />}
+            path="tests/perf/long-thread"
+            element={<IssueChatLongThreadPerf />}
           />
-          <Route
-            path="instance/settings/*"
-            element={<LegacySettingsRedirect />}
-          />
-          <Route path="companies" element={<UnprefixedBoardRedirect />} />
-          <Route path="issues" element={<UnprefixedBoardRedirect />} />
-          <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
-          <Route path="routines" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="routines/:routineId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
-          <Route path="learnings" element={<UnprefixedBoardRedirect />} />
-          <Route path="cases" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="cases/:caseIdentifier"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route path="pipelines" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="pipelines/:pipelineId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="pipelines/:pipelineId/add"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="pipelines/:pipelineId/settings"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="pipelines/:pipelineId/items/:caseId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="pipelines/:pipelineId/cases/:caseId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
-          <Route path="decisions" element={<UnprefixedBoardRedirect />} />
-          <Route path="u/:userSlug" element={<UnprefixedBoardRedirect />} />
-          <Route path="skills/studio" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="skills/studio/new"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="skills/studio/:skillId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="skills/:skillId/studio"
-            element={<LegacySkillStudioRedirect />}
-          />
-          <Route path="skills/*" element={<UnprefixedBoardRedirect />} />
-          <Route path="settings" element={<LegacySettingsRedirect />} />
-          <Route path="settings/*" element={<LegacySettingsRedirect />} />
-          <Route path="agents" element={<UnprefixedBoardRedirect />} />
-          {AGENT_FILTER_TABS.map((tab) => (
-            <Route
-              key={tab}
-              path={`agents/${tab}`}
-              element={<UnprefixedBoardRedirect />}
-            />
-          ))}
-          <Route path="agents/new" element={<UnprefixedBoardRedirect />} />
-          <Route path="agents/:agentId" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="agents/:agentId/:tab"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="agents/:agentId/runs/:runId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route path="projects" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="projects/:projectId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="projects/:projectId/overview"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="projects/:projectId/issues"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="projects/:projectId/issues/:filter"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="projects/:projectId/workspaces"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="projects/:projectId/workspaces/:workspaceId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="projects/:projectId/configuration"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route path="workspaces" element={<UnprefixedBoardRedirect />} />
-          <Route
-            path="execution-workspaces/:workspaceId"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="execution-workspaces/:workspaceId/services"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="execution-workspaces/:workspaceId/configuration"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="execution-workspaces/:workspaceId/runtime-logs"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="execution-workspaces/:workspaceId/issues"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route
-            path="execution-workspaces/:workspaceId/routines"
-            element={<UnprefixedBoardRedirect />}
-          />
-          <Route path=":companyPrefix" element={<Layout />}>
-            {boardRoutes()}
+          <Route element={<AuthenticatedAppGate />}>
+            <Route index element={<CompanyRootRedirect />} />
+            <Route path="onboarding" element={<OnboardingRoutePage />} />
+            {UNPREFIXED_BOARD_PATHS.map((path) => (
+              <Route
+                key={path}
+                path={path}
+                element={<UnprefixedBoardRedirect />}
+              />
+            ))}
+            <Route path=":companyPrefix" element={<Layout />}>
+              {boardRoutes()}
+            </Route>
+            <Route path="*" element={<NotFoundPage scope="global" />} />
           </Route>
-          <Route path="*" element={<NotFoundPage scope="global" />} />
-        </Route>
-      </Routes>
-      <OnboardingWizardVariant />
+        </Routes>
+      </Suspense>
+      {/* Modal overlay; nothing renders until it opens, so no visible fallback. */}
+      <Suspense fallback={null}>
+        <OnboardingWizardVariant />
+      </Suspense>
     </>
   );
 }

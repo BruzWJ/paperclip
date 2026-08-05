@@ -61,14 +61,6 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -84,7 +76,6 @@ import {
   type MentionOption,
   type MarkdownEditorRef,
 } from "./MarkdownEditor";
-import { Identity } from "./Identity";
 import {
   InlineEntitySelector,
   type InlineEntityOption,
@@ -149,7 +140,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
 import {
   AlertTriangle,
   ArrowRight,
@@ -166,10 +156,9 @@ import {
   Reply as ReplyIcon,
   Search,
   Square,
-  ThumbsDown,
-  ThumbsUp,
   X,
 } from "lucide-react";
+import { IssueChatFeedbackButtons } from "./AgentBubbleActionRow";
 import { IssueBlockedNotice } from "./IssueBlockedNotice";
 import { IssueOwnerBacklogNotice } from "./IssueOwnerBacklogNotice";
 import { SourceTrustBadge } from "./SourceTrustBadge";
@@ -2032,241 +2021,6 @@ function IssueChatAssistantMessage({
         </div>
       </div>
     </div>
-  );
-}
-
-function IssueChatFeedbackButtons({
-  activeVote,
-  sharingPreference = "prompt",
-  termsUrl,
-  onVote,
-}: {
-  activeVote: FeedbackVoteValue | null;
-  sharingPreference: FeedbackDataSharingPreference;
-  termsUrl: string | null;
-  onVote: (
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) => Promise<void>;
-}) {
-  const [isSaving, setIsSaving] = useState(false);
-  const [optimisticVote, setOptimisticVote] =
-    useState<FeedbackVoteValue | null>(null);
-  const [reasonOpen, setReasonOpen] = useState(false);
-  const [downvoteReason, setDownvoteReason] = useState("");
-  const feedbackReasonInputId = useId();
-  const [pendingSharingDialog, setPendingSharingDialog] = useState<{
-    vote: FeedbackVoteValue;
-    reason?: string;
-  } | null>(null);
-  const visibleVote = optimisticVote ?? activeVote ?? null;
-
-  useEffect(() => {
-    if (optimisticVote && activeVote === optimisticVote)
-      setOptimisticVote(null);
-  }, [activeVote, optimisticVote]);
-
-  async function doVote(
-    vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
-  ) {
-    setIsSaving(true);
-    try {
-      await onVote(vote, options);
-    } catch {
-      setOptimisticVote(null);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  function handleVote(vote: FeedbackVoteValue, reason?: string) {
-    setOptimisticVote(vote);
-    if (sharingPreference === "prompt") {
-      setPendingSharingDialog({ vote, ...(reason ? { reason } : {}) });
-      return;
-    }
-    const allowSharing = sharingPreference === "allowed";
-    void doVote(vote, {
-      ...(allowSharing ? { allowSharing: true } : {}),
-      ...(reason ? { reason } : {}),
-    });
-  }
-
-  function handleThumbsUp() {
-    handleVote("up");
-  }
-
-  function handleThumbsDown() {
-    setOptimisticVote("down");
-    setReasonOpen(true);
-    // Submit the initial down vote right away
-    handleVote("down");
-  }
-
-  function handleSubmitReason() {
-    if (!downvoteReason.trim()) return;
-    // Re-submit with reason attached
-    if (sharingPreference === "prompt") {
-      setPendingSharingDialog({ vote: "down", reason: downvoteReason });
-    } else {
-      const allowSharing = sharingPreference === "allowed";
-      void doVote("down", {
-        ...(allowSharing ? { allowSharing: true } : {}),
-        reason: downvoteReason,
-      });
-    }
-    setReasonOpen(false);
-    setDownvoteReason("");
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        disabled={isSaving}
-        className={cn(
-          "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-          visibleVote === "up"
-            ? "text-green-600 dark:text-green-400"
-            : "text-muted-foreground hover:bg-accent hover:text-foreground",
-        )}
-        title="Helpful"
-        aria-label="Helpful"
-        onClick={handleThumbsUp}
-      >
-        <ThumbsUp className="h-3.5 w-3.5" />
-      </button>
-      <Popover open={reasonOpen} onOpenChange={setReasonOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            disabled={isSaving}
-            className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-              visibleVote === "down"
-                ? "text-amber-600 dark:text-amber-400"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-            title="Needs work"
-            aria-label="Needs work"
-            onClick={handleThumbsDown}
-          >
-            <ThumbsDown className="h-3.5 w-3.5" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent side="top" align="start" className="w-80 p-3">
-          <label htmlFor={feedbackReasonInputId} className="mb-2 block text-sm font-medium">
-            What could have been better?
-          </label>
-          <Textarea
-            id={feedbackReasonInputId}
-            value={downvoteReason}
-            onChange={(event) => setDownvoteReason(event.target.value)}
-            placeholder="Add a short note"
-            className="min-h-20 resize-y bg-background text-sm"
-            disabled={isSaving}
-          />
-          <div className="mt-2 flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={isSaving}
-              onClick={() => {
-                setReasonOpen(false);
-                setDownvoteReason("");
-              }}
-            >
-              Dismiss
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={isSaving || !downvoteReason.trim()}
-              onClick={handleSubmitReason}
-            >
-              {isSaving ? "Saving..." : "Save note"}
-            </Button>
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      <Dialog
-        open={Boolean(pendingSharingDialog)}
-        onOpenChange={(open) => {
-          if (!open && !isSaving) {
-            setPendingSharingDialog(null);
-            setOptimisticVote(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Save your feedback sharing preference</DialogTitle>
-            <DialogDescription>
-              Choose whether voted AI outputs can be shared with Paperclip Labs.
-              This answer becomes the default for future thumbs up and thumbs
-              down votes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>This vote is always saved locally.</p>
-            <p>
-              Choose{" "}
-              <span className="font-medium text-foreground">Always allow</span>{" "}
-              to share this vote and future voted AI outputs. Choose{" "}
-              <span className="font-medium text-foreground">Don't allow</span>{" "}
-              to keep this vote and future votes local.
-            </p>
-            <p>You can change this later in Instance Settings &gt; General.</p>
-            {termsUrl ? (
-              <a
-                href={termsUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex text-sm text-foreground underline underline-offset-4"
-              >
-                Read our terms of service
-              </a>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!pendingSharingDialog || isSaving}
-              onClick={() => {
-                if (!pendingSharingDialog) return;
-                void doVote(
-                  pendingSharingDialog.vote,
-                  pendingSharingDialog.reason
-                    ? { reason: pendingSharingDialog.reason }
-                    : undefined,
-                ).then(() => setPendingSharingDialog(null));
-              }}
-            >
-              {isSaving ? "Saving..." : "Don't allow"}
-            </Button>
-            <Button
-              type="button"
-              disabled={!pendingSharingDialog || isSaving}
-              onClick={() => {
-                if (!pendingSharingDialog) return;
-                void doVote(pendingSharingDialog.vote, {
-                  allowSharing: true,
-                  ...(pendingSharingDialog.reason
-                    ? { reason: pendingSharingDialog.reason }
-                    : {}),
-                }).then(() => setPendingSharingDialog(null));
-              }}
-            >
-              {isSaving ? "Saving..." : "Always allow"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   );
 }
 

@@ -317,8 +317,10 @@ describe("AuthenticatedAppGate", () => {
 
 describe("Skill Studio routes", () => {
   it("registers create mode before the skillId route in prefixed and unprefixed routing", () => {
-    const createRoute = 'path="skills/studio/new"';
-    const detailRoute = 'path="skills/studio/:skillId"';
+    // Matches both the boardRoutes registration (path="skills/studio/new") and
+    // the UNPREFIXED_BOARD_PATHS entry ("skills/studio/new").
+    const createRoute = '"skills/studio/new"';
+    const detailRoute = '"skills/studio/:skillId"';
     const createIndexes = [
       ...appSource.matchAll(new RegExp(createRoute, "g")),
     ].map((match) => match.index ?? -1);

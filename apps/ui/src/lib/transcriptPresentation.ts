@@ -1,11 +1,5 @@
 type TranscriptDensity = "comfortable" | "compact";
 
-type TranscriptActivity = {
-  activityId?: string;
-  name: string;
-  status: "running" | "completed";
-};
-
 export interface ToolInputDetail {
   label: string;
   value: string;
@@ -259,23 +253,4 @@ export function summarizeToolResult(
     .filter(Boolean);
   const firstLine = lines[0] ?? result;
   return truncate(firstLine, density === "compact" ? 84 : 140);
-}
-
-export function parseSystemActivity(text: string): TranscriptActivity | null {
-  const match = text.match(/^item (started|completed):\s*([a-z0-9_-]+)(?:\s+\(id=([^)]+)\))?$/i);
-  if (!match) return null;
-  return {
-    status: match[1].toLowerCase() === "started" ? "running" : "completed",
-    name: humanizeLabel(match[2] ?? "Activity"),
-    activityId: match[3] || undefined,
-  };
-}
-
-export function shouldHideNiceModeStderr(text: string): boolean {
-  const normalized = compactWhitespace(text).toLowerCase();
-  return normalized.startsWith("[paperclip] skipping saved session resume");
-}
-
-export function summarizeNotice(text: string, max = 160): string {
-  return truncate(compactWhitespace(text), max);
 }

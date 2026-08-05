@@ -152,20 +152,10 @@ export const agentStatusColor: Record<string, AgentBadgeColor> = {
   error: "red",
 };
 
-export const agentStatusColorDefault: AgentBadgeColor = "gray";
-
 // Brand `.task-chip` styles per colour name live in `brandChipBadge` below —
 // `AgentBadgeColor` is a subset of `BrandChipColor`, so agent badges index
 // straight into it. (A byte-identical `agentStatusBadge` duplicate map was
 // collapsed into `brandChipBadge` in the Run 2 review; DECISION-SHEET.md A1.)
-
-/** Status-capsule fill (solid) per colour name. gray darkens in dark mode. */
-export const agentStatusCapsule: Record<AgentBadgeColor, string> = {
-  gray: "bg-[#A8AEB2] dark:bg-[#6E6960]",
-  blue: "bg-[#2563EB]",
-  amber: "bg-[#F59E0B]",
-  red: "bg-[#DC2626]",
-};
 
 /** Per-status capsule motion (running pulses, error blinks). Honors reduced-motion. */
 export const agentStatusMotion: Record<string, string> = {
@@ -227,8 +217,6 @@ export const issueStatusColor: Record<string, BrandChipColor> = {
   blocked: "red",
   cancelled: "gray",
 };
-
-export const issueStatusColorDefault: BrandChipColor = "gray";
 
 // ---------------------------------------------------------------------------
 // Status → base-hue CSS variable
@@ -391,5 +379,3 @@ export const externalObjectStatusToneSeverity: Record<string, number> = {
   warning: 4,
   danger: 5,
 };
-
-export const externalObjectStatusToneSeverityDefault = 0;

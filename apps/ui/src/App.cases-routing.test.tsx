@@ -63,11 +63,16 @@ vi.mock("./components/Layout", async () => {
 });
 
 // The experimental gate would otherwise hide the page behind a feature flag.
-vi.mock("./components/CasesExperimentalGate", () => ({
-  CasesExperimentalGate: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
-}));
+// Like the real gate, it renders children as a wrapper and an <Outlet /> when
+// used as a pathless layout route.
+vi.mock("./components/CasesExperimentalGate", async () => {
+  const { Outlet } = await import("react-router-dom");
+  return {
+    CasesExperimentalGate: ({ children }: { children?: ReactNode }) => (
+      <>{children ?? <Outlet />}</>
+    ),
+  };
+});
 
 // Rendered by <App> outside <Routes> and needs DialogProvider; irrelevant here.
 vi.mock("./components/OnboardingWizardVariant", () => ({
