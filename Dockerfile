@@ -27,10 +27,7 @@ COPY packages/kv-demo-mcp-server/package.json packages/kv-demo-mcp-server/
 COPY packages/skills-catalog/package.json packages/skills-catalog/
 COPY packages/teams-catalog/package.json packages/teams-catalog/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
-COPY --parents packages/plugins/sandbox-providers/./*/package.json packages/plugins/sandbox-providers/
-COPY packages/plugins/paperclip-plugin-fake-sandbox/package.json packages/plugins/paperclip-plugin-fake-sandbox/
-COPY packages/plugins/plugin-llm-wiki/package.json packages/plugins/plugin-llm-wiki/
-COPY packages/plugins/plugin-workspace-diff/package.json packages/plugins/plugin-workspace-diff/
+COPY packages/plugins/agentmemory-plugin/package.json packages/plugins/agentmemory-plugin/
 COPY patches/ patches/
 COPY scripts/link-plugin-dev-sdk.mjs scripts/
 
