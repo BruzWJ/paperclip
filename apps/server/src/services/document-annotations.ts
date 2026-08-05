@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   documentAnnotationAnchorSnapshots,
@@ -123,6 +123,85 @@ function snapshotFromThread(thread: Pick<DocumentAnnotationThread, "selectedText
     markdownStart: thread.markdownStart,
     markdownEnd: thread.markdownEnd,
   };
+}
+
+type DocumentAnnotationTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+async function remapOpenThreadsForScope(
+  tx: DocumentAnnotationTx,
+  scopeCondition: SQL,
+  input: {
+    documentId: string;
+    nextRevisionId: string | null;
+    nextRevisionNumber: number;
+    nextBody: string;
+  },
+) {
+  const threads: DocumentAnnotationThread[] = await tx
+    .select(threadSelect)
+    .from(documentAnnotationThreads)
+    .where(and(
+      scopeCondition,
+      eq(documentAnnotationThreads.documentId, input.documentId),
+      eq(documentAnnotationThreads.status, "open"),
+    ));
+  const changed = [];
+  const now = new Date();
+
+  for (const thread of threads) {
+    if (thread.currentRevisionId === input.nextRevisionId) continue;
+    const previousAnchor = snapshotFromThread(thread);
+    const remap = remapDocumentAnchor({
+      previousAnchor,
+      nextMarkdown: input.nextBody,
+    });
+    const nextAnchor = remap.anchor;
+    const nextSelector = nextAnchor ? anchorSnapshotToSelector(nextAnchor) : thread.anchorSelector;
+    const [updated] = await tx
+      .update(documentAnnotationThreads)
+      .set({
+        currentRevisionId: input.nextRevisionId,
+        currentRevisionNumber: input.nextRevisionNumber,
+        anchorState: remap.anchorState,
+        anchorConfidence: remap.confidence,
+        ...(nextAnchor
+          ? {
+            selectedText: nextAnchor.selectedText,
+            prefixText: nextAnchor.prefixText,
+            suffixText: nextAnchor.suffixText,
+            normalizedStart: nextAnchor.normalizedStart,
+            normalizedEnd: nextAnchor.normalizedEnd,
+            markdownStart: nextAnchor.markdownStart,
+            markdownEnd: nextAnchor.markdownEnd,
+          }
+          : {}),
+        anchorSelector: nextSelector,
+        updatedAt: now,
+      })
+      .where(eq(documentAnnotationThreads.id, thread.id))
+      .returning(threadSelect);
+    const [snapshot] = await tx
+      .insert(documentAnnotationAnchorSnapshots)
+      .values({
+        companyId: thread.companyId,
+        threadId: thread.id,
+        documentId: thread.documentId,
+        fromRevisionId: thread.currentRevisionId,
+        fromRevisionNumber: thread.currentRevisionNumber,
+        toRevisionId: input.nextRevisionId,
+        toRevisionNumber: input.nextRevisionNumber,
+        previousAnchor,
+        nextAnchor,
+        anchorState: remap.anchorState,
+        anchorConfidence: remap.confidence,
+        failureReason: remap.anchor ? null : remap.reason,
+        createdAt: now,
+      })
+      .returning();
+    changed.push({ thread: updated, snapshot });
+  }
+
+  return changed;
 }
 
 export function documentAnnotationService(db: Db) {
@@ -901,73 +980,8 @@ export function documentAnnotationService(db: Db) {
       nextRevisionId: string | null;
       nextRevisionNumber: number;
       nextBody: string;
-    }) => db.transaction(async (tx) => {
-      const threads: DocumentAnnotationThread[] = await tx
-        .select(threadSelect)
-        .from(documentAnnotationThreads)
-        .where(and(
-          eq(documentAnnotationThreads.issueId, input.issueId),
-          eq(documentAnnotationThreads.documentId, input.documentId),
-          eq(documentAnnotationThreads.status, "open"),
-        ));
-      const changed = [];
-      const now = new Date();
-
-      for (const thread of threads) {
-        if (thread.currentRevisionId === input.nextRevisionId) continue;
-        const previousAnchor = snapshotFromThread(thread);
-        const remap = remapDocumentAnchor({
-          previousAnchor,
-          nextMarkdown: input.nextBody,
-        });
-        const nextAnchor = remap.anchor;
-        const nextSelector = nextAnchor ? anchorSnapshotToSelector(nextAnchor) : thread.anchorSelector;
-        const [updated] = await tx
-          .update(documentAnnotationThreads)
-          .set({
-            currentRevisionId: input.nextRevisionId,
-            currentRevisionNumber: input.nextRevisionNumber,
-            anchorState: remap.anchorState,
-            anchorConfidence: remap.confidence,
-            ...(nextAnchor
-              ? {
-                selectedText: nextAnchor.selectedText,
-                prefixText: nextAnchor.prefixText,
-                suffixText: nextAnchor.suffixText,
-                normalizedStart: nextAnchor.normalizedStart,
-                normalizedEnd: nextAnchor.normalizedEnd,
-                markdownStart: nextAnchor.markdownStart,
-                markdownEnd: nextAnchor.markdownEnd,
-              }
-              : {}),
-            anchorSelector: nextSelector,
-            updatedAt: now,
-          })
-          .where(eq(documentAnnotationThreads.id, thread.id))
-          .returning(threadSelect);
-        const [snapshot] = await tx
-          .insert(documentAnnotationAnchorSnapshots)
-          .values({
-            companyId: thread.companyId,
-            threadId: thread.id,
-            documentId: thread.documentId,
-            fromRevisionId: thread.currentRevisionId,
-            fromRevisionNumber: thread.currentRevisionNumber,
-            toRevisionId: input.nextRevisionId,
-            toRevisionNumber: input.nextRevisionNumber,
-            previousAnchor,
-            nextAnchor,
-            anchorState: remap.anchorState,
-            anchorConfidence: remap.confidence,
-            failureReason: remap.anchor ? null : remap.reason,
-            createdAt: now,
-          })
-          .returning();
-        changed.push({ thread: updated, snapshot });
-      }
-
-      return changed;
-    }),
+    }) => db.transaction(async (tx) =>
+      remapOpenThreadsForScope(tx, eq(documentAnnotationThreads.issueId, input.issueId), input)),
 
     remapOpenThreadsForRoutineDocument: async (input: {
       routineId: string;
@@ -976,73 +990,8 @@ export function documentAnnotationService(db: Db) {
       nextRevisionId: string | null;
       nextRevisionNumber: number;
       nextBody: string;
-    }) => db.transaction(async (tx) => {
-      const threads: DocumentAnnotationThread[] = await tx
-        .select(threadSelect)
-        .from(documentAnnotationThreads)
-        .where(and(
-          eq(documentAnnotationThreads.routineId, input.routineId),
-          eq(documentAnnotationThreads.documentId, input.documentId),
-          eq(documentAnnotationThreads.status, "open"),
-        ));
-      const changed = [];
-      const now = new Date();
-
-      for (const thread of threads) {
-        if (thread.currentRevisionId === input.nextRevisionId) continue;
-        const previousAnchor = snapshotFromThread(thread);
-        const remap = remapDocumentAnchor({
-          previousAnchor,
-          nextMarkdown: input.nextBody,
-        });
-        const nextAnchor = remap.anchor;
-        const nextSelector = nextAnchor ? anchorSnapshotToSelector(nextAnchor) : thread.anchorSelector;
-        const [updated] = await tx
-          .update(documentAnnotationThreads)
-          .set({
-            currentRevisionId: input.nextRevisionId,
-            currentRevisionNumber: input.nextRevisionNumber,
-            anchorState: remap.anchorState,
-            anchorConfidence: remap.confidence,
-            ...(nextAnchor
-              ? {
-                selectedText: nextAnchor.selectedText,
-                prefixText: nextAnchor.prefixText,
-                suffixText: nextAnchor.suffixText,
-                normalizedStart: nextAnchor.normalizedStart,
-                normalizedEnd: nextAnchor.normalizedEnd,
-                markdownStart: nextAnchor.markdownStart,
-                markdownEnd: nextAnchor.markdownEnd,
-              }
-              : {}),
-            anchorSelector: nextSelector,
-            updatedAt: now,
-          })
-          .where(eq(documentAnnotationThreads.id, thread.id))
-          .returning(threadSelect);
-        const [snapshot] = await tx
-          .insert(documentAnnotationAnchorSnapshots)
-          .values({
-            companyId: thread.companyId,
-            threadId: thread.id,
-            documentId: thread.documentId,
-            fromRevisionId: thread.currentRevisionId,
-            fromRevisionNumber: thread.currentRevisionNumber,
-            toRevisionId: input.nextRevisionId,
-            toRevisionNumber: input.nextRevisionNumber,
-            previousAnchor,
-            nextAnchor,
-            anchorState: remap.anchorState,
-            anchorConfidence: remap.confidence,
-            failureReason: remap.anchor ? null : remap.reason,
-            createdAt: now,
-          })
-          .returning();
-        changed.push({ thread: updated, snapshot });
-      }
-
-      return changed;
-    }),
+    }) => db.transaction(async (tx) =>
+      remapOpenThreadsForScope(tx, eq(documentAnnotationThreads.routineId, input.routineId), input)),
 
     remapOpenThreadsForCaseDocument: async (input: {
       caseId: string;
@@ -1051,73 +1000,8 @@ export function documentAnnotationService(db: Db) {
       nextRevisionId: string | null;
       nextRevisionNumber: number;
       nextBody: string;
-    }) => db.transaction(async (tx) => {
-      const threads: DocumentAnnotationThread[] = await tx
-        .select(threadSelect)
-        .from(documentAnnotationThreads)
-        .where(and(
-          eq(documentAnnotationThreads.caseId, input.caseId),
-          eq(documentAnnotationThreads.documentId, input.documentId),
-          eq(documentAnnotationThreads.status, "open"),
-        ));
-      const changed = [];
-      const now = new Date();
-
-      for (const thread of threads) {
-        if (thread.currentRevisionId === input.nextRevisionId) continue;
-        const previousAnchor = snapshotFromThread(thread);
-        const remap = remapDocumentAnchor({
-          previousAnchor,
-          nextMarkdown: input.nextBody,
-        });
-        const nextAnchor = remap.anchor;
-        const nextSelector = nextAnchor ? anchorSnapshotToSelector(nextAnchor) : thread.anchorSelector;
-        const [updated] = await tx
-          .update(documentAnnotationThreads)
-          .set({
-            currentRevisionId: input.nextRevisionId,
-            currentRevisionNumber: input.nextRevisionNumber,
-            anchorState: remap.anchorState,
-            anchorConfidence: remap.confidence,
-            ...(nextAnchor
-              ? {
-                selectedText: nextAnchor.selectedText,
-                prefixText: nextAnchor.prefixText,
-                suffixText: nextAnchor.suffixText,
-                normalizedStart: nextAnchor.normalizedStart,
-                normalizedEnd: nextAnchor.normalizedEnd,
-                markdownStart: nextAnchor.markdownStart,
-                markdownEnd: nextAnchor.markdownEnd,
-              }
-              : {}),
-            anchorSelector: nextSelector,
-            updatedAt: now,
-          })
-          .where(eq(documentAnnotationThreads.id, thread.id))
-          .returning(threadSelect);
-        const [snapshot] = await tx
-          .insert(documentAnnotationAnchorSnapshots)
-          .values({
-            companyId: thread.companyId,
-            threadId: thread.id,
-            documentId: thread.documentId,
-            fromRevisionId: thread.currentRevisionId,
-            fromRevisionNumber: thread.currentRevisionNumber,
-            toRevisionId: input.nextRevisionId,
-            toRevisionNumber: input.nextRevisionNumber,
-            previousAnchor,
-            nextAnchor,
-            anchorState: remap.anchorState,
-            anchorConfidence: remap.confidence,
-            failureReason: remap.anchor ? null : remap.reason,
-            createdAt: now,
-          })
-          .returning();
-        changed.push({ thread: updated, snapshot });
-      }
-
-      return changed;
-    }),
+    }) => db.transaction(async (tx) =>
+      remapOpenThreadsForScope(tx, eq(documentAnnotationThreads.caseId, input.caseId), input)),
 
     selectorToAnchorSnapshot,
   };

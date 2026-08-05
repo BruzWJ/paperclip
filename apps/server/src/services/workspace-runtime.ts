@@ -1599,64 +1599,6 @@ async function logForwardBranchReconcileActivity(input: {
   });
 }
 
-export async function reconcilePendingForwardBranchAfterPersistence(input: {
-  db: Db;
-  executionWorkspaceId: string;
-  issueId: string;
-  pending: PendingForwardBranchReconcile;
-  runId?: string | null;
-  reconcileOperationPhase?: "worktree_prepare" | "workspace_finalize";
-  recorder?: WorkspaceOperationRecorder | null;
-}) {
-  const result = await executionWorkspaceService(input.db).reconcileExecutionWorkspaceBranch(
-    input.executionWorkspaceId,
-    {
-      mode: "forward",
-      issueId: input.issueId,
-      reason: input.pending.reason,
-      actor: {
-        actorType: "system",
-        actorId: "workspace_runtime",
-        runId: input.runId ?? null,
-      },
-    },
-  );
-  await logForwardBranchReconcileActivity({
-    db: input.db,
-    companyId: result.workspace.companyId,
-    executionWorkspaceId: result.workspace.id,
-    sourceIssueId: result.boundIssueId,
-    runId: input.runId ?? null,
-    mode: "forward",
-    reason: input.pending.reason,
-    fromBranch: result.inspection.fromBranch,
-    toBranch: result.inspection.toBranch,
-    fromSha: result.inspection.fromSha,
-    toSha: result.inspection.toSha,
-    ancestryVerdict: result.inspection.ancestryVerdict,
-    fingerprint: result.inspection.fingerprint,
-    auditCommentId: result.auditCommentId,
-  });
-  await recordForwardBranchReconcileOperation({
-    recorder: input.recorder,
-    phase: input.reconcileOperationPhase,
-    cwd: result.inspection.worktreePath,
-    repoRoot: result.inspection.repoRoot,
-    worktreePath: result.inspection.worktreePath,
-    expectedBranchName: result.inspection.fromBranch,
-    actualBranchName: result.inspection.toBranch,
-    executionWorkspaceId: result.workspace.id,
-    sourceIssueId: result.boundIssueId,
-    fingerprint: result.inspection.fingerprint,
-    expectedHeadSha: result.inspection.fromSha,
-    actualHeadSha: result.inspection.toSha,
-    ancestryVerdict: result.inspection.ancestryVerdict,
-    mode: "adopt_for_realize",
-    auditCommentId: result.auditCommentId,
-  });
-  return result;
-}
-
 export async function ensureGitWorktreeBranchCoherent(input: {
   db?: Db | null;
   repoRoot: string;
@@ -2307,18 +2249,6 @@ async function validateLinkedGitWorktree(input: {
         reasonCode: inspection.reasonCode ?? "not_a_git_checkout",
         actualBranchName: inspection.actualBranchName,
       };
-}
-
-export function formatManagedGitWorktreeBranchInspection(input: ManagedGitWorktreeBranchInspection) {
-  return {
-    valid: input.valid,
-    reason: input.reason,
-    reasonCode: input.reasonCode,
-    repoRoot: input.repoRoot,
-    worktreePath: input.worktreePath,
-    expectedBranchName: input.expectedBranchName,
-    actualBranchName: input.actualBranchName,
-  };
 }
 
 function terminateChildProcess(child: ChildProcess) {
@@ -4625,34 +4555,6 @@ export async function stopRuntimeServicesForProjectWorkspace(input: {
   }
 }
 
-export async function listWorkspaceRuntimeServicesForProjectWorkspaces(
-  db: Db,
-  companyId: string,
-  projectWorkspaceIds: string[],
-) {
-  if (projectWorkspaceIds.length === 0) return new Map<string, typeof workspaceRuntimeServices.$inferSelect[]>();
-  const rows = await db
-    .select()
-    .from(workspaceRuntimeServices)
-    .where(
-      and(
-        eq(workspaceRuntimeServices.companyId, companyId),
-        inArray(workspaceRuntimeServices.projectWorkspaceId, projectWorkspaceIds),
-        eq(workspaceRuntimeServices.scopeType, "project_workspace"),
-      ),
-    )
-    .orderBy(desc(workspaceRuntimeServices.updatedAt), desc(workspaceRuntimeServices.createdAt));
-
-  const grouped = new Map<string, typeof workspaceRuntimeServices.$inferSelect[]>();
-  for (const row of rows) {
-    if (!row.projectWorkspaceId) continue;
-    const existing = grouped.get(row.projectWorkspaceId);
-    if (existing) existing.push(row);
-    else grouped.set(row.projectWorkspaceId, [row]);
-  }
-  return grouped;
-}
-
 export async function reconcilePersistedRuntimeServicesOnStartup(db: Db) {
   const rows = await db
     .select()
@@ -4938,114 +4840,4 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
   }
 
   return { restarted, failed };
-}
-
-export async function persistAdapterManagedRuntimeServices(input: {
-  db: Db;
-  adapterType: string;
-  runId: string;
-  agent: ExecutionWorkspaceAgentRef;
-  issue: ExecutionWorkspaceIssueRef | null;
-  workspace: RealizedExecutionWorkspace;
-  executionWorkspaceId?: string | null;
-  reports: AdapterRuntimeServiceReport[];
-}) {
-  const refs = normalizeAdapterManagedRuntimeServices(input);
-  if (refs.length === 0) return refs;
-
-  const existingRows = await input.db
-    .select()
-    .from(workspaceRuntimeServices)
-    .where(inArray(workspaceRuntimeServices.id, refs.map((ref) => ref.id)));
-  const existingById = new Map(existingRows.map((row) => [row.id, row]));
-
-  for (const ref of refs) {
-    const existing = existingById.get(ref.id);
-    const startedAt = existing?.startedAt ?? new Date(ref.startedAt);
-    const createdAt = existing?.createdAt ?? new Date();
-    await input.db
-      .insert(workspaceRuntimeServices)
-      .values({
-        id: ref.id,
-        companyId: ref.companyId,
-        projectId: ref.projectId,
-        projectWorkspaceId: ref.projectWorkspaceId,
-        executionWorkspaceId: ref.executionWorkspaceId,
-        issueId: ref.issueId,
-        scopeType: ref.scopeType,
-        scopeId: ref.scopeId,
-        serviceName: ref.serviceName,
-        status: ref.status,
-        lifecycle: ref.lifecycle,
-        reuseKey: ref.reuseKey,
-        command: ref.command,
-        cwd: ref.cwd,
-        port: ref.port,
-        url: ref.url,
-        provider: ref.provider,
-        providerRef: ref.providerRef,
-        ownerAgentId: ref.ownerAgentId,
-        startedByRunId: ref.startedByRunId,
-        lastUsedAt: new Date(ref.lastUsedAt),
-        startedAt,
-        stoppedAt: ref.stoppedAt ? new Date(ref.stoppedAt) : null,
-        stopPolicy: ref.stopPolicy,
-        healthStatus: ref.healthStatus,
-        createdAt,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: workspaceRuntimeServices.id,
-        set: {
-          projectId: ref.projectId,
-          projectWorkspaceId: ref.projectWorkspaceId,
-          executionWorkspaceId: ref.executionWorkspaceId,
-          issueId: ref.issueId,
-          scopeType: ref.scopeType,
-          scopeId: ref.scopeId,
-          serviceName: ref.serviceName,
-          status: ref.status,
-          lifecycle: ref.lifecycle,
-          reuseKey: ref.reuseKey,
-          command: ref.command,
-          cwd: ref.cwd,
-          port: ref.port,
-          url: ref.url,
-          provider: ref.provider,
-          providerRef: ref.providerRef,
-          ownerAgentId: ref.ownerAgentId,
-          startedByRunId: ref.startedByRunId,
-          lastUsedAt: new Date(ref.lastUsedAt),
-          startedAt,
-          stoppedAt: ref.stoppedAt ? new Date(ref.stoppedAt) : null,
-          stopPolicy: ref.stopPolicy,
-          healthStatus: ref.healthStatus,
-          updatedAt: new Date(),
-        },
-      });
-  }
-
-  return refs;
-}
-
-export function buildWorkspaceReadyComment(input: {
-  workspace: RealizedExecutionWorkspace;
-  runtimeServices: RuntimeServiceRef[];
-}) {
-  const lines = ["## Workspace Ready", ""];
-  lines.push(`- Strategy: \`${input.workspace.strategy}\``);
-  if (input.workspace.branchName) lines.push(`- Branch: \`${input.workspace.branchName}\``);
-  lines.push(`- CWD: \`${input.workspace.cwd}\``);
-  if (input.workspace.worktreePath && input.workspace.worktreePath !== input.workspace.cwd) {
-    lines.push(`- Worktree: \`${input.workspace.worktreePath}\``);
-  }
-  for (const warning of input.workspace.warnings) {
-    lines.push(`- Warning: ${warning}`);
-  }
-  for (const service of input.runtimeServices) {
-    const detail = service.url ? `${service.serviceName}: ${service.url}` : `${service.serviceName}: running`;
-    const suffix = service.reused ? " (reused)" : "";
-    lines.push(`- Service: ${detail}${suffix}`);
-  }
-  return lines.join("\n");
 }

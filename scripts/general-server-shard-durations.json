@@ -68,7 +68,6 @@
     "apps/server/src/__tests__/file-resources.test.ts": 4757,
     "apps/server/src/__tests__/first-admin-claim.test.ts": 2117,
     "apps/server/src/__tests__/forbidden-tokens.test.ts": 6,
-    "apps/server/src/__tests__/agent-start-lock.test.ts": 8,
     "apps/server/src/__tests__/http-log-policy.test.ts": 5,
     "apps/server/src/__tests__/inbox-dismissals.test.ts": 2110,
     "apps/server/src/__tests__/instance-settings-service.test.ts": 15,

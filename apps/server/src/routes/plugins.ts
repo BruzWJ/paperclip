@@ -367,6 +367,53 @@ async function resolvePlugin(
   return registry.getByKey(pluginId);
 }
 
+function buildPluginHealthResult(
+  plugin: NonNullable<Awaited<ReturnType<typeof resolvePlugin>>>,
+): PluginHealthCheckResult {
+  const checks: PluginHealthCheckResult["checks"] = [];
+
+  // Check 1: Plugin is registered
+  checks.push({
+    name: "registry",
+    passed: true,
+    message: "Plugin found in registry",
+  });
+
+  // Check 2: Manifest is valid
+  const hasValidManifest = Boolean(plugin.manifestJson?.id);
+  checks.push({
+    name: "manifest",
+    passed: hasValidManifest,
+    message: hasValidManifest ? "Manifest is valid" : "Manifest is invalid or missing",
+  });
+
+  // Check 3: Plugin status
+  const isHealthy = plugin.status === "ready";
+  checks.push({
+    name: "status",
+    passed: isHealthy,
+    message: `Current status: ${plugin.status}`,
+  });
+
+  // Check 4: No last error
+  const hasNoError = !plugin.lastError;
+  if (!hasNoError) {
+    checks.push({
+      name: "error_state",
+      passed: false,
+      message: plugin.lastError ?? undefined,
+    });
+  }
+
+  return {
+    pluginId: plugin.id,
+    status: plugin.status,
+    healthy: isHealthy && hasValidManifest && hasNoError,
+    checks,
+    lastError: plugin.lastError ?? undefined,
+  };
+}
+
 /**
  * Optional dependencies for plugin job scheduling routes.
  *
@@ -1775,50 +1822,7 @@ export function pluginRoutes(
       return;
     }
 
-    const checks: PluginHealthCheckResult["checks"] = [];
-
-    // Check 1: Plugin is registered
-    checks.push({
-      name: "registry",
-      passed: true,
-      message: "Plugin found in registry",
-    });
-
-    // Check 2: Manifest is valid
-    const hasValidManifest = Boolean(plugin.manifestJson?.id);
-    checks.push({
-      name: "manifest",
-      passed: hasValidManifest,
-      message: hasValidManifest ? "Manifest is valid" : "Manifest is invalid or missing",
-    });
-
-    // Check 3: Plugin status
-    const isHealthy = plugin.status === "ready";
-    checks.push({
-      name: "status",
-      passed: isHealthy,
-      message: `Current status: ${plugin.status}`,
-    });
-
-    // Check 4: No last error
-    const hasNoError = !plugin.lastError;
-    if (!hasNoError) {
-      checks.push({
-        name: "error_state",
-        passed: false,
-        message: plugin.lastError ?? undefined,
-      });
-    }
-
-    const result: PluginHealthCheckResult = {
-      pluginId: plugin.id,
-      status: plugin.status,
-      healthy: isHealthy && hasValidManifest && hasNoError,
-      checks,
-      lastError: plugin.lastError ?? undefined,
-    };
-
-    res.json(result);
+    res.json(buildPluginHealthResult(plugin));
   });
 
   /**
@@ -2759,45 +2763,7 @@ export function pluginRoutes(
       // Webhook data unavailable — leave empty
     }
 
-    // --- Health check (same logic as GET /health) ---
-    const checks: PluginHealthCheckResult["checks"] = [];
-
-    checks.push({
-      name: "registry",
-      passed: true,
-      message: "Plugin found in registry",
-    });
-
-    const hasValidManifest = Boolean(plugin.manifestJson?.id);
-    checks.push({
-      name: "manifest",
-      passed: hasValidManifest,
-      message: hasValidManifest ? "Manifest is valid" : "Manifest is invalid or missing",
-    });
-
-    const isHealthy = plugin.status === "ready";
-    checks.push({
-      name: "status",
-      passed: isHealthy,
-      message: `Current status: ${plugin.status}`,
-    });
-
-    const hasNoError = !plugin.lastError;
-    if (!hasNoError) {
-      checks.push({
-        name: "error_state",
-        passed: false,
-        message: plugin.lastError ?? undefined,
-      });
-    }
-
-    const health: PluginHealthCheckResult = {
-      pluginId: plugin.id,
-      status: plugin.status,
-      healthy: isHealthy && hasValidManifest && hasNoError,
-      checks,
-      lastError: plugin.lastError ?? undefined,
-    };
+    const health = buildPluginHealthResult(plugin);
 
     res.json({
       pluginId: plugin.id,

@@ -544,6 +544,52 @@ export function issueTreeControlService(db: Db) {
       releasePolicy: holdReleasePolicy,
     });
 
+    async function insertHoldWithMembers(
+      tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    ) {
+      const [createdHold] = await tx
+        .insert(issueTreeHolds)
+        .values({
+          companyId,
+          rootIssueId,
+          mode: input.mode,
+          status: "active",
+          reason: input.reason ?? null,
+          releasePolicy: holdReleasePolicy as unknown as Record<string, unknown>,
+          createdByActorType: input.actor.actorType,
+          createdByAgentId: input.actor.agentId ?? null,
+          createdByUserId: input.actor.userId ?? (input.actor.actorType === "user" ? input.actor.actorId : null),
+          createdByRunId: input.actor.runId ?? null,
+        })
+        .returning();
+
+      const memberRows = holdPreview.issues.map((issue) => ({
+        companyId,
+        holdId: createdHold.id,
+        issueId: issue.id,
+        parentIssueId: issue.parentId,
+        depth: issue.depth,
+        issueIdentifier: issue.identifier,
+        issueTitle: issue.title,
+        issueStatus: issue.boardPresentationStatus,
+        ownerAgentId: issue.ownerAgentId,
+        ownerUserId: issue.ownerUserId,
+        activeRunId: issue.activeRun?.id ?? null,
+        activeRunStatus: issue.activeRun?.status ?? null,
+        skipped: issue.skipped,
+        skipReason: issue.skipReason,
+      }));
+
+      const createdMembers = memberRows.length > 0
+        ? await tx
+          .insert(issueTreeHoldMembers)
+          .values(memberRows)
+          .returning()
+        : [];
+
+      return { createdHold, createdMembers };
+    }
+
     if (input.mode === "resume") {
       const issueIds = [...new Set(holdPreview.issues.map((issue) => issue.id))];
       const releaseReason = input.reason ?? "Subtree resume applied.";
@@ -565,45 +611,7 @@ export function issueTreeControlService(db: Db) {
             )
             .orderBy(asc(issueTreeHolds.createdAt), asc(issueTreeHolds.id))
             .for("update");
-        const [createdHold] = await tx
-          .insert(issueTreeHolds)
-          .values({
-            companyId,
-            rootIssueId,
-            mode: input.mode,
-            status: "active",
-            reason: input.reason ?? null,
-            releasePolicy: holdReleasePolicy as unknown as Record<string, unknown>,
-            createdByActorType: input.actor.actorType,
-            createdByAgentId: input.actor.agentId ?? null,
-            createdByUserId: input.actor.userId ?? (input.actor.actorType === "user" ? input.actor.actorId : null),
-            createdByRunId: input.actor.runId ?? null,
-          })
-          .returning();
-
-        const memberRows = holdPreview.issues.map((issue) => ({
-          companyId,
-          holdId: createdHold.id,
-          issueId: issue.id,
-          parentIssueId: issue.parentId,
-          depth: issue.depth,
-          issueIdentifier: issue.identifier,
-          issueTitle: issue.title,
-          issueStatus: issue.boardPresentationStatus,
-          ownerAgentId: issue.ownerAgentId,
-          ownerUserId: issue.ownerUserId,
-          activeRunId: issue.activeRun?.id ?? null,
-          activeRunStatus: issue.activeRun?.status ?? null,
-          skipped: issue.skipped,
-          skipReason: issue.skipReason,
-        }));
-
-        const createdMembers = memberRows.length > 0
-          ? await tx
-            .insert(issueTreeHoldMembers)
-            .values(memberRows)
-            .returning()
-          : [];
+        const { createdHold, createdMembers } = await insertHoldWithMembers(tx);
         const resumedPauseHoldIds = activePauseHolds.map((hold) => hold.id);
         const now = new Date();
         let affectedIssueIds: string[] = [];
@@ -711,42 +719,7 @@ export function issueTreeControlService(db: Db) {
     }
 
     const { hold, members } = await db.transaction(async (tx) => {
-      const [createdHold] = await tx
-        .insert(issueTreeHolds)
-        .values({
-          companyId,
-          rootIssueId,
-          mode: input.mode,
-          status: "active",
-          reason: input.reason ?? null,
-          releasePolicy: holdReleasePolicy as unknown as Record<string, unknown>,
-          createdByActorType: input.actor.actorType,
-          createdByAgentId: input.actor.agentId ?? null,
-          createdByUserId: input.actor.userId ?? (input.actor.actorType === "user" ? input.actor.actorId : null),
-          createdByRunId: input.actor.runId ?? null,
-        })
-        .returning();
-
-      const memberRows = holdPreview.issues.map((issue) => ({
-        companyId,
-        holdId: createdHold.id,
-        issueId: issue.id,
-        parentIssueId: issue.parentId,
-        depth: issue.depth,
-        issueIdentifier: issue.identifier,
-        issueTitle: issue.title,
-        issueStatus: issue.boardPresentationStatus,
-        ownerAgentId: issue.ownerAgentId,
-        ownerUserId: issue.ownerUserId,
-        activeRunId: issue.activeRun?.id ?? null,
-        activeRunStatus: issue.activeRun?.status ?? null,
-        skipped: issue.skipped,
-        skipReason: issue.skipReason,
-      }));
-
-      const createdMembers = memberRows.length > 0
-        ? await tx.insert(issueTreeHoldMembers).values(memberRows).returning()
-        : [];
+      const { createdHold, createdMembers } = await insertHoldWithMembers(tx);
 
       const actorUserId = namedBoardActorUserId(input.actor);
       if (input.mode === "pause" && actorUserId) {

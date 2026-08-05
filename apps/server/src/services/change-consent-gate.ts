@@ -7,7 +7,6 @@ import {
   resolveIssueExecutionRunIdentityById,
 } from "./issue-execution-run-service.js";
 
-export const AGENT_PROFILE_CHANGE_CONSENT_FIELDS = ["name", "title", "capabilities"] as const;
 export const CHANGE_CONSENT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type ChangeConsentStatus = "pending" | "accepted" | "rejected" | "expired";
@@ -18,24 +17,6 @@ export function agentProfileChangeTargetKey(agentId: string) {
 
 export function skillChangeTargetKey(skillId: string) {
   return `skill:${skillId}`;
-}
-
-export function skillSlugChangeTargetKey(slug: string) {
-  return `skill-slug:${slug}`;
-}
-
-export function skillImportChangeTargetKey(source: string) {
-  return `skill-import:${source}`;
-}
-
-export function skillsScanProjectsChangeTargetKey() {
-  return "skills:scan-projects";
-}
-
-export function touchesAgentProfileChangeConsentFields(patchData: Record<string, unknown>) {
-  return AGENT_PROFILE_CHANGE_CONSENT_FIELDS.some((key) =>
-    Object.prototype.hasOwnProperty.call(patchData, key),
-  );
 }
 
 export type ChangeConsentTransaction =

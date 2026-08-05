@@ -94,12 +94,6 @@ export interface InvokableIssueOwnerSnapshot<
   adapterRevisions: readonly Revision[];
 }
 
-export const DIRECT_NON_INVOKABLE_STATUSES = new Set<AgentStatus>([
-  "paused",
-  "terminated",
-  "pending_approval",
-]);
-
 function blocked(
   reason: AgentInvokabilityBlockReason,
   message: string,
@@ -496,8 +490,4 @@ export async function evaluateAgentInvokabilityFromDb(
     .from(agents)
     .where(eq(agents.companyId, agent.companyId));
   return evaluateAgentInvokability(agent, companyAgents);
-}
-
-export function shouldCancelRunsForNonInvokableAgent(result: AgentInvokability) {
-  return !result.invokable && (result.reason === "terminated" || result.invalidOrgChain);
 }

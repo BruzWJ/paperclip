@@ -3,7 +3,7 @@ import {
   randomBytes
 } from "node:crypto";
 import { Router } from "express";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -2191,192 +2191,90 @@ export function accessRoutes(
     res.json({ users });
   });
 
-  router.patch(
-    "/companies/:companyId/members/:memberId",
-    validate(updateCompanyMemberSchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      const memberId = req.params.memberId as string;
-      await assertCompanyPermission(req, companyId, "users:manage_permissions");
-      const memberToUpdate = await access.getMemberById(companyId, memberId);
-      if (!memberToUpdate) throw notFound("Member not found");
-      await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
+  async function handleUpdateCompanyMember(
+    req: Request,
+    res: Response,
+    options: { withGrants: boolean },
+  ) {
+    const companyId = req.params.companyId as string;
+    const memberId = req.params.memberId as string;
+    await assertCompanyPermission(req, companyId, "users:manage_permissions");
+    const memberToUpdate = await access.getMemberById(companyId, memberId);
+    if (!memberToUpdate) throw notFound("Member not found");
+    await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
 
-      const updated = await db.transaction(async (tx) => {
-        await tx.execute(sql`
-          select ${companyMemberships.id}
-          from ${companyMemberships}
-          where ${companyMemberships.companyId} = ${companyId}
-            and ${companyMemberships.principalType} = 'user'
-            and ${companyMemberships.status} = 'active'
-            and ${companyMemberships.membershipRole} = 'owner'
-          for update
-        `);
+    const updated = await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        select ${companyMemberships.id}
+        from ${companyMemberships}
+        where ${companyMemberships.companyId} = ${companyId}
+          and ${companyMemberships.principalType} = 'user'
+          and ${companyMemberships.status} = 'active'
+          and ${companyMemberships.membershipRole} = 'owner'
+        for update
+      `);
 
-        const existing = await tx
-          .select()
+      const existing = await tx
+        .select()
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.id, memberId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!existing) return null;
+      if (
+        existing.principalType !== "user"
+        || !existing.principalUserId
+      ) {
+        throw conflict("Only human company members can be updated");
+      }
+      const principalUserId = existing.principalUserId;
+
+      const nextMembershipRole =
+        req.body.membershipRole !== undefined
+          ? req.body.membershipRole
+          : existing.membershipRole;
+      const nextStatus = req.body.status ?? existing.status;
+
+      if (
+        existing.principalType === "user" &&
+        existing.status === "active" &&
+        existing.membershipRole === "owner" &&
+        (nextStatus !== "active" || nextMembershipRole !== "owner")
+      ) {
+        const activeOwnerCount = await tx
+          .select({ id: companyMemberships.id })
           .from(companyMemberships)
           .where(
             and(
               eq(companyMemberships.companyId, companyId),
-              eq(companyMemberships.id, memberId),
+              eq(companyMemberships.principalType, "user"),
+              eq(companyMemberships.status, "active"),
+              eq(companyMemberships.membershipRole, "owner"),
             ),
           )
-          .then((rows) => rows[0] ?? null);
-        if (!existing) return null;
-        if (
-          existing.principalType !== "user"
-          || !existing.principalUserId
-        ) {
-          throw conflict("Only human company members can be updated");
+          .then((rows) => rows.length);
+        if (activeOwnerCount <= 1) {
+          throw conflict("Cannot remove the last active owner");
         }
-        const principalUserId = existing.principalUserId;
+      }
 
-        const nextMembershipRole =
-          req.body.membershipRole !== undefined
-            ? req.body.membershipRole
-            : existing.membershipRole;
-        const nextStatus = req.body.status ?? existing.status;
+      const now = new Date();
+      const updatedMember = await tx
+        .update(companyMemberships)
+        .set({
+          membershipRole: nextMembershipRole,
+          status: nextStatus,
+          updatedAt: now,
+        })
+        .where(eq(companyMemberships.id, existing.id))
+        .returning()
+        .then((rows) => rows[0] ?? existing);
 
-        if (
-          existing.principalType === "user" &&
-          existing.status === "active" &&
-          existing.membershipRole === "owner" &&
-          (nextStatus !== "active" || nextMembershipRole !== "owner")
-        ) {
-          const activeOwnerCount = await tx
-            .select({ id: companyMemberships.id })
-            .from(companyMemberships)
-            .where(
-              and(
-                eq(companyMemberships.companyId, companyId),
-                eq(companyMemberships.principalType, "user"),
-                eq(companyMemberships.status, "active"),
-                eq(companyMemberships.membershipRole, "owner"),
-              ),
-            )
-            .then((rows) => rows.length);
-          if (activeOwnerCount <= 1) {
-            throw conflict("Cannot remove the last active owner");
-          }
-        }
-
-        return tx
-          .update(companyMemberships)
-          .set({
-            membershipRole: nextMembershipRole,
-            status: nextStatus,
-            updatedAt: new Date(),
-          })
-          .where(eq(companyMemberships.id, existing.id))
-          .returning()
-          .then((rows) => rows[0] ?? existing);
-      });
-      if (!updated) throw notFound("Member not found");
-
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: getBoardUserId(req),
-        action: "company_member.updated",
-        entityType: "company_membership",
-        entityId: memberId,
-        details: {
-          membershipRole: updated.membershipRole,
-          status: updated.status,
-        },
-      });
-
-      const member = (await loadCompanyMemberRecords(db, companyId)).find(
-        (entry) => entry.id === memberId,
-      );
-      if (!member) throw notFound("Member not found");
-      res.json(member);
-    }
-  );
-
-  router.patch(
-    "/companies/:companyId/members/:memberId/role-and-grants",
-    validate(updateCompanyMemberWithPermissionsSchema),
-    async (req, res) => {
-      const companyId = req.params.companyId as string;
-      const memberId = req.params.memberId as string;
-      await assertCompanyPermission(req, companyId, "users:manage_permissions");
-      const memberToUpdate = await access.getMemberById(companyId, memberId);
-      if (!memberToUpdate) throw notFound("Member not found");
-      await assertCanManageCompanyMember(req, access, companyId, memberToUpdate);
-
-      const updated = await db.transaction(async (tx) => {
-        await tx.execute(sql`
-          select ${companyMemberships.id}
-          from ${companyMemberships}
-          where ${companyMemberships.companyId} = ${companyId}
-            and ${companyMemberships.principalType} = 'user'
-            and ${companyMemberships.status} = 'active'
-            and ${companyMemberships.membershipRole} = 'owner'
-          for update
-        `);
-
-        const existing = await tx
-          .select()
-          .from(companyMemberships)
-          .where(
-            and(
-              eq(companyMemberships.companyId, companyId),
-              eq(companyMemberships.id, memberId),
-            ),
-          )
-          .then((rows) => rows[0] ?? null);
-        if (!existing) return null;
-        if (
-          existing.principalType !== "user"
-          || !existing.principalUserId
-        ) {
-          throw conflict("Only human company members can be updated");
-        }
-        const principalUserId = existing.principalUserId;
-
-        const nextMembershipRole =
-          req.body.membershipRole !== undefined
-            ? req.body.membershipRole
-            : existing.membershipRole;
-        const nextStatus = req.body.status ?? existing.status;
-
-        if (
-          existing.principalType === "user" &&
-          existing.status === "active" &&
-          existing.membershipRole === "owner" &&
-          (nextStatus !== "active" || nextMembershipRole !== "owner")
-        ) {
-          const activeOwnerCount = await tx
-            .select({ id: companyMemberships.id })
-            .from(companyMemberships)
-            .where(
-              and(
-                eq(companyMemberships.companyId, companyId),
-                eq(companyMemberships.principalType, "user"),
-                eq(companyMemberships.status, "active"),
-                eq(companyMemberships.membershipRole, "owner"),
-              ),
-            )
-            .then((rows) => rows.length);
-          if (activeOwnerCount <= 1) {
-            throw conflict("Cannot remove the last active owner");
-          }
-        }
-
-        const now = new Date();
-        const updatedMember = await tx
-          .update(companyMemberships)
-          .set({
-            membershipRole: nextMembershipRole,
-            status: nextStatus,
-            updatedAt: now,
-          })
-          .where(eq(companyMemberships.id, existing.id))
-          .returning()
-          .then((rows) => rows[0] ?? existing);
-
+      if (options.withGrants) {
         await tx
           .delete(principalPermissionGrants)
           .where(
@@ -2406,30 +2304,50 @@ export function accessRoutes(
             })),
           );
         }
+      }
 
-        return updatedMember;
-      });
-      if (!updated) throw notFound("Member not found");
+      return updatedMember;
+    });
+    if (!updated) throw notFound("Member not found");
 
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: getBoardUserId(req),
-        action: "company_member.access_updated",
-        entityType: "company_membership",
-        entityId: memberId,
-        details: {
-          membershipRole: updated.membershipRole,
-          status: updated.status,
-          grantCount: req.body.grants?.length ?? 0,
-        },
-      });
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: getBoardUserId(req),
+      action: options.withGrants
+        ? "company_member.access_updated"
+        : "company_member.updated",
+      entityType: "company_membership",
+      entityId: memberId,
+      details: {
+        membershipRole: updated.membershipRole,
+        status: updated.status,
+        ...(options.withGrants
+          ? { grantCount: req.body.grants?.length ?? 0 }
+          : {}),
+      },
+    });
 
-      const member = (await loadCompanyMemberRecords(db, companyId)).find(
-        (entry) => entry.id === memberId,
-      );
-      if (!member) throw notFound("Member not found");
-      res.json(member);
+    const member = (await loadCompanyMemberRecords(db, companyId)).find(
+      (entry) => entry.id === memberId,
+    );
+    if (!member) throw notFound("Member not found");
+    res.json(member);
+  }
+
+  router.patch(
+    "/companies/:companyId/members/:memberId",
+    validate(updateCompanyMemberSchema),
+    async (req, res) => {
+      await handleUpdateCompanyMember(req, res, { withGrants: false });
+    }
+  );
+
+  router.patch(
+    "/companies/:companyId/members/:memberId/role-and-grants",
+    validate(updateCompanyMemberWithPermissionsSchema),
+    async (req, res) => {
+      await handleUpdateCompanyMember(req, res, { withGrants: true });
     }
   );
 

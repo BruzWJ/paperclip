@@ -318,8 +318,6 @@ export {
   RuntimeIssueActionDenied,
   type PostgresRuntimeIssueActionServiceOptions,
   type RuntimeIssueActionService,
-  type RuntimeMentionExecutionInput,
-  type RuntimeMentionExecutionResult,
 } from "./runtime-issue-action-port.js";
 export {
   createOrdinaryIssueRuntime,
