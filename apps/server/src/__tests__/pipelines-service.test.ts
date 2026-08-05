@@ -19,7 +19,17 @@ const ordinaryIssues = {
 } as never;
 
 function serviceFor(db: ReturnType<typeof createMockDb>["db"]) {
-  return pipelineService(db, { ordinaryIssues });
+  return pipelineService(db, {
+    ordinaryIssues,
+    issueExecutionCancellation: {
+      requestScopeCancellationsInTransaction: vi.fn(async (_tx, input) => ({
+        ...input,
+        fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+        requests: [],
+      })),
+      reconcileRequestedScopeCancellations: vi.fn(async () => []),
+    },
+  });
 }
 
 function pipelineRow(overrides: Record<string, unknown> = {}) {

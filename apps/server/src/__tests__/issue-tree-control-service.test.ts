@@ -6,6 +6,10 @@ const serviceMocks = vi.hoisted(() => ({
   finalizeSummarySlotsForTerminalIssue: vi.fn(async () => undefined),
   recordNamedBoardLifecycleCommandInTransaction: vi.fn(async () => undefined),
   resolveCurrentIssueOwnerRunLinkages: vi.fn(async () => new Map()),
+  requestRunningIssueInterruptionsInTransaction: vi.fn(),
+  reconcileRequestedRunningIssueInterruptions: vi.fn(),
+  requestScopeCancellationsInTransaction: vi.fn(),
+  reconcileRequestedScopeCancellations: vi.fn(),
 }));
 
 vi.mock("../services/summary-slot-finalization.js", () => ({
@@ -34,6 +38,7 @@ function issue(input: {
   parentId?: string | null;
   title?: string;
   status?: string;
+  lifecycleStatus?: "open" | "blocked" | "done" | "cancelled";
   ownerAgentId?: string | null;
   ownerUserId?: string | null;
   createdAt?: Date;
@@ -46,6 +51,13 @@ function issue(input: {
     title: input.title ?? "Issue",
     parentId: input.parentId ?? null,
     boardPresentationStatus: input.status ?? "todo",
+    lifecycleStatus:
+      input.lifecycleStatus ??
+      (input.status === "done" || input.status === "cancelled"
+        ? input.status
+        : input.status === "blocked"
+          ? "blocked"
+          : "open"),
     ownerAgentId: input.ownerAgentId ?? null,
     ownerUserId: input.ownerUserId ?? null,
     ownershipEpoch: 1,
@@ -118,6 +130,23 @@ describe("issueTreeControlService without a database process", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     serviceMocks.resolveCurrentIssueOwnerRunLinkages.mockResolvedValue(new Map());
+    serviceMocks.requestRunningIssueInterruptionsInTransaction.mockResolvedValue({
+      companyId,
+      issueId: "issue",
+      ownershipEpoch: 1,
+      reason: "active_subtree_pause_hold",
+      requests: [],
+    });
+    serviceMocks.requestScopeCancellationsInTransaction.mockResolvedValue({
+      companyId,
+      issueId: "issue",
+      selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
+      reason: "issue_tree_cancelled",
+      fence: { refIds: [], deliveryIds: [], correlationIds: [] },
+      requests: [],
+    });
+    serviceMocks.reconcileRequestedRunningIssueInterruptions.mockResolvedValue([]);
+    serviceMocks.reconcileRequestedScopeCancellations.mockResolvedValue([]);
   });
 
   it("previews a subtree, terminal skips, and active execution without mutations", async () => {
@@ -199,6 +228,31 @@ describe("issueTreeControlService without a database process", () => {
     expect(preview.affectedAgents).toEqual([]);
   });
 
+  it("uses lifecycle rather than stale terminal presentation for tree control", async () => {
+    const reopened = issue({
+      status: "done",
+      lifecycleStatus: "open",
+      ownerAgentId: randomUUID(),
+    });
+    const harness = createMockDb({
+      select: [[reopened], [], [], []],
+    });
+
+    const preview = await issueTreeControlService(harness.db).preview(
+      companyId,
+      reopened.id,
+      { mode: "cancel" },
+    );
+
+    expect(preview.issues).toEqual([
+      expect.objectContaining({ id: reopened.id, skipReason: null }),
+    ]);
+    expect(preview.totals).toMatchObject({
+      affectedIssues: 1,
+      skippedIssues: 0,
+    });
+  });
+
   it("fails closed when the root is outside the requested company", async () => {
     const harness = createMockDb({ select: [[]] });
 
@@ -220,9 +274,21 @@ describe("issueTreeControlService without a database process", () => {
     const harness = createMockDb({
       select: [[root], [], [], [{ id: root.id, ownershipEpoch: 1 }]],
       insert: [[createdHold], [createdMember]],
+      execute: [[]],
     });
 
-    const result = await issueTreeControlService(harness.db).createHold(
+    const result = await issueTreeControlService(harness.db, {
+      issueExecutionCancellation: {
+        requestRunningIssueInterruptionsInTransaction:
+          serviceMocks.requestRunningIssueInterruptionsInTransaction,
+        reconcileRequestedRunningIssueInterruptions:
+          serviceMocks.reconcileRequestedRunningIssueInterruptions,
+        requestScopeCancellationsInTransaction:
+          serviceMocks.requestScopeCancellationsInTransaction,
+        reconcileRequestedScopeCancellations:
+          serviceMocks.reconcileRequestedScopeCancellations,
+      },
+    }).createHold(
       companyId,
       root.id,
       {
@@ -252,8 +318,23 @@ describe("issueTreeControlService without a database process", () => {
           sourceCommandId: createdHold.id,
         }),
       );
+    expect(serviceMocks.requestRunningIssueInterruptionsInTransaction)
+      .toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          companyId,
+          issueId: root.id,
+          ownershipEpoch: 1,
+          reason: "active_subtree_pause_hold",
+        }),
+      );
+    expect(serviceMocks.reconcileRequestedRunningIssueInterruptions)
+      .toHaveBeenCalledOnce();
     expect(harness.remaining("select")).toBe(0);
     expect(harness.remaining("insert")).toBe(0);
+    expect(harness.remaining("execute")).toBe(0);
+    expect(harness.calls.findIndex((call) => call.operation === "execute"))
+      .toBeLessThan(harness.calls.findIndex((call) => call.operation === "select"));
   });
 
   it("releases a hold and records a separate named-board lifecycle command", async () => {
@@ -302,9 +383,62 @@ describe("issueTreeControlService without a database process", () => {
       );
   });
 
-  it("cancels only snapshotted issues and finalizes their summary slots", async () => {
+  it.each(["cancel", "resume", "restore"] as const)(
+    "rejects direct release of a %s hold",
+    async (mode) => {
+      const rootIssueId = randomUUID();
+      const existing = hold({ rootIssueId, mode });
+      const harness = createMockDb({ select: [[existing]] });
+
+      await expect(
+        issueTreeControlService(harness.db).releaseHold(
+          companyId,
+          rootIssueId,
+          existing.id,
+          {
+            reason: "invalid direct release",
+            actor: {
+              actorType: "user",
+              actorId: boardUserId,
+              userId: boardUserId,
+            },
+          },
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(harness.calls.some((call) => call.operation === "update"))
+        .toBe(false);
+    },
+  );
+
+  it("allows internal cleanup to release a failed restore command", async () => {
+    const rootIssueId = randomUUID();
+    const existing = hold({ rootIssueId, mode: "restore" });
+    const released = { ...existing, status: "released" };
+    const harness = createMockDb({
+      select: [[existing], []],
+      update: [[released]],
+    });
+
+    await expect(issueTreeControlService(harness.db).releaseHold(
+      companyId,
+      rootIssueId,
+      existing.id,
+      {
+        actor: { actorType: "system", actorId: "restore-cleanup" },
+        internal: true,
+      },
+    )).resolves.toMatchObject({ status: "released", mode: "restore" });
+  });
+
+  it("commits a cancel hold, lifecycle update, and execution fence together", async () => {
     const rootIssueId = randomUUID();
     const childIssueId = randomUUID();
+    const root = issue({ id: rootIssueId, title: "Root" });
+    const child = issue({
+      id: childIssueId,
+      parentId: rootIssueId,
+      title: "Running child",
+    });
     const cancelHold = hold({ rootIssueId, mode: "cancel" });
     const cancelMember = member({
       holdId: cancelHold.id,
@@ -322,20 +456,35 @@ describe("issueTreeControlService without a database process", () => {
       ownerAgentId: null,
     };
     const harness = createMockDb({
-      select: [[cancelHold], [cancelMember]],
+      select: [[root], [child], [], []],
+      insert: [[cancelHold], [cancelMember]],
       update: [[updatedIssue]],
+      execute: [[]],
     });
 
-    const result = await issueTreeControlService(harness.db)
-      .cancelIssueStatusesForHold(companyId, rootIssueId, cancelHold.id);
+    const result = await issueTreeControlService(harness.db, {
+      issueExecutionCancellation: {
+        requestRunningIssueInterruptionsInTransaction:
+          serviceMocks.requestRunningIssueInterruptionsInTransaction,
+        reconcileRequestedRunningIssueInterruptions:
+          serviceMocks.reconcileRequestedRunningIssueInterruptions,
+        requestScopeCancellationsInTransaction:
+          serviceMocks.requestScopeCancellationsInTransaction,
+        reconcileRequestedScopeCancellations:
+          serviceMocks.reconcileRequestedScopeCancellations,
+      },
+    })
+      .createHold(companyId, rootIssueId, {
+        mode: "cancel",
+        reason: "cancel subtree",
+        actor: {
+          actorType: "user",
+          actorId: boardUserId,
+          userId: boardUserId,
+        },
+      });
 
-    expect(result.updatedIssueIds).toEqual([childIssueId]);
-    expect(result.updatedIssues).toEqual([
-      expect.objectContaining({
-        id: childIssueId,
-        boardPresentationStatus: "cancelled",
-      }),
-    ]);
+    expect(result.cancelledIssueIds).toEqual([childIssueId]);
     expect(serviceMocks.finalizeSummarySlotsForTerminalIssue)
       .toHaveBeenCalledWith(expect.anything(), updatedIssue);
     expect(serviceMocks.recordNamedBoardLifecycleCommandInTransaction)
@@ -343,6 +492,20 @@ describe("issueTreeControlService without a database process", () => {
         expect.anything(),
         expect.objectContaining({ subtype: "tree_control_cancel" }),
       );
+    expect(serviceMocks.requestScopeCancellationsInTransaction)
+      .toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          companyId,
+          issueId: childIssueId,
+          selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
+          reason: "issue_tree_cancelled",
+        }),
+      );
+    expect(serviceMocks.reconcileRequestedScopeCancellations)
+      .toHaveBeenCalledOnce();
+    expect(harness.calls.findIndex((call) => call.operation === "execute"))
+      .toBeLessThan(harness.calls.findIndex((call) => call.operation === "select"));
   });
 
   it("walks pause-hold ancestry beyond fifteen levels", async () => {
@@ -454,7 +617,8 @@ describe("issueTreeControlService without a database process", () => {
     const root = issue({ status: "cancelled" });
     const child = issue({
       parentId: root.id,
-      status: "blocked",
+      status: "cancelled",
+      lifecycleStatus: "open",
     });
     const cancelHold = hold({ rootIssueId: root.id, mode: "cancel" });
     const rootSnapshot = member({

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createIssueFormCommitRuntime,
+  createPostgresRuntimeIssueActionService,
   createRuntimeIssueActionPort,
   RuntimeIssueActionConflict,
   RuntimeIssueActionDenied,
@@ -251,6 +252,10 @@ describe("runtime issue action contracts", () => {
     const harness = createMockDb();
     const runtime = createIssueFormCommitRuntime(harness.db, {
       notifyCreatorDelivery: vi.fn(async () => undefined),
+      issueExecutionCancellation: {
+        requestScopeCancellationsInTransaction: vi.fn(),
+        reconcileRequestedScopeCancellations: vi.fn(),
+      },
     });
     const humanAuthority = {
       kind: "system-escalation-human" as const,
@@ -286,6 +291,10 @@ describe("runtime issue action contracts", () => {
     const harness = createMockDb();
     const runtime = createIssueFormCommitRuntime(harness.db, {
       notifyCreatorDelivery: vi.fn(async () => undefined),
+      issueExecutionCancellation: {
+        requestScopeCancellationsInTransaction: vi.fn(),
+        reconcileRequestedScopeCancellations: vi.fn(),
+      },
     });
     const withdrawalAuthority = {
       kind: "user-creator-withdrawal" as const,
@@ -313,5 +322,125 @@ describe("runtime issue action contracts", () => {
       reason: "user_withdrawal_cancel_only",
     });
     expect(harness.calls).toEqual([]);
+  });
+
+  it.each([
+    {
+      lifecycleStatus: "cancelled",
+      executionPaused: false,
+      reason: "issue_lifecycle_terminal",
+    },
+    {
+      lifecycleStatus: "open",
+      executionPaused: true,
+      reason: "issue_execution_paused",
+    },
+  ])(
+    "rejects $reason under the runtime mutation lock",
+    async ({ lifecycleStatus, executionPaused, reason }) => {
+      const harness = createMockDb({
+        execute: [[], []],
+        select: [
+          [{ id: capability.companyId }],
+          [{ id: capability.issueId, lifecycleStatus, executionPaused }],
+        ],
+      });
+      const runtime = createPostgresRuntimeIssueActionService(harness.db, {
+        clock: () => new Date("2026-08-02T12:30:00.000Z"),
+        dispatchPersistedRef: vi.fn(async () => undefined),
+        notifyCreatorDelivery: vi.fn(async () => undefined),
+        issueExecutionCancellation: {
+          requestScopeCancellationsInTransaction: vi.fn(),
+          reconcileRequestedScopeCancellations: vi.fn(),
+        },
+      });
+
+      await expect(runtime.mentionBoard({
+        capability,
+        invocationId: `mutation-fence-${reason}`,
+        runInterfaceToolCallId: "00000000-0000-4000-8000-000000000711",
+        ingressOrdinal: 0,
+        commitTerminalAction: vi.fn(),
+        message: "Do not commit this mention",
+      })).rejects.toMatchObject<Partial<RuntimeIssueActionDenied>>({ reason });
+
+      expect(harness.calls
+        .filter((call) => call.method === call.operation)
+        .map((call) => call.operation))
+        .toEqual(["execute", "select", "execute", "select"]);
+      expect(harness.remaining("execute")).toBe(0);
+      expect(harness.remaining("select")).toBe(0);
+    },
+  );
+
+  it("rejects a pre-cancel capability after the issue is restored", async () => {
+    const harness = createMockDb({
+      execute: [[], []],
+      insert: [[]],
+      select: [
+        [{ id: capability.companyId }],
+        [{
+          id: capability.issueId,
+          lifecycleStatus: "open",
+          executionPaused: false,
+        }],
+        [{ id: capability.sessionId }],
+        [{ id: capability.targetAgentId }],
+        [{ targetAgentId: capability.targetAgentId }],
+        [{
+          id: capability.runId,
+          companyId: capability.companyId,
+          issueId: capability.issueId,
+          sessionId: capability.sessionId,
+          executionScopeId: "00000000-0000-4000-8000-00000000070b",
+          kind: "productive",
+          status: "running",
+          ownershipEpoch: capability.ownershipEpoch,
+          targetAgentId: capability.targetAgentId,
+          executionMode: capability.executionMode,
+          issueExecutionAuthorityId: capability.issueExecutionAuthorityId,
+          consultExecutionId: capability.consultExecutionId,
+          parentRunId: null,
+          retryOfRunId: null,
+          adapterConfigRevisionId: capability.adapterConfigIdentity,
+          executionWorkspaceBindingId: capability.workspaceIdentity,
+          currentAttemptId: capability.attemptId,
+          currentLeaseId: capability.leaseId,
+          cancellationIntentId: "00000000-0000-4000-8000-000000000712",
+          terminalFinalizationId: null,
+          startedAt: new Date("2026-08-02T12:00:00.000Z"),
+          finishedAt: null,
+          terminalClassification: null,
+          terminalReasonCode: null,
+          processExitCode: null,
+          processSignal: null,
+          createdAt: new Date("2026-08-02T12:00:00.000Z"),
+          updatedAt: new Date("2026-08-02T12:00:00.000Z"),
+        }],
+      ],
+    });
+    const runtime = createPostgresRuntimeIssueActionService(harness.db, {
+      clock: () => new Date("2026-08-02T12:30:00.000Z"),
+      dispatchPersistedRef: vi.fn(async () => undefined),
+      notifyCreatorDelivery: vi.fn(async () => undefined),
+      issueExecutionCancellation: {
+        requestScopeCancellationsInTransaction: vi.fn(),
+        reconcileRequestedScopeCancellations: vi.fn(),
+      },
+    });
+
+    await expect(runtime.mentionBoard({
+      capability,
+      invocationId: "mutation-fence-cancelled-run",
+      runInterfaceToolCallId: "00000000-0000-4000-8000-000000000713",
+      ingressOrdinal: 0,
+      commitTerminalAction: vi.fn(),
+      message: "Do not revive this call",
+    })).rejects.toMatchObject<Partial<RuntimeIssueActionDenied>>({
+      reason: "run_scope_changed",
+    });
+    expect(harness.remaining("execute")).toBe(0);
+    expect(harness.remaining("insert")).toBe(0);
+    expect(harness.remaining("select")).toBe(0);
   });
 });

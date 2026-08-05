@@ -211,6 +211,15 @@ export interface RequestedScopedRunCancellations {
   readonly requests: readonly RequestedRunCancellation[];
 }
 
+/** Running attempts interrupted by a pause without revoking queued authority. */
+export interface RequestedRunningIssueInterruptions {
+  readonly companyId: string;
+  readonly issueId: string;
+  readonly ownershipEpoch: number;
+  readonly reason: string;
+  readonly requests: readonly RequestedRunCancellation[];
+}
+
 export class IssueExecutionCancellationRejected extends Error {
   readonly code = "issue_execution_cancellation_rejected";
 
@@ -785,6 +794,23 @@ export function createIssueExecutionCancellationService(
             refIds: Object.freeze(refIds),
           });
         })();
+    // Finalization owns the run row before it can publish a routed ref. Keep
+    // the same run -> ref lock order here so the fence observes every ref
+    // committed by a finalizer that was already in flight.
+    const runs = await options.runService.lockActiveRunsForScopeInTransaction(
+      transaction,
+      selector.kind === "ownership_epoch"
+        ? {
+            companyId: input.companyId,
+            issueId: input.issueId,
+            ownershipEpoch: selector.ownershipEpoch,
+          }
+        : {
+            companyId: input.companyId,
+            issueId: input.issueId,
+            refIds: selector.refIds,
+          },
+    );
     const fence = await options.settlement
       .fenceRevokedExecutionAuthorityInTransaction(
         transaction,
@@ -810,20 +836,6 @@ export function createIssueExecutionCancellationService(
               at,
             },
       );
-    const runs = await options.runService.lockActiveRunsForScopeInTransaction(
-      transaction,
-      selector.kind === "ownership_epoch"
-        ? {
-            companyId: input.companyId,
-            issueId: input.issueId,
-            ownershipEpoch: selector.ownershipEpoch,
-          }
-        : {
-            companyId: input.companyId,
-            issueId: input.issueId,
-            refIds: selector.refIds,
-          },
-    );
     const requests = await requestLockedRunCancellationsInTransaction(
       transaction,
       { runs, reason, actor: input.actor, at },
@@ -836,6 +848,60 @@ export function createIssueExecutionCancellationService(
       fence,
       requests,
     });
+  }
+
+  async function requestRunningIssueInterruptionsInTransaction(
+    transaction: IssueSessionDbTransaction,
+    input: {
+      readonly companyId: string;
+      readonly issueId: string;
+      readonly ownershipEpoch: number;
+      readonly reason: string;
+      readonly actor: IssueExecutionCancellationActor;
+      readonly now: Date;
+    },
+  ): Promise<RequestedRunningIssueInterruptions> {
+    exactIdentifier(input.companyId, "company id");
+    exactIdentifier(input.issueId, "issue id");
+    if (
+      !Number.isSafeInteger(input.ownershipEpoch) ||
+      input.ownershipEpoch < 1
+    ) {
+      reject("ownership epoch must be a positive integer");
+    }
+    const reason = boundedReason(input.reason, "issue_execution_paused");
+    const at = exactDate(input.now, "running issue interruption time");
+    const runs = await options.runService.lockActiveRunsForScopeInTransaction(
+      transaction,
+      {
+        companyId: input.companyId,
+        issueId: input.issueId,
+        ownershipEpoch: input.ownershipEpoch,
+      },
+    );
+    const requests = await requestLockedRunCancellationsInTransaction(
+      transaction,
+      {
+        runs: runs.filter((run) => run.status === "running"),
+        reason,
+        actor: input.actor,
+        at,
+        reasonKind: "lifecycle",
+      },
+    );
+    return Object.freeze({
+      companyId: input.companyId,
+      issueId: input.issueId,
+      ownershipEpoch: input.ownershipEpoch,
+      reason,
+      requests,
+    });
+  }
+
+  async function reconcileRequestedRunningIssueInterruptions(
+    requested: RequestedRunningIssueInterruptions,
+  ): Promise<readonly IssueExecutionCancellationResult[]> {
+    return reconcileRequestedCancellationBundle(requested);
   }
 
   async function reconcileRequestedScopeCancellations(
@@ -1162,6 +1228,8 @@ export function createIssueExecutionCancellationService(
     requestBudgetScopeSuspensionInTransaction,
     reconcileRequestedBudgetScopeSuspension,
     releaseBudgetScopeSuspensionInTransaction,
+    requestRunningIssueInterruptionsInTransaction,
+    reconcileRequestedRunningIssueInterruptions,
     requestScopeCancellationsInTransaction,
     reconcileRequestedScopeCancellations,
 

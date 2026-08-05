@@ -70,9 +70,16 @@ import type {
   RequestedScopedRunCancellations,
 } from "./issue-execution-cancellation.js";
 import {
+  lockIssueExecutionRunIfPresentInTransaction,
+} from "./issue-execution-run-service.js";
+import {
   IssueConsultChainInvalid,
   lockAndValidateIssueConsultChain,
 } from "./issue-consult-chain-postgres.js";
+import {
+  activeIssueTreePauseHoldExistsSql,
+  lockIssueTreeExecutionGate,
+} from "./issue-execution-lifecycle-gate.js";
 import {
   applyIssueExecutionPolicyTransition,
   issueExecutionPolicyPersistencePatch,
@@ -416,8 +423,20 @@ async function lockRuntimeActionHierarchy(
       "company_inactive",
     );
   }
+  await lockIssueTreeExecutionGate(
+    tx,
+    capability.companyId,
+    capability.issueId,
+  );
   const issueRows = await tx
-    .select({ id: issues.id })
+    .select({
+      id: issues.id,
+      lifecycleStatus: issues.lifecycleStatus,
+      executionPaused: activeIssueTreePauseHoldExistsSql(
+        issues.companyId,
+        issues.id,
+      ),
+    })
     .from(issues)
     .where(
       and(
@@ -431,6 +450,19 @@ async function lockRuntimeActionHierarchy(
     throw new RuntimeIssueActionDenied(
       "Issue ownership epoch has changed",
       "ownership_epoch_changed",
+    );
+  }
+  const issue = issueRows[0]!;
+  if (!["open", "blocked"].includes(issue.lifecycleStatus)) {
+    throw new RuntimeIssueActionDenied(
+      "Issue lifecycle is terminal",
+      "issue_lifecycle_terminal",
+    );
+  }
+  if (issue.executionPaused) {
+    throw new RuntimeIssueActionDenied(
+      "Issue execution is paused",
+      "issue_execution_paused",
     );
   }
   const sessionRows = await tx
@@ -519,6 +551,38 @@ async function lockRuntimeActionHierarchy(
   }
 }
 
+async function lockRuntimeActionRun(
+  tx: IssueSessionDbTransaction,
+  capability: RuntimeActionInvocation["capability"],
+): Promise<void> {
+  const run = await lockIssueExecutionRunIfPresentInTransaction(tx, {
+    companyId: capability.companyId,
+    issueId: capability.issueId,
+    runId: capability.runId,
+  });
+  if (
+    !run ||
+    run.status !== "running" ||
+    run.sessionId !== capability.sessionId ||
+    run.ownershipEpoch !== capability.ownershipEpoch ||
+    run.targetAgentId !== capability.targetAgentId ||
+    run.executionMode !== capability.executionMode ||
+    run.issueExecutionAuthorityId !== capability.issueExecutionAuthorityId ||
+    run.consultExecutionId !== capability.consultExecutionId ||
+    run.adapterConfigRevisionId !== capability.adapterConfigIdentity ||
+    run.executionWorkspaceBindingId !== capability.workspaceIdentity ||
+    run.currentAttemptId !== capability.attemptId ||
+    run.currentLeaseId !== capability.leaseId ||
+    run.cancellationIntentId !== null ||
+    run.terminalFinalizationId !== null
+  ) {
+    throw new RuntimeIssueActionDenied(
+      "Run is no longer active in this execution scope",
+      "run_scope_changed",
+    );
+  }
+}
+
 async function lockRuntimeActionAuthority(
   tx: IssueSessionDbTransaction,
   capability: RuntimeActionInvocation["capability"],
@@ -542,6 +606,10 @@ async function lockRuntimeActionAuthority(
       additionalLaneTargetAgentId: options.additionalLaneTargetAgentId,
     });
   }
+  // Run transitions own their attempt and lease projections. Locking the
+  // canonical run closes that race; the capability lock below rechecks the
+  // exact generation and database-clock expiry.
+  await lockRuntimeActionRun(tx, capability);
   try {
     await lockActivePromptCapabilityBinding(tx, capability, now);
   } catch {
@@ -1226,6 +1294,7 @@ export type CanonicalCreatorFormAuthority =
 export interface IssueFormCommitRuntimeOptions {
   clock?: () => Date;
   notifyCreatorDelivery(deliveryId: string): Promise<void>;
+  issueExecutionCancellation: RuntimeIssueScopeCancellationPort;
 }
 
 function authorityCompanyId(
@@ -1680,7 +1749,7 @@ export function createIssueFormCommitRuntime(
             "owner issue_update invocation was retried with different immutable arguments",
           );
         }
-        return retry;
+        return { ...retry, cancellations: null };
       }
 
       if (input.status === undefined) {
@@ -1895,6 +1964,31 @@ export function createIssueFormCommitRuntime(
           "Issue lifecycle changed during owner update",
         );
       }
+      const cancellations =
+        !gated && input.status === "cancelled"
+          ? await options.issueExecutionCancellation
+              .requestScopeCancellationsInTransaction(tx, {
+                companyId,
+                issueId: issue.id,
+                selector: {
+                  kind: "ownership_epoch",
+                  ownershipEpoch: issue.ownershipEpoch!,
+                },
+                reason: "issue_cancelled",
+                actor:
+                  ownerAuthority.kind === "agent-execution"
+                    ? {
+                        kind: "agent",
+                        agentId:
+                          ownerAuthority.capability.targetAgentId,
+                      }
+                    : {
+                        kind: "user",
+                        userId: ownerAuthority.actorUserId,
+                      },
+                now,
+              })
+          : null;
       await recordIssueLivenessActionInTransaction(
         tx,
         `issue_update:${update.id}`,
@@ -1905,6 +1999,7 @@ export function createIssueFormCommitRuntime(
         comment: admission.comment,
         delivery,
         gated,
+        cancellations,
         retried: false as const,
       };
     });
@@ -1914,7 +2009,15 @@ export function createIssueFormCommitRuntime(
     void options.notifyCreatorDelivery(committed.delivery.id).catch(() => {
       // The creator-delivery drain retries committed queued work.
     });
-    return committed;
+    if (committed.cancellations) {
+      void options.issueExecutionCancellation
+        .reconcileRequestedScopeCancellations(committed.cancellations)
+        .catch(() => {
+          // The durable cancellation-intent reconciler retries this signal.
+        });
+    }
+    const { cancellations: _, ...result } = committed;
+    return result;
   }
 
   async function commitCreatorFormUpdate(
@@ -2751,6 +2854,7 @@ export function createPostgresRuntimeIssueActionService(
   const issueForms = createIssueFormCommitRuntime(db, {
     clock,
     notifyCreatorDelivery: options.notifyCreatorDelivery,
+    issueExecutionCancellation: options.issueExecutionCancellation,
   });
 
   return {

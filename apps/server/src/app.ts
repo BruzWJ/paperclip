@@ -210,6 +210,10 @@ export async function createApp(
       | "requestAgentSuspensionsInTransaction"
       | "reconcileRequestedAgentSuspensions"
       | "releaseAgentSuspensionsInTransaction"
+      | "requestRunningIssueInterruptionsInTransaction"
+      | "reconcileRequestedRunningIssueInterruptions"
+      | "requestScopeCancellationsInTransaction"
+      | "reconcileRequestedScopeCancellations"
     >;
     adapterReadinessEnvironmentOrchestrator?: Pick<
       EnvironmentRunOrchestrator,
@@ -328,7 +332,10 @@ export async function createApp(
   ));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { ordinaryIssues }));
-  api.use(pipelineRoutes(db, { ordinaryIssues }));
+  api.use(pipelineRoutes(db, {
+    ordinaryIssues,
+    issueExecutionCancellation: opts.issueExecutionCancellation,
+  }));
   api.use(environmentRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(goalRoutes(db));

@@ -10,16 +10,13 @@ const mockIssueService = vi.hoisted(() => ({
 const mockTreeControlService = vi.hoisted(() => ({
   preview: vi.fn(),
   createHold: vi.fn(),
-  cancelIssueStatusesForHold: vi.fn(),
   restoreIssueStatusesForHold: vi.fn(),
   getHold: vi.fn(),
   releaseHold: vi.fn(),
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
-const mockIssueExecutionCancellation = vi.hoisted(() => ({
-  cancelRun: vi.fn(),
-}));
+const mockIssueExecutionCancellation = vi.hoisted(() => ({}));
 
 vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
@@ -38,7 +35,10 @@ async function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", issueTreeControlRoutes({} as any, mockIssueExecutionCancellation as never));
+  app.use("/api", issueTreeControlRoutes(
+    {} as any,
+    mockIssueExecutionCancellation as never,
+  ));
   app.use(errorHandler);
   return app;
 }
@@ -66,14 +66,12 @@ describe("issue tree control routes", () => {
       id: "11111111-1111-4111-8111-111111111111",
       companyId: "company-2",
     });
-    mockTreeControlService.cancelIssueStatusesForHold.mockResolvedValue({ updatedIssueIds: [], updatedIssues: [] });
     mockTreeControlService.restoreIssueStatusesForHold.mockResolvedValue({
       updatedIssueIds: [],
       updatedIssues: [],
       releasedCancelHoldIds: [],
       restoreHold: null,
     });
-    mockIssueExecutionCancellation.cancelRun.mockResolvedValue(null);
   });
 
   it("rejects cross-company preview requests with a uniform 404 before calling the preview service", async () => {
@@ -121,45 +119,7 @@ describe("issue tree control routes", () => {
     expect(mockTreeControlService.releaseHold).not.toHaveBeenCalled();
   });
 
-  it("cancels active descendant runs when creating a pause hold", async () => {
-    const app = await createApp(boardActor(["company-2"]));
-    mockTreeControlService.createHold.mockResolvedValue({
-      hold: {
-        id: "33333333-3333-4333-8333-333333333333",
-        mode: "pause",
-        reason: "pause subtree",
-      },
-      preview: {
-        mode: "pause",
-        totals: { affectedIssues: 1 },
-        warnings: [],
-        activeRuns: [
-          {
-            id: "44444444-4444-4444-8444-444444444444",
-            issueId: "11111111-1111-4111-8111-111111111111",
-          },
-        ],
-      },
-    });
-
-    const res = await request(app)
-      .post("/api/issues/11111111-1111-4111-8111-111111111111/tree-holds")
-      .send({ mode: "pause", reason: "pause subtree" });
-
-    expect(res.status).toBe(201);
-    expect(mockIssueExecutionCancellation.cancelRun).toHaveBeenCalledWith(
-      "44444444-4444-4444-8444-444444444444",
-    );
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        action: "issue.tree_hold_run_interrupted",
-        entityId: "44444444-4444-4444-8444-444444444444",
-      }),
-    );
-  });
-
-  it("marks affected issues cancelled when creating a cancel hold", async () => {
+  it("reports issue cancellation committed with the cancel hold", async () => {
     const app = await createApp(boardActor(["company-2"]));
     mockTreeControlService.createHold.mockResolvedValue({
       hold: {
@@ -173,13 +133,10 @@ describe("issue tree control routes", () => {
         warnings: [],
         activeRuns: [],
       },
-    });
-    mockTreeControlService.cancelIssueStatusesForHold.mockResolvedValue({
-      updatedIssueIds: [
+      cancelledIssueIds: [
         "11111111-1111-4111-8111-111111111111",
         "55555555-5555-4555-8555-555555555555",
       ],
-      updatedIssues: [],
     });
 
     const res = await request(app)
@@ -187,67 +144,11 @@ describe("issue tree control routes", () => {
       .send({ mode: "cancel", reason: "cancel subtree" });
 
     expect(res.status).toBe(201);
-    expect(mockTreeControlService.cancelIssueStatusesForHold).toHaveBeenCalledWith(
-      "company-2",
-      "11111111-1111-4111-8111-111111111111",
-      "33333333-3333-4333-8333-333333333333",
-    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         action: "issue.tree_cancel_status_updated",
         details: expect.objectContaining({ cancelledIssueCount: 2 }),
-      }),
-    );
-  });
-
-  it("still marks affected issues cancelled when run interruption fails", async () => {
-    const app = await createApp(boardActor(["company-2"]));
-    mockTreeControlService.createHold.mockResolvedValue({
-      hold: {
-        id: "33333333-3333-4333-8333-333333333333",
-        mode: "cancel",
-        reason: "cancel subtree",
-      },
-      preview: {
-        mode: "cancel",
-        totals: { affectedIssues: 1 },
-        warnings: [],
-        activeRuns: [
-          {
-            id: "44444444-4444-4444-8444-444444444444",
-            issueId: "11111111-1111-4111-8111-111111111111",
-          },
-        ],
-      },
-    });
-    mockTreeControlService.cancelIssueStatusesForHold.mockResolvedValue({
-      updatedIssueIds: ["11111111-1111-4111-8111-111111111111"],
-      updatedIssues: [],
-    });
-    mockIssueExecutionCancellation.cancelRun.mockRejectedValue(new Error("adapter process did not exit"));
-
-    const res = await request(app)
-      .post("/api/issues/11111111-1111-4111-8111-111111111111/tree-holds")
-      .send({ mode: "cancel", reason: "cancel subtree" });
-
-    expect(res.status).toBe(201);
-    expect(mockIssueExecutionCancellation.cancelRun).toHaveBeenCalledWith(
-      "44444444-4444-4444-8444-444444444444",
-    );
-    expect(mockTreeControlService.cancelIssueStatusesForHold).toHaveBeenCalledWith(
-      "company-2",
-      "11111111-1111-4111-8111-111111111111",
-      "33333333-3333-4333-8333-333333333333",
-    );
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        action: "issue.tree_hold_run_interrupt_failed",
-        entityId: "44444444-4444-4444-8444-444444444444",
-        details: expect.objectContaining({
-          error: "adapter process did not exit",
-        }),
       }),
     );
   });
@@ -354,7 +255,6 @@ describe("issue tree control routes", () => {
       },
       resumedPauseHoldIds: ["33333333-3333-4333-8333-333333333333"],
     });
-
     const res = await request(app)
       .post("/api/issues/11111111-1111-4111-8111-111111111111/tree-holds")
       .send({ mode: "resume", reason: "resume subtree" });
@@ -363,8 +263,6 @@ describe("issue tree control routes", () => {
     expect(res.body.hold.mode).toBe("resume");
     expect(res.body.hold.status).toBe("released");
     expect(res.body.resumedPauseHoldIds).toEqual(["33333333-3333-4333-8333-333333333333"]);
-    expect(mockIssueExecutionCancellation.cancelRun).not.toHaveBeenCalled();
-    expect(mockTreeControlService.cancelIssueStatusesForHold).not.toHaveBeenCalled();
     expect(mockTreeControlService.restoreIssueStatusesForHold).not.toHaveBeenCalled();
   });
 });

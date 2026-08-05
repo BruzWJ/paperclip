@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
 import { parseMoneyAmount } from "@paperclipai/shared";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { errorHandler } from "../middleware/index.js";
 import { attentionRoutes } from "../routes/attention.js";
 import { attentionService } from "../services/attention.js";
@@ -218,6 +219,14 @@ describe("attention service", () => {
       kind: "generic",
       summaryExcerpt: "Which rollout should I use?",
     });
+    const reopenFence = harness.calls.find((call) =>
+      call.method === "where" &&
+      new PgDialect().sqlToQuery(call.args[0] as never).sql
+        .includes("issue_board_reopen_commands")
+    );
+    expect(reopenFence).toBeDefined();
+    expect(new PgDialect().sqlToQuery(reopenFence!.args[0] as never).sql)
+      .toContain(">=");
     expect(harness.remaining("select")).toBe(0);
   });
 

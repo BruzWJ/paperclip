@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   issueTreeHoldMembers,
@@ -26,6 +26,13 @@ import {
 } from "./issue-board-lifecycle-command.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
+import type {
+  IssueExecutionCancellationActor,
+  IssueExecutionCancellationService,
+  RequestedRunningIssueInterruptions,
+  RequestedScopedRunCancellations,
+} from "./issue-execution-cancellation.js";
+import { lockIssueTreeExecutionGate } from "./issue-execution-lifecycle-gate.js";
 
 type IssueRow = typeof issues.$inferSelect;
 type HoldRow = typeof issueTreeHolds.$inferSelect;
@@ -71,8 +78,14 @@ type RestoreTreeStatusResult = TreeStatusUpdateResult & {
   releasedCancelHoldIds: string[];
   restoreHold: IssueTreeHold | null;
 };
+export type IssueTreeCancellationPort = Pick<
+  IssueExecutionCancellationService,
+  | "requestRunningIssueInterruptionsInTransaction"
+  | "reconcileRequestedRunningIssueInterruptions"
+  | "requestScopeCancellationsInTransaction"
+  | "reconcileRequestedScopeCancellations"
+>;
 
-const TERMINAL_ISSUE_STATUSES = new Set<IssueStatus>(["done", "cancelled"]);
 const DEFAULT_RELEASE_POLICY: IssueTreeHoldReleasePolicy = { strategy: "manual" };
 const MAX_PAUSE_HOLD_ANCESTOR_DEPTH = 100;
 function normalizeReleasePolicy(
@@ -83,10 +96,6 @@ function normalizeReleasePolicy(
 
 function coerceIssueStatus(status: string): IssueStatus {
   return ISSUE_STATUSES.includes(status as IssueStatus) ? (status as IssueStatus) : "backlog";
-}
-
-function isTerminalIssue(status: string): status is IssueStatus {
-  return TERMINAL_ISSUE_STATUSES.has(coerceIssueStatus(status));
 }
 
 function toPreviewRun(row: ActiveRunRow): IssueTreePreviewRun {
@@ -153,17 +162,19 @@ function issueSkipReason(input: {
   activePauseHoldIds: string[];
   activeCancelSnapshot?: ActiveCancelSnapshot | null;
 }): string | null {
-  const status = coerceIssueStatus(input.issue.boardPresentationStatus);
+  const lifecycleStatus = input.issue.lifecycleStatus;
   if (input.mode === "restore") {
-    if (input.activeCancelSnapshot?.member && status !== "cancelled") {
+    if (
+      input.activeCancelSnapshot?.member &&
+      lifecycleStatus !== "cancelled"
+    ) {
       return "changed_after_cancel";
     }
-    if (status !== "cancelled") return "not_cancelled";
+    if (lifecycleStatus !== "cancelled") return "not_cancelled";
     if (!input.activeCancelSnapshot?.member) return "not_cancelled_by_tree_control";
-    const snapshotStatus = coerceIssueStatus(input.activeCancelSnapshot.member.issueStatus);
-    return isTerminalIssue(snapshotStatus) ? "terminal_status" : null;
+    return null;
   }
-  if (isTerminalIssue(status)) {
+  if (lifecycleStatus === "done" || lifecycleStatus === "cancelled") {
     return "terminal_status";
   }
   if (input.mode === "pause" && input.activePauseHoldIds.length > 0) {
@@ -256,7 +267,6 @@ function buildWarnings(input: {
 
 function restoreStatusFromCancelSnapshot(status: IssueStatus): IssueStatus | null {
   if (status === "in_progress") return "todo";
-  if (isTerminalIssue(status)) return null;
   return status;
 }
 
@@ -268,6 +278,20 @@ function namedBoardActorUserId(actor: ActorInput): string | null {
     );
   }
   return actor.userId;
+}
+
+function cancellationActorForHold(hold: {
+  createdByActorType: string;
+  createdByUserId: string | null;
+  createdByAgentId: string | null;
+}): IssueExecutionCancellationActor {
+  if (hold.createdByActorType === "user" && hold.createdByUserId) {
+    return { kind: "user", userId: hold.createdByUserId };
+  }
+  if (hold.createdByActorType === "agent" && hold.createdByAgentId) {
+    return { kind: "agent", agentId: hold.createdByAgentId };
+  }
+  return { kind: "system" };
 }
 
 function deterministicTreeCommandId(namespace: string, sourceId: string): string {
@@ -284,7 +308,10 @@ function deterministicTreeCommandId(namespace: string, sourceId: string): string
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export function issueTreeControlService(db: Db) {
+export function issueTreeControlService(
+  db: Db,
+  options: { issueExecutionCancellation?: IssueTreeCancellationPort } = {},
+) {
   async function listTreeIssues(companyId: string, rootIssueId: string): Promise<TreeIssue[]> {
     const root = await db
       .select()
@@ -537,15 +564,19 @@ export function issueTreeControlService(db: Db) {
     hold: IssueTreeHold;
     preview: IssueTreeControlPreview;
     resumedPauseHoldIds?: string[];
+    cancelledIssueIds: string[];
   }> {
     const holdReleasePolicy = normalizeReleasePolicy(input.releasePolicy);
-    const holdPreview = await preview(companyId, rootIssueId, {
-      mode: input.mode,
-      releasePolicy: holdReleasePolicy,
-    });
+    const holdPreview = input.mode === "pause" || input.mode === "cancel"
+      ? null
+      : await preview(companyId, rootIssueId, {
+        mode: input.mode,
+        releasePolicy: holdReleasePolicy,
+      });
 
     async function insertHoldWithMembers(
       tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+      previewSnapshot: IssueTreeControlPreview,
     ) {
       const [createdHold] = await tx
         .insert(issueTreeHolds)
@@ -563,7 +594,7 @@ export function issueTreeControlService(db: Db) {
         })
         .returning();
 
-      const memberRows = holdPreview.issues.map((issue) => ({
+      const memberRows = previewSnapshot.issues.map((issue) => ({
         companyId,
         holdId: createdHold.id,
         issueId: issue.id,
@@ -591,7 +622,8 @@ export function issueTreeControlService(db: Db) {
     }
 
     if (input.mode === "resume") {
-      const issueIds = [...new Set(holdPreview.issues.map((issue) => issue.id))];
+      const resumePreview = holdPreview!;
+      const issueIds = [...new Set(resumePreview.issues.map((issue) => issue.id))];
       const releaseReason = input.reason ?? "Subtree resume applied.";
       const actorUserId = namedBoardActorUserId(input.actor);
 
@@ -611,7 +643,7 @@ export function issueTreeControlService(db: Db) {
             )
             .orderBy(asc(issueTreeHolds.createdAt), asc(issueTreeHolds.id))
             .for("update");
-        const { createdHold, createdMembers } = await insertHoldWithMembers(tx);
+        const { createdHold, createdMembers } = await insertHoldWithMembers(tx, resumePreview);
         const resumedPauseHoldIds = activePauseHolds.map((hold) => hold.id);
         const now = new Date();
         let affectedIssueIds: string[] = [];
@@ -712,20 +744,42 @@ export function issueTreeControlService(db: Db) {
 
         return {
           hold: toHold(releasedResumeHold, createdMembers),
-          preview: holdPreview,
+          preview: resumePreview,
           resumedPauseHoldIds,
+          cancelledIssueIds: [],
         };
       });
     }
 
-    const { hold, members } = await db.transaction(async (tx) => {
-      const { createdHold, createdMembers } = await insertHoldWithMembers(tx);
-
+    const applied = await db.transaction(async (tx) => {
+      if (input.mode === "pause" || input.mode === "cancel") {
+        await lockIssueTreeExecutionGate(tx, companyId, rootIssueId);
+      }
+      const committedPreview = holdPreview
+        ?? await issueTreeControlService(tx as unknown as Db).preview(
+          companyId,
+          rootIssueId,
+          {
+            mode: input.mode,
+            releasePolicy: holdReleasePolicy,
+          },
+        );
+      const { createdHold, createdMembers } = await insertHoldWithMembers(
+        tx,
+        committedPreview,
+      );
+      const affectedIssueIds = createdMembers
+        .filter((member) => !member.skipped)
+        .map((member) => member.issueId);
       const actorUserId = namedBoardActorUserId(input.actor);
-      if (input.mode === "pause" && actorUserId) {
-        const affectedIssueIds = holdPreview.issues
-          .filter((issue) => !issue.skipped)
-          .map((issue) => issue.id);
+      const now = createdHold.createdAt;
+
+      if (input.mode === "pause") {
+        if (!options.issueExecutionCancellation) {
+          throw new Error(
+            "Issue-tree pause requires the execution cancellation boundary",
+          );
+        }
         const affectedIssues = affectedIssueIds.length === 0
           ? []
           : await tx
@@ -738,113 +792,158 @@ export function issueTreeControlService(db: Db) {
               and(
                 eq(issues.companyId, companyId),
                 inArray(issues.id, affectedIssueIds),
+                inArray(issues.lifecycleStatus, ["open", "blocked"]),
               ),
             )
             .orderBy(asc(issues.id))
             .for("update");
-        await recordNamedBoardLifecycleCommandInTransaction(tx, {
-          companyId,
-          affectedIssues,
-          actorUserId,
-          subtype: "tree_control_pause",
-          sourceCommandId: createdHold.id,
-          idempotencyKey: `issue-tree-pause:${createdHold.id}`,
-          committedAt: createdHold.createdAt,
-        });
+        const pauseInterruptions: RequestedRunningIssueInterruptions[] = [];
+        for (const issue of affectedIssues) {
+          pauseInterruptions.push(
+            await options.issueExecutionCancellation
+              .requestRunningIssueInterruptionsInTransaction(tx, {
+                companyId,
+                issueId: issue.id,
+                ownershipEpoch: issue.ownershipEpoch,
+                reason: "active_subtree_pause_hold",
+                actor: cancellationActorForHold(createdHold),
+                now,
+              }),
+          );
+        }
+        if (actorUserId) {
+          await recordNamedBoardLifecycleCommandInTransaction(tx, {
+            companyId,
+            affectedIssues,
+            actorUserId,
+            subtype: "tree_control_pause",
+            sourceCommandId: createdHold.id,
+            idempotencyKey: `issue-tree-pause:${createdHold.id}`,
+            committedAt: now,
+          });
+        }
+        return {
+          hold: createdHold,
+          members: createdMembers,
+          preview: committedPreview,
+          pauseInterruptions,
+          cancelCancellations: [] as RequestedScopedRunCancellations[],
+          cancelledIssueIds: [],
+        };
       }
 
-      return { hold: createdHold, members: createdMembers };
+      if (input.mode === "cancel") {
+        if (!options.issueExecutionCancellation) {
+          throw new Error(
+            "Issue-tree cancellation requires the execution cancellation boundary",
+          );
+        }
+        const rows = affectedIssueIds.length === 0
+          ? []
+          : await tx
+            .update(issues)
+            .set({
+              boardPresentationStatus: "cancelled",
+              lifecycleStatus: "cancelled",
+              disposition: {
+                message: `Cancelled by issue-tree hold ${createdHold.id}`,
+                structuredResult: {
+                  kind: "issue_tree_control",
+                  holdId: createdHold.id,
+                },
+              },
+              cancelledAt: now,
+              completedAt: null,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(issues.companyId, companyId),
+                inArray(issues.id, affectedIssueIds),
+                inArray(issues.lifecycleStatus, ["open", "blocked"]),
+              ),
+            )
+            .returning({
+              id: issues.id,
+              companyId: issues.companyId,
+              ownershipEpoch: issues.ownershipEpoch,
+              identifier: issues.identifier,
+              title: issues.title,
+              boardPresentationStatus: issues.boardPresentationStatus,
+              ownerAgentId: issues.ownerAgentId,
+            });
+        if (actorUserId) {
+          await recordNamedBoardLifecycleCommandInTransaction(tx, {
+            companyId,
+            affectedIssues: rows.map((issue) => ({
+              id: issue.id,
+              ownershipEpoch: issue.ownershipEpoch,
+            })),
+            actorUserId,
+            subtype: "tree_control_cancel",
+            sourceCommandId: createdHold.id,
+            idempotencyKey: `issue-tree-cancel:${createdHold.id}`,
+            committedAt: now,
+          });
+        }
+        const cancelCancellations: RequestedScopedRunCancellations[] = [];
+        for (const issue of rows) {
+          cancelCancellations.push(
+            await options.issueExecutionCancellation
+              .requestScopeCancellationsInTransaction(tx, {
+                companyId,
+                issueId: issue.id,
+                selector: {
+                  kind: "ownership_epoch",
+                  ownershipEpoch: issue.ownershipEpoch,
+                },
+                reason: "issue_tree_cancelled",
+                actor: cancellationActorForHold(createdHold),
+                now,
+              }),
+          );
+          await finalizeSummarySlotsForTerminalIssue(tx, issue);
+        }
+        return {
+          hold: createdHold,
+          members: createdMembers,
+          preview: committedPreview,
+          pauseInterruptions: [] as RequestedRunningIssueInterruptions[],
+          cancelCancellations,
+          cancelledIssueIds: rows.map((issue) => issue.id),
+        };
+      }
+
+      return {
+        hold: createdHold,
+        members: createdMembers,
+        preview: committedPreview,
+        pauseInterruptions: [] as RequestedRunningIssueInterruptions[],
+        cancelCancellations: [] as RequestedScopedRunCancellations[],
+        cancelledIssueIds: [],
+      };
     });
 
-    return {
-      hold: toHold(hold, members),
-      preview: holdPreview,
-    };
-  }
-
-  async function cancelIssueStatusesForHold(
-    companyId: string,
-    rootIssueId: string,
-    holdId: string,
-  ): Promise<TreeStatusUpdateResult> {
-    const hold = await getHold(companyId, holdId);
-    if (!hold) throw notFound("Issue tree hold not found");
-    if (hold.rootIssueId !== rootIssueId) {
-      throw unprocessable("Issue tree hold does not belong to the requested root issue");
-    }
-    if (hold.mode !== "cancel") {
-      throw unprocessable("Issue tree hold is not a cancel operation");
-    }
-
-    const issueIds = [...new Set((hold.members ?? [])
-      .filter((member) => !member.skipped)
-      .map((member) => member.issueId))];
-    if (issueIds.length === 0) return { updatedIssueIds: [], updatedIssues: [] };
-
-    const now = new Date();
-    const updated = await db.transaction(async (tx) => {
-      const rows = await tx
-        .update(issues)
-        .set({
-          boardPresentationStatus: "cancelled",
-          lifecycleStatus: "cancelled",
-          disposition: {
-            message: `Cancelled by issue-tree hold ${holdId}`,
-            structuredResult: { kind: "issue_tree_control", holdId },
-          },
-          cancelledAt: now,
-          completedAt: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(issues.companyId, companyId),
-            inArray(issues.id, issueIds),
-            notInArray(issues.boardPresentationStatus, ["done", "cancelled"]),
-          ),
-        )
-        .returning({
-          id: issues.id,
-          companyId: issues.companyId,
-          ownershipEpoch: issues.ownershipEpoch,
-          identifier: issues.identifier,
-          title: issues.title,
-          boardPresentationStatus: issues.boardPresentationStatus,
-          ownerAgentId: issues.ownerAgentId,
-        });
-
-      if (
-        hold.createdByActorType === "user" &&
-        hold.createdByUserId
-      ) {
-        await recordNamedBoardLifecycleCommandInTransaction(tx, {
-          companyId,
-          affectedIssues: rows.map((issue) => ({
-            id: issue.id,
-            ownershipEpoch: issue.ownershipEpoch,
-          })),
-          actorUserId: hold.createdByUserId,
-          subtype: "tree_control_cancel",
-          sourceCommandId: holdId,
-          idempotencyKey: `issue-tree-cancel:${holdId}`,
-          committedAt: now,
-        });
+    if (options.issueExecutionCancellation) {
+      for (const requested of applied.pauseInterruptions) {
+        void options.issueExecutionCancellation
+          .reconcileRequestedRunningIssueInterruptions(requested)
+          .catch(() => {
+            // The durable cancellation intent remains restart-reconcilable.
+          });
       }
-
-      for (const issue of rows) {
-        await finalizeSummarySlotsForTerminalIssue(tx, issue);
+      for (const requested of applied.cancelCancellations) {
+        void options.issueExecutionCancellation
+          .reconcileRequestedScopeCancellations(requested)
+          .catch(() => {
+            // The durable cancellation intent remains restart-reconcilable.
+          });
       }
-      return rows;
-    });
-
+    }
     return {
-      updatedIssueIds: updated.map((issue) => issue.id),
-      updatedIssues: updated.map((issue) => ({
-        id: issue.id,
-        boardPresentationStatus:
-          coerceIssueStatus(issue.boardPresentationStatus),
-        ownerAgentId: issue.ownerAgentId,
-      })),
+      hold: toHold(applied.hold, applied.members),
+      preview: applied.preview,
+      cancelledIssueIds: applied.cancelledIssueIds,
     };
   }
 
@@ -909,7 +1008,7 @@ export function issueTreeControlService(db: Db) {
           .update(issues)
           .set({
             boardPresentationStatus: status,
-            lifecycleStatus: "open",
+            lifecycleStatus: status === "blocked" ? "blocked" : "open",
             disposition: null,
             cancelledAt: null,
             completedAt: null,
@@ -919,6 +1018,7 @@ export function issueTreeControlService(db: Db) {
             and(
               eq(issues.companyId, companyId),
               inArray(issues.id, issueIdsForStatus),
+              eq(issues.lifecycleStatus, "cancelled"),
               eq(issues.boardPresentationStatus, "cancelled"),
             ),
           )
@@ -1108,6 +1208,12 @@ export function issueTreeControlService(db: Db) {
           "Issue tree hold does not belong to the requested root issue",
         );
       }
+      if (
+        existing.mode !== "pause" &&
+        !(input.internal && existing.mode === "restore")
+      ) {
+        throw unprocessable("Only pause holds can be released directly");
+      }
       if (existing.status === "released") {
         throw conflict("Issue tree hold is already released");
       }
@@ -1206,7 +1312,6 @@ export function issueTreeControlService(db: Db) {
     listTreeIssues,
     preview,
     createHold,
-    cancelIssueStatusesForHold,
     restoreIssueStatusesForHold,
     getHold,
     listHolds,

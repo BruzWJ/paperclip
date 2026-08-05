@@ -11,6 +11,7 @@ import {
   issueApprovals,
   issueAttachments,
   issueBoardMentions,
+  issueBoardReopenCommands,
   issueBoardUserComments,
   issueComments,
   issues,
@@ -659,6 +660,17 @@ export function attentionService(db: Db) {
                 gt(boardReplyComments.projectedEventSeq, boardMentionComments.projectedEventSeq),
               )),
           ),
+          notExists(
+            db
+              .select({ id: issueBoardReopenCommands.id })
+              .from(issueBoardReopenCommands)
+              .where(and(
+                eq(issueBoardReopenCommands.companyId, issueBoardMentions.companyId),
+                eq(issueBoardReopenCommands.issueId, issueBoardMentions.issueId),
+                eq(issueBoardReopenCommands.ownershipEpoch, issueBoardMentions.ownershipEpoch),
+                sql`${issueBoardReopenCommands.createdAt} >= ${issueBoardMentions.createdAt}`,
+              )),
+          ),
         ))
         .orderBy(desc(issueBoardMentions.createdAt), desc(issueBoardMentions.id));
       const boardMentionIssueMap = await issueSummaryMap(
@@ -684,7 +696,7 @@ export function attentionService(db: Db) {
           ),
           inlineResolvable: false,
           entryRule: "An active agent Board mention exists for the current nonterminal issue ownership epoch.",
-          exitRule: "A Board user resumes the exact owner/epoch, or the issue ownership epoch leaves scope.",
+          exitRule: "A Board user resumes the exact owner/epoch, the issue is reopened, or the ownership epoch leaves scope.",
           dedupKey: `board-mention:${mention.id}`,
           severity: "medium",
           activityAt: toIso(mention.createdAt),

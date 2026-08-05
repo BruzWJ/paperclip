@@ -251,6 +251,119 @@ describe("ordinary issue board mutations without a database", () => {
     expect(harness.remaining("select")).toBe(0);
   });
 
+  it("fences the terminal epoch before admitting the one fresh reopen ref", async () => {
+    const ownerAgentId = "owner-agent";
+    const session = sessionState();
+    const issue = {
+      id: ISSUE_ID,
+      companyId: COMPANY_ID,
+      request: "Resume from one fresh board command.",
+      lifecycleStatus: "done",
+      disposition: { message: "Previously completed" },
+      ownershipEpoch: 1,
+      ownerKind: "agent",
+      ownerAgentId,
+      ownerUserId: null,
+      ownerAssignmentSource: null,
+      creatorKind: "user/board",
+      creatorUserId: "creator-user",
+    };
+    const reopened = {
+      ...issue,
+      lifecycleStatus: "open",
+      disposition: null,
+    };
+    const edge = {
+      id: "edge-1",
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      ownershipEpoch: 1,
+      creatorKind: "user/board",
+      endpointKind: "user/board",
+      endpointId: "creator-user",
+      state: "receivable",
+    };
+    const authority = {
+      id: "authority-owner",
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      sessionId: session.session.id,
+      ownershipEpoch: 1,
+      agentId: ownerAgentId,
+      state: "current",
+    };
+    const ref = {
+      id: "ref-reopen-fresh",
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      sessionId: session.session.id,
+      ownershipEpoch: 1,
+      mode: "owner",
+      sourceKind: "issue_reopen",
+      exactMessage: issue.request,
+      targetAgentId: ownerAgentId,
+      issueExecutionAuthorityId: authority.id,
+      disposition: "active",
+    };
+    const command = {
+      id: "reopen-command-fresh",
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+    };
+    const cancellations = {
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
+      reason: "board_reopen_continuity_fence",
+      fence: { refIds: ["ref-stale"], deliveryIds: [], correlationIds: [] },
+      requests: [],
+    };
+    mocks.sessions.admitExecutionSource.mockResolvedValue({ ref });
+    mocks.requestCancellations.mockResolvedValue(cancellations);
+    const harness = createMockDb({
+      execute: [[]],
+      select: [
+        [{ id: "board-user" }],
+        [],
+        [issue],
+        [session],
+        [edge],
+        [authority],
+        [],
+        [],
+        [],
+      ],
+      update: [[], [reopened]],
+      insert: [[command]],
+    });
+
+    const result = await createRuntime(harness).boardReopen({
+      companyId: COMPANY_ID,
+      issueId: ISSUE_ID,
+      actorUserId: "board-user",
+      reason: "Resume cleanly",
+      idempotencyKey: "reopen-fenced-1",
+    });
+
+    expect(mocks.requestCancellations).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        companyId: COMPANY_ID,
+        issueId: ISSUE_ID,
+        selector: { kind: "ownership_epoch", ownershipEpoch: 1 },
+        reason: "board_reopen_continuity_fence",
+        actor: { kind: "user", userId: "board-user" },
+        now: NOW,
+      },
+    );
+    expect(mocks.reconcileCancellations).toHaveBeenCalledWith(cancellations);
+    expect(mocks.dispatchRef).toHaveBeenCalledWith(ref.id);
+    expect(result).not.toHaveProperty("cancellations");
+    expect(harness.remaining("select")).toBe(0);
+    expect(harness.remaining("update")).toBe(0);
+    expect(harness.remaining("insert")).toBe(0);
+  });
+
   it("requires an authenticated named board user before a reopen can mutate", async () => {
     const harness = createMockDb({ execute: [[]], select: [[]] });
 

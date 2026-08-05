@@ -345,7 +345,7 @@ const PAUSE_BUCKET_LABEL: Record<PauseAffectsBucketKey, string> = {
 };
 
 const PAUSE_BUCKET_DETAIL: Record<PauseAffectsBucketKey, string> = {
-  live_runs: "interrupted now, re-queued when you resume",
+  live_runs: "interrupted now; transmitted prompts are not replayed",
   queued_runs: "held — they won't start until you resume",
   inactive: "the hold prevents new work from starting",
 };

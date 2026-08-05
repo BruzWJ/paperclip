@@ -53,6 +53,7 @@ import {
 import { accessService } from "../services/access.js";
 import { authorizationService } from "../services/authorization.js";
 import type { OrdinaryIssueRuntime } from "../services/ordinary-issue-runtime.js";
+import type { PipelineCancellationPort } from "../services/pipelines.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import {
   computePipelineHealth,
@@ -717,11 +718,17 @@ async function assertIssueLinkMutationAllowed(
 
 export function pipelineRoutes(
   db: Db,
-  opts: { ordinaryIssues: OrdinaryIssueRuntime },
+  opts: {
+    ordinaryIssues: OrdinaryIssueRuntime;
+    issueExecutionCancellation: PipelineCancellationPort;
+  },
 ) {
   const router = Router();
   const ordinaryIssues = opts.ordinaryIssues;
-  const svc = pipelineService(db, { ordinaryIssues });
+  const svc = pipelineService(db, {
+    ordinaryIssues,
+    issueExecutionCancellation: opts.issueExecutionCancellation,
+  });
   const outputsSvc = pipelineCaseOutputsService(db);
   const access = accessService(db);
 

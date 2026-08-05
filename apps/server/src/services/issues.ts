@@ -94,9 +94,6 @@ import {
   resolveInvokableIssueOwnerFromDb,
 } from "./agent-invokability.js";
 import { summarizeIssueWatchdog } from "./issue-watchdogs.js";
-import {
-  issueTreeControlService,
-} from "./issue-tree-control.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
 import { resolveCurrentIssueOwnerRunLinkages } from "./productive-run-linkage.js";
@@ -373,6 +370,8 @@ type IssueControlStateUpdate = Partial<
     typeof issues.$inferInsert,
     | "id"
     | "companyId"
+    | "parentId"
+    | "parentOwnershipEpoch"
     | "request"
     | "title"
     | "ownerKind"
@@ -392,6 +391,10 @@ type IssueControlStateUpdate = Partial<
     | "creatorRoutineDispatchId"
     | "creatorSystemSourceKind"
     | "creatorSystemSourceId"
+    | "lifecycleStatus"
+    | "disposition"
+    | "completedAt"
+    | "cancelledAt"
     | "createdAt"
     | "executionWorkspaceId"
   >
@@ -2772,7 +2775,6 @@ async function countBlockedInboxIssues(dbOrTx: any, companyId: string, filters?:
 
 export function issueService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
-  const treeControlSvc = issueTreeControlService(db);
 
   async function getIssueByUuid(id: string) {
     const row = await db
@@ -4492,6 +4494,8 @@ export function issueService(db: Db) {
       for (const field of [
         "request",
         "title",
+        "parentId",
+        "parentOwnershipEpoch",
         "ownerKind",
         "ownerAgentId",
         "ownerUserId",
@@ -4509,6 +4513,10 @@ export function issueService(db: Db) {
         "creatorRoutineDispatchId",
         "creatorSystemSourceKind",
         "creatorSystemSourceId",
+        "lifecycleStatus",
+        "disposition",
+        "completedAt",
+        "cancelledAt",
       ] as const) {
         if (Object.prototype.hasOwnProperty.call(data, field)) {
           throw unprocessable(

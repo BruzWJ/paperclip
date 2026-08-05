@@ -26,6 +26,8 @@ const ACTION_PORT_OWNER = "apps/server/src/services/runtime-issue-action-port.ts
 const ISSUE_SCHEMA_OWNER = "packages/db/schema/issues.ts";
 
 const IMMUTABLE_UPDATE_FIELDS = new Set([
+  "parentId",
+  "parentOwnershipEpoch",
   "request",
   "creatorKind",
   "creatorAuthorityId",

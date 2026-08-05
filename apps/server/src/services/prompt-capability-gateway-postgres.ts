@@ -31,6 +31,7 @@ import {
 import type {
   IssueSessionDbTransaction,
 } from "./issue-session/event-store.js";
+import { activeIssueTreePauseHoldExistsSql } from "./issue-execution-lifecycle-gate.js";
 
 interface PromptCapabilityCompiler {
   resolve(
@@ -309,8 +310,13 @@ export function createPostgresPromptCapabilityGatewayRepository(
         .select({
           companyId: issues.companyId,
           ownershipEpoch: issues.ownershipEpoch,
+          lifecycleStatus: issues.lifecycleStatus,
           ownerKind: issues.ownerKind,
           ownerAgentId: issues.ownerAgentId,
+          executionPaused: activeIssueTreePauseHoldExistsSql(
+            issues.companyId,
+            issues.id,
+          ),
         })
         .from(issues)
         .where(eq(issues.id, row.issueId))
@@ -435,6 +441,12 @@ export function createPostgresPromptCapabilityGatewayRepository(
           issue.ownerAgentId !== row.targetAgentId))
     ) {
       return invalid("ownership_epoch_changed");
+    }
+    if (!["open", "blocked"].includes(issue.lifecycleStatus)) {
+      return invalid("issue_lifecycle_terminal");
+    }
+    if (issue.executionPaused) {
+      return invalid("issue_execution_paused");
     }
     const agent = agentRows[0];
     if (

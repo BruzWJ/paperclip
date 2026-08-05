@@ -9,39 +9,18 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { issueService, issueTreeControlService, logActivity } from "../services/index.js";
-import type { IssueExecutionCancellationService } from "../services/issue-execution-cancellation.js";
+import type { IssueTreeCancellationPort } from "../services/issue-tree-control.js";
 import { assertBoard, getAccessibleResource } from "./authz.js";
-
-const TREE_RUN_CANCELLATION_RESPONSE_WAIT_MS = 1_000;
-
-function errorToMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function waitForRunCancellationTasks(tasks: Promise<void>[]) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  try {
-    await Promise.race([
-      Promise.all(tasks),
-      new Promise((resolve) => {
-        timeout = setTimeout(resolve, TREE_RUN_CANCELLATION_RESPONSE_WAIT_MS);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
 
 export function issueTreeControlRoutes(
   db: Db,
-  issueExecutionCancellation: Pick<
-    IssueExecutionCancellationService,
-    "cancelRun"
-  >,
+  issueExecutionCancellation: IssueTreeCancellationPort,
 ) {
   const router = Router();
   const issuesSvc = issueService(db);
-  const treeControlSvc = issueTreeControlService(db);
+  const treeControlSvc = issueTreeControlService(db, {
+    issueExecutionCancellation,
+  });
 
   async function resolveRootIssue(req: Request) {
     const rootIssueId = req.params.id as string;
@@ -82,10 +61,15 @@ export function issueTreeControlRoutes(
       actorId: req.actor.userId,
       userId: req.actor.userId,
     };
-    let result = await treeControlSvc.createHold(root.companyId, root.id, {
+    const applied = await treeControlSvc.createHold(root.companyId, root.id, {
       ...req.body,
       actor: actorInput,
     });
+    const {
+      cancelledIssueIds,
+      ...createdResult
+    } = applied;
+    let result = createdResult;
     await logActivity(db, {
       companyId: root.companyId,
       actorType: "user",
@@ -102,50 +86,7 @@ export function issueTreeControlRoutes(
       },
     });
 
-    const runCancellationTasks: Promise<void>[] = [];
-    if (result.hold.mode === "pause" || result.hold.mode === "cancel") {
-      const interruptedRunIds = [...new Set(result.preview.activeRuns.map((run) => run.id))];
-      for (const runId of interruptedRunIds) {
-        const cancellationTask = (async () => {
-          try {
-            await issueExecutionCancellation.cancelRun(runId);
-            await logActivity(db, {
-              companyId: root.companyId,
-              actorType: "user",
-              actorId: req.actor.userId,
-              action: "issue.tree_hold_run_interrupted",
-              entityType: "issue_execution_run",
-              entityId: runId,
-              details: {
-                holdId: result.hold.id,
-                rootIssueId: root.id,
-                reason: result.hold.mode === "pause" ? "active_subtree_pause_hold" : "subtree_cancel_operation",
-              },
-            });
-          } catch (error) {
-            await Promise.resolve(logActivity(db, {
-              companyId: root.companyId,
-              actorType: "user",
-              actorId: req.actor.userId,
-              action: "issue.tree_hold_run_interrupt_failed",
-              entityType: "issue_execution_run",
-              entityId: runId,
-              details: {
-                holdId: result.hold.id,
-                rootIssueId: root.id,
-                reason: result.hold.mode === "pause" ? "active_subtree_pause_hold" : "subtree_cancel_operation",
-                error: errorToMessage(error),
-              },
-            })).catch(() => null);
-          }
-        })();
-        runCancellationTasks.push(cancellationTask);
-      }
-
-    }
-
     if (result.hold.mode === "cancel") {
-      const statusUpdate = await treeControlSvc.cancelIssueStatusesForHold(root.companyId, root.id, result.hold.id);
       await logActivity(db, {
         companyId: root.companyId,
         actorType: "user",
@@ -155,14 +96,10 @@ export function issueTreeControlRoutes(
         entityId: root.id,
         details: {
           holdId: result.hold.id,
-          cancelledIssueIds: statusUpdate.updatedIssueIds,
-          cancelledIssueCount: statusUpdate.updatedIssueIds.length,
+          cancelledIssueIds,
+          cancelledIssueCount: cancelledIssueIds.length,
         },
       });
-    }
-
-    if (runCancellationTasks.length > 0) {
-      await waitForRunCancellationTasks(runCancellationTasks);
     }
 
     if (result.hold.mode === "restore") {

@@ -1115,8 +1115,6 @@ async function applyBoardReopenContinuityFence(
 ): Promise<number> {
   const correlations = await tx
     .select({
-      id: issueExecutionSessions.id,
-      state: issueExecutionSessions.state,
       generation: issueExecutionSessions.correlationGeneration,
     })
     .from(issueExecutionSessions)
@@ -1181,35 +1179,6 @@ async function applyBoardReopenContinuityFence(
     throw new OrdinaryIssueRuntimeRejected(
       "Board reopen exhausted the epoch-local continuity generation",
       "board_reopen_continuity_exhausted",
-    );
-  }
-
-  const liveCorrelations = correlations.filter(
-    (row) => row.state === "eligible" || row.state === "current",
-  );
-  const superseded = await tx
-    .update(issueExecutionSessions)
-    .set({
-      state: "superseded",
-      supersessionReason: "board_reopen_terminal_continuity_fence",
-      supersededAt: input.at,
-    })
-    .where(
-      and(
-        eq(issueExecutionSessions.companyId, input.companyId),
-        eq(issueExecutionSessions.issueId, input.issueId),
-        eq(
-          issueExecutionSessions.ownershipEpoch,
-          input.ownershipEpoch,
-        ),
-        inArray(issueExecutionSessions.state, ["eligible", "current"]),
-      ),
-    )
-    .returning({ id: issueExecutionSessions.id });
-  if (superseded.length !== liveCorrelations.length) {
-    throw new OrdinaryIssueRuntimeRejected(
-      "Board reopen lost a locked native-correlation fence winner",
-      "board_reopen_continuity_conflict",
     );
   }
 
@@ -1366,6 +1335,7 @@ export function createOrdinaryIssueRuntime(
   const issueForms = createIssueFormCommitRuntime(db, {
     clock,
     notifyCreatorDelivery: options.notifyCreatorDelivery,
+    issueExecutionCancellation: options.issueExecutionCancellation,
   });
 
   async function dispatch(refId: string): Promise<void> {
@@ -2107,6 +2077,7 @@ export function createOrdinaryIssueRuntime(
                   projectPersistedIssueExecutionRef(executionRef),
               } satisfies IssueBoardReopenDispatch,
               escalationDispatchRefId: null,
+              cancellations: null,
               retried: true as const,
             };
           }
@@ -2140,6 +2111,7 @@ export function createOrdinaryIssueRuntime(
             command: priorCommand,
             dispatch: { kind: "board_only" } satisfies IssueBoardReopenDispatch,
             escalationDispatchRefId: null,
+            cancellations: null,
             retried: true as const,
           };
         }
@@ -2270,6 +2242,19 @@ export function createOrdinaryIssueRuntime(
         }
 
         const now = clock();
+        const cancellations =
+          await options.issueExecutionCancellation
+            .requestScopeCancellationsInTransaction(tx, {
+              companyId: input.companyId,
+              issueId: issue.id,
+              selector: {
+                kind: "ownership_epoch",
+                ownershipEpoch: issue.ownershipEpoch,
+              },
+              reason: "board_reopen_continuity_fence",
+              actor: { kind: "user", userId: actorUserId },
+              now,
+            });
         const continuityFenceGeneration =
           await applyBoardReopenContinuityFence(tx, {
             companyId: input.companyId,
@@ -2422,6 +2407,7 @@ export function createOrdinaryIssueRuntime(
                 projectPersistedIssueExecutionRef(executionRef),
             } satisfies IssueBoardReopenDispatch,
             escalationDispatchRefId: escalation?.dispatchRefId ?? null,
+            cancellations,
             retried: false as const,
           };
         }
@@ -2431,16 +2417,28 @@ export function createOrdinaryIssueRuntime(
           command,
           dispatch: { kind: "board_only" } satisfies IssueBoardReopenDispatch,
           escalationDispatchRefId: escalation?.dispatchRefId ?? null,
+          cancellations,
           retried: false as const,
         };
       });
+      if (result.cancellations) {
+        void options.issueExecutionCancellation
+          .reconcileRequestedScopeCancellations(result.cancellations)
+          .catch(() => {
+            // The committed lifecycle fence keeps the prior refs ineligible.
+          });
+      }
       if (result.dispatch.kind === "agent_execution") {
         await dispatch(result.dispatch.executionRef.id);
       }
       if (result.escalationDispatchRefId) {
         await dispatch(result.escalationDispatchRefId);
       }
-      const { escalationDispatchRefId: _, ...publicResult } = result;
+      const {
+        escalationDispatchRefId: _,
+        cancellations: __,
+        ...publicResult
+      } = result;
       return publicResult;
     },
 

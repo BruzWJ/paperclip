@@ -87,6 +87,10 @@ import {
   IssueConsultChainInvalid,
   lockAndValidateIssueConsultChain,
 } from "./issue-consult-chain-postgres.js";
+import {
+  activeIssueTreePauseHoldExistsSql,
+  lockIssueTreeExecutionGate,
+} from "./issue-execution-lifecycle-gate.js";
 
 export type PersistedIssueExecutionRefRow =
   typeof issueExecutionRefs.$inferSelect;
@@ -3010,6 +3014,34 @@ export function createPostgresIssueExecutionDispatcherRepository(
   }): Promise<LeaseForLaneResult> {
     const result: LeaseForLaneResult = await options.database.transaction(
       async (transaction) => {
+      await transaction
+        .select({ id: companies.id })
+        .from(companies)
+        .where(eq(companies.id, input.lane.companyId))
+        .limit(1)
+        .for("update");
+      await lockIssueTreeExecutionGate(
+        transaction,
+        input.lane.companyId,
+        input.lane.issueId,
+      );
+      const paused = await transaction
+        .select({
+          active: activeIssueTreePauseHoldExistsSql(
+            input.lane.companyId,
+            input.lane.issueId,
+          ),
+        })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.companyId, input.lane.companyId),
+            eq(issues.id, input.lane.issueId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]?.active === true);
+      if (paused) return { kind: "queued" };
       let existing = await findExistingRunForLane(
         transaction,
         input.lane,
@@ -4052,6 +4084,10 @@ export function createPostgresIssueExecutionDispatcherRepository(
               where lifecycle.company_id = ${issueExecutionRefs.companyId}
                 and lifecycle.status in ('fenced','cancelling','purge_ready')
             )`,
+            sql`not (${activeIssueTreePauseHoldExistsSql(
+              issueExecutionRefs.companyId,
+              issueExecutionRefs.issueId,
+            )})`,
             blockedRefIds.length === 0
               ? undefined
               : notInArray(issueExecutionRefs.id, [...blockedRefIds]),

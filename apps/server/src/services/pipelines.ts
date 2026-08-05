@@ -53,6 +53,16 @@ import {
 } from "./pipeline-case-outputs.js";
 import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 import { appendCanonicalControlNotice } from "./issue-session-producers.js";
+import type {
+  IssueExecutionCancellationService,
+  RequestedScopedRunCancellations,
+} from "./issue-execution-cancellation.js";
+
+export type PipelineCancellationPort = Pick<
+  IssueExecutionCancellationService,
+  | "requestScopeCancellationsInTransaction"
+  | "reconcileRequestedScopeCancellations"
+>;
 
 const DEFAULT_LEASE_MS = 15 * 60 * 1000;
 const MAX_LEASE_MS = 24 * 60 * 60 * 1000;
@@ -1956,7 +1966,10 @@ async function descendantCaseIds(db: PipelineDb, companyId: string, rootCaseIds:
 /** @internal Server route implementation; not part of the published server API. */
 export function pipelineService(
   db: Db,
-  deps: { ordinaryIssues: OrdinaryIssueRuntime },
+  deps: {
+    ordinaryIssues: OrdinaryIssueRuntime;
+    issueExecutionCancellation: PipelineCancellationPort;
+  },
 ) {
   const routinesSvc = routineService(db, {
     ordinaryIssues: deps.ordinaryIssues,
@@ -4200,6 +4213,7 @@ export function pipelineService(
       actor: PipelineActor;
     }) {
       const result = await db.transaction(async (tx) => {
+        const issueCancellations: RequestedScopedRunCancellations[] = [];
         const detail = await getCaseWithStageForUpdateOrThrow(tx, input.companyId, input.caseId);
         if (detail.case.version !== input.expectedVersion) {
           throw conflict("Pipeline case version conflict", {
@@ -4325,16 +4339,36 @@ export function pipelineService(
             .where(and(
               eq(issues.companyId, input.companyId),
               inArray(issues.id, issueIdsToCancel),
-              ne(issues.boardPresentationStatus, "done"),
+              inArray(issues.lifecycleStatus, ["open", "blocked"]),
             ))
             .returning({
               id: issues.id,
               companyId: issues.companyId,
+              ownershipEpoch: issues.ownershipEpoch,
               identifier: issues.identifier,
               title: issues.title,
               boardPresentationStatus: issues.boardPresentationStatus,
             });
           for (const issue of cancelledIssues) {
+            issueCancellations.push(
+              await deps.issueExecutionCancellation
+                .requestScopeCancellationsInTransaction(tx, {
+                  companyId: input.companyId,
+                  issueId: issue.id,
+                  selector: {
+                    kind: "ownership_epoch",
+                    ownershipEpoch: issue.ownershipEpoch,
+                  },
+                  reason: "pipeline_cleanup_cancelled",
+                  actor:
+                    input.actor.type === "user"
+                      ? { kind: "user", userId: input.actor.userId }
+                      : input.actor.type === "agent"
+                        ? { kind: "agent", agentId: input.actor.agentId }
+                        : { kind: "system" },
+                  now,
+                }),
+            );
             await finalizeSummarySlotsForTerminalIssue(tx, issue);
           }
           await tx
@@ -4418,8 +4452,16 @@ export function pipelineService(
             caseIds: uniqueRetireCaseIds,
             issueIds: issueIdsToCancel,
           },
+          issueCancellations,
         };
       });
+      for (const requested of result.issueCancellations) {
+        void deps.issueExecutionCancellation
+          .reconcileRequestedScopeCancellations(requested)
+          .catch(() => {
+            // The committed lifecycle fence keeps the retired refs ineligible.
+          });
+      }
       const automationExecution = await executeAutomationLedger(result.ledger.id, input.actor);
       const { targetStageRow: _targetStageRow, automationRoutineId: _automationRoutineId, ...plan } = result.plan;
       return {

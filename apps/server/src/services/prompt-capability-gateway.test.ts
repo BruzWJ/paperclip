@@ -112,6 +112,10 @@ function persistedCapabilityRow(input: {
 
 function gatewayAuthorityRows(
   row: ReturnType<typeof persistedCapabilityRow>,
+  issueState: {
+    lifecycleStatus?: "open" | "blocked" | "done" | "cancelled";
+    executionPaused?: boolean;
+  } = {},
 ) {
   return new Map<unknown, readonly unknown[]>([
     [issueExecutionPromptCapabilities, [row]],
@@ -121,8 +125,10 @@ function gatewayAuthorityRows(
       [{
         companyId: row.companyId,
         ownershipEpoch: row.ownershipEpoch,
+        lifecycleStatus: issueState.lifecycleStatus ?? "open",
         ownerKind: "agent",
         ownerAgentId: row.targetAgentId,
+        executionPaused: issueState.executionPaused ?? false,
       }],
     ],
     [
@@ -238,8 +244,9 @@ function gatewayAuthorityRows(
 function postgresGatewayRepository(
   row: ReturnType<typeof persistedCapabilityRow>,
   databaseTime = now,
+  issueState: Parameters<typeof gatewayAuthorityRows>[1] = {},
 ) {
-  const rowsByTable = gatewayAuthorityRows(row);
+  const rowsByTable = gatewayAuthorityRows(row, issueState);
   const database: Record<string, unknown> = {
     async execute() {
       return [{ timestamp: databaseTime }];
@@ -466,6 +473,39 @@ describe("prompt-capability gateway", () => {
         expiresAt: row.expiresAt,
       },
     });
+  });
+
+  it.each([
+    {
+      label: "blocked issue",
+      issueState: { lifecycleStatus: "blocked" as const },
+      expected: "authenticated",
+    },
+    {
+      label: "cancelled issue",
+      issueState: { lifecycleStatus: "cancelled" as const },
+      expected: "issue_lifecycle_terminal",
+    },
+    {
+      label: "paused issue tree",
+      issueState: { executionPaused: true },
+      expected: "issue_execution_paused",
+    },
+  ])("applies the canonical execution gate for a $label", async ({ issueState, expected }) => {
+    const row = persistedCapabilityRow({
+      expiresAt: new Date("2026-07-31T12:10:00.000Z"),
+    });
+    const repository = postgresGatewayRepository(row, now, issueState);
+    const result = await repository.revalidate(
+      capability,
+      new Date("2026-07-31T12:06:00.000Z"),
+    );
+
+    if (expected === "authenticated") {
+      expect(result.kind).toBe("authenticated");
+    } else {
+      expect(result).toEqual({ kind: "authority_invalid", reason: expected });
+    }
   });
 
   it.each([

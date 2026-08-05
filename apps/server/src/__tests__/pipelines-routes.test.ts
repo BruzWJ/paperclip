@@ -57,7 +57,10 @@ function app() {
     next();
   });
   const mock = createMockDb();
-  expressApp.use("/api", pipelineRoutes(mock.db, { ordinaryIssues: {} as never }));
+  expressApp.use("/api", pipelineRoutes(mock.db, {
+    ordinaryIssues: {} as never,
+    issueExecutionCancellation: {} as never,
+  }));
   expressApp.use(errorHandler);
   return expressApp;
 }

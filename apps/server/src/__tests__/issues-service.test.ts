@@ -195,8 +195,14 @@ describe("issue ownership and lifecycle mutation", () => {
     ["ownerAgentId", ownerAgentId],
     ["ownerKind", "agent"],
     ["ownershipEpoch", 2],
+    ["parentId", "00000000-0000-4000-8000-000000000099"],
+    ["parentOwnershipEpoch", 2],
     ["request", "replacement request"],
     ["creatorUserId", "user-2"],
+    ["lifecycleStatus", "cancelled"],
+    ["disposition", { message: "replacement disposition" }],
+    ["completedAt", new Date("2026-07-30T12:00:00.000Z")],
+    ["cancelledAt", new Date("2026-07-30T12:00:00.000Z")],
   ])("rejects direct mutation of canonical %s", async (field, value) => {
     const harness = createMockDb();
     const service = issueService(harness.db);

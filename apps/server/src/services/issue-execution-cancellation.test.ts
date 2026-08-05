@@ -33,6 +33,54 @@ function fixture() {
   };
 }
 
+function scopedFixture(input: {
+  runs?: readonly unknown[];
+  onRunsLocked?: () => void;
+  fencedRefIds?: () => readonly string[];
+}) {
+  const events: string[] = [];
+  const lockActiveRunsForScopeInTransaction = vi.fn(async () => {
+    events.push("run_locked");
+    input.onRunsLocked?.();
+    return (input.runs ?? []) as never;
+  });
+  const fenceRevokedExecutionAuthorityInTransaction = vi.fn(async () => {
+    events.push("refs_fenced");
+    return {
+      refIds: [...(input.fencedRefIds?.() ?? [])],
+      deliveryIds: [],
+      correlationIds: [],
+    };
+  });
+  return {
+    service: createIssueExecutionCancellationService({
+      database: {} as never,
+      runService: { lockActiveRunsForScopeInTransaction } as never,
+      dispatcher: {} as never,
+      settlement: { fenceRevokedExecutionAuthorityInTransaction } as never,
+    }),
+    events,
+    lockActiveRunsForScopeInTransaction,
+    fenceRevokedExecutionAuthorityInTransaction,
+  };
+}
+
+function activeRun(
+  runId: string,
+  status: "queued" | "running" | "scheduled_retry",
+  cancellationIntentId: string | null = null,
+) {
+  return {
+    companyId: "company-1",
+    issueId: "issue-1",
+    runId,
+    status,
+    cancellationIntentId,
+    currentAttemptId: null,
+    currentLeaseId: null,
+  };
+}
+
 describe("budget-scope execution suspension", () => {
   it("fences the exact project scope and locks its active runs in one transaction", async () => {
     const value = fixture();
@@ -103,5 +151,65 @@ describe("budget-scope execution suspension", () => {
       scopeId: "agent-1",
       at: now,
     });
+  });
+});
+
+describe("scoped execution cancellation", () => {
+  it("locks runs before fencing a late finalizer-created routed ref", async () => {
+    let routedRefCommitted = false;
+    const value = scopedFixture({
+      onRunsLocked: () => {
+        routedRefCommitted = true;
+      },
+      fencedRefIds: () =>
+        routedRefCommitted ? ["ref-routed-after-finalization"] : [],
+    });
+    const transaction = {} as never;
+    const now = new Date("2026-08-05T12:00:00.000Z");
+
+    const requested =
+      await value.service.requestScopeCancellationsInTransaction(transaction, {
+        companyId: "company-1",
+        issueId: "issue-1",
+        selector: { kind: "ownership_epoch", ownershipEpoch: 4 },
+        reason: "issue_cancelled",
+        actor: { kind: "system" },
+        now,
+      });
+
+    expect(value.events).toEqual(["run_locked", "refs_fenced"]);
+    expect(requested.fence.refIds).toEqual([
+      "ref-routed-after-finalization",
+    ]);
+  });
+
+  it("interrupts only running attempts without fencing queued refs", async () => {
+    const value = scopedFixture({
+      runs: [
+        activeRun("run-queued", "queued"),
+        activeRun("run-running", "running", "intent-running"),
+        activeRun("run-retry", "scheduled_retry"),
+      ],
+    });
+    const transaction = {} as never;
+    const now = new Date("2026-08-05T12:00:00.000Z");
+
+    const requested =
+      await value.service.requestRunningIssueInterruptionsInTransaction(
+        transaction,
+        {
+          companyId: "company-1",
+          issueId: "issue-1",
+          ownershipEpoch: 4,
+          reason: "issue_tree_paused",
+          actor: { kind: "user", userId: "user-1" },
+          now,
+        },
+      );
+
+    expect(value.fenceRevokedExecutionAuthorityInTransaction)
+      .not.toHaveBeenCalled();
+    expect(requested.requests.map((request) => request.runId))
+      .toEqual(["run-running"]);
   });
 });
