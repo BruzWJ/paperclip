@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
 import { buildHostServices } from "../services/plugin-host-services.js";
+import { PluginIssueAuthorizationRejected } from "../services/plugin-issue-authorization.js";
 import { createMockDb } from "./helpers/mock-db.js";
 
 const mocks = vi.hoisted(() => ({
@@ -59,6 +60,54 @@ describe("plugin access and authorization host services", () => {
     mocks.agentGetById.mockReset();
     mocks.authorizationDecide.mockReset();
     mocks.logActivity.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("does not disclose company events when the plugin is unavailable there", async () => {
+    const subscribe = vi.fn();
+    const deliver = vi.fn(async () => undefined);
+    const eventBus = {
+      forPlugin: () => ({ subscribe, emit: vi.fn(), clear: vi.fn() }),
+    } as never;
+    const host = buildHostServices(
+      createMockDb().db,
+      pluginId,
+      pluginKey,
+      eventBus,
+      deliver,
+      {
+        ordinaryIssues: {} as never,
+        pluginIssueControlPlane: {} as never,
+        issueExecutionCancellation: {} as never,
+      },
+    );
+    await host.events.subscribe({ eventPattern: "agent.run.finished" });
+    const handler = subscribe.mock.calls[0]![1] as (event: unknown) => Promise<void>;
+    const event = {
+      eventId: "event",
+      eventType: "agent.run.finished",
+      occurredAt: "2026-08-05T00:00:00.000Z",
+      companyId,
+      payload: { companyId, runId: "run" },
+    };
+
+    mocks.assertPluginAvailable.mockRejectedValueOnce(
+      new PluginIssueAuthorizationRejected(
+        "disabled",
+        "plugin_company_disabled",
+        { companyId },
+      ),
+    );
+    await handler(event);
+    expect(deliver).not.toHaveBeenCalled();
+
+    mocks.assertPluginAvailable.mockResolvedValueOnce(undefined);
+    await handler(event);
+    expect(deliver).toHaveBeenCalledOnce();
+
+    mocks.assertPluginAvailable.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(handler(event)).rejects.toThrow("database unavailable");
+    expect(deliver).toHaveBeenCalledOnce();
+    host.dispose();
   });
 
   it("rejects grant writes for agents outside the requested company", async () => {

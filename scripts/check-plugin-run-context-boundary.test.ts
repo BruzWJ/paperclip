@@ -32,7 +32,6 @@ function fixtureRoot(): string {
       "    capabilityConnectionId: uuid(),",
       "    capabilityGeneration: integer(),",
       "    runInterfaceToolCallId: uuid(),",
-      "    companyToolSelectionId: uuid(),",
       "    pluginInstallationId: uuid(),",
       '    handleHash: text("handle_hash").primaryKey(),',
       "    firstUsedAt: timestamp(),",
@@ -41,7 +40,6 @@ function fixtureRoot(): string {
       "  (table) => [",
       "    plugin_run_contexts_capability_generation_fk,",
       "    plugin_run_contexts_exact_tool_call_fk,",
-      "    plugin_run_contexts_tool_selection_fk,",
       "  ],",
       ");",
       "/**",
@@ -51,13 +49,13 @@ function fixtureRoot(): string {
       "",
     ].join("\n"),
   );
-  write(root, COMPILER_PATH, "selectedCompanyToolSelectionId pluginInstallationId selectedCompanyTools\n");
-  write(root, EXECUTOR_PATH, "options.companyTools.execute({ runInterfaceToolCallId: claim.id, mintPluginRunContext, pluginInstallationId });\n");
+  write(root, COMPILER_PATH, 'pluginDescriptors; source: "plugin"; pluginInstallationId\n');
+  write(root, EXECUTOR_PATH, "options.pluginTools.execute({ runInterfaceToolCallId: claim.id, mintPluginRunContext, pluginInstallationId });\n");
   write(root, GATEWAY_PATH, "randomPluginRunContextHandle(); createPluginRunContext({ handleHash: sha256(handle) }); resolvePluginRunContext();\n");
-  write(root, GATEWAY_REPOSITORY_PATH, ".insert(pluginRunContexts); resolvePluginRunContextHash; pluginInstallationId; companyToolSelectionId; runInterfaceToolCallId;\n");
-  write(root, TOOL_GATEWAY_PATH, "executePromptCapabilityTool; pluginToolDispatcher!.executeTool( await input.mintPluginRunContext() );\n");
+  write(root, GATEWAY_REPOSITORY_PATH, ".insert(pluginRunContexts); resolvePluginRunContextHash; pluginInstallationId; runInterfaceToolCallId;\n");
+  write(root, APP_PATH, "bindPromptCapabilityPluginTools; pluginToolDispatcher.executeTool( pluginInstallationId: input.pluginInstallationId, await input.mintPluginRunContext() );\n");
   write(root, DISPATCHER_PATH, "PluginToolExecutionScope; registry.executeTool(\n");
-  write(root, REGISTRY_PATH, "runContextHandle: scope.runContextHandle; workerManager.call(\"executeTool\", { pluginRunContextHandle: scope.runContextHandle });\n");
+  write(root, REGISTRY_PATH, "registered.pluginDbId !== scope.pluginInstallationId; runContextHandle: scope.runContextHandle; workerManager.call(\"executeTool\", { pluginRunContextHandle: scope.runContextHandle });\n");
   write(
     root,
     "packages/plugins/sdk/src/protocol.ts",
@@ -146,7 +144,7 @@ const COMPILER_PATH = "apps/server/src/services/runtime-interface-compiler.ts";
 const EXECUTOR_PATH = "apps/server/src/services/runtime-tool-executor.ts";
 const GATEWAY_PATH = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY_PATH = "apps/server/src/services/prompt-capability-gateway-postgres.ts";
-const TOOL_GATEWAY_PATH = "apps/server/src/services/tool-gateway.ts";
+const APP_PATH = "apps/server/src/app.ts";
 const DISPATCHER_PATH = "apps/server/src/services/plugin-tool-dispatcher.ts";
 const REGISTRY_PATH = "apps/server/src/services/plugin-tool-registry.ts";
 

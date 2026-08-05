@@ -6,6 +6,7 @@ import {
   agentMentionReachGrants,
   agents,
   issues,
+  pluginCompanySettings,
   plugins,
   principalPermissionGrants,
   toolApplications,
@@ -20,6 +21,7 @@ import {
   PAPERCLIP_ACTION_KEYS,
   type AgentContextGrantKey,
   type AgentMentionReachGrantKey,
+  type PaperclipPluginManifestV1,
   type PaperclipActionKey,
   type RuntimeAgentCompanyToolOption,
 } from "@paperclipai/shared";
@@ -41,9 +43,11 @@ import type {
   JsonSchema,
   RuntimeAgentConfigureTarget,
   RuntimeInterfaceCompileInput,
+  RuntimePluginTool,
   SelectedCompanyTool,
 } from "./runtime-interface-compiler.js";
 import type { RuntimeRetrievalScopeResolver } from "./runtime-tool-executor.js";
+import { listAuthorizedPluginAgentTools } from "./plugin-agent-tool-authority.js";
 import { resolveExecutionModeContextMask } from "./execution-mode-context-mask.js";
 import {
   resolveMentionReach,
@@ -88,8 +92,6 @@ type SelectedToolRow = {
   connectionStatus: string;
   connectionEnabled: boolean;
   applicationStatus: string;
-  pluginInstallationId: string | null;
-  pluginStatus: string | null;
 };
 
 export interface RuntimeInterfaceCompilerSnapshot {
@@ -124,16 +126,13 @@ export interface RuntimeInterfaceCompilerSnapshot {
   issueTree: readonly MentionReachIssue[];
   agentHireCompanyToolOptions: readonly RuntimeAgentCompanyToolOption[];
   selectedTools: readonly SelectedToolRow[];
+  pluginTools: readonly RuntimePluginTool[];
 }
 
 export interface PostgresPromptCapabilityCompiler {
   resolve(
     capability: PromptCapabilityCompileScope,
   ): Promise<RuntimeInterfaceCompileInput>;
-  resolvePluginCompanyTool(input: {
-    capability: PromptCapabilityCompileScope;
-    companyToolSelectionId: string;
-  }): Promise<{ readonly pluginInstallationId: string } | null>;
 }
 
 function booleanRecord<const Key extends string>(
@@ -225,8 +224,7 @@ function selectedCompanyTools(
         row.catalogVersionHash === row.entryVersionHash &&
         row.connectionStatus === "active" &&
         row.connectionEnabled &&
-        row.applicationStatus === "active" &&
-        (row.pluginInstallationId === null || row.pluginStatus === "ready")
+        row.applicationStatus === "active"
       );
     })
     .map((row) => ({
@@ -236,12 +234,37 @@ function selectedCompanyTools(
       title: row.title ?? row.entryName,
       description: row.description ?? "",
       inputSchema: row.inputSchema as JsonSchema,
-      pluginInstallationId: row.pluginInstallationId,
     }))
     .sort((left, right) =>
       left.name.localeCompare(right.name) ||
       left.selectionId.localeCompare(right.selectionId),
     );
+}
+
+export function readyPluginTools(
+  rows: readonly {
+    id: string;
+    pluginKey: string;
+    manifestJson: PaperclipPluginManifestV1;
+  }[],
+  disabledPluginIds: ReadonlySet<string>,
+): RuntimePluginTool[] {
+  return rows.flatMap((row) => {
+    if (disabledPluginIds.has(row.id)) return [];
+    return listAuthorizedPluginAgentTools({
+      pluginKey: row.pluginKey,
+      manifest: row.manifestJson,
+    }).map((tool) => ({
+      installationId: row.id,
+      name: `${row.pluginKey}:${tool.name}`,
+      title: tool.displayName,
+      description: tool.description,
+      inputSchema: tool.parametersSchema as JsonSchema,
+    }));
+  }).sort((left, right) =>
+    left.name.localeCompare(right.name) ||
+    left.installationId.localeCompare(right.installationId),
+  );
 }
 
 export function buildRuntimeInterfaceCompileInput(
@@ -399,6 +422,7 @@ export function buildRuntimeInterfaceCompileInput(
     configureTargets,
     agentHireCompanyToolOptions: snapshot.agentHireCompanyToolOptions,
     selectedCompanyTools: selectedCompanyTools(capability, snapshot.selectedTools),
+    pluginTools: snapshot.pluginTools,
   };
 }
 
@@ -427,8 +451,6 @@ async function loadSelectedToolRows(
       connectionStatus: toolConnections.status,
       connectionEnabled: toolConnections.enabled,
       applicationStatus: toolApplications.status,
-      pluginInstallationId: toolApplications.pluginId,
-      pluginStatus: plugins.status,
     })
     .from(agentCompanyToolSelections)
     .innerJoin(
@@ -473,7 +495,6 @@ async function loadSelectedToolRows(
         eq(toolApplications.id, toolConnections.applicationId),
       ),
     )
-    .leftJoin(plugins, eq(plugins.id, toolApplications.pluginId))
     .where(
       and(
         eq(agentCompanyToolSelections.companyId, capability.companyId),
@@ -504,6 +525,8 @@ async function loadSnapshot(
     issueTreeRows,
     agentHireCompanyToolOptions,
     selectedTools,
+    readyPlugins,
+    companyPluginSettings,
   ] = await Promise.all([
     db
       .select({
@@ -669,6 +692,21 @@ async function loadSnapshot(
     `),
     listRuntimeAgentCreateCompanyToolOptions(db, capability.companyId),
     loadSelectedToolRows(db, capability),
+    db
+      .select({
+        id: plugins.id,
+        pluginKey: plugins.pluginKey,
+        manifestJson: plugins.manifestJson,
+      })
+      .from(plugins)
+      .where(eq(plugins.status, "ready")),
+    db
+      .select({
+        pluginId: pluginCompanySettings.pluginId,
+        enabled: pluginCompanySettings.enabled,
+      })
+      .from(pluginCompanySettings)
+      .where(eq(pluginCompanySettings.companyId, capability.companyId)),
   ]);
   const issue = issueRows[0];
   if (!issue) throw new Error("Prompt-capability issue no longer exists");
@@ -696,6 +734,14 @@ async function loadSnapshot(
     ) as unknown as MentionReachIssue[],
     agentHireCompanyToolOptions,
     selectedTools,
+    pluginTools: readyPluginTools(
+      readyPlugins,
+      new Set(
+        companyPluginSettings
+          .filter((setting) => !setting.enabled)
+          .map((setting) => setting.pluginId),
+      ),
+    ),
   };
 }
 
@@ -714,18 +760,6 @@ export function createPostgresRuntimeInterfaceCompiler(
       );
     },
 
-    async resolvePluginCompanyTool({
-      capability,
-      companyToolSelectionId,
-    }) {
-      const row = (await loadSelectedToolRows(db, capability)).find(
-        (candidate) => candidate.id === companyToolSelectionId,
-      );
-      if (!row || !row.pluginInstallationId) return null;
-      const selected = selectedCompanyTools(capability, [row]);
-      if (selected.length !== 1) return null;
-      return { pluginInstallationId: row.pluginInstallationId };
-    },
   };
 }
 

@@ -5,8 +5,8 @@
  * Workers are keyed by DB UUID in PluginWorkerManager. If the dispatcher
  * registers tools without the UUID, `workerManager.isRunning(...)` checks
  * the pluginKey instead and always returns false, so every
- * /api/plugins/tools/execute returns 502 "worker for plugin X is not
- * running" even when the worker is alive. The dispatcher and registry
+ * direct prompt-capability execution reports the worker as unavailable even
+ * when it is alive. The dispatcher and registry
  * both require `pluginDbId` so this contract violation surfaces at the
  * call site instead of silently regressing.
  *
@@ -35,7 +35,7 @@ const MANIFEST: PaperclipPluginManifestV1 = {
   description: "Regression fixture",
   author: "Paperclip",
   categories: ["automation"],
-  capabilities: [],
+  capabilities: ["agent.tools.register"],
   entrypoints: { worker: "dist/worker.js" },
   tools: [
     {
@@ -56,14 +56,17 @@ const MANIFEST: PaperclipPluginManifestV1 = {
  * lookup key (notably the pluginKey) reports the worker as down — matches
  * the real `PluginWorkerManager` behavior which keys workers by UUID.
  */
-function createUuidKeyedWorkerManager(opts: { liveUuid?: string } = {}): PluginWorkerManager {
+function createUuidKeyedWorkerManager(opts: {
+  liveUuid?: string;
+  result?: unknown;
+} = {}): PluginWorkerManager {
   const liveUuid = opts.liveUuid ?? PLUGIN_DB_ID;
   const isRunning = vi.fn((id: string) => id === liveUuid);
   const call = vi.fn(async (id: string) => {
     if (!isRunning(id)) {
       throw new Error(`worker for plugin "${id}" is not running`);
     }
-    return { ok: true } as unknown;
+    return opts.result ?? { content: "ok" };
   });
   return {
     startWorker: vi.fn(),
@@ -127,10 +130,9 @@ describe("dispatcher.registerPluginTools — activation path", () => {
         `${PLUGIN_KEY}:ping`,
         {},
         {
-          agentId: "agent-1",
-          runId: "run-1",
           companyId: "company-1",
-          projectId: "project-1",
+          pluginInstallationId: PLUGIN_DB_ID,
+          runContextHandle: "pc_plugin_ctx_v1_test",
         },
       ),
     ).resolves.toBeDefined();
@@ -138,6 +140,42 @@ describe("dispatcher.registerPluginTools — activation path", () => {
     // Routing evidence: isRunning was called with the UUID, never the pluginKey.
     expect(workerManager.isRunning).toHaveBeenCalledWith(PLUGIN_DB_ID);
     expect(workerManager.isRunning).not.toHaveBeenCalledWith(PLUGIN_KEY);
+  });
+
+  it("rejects a stale compiled installation before worker dispatch", async () => {
+    const workerManager = createUuidKeyedWorkerManager();
+    const dispatcher = createPluginToolDispatcher({ workerManager });
+    dispatcher.registerPluginTools(PLUGIN_KEY, MANIFEST, PLUGIN_DB_ID);
+
+    await expect(dispatcher.executeTool(
+      `${PLUGIN_KEY}:ping`,
+      {},
+      {
+        companyId: "company-1",
+        pluginInstallationId: "00000000-0000-4000-8000-000000000002",
+        runContextHandle: "pc_plugin_ctx_v1_stale",
+      },
+    )).rejects.toThrow(/no longer belongs/);
+    expect(workerManager.call).not.toHaveBeenCalled();
+    expect(workerManager.isRunning).not.toHaveBeenCalled();
+  });
+
+  it("treats a worker ToolResult.error as a failed call", async () => {
+    const workerManager = createUuidKeyedWorkerManager({
+      result: { error: "issue is outside memory reach" },
+    });
+    const dispatcher = createPluginToolDispatcher({ workerManager });
+    dispatcher.registerPluginTools(PLUGIN_KEY, MANIFEST, PLUGIN_DB_ID);
+
+    await expect(dispatcher.executeTool(
+      `${PLUGIN_KEY}:ping`,
+      {},
+      {
+        companyId: "company-1",
+        pluginInstallationId: PLUGIN_DB_ID,
+        runContextHandle: "pc_plugin_ctx_v1_denied",
+      },
+    )).rejects.toThrow(/outside memory reach/);
   });
 
   // ---------------------------------------------------------------------------
@@ -194,7 +232,7 @@ describe("dispatcher — lifecycle path (plugin.enabled → registerFromDb)", ()
       dispatcher.executeTool(
         `${PLUGIN_KEY}:ping`,
         {},
-        { agentId: "a", runId: "r", companyId: "c", projectId: "p" },
+        { companyId: "c", pluginInstallationId: PLUGIN_DB_ID, runContextHandle: "pc_plugin_ctx_v1_test" },
       ),
     ).resolves.toBeDefined();
     expect(workerManager.isRunning).toHaveBeenCalledWith(PLUGIN_DB_ID);
@@ -229,7 +267,7 @@ describe("dispatcher — disable → enable cycle (re-entry)", () => {
       dispatcher.executeTool(
         `${PLUGIN_KEY}:ping`,
         {},
-        { agentId: "a", runId: "r", companyId: "c", projectId: "p" },
+        { companyId: "c", pluginInstallationId: PLUGIN_DB_ID, runContextHandle: "pc_plugin_ctx_v1_test" },
       ),
     ).resolves.toBeDefined();
     expect(workerManager.isRunning).not.toHaveBeenCalledWith(PLUGIN_KEY);
@@ -283,7 +321,7 @@ describe("dispatcher — worker re-spawn after container restart", () => {
       dispatcher.executeTool(
         `${PLUGIN_KEY}:ping`,
         {},
-        { agentId: "a", runId: "r1", companyId: "c", projectId: "p" },
+        { companyId: "c", pluginInstallationId: PLUGIN_DB_ID, runContextHandle: "pc_plugin_ctx_v1_r1" },
       ),
     ).resolves.toBeDefined();
 
@@ -293,7 +331,7 @@ describe("dispatcher — worker re-spawn after container restart", () => {
       dispatcher.executeTool(
         `${PLUGIN_KEY}:ping`,
         {},
-        { agentId: "a", runId: "r2", companyId: "c", projectId: "p" },
+        { companyId: "c", pluginInstallationId: PLUGIN_DB_ID, runContextHandle: "pc_plugin_ctx_v1_r2" },
       ),
     ).rejects.toThrow(/is not running/);
 
@@ -303,7 +341,7 @@ describe("dispatcher — worker re-spawn after container restart", () => {
       dispatcher.executeTool(
         `${PLUGIN_KEY}:ping`,
         {},
-        { agentId: "a", runId: "r3", companyId: "c", projectId: "p" },
+        { companyId: "c", pluginInstallationId: PLUGIN_DB_ID, runContextHandle: "pc_plugin_ctx_v1_r3" },
       ),
     ).resolves.toBeDefined();
 

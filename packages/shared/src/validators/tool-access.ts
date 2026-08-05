@@ -126,7 +126,6 @@ export const createToolApplicationSchema = z.object({
   description: z.string().max(4000).optional().nullable(),
   type: toolApplicationTypeSchema,
   status: toolApplicationStatusSchema.optional(),
-  pluginId: z.string().uuid().optional().nullable(),
   ownerAgentId: z.string().uuid().optional().nullable(),
   ownerUserId: z.string().optional().nullable(),
   metadata: z.record(z.string(), z.unknown()).optional().nullable(),

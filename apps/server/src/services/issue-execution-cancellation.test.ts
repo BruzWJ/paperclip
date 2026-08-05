@@ -52,16 +52,21 @@ function scopedFixture(input: {
       correlationIds: [],
     };
   });
+  const terminalizeDetachedCancelledRunInTransaction = vi.fn(async () => true);
   return {
     service: createIssueExecutionCancellationService({
       database: {} as never,
       runService: { lockActiveRunsForScopeInTransaction } as never,
       dispatcher: {} as never,
-      settlement: { fenceRevokedExecutionAuthorityInTransaction } as never,
+      settlement: {
+        fenceRevokedExecutionAuthorityInTransaction,
+        terminalizeDetachedCancelledRunInTransaction,
+      } as never,
     }),
     events,
     lockActiveRunsForScopeInTransaction,
     fenceRevokedExecutionAuthorityInTransaction,
+    terminalizeDetachedCancelledRunInTransaction,
   };
 }
 
@@ -74,6 +79,7 @@ function activeRun(
     companyId: "company-1",
     issueId: "issue-1",
     runId,
+    targetAgentId: "agent-1",
     status,
     cancellationIntentId,
     currentAttemptId: null,
@@ -211,5 +217,37 @@ describe("scoped execution cancellation", () => {
       .not.toHaveBeenCalled();
     expect(requested.requests.map((request) => request.runId))
       .toEqual(["run-running"]);
+  });
+
+  it("carries a post-commit event for a detached run terminalized in the transaction", async () => {
+    const value = scopedFixture({ runs: [activeRun("run-queued", "queued")] });
+    const now = new Date("2026-08-05T12:00:00.000Z");
+
+    const requested = await value.service.requestScopeCancellationsInTransaction(
+      {} as never,
+      {
+        companyId: "company-1",
+        issueId: "issue-1",
+        selector: { kind: "ownership_epoch", ownershipEpoch: 4 },
+        reason: "issue_cancelled",
+        actor: { kind: "system" },
+        now,
+      },
+    );
+
+    expect(value.terminalizeDetachedCancelledRunInTransaction).toHaveBeenCalled();
+    expect(requested.requests).toEqual([expect.objectContaining({
+      runId: "run-queued",
+      state: "terminalized",
+      terminalEvent: {
+        companyId: "company-1",
+        issueId: "issue-1",
+        runId: "run-queued",
+        agentId: "agent-1",
+        outcome: "cancelled",
+        reason: "issue_cancelled",
+        occurredAt: now,
+      },
+    })]);
   });
 });

@@ -96,6 +96,8 @@ export interface ToolExecutionResult {
 export interface PluginToolExecutionScope {
   /** Server-resolved company scope; this field never crosses into the worker. */
   companyId: string;
+  /** Immutable installation expected by the compiled run descriptor. */
+  pluginInstallationId: string;
   /** Opaque binding minted by the compiler-owned run-interface session. */
   runContextHandle: PluginRunContextHandle;
 }
@@ -415,6 +417,11 @@ export function createPluginToolRegistry(
           `The plugin may not be installed or its worker may not be running.`,
         );
       }
+      if (tool.pluginDbId !== scope.pluginInstallationId) {
+        throw new Error(
+          `Tool "${namespacedName}" no longer belongs to the compiled plugin installation.`,
+        );
+      }
 
       // 3. Verify the worker manager is available
       if (!workerManager) {
@@ -455,6 +462,12 @@ export function createPluginToolRegistry(
           pluginRunContextHandle: scope.runContextHandle,
         },
       );
+
+      if (result.error) {
+        throw new Error(
+          `Plugin tool "${namespacedName}" failed: ${result.error}`,
+        );
+      }
 
       log.debug(
         {

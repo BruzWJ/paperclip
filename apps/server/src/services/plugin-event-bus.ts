@@ -35,8 +35,23 @@ interface Subscription {
   eventPattern: string;
   /** Optional server-side filter applied before delivery. */
   filter: EventFilter | null;
+  /** Stable identity so worker restarts replace rather than duplicate delivery. */
+  key: string;
   /** Async handler to invoke when a matching event passes the filter. */
   handler: (event: PluginEvent) => Promise<void>;
+}
+
+function stableFilterKey(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableFilterKey).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableFilterKey(record[key])}`
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +250,17 @@ export function createPluginEventBus(): PluginEventBus {
           handler = maybeFn;
         }
 
-        subsFor(pluginId).push({ eventPattern, filter, handler });
+        const subscriptions = subsFor(pluginId);
+        const key = `${eventPattern}\0${stableFilterKey(filter)}`;
+        const existing = subscriptions.find((subscription) =>
+          subscription.key === key
+        );
+        if (existing) {
+          existing.filter = filter;
+          existing.handler = handler;
+        } else {
+          subscriptions.push({ eventPattern, filter, handler, key });
+        }
       },
 
       /**

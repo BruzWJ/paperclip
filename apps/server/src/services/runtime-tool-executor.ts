@@ -51,6 +51,15 @@ export interface RuntimeCompanyToolPort {
     arguments: unknown;
     callIdentity: PromptCapabilityCallIdentity;
     runInterfaceToolCallId: string;
+  }): Promise<unknown>;
+}
+
+export interface RuntimePluginToolPort {
+  execute(input: {
+    capability: PromptCapabilityBinding;
+    toolName: string;
+    pluginInstallationId: string;
+    arguments: unknown;
     mintPluginRunContext(): Promise<string>;
   }): Promise<unknown>;
 }
@@ -110,6 +119,7 @@ export function createRuntimeToolExecutor(options: {
   retrievalScope: RuntimeRetrievalScopeResolver;
   actions: RuntimeActionPort;
   companyTools: RuntimeCompanyToolPort;
+  pluginTools: RuntimePluginToolPort;
   callLedger: RuntimeToolCallLedger;
 }): PromptCapabilityToolExecutor {
   async function retrieval(
@@ -276,6 +286,22 @@ export function createRuntimeToolExecutor(options: {
           descriptor.name === "read_issue_agent_run"
         ) {
           result = await retrieval(capability, descriptor, validatedArguments);
+        } else if (descriptor.source === "plugin") {
+          if (!descriptor.pluginInstallationId) {
+            throw new RuntimeToolArgumentsInvalid(
+              "Plugin tool is missing its immutable installation id",
+            );
+          }
+          result = await options.pluginTools.execute({
+            capability,
+            toolName: descriptor.name,
+            pluginInstallationId: descriptor.pluginInstallationId,
+            arguments: validatedArguments,
+            mintPluginRunContext: () => mintPluginRunContext({
+              runInterfaceToolCallId: claim.id,
+              pluginInstallationId: descriptor.pluginInstallationId!,
+            }),
+          });
         } else if (descriptor.source === "company") {
           if (!descriptor.selectedCompanyToolSelectionId) {
             throw new RuntimeToolArgumentsInvalid(
@@ -289,19 +315,6 @@ export function createRuntimeToolExecutor(options: {
             arguments: validatedArguments,
             callIdentity,
             runInterfaceToolCallId: claim.id,
-            mintPluginRunContext: () => {
-              if (!descriptor.pluginInstallationId) {
-                throw new RuntimeToolArgumentsInvalid(
-                  "This selected company tool has no plugin run-context authority",
-                );
-              }
-              return mintPluginRunContext({
-                runInterfaceToolCallId: claim.id,
-                companyToolSelectionId:
-                  descriptor.selectedCompanyToolSelectionId!,
-                pluginInstallationId: descriptor.pluginInstallationId,
-              });
-            },
           });
         } else {
           const handler = action[descriptor.name as keyof typeof action];

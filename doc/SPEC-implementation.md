@@ -30,7 +30,8 @@ The schema owns:
 - creator edges and ordered deliveries
 - execution-workspace bindings
 - context/action/mention grants
-- selected company tools and genuine company skills
+- selected company tools, installed plugin manifests and exact plugin tool-call
+  bindings, and genuine company skills
 
 Company, issue, run, Session, authority, reference, workspace, and grant
 relations remain company-scoped with database uniqueness and foreign-key
@@ -208,6 +209,15 @@ Plugins may list/get/create/update their own message/lifecycle projection and
 withdraw only their own nonterminal issue through the dedicated audited
 operation. They cannot invoke agents, request arbitrary work, own provider
 sessions, or patch unrelated issue state.
+
+Administrator-approved infrastructure plugins may declare generic elevated
+worker capabilities for direct all-agent tools, exact live run-context
+resolution, canonical redacted runtime-record reads, and managed private-network
+HTTP. Those capabilities are install-time visible, company-fenced, and
+revalidated at invocation time. They do not add a plugin-specific REST route,
+provider credential, provider session, or prompt injection path; contributed
+tools remain inside the canonical prompt-capability and audit boundary without
+being projected into the company-tool policy system.
 
 Routine executions create ordinary issues with immutable request and configured
 owner. Derived summary cards/projectors link to the canonical source

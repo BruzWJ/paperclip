@@ -43,6 +43,13 @@
       "when": 1785895095852,
       "tag": "0005_sleepy_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785970774583,
+      "tag": "0006_majestic_absorbing_man",
+      "breakpoints": true
     }
   ]
 }

@@ -109,7 +109,6 @@ export interface ToolApplication {
   description: string | null;
   type: ToolApplicationType;
   status: ToolApplicationStatus;
-  pluginId: string | null;
   ownerAgentId: string | null;
   ownerUserId: string | null;
   metadata: Record<string, unknown> | null;

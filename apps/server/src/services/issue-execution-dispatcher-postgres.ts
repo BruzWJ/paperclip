@@ -88,6 +88,10 @@ import {
   lockAndValidateIssueConsultChain,
 } from "./issue-consult-chain-postgres.js";
 import {
+  publishAgentRunTerminalEvent,
+  type AgentRunTerminalPluginEventInput,
+} from "./agent-run-plugin-events.js";
+import {
   activeIssueTreePauseHoldExistsSql,
   lockIssueTreeExecutionGate,
 } from "./issue-execution-lifecycle-gate.js";
@@ -1944,6 +1948,23 @@ export function createPostgresIssueExecutionDispatcherRepository(
         readonly terminal: IssueExecutionTerminal;
       };
 
+  function terminalEventForExpiredRun(
+    run: RunRow,
+    recovery: ExpiredRunRecovery,
+    occurredAt: Date,
+  ): AgentRunTerminalPluginEventInput | null {
+    if (recovery.kind !== "released_run") return null;
+    return {
+      companyId: run.companyId,
+      issueId: run.issueId,
+      runId: run.runId,
+      agentId: run.targetAgentId,
+      outcome: recovery.terminal.outcome,
+      reason: recovery.terminal.reason,
+      occurredAt,
+    };
+  }
+
   async function recoverExpiredRunInTransaction(
     transaction: IssueSessionDbTransaction,
     run: RunRow,
@@ -3012,6 +3033,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
     readonly workerId: string;
     readonly at: Date;
   }): Promise<LeaseForLaneResult> {
+    let recoveredTerminalEvent: AgentRunTerminalPluginEventInput | null = null;
     const result: LeaseForLaneResult = await options.database.transaction(
       async (transaction) => {
       await transaction
@@ -3047,9 +3069,15 @@ export function createPostgresIssueExecutionDispatcherRepository(
         input.lane,
       );
       if (existing) {
+        const expiredRun = existing;
         const recovered = await recoverExpiredRunInTransaction(
           transaction,
-          existing,
+          expiredRun,
+          input.at,
+        );
+        recoveredTerminalEvent = terminalEventForExpiredRun(
+          expiredRun,
+          recovered,
           input.at,
         );
         if (recovered.kind === "released_run") {
@@ -3146,6 +3174,9 @@ export function createPostgresIssueExecutionDispatcherRepository(
       return { kind: "leased", lease, run: leasedRun };
       },
     );
+    if (recoveredTerminalEvent) {
+      publishAgentRunTerminalEvent(recoveredTerminalEvent);
+    }
     return result;
   }
 
@@ -3977,6 +4008,7 @@ export function createPostgresIssueExecutionDispatcherRepository(
         .limit(limit);
       const refIds: string[] = [];
       for (const candidate of candidates) {
+        let recoveredTerminalEvent: AgentRunTerminalPluginEventInput | null = null;
         const recovered = await options.database.transaction(
           async (transaction) => {
             const run = await findExistingRunForLane(
@@ -3991,6 +4023,11 @@ export function createPostgresIssueExecutionDispatcherRepository(
             const result = await recoverExpiredRunInTransaction(
               transaction,
               run,
+              at,
+            );
+            recoveredTerminalEvent = terminalEventForExpiredRun(
+              run,
+              result,
               at,
             );
             if (result.kind === "current") return null;
@@ -4020,6 +4057,9 @@ export function createPostgresIssueExecutionDispatcherRepository(
               : null;
           },
         );
+        if (recoveredTerminalEvent) {
+          publishAgentRunTerminalEvent(recoveredTerminalEvent);
+        }
         if (recovered) refIds.push(recovered);
       }
       return { refIds: [...new Set(refIds)] };
@@ -4348,6 +4388,17 @@ export function createPostgresIssueExecutionDispatcherRepository(
         );
         return completed;
       });
+      if (settlement.finalization) {
+        publishAgentRunTerminalEvent({
+          companyId: settlement.finalization.companyId,
+          issueId: settlement.finalization.issueId,
+          runId: settlement.finalization.runId,
+          agentId: input.lease.ref.targetAgentId,
+          outcome: settlement.finalization.status,
+          reason: input.reason,
+          occurredAt: settlement.finalization.finishedAt,
+        });
+      }
       return {
         laneReleased: settlement.laneReleased,
         dispatchRefIds: settlement.dispatchRefIds,
@@ -4361,8 +4412,30 @@ export function createPostgresIssueExecutionDispatcherRepository(
       reason: string;
       finishedAt: Date;
     }) {
-      await options.database.transaction((transaction) =>
+      const terminalized = await options.database.transaction((transaction) =>
         terminalizeDetachedCancelledRunInTransaction(transaction, input));
+      if (!terminalized) return;
+      const run = await options.database
+        .select({ targetAgentId: issueExecutionRuns.targetAgentId })
+        .from(issueExecutionRuns)
+        .where(
+          and(
+            eq(issueExecutionRuns.companyId, input.companyId),
+            eq(issueExecutionRuns.id, input.runId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (!run) return;
+      publishAgentRunTerminalEvent({
+        companyId: input.companyId,
+        issueId: input.issueId,
+        runId: input.runId,
+        agentId: run.targetAgentId,
+        outcome: "cancelled",
+        reason: input.reason,
+        occurredAt: input.finishedAt,
+      });
     },
 
     terminalizeDetachedCancelledRunInTransaction,

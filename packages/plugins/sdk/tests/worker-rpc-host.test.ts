@@ -528,7 +528,7 @@ describe("worker plugin run-context bridge", () => {
       )).resolves.toEqual({
         content: "ok",
         data: {
-          contextKeys: ["handle", "issues"],
+          contextKeys: ["handle", "issueReach", "issues", "resolve"],
           handle: "pc_plugin_ctx_v1_exact",
           ordinaryIssueError: {
             code: PLUGIN_RPC_ERROR_CODES.INVOCATION_SCOPE_DENIED,

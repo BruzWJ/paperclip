@@ -289,7 +289,6 @@ describe("normalized plugin run contexts", () => {
       "capability_connection_id",
       "capability_generation",
       "run_interface_tool_call_id",
-      "company_tool_selection_id",
       "plugin_installation_id",
       "handle_hash",
       "first_used_at",
@@ -319,7 +318,6 @@ describe("normalized plugin run contexts", () => {
       expect.arrayContaining([
         "plugin_run_contexts_capability_generation_fk",
         "plugin_run_contexts_exact_tool_call_fk",
-        "plugin_run_contexts_tool_selection_fk",
       ]),
     );
     expect(config.uniqueConstraints.map((value) => value.getName())).toContain(

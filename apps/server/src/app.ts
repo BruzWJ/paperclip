@@ -80,6 +80,7 @@ import {
   type ToolGatewayService,
 } from "./services/tool-gateway.js";
 import type { PromptCapabilityGateway } from "./services/prompt-capability-gateway.js";
+import type { RuntimePluginToolPort } from "./services/runtime-tool-executor.js";
 import type { IssueExecutionRunService } from "./services/issue-execution-run-service.js";
 import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
 import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
@@ -87,6 +88,7 @@ import {
   buildHostServices,
   flushPluginLogBuffer,
   type PluginRunIssueContextReader,
+  type PluginRuntimeRecordsReader,
 } from "./services/plugin-host-services.js";
 import { createPluginIssueControlPlane } from "./services/plugin-issue-control-plane.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
@@ -95,7 +97,10 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import type { OrdinaryIssueRuntime } from "./services/ordinary-issue-runtime.js";
-import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
+import {
+  createHostClientHandlers,
+  type HostToWorkerMethods,
+} from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
@@ -191,9 +196,13 @@ export async function createApp(
     resolveSession: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
     promptCapabilityGateway?: PromptCapabilityGateway;
     pluginRunIssueContextReader?: PluginRunIssueContextReader;
+    pluginRuntimeRecordsReader?: PluginRuntimeRecordsReader;
     issueSessionStore?: IssueSessionStore;
     bindPromptCapabilityCompanyTools?: (
       execute: ToolGatewayService["executePromptCapabilityTool"],
+    ) => void;
+    bindPromptCapabilityPluginTools?: (
+      execute: RuntimePluginToolPort["execute"],
     ) => void;
     ordinaryIssueRuntime: OrdinaryIssueRuntime;
     issueExecutionRunService: Pick<
@@ -413,15 +422,14 @@ export async function createApp(
       deploymentExposure: opts.deploymentExposure,
     },
     buildHostHandlers: (pluginId, manifest) => {
-      const notifyWorker = (method: string, params: unknown) => {
-        const handle = workerManager.getWorker(pluginId);
-        if (handle) handle.notify(method, params);
-      };
-      const services = buildHostServices(db, pluginId, manifest.id, eventBus, notifyWorker, {
+      const deliverEvent = (params: HostToWorkerMethods["onEvent"][0]) =>
+        workerManager.call(pluginId, "onEvent", params, 15 * 60 * 1_000);
+      const services = buildHostServices(db, pluginId, manifest.id, eventBus, deliverEvent, {
         pluginWorkerManager: workerManager,
         manifest,
         pluginIssueControlPlane,
         pluginRunIssueContextReader: opts.pluginRunIssueContextReader,
+        pluginRuntimeRecordsReader: opts.pluginRuntimeRecordsReader,
         ordinaryIssues,
         issueExecutionCancellation: opts.issueExecutionCancellation,
       });
@@ -434,13 +442,25 @@ export async function createApp(
     },
   });
   const toolGateway = createToolGatewayService(db, {
-    pluginToolDispatcher: toolDispatcher,
     deploymentExposure: opts.deploymentExposure,
     trustedLocalStdioRuntimeHost,
   });
   opts.bindPromptCapabilityCompanyTools?.(
     toolGateway.executePromptCapabilityTool.bind(toolGateway),
   );
+  opts.bindPromptCapabilityPluginTools?.(async (input) => {
+    return (
+      await toolDispatcher.executeTool(
+        input.toolName,
+        input.arguments,
+        {
+          companyId: input.capability.companyId,
+          pluginInstallationId: input.pluginInstallationId,
+          runContextHandle: await input.mintPluginRunContext(),
+        },
+      )
+    ).result;
+  });
   // Issue routes are intentionally mounted after the gateway is constructed because
   // issue approval endpoints delegate to it. The intervening routers use distinct
   // route prefixes, so this dependency does not change issue-route precedence.
@@ -477,7 +497,6 @@ export async function createApp(
       lifecycle,
       { scheduler, jobStore },
       { workerManager },
-      { toolDispatcher },
       { workerManager },
     ),
   );
@@ -648,66 +667,7 @@ export async function createApp(
     lifecycle,
     async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
   );
-  // Auto-install the bundled kubernetes sandbox-provider plugin so the
-  // "kubernetes" sandbox provider is registered for agent runs. The plugin is
-  // excluded from the pnpm workspace and built standalone into the image (see
-  // Dockerfile), then installed here from its local path. This runs BEFORE
-  // loadAll() so loadAll() can activate it in the same startup pass.
-  //
-  // SAFETY (invariant B): this is fully fail-safe. Any failure (missing path,
-  // install error, load error) is caught, logged, and swallowed so the server
-  // ALWAYS finishes booting. A degraded boot (no kubernetes provider, agents
-  // cannot run) is strictly preferable to a crash loop.
-  const ensureBundledKubernetesPlugin = async (): Promise<void> => {
-    const KUBERNETES_PLUGIN_KEY = "paperclip.kubernetes-sandbox-provider";
-    const pluginPath =
-      process.env["PAPERCLIP_KUBERNETES_PLUGIN_PATH"] ??
-      "/app/packages/plugins/sandbox-providers/kubernetes";
-    try {
-      // Idempotent: skip if already installed (any non-uninstalled status).
-      const existing = await pluginRegistry.getByKey(KUBERNETES_PLUGIN_KEY);
-      if (existing) {
-        logger.info(
-          { pluginKey: KUBERNETES_PLUGIN_KEY, status: existing.status },
-          "kubernetes sandbox plugin already installed; skipping auto-install",
-        );
-        return;
-      }
-      // Skip silently when the bundle is absent (e.g. local dev or an image
-      // built without the plugin). Not an error condition.
-      if (!fs.existsSync(path.join(pluginPath, "dist", "manifest.js"))) {
-        logger.info(
-          { pluginPath },
-          "kubernetes sandbox plugin bundle not present; skipping auto-install",
-        );
-        return;
-      }
-      logger.info({ pluginPath }, "auto-installing bundled kubernetes sandbox plugin");
-      const discovered = await loader.installPlugin({ localPath: pluginPath });
-      if (!discovered.manifest) {
-        logger.error("kubernetes sandbox plugin installed but manifest is missing");
-        return;
-      }
-      // Transition installed -> ready and activate the worker.
-      const installed = await pluginRegistry.getByKey(discovered.manifest.id);
-      if (installed) {
-        await lifecycle.load(installed.id);
-        logger.info(
-          { pluginId: installed.id, pluginKey: installed.pluginKey },
-          "kubernetes sandbox plugin auto-installed and loaded",
-        );
-      } else {
-        logger.error("kubernetes sandbox plugin installed but not found in registry");
-      }
-    } catch (err) {
-      logger.error(
-        { err },
-        "Failed to auto-install the kubernetes sandbox plugin; continuing boot (degraded: kubernetes provider unavailable)",
-      );
-    }
-  };
-  void ensureBundledKubernetesPlugin()
-    .then(() => loader.loadAll())
+  void loader.loadAll()
     .then((result) => {
     if (!result) return;
     for (const loaded of result.results) {

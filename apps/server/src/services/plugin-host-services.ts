@@ -11,6 +11,7 @@ import {
 import { eq, and, desc, sql, isNull, isNotNull, gt, lte, or } from "drizzle-orm";
 import type {
   HostServices,
+  HostToWorkerMethods,
   WorkerToHostMethods,
   Company,
   Agent,
@@ -64,7 +65,10 @@ import { getTelemetryClient } from "../telemetry.js";
 import { accessService } from "./access.js";
 import { authorizationService, type AuthorizationActor } from "./authorization.js";
 import { sanitizeRecord } from "../redaction.js";
-import { assertPluginInstallationAvailableForCompany } from "./plugin-issue-authorization.js";
+import {
+  assertPluginInstallationAvailableForCompany,
+  PluginIssueAuthorizationRejected,
+} from "./plugin-issue-authorization.js";
 import type { OrdinaryIssueRuntime } from "./ordinary-issue-runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -139,7 +143,10 @@ interface ValidatedFetchTarget {
   useTls: boolean;
 }
 
-async function validateAndResolveFetchUrl(urlString: string): Promise<ValidatedFetchTarget> {
+async function validateAndResolveFetchUrl(
+  urlString: string,
+  options: { allowPrivateNetwork?: boolean } = {},
+): Promise<ValidatedFetchTarget> {
   let parsed: URL;
   try {
     parsed = new URL(urlString);
@@ -178,7 +185,9 @@ async function validateAndResolveFetchUrl(urlString: string): Promise<ValidatedF
     // Filter to only non-private IPs instead of rejecting the entire request
     // when some IPs are private. This handles multi-homed hosts that resolve
     // to both private and public addresses.
-    const safeResults = results.filter((entry) => !isPrivateIP(entry.address));
+    const safeResults = options.allowPrivateNetwork
+      ? results
+      : results.filter((entry) => !isPrivateIP(entry.address));
     if (safeResults.length === 0) {
       throw new Error(
         `All resolved IPs for ${originalHostname} are in private/reserved ranges`,
@@ -510,6 +519,14 @@ export interface PluginIssueControlPlane {
 }
 
 export interface PluginRunIssueContextReader {
+  resolveContext(
+    params: WorkerToHostMethods["run.context.resolve"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["run.context.resolve"][1]>;
+  issueReach(
+    params: WorkerToHostMethods["run.context.issueReach"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["run.context.issueReach"][1]>;
   listCompanyIssues(
     params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]
       & PluginIssueInstallationContext,
@@ -528,11 +545,23 @@ export interface PluginRunIssueContextReader {
   ): Promise<WorkerToHostMethods["run.issues.readIssueAgentRun"][1]>;
 }
 
+export interface PluginRuntimeRecordsReader {
+  readRun(
+    params: WorkerToHostMethods["runtime.records.readRun"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["runtime.records.readRun"][1]>;
+  readIssueComments(
+    params: WorkerToHostMethods["runtime.records.readIssueComments"][0]
+      & PluginIssueInstallationContext,
+  ): Promise<WorkerToHostMethods["runtime.records.readIssueComments"][1]>;
+}
+
 export interface PluginHostServicesOptions {
   pluginWorkerManager?: PluginWorkerManager;
   manifest?: import("@paperclipai/shared").PaperclipPluginManifestV1;
   pluginIssueControlPlane: PluginIssueControlPlane;
   pluginRunIssueContextReader?: PluginRunIssueContextReader;
+  pluginRuntimeRecordsReader?: PluginRuntimeRecordsReader;
   ordinaryIssues: OrdinaryIssueRuntime;
   issueExecutionCancellation: AgentControlLifecycleService;
 }
@@ -542,7 +571,9 @@ export function buildHostServices(
   pluginId: string,
   pluginKey: string,
   eventBus: PluginEventBus,
-  notifyWorker: ((method: string, params: unknown) => void) | undefined,
+  deliverEvent:
+    | ((params: HostToWorkerMethods["onEvent"][0]) => Promise<void>)
+    | undefined,
   options: PluginHostServicesOptions,
 ): HostServices & { dispose(): void } {
   const registry = pluginRegistryService(db);
@@ -1101,8 +1132,16 @@ export function buildHostServices(
       },
       async subscribe(params: { eventPattern: string; filter?: Record<string, unknown> | null }) {
         const handler = async (event: import("@paperclipai/plugin-sdk").PluginEvent) => {
-          if (notifyWorker) {
-            notifyWorker("onEvent", { event });
+          if (event.companyId) {
+            try {
+              await ensurePluginAvailableForCompany(event.companyId);
+            } catch (error) {
+              if (error instanceof PluginIssueAuthorizationRejected) return;
+              throw error;
+            }
+          }
+          if (deliverEvent) {
+            await deliverEvent({ event });
           }
         };
         if (params.filter) {
@@ -1117,7 +1156,11 @@ export function buildHostServices(
       async fetch(params) {
         // SSRF protection: validate protocol whitelist + block private IPs.
         // Resolve once, then connect directly to that IP to prevent DNS rebinding.
-        const target = await validateAndResolveFetchUrl(params.url);
+        const target = await validateAndResolveFetchUrl(params.url, {
+          allowPrivateNetwork:
+            options.manifest?.capabilities.includes("http.private-network")
+            ?? false,
+        });
 
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), PLUGIN_FETCH_TIMEOUT_MS);
@@ -1128,6 +1171,35 @@ export function buildHostServices(
         } finally {
           clearTimeout(timeout);
         }
+      },
+    },
+
+    runtimeRecords: {
+      async readRun(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        if (!options.pluginRuntimeRecordsReader) {
+          throw new Error("Plugin runtime record reader is not configured");
+        }
+        return options.pluginRuntimeRecordsReader.readRun({
+          ...params,
+          companyId,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
+      },
+      async readIssueComments(params) {
+        const companyId = ensureCompanyId(params.companyId);
+        await ensurePluginAvailableForCompany(companyId);
+        if (!options.pluginRuntimeRecordsReader) {
+          throw new Error("Plugin runtime record reader is not configured");
+        }
+        return options.pluginRuntimeRecordsReader.readIssueComments({
+          ...params,
+          companyId,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
       },
     },
 
@@ -1504,6 +1576,26 @@ export function buildHostServices(
     },
 
     runIssues: {
+      async resolveContext(params) {
+        if (!options.pluginRunIssueContextReader) {
+          throw new Error("Plugin run-serving context is not configured");
+        }
+        return options.pluginRunIssueContextReader.resolveContext({
+          ...params,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
+      },
+      async issueReach(params) {
+        if (!options.pluginRunIssueContextReader) {
+          throw new Error("Plugin run-serving context is not configured");
+        }
+        return options.pluginRunIssueContextReader.issueReach({
+          ...params,
+          pluginInstallationId: pluginId,
+          pluginKey,
+        });
+      },
       async listCompanyIssues(params) {
         if (!options.pluginRunIssueContextReader) {
           throw new Error(

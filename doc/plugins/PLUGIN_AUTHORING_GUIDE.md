@@ -167,7 +167,7 @@ Do not hide long-lived work behind private plugin state when it should be visibl
 to the board, scoped to a company, audited, budgeted, and assigned like normal
 Paperclip work.
 
-Content-oriented plugins, such as LLM Wiki-style ingestion or durable knowledge
+Content-oriented plugins, such as source ingestion or durable knowledge
 systems, should use the same pattern: managed projects for operation issues,
 managed agents plus managed skills for LLM work, and managed routines for
 ingest, lint, refresh, or maintenance runs.
@@ -336,6 +336,30 @@ Authoring rules:
   plugin, but the resulting resources are normal Paperclip records that the
   operator can inspect, pause, and adjust.
 
+## Privileged system plugins
+
+Paperclip also supports administrator-approved infrastructure plugins without
+adding product-specific core endpoints. These capabilities are deliberately
+broader than ordinary connector capabilities:
+
+| Capability | Generic host contract |
+| --- | --- |
+| `agent.tools.register` | Every declared tool is compiled directly for all agents in companies where the ready plugin is enabled. No company-tool catalog projection or per-agent selection is involved. |
+| `runtime.context.read` | An exact live tool handler can resolve its opaque `runContext` or ask whether a target issue is reachable under the agent's existing context-access matrix. |
+| `runtime.records.read` | The worker can read company-scoped, provider-safe run traces and issue comments for automatic infrastructure processing. |
+| `http.private-network` | The managed HTTP client may reach loopback/private addresses while retaining DNS pinning and other HTTP protections. Also requires `http.outbound`. |
+
+Tools remain plugin-namespaced and execute through the normal
+prompt-capability gateway.
+The host revalidates the installation, manifest capability, company enablement,
+exact compiled tool name, and immutable tool-call binding when the tool is
+called.
+
+Use these capabilities only when an ordinary selected tool and ordinary
+company APIs cannot implement the requirement. Do not add a domain-specific
+Paperclip route solely to serve one plugin; add a generic, capability-gated,
+company-fenced worker contract when the host primitive is broadly reusable.
+
 UI:
 
 - `usePluginData`
@@ -480,10 +504,8 @@ export function WikiTree() {
 }
 ```
 
-Good fits:
+Good fit:
 
-- LLM Wiki page navigation in `packages/plugins/plugin-llm-wiki` builds a
-  `FileTreeNode[]` from worker query results and renders it through `FileTree`.
 - The example `plugin-file-browser-example` lazily fetches a directory's
   children through a `loadFileList` action when `onToggleDir` fires, then
   merges the children into the local tree state — letting the shared component
@@ -558,9 +580,8 @@ shared `FileTree` stays the rendering surface.
 
 ### Mixing surfaces
 
-A single plugin can use more than one of these. The LLM Wiki uses
-`localFolders` for its content root, then renders the resulting page list
-through `FileTree`. The file browser example uses `ctx.projects.listWorkspaces`
+A single plugin can use more than one of these. The file browser example uses
+`ctx.projects.listWorkspaces`
 to pick a workspace and renders its on-disk tree through `FileTree` with lazy
 loading. Pick the boundary per data source, not per plugin.
 

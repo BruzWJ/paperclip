@@ -190,8 +190,6 @@ describe("runtime-agent tool option projection without a database process", () =
     connectionStatus: "active",
     connectionEnabled: true,
     applicationStatus: "active",
-    pluginId: null,
-    pluginStatus: null,
   };
 
   it("projects only concrete active tools and hides connection-install identity", async () => {
@@ -199,7 +197,6 @@ describe("runtime-agent tool option projection without a database process", () =
       select: [[
         activeRow,
         { ...activeRow, catalogEntryId: toolIdB, entryStatus: "disabled" },
-        { ...activeRow, catalogEntryId: toolIdB, pluginId: "plugin-1", pluginStatus: "error" },
       ]],
     });
 

@@ -269,7 +269,7 @@ export type PluginRpcErrorCode =
 export interface PluginInvocationScope {
   companyId: string;
   /**
-   * Present only for a selected company-tool invocation. The worker may echo
+   * Present only for a direct plugin-tool invocation. The worker may echo
    * only the enclosing invocation id; run-serving host calls must also carry
    * the exact opaque handle from `ExecuteToolParams`.
    */
@@ -567,7 +567,7 @@ export interface ExecuteToolParams {
   toolName: string;
   /** Parsed parameters matching the tool's declared schema. */
   parameters: unknown;
-  /** Opaque host-minted context for this exact compiled company-tool call. */
+  /** Opaque host-minted context for this exact compiled plugin-tool call. */
   runContextHandle: PluginRunContextHandle;
 }
 
@@ -1312,6 +1312,15 @@ export interface WorkerToHostMethods {
     result: { status: number; statusText: string; headers: Record<string, string>; body: string },
   ];
 
+  "runtime.records.readRun": [
+    params: { companyId: string; runId: string; cursor?: string },
+    result: ProviderSafeRunTrace,
+  ];
+  "runtime.records.readIssueComments": [
+    params: { companyId: string; issueId: string; cursor?: string; limit?: number },
+    result: PluginRunPage<PluginRunIssueCommentProjection>,
+  ];
+
   // Secrets
   "secrets.resolve": [
     params: { secretRef: string | EnvSecretRefBinding; companyId?: string; configPath?: string },
@@ -1498,6 +1507,14 @@ export interface WorkerToHostMethods {
       limit?: number;
     },
     result: PluginRunPage<PluginRunIssueProjection>,
+  ];
+  "run.context.resolve": [
+    params: { runContextHandle: PluginRunContextHandle },
+    result: import("./types.js").PluginResolvedRunContext,
+  ];
+  "run.context.issueReach": [
+    params: { runContextHandle: PluginRunContextHandle; issueId: string },
+    result: import("./types.js").PluginRunIssueReach,
   ];
   "run.issues.listSubIssues": [
     params: {

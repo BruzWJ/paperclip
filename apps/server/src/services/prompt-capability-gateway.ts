@@ -105,7 +105,6 @@ export interface PromptCapabilityAudit {
 export interface PromptCapabilityPluginContext {
   readonly capability: PromptCapabilityBinding;
   readonly runInterfaceToolCallId: string;
-  readonly companyToolSelectionId: string;
   readonly pluginInstallationId: string;
 }
 
@@ -138,14 +137,9 @@ export interface PromptCapabilityGatewayRepository {
   resolveCompileInput(
     capability: PromptCapabilityBinding,
   ): Promise<RuntimeInterfaceCompileInput>;
-  resolvePluginCompanyTool(input: {
-    capability: PromptCapabilityBinding;
-    companyToolSelectionId: string;
-  }): Promise<{ readonly pluginInstallationId: string } | null>;
   createPluginRunContext(input: {
     capability: PromptCapabilityBinding;
     runInterfaceToolCallId: string;
-    companyToolSelectionId: string;
     pluginInstallationId: string;
     handleHash: string;
     createdAt: Date;
@@ -182,7 +176,6 @@ export interface PromptCapabilityToolExecutor {
     ingressOrdinal: number;
     mintPluginRunContext(input: {
       runInterfaceToolCallId: string;
-      companyToolSelectionId: string;
       pluginInstallationId: string;
     }): Promise<string>;
     commitTerminalAudit?(
@@ -389,30 +382,13 @@ export function createPromptCapabilityGateway(options: {
   async function mintPluginRunContext(input: {
     capability: PromptCapabilityBinding;
     runInterfaceToolCallId: string;
-    companyToolSelectionId: string;
     pluginInstallationId: string;
   }): Promise<string> {
     const current = await requireStillAuthoritative(input.capability);
-    const selected = await options.repository.resolvePluginCompanyTool({
-      capability: current,
-      companyToolSelectionId: input.companyToolSelectionId,
-    });
-    if (
-      !selected ||
-      selected.pluginInstallationId !== input.pluginInstallationId
-    ) {
-      await audit(current, {
-        event: "plugin_context",
-        outcome: "denied",
-        reason: "plugin_company_tool_not_current",
-      });
-      throw new RuntimeToolUnavailable(input.companyToolSelectionId);
-    }
     const handle = randomPluginRunContextHandle();
     await options.repository.createPluginRunContext({
       capability: current,
       runInterfaceToolCallId: input.runInterfaceToolCallId,
-      companyToolSelectionId: input.companyToolSelectionId,
       pluginInstallationId: input.pluginInstallationId,
       handleHash: sha256(handle),
       createdAt: now(),
@@ -556,18 +532,6 @@ export function createPromptCapabilityGateway(options: {
         );
       }
       const current = await requireStillAuthoritative(resolved.capability);
-      const selected = await options.repository.resolvePluginCompanyTool({
-        capability: current,
-        companyToolSelectionId: resolved.companyToolSelectionId,
-      });
-      if (
-        !selected ||
-        selected.pluginInstallationId !== resolved.pluginInstallationId
-      ) {
-        throw new PromptCapabilityAuthorityError(
-          "plugin_company_tool_not_current",
-        );
-      }
       return { ...resolved, capability: current };
     },
   };

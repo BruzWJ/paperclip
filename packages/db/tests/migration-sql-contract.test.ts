@@ -65,6 +65,19 @@ function referencedKeysUnavailableAtForeignKeyCreation(source: string): string[]
       continue;
     }
 
+    const addedUniqueConstraint = statement.match(
+      /^ALTER TABLE "([^"]+)" ADD CONSTRAINT "[^"]+" UNIQUE\(([^)]+)\);$/,
+    );
+    if (addedUniqueConstraint) {
+      uniqueTargets.add(
+        keyIdentity(
+          addedUniqueConstraint[1]!,
+          quotedColumns(addedUniqueConstraint[2]!),
+        ),
+      );
+      continue;
+    }
+
     const foreignKey = statement.match(
       /^ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)" FOREIGN KEY \(([^)]+)\) REFERENCES "public"\."([^"]+)"\(([^)]+)\)/,
     );

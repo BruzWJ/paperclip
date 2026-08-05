@@ -421,6 +421,59 @@ describe("createHostClientHandlers plugin run-context scope", () => {
     expect(listCompanyIssues).toHaveBeenCalledWith(params);
   });
 
+  it("gates privileged run identity resolution by capability and exact opaque handle", async () => {
+    const resolved = {
+      companyId: "company-a",
+      issueId: "issue-a",
+      agentId: "agent-a",
+      runId: "run-a",
+      projectId: null,
+      contextAccess: {},
+    };
+    const resolveContext = vi.fn(async () => resolved);
+    const params = { runContextHandle: "pc_plugin_ctx_v1_exact" };
+    const context = {
+      invocationScope: {
+        companyId: "company-a",
+        pluginRunContextHandle: "pc_plugin_ctx_v1_exact",
+      },
+    };
+    const services = {
+      runIssues: { resolveContext },
+    } as unknown as HostServices;
+
+    await expect(createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: [],
+      services,
+    })["run.context.resolve"](params, context)).rejects.toBeInstanceOf(
+      CapabilityDeniedError,
+    );
+    await expect(createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["runtime.context.read"],
+      services,
+    })["run.context.resolve"](params, context)).resolves.toBe(resolved);
+  });
+
+  it("keeps privileged runtime records inside the invocation company", async () => {
+    const readIssueComments = vi.fn(async () => ({ items: [], nextCursor: null }));
+    const services = {
+      runtimeRecords: { readIssueComments },
+    } as unknown as HostServices;
+    const handler = createHostClientHandlers({
+      pluginId: "paperclip.test",
+      capabilities: ["runtime.records.read"],
+      services,
+    })["runtime.records.readIssueComments"];
+
+    await expect(handler(
+      { companyId: "company-b", issueId: "issue-b" },
+      { invocationScope: { companyId: "company-a" } },
+    )).rejects.toBeInstanceOf(InvocationScopeDeniedError);
+    expect(readIssueComments).not.toHaveBeenCalled();
+  });
+
   it("uses the shared gateway trace DTO unchanged in the plugin protocol", async () => {
     type PluginTrace =
       WorkerToHostMethods["run.issues.readIssueAgentRun"][1];

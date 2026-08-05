@@ -78,7 +78,6 @@ export const toolApplications = pgTable(
     description: text("description"),
     type: text("type").$type<ToolApplicationType>().notNull(),
     status: text("status").$type<ToolApplicationStatus>().notNull().default("active"),
-    pluginId: uuid("plugin_id").references(() => plugins.id, { onDelete: "set null" }),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id, { onDelete: "set null" }),
     ownerUserId: text("owner_user_id").references(() => authUsers.id, {
       onDelete: "set null",

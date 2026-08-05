@@ -287,7 +287,6 @@ function postgresGatewayRepository(
     database as unknown as Db,
     {
       resolve: vi.fn(async () => compileInput()),
-      resolvePluginCompanyTool: vi.fn(async () => null),
     },
     {
       readRun: vi.fn(async () => ({
@@ -323,6 +322,7 @@ function compileInput(): RuntimeInterfaceCompileInput {
     configureTargets: [],
     agentHireCompanyToolOptions: [],
     selectedCompanyTools: [],
+    pluginTools: [],
   };
 }
 
@@ -348,7 +348,6 @@ function setup(compile = compileInput()) {
     authenticateBearerHash,
     revalidate,
     resolveCompileInput: vi.fn(async () => compile),
-    resolvePluginCompanyTool: vi.fn(async () => null),
     createPluginRunContext: vi.fn(async () => undefined),
     resolvePluginRunContextHash: vi.fn(async () => null),
     writeAudit,

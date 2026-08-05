@@ -952,6 +952,20 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         return fetch(url, init);
       },
     },
+    runtime: {
+      records: {
+        async readRun() {
+          requireCapability(manifest, capabilitySet, "runtime.records.read");
+          throw new Error(
+            "No runtime run record is configured in the plugin test harness",
+          );
+        },
+        async readIssueComments() {
+          requireCapability(manifest, capabilitySet, "runtime.records.read");
+          return { items: [], nextCursor: null };
+        },
+      },
+    },
     secrets: {
       async resolve(secretRef) {
         requireCapability(manifest, capabilitySet, "secrets.read-ref");
@@ -2205,6 +2219,24 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       if (!handler) throw new Error(`No tool handler registered for '${name}'`);
       const ctxToPass: PluginToolRunContext = {
         handle: runContextHandle,
+        async resolve() {
+          requireCapability(manifest, capabilitySet, "runtime.context.read");
+          return {
+            companyId: "00000000-0000-4000-8000-000000000001",
+            issueId: "00000000-0000-4000-8000-000000000002",
+            agentId: "00000000-0000-4000-8000-000000000003",
+            runId: "00000000-0000-4000-8000-000000000004",
+            projectId: null,
+            contextAccess: {},
+          };
+        },
+        async issueReach(issueId) {
+          requireCapability(manifest, capabilitySet, "runtime.context.read");
+          const activeIssueId = "00000000-0000-4000-8000-000000000002";
+          return issueId === activeIssueId
+            ? { visible: true, relation: "active" }
+            : { visible: false, relation: "outside" };
+        },
         issues: {
           async listCompanyIssues() {
             return { items: [], nextCursor: null };

@@ -236,8 +236,8 @@ export interface PluginJobContext {
 // ---------------------------------------------------------------------------
 
 /**
- * Opaque run-context handle passed to a plugin tool handler when a selected
- * company tool is invoked from a compiled run interface.
+ * Opaque run-context handle passed to a plugin tool handler when its direct
+ * namespaced tool is invoked from a compiled run interface.
  *
  * The value has no client-derivable fields. Plugins may only echo it through
  * the active worker invocation; the host resolves and revalidates its live
@@ -246,8 +246,8 @@ export interface PluginJobContext {
 export type PluginRunContextHandle = string;
 
 /**
- * Run-serving issue projection available only while handling a selected
- * company-tool invocation. It is intentionally separate from `ctx.issues`,
+ * Run-serving issue projection available only while handling a direct plugin
+ * tool invocation. It is intentionally separate from `ctx.issues`,
  * which remains the installation control plane.
  */
 export type PluginRunIssueProjection =
@@ -296,12 +296,34 @@ export interface PluginRunIssuesClient {
   ): Promise<ProviderSafeRunTrace>;
 }
 
+/** Trusted, host-resolved identity for the exact active agent tool call. */
+export interface PluginResolvedRunContext {
+  companyId: string;
+  issueId: string;
+  agentId: string;
+  runId: string;
+  projectId: string | null;
+  contextAccess: PluginContextAccess;
+}
+
+export interface PluginRunIssueReach {
+  visible: boolean;
+  relation: "active" | "descendant" | "company" | "outside";
+}
+
 /**
  * Worker-local facade for an opaque run-context handle. No Paperclip identity
  * or scope coordinate is exposed to the plugin.
  */
 export interface PluginToolRunContext {
   readonly handle: PluginRunContextHandle;
+  /** Resolve canonical identity for this exact live tool invocation. */
+  resolve(): Promise<PluginResolvedRunContext>;
+  /**
+   * Resolve issue visibility from the active agent's existing context-access
+   * matrix. The host, rather than the plugin, owns the authorization decision.
+   */
+  issueReach(issueId: string): Promise<PluginRunIssueReach>;
   readonly issues: PluginRunIssuesClient;
 }
 
@@ -652,6 +674,28 @@ export interface PluginHttpClient {
    * @returns The response
    */
   fetch(url: string, init?: RequestInit): Promise<Response>;
+}
+
+/**
+ * Canonical, redacted runtime records exposed to privileged infrastructure
+ * plugins. Every request is company-scoped by the host invocation boundary.
+ */
+export interface PluginRuntimeRecordsClient {
+  readRun(input: {
+    companyId: string;
+    runId: string;
+    cursor?: string;
+  }): Promise<ProviderSafeRunTrace>;
+  readIssueComments(input: {
+    companyId: string;
+    issueId: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<PluginRunPage<PluginRunIssueCommentProjection>>;
+}
+
+export interface PluginRuntimeClient {
+  readonly records: PluginRuntimeRecordsClient;
 }
 
 /**
@@ -1525,6 +1569,9 @@ export interface PluginContext {
 
   /** Make outbound HTTP requests. Requires `http.outbound`. */
   http: PluginHttpClient;
+
+  /** Read canonical provider-safe execution records. Requires `runtime.records.read`. */
+  runtime: PluginRuntimeClient;
 
   /** Resolve secret references. Requires `secrets.read-ref`. */
   secrets: PluginSecretsClient;

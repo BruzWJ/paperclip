@@ -574,7 +574,7 @@ export class MockPaperclipApi {
 
       if (resource === "tools/applications") {
         if (method === "GET") return { body: { applications: this.applications.filter((row) => row.companyId === companyId && row.status !== "archived") } };
-        const application = { id: id(), companyId, name: body.name ?? "Application", description: body.description ?? null, type: body.type ?? "mcp_http", status: body.status ?? "active", pluginId: body.pluginId ?? null, ownerAgentId: null, ownerUserId: "user-test", metadata: body.metadata ?? null, archivedAt: null, createdAt: now(), updatedAt: now() };
+        const application = { id: id(), companyId, name: body.name ?? "Application", description: body.description ?? null, type: body.type ?? "mcp_http", status: body.status ?? "active", ownerAgentId: null, ownerUserId: "user-test", metadata: body.metadata ?? null, archivedAt: null, createdAt: now(), updatedAt: now() };
         this.applications.push(application);
         return { status: 201, body: application };
       }
@@ -582,7 +582,7 @@ export class MockPaperclipApi {
         if (method === "GET") return { body: { connections: this.connections.filter((row) => row.companyId === companyId && row.status !== "archived") } };
         let application = body.applicationId ? this.application(body.applicationId) : undefined;
         if (!application) {
-          application = { id: id(), companyId, name: body.applicationName ?? body.name ?? "Application", description: null, type: "mcp_http", status: "active", pluginId: null, ownerAgentId: null, ownerUserId: "user-test", metadata: null, archivedAt: null, createdAt: now(), updatedAt: now() };
+          application = { id: id(), companyId, name: body.applicationName ?? body.name ?? "Application", description: null, type: "mcp_http", status: "active", ownerAgentId: null, ownerUserId: "user-test", metadata: null, archivedAt: null, createdAt: now(), updatedAt: now() };
           this.applications.push(application);
         }
         const connection = { id: id(), companyId, applicationId: application.id, name: body.name ?? application.name, uid: `mock:${id()}`, connectionKind: "mcp", ownership: "customer", transport: body.transport ?? "mcp_remote", authKind: "none", status: body.status ?? "active", transportConfig: body.transportConfig ?? body.config ?? {}, config: body.config ?? body.transportConfig ?? {}, credentialSecretRefs: [], credentialRefs: [], healthStatus: "ok", healthMessage: null, healthCheckedAt: now(), lastError: null, enabled: body.enabled ?? true, createdByAgentId: null, createdByUserId: "user-test", createdAt: now(), updatedAt: now(), installs: [], grants: [] };
@@ -590,7 +590,7 @@ export class MockPaperclipApi {
         return { status: 201, body: connection };
       }
       if (resource === "tools/apps/connect") {
-        const application = { id: id(), companyId, name: body.name ?? "Connected app", description: null, type: "mcp_http", status: "active", pluginId: null, ownerAgentId: null, ownerUserId: "user-test", metadata: null, archivedAt: null, createdAt: now(), updatedAt: now() };
+        const application = { id: id(), companyId, name: body.name ?? "Connected app", description: null, type: "mcp_http", status: "active", ownerAgentId: null, ownerUserId: "user-test", metadata: null, archivedAt: null, createdAt: now(), updatedAt: now() };
         const connection = { id: id(), companyId, applicationId: application.id, name: application.name, uid: `mock:${id()}`, connectionKind: "mcp", ownership: "customer", transport: "mcp_remote", authKind: body.credentialValues ? "api_key" : "none", status: "draft", transportConfig: { url: body.link }, config: { url: body.link }, credentialSecretRefs: [], healthStatus: "ok", healthMessage: null, healthCheckedAt: now(), lastError: null, enabled: true, createdByAgentId: null, createdByUserId: "user-test", createdAt: now(), updatedAt: now(), installs: [], grants: [] };
         this.applications.push(application);
         this.connections.push(connection);

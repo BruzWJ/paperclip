@@ -13,7 +13,7 @@ const EXECUTOR = "apps/server/src/services/runtime-tool-executor.ts";
 const GATEWAY = "apps/server/src/services/prompt-capability-gateway.ts";
 const GATEWAY_REPOSITORY =
   "apps/server/src/services/prompt-capability-gateway-postgres.ts";
-const TOOL_GATEWAY = "apps/server/src/services/tool-gateway.ts";
+const APP = "apps/server/src/app.ts";
 const DISPATCHER = "apps/server/src/services/plugin-tool-dispatcher.ts";
 const REGISTRY = "apps/server/src/services/plugin-tool-registry.ts";
 const SDK_PROTOCOL = "packages/plugins/sdk/src/protocol.ts";
@@ -27,7 +27,6 @@ const PLUGIN_CONTEXT_COLUMNS = new Set([
   "capabilityConnectionId",
   "capabilityGeneration",
   "runInterfaceToolCallId",
-  "companyToolSelectionId",
   "pluginInstallationId",
   "handleHash",
   "firstUsedAt",
@@ -100,7 +99,7 @@ function exactSetViolation(
 }
 
 /**
- * Verifies the one opaque plugin-context flow from a compiled selected company
+ * Verifies the one opaque plugin-context flow from a compiled direct plugin
  * tool to the capability-authenticated retrieval service. No run identity is
  * copied into the plugin payload/facade and no plaintext handle is persisted.
  */
@@ -113,18 +112,16 @@ export function pluginRunContextBoundaryViolations(
       "handleHash: text(\"handle_hash\").primaryKey()",
       "plugin_run_contexts_capability_generation_fk",
       "plugin_run_contexts_exact_tool_call_fk",
-      "plugin_run_contexts_tool_selection_fk",
       "pluginInstallationId",
       "runInterfaceToolCallId",
-      "companyToolSelectionId",
     ]),
     ...requireFileTokens(repositoryRoot, COMPILER, [
-      "selectedCompanyToolSelectionId",
+      'source: "plugin"',
       "pluginInstallationId",
-      "selectedCompanyTools",
+      "pluginDescriptors",
     ]),
     ...requireFileTokens(repositoryRoot, EXECUTOR, [
-      "options.companyTools.execute({",
+      "options.pluginTools.execute({",
       "runInterfaceToolCallId: claim.id",
       "mintPluginRunContext",
       "pluginInstallationId",
@@ -139,12 +136,12 @@ export function pluginRunContextBoundaryViolations(
       ".insert(pluginRunContexts)",
       "resolvePluginRunContextHash",
       "pluginInstallationId",
-      "companyToolSelectionId",
       "runInterfaceToolCallId",
     ]),
-    ...requireFileTokens(repositoryRoot, TOOL_GATEWAY, [
-      "executePromptCapabilityTool",
-      "pluginToolDispatcher!.executeTool(",
+    ...requireFileTokens(repositoryRoot, APP, [
+      "bindPromptCapabilityPluginTools",
+      "pluginToolDispatcher.executeTool(",
+      "pluginInstallationId: input.pluginInstallationId",
       "await input.mintPluginRunContext()",
     ]),
     ...requireFileTokens(repositoryRoot, DISPATCHER, [
@@ -153,6 +150,7 @@ export function pluginRunContextBoundaryViolations(
     ]),
     ...requireFileTokens(repositoryRoot, REGISTRY, [
       "runContextHandle: scope.runContextHandle",
+      "registered.pluginDbId !== scope.pluginInstallationId",
       'workerManager.call(',
       '"executeTool"',
       "pluginRunContextHandle: scope.runContextHandle",

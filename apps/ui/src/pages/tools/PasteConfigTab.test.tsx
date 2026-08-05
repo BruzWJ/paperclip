@@ -69,7 +69,6 @@ function connectResult(overrides: Partial<ConnectToolAppResult> = {}): ConnectTo
       description: null,
       type: "mcp_http",
       status: "draft",
-      pluginId: null,
       ownerAgentId: null,
       ownerUserId: null,
       metadata: null,

@@ -592,6 +592,17 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
       },
 
+      runtime: {
+        records: {
+          async readRun(input) {
+            return callHost("runtime.records.readRun", input);
+          },
+          async readIssueComments(input) {
+            return callHost("runtime.records.readIssueComments", input);
+          },
+        },
+      },
+
       secrets: {
         async resolve(secretRef, options = {}): Promise<string> {
           return callHost("secrets.resolve", {
@@ -1337,6 +1348,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
   async function handleOnEvent(params: OnEventParams): Promise<void> {
     const event = params.event;
+    const errors: unknown[] = [];
 
     for (const registration of eventHandlers) {
       // Check event type match
@@ -1356,6 +1368,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       try {
         await registration.fn(event);
       } catch (err) {
+        errors.push(err);
         // Log error but continue processing other handlers so one failing
         // handler doesn't prevent the rest from running.
         notifyHost("log", {
@@ -1366,6 +1379,12 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
           meta: { eventType: event.eventType, stack: err instanceof Error ? err.stack : undefined },
         });
       }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(
+        errors,
+        `${errors.length} plugin event handler(s) failed for ${event.eventType}`,
+      );
     }
   }
 
@@ -1449,6 +1468,17 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     }
     const runContext: PluginToolRunContext = Object.freeze({
       handle: params.runContextHandle,
+      resolve() {
+        return callHost("run.context.resolve", {
+          runContextHandle: params.runContextHandle,
+        });
+      },
+      issueReach(issueId: string) {
+        return callHost("run.context.issueReach", {
+          runContextHandle: params.runContextHandle,
+          issueId,
+        });
+      },
       issues: Object.freeze({
         listCompanyIssues(input: {
           status?: "open" | "blocked" | "done" | "cancelled";

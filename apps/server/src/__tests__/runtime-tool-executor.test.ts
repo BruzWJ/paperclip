@@ -78,12 +78,13 @@ function setup(options: {
     agentHire: no,
     agentConfigure,
   };
-  const executeCompany = vi.fn(
+  const executePlugin = vi.fn(
     async (input: { mintPluginRunContext(): Promise<string> }) => ({
-      company: true,
+      plugin: true,
       opaqueRunContext: await input.mintPluginRunContext(),
     }),
   );
+  const executeCompany = vi.fn(async () => ({ company: true }));
   const readCanonicalRunTrace = vi.fn(
     async ({ runId }: { runId: string }) => ({
       runId,
@@ -159,6 +160,9 @@ function setup(options: {
     companyTools: {
       execute: executeCompany,
     },
+    pluginTools: {
+      execute: executePlugin,
+    },
     callLedger: {
       async claim() {
         return { state: "claimed", id: "ledger-call-1" };
@@ -179,6 +183,7 @@ function setup(options: {
     classify,
     commitTerminalAction,
     executeCompany,
+    executePlugin,
     readCanonicalRunTrace,
     terminalTransaction,
   };
@@ -258,16 +263,15 @@ describe("runtime tool executor", () => {
     );
   });
 
-  it("gives company tools only an opaque run-context handle", async () => {
-    const { executor, executeCompany } = setup();
+  it("gives direct plugin tools only an opaque run-context handle", async () => {
+    const { executor, executePlugin } = setup();
     await executor.execute({
       capability,      descriptor: {
-        name: "company_lookup",
+        name: "paperclip.example:lookup",
         title: "",
         description: "",
         inputSchema: {},
-        source: "company",
-        selectedCompanyToolSelectionId: "company-tool-selection",
+        source: "plugin",
         pluginInstallationId: "plugin-installation",
       },
       arguments: { query: "x" },
@@ -278,17 +282,57 @@ describe("runtime tool executor", () => {
     expect(mintPluginRunContext).toHaveBeenCalledWith(
       {
         runInterfaceToolCallId: "ledger-call-1",
-        companyToolSelectionId: "company-tool-selection",
         pluginInstallationId: "plugin-installation",
       },
     );
-    expect(executeCompany).toHaveBeenCalledWith(expect.objectContaining({
-      capability,      companyToolSelectionId: "company-tool-selection",
+    expect(executePlugin).toHaveBeenCalledWith(expect.objectContaining({
+      capability,
+      toolName: "paperclip.example:lookup",
+      pluginInstallationId: "plugin-installation",
       arguments: { query: "x" },
-      callIdentity: { source: "provider", id: "call-1" },
-      runInterfaceToolCallId: "ledger-call-1",
       mintPluginRunContext: expect.any(Function),
     }));
+  });
+
+  it("rejects invalid plugin arguments before minting context or calling the worker", async () => {
+    const { executor, executePlugin } = setup();
+    const mintRunContext = vi.fn(async () => "opaque");
+    const descriptor = compileRuntimeInterface({
+      mode: "owner",
+      contextDial: resolveContextDial({ agent: {} }).effective,
+      actionGrants: {},
+      isCurrentOwner: true,
+      issueCreateDirectChildren: [],
+      issueAssignTargets: [],
+      creatorUpdateTargets: [],
+      mentionTargets: [],
+      configureTargets: [],
+      agentHireCompanyToolOptions: [],
+      selectedCompanyTools: [],
+      pluginTools: [{
+        installationId: "plugin-installation",
+        name: "paperclip.example:lookup",
+        title: "Lookup",
+        description: "Lookup",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          additionalProperties: false,
+          properties: { query: { type: "string", minLength: 1 } },
+        },
+      }],
+    }).byName.get("paperclip.example:lookup")!;
+
+    await expect(executor.execute({
+      capability,
+      descriptor,
+      arguments: { query: "", unexpected: true },
+      callIdentity: { source: "provider", id: "invalid-plugin-call" },
+      ingressOrdinal: 0,
+      mintPluginRunContext: mintRunContext,
+    })).rejects.toThrow(RuntimeDescriptorArgumentsInvalid);
+    expect(mintRunContext).not.toHaveBeenCalled();
+    expect(executePlugin).not.toHaveBeenCalled();
   });
 
   it("classifies and propagates the immutable mention ingress boundary", async () => {
@@ -314,6 +358,7 @@ describe("runtime tool executor", () => {
       configureTargets: [],
       agentHireCompanyToolOptions: [],
       selectedCompanyTools: [],
+      pluginTools: [],
     }).byName.get("mention_agent")!;
 
     await executor.execute({
@@ -365,6 +410,7 @@ describe("runtime tool executor", () => {
       configureTargets: [],
       agentHireCompanyToolOptions: [],
       selectedCompanyTools: [],
+      pluginTools: [],
     }).byName.get("mention_board")!;
 
     await expect(
@@ -426,6 +472,7 @@ describe("runtime tool executor", () => {
       configureTargets: [{ id: "agent" }],
       agentHireCompanyToolOptions: [],
       selectedCompanyTools: [],
+      pluginTools: [],
     }).byName.get("agent_configure")!;
 
     await expect(

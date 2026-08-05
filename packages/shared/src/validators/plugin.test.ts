@@ -3,6 +3,7 @@ import { PLUGIN_CAPABILITIES } from "../constants.js";
 import {
   pluginManagedRoutineDeclarationSchema,
   pluginManifestV1Schema,
+  pluginToolDeclarationSchema,
   pluginUiSlotDeclarationSchema,
   uninstallPluginSchema,
 } from "./plugin.js";
@@ -26,6 +27,42 @@ describe("plugin uninstall validator", () => {
 });
 
 describe("plugin manifest validators", () => {
+  it("rejects tool names containing the namespace separator", () => {
+    const tool = {
+      name: "memory:recall",
+      displayName: "Recall",
+      description: "Recall memory",
+      parametersSchema: { type: "object" },
+    };
+    expect(pluginToolDeclarationSchema.safeParse(tool).success).toBe(false);
+    expect(pluginToolDeclarationSchema.safeParse({
+      ...tool,
+      name: "memory_recall",
+    }).success).toBe(true);
+  });
+
+  it("requires the ordinary HTTP capability before private-network access", () => {
+    const base = {
+      id: "paperclip.private-service",
+      apiVersion: 1,
+      version: "0.1.0",
+      displayName: "Private Service",
+      description: "Connects to an operator-hosted private service.",
+      author: "Paperclip",
+      categories: ["connector"],
+      entrypoints: { worker: "./dist/worker.js" },
+    } as const;
+
+    expect(pluginManifestV1Schema.safeParse({
+      ...base,
+      capabilities: ["http.private-network"],
+    }).success).toBe(false);
+    expect(pluginManifestV1Schema.safeParse({
+      ...base,
+      capabilities: ["http.outbound", "http.private-network"],
+    }).success).toBe(true);
+  });
+
   it("accepts existing-style plugins that do not request access or authorization capabilities", () => {
     const parsed = pluginManifestV1Schema.parse({
       id: "paperclip.compat-dashboard",
@@ -216,9 +253,9 @@ describe("plugin UI slot validators", () => {
   it("accepts workspace entity types as detailTab targets", () => {
     const parsed = pluginUiSlotDeclarationSchema.parse({
       type: "detailTab",
-      id: "workspace-diff-viewer",
-      displayName: "Diff",
-      exportName: "WorkspaceDiffViewer",
+      id: "workspace-inspector",
+      displayName: "Inspector",
+      exportName: "WorkspaceInspector",
       entityTypes: ["execution_workspace", "project_workspace"],
     });
 
@@ -228,9 +265,9 @@ describe("plugin UI slot validators", () => {
   it("accepts execution_workspace as a toolbarButton entityType", () => {
     const parsed = pluginUiSlotDeclarationSchema.parse({
       type: "toolbarButton",
-      id: "workspace-open-diff",
-      displayName: "Open diff",
-      exportName: "OpenWorkspaceDiffButton",
+      id: "workspace-open-inspector",
+      displayName: "Open inspector",
+      exportName: "OpenWorkspaceInspectorButton",
       entityTypes: ["execution_workspace"],
     });
 

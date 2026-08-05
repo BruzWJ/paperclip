@@ -754,7 +754,7 @@ export const PERMISSION_KEYS = [
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
-export const TOOL_APPLICATION_TYPES = ["mcp_http", "mcp_stdio", "paperclip_plugin", "a2a"] as const;
+export const TOOL_APPLICATION_TYPES = ["mcp_http", "mcp_stdio", "a2a"] as const;
 export type ToolApplicationType = (typeof TOOL_APPLICATION_TYPES)[number];
 
 export const TOOL_APPLICATION_STATUSES = ["draft", "active", "disabled", "archived"] as const;
@@ -1081,9 +1081,12 @@ export const PLUGIN_CAPABILITIES = [
   "webhooks.receive",
   "api.routes.register",
   "http.outbound",
+  "http.private-network",
   "secrets.read-ref",
   "environment.drivers.register",
   "local.folders",
+  "runtime.context.read",
+  "runtime.records.read",
   // Agent Tools
   "agent.tools.register",
   // UI

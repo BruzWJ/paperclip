@@ -27,6 +27,7 @@ import {
 import type {
   RuntimeActionPort,
   RuntimeCompanyToolPort,
+  RuntimePluginToolPort,
 } from "./runtime-tool-executor.js";
 
 export interface PostgresIssueExecutionProductionRuntimeOptions {
@@ -41,6 +42,7 @@ export interface PostgresIssueExecutionProductionRuntimeOptions {
   readonly capabilityCursorSecret: string;
   readonly actions: RuntimeActionPort;
   readonly companyTools: RuntimeCompanyToolPort;
+  readonly pluginTools: RuntimePluginToolPort;
   readonly steeringResults: IssueExecutionSteeringResultBroker;
   readonly now?: () => Date;
   readonly idFactory?: () => string;
@@ -133,6 +135,7 @@ export function createPostgresIssueExecutionProductionRuntime(
     cursorSecret: options.capabilityCursorSecret,
     actions: options.actions,
     companyTools: options.companyTools,
+    pluginTools: options.pluginTools,
     now,
   });
   const finalizer = createPostgresIssueExecutionFinalizationWriter({

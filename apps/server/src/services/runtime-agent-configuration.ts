@@ -219,7 +219,6 @@ interface LockedActiveToolCatalogEntry {
   catalogEntryId: string;
   connectionId: string;
   applicationId: string;
-  pluginId: string | null;
   catalogVersionHash: string;
 }
 
@@ -256,8 +255,6 @@ async function listCompanyToolOptionsForTarget(
       connectionStatus: toolConnections.status,
       connectionEnabled: toolConnections.enabled,
       applicationStatus: toolApplications.status,
-      pluginId: toolApplications.pluginId,
-      pluginStatus: plugins.status,
     })
     .from(toolCatalogEntries)
     .innerJoin(
@@ -285,7 +282,6 @@ async function listCompanyToolOptionsForTarget(
           : eq(toolConnectionInstalls.targetAgentId, input.targetId),
       ),
     )
-    .leftJoin(plugins, eq(plugins.id, toolApplications.pluginId))
     .where(eq(toolCatalogEntries.companyId, input.companyId))
     .orderBy(
       asc(toolConnections.name),
@@ -299,8 +295,7 @@ async function listCompanyToolOptionsForTarget(
         row.entryStatus === "active" &&
         row.connectionStatus === "active" &&
         row.connectionEnabled === true &&
-        row.applicationStatus === "active" &&
-        (row.pluginId === null || row.pluginStatus === "ready"),
+        row.applicationStatus === "active",
     )
     .map((row) => ({
       catalogEntryId: row.catalogEntryId,
@@ -1487,7 +1482,6 @@ async function lockActiveToolCatalogEntries(
     .select({
       applicationId: toolApplications.id,
       applicationStatus: toolApplications.status,
-      pluginId: toolApplications.pluginId,
     })
     .from(toolApplications)
     .where(
@@ -1509,36 +1503,6 @@ async function lockActiveToolCatalogEntries(
     }
   }
 
-  const pluginIds = Array.from(
-    new Set(
-      applicationRows
-        .map((row) => row.pluginId)
-        .filter((id): id is string => id !== null),
-    ),
-  ).sort();
-  if (pluginIds.length > 0) {
-    await lockToolSelectionRowsInOrder(tx, {
-      companyId,
-      pluginInstallationIds: pluginIds,
-    });
-    const pluginRows = await tx
-      .select({ id: plugins.id, status: plugins.status })
-      .from(plugins)
-      .where(inArray(plugins.id, pluginIds))
-      .orderBy(asc(plugins.id));
-    const readyPluginIds = new Set(
-      pluginRows
-        .filter((row) => row.status === "ready")
-        .map((row) => row.id),
-    );
-    const unavailable = pluginIds.find((id) => !readyPluginIds.has(id));
-    if (unavailable) {
-      throw new RuntimeAgentConfigurationInvalid(
-        `Company tool plugin installation ${unavailable} is not ready`,
-      );
-    }
-  }
-
   return requestedIds.map((catalogEntryId) => {
     const catalog = catalogById.get(catalogEntryId)!;
     const connection = connectionById.get(catalog.connectionId)!;
@@ -1547,7 +1511,6 @@ async function lockActiveToolCatalogEntries(
       catalogEntryId,
       connectionId: connection.connectionId,
       applicationId: application.applicationId,
-      pluginId: application.pluginId,
       catalogVersionHash: catalog.catalogVersionHash,
     };
   });

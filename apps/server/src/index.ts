@@ -21,7 +21,6 @@ import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/e
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
   feedbackService,
-  bootstrapExecutionPolicyFromEnv,
   environmentCustomImageService,
   composeRuntimeActionPort,
   createOrdinaryIssueRuntime,
@@ -55,7 +54,10 @@ import { conflict } from "./errors.js";
 import { loadRuntimeEnvironmentFiles } from "./runtime-environment.js";
 import { deriveInstancePrivateSecret } from "./secrets/local-encrypted-provider.js";
 import type { ToolGatewayService } from "./services/tool-gateway.js";
-import type { RuntimeCompanyToolPort } from "./services/runtime-tool-executor.js";
+import type {
+  RuntimeCompanyToolPort,
+  RuntimePluginToolPort,
+} from "./services/runtime-tool-executor.js";
 import { createIssueExecutionSteeringResultBroker } from "./services/issue-execution-steering-results.js";
 import type {
   InstanceDatabaseBackupRunResult,
@@ -375,8 +377,20 @@ export async function startServer(): Promise<StartedServer> {
         parameters: input.arguments,
         callIdentity: input.callIdentity,
         runInterfaceToolCallId: input.runInterfaceToolCallId,
-        mintPluginRunContext: input.mintPluginRunContext,
       });
+    },
+  };
+  let executePromptCapabilityPluginTool:
+    | RuntimePluginToolPort["execute"]
+    | null = null;
+  const promptCapabilityPluginTools: RuntimePluginToolPort = {
+    execute(input) {
+      if (!executePromptCapabilityPluginTool) {
+        throw new Error(
+          "Prompt-capability plugin-tool executor is not initialized",
+        );
+      }
+      return executePromptCapabilityPluginTool(input);
     },
   };
   // Warm the ACPX catalog without making server availability depend on every
@@ -423,6 +437,7 @@ export async function startServer(): Promise<StartedServer> {
         ).toString("base64url"),
         actions,
         companyTools: promptCapabilityCompanyTools,
+        pluginTools: promptCapabilityPluginTools,
         steeringResults: issueExecutionSteeringResults,
       },
     );
@@ -509,9 +524,14 @@ export async function startServer(): Promise<StartedServer> {
       issueExecution.promptCapabilities.gateway,
     pluginRunIssueContextReader:
       issueExecution.promptCapabilities.pluginRunIssueContextReader,
+    pluginRuntimeRecordsReader:
+      issueExecution.promptCapabilities.pluginRuntimeRecordsReader,
     issueSessionStore,
     bindPromptCapabilityCompanyTools(execute) {
       executePromptCapabilityTool = execute;
+    },
+    bindPromptCapabilityPluginTools(execute) {
+      executePromptCapabilityPluginTool = execute;
     },
     ordinaryIssueRuntime: ordinaryIssues,
     issueExecutionRunService: issueExecution.runService,
@@ -571,27 +591,6 @@ export async function startServer(): Promise<StartedServer> {
     .catch((err) => {
       logger.error({ err }, "startup reconciliation of cloud upstream runs failed");
     });
-
-  // Force the instance onto the Kubernetes sandbox provider when configured via
-  // env (PAPERCLIP_EXECUTION_MODE=kubernetes). Runs before persisted issue execution resumes
-  // queued runs so the policy + managed k8s environments are in place. A bad
-  // PAPERCLIP_EXECUTION_MODE / PAPERCLIP_K8S_* value throws and fails startup
-  // (fail-loud) rather than silently allowing local execution.
-  try {
-    const policyResult = await bootstrapExecutionPolicyFromEnv(db as any);
-    if (policyResult) {
-      logger.warn(
-        {
-          executionMode: policyResult.executionMode,
-          companiesConfigured: policyResult.companiesConfigured,
-        },
-        "forced execution policy applied at startup",
-      );
-    }
-  } catch (err) {
-    logger.error({ err }, "failed to apply forced execution policy from environment");
-    throw err;
-  }
 
   let issueExecutionSchedulerStopped = false;
   let issueExecutionSchedulerInterval: ReturnType<typeof setInterval> | null = null;

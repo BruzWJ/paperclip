@@ -24,6 +24,10 @@ import {
   reconcileCompanySessionLifecycleOperationInTx,
 } from "./issue-session-lifecycle.js";
 import type { IssueSessionDbTransaction } from "./issue-session/event-store.js";
+import {
+  publishAgentRunTerminalEvent,
+  type AgentRunTerminalPluginEventInput,
+} from "./agent-run-plugin-events.js";
 
 const ACTIVE_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 const TERMINAL_RUN_STATUSES = new Set<IssueExecutionRunStatus>([
@@ -152,6 +156,8 @@ export interface RequestedRunCancellation {
   /** Null means the active envelope had no prompt attempt to cancel. */
   readonly cancellationIntentId: string | null;
   readonly state: "intent_requested" | "terminalized";
+  /** Post-commit plugin event owned by the reconciliation step. */
+  readonly terminalEvent?: AgentRunTerminalPluginEventInput;
 }
 
 export interface IssueExecutionAuthorityFenceResult {
@@ -251,6 +257,31 @@ function exactDate(value: Date, label: string): Date {
   return value;
 }
 
+function terminalizedCancellationResult(
+  request: RequestedRunCancellation,
+): IssueExecutionCancellationResult {
+  if (request.cancellationIntentId !== null) {
+    reject("terminalized cancellation unexpectedly owns an intent");
+  }
+  if (request.terminalEvent) {
+    if (
+      request.terminalEvent.companyId !== request.companyId
+      || request.terminalEvent.issueId !== request.issueId
+      || request.terminalEvent.runId !== request.runId
+      || request.terminalEvent.outcome !== "cancelled"
+    ) {
+      reject("terminalized cancellation plugin event crossed its exact run");
+    }
+    publishAgentRunTerminalEvent(request.terminalEvent);
+  }
+  return {
+    runId: request.runId,
+    alreadyTerminal: true,
+    cancellationIntentId: null,
+    state: "terminalized",
+  };
+}
+
 function cancellationActorColumns(actor: IssueExecutionCancellationActor) {
   if (actor.kind === "user") {
     exactIdentifier(actor.userId, "cancellation actor user id");
@@ -328,6 +359,7 @@ export function createIssueExecutionCancellationService(
       readonly companyId: string;
       readonly issueId: string;
       readonly runId: string;
+      readonly targetAgentId: string;
       readonly cancellationIntentId: string | null;
       readonly currentAttemptId: string | null;
       readonly currentLeaseId: string | null;
@@ -349,7 +381,7 @@ export function createIssueExecutionCancellationService(
       };
     }
     if (run.currentAttemptId === null && run.currentLeaseId === null) {
-      await options.settlement.terminalizeDetachedCancelledRunInTransaction(
+      const terminalized = await options.settlement.terminalizeDetachedCancelledRunInTransaction(
         transaction,
         {
           companyId: run.companyId,
@@ -359,12 +391,24 @@ export function createIssueExecutionCancellationService(
           finishedAt: params.at,
         },
       );
+      if (!terminalized) {
+        reject("detached cancellation lost its nonterminal run");
+      }
       return {
         companyId: run.companyId,
         issueId: run.issueId,
         runId: run.runId,
         cancellationIntentId: null,
         state: "terminalized",
+        terminalEvent: {
+          companyId: run.companyId,
+          issueId: run.issueId,
+          runId: run.runId,
+          agentId: run.targetAgentId,
+          outcome: "cancelled",
+          reason: params.reason,
+          occurredAt: params.at,
+        },
       };
     }
     if (run.currentAttemptId === null || run.currentLeaseId === null) {
@@ -725,15 +769,7 @@ export function createIssueExecutionCancellationService(
         reject("agent cancellation bundle crossed its company");
       }
       if (request.state === "terminalized") {
-        if (request.cancellationIntentId !== null) {
-          reject("terminalized cancellation unexpectedly owns an intent");
-        }
-        results.push({
-          runId: request.runId,
-          alreadyTerminal: true,
-          cancellationIntentId: null,
-          state: "terminalized",
-        });
+        results.push(terminalizedCancellationResult(request));
         continue;
       }
       if (request.cancellationIntentId === null) {
@@ -921,15 +957,7 @@ export function createIssueExecutionCancellationService(
         reject("cancellation bundle crossed its company");
       }
       if (request.state === "terminalized") {
-        if (request.cancellationIntentId !== null) {
-          reject("terminalized cancellation unexpectedly owns an intent");
-        }
-        results.push({
-          runId: request.runId,
-          alreadyTerminal: true,
-          cancellationIntentId: null,
-          state: "terminalized",
-        });
+        results.push(terminalizedCancellationResult(request));
         continue;
       }
       if (request.cancellationIntentId === null) {

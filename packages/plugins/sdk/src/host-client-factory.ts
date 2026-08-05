@@ -148,6 +148,12 @@ export interface HostServices {
     fetch(params: WorkerToHostMethods["http.fetch"][0]): Promise<WorkerToHostMethods["http.fetch"][1]>;
   };
 
+  /** Provides privileged, company-scoped canonical runtime records. */
+  runtimeRecords: {
+    readRun(params: WorkerToHostMethods["runtime.records.readRun"][0]): Promise<WorkerToHostMethods["runtime.records.readRun"][1]>;
+    readIssueComments(params: WorkerToHostMethods["runtime.records.readIssueComments"][0]): Promise<WorkerToHostMethods["runtime.records.readIssueComments"][1]>;
+  };
+
   /** Provides `secrets.resolve`. */
   secrets: {
     resolve(
@@ -240,8 +246,10 @@ export interface HostServices {
     ): Promise<WorkerToHostMethods["issues.withdraw"][1]>;
   };
 
-  /** Provides run-scoped issue projections for selected company tools. */
+  /** Provides run-scoped issue projections for direct plugin tools. */
   runIssues?: {
+    resolveContext(params: WorkerToHostMethods["run.context.resolve"][0]): Promise<WorkerToHostMethods["run.context.resolve"][1]>;
+    issueReach(params: WorkerToHostMethods["run.context.issueReach"][0]): Promise<WorkerToHostMethods["run.context.issueReach"][1]>;
     listCompanyIssues(params: WorkerToHostMethods["run.issues.listCompanyIssues"][0]): Promise<WorkerToHostMethods["run.issues.listCompanyIssues"][1]>;
     listSubIssues(params: WorkerToHostMethods["run.issues.listSubIssues"][0]): Promise<WorkerToHostMethods["run.issues.listSubIssues"][1]>;
     readIssueComments(params: WorkerToHostMethods["run.issues.readIssueComments"][0]): Promise<WorkerToHostMethods["run.issues.readIssueComments"][1]>;
@@ -384,6 +392,10 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   // HTTP
   "http.fetch": "http.outbound",
 
+  // Privileged runtime records
+  "runtime.records.readRun": "runtime.records.read",
+  "runtime.records.readIssueComments": "runtime.records.read",
+
   // Secrets
   "secrets.resolve": "secrets.read-ref",
 
@@ -429,6 +441,8 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   "issues.create": "issues.create",
   "issues.update": "issues.update",
   "issues.withdraw": "issues.withdraw",
+  "run.context.resolve": "runtime.context.read",
+  "run.context.issueReach": "runtime.context.read",
   "run.issues.listCompanyIssues": "issues.read",
   "run.issues.listSubIssues": "issues.read",
   "run.issues.readIssueComments": "issues.read",
@@ -623,6 +637,8 @@ export function createHostClientHandlers(
 
   function requireExactRunContextHandle(
     method:
+      | "run.context.resolve"
+      | "run.context.issueReach"
       | "run.issues.listCompanyIssues"
       | "run.issues.listSubIssues"
       | "run.issues.readIssueComments"
@@ -786,6 +802,15 @@ export function createHostClientHandlers(
       return services.http.fetch(params);
     }),
 
+    "runtime.records.readRun": gated("runtime.records.readRun", async (params, context) => {
+      const companyId = resolveRequiredCompanyId("runtime.records.readRun", params, context);
+      return services.runtimeRecords.readRun({ ...params, companyId });
+    }),
+    "runtime.records.readIssueComments": gated("runtime.records.readIssueComments", async (params, context) => {
+      const companyId = resolveRequiredCompanyId("runtime.records.readIssueComments", params, context);
+      return services.runtimeRecords.readIssueComments({ ...params, companyId });
+    }),
+
     // Secrets
     "secrets.resolve": gated("secrets.resolve", async (params, context) => {
       const companyId = resolveRequiredCompanyId("secrets.resolve", params, context);
@@ -891,6 +916,28 @@ export function createHostClientHandlers(
     }),
     "issues.creatorCallback.register": gated("issues.creatorCallback.register", async (params) => {
       return services.issues.registerCreatorCallback(params);
+    }),
+    "run.context.resolve": gated("run.context.resolve", async (params, context) => {
+      requireExactRunContextHandle("run.context.resolve", params, context);
+      if (!services.runIssues) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "run.context.resolve",
+          "run-serving context is not configured",
+        );
+      }
+      return services.runIssues.resolveContext(params);
+    }),
+    "run.context.issueReach": gated("run.context.issueReach", async (params, context) => {
+      requireExactRunContextHandle("run.context.issueReach", params, context);
+      if (!services.runIssues) {
+        throw new InvocationScopeDeniedError(
+          pluginId,
+          "run.context.issueReach",
+          "run-serving context is not configured",
+        );
+      }
+      return services.runIssues.issueReach(params);
     }),
     "run.issues.listCompanyIssues": gated("run.issues.listCompanyIssues", async (params, context) => {
       requireExactRunContextHandle("run.issues.listCompanyIssues", params, context);

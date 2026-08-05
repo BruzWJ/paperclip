@@ -42,13 +42,19 @@ function eventTypeForActivityAction(action: string): PluginEventType | null {
   return ACTIVITY_ACTION_TO_PLUGIN_EVENT[action.replaceAll(".", "_")] ?? null;
 }
 
-export function publishPluginDomainEvent(event: PluginEvent): void {
+export async function publishPluginDomainEvent(event: PluginEvent): Promise<void> {
   if (!_pluginEventBus) return;
-  void _pluginEventBus.emit(event).then(({ errors }) => {
+  try {
+    const { errors } = await _pluginEventBus.emit(event);
     for (const { pluginId, error } of errors) {
       logger.warn({ pluginId, eventType: event.eventType, err: error }, "plugin event handler failed");
     }
-  }).catch(() => {});
+  } catch (error) {
+    logger.warn(
+      { eventType: event.eventType, err: error },
+      "plugin event delivery failed",
+    );
+  }
 }
 
 export interface LogActivityInput {
@@ -152,6 +158,6 @@ export async function logActivity(db: Db, input: LogActivityInput) {
         responsibleUserId,
       },
     };
-    publishPluginDomainEvent(event);
+    void publishPluginDomainEvent(event);
   }
 }

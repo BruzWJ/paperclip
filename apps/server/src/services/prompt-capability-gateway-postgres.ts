@@ -1,5 +1,4 @@
 import {
-  agentCompanyToolSelections,
   agents,
   companies,
   issueConsultExecutions,
@@ -14,7 +13,9 @@ import {
   issueExecutionSessions,
   issueExecutionWorkspaceBindings,
   issues,
+  pluginCompanySettings,
   pluginRunContexts,
+  plugins,
   runInterfaceToolCalls,
   toolAccessAuditEvents,
   type Db,
@@ -32,15 +33,13 @@ import type {
   IssueSessionDbTransaction,
 } from "./issue-session/event-store.js";
 import { activeIssueTreePauseHoldExistsSql } from "./issue-execution-lifecycle-gate.js";
+import { lockPluginCompanySettingScopeInTransaction } from "./plugin-authorization-locks.js";
+import { pluginManifestDeclaresAgentTool } from "./plugin-agent-tool-authority.js";
 
 interface PromptCapabilityCompiler {
   resolve(
     capability: PromptCapabilityBinding,
   ): Promise<RuntimeInterfaceCompileInput>;
-  resolvePluginCompanyTool(input: {
-    capability: PromptCapabilityBinding;
-    companyToolSelectionId: string;
-  }): Promise<{ readonly pluginInstallationId: string } | null>;
 }
 
 type PromptCapabilityRow =
@@ -715,10 +714,6 @@ export function createPostgresPromptCapabilityGatewayRepository(
       return compiler.resolve(capability);
     },
 
-    resolvePluginCompanyTool(input) {
-      return compiler.resolvePluginCompanyTool(input);
-    },
-
     async createPluginRunContext(input) {
       await db.transaction(async (tx) => {
         const parent = await tx
@@ -755,6 +750,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
         const call = await tx
           .select({
             id: runInterfaceToolCalls.id,
+            toolName: runInterfaceToolCalls.toolName,
           })
           .from(runInterfaceToolCalls)
           .where(
@@ -776,10 +772,6 @@ export function createPostgresPromptCapabilityGatewayRepository(
                 input.capability.capabilityGeneration,
               ),
               eq(
-                runInterfaceToolCalls.companyToolSelectionId,
-                input.companyToolSelectionId,
-              ),
-              eq(
                 runInterfaceToolCalls.pluginInstallationId,
                 input.pluginInstallationId,
               ),
@@ -793,12 +785,35 @@ export function createPostgresPromptCapabilityGatewayRepository(
             "Plugin context is not bound to the exact active tool call",
           );
         }
+        const pluginScope = await lockPluginCompanySettingScopeInTransaction(
+          tx,
+          {
+            pluginInstallationId: input.pluginInstallationId,
+            companyId: input.capability.companyId,
+          },
+        );
+        const installation = pluginScope.installation;
+        if (
+          installation?.status !== "ready" ||
+          !pluginScope.company ||
+          pluginScope.companySetting?.enabled === false ||
+          !pluginManifestDeclaresAgentTool(
+            {
+              pluginKey: installation.pluginKey,
+              manifest: installation.manifestJson,
+            },
+            call.toolName,
+          )
+        ) {
+          throw new Error(
+            "Plugin context is not bound to a ready company-enabled tool",
+          );
+        }
         await tx.insert(pluginRunContexts).values({
           capabilityConnectionId:
             input.capability.capabilityConnectionId,
           capabilityGeneration: input.capability.capabilityGeneration,
           runInterfaceToolCallId: input.runInterfaceToolCallId,
-          companyToolSelectionId: input.companyToolSelectionId,
           pluginInstallationId: input.pluginInstallationId,
           handleHash: input.handleHash,
           firstUsedAt: null,
@@ -826,7 +841,7 @@ export function createPostgresPromptCapabilityGatewayRepository(
         .select({
           id: runInterfaceToolCalls.id,
           status: runInterfaceToolCalls.status,
-          selectionId: runInterfaceToolCalls.companyToolSelectionId,
+          toolName: runInterfaceToolCalls.toolName,
           pluginInstallationId: runInterfaceToolCalls.pluginInstallationId,
         })
         .from(runInterfaceToolCalls)
@@ -848,33 +863,44 @@ export function createPostgresPromptCapabilityGatewayRepository(
       if (
         !call ||
         call.status !== "executing" ||
-        call.selectionId !== child.companyToolSelectionId ||
         call.pluginInstallationId !== child.pluginInstallationId
       ) {
         return null;
       }
-      const selection = await db
-        .select({ status: agentCompanyToolSelections.status })
-        .from(agentCompanyToolSelections)
+      const installation = await db
+        .select({
+          status: plugins.status,
+          pluginKey: plugins.pluginKey,
+          manifestJson: plugins.manifestJson,
+        })
+        .from(plugins)
         .where(
-          and(
-            eq(
-              agentCompanyToolSelections.id,
-              child.companyToolSelectionId,
-            ),
-            eq(
-              agentCompanyToolSelections.companyId,
-              result.capability.companyId,
-            ),
-            eq(
-              agentCompanyToolSelections.agentId,
-              result.capability.targetAgentId,
-            ),
-          ),
+          eq(plugins.id, child.pluginInstallationId),
         )
         .limit(1)
         .then((rows) => rows[0] ?? null);
-      if (selection?.status !== "selected") return null;
+      const companySetting = await db
+        .select({ enabled: pluginCompanySettings.enabled })
+        .from(pluginCompanySettings)
+        .where(and(
+          eq(pluginCompanySettings.pluginId, child.pluginInstallationId),
+          eq(pluginCompanySettings.companyId, result.capability.companyId),
+        ))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (
+        installation?.status !== "ready" ||
+        companySetting?.enabled === false ||
+        !pluginManifestDeclaresAgentTool(
+          {
+            pluginKey: installation.pluginKey,
+            manifest: installation.manifestJson,
+          },
+          call.toolName,
+        )
+      ) {
+        return null;
+      }
       if (child.firstUsedAt === null) {
         await db
           .update(pluginRunContexts)
@@ -890,7 +916,6 @@ export function createPostgresPromptCapabilityGatewayRepository(
       return {
         capability: result.capability,
         runInterfaceToolCallId: child.runInterfaceToolCallId,
-        companyToolSelectionId: child.companyToolSelectionId,
         pluginInstallationId: child.pluginInstallationId,
       };
     },

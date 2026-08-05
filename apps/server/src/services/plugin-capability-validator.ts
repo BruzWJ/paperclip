@@ -106,6 +106,10 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "webhooks.receive": ["webhooks.receive"],
   "http.request": ["http.outbound"],
   "secrets.resolve": ["secrets.read-ref"],
+  "run.context.resolve": ["runtime.context.read"],
+  "run.context.issueReach": ["runtime.context.read"],
+  "runtime.records.readRun": ["runtime.records.read"],
+  "runtime.records.readIssueComments": ["runtime.records.read"],
 
   // Agent tools
   "agent.tools.register": ["agent.tools.register"],
@@ -448,6 +452,10 @@ export function pluginCapabilityValidator(): PluginCapabilityValidator {
             allMissing.push(requiredCap);
           }
         }
+      }
+
+      if (declared.has("http.private-network") && !declared.has("http.outbound")) {
+        allMissing.push("http.outbound");
       }
 
       if ((manifest.objectReferences?.length ?? 0) > 0) {

@@ -28,6 +28,13 @@ export function validateInstanceConfig(
   configJson: Record<string, unknown>,
   schema: JsonSchema,
 ): ConfigValidationResult {
+  return validateJsonSchemaValue(configJson, schema);
+}
+
+export function validateJsonSchemaValue(
+  value: unknown,
+  schema: JsonSchema,
+): ConfigValidationResult {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const AjvCtor = (Ajv as any).default ?? Ajv;
   const ajv = new AjvCtor({ allErrors: true });
@@ -39,7 +46,7 @@ export function validateInstanceConfig(
   // hint only — UUID validation happens in the secrets handler at resolve time.
   ajv.addFormat("secret-ref", { validate: () => true });
   const validate = ajv.compile(schema);
-  const valid = validate(configJson);
+  const valid = validate(value);
 
   if (valid) {
     return { valid: true };

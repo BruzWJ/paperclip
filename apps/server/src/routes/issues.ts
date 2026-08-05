@@ -106,6 +106,7 @@ import {
   workProductService,
 } from "../services/index.js";
 import { issueWatchdogService } from "../services/issue-watchdogs.js";
+import { publishPluginDomainEvent } from "../services/activity-log.js";
 import { logger } from "../middleware/logger.js";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import {
@@ -4123,6 +4124,21 @@ export function issueRoutes(
             "board_comment_projection_missing",
           );
         }
+        await publishPluginDomainEvent({
+          eventId: comment.id,
+          eventType: "issue.comment.created",
+          occurredAt: new Date().toISOString(),
+          actorId: actorUserId,
+          actorType: "user",
+          entityId: comment.id,
+          entityType: "issue_comment",
+          companyId: existing.companyId,
+          payload: {
+            companyId: existing.companyId,
+            issueId: existing.id,
+            commentId: comment.id,
+          },
+        });
         res.status(result.retried ? 200 : 201).json({
           comment,
           retried: result.retried,

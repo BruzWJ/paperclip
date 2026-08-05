@@ -111,7 +111,9 @@ export type PluginWebhookDeclarationInput = z.infer<typeof pluginWebhookDeclarat
  * @see PLUGIN_SPEC.md §11 — Agent Tools
  */
 export const pluginToolDeclarationSchema = z.object({
-  name: z.string().min(1),
+  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, {
+    message: "tool name must start with an alphanumeric and contain only letters, digits, dots, underscores, or hyphens",
+  }),
   displayName: z.string().min(1),
   description: z.string().min(1),
   parametersSchema: jsonSchemaSchema,
@@ -771,6 +773,17 @@ export const pluginManifestV1Schema = z.object({
         path: ["capabilities"],
       });
     }
+  }
+
+  if (
+    manifest.capabilities.includes("http.private-network")
+    && !manifest.capabilities.includes("http.outbound")
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Capability 'http.outbound' is required when 'http.private-network' is declared",
+      path: ["capabilities"],
+    });
   }
 
   // environment drivers require environment.drivers.register

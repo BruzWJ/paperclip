@@ -28,7 +28,6 @@ export const pluginRunContexts = pgTable(
     capabilityConnectionId: uuid("capability_connection_id").notNull(),
     capabilityGeneration: integer("capability_generation").notNull(),
     runInterfaceToolCallId: uuid("run_interface_tool_call_id").notNull(),
-    companyToolSelectionId: uuid("company_tool_selection_id").notNull(),
     pluginInstallationId: uuid("plugin_installation_id")
       .notNull()
       .references(() => plugins.id, { onDelete: "restrict" }),
@@ -64,23 +63,16 @@ export const pluginRunContexts = pgTable(
         table.capabilityConnectionId,
         table.capabilityGeneration,
         table.runInterfaceToolCallId,
-        table.companyToolSelectionId,
         table.pluginInstallationId,
       ],
       foreignColumns: [
         runInterfaceToolCalls.capabilityConnectionId,
         runInterfaceToolCalls.capabilityGeneration,
         runInterfaceToolCalls.id,
-        runInterfaceToolCalls.companyToolSelectionId,
         runInterfaceToolCalls.pluginInstallationId,
       ],
       name: "plugin_run_contexts_exact_tool_call_fk",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.companyToolSelectionId],
-      foreignColumns: [agentCompanyToolSelections.id],
-      name: "plugin_run_contexts_tool_selection_fk",
-    }).onDelete("restrict"),
     unique("plugin_run_contexts_tool_call_uq").on(
       table.runInterfaceToolCallId,
     ),
@@ -88,8 +80,7 @@ export const pluginRunContexts = pgTable(
       table.capabilityConnectionId,
       table.capabilityGeneration,
     ),
-    index("plugin_run_contexts_selection_installation_idx").on(
-      table.companyToolSelectionId,
+    index("plugin_run_contexts_installation_idx").on(
       table.pluginInstallationId,
     ),
   ],
@@ -237,8 +228,10 @@ export const runInterfaceToolCalls = pgTable(
     ),
     check(
       "run_interface_tool_calls_plugin_binding_check",
-      sql`${table.pluginInstallationId} is null
-        or ${table.companyToolSelectionId} is not null`,
+      sql`not (
+        ${table.pluginInstallationId} is not null
+        and ${table.companyToolSelectionId} is not null
+      )`,
     ),
     foreignKey({
       columns: [
@@ -279,7 +272,6 @@ export const runInterfaceToolCalls = pgTable(
       table.capabilityConnectionId,
       table.capabilityGeneration,
       table.id,
-      table.companyToolSelectionId,
       table.pluginInstallationId,
     ),
     index("run_interface_tool_calls_capability_status_idx").on(

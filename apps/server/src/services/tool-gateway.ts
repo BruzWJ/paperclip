@@ -8,7 +8,6 @@ import {
   approvals,
   authUsers,
   issues,
-  plugins,
   projects,
   runInterfaceToolCalls,
   toolActionRequests,
@@ -49,7 +48,6 @@ import type {
   ToolMcpGatewayWithTokens,
   UpdateToolMcpGateway,
 } from "@paperclipai/shared";
-import type { AgentToolDescriptor, PluginToolDispatcher } from "./plugin-tool-dispatcher.js";
 import type {
   PromptCapabilityBinding,
   PromptCapabilityCallIdentity,
@@ -113,8 +111,7 @@ const TOOL_APPROVAL_DESCRIPTION_SUFFIX =
 
 export type ToolGatewayProviderType =
   | "mcp_remote_http"
-  | "mcp_local_stdio"
-  | "paperclip_plugin";
+  | "mcp_local_stdio";
 
 export interface ConnectedMcpGatewayMetadata {
   applicationId: string;
@@ -137,7 +134,11 @@ export interface ConnectedMcpGatewayMetadata {
   };
 }
 
-export interface ToolGatewayDescriptor extends AgentToolDescriptor {
+export interface ToolGatewayDescriptor {
+  name: string;
+  displayName: string;
+  description: string;
+  parametersSchema: Record<string, unknown>;
   providerType: ToolGatewayProviderType;
   risk: "read" | "write" | "destructive";
   applicationId?: string | null;
@@ -568,7 +569,6 @@ function buildHumanizedActionPreview(input: {
 export function createToolGatewayService(
   db: Db,
   options: {
-    pluginToolDispatcher?: PluginToolDispatcher;
     deploymentExposure?: DeploymentExposure;
     trustedLocalStdioRuntimeHost?: string | null;
     runtimeSupervisor?: ToolRuntimeSupervisorOptions;
@@ -586,7 +586,6 @@ export function createToolGatewayService(
     trustedLocalStdioRuntimeHost: options.trustedLocalStdioRuntimeHost,
     ...options.runtimeSupervisor,
   });
-  const pluginToolDispatcher = options.pluginToolDispatcher;
   const policyService = toolAccessPolicyService(db);
   const secrets = secretService(db);
   const protocolLimits = mcpGatewayProtocolLimits(options.mcpGatewayProtocolLimits);
@@ -732,7 +731,6 @@ export function createToolGatewayService(
         displayName: catalogEntry.title ?? catalogEntry.toolName,
         description: catalogEntry.description ?? `Connected MCP tool ${catalogEntry.toolName} from ${connection.name}.`,
         parametersSchema: inputSchema,
-        pluginId: `mcp:${applicationKey ?? application.id}`,
         providerType: connection.transport === "local_stdio" ? "mcp_local_stdio" : "mcp_remote_http",
         risk,
         applicationId: application.id,
@@ -765,7 +763,6 @@ export function createToolGatewayService(
         catalogEntry: toolCatalogEntries,
         connection: toolConnections,
         application: toolApplications,
-        plugin: plugins,
       })
       .from(agentCompanyToolSelections)
       .innerJoin(
@@ -825,7 +822,6 @@ export function createToolGatewayService(
           eq(toolApplications.id, toolConnections.applicationId),
         ),
       )
-      .leftJoin(plugins, eq(plugins.id, toolApplications.pluginId))
       .where(
         and(
           eq(
@@ -870,10 +866,6 @@ export function createToolGatewayService(
       );
     }
 
-    const isPlugin =
-      row.application.type === "paperclip_plugin" &&
-      row.application.pluginId !== null &&
-      row.plugin?.status === "ready";
     const isRemote =
       row.application.type === "mcp_http" &&
       row.connection.transport === "mcp_remote" &&
@@ -884,31 +876,21 @@ export function createToolGatewayService(
       row.connection.transport === "local_stdio" &&
       (row.connection.healthStatus === "ok" ||
         row.connection.healthStatus === "healthy");
-    if (!isPlugin && !isRemote && !isLocal) {
+    if (!isRemote && !isLocal) {
       throw new ToolGatewayHttpError(
         404,
         "Selected company tool is unavailable",
         "tool_not_found",
       );
     }
-    if (isPlugin && !pluginToolDispatcher) {
-      throw new ToolGatewayHttpError(
-        503,
-        "Selected company tool runtime is unavailable",
-        "tool_runtime_unavailable",
-      );
-    }
-
     const applicationKey = row.application.applicationKey ?? null;
     const inputSchema = row.catalogEntry.inputSchema ?? {};
     const outputSchema = row.catalogEntry.outputSchema ?? null;
     const annotations = row.catalogEntry.annotations ?? {};
     const risk = riskFromCatalogEntry(row.catalogEntry);
-    const providerType: ToolGatewayProviderType = isPlugin
-      ? "paperclip_plugin"
-      : isLocal
-        ? "mcp_local_stdio"
-        : "mcp_remote_http";
+    const providerType: ToolGatewayProviderType = isLocal
+      ? "mcp_local_stdio"
+      : "mcp_remote_http";
     return {
       name: row.catalogEntry.toolName,
       displayName:
@@ -917,9 +899,6 @@ export function createToolGatewayService(
         row.catalogEntry.description ??
         `Company tool ${row.catalogEntry.toolName} from ${row.connection.name}.`,
       parametersSchema: inputSchema,
-      pluginId: isPlugin
-        ? row.application.pluginId!
-        : `mcp:${applicationKey ?? row.application.id}`,
       providerType,
       risk,
       applicationId: row.application.id,
@@ -3920,7 +3899,6 @@ export function createToolGatewayService(
     parameters: unknown;
     callIdentity: PromptCapabilityCallIdentity;
     runInterfaceToolCallId: string;
-    mintPluginRunContext(): Promise<string>;
   }) {
     const issue = await db
       .select({
@@ -4103,28 +4081,15 @@ export function createToolGatewayService(
                 executionTimeoutMs,
               )
             : null;
-      const rawResult =
-        selectedTool.providerType === "paperclip_plugin"
-          ? (
-              await pluginToolDispatcher!.executeTool(
-                selectedTool.name,
-                input.parameters ?? {},
-                {
-                  companyId: input.capability.companyId,
-                  runContextHandle:
-                    await input.mintPluginRunContext(),
-                },
-              )
-            ).result
-          : connectedExecution
-            ? connectedExecution.result
-            : (() => {
-                throw new ToolGatewayHttpError(
-                  404,
-                  "Selected company tool runtime is unavailable",
-                  "tool_runtime_unavailable",
-                );
-              })();
+      const rawResult = connectedExecution
+        ? connectedExecution.result
+        : (() => {
+            throw new ToolGatewayHttpError(
+              404,
+              "Selected company tool runtime is unavailable",
+              "tool_runtime_unavailable",
+            );
+          })();
       const result = validateToolContent({
         value: rawResult,
         direction: "result",
@@ -5110,13 +5075,6 @@ export function createToolGatewayService(
 
       try {
         const executionTimeoutMs = timeoutMs(input.timeoutMs);
-        if (tool.providerType === "paperclip_plugin") {
-          throw new ToolGatewayHttpError(
-            403,
-            "Plugin company tools execute only through an active prompt capability",
-            "prompt_capability_required",
-          );
-        }
         const connectedMcpExecution =
           tool.providerType === "mcp_remote_http"
             ? await executeRemoteHttpTool(session, tool, effectiveParameters, executionTimeoutMs, invocationId, input.callerHeaders)

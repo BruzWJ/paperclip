@@ -29,6 +29,7 @@ function compileInput(
     configureTargets: [],
     agentHireCompanyToolOptions: [],
     selectedCompanyTools: [],
+    pluginTools: [],
     ...overrides,
   };
 }
@@ -616,6 +617,71 @@ describe("runtime interface compiler", () => {
         }),
       ),
     ).toThrow(/collides/);
+  });
+
+  it("compiles administrator-installed plugin tools with immutable installation identity", () => {
+    const descriptor = compileRuntimeInterface(
+      compileInput({
+        pluginTools: [{
+          installationId: "plugin-installation-1",
+          name: "paperclip.agentmemory:read_issue_agent_memory",
+          title: "Read issue agent memory",
+          description: "Recall issue memory",
+          inputSchema: { type: "object" },
+        }],
+      }),
+    ).byName.get("paperclip.agentmemory:read_issue_agent_memory");
+
+    expect(descriptor).toMatchObject({
+      source: "plugin",
+      pluginInstallationId: "plugin-installation-1",
+    });
+    expect(descriptor?.validateArguments?.({})).toEqual({});
+  });
+
+  it("validates direct plugin arguments against the manifest schema", () => {
+    const descriptor = compileRuntimeInterface(compileInput({
+      pluginTools: [{
+        installationId: "plugin-installation-1",
+        name: "acme.memory:recall",
+        title: "Recall",
+        description: "Recall memory",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          additionalProperties: false,
+          properties: { query: { type: "string", minLength: 1 } },
+        },
+      }],
+    })).byName.get("acme.memory:recall");
+
+    expect(() => descriptor?.validateArguments?.({ query: "" }))
+      .toThrow(RuntimeDescriptorArgumentsInvalid);
+    expect(() => descriptor?.validateArguments?.({ query: "memory", extra: true }))
+      .toThrow(RuntimeDescriptorArgumentsInvalid);
+    expect(descriptor?.validateArguments?.({ query: "memory" }))
+      .toEqual({ query: "memory" });
+  });
+
+  it("rejects duplicate tool names across plugin installations", () => {
+    expect(() => compileRuntimeInterface(compileInput({
+      pluginTools: [
+        {
+          installationId: "plugin-installation-1",
+          name: "paperclip.example:lookup",
+          title: "Lookup",
+          description: "Lookup",
+          inputSchema: { type: "object" },
+        },
+        {
+          installationId: "plugin-installation-2",
+          name: "paperclip.example:lookup",
+          title: "Lookup",
+          description: "Lookup",
+          inputSchema: { type: "object" },
+        },
+      ],
+    }))).toThrow(/Duplicate compiled tool name/);
   });
 
   it("re-resolves narrowing and widening before every list and call", async () => {

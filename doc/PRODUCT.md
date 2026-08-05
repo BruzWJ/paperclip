@@ -26,8 +26,8 @@ limited to:
 - its `reportsTo` relationship;
 - a free-text capabilities description used in the owner catalog.
 
-An agent has no Paperclip role, soul, instruction fallback, or cross-issue
-memory. Paperclip retains control-plane configuration such as adapter binding,
+An agent has no core Paperclip role, soul, instruction fallback, or built-in
+cross-issue memory. Paperclip retains control-plane configuration such as adapter binding,
 provider-native target declaration, context/action/mention dials, lifecycle
 state, budget, and telemetry, but that bookkeeping is never injected into
 provider context.
@@ -35,6 +35,12 @@ provider context.
 Provider-native configuration and storage are operator-owned and opaque.
 Paperclip does not inspect, seed, copy, merge, or delete provider homes,
 authentication, hidden state, or memory.
+
+An administrator may install a trusted infrastructure plugin that exports
+canonical redacted records to an external memory service and contributes
+policy-governed recall tools. That remains an optional plugin-owned edge:
+Paperclip core does not store the memory, inject memory into prompts, or give
+the plugin a provider session.
 
 ### Issues Are the Only Invocation Boundary
 
@@ -101,6 +107,9 @@ Paperclip actions and company tools are separate:
   from the current execution's authority.
 - Company tools are concrete enabled catalog entries explicitly selected for an
   agent and further reduced by safety and approval policy.
+- Plugin tools are a separate, administrator-installed runtime source. Every
+  declared tool is available to agents in enabled companies without company-tool
+  catalog projection or per-agent memory configuration.
 - Company skills are explicitly selected workspace content. They grant no
   authority and are not announced through synthesized prompt prose.
 
@@ -110,8 +119,9 @@ surface, or generic REST instruction bundle is injected into a run.
 ## Product Principles
 
 1. **Company is the unit of organization.** Everything is company-scoped.
-2. **Agent identity is configuration, not memory.** Paperclip carries no
-   per-agent model-visible history between issues.
+2. **Agent identity is configuration, not memory.** Paperclip core carries no
+   per-agent model-visible history between issues; optional trusted plugins may
+   expose externally stored recall only through explicit tools.
 3. **All execution is issue-backed.** Durable authority and source records
    precede every provider invocation.
 4. **All work explains why it exists.** Parent/sub-issue and project/goal links

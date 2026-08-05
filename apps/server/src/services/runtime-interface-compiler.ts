@@ -21,6 +21,7 @@ import {
 import type {
   RetrievalIssueFilters,
 } from "./context-retrieval.js";
+import { validateJsonSchemaValue } from "./plugin-config-validator.js";
 
 export const PAPERCLIP_RETRIEVAL_TOOL_NAMES = [
   "list_company_issues",
@@ -40,7 +41,7 @@ export const PAPERCLIP_RUNTIME_TOOL_NAMES = [
 export type PaperclipRuntimeToolName =
   (typeof PAPERCLIP_RUNTIME_TOOL_NAMES)[number];
 
-export type RuntimeToolSource = "paperclip" | "company";
+export type RuntimeToolSource = "paperclip" | "company" | "plugin";
 
 export interface JsonSchema {
   type?: string;
@@ -68,7 +69,7 @@ export interface CompiledRunToolDescriptor {
   inputSchema: JsonSchema;
   source: RuntimeToolSource;
   selectedCompanyToolSelectionId?: string;
-  /** Server-only immutable installation identity for a selected plugin tool. */
+  /** Server-only immutable installation identity for a direct plugin tool. */
   pluginInstallationId?: string;
   /**
    * Server-only validator paired with the serialized JSON Schema. It is never
@@ -113,7 +114,15 @@ export interface SelectedCompanyTool {
   title: string;
   description: string;
   inputSchema: JsonSchema;
-  pluginInstallationId: string | null;
+}
+
+/** A tool declared by a ready administrator-installed plugin. */
+export interface RuntimePluginTool {
+  installationId: string;
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: JsonSchema;
 }
 
 export interface RuntimeInterfaceCompileInput {
@@ -131,6 +140,8 @@ export interface RuntimeInterfaceCompileInput {
   configureTargets: readonly RuntimeAgentConfigureTarget[];
   agentHireCompanyToolOptions: readonly RuntimeAgentCompanyToolOption[];
   selectedCompanyTools: readonly SelectedCompanyTool[];
+  /** Ready plugin tools are host-managed and available to every agent. */
+  pluginTools: readonly RuntimePluginTool[];
 }
 
 export interface CompiledRuntimeInterface {
@@ -977,9 +988,33 @@ function companyDescriptors(
     inputSchema: tool.inputSchema,
     source: "company",
     selectedCompanyToolSelectionId: tool.selectionId,
-    ...(tool.pluginInstallationId
-      ? { pluginInstallationId: tool.pluginInstallationId }
-      : {}),
+  }));
+}
+
+function pluginDescriptors(
+  tools: readonly RuntimePluginTool[],
+): CompiledRunToolDescriptor[] {
+  return tools.map((tool) => ({
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    source: "plugin",
+    pluginInstallationId: tool.installationId,
+    validateArguments(argumentsValue) {
+      const validation = validateJsonSchemaValue(
+        argumentsValue,
+        tool.inputSchema,
+      );
+      if (!validation.valid) {
+        throw new RuntimeDescriptorArgumentsInvalid(
+          `Invalid arguments for ${tool.name}: ${validation.errors
+            ?.map((error) => `${error.field} ${error.message}`)
+            .join("; ") ?? "schema validation failed"}`,
+        );
+      }
+      return argumentsValue;
+    },
   }));
 }
 
@@ -1008,6 +1043,7 @@ export function compileRuntimeInterface(
   const descriptors = [
     ...buildRuntimeRetrievalAbi(input.contextDial).descriptors,
     ...actionDescriptors(input),
+    ...pluginDescriptors(input.pluginTools),
     ...companyDescriptors(input.selectedCompanyTools),
   ];
   const byName = new Map<string, CompiledRunToolDescriptor>();
@@ -1018,13 +1054,13 @@ export function compileRuntimeInterface(
       );
     }
     if (
-      descriptor.source === "company" &&
+      descriptor.source !== "paperclip" &&
       (PAPERCLIP_RUNTIME_TOOL_NAMES as readonly string[]).includes(
         descriptor.name,
       )
     ) {
       throw new RuntimeInterfaceConflict(
-        `Selected company tool collides with Paperclip tool: ${descriptor.name}`,
+        `External tool collides with Paperclip tool: ${descriptor.name}`,
       );
     }
     byName.set(descriptor.name, descriptor);

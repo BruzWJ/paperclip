@@ -100,7 +100,7 @@ runWorker(plugin, import.meta.url);
 | `onValidateConfig?(config)` | Optional. Return `{ ok, warnings?, errors? }` for settings UI / Test Connection. |
 | `onWebhook?(input)` | Optional. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`; required if webhooks declared. |
 
-**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `launchers`, `http`, `secrets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
+**Context (`ctx`) in setup:** `config`, `localFolders`, `events`, `jobs`, `launchers`, `http`, `runtime`, `secrets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `access`, `authorization`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
 
 **Agent work:** create an ordinary issue through `ctx.issues.create` with an
 explicit eligible owner and a registered creator callback. Plugins cannot
@@ -109,6 +109,34 @@ invoke an agent or open a conversational agent session directly.
 **Jobs:** Declare in `manifest.jobs` with `jobKey`, `displayName`, `schedule` (cron). Register handler with `ctx.jobs.register(jobKey, fn)`. **Webhooks:** Declare in `manifest.webhooks` with `endpointKey`; handle in `onWebhook(input)`. **State:** `ctx.state.get/set/delete(scopeKey)`; scope kinds: `instance`, `company`, `project`, `project_workspace`, `agent`, `issue`, `goal`, `run`.
 
 **Trusted local folders:** Declare `manifest.localFolders[]` and the `local.folders` capability when a plugin needs an operator-configured company-scoped folder. Use `ctx.localFolders.configure()`, `status()`, `readText()`, and `writeTextAtomic()` instead of resolving arbitrary filesystem paths yourself. The host validates absolute roots, read/write access, required relative folders/files, traversal attempts, symlink escapes, and writes through temp-file-plus-rename atomic replacement.
+
+### Privileged infrastructure plugins
+
+The following contracts are intentionally generic and high-trust. Their
+capabilities are visible at install/upgrade time and should be approved only
+for administrator-controlled plugins:
+
+- Declare `agent.tools.register` to expose every manifest-declared tool directly
+  to all agents in companies where the ready plugin is enabled. Installation is
+  the administrator grant; no company-tool catalog projection or per-agent
+  selection is involved. Calls still use the prompt-capability gateway, schema
+  validation, immutable installation binding, and audit trail.
+- Declare `runtime.context.read` to call `runContext.resolve()` and
+  `runContext.issueReach(issueId)` inside a tool handler. The run-context
+  handle is opaque, host-issued, short-lived, and accepted only for that exact
+  invocation.
+- Declare `runtime.records.read` to read canonical provider-safe records with
+  `ctx.runtime.records.readRun(...)` and
+  `ctx.runtime.records.readIssueComments(...)`. Requests are fenced to the
+  active invocation's company by the host.
+- Declare `http.private-network` together with `http.outbound` when the worker
+  must call an operator-hosted loopback or private-network service. The host
+  retains protocol validation, DNS resolution pinning, timeouts, and response
+  limits; the capability changes only the private-address rejection.
+
+These are worker capabilities, not new plugin-owned REST endpoints. A plugin
+cannot convert an opaque run-context handle into broader authority or use a
+company identifier from one invocation in another.
 
 ## Events
 
@@ -355,9 +383,12 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `webhooks.receive` |
 | | `api.routes.register` |
 | | `http.outbound` |
+| | `http.private-network` |
 | | `secrets.read-ref` |
 | | `environment.drivers.register` |
 | | `local.folders` |
+| | `runtime.context.read` |
+| | `runtime.records.read` |
 | **Agent** | `agent.tools.register` |
 | | `access.members.write` |
 | | `access.invites.write` |

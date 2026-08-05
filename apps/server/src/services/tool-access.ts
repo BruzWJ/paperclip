@@ -22,7 +22,6 @@ import {
   authUsers,
   companySecrets,
   issues,
-  plugins,
   projects,
   routines,
   toolAccessAuditEvents,
@@ -576,7 +575,6 @@ function toApplication(row: typeof toolApplications.$inferSelect): ToolApplicati
     description: row.description,
     type: row.type,
     status: row.status,
-    pluginId: row.pluginId,
     ownerAgentId: row.ownerAgentId,
     ownerUserId: row.ownerUserId,
     metadata: row.metadata ?? null,
@@ -1779,22 +1777,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     if (!agentId) return;
     const [row] = await db.select({ id: agents.id }).from(agents).where(and(eq(agents.id, agentId), eq(agents.companyId, companyId)));
     if (!row) throw unprocessable(`${label} must belong to the same company`);
-  }
-
-  async function assertOptionalPlugin(pluginId: string | null | undefined) {
-    if (!pluginId) return;
-    const [row] = await db
-      .select({ id: plugins.id })
-      .from(plugins)
-      .where(
-        and(
-          eq(plugins.id, pluginId),
-          eq(plugins.status, "ready"),
-        ),
-      );
-    if (!row) {
-      throw unprocessable("Ready tool application plugin was not found");
-    }
   }
 
   async function assertSecretRefs(companyId: string, refs: Array<{
@@ -4994,7 +4976,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     },
 
     createApplication: async (companyId: string, input: CreateToolApplication): Promise<ToolApplication> => {
-      await assertOptionalPlugin(input.pluginId);
       await assertOptionalAgent(companyId, input.ownerAgentId, "Tool application owner agent");
       const [row] = await db.insert(toolApplications).values({
         companyId,
@@ -5003,7 +4984,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
         description: input.description ?? null,
         type: input.type,
         status: input.status ?? "active",
-        pluginId: input.pluginId ?? null,
         ownerAgentId: input.ownerAgentId ?? null,
         ownerUserId: input.ownerUserId ?? null,
         metadata: input.metadata ?? {},
@@ -5023,7 +5003,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
     updateApplication: async (applicationId: string, input: UpdateToolApplication): Promise<ToolApplication> => {
       const [existing] = await db.select().from(toolApplications).where(eq(toolApplications.id, applicationId));
       if (!existing) throw notFound("Tool application not found");
-      await assertOptionalPlugin(input.pluginId);
       await assertOptionalAgent(existing.companyId, input.ownerAgentId, "Tool application owner agent");
       if (input.name && input.name !== existing.name) {
         const [duplicate] = await db
@@ -5045,7 +5024,6 @@ export function toolAccessService(db: Db, options: ToolAccessServiceOptions = {}
           name: input.name ?? existing.name,
           description: input.description ?? existing.description,
           status: input.status ?? existing.status,
-          pluginId: input.pluginId ?? existing.pluginId,
           ownerAgentId: input.ownerAgentId ?? existing.ownerAgentId,
           ownerUserId: input.ownerUserId ?? existing.ownerUserId,
           metadata: input.metadata ?? existing.metadata,

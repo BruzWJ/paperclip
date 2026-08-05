@@ -214,7 +214,8 @@ Plugins that need local tooling (file browsing, git, terminals, process tracking
 
 Plugin installation is global and operator-driven.
 
-There is no per-company install table and no per-company enable/disable switch.
+There is no per-company install table. A company setting may explicitly disable
+an installed plugin for that company; otherwise a ready installation is enabled.
 
 If a plugin needs business-object-specific mappings, those are stored as plugin configuration or plugin state.
 
@@ -272,8 +273,7 @@ For the current implementation, this install flow should be read as a single-hos
 Load order must be deterministic.
 
 1. core platform modules
-2. built-in first-party plugins
-3. installed plugins sorted by:
+2. administrator-installed plugins sorted by:
    - explicit operator-configured order if present
    - otherwise manifest `id`
 
@@ -417,15 +417,27 @@ Tool names are automatically namespaced by plugin ID at runtime (e.g. `linear:se
 
 ### 11.2 Tool Execution
 
-When an agent invokes a plugin tool during a run, the host routes the call to the plugin worker via a `executeTool` RPC method:
+When an agent invokes a plugin tool during a run, the host routes the call to the plugin worker via an `executeTool` RPC method:
 
-- `executeTool(input)` — receives tool name, parsed parameters, and run context (agent ID, run ID, company ID, project ID)
+- `executeTool(input)` receives the tool name, parsed parameters, and an opaque
+  host-issued run-context handle. A plugin declaring `runtime.context.read` may
+  resolve canonical identity for that exact live invocation or ask the host to
+  evaluate issue reach; the worker cannot manufacture or reuse the handle.
 
 The worker executes the tool logic and returns a typed result. The host enforces capability gates — a plugin must declare `agent.tools.register` to contribute tools, and individual tools may require additional capabilities (e.g. `http.outbound` for tools that call external APIs).
 
 ### 11.3 Tool Availability
 
-By default, plugin tools are available to all agents. The operator may restrict tool availability per agent or per project through plugin configuration.
+Installing a plugin is an administrator trust decision. Every tool declared by
+a ready plugin with `agent.tools.register` is available to every agent in a
+company unless that company explicitly disables the plugin. Plugin tools are a
+direct runtime source; they are not copied into the company-tool catalog and do
+not require per-agent selection, profiles, approval rules, or reconciliation.
+
+The runtime compiler and call path revalidate the exact installation ID,
+current manifest declaration, worker registration, and company enablement.
+Agents still use ordinary Paperclip list/read tools to discover issue IDs, and
+a plugin's capability-gated host reads enforce company and context reach.
 
 Plugin tools appear in the agent's tool list alongside core tools but are visually distinguished in the UI as plugin-contributed.
 
@@ -680,10 +692,7 @@ Plugins that perform durable work should declare managed Paperclip resources rat
 - `routines` + `ctx.routines.managed.*` for schedule/webhook/manual execution with issue trails (`routines.managed` required)
 - `skills` + `ctx.skills.managed.*` for reusable agent capabilities (`skills.managed` required)
 
-The LLM Wiki plugin is the current reference for this pattern: it declares managed
-agents, projects, routines, and skills in manifest, reconciles them per company,
-and uses managed routines for periodic wiki maintenance and ingest operations.
-Content-oriented plugins should follow the same model instead of running
+Content-oriented plugins should follow this model instead of running
 unmanaged background loops: make the LLM-facing worker an operator-visible
 managed agent, attach reusable prompt/tool guidance as managed skills, keep
 operation issues in a managed project, and drive recurring work through managed
@@ -833,8 +842,11 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `webhooks.receive`
 - `local.folders`
 - `http.outbound`
+- `http.private-network`
 - `secrets.read-ref`
 - `environment.drivers.register`
+- `runtime.context.read`
+- `runtime.records.read`
 
 ### Agent Tools
 

@@ -98,7 +98,6 @@ export interface CreateToolApplicationInput {
   name: string;
   description?: string | null;
   type: ToolApplication["type"];
-  pluginId?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 

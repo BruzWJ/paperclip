@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import type { PromptCapabilityCompileScope } from "../services/prompt-capability-gateway.ts";
 import {
   buildRuntimeInterfaceCompileInput,
+  readyPluginTools,
   type RuntimeInterfaceCompilerSnapshot,
 } from "../services/runtime-interface-compiler-db.ts";
 import { compileRuntimeInterface } from "../services/runtime-interface-compiler.ts";
@@ -218,6 +220,7 @@ function snapshot(
         catalogVersionHash: "catalog-v1",
       },
     ],
+    pluginTools: [],
     selectedTools: [
       {
         id: "selection",
@@ -239,8 +242,6 @@ function snapshot(
         connectionStatus: "active",
         connectionEnabled: true,
         applicationStatus: "active",
-        pluginInstallationId: "plugin",
-        pluginStatus: "ready",
       },
       {
         id: "stale-selection",
@@ -262,8 +263,6 @@ function snapshot(
         connectionStatus: "active",
         connectionEnabled: true,
         applicationStatus: "active",
-        pluginInstallationId: null,
-        pluginStatus: null,
       },
     ],
     ...overrides,
@@ -271,6 +270,48 @@ function snapshot(
 }
 
 describe("Postgres runtime-interface compile snapshot", () => {
+  it("admits only enabled tools from an exact agent-tool manifest", () => {
+    const manifest: PaperclipPluginManifestV1 = {
+      id: "acme.memory",
+      apiVersion: 1,
+      version: "1.0.0",
+      displayName: "Memory",
+      description: "Memory tools",
+      author: "Acme",
+      categories: ["connector"],
+      capabilities: ["agent.tools.register"],
+      entrypoints: { worker: "./dist/worker.js" },
+      tools: [{
+        name: "recall",
+        displayName: "Recall",
+        description: "Recall memory",
+        parametersSchema: { type: "object" },
+      }],
+    };
+    const rows = [
+      { id: "enabled", pluginKey: "acme.memory", manifestJson: manifest },
+      { id: "disabled", pluginKey: "acme.memory", manifestJson: manifest },
+      {
+        id: "mismatched",
+        pluginKey: "acme.other",
+        manifestJson: manifest,
+      },
+      {
+        id: "missing-capability",
+        pluginKey: "acme.memory",
+        manifestJson: { ...manifest, capabilities: [] },
+      },
+    ];
+
+    expect(readyPluginTools(rows, new Set(["disabled"]))).toEqual([{
+      installationId: "enabled",
+      name: "acme.memory:recall",
+      title: "Recall",
+      description: "Recall memory",
+      inputSchema: { type: "object" },
+    }]);
+  });
+
   it("derives exact attenuated catalogs without identity or legacy defaults", () => {
     const compiled = buildRuntimeInterfaceCompileInput(snapshot());
 
