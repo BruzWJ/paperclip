@@ -197,14 +197,14 @@ function project(overrides: Partial<Project> = {}): Project {
 
 function pluginSlot(overrides: Record<string, unknown> = {}) {
   return {
-    id: "changes-tab",
+    id: "inspector-tab",
     type: "detailTab",
-    displayName: "Changes",
-    exportName: "ExecutionWorkspaceChangesTab",
+    displayName: "Inspector",
+    exportName: "ExecutionWorkspaceInspectorTab",
     entityTypes: ["execution_workspace"],
     pluginId: "plugin-1",
-    pluginKey: "paperclip.workspace-diff",
-    pluginDisplayName: "Workspace Changes",
+    pluginKey: "acme.execution-workspace-inspector",
+    pluginDisplayName: "Workspace Inspector",
     pluginVersion: "0.1.0",
     ...overrides,
   };
@@ -341,7 +341,7 @@ describe("ExecutionWorkspaceDetail plugin slots", () => {
   it("orders execution workspace plugin tabs against built-in tabs by slot order", async () => {
     mockPluginSlotState.slots = [
       pluginSlot({ id: "default-tab", displayName: "Default" }),
-      pluginSlot({ id: "changes-tab", displayName: "Changes", order: 25 }),
+      pluginSlot({ id: "inspector-tab", displayName: "Inspector", order: 25 }),
       pluginSlot({ id: "inspect-tab", displayName: "Inspect", order: 50 }),
     ];
 
@@ -351,7 +351,7 @@ describe("ExecutionWorkspaceDetail plugin slots", () => {
     expect(tabLabels).toEqual([
       "Tasks",
       "Services",
-      "Changes",
+      "Inspector",
       "Configuration",
       "Runtime logs",
       "Inspect",

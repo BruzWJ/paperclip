@@ -39,10 +39,9 @@ published documentation site. Reusable and publishable workspaces live under
 catalog packages, MCP fixtures, and the plugin packages. Turbo discovers these
 workspace roots through `pnpm-workspace.yaml`.
 
-Not every directory below `packages/plugins/` is a root workspace. The
-sandbox-provider implementations and the orchestration smoke fixture remain
-standalone packages, as recorded by the exclusions in `pnpm-workspace.yaml`;
-they keep their independent install and test workflows.
+The orchestration smoke fixture below `packages/plugins/examples/` remains a
+standalone package, as recorded by the exclusion in `pnpm-workspace.yaml`; it
+keeps an independent install and test workflow.
 
 The root `doc/` directory is not a duplicate documentation app. It holds
 repository-internal product contracts, engineering notes, operational runbooks,

@@ -222,7 +222,6 @@ vi.mock("../services/index.js", () => ({
   createRuntimeAgentConfigurationService: vi.fn(() => ({})),
   createRuntimeIssueActionPort: vi.fn((service) => service),
   feedbackService: feedbackServiceFactoryMock,
-  bootstrapExecutionPolicyFromEnv: vi.fn(async () => null),
   environmentCustomImageService: environmentCustomImagesServiceFactoryMock,
   instanceSettingsService: vi.fn(() => ({
     getGeneral: vi.fn(async () => ({

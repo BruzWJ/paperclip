@@ -745,12 +745,12 @@ pnpm paperclipai project-workspace runtime-command <project-id> <workspace-id> r
 
 ## Plugin Commands
 
-Existing plugin lifecycle commands remain available: `plugin init`, `list`, `install`, `uninstall`, `enable`, `disable`, `inspect`, and `examples`.
+Plugin lifecycle commands include `plugin init`, `list`, `install`, `uninstall`,
+`enable`, `disable`, and `inspect`. Paperclip does not bundle a plugin catalog;
+administrators install an explicit local path or npm package.
 
 ```sh
 pnpm paperclipai plugin ui-contributions
-pnpm paperclipai plugin tools
-pnpm paperclipai plugin tool:execute --payload-json '{...}'
 pnpm paperclipai plugin health <plugin-id>
 pnpm paperclipai plugin logs <plugin-id>
 pnpm paperclipai plugin upgrade <plugin-id>

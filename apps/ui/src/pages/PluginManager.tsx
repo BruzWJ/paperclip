@@ -1,6 +1,6 @@
 /**
- * @fileoverview Plugin Manager page — admin UI for discovering,
- * installing, enabling/disabling, and uninstalling plugins.
+ * @fileoverview Plugin Manager page — admin UI for installing and managing
+ * explicitly installed plugins.
  *
  * @see PLUGIN_SPEC.md §9 — Plugin Marketplace / Manager
  */
@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PluginRecord } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
-import { AlertTriangle, FlaskConical, Plus, Power, Puzzle, Settings, Trash } from "lucide-react";
+import { AlertTriangle, Plus, Power, Puzzle, Settings, Trash } from "lucide-react";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { pluginsApi } from "@/api/plugins";
@@ -41,31 +41,6 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
 
 function getPluginErrorSummary(plugin: PluginRecord): string {
   return firstNonEmptyLine(plugin.lastError) ?? "Plugin entered an error state without a stored error message.";
-}
-
-function isExperimentalPluginIdentity(input: {
-  packageName?: string | null;
-  packagePath?: string | null;
-  manifestJson?: PluginRecord["manifestJson"] | null;
-  bundledExperimental?: boolean;
-}) {
-  if (input.bundledExperimental) return true;
-
-  const packageName = input.packageName ?? "";
-  const packagePath = input.packagePath ?? "";
-  if (packageName.includes("sandbox") || packagePath.includes("sandbox")) return true;
-  return input.manifestJson?.environmentDrivers?.some((driver) => driver.kind === "sandbox_provider") === true;
-}
-
-function ExperimentalBadge() {
-  return (
-    <Badge
-      variant="outline"
-      className="border-amber-500/30 bg-amber-500/10 text-amber-700 hover:bg-amber-500/10 dark:text-amber-200"
-    >
-      Experimental
-    </Badge>
-  );
 }
 
 /**
@@ -111,14 +86,8 @@ export function PluginManager() {
     queryFn: () => pluginsApi.list(),
   });
 
-  const bundledQuery = useQuery({
-    queryKey: queryKeys.plugins.examples,
-    queryFn: () => pluginsApi.listBundled(),
-  });
-
   const invalidatePluginQueries = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.plugins.all });
-    queryClient.invalidateQueries({ queryKey: queryKeys.plugins.examples });
     queryClient.invalidateQueries({ queryKey: queryKeys.plugins.uiContributions });
   };
 
@@ -170,14 +139,6 @@ export function PluginManager() {
   });
 
   const installedPlugins = plugins ?? [];
-  const bundledPlugins = bundledQuery.data ?? [];
-  const installedByPackageName = new Map(installedPlugins.map((plugin) => [plugin.packageName, plugin]));
-  const bundledByPackageName = new Map(bundledPlugins.map((plugin) => [plugin.packageName, plugin]));
-  // Scope the in-section banner to bundled (local-path) installs so an npm-dialog
-  // install failure does not surface its error in the bundled-plugins section.
-  const installErrorMessage = installMutation.variables?.isLocalPath
-    ? installMutation.error?.message ?? null
-    : null;
   const errorSummaryByPluginId = useMemo(
     () =>
       new Map(
@@ -259,111 +220,6 @@ export function PluginManager() {
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
-          <FlaskConical className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-base font-semibold">Available Plugins</h2>
-          <Badge variant="outline">Bundled</Badge>
-        </div>
-
-        {installErrorMessage && (
-          <div className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-4 py-3 text-sm text-destructive whitespace-pre-wrap break-words" role="alert">
-            {installErrorMessage}
-          </div>
-        )}
-
-        {bundledQuery.isLoading ? (
-          <div className="text-sm text-muted-foreground" role="status">Loading bundled plugins...</div>
-        ) : bundledQuery.error ? (
-          <div className="text-sm text-destructive" role="alert">Failed to load bundled plugins.</div>
-        ) : bundledPlugins.length === 0 ? (
-          <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
-            No bundled plugins were found in this checkout.
-          </div>
-        ) : (
-          <Card className="block py-0">
-          <ul className="divide-y">
-            {bundledPlugins.map((bundledPlugin) => {
-              const installedPlugin = installedByPackageName.get(bundledPlugin.packageName);
-              const installPending =
-                installMutation.isPending &&
-                installMutation.variables?.isLocalPath &&
-                installMutation.variables.packageName === bundledPlugin.localPath;
-
-              return (
-                <li key={bundledPlugin.packageName}>
-                  <div className="flex items-center gap-4 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{bundledPlugin.displayName}</span>
-                        <Badge variant="outline">
-                          {bundledPlugin.tag === "first-party" ? "First-party" : "Example"}
-                        </Badge>
-                        {isExperimentalPluginIdentity({
-                          packageName: bundledPlugin.packageName,
-                          packagePath: bundledPlugin.localPath,
-                          bundledExperimental: bundledPlugin.experimental,
-                        }) && <ExperimentalBadge />}
-                        {installedPlugin ? (
-                          <Badge
-                            variant={installedPlugin.status === "ready" ? "default" : "secondary"}
-                            className={installedPlugin.status === "ready" ? "bg-green-600 hover:bg-green-700" : ""}
-                          >
-                            {installedPlugin.status}
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">Not installed</Badge>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">{bundledPlugin.description}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{bundledPlugin.packageName}</p>
-                      {installPending && !bundledPlugin.hasBuiltEntrypoints && (
-                        <p className="mt-2 text-xs text-muted-foreground">Building plugin...</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {installedPlugin ? (
-                        <>
-                          {installedPlugin.status !== "ready" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={enableMutation.isPending}
-                              onClick={() => enableMutation.mutate(installedPlugin.id)}
-                            >
-                              Enable
-                            </Button>
-                          )}
-                          <Button variant="outline" size="sm" asChild>
-                            <Link to={`/company/settings/instance/plugins/${installedPlugin.id}`}>
-                              {installedPlugin.status === "ready" ? "Open Settings" : "Review"}
-                            </Link>
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          size="sm"
-                          disabled={installPending || installMutation.isPending}
-                          onClick={() =>
-                            installMutation.mutate({
-                              packageName: bundledPlugin.localPath,
-                              isLocalPath: true,
-                            })
-                          }
-                        >
-                          {installPending ? "Installing..." : "Install"}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-          </Card>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
           <Puzzle className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-base font-semibold">Installed Plugins</h2>
         </div>
@@ -393,19 +249,6 @@ export function PluginManager() {
                       >
                         {plugin.manifestJson.displayName ?? plugin.packageName}
                       </Link>
-                      {bundledByPackageName.has(plugin.packageName) && (
-                        <Badge variant="outline">
-                          {bundledByPackageName.get(plugin.packageName)?.tag === "first-party"
-                            ? "First-party"
-                            : "Example"}
-                        </Badge>
-                      )}
-                      {isExperimentalPluginIdentity({
-                        packageName: plugin.packageName,
-                        packagePath: plugin.packagePath,
-                        manifestJson: plugin.manifestJson,
-                        bundledExperimental: bundledByPackageName.get(plugin.packageName)?.experimental,
-                      }) && <ExperimentalBadge />}
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mt-0.5 truncate" title={plugin.packageName}>

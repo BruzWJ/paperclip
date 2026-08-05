@@ -47,8 +47,8 @@ paperclip/
 `apps/docs/` and `doc/` serve different audiences. `apps/docs/` is the
 published documentation application and contains `docs.json`; `doc/` contains
 repository-internal specifications, runbooks, design records, and plans.
-Some sandbox-provider and smoke-fixture directories under `packages/plugins/`
-are intentionally standalone rather than pnpm root workspaces.
+The orchestration smoke fixture under `packages/plugins/examples/` is
+intentionally standalone rather than a pnpm root workspace.
 
 ## Canonical Issue-Execution Flow
 

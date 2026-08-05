@@ -30,11 +30,8 @@ function runtimeServices() {
 }
 
 describe("pluginLoader runtime binding", () => {
-  it("keeps discovery loaders unbound until the runtime graph is explicitly bound", async () => {
-    const loader = pluginLoader({} as never, {
-      enableLocalFilesystem: false,
-      enableNpmDiscovery: false,
-    });
+  it("keeps the loader unbound until the runtime graph is explicitly bound", async () => {
+    const loader = pluginLoader({} as never);
 
     expect(loader.hasRuntimeServices()).toBe(false);
     await expect(loader.loadAll()).rejects.toThrow(
@@ -51,10 +48,7 @@ describe("pluginLoader runtime binding", () => {
   });
 
   it("rejects replacing the bound runtime graph", () => {
-    const loader = pluginLoader({} as never, {
-      enableLocalFilesystem: false,
-      enableNpmDiscovery: false,
-    });
+    const loader = pluginLoader({} as never);
     const first = runtimeServices();
     const replacement = runtimeServices();
 

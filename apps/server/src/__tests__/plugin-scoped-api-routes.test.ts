@@ -82,7 +82,6 @@ async function createApp(input: {
       mockLifecycle as never,
       undefined,
       undefined,
-      undefined,
       { workerManager } as never,
     ),
   );

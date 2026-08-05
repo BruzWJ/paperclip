@@ -74,8 +74,6 @@ describe("routine and plugin parity commands", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["plugin", "ui-contributions"]);
-    await run(["plugin", "tools"]);
-    await run(["plugin", "tool:execute", "--payload-json", "{}"]);
     await run(["plugin", "health", "plug"]);
     await run(["plugin", "logs", "plug"]);
     await run(["plugin", "upgrade", "plug"]);
@@ -99,8 +97,6 @@ describe("routine and plugin parity commands", () => {
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", "http://localhost:3100/api/plugins/ui-contributions"],
-      ["GET", "http://localhost:3100/api/plugins/tools"],
-      ["POST", "http://localhost:3100/api/plugins/tools/execute"],
       ["GET", "http://localhost:3100/api/plugins/plug/health"],
       ["GET", "http://localhost:3100/api/plugins/plug/logs"],
       ["POST", "http://localhost:3100/api/plugins/plug/upgrade"],

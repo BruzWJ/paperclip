@@ -335,7 +335,7 @@ describe("plugin tenant isolation", () => {
 
   it("purges only operational plugin data and retains identity and provenance tables", async () => {
     const harness = createMockDb({
-      select: [[{ namespaceName: "paperclip_plugin_fixture" }]],
+      select: [[{ namespaceName: "plugin_fixture" }]],
       execute: [undefined],
       delete: Array.from({ length: 8 }, () => []),
     });

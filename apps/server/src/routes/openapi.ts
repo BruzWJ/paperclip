@@ -4949,25 +4949,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/plugins/examples",
-  tags: ["plugins"],
-  summary: "List example plugins",
-  responses: { 200: r.ok() },
-});
-
-registry.registerPath({
-  method: "get",
   path: "/api/plugins/ui-contributions",
   tags: ["plugins"],
   summary: "List plugin UI contributions",
-  responses: { 200: r.ok(), 401: r.unauthorized },
-});
-
-registry.registerPath({
-  method: "get",
-  path: "/api/plugins/tools",
-  tags: ["plugins"],
-  summary: "List plugin tools",
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 

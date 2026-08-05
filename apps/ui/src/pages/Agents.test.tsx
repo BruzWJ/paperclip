@@ -202,7 +202,6 @@ function makeInstanceSettings({
         weeklyWeeks: 4,
         monthlyMonths: 1,
       },
-      executionMode: "any",
     },
     experimental: {
       enableEnvironments,

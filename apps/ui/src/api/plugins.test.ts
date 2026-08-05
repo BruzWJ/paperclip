@@ -31,33 +31,33 @@ describe("pluginsApi local folders", () => {
   });
 
   it("validates a candidate folder path without saving", async () => {
-    await pluginsApi.validateLocalFolder("plugin-1", "company-1", "wiki-root", {
-      path: "/tmp/wiki",
+    await pluginsApi.validateLocalFolder("plugin-1", "company-1", "content-root", {
+      path: "/tmp/content",
       access: "readWrite",
-      requiredFiles: ["WIKI.md"],
+      requiredFiles: ["CONTENT.md"],
     });
 
     expect(mockApi.post).toHaveBeenCalledWith(
-      "/plugins/plugin-1/companies/company-1/local-folders/wiki-root/validate",
+      "/plugins/plugin-1/companies/company-1/local-folders/content-root/validate",
       {
-        path: "/tmp/wiki",
+        path: "/tmp/content",
         access: "readWrite",
-        requiredFiles: ["WIKI.md"],
+        requiredFiles: ["CONTENT.md"],
       },
     );
   });
 
   it("saves through the local-folder PUT endpoint", async () => {
-    await pluginsApi.configureLocalFolder("plugin-1", "company-1", "wiki-root", {
-      path: "/tmp/wiki",
-      requiredDirectories: ["wiki"],
+    await pluginsApi.configureLocalFolder("plugin-1", "company-1", "content-root", {
+      path: "/tmp/content",
+      requiredDirectories: ["content"],
     });
 
     expect(mockApi.put).toHaveBeenCalledWith(
-      "/plugins/plugin-1/companies/company-1/local-folders/wiki-root",
+      "/plugins/plugin-1/companies/company-1/local-folders/content-root",
       {
-        path: "/tmp/wiki",
-        requiredDirectories: ["wiki"],
+        path: "/tmp/content",
+        requiredDirectories: ["content"],
       },
     );
   });

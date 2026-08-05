@@ -352,10 +352,7 @@ export function prepareStandaloneVitestProjects(
       }
     }
 
-    if (
-      project.path.startsWith("packages/plugins/sandbox-providers/") &&
-      project.path.split("/").length === 4
-    ) {
+    if (project.path.startsWith("packages/plugins/")) {
       linkSdk(projectRoot);
     }
   }

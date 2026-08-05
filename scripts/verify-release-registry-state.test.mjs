@@ -151,7 +151,7 @@ test("verifyPackageRegistryState tolerates a stale root versions map when dist-t
 test("verifyPackageRegistryState fails when canary latest is left in place by default", () => {
   const packageDocsByName = new Map([
     [
-      "@paperclipai/plugin-e2b",
+      "@example/plugin-sandbox",
       {
         "dist-tags": {
           latest: "2026.425.0-canary.5",
@@ -183,8 +183,8 @@ test("verifyPackageRegistryState fails when canary latest is left in place by de
 
   assert.deepEqual(
     verifyPackageRegistryState({
-      packageName: "@paperclipai/plugin-e2b",
-      packageDoc: packageDocsByName.get("@paperclipai/plugin-e2b"),
+      packageName: "@example/plugin-sandbox",
+      packageDoc: packageDocsByName.get("@example/plugin-sandbox"),
       packageDocsByName,
       channel: "canary",
       distTag: "canary",
@@ -192,8 +192,8 @@ test("verifyPackageRegistryState fails when canary latest is left in place by de
       allowCanaryLatest: false,
     }),
     [
-      "@paperclipai/plugin-e2b: latest dist-tag still resolves to canary 2026.425.0-canary.5; if that state is intentional, rerun the verification script directly with --allow-canary-latest",
-      "@paperclipai/plugin-e2b@2026.425.0-canary.5 via latest: dependencies requires @paperclipai/plugin-sdk@2026.425.0-canary.5, but npm does not expose that version",
+      "@example/plugin-sandbox: latest dist-tag still resolves to canary 2026.425.0-canary.5; if that state is intentional, rerun the verification script directly with --allow-canary-latest",
+      "@example/plugin-sandbox@2026.425.0-canary.5 via latest: dependencies requires @paperclipai/plugin-sdk@2026.425.0-canary.5, but npm does not expose that version",
     ],
   );
 });
@@ -201,7 +201,7 @@ test("verifyPackageRegistryState fails when canary latest is left in place by de
 test("verifyPackageRegistryProblems marks canary latest drift as non-retriable", () => {
   const packageDocsByName = new Map([
     [
-      "@paperclipai/plugin-e2b",
+      "@example/plugin-sandbox",
       {
         "dist-tags": {
           latest: "2026.425.0-canary.5",
@@ -215,8 +215,8 @@ test("verifyPackageRegistryProblems marks canary latest drift as non-retriable",
   ]);
 
   const problems = verifyPackageRegistryProblems({
-    packageName: "@paperclipai/plugin-e2b",
-    packageDoc: packageDocsByName.get("@paperclipai/plugin-e2b"),
+    packageName: "@example/plugin-sandbox",
+    packageDoc: packageDocsByName.get("@example/plugin-sandbox"),
     packageDocsByName,
     channel: "canary",
     distTag: "canary",

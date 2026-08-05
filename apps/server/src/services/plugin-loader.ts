@@ -1,31 +1,25 @@
 /**
- * PluginLoader — discovery, installation, and runtime activation of plugins.
+ * PluginLoader — explicit installation and runtime activation of plugins.
  *
  * This service is the entry point for the plugin system's I/O boundary:
  *
- * 1. **Discovery** — Scans the local plugin directory
- *    (`~/.paperclip/plugins/`) and `node_modules` for packages matching
- *    the `paperclip-plugin-*` naming convention. Aggregates results with
- *    path-based deduplication.
- *
- * 2. **Installation** — `installPlugin()` downloads from npm (or reads a
+ * 1. **Installation** — `installPlugin()` downloads from npm (or reads a
  *    local path), validates the manifest, checks capability consistency,
  *    and persists the install record.
  *
- * 3. **Runtime activation** — `activatePlugin()` wires up a loaded plugin
+ * 2. **Runtime activation** — `activatePlugin()` wires up a loaded plugin
  *    with all runtime services: resolves its entrypoint, builds
  *    capability-gated host handlers, spawns a worker process, syncs job
  *    declarations, registers event subscriptions, and discovers tools.
  *
- * 4. **Shutdown** — `shutdownAll()` gracefully stops all active workers
+ * 3. **Shutdown** — `shutdownAll()` gracefully stops all active workers
  *    and unregisters runtime hooks.
  *
- * @see PLUGIN_SPEC.md §8 — Plugin Discovery
  * @see PLUGIN_SPEC.md §10 — Package Contract
  * @see PLUGIN_SPEC.md §12 — Process Model
  */
 import { existsSync } from "node:fs";
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -52,27 +46,13 @@ import { pluginDatabaseService } from "./plugin-database.js";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const REPO_ROOT = path.resolve(__dirname, "../../../../");
-export const BUNDLED_LOCAL_PLUGIN_ROOT = path.join(REPO_ROOT, "packages", "plugins");
-export const STANDALONE_BUNDLED_PLUGIN_ROOT = path.join(BUNDLED_LOCAL_PLUGIN_ROOT, "sandbox-providers");
-export const LOCAL_PLUGIN_AUTOBUILD_TIMEOUT_MS = 120_000;
-const STANDALONE_BUNDLED_PLUGIN_SDK_PACKAGE = "@paperclipai/plugin-sdk";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /**
- * Naming convention for npm-published Paperclip plugins.
- * Packages matching this pattern are considered Paperclip plugins.
- *
- * @see PLUGIN_SPEC.md §10 — Package Contract
- */
-export const NPM_PLUGIN_PACKAGE_PREFIX = "paperclip-plugin-";
-
-/**
- * Default local plugin directory.  The loader scans this directory for
- * locally-installed plugin packages.
+ * Default managed directory for npm-installed plugin packages.
  *
  * @see PLUGIN_SPEC.md §8.1 — On-Disk Layout
  */
@@ -84,104 +64,43 @@ export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
 
 const DEV_TSX_LOADER_PATH = path.resolve(__dirname, "../../../../packages/cli/node_modules/tsx/dist/loader.mjs");
 
-/**
- * In-cluster Kubernetes service-discovery vars. A sandbox-provider plugin that
- * runs in-cluster (e.g. `@paperclipai/plugin-kubernetes` with inCluster=true)
- * builds its API client via `KubeConfig.loadFromCluster()`, which reads these
- * to construct the apiserver URL. Without them the worker fails with "Invalid
- * URL" at lease acquisition. The CA + token are files under
- * /var/run/secrets/kubernetes.io/serviceaccount and are readable directly.
- * Gated on environment-driver registration. Provider authentication is never
- * inherited from the Paperclip server process.
- */
-const K8S_IN_CLUSTER_ENV_PASSTHROUGH = [
-  "KUBERNETES_SERVICE_HOST",
-  "KUBERNETES_SERVICE_PORT",
-  "KUBERNETES_SERVICE_PORT_HTTPS",
-];
-
 export function buildPluginWorkerEnv(input: {
-  manifest: Pick<PaperclipPluginManifestV1, "capabilities">;
   instanceInfo: { deploymentExposure?: string | null };
-  processEnv?: NodeJS.ProcessEnv;
 }): Record<string, string> {
-  const processEnv = input.processEnv ?? process.env;
-  const env: Record<string, string> = {
+  return {
     PAPERCLIP_DEPLOYMENT_EXPOSURE: input.instanceInfo.deploymentExposure ?? "",
   };
-  const canRegisterEnvironmentDrivers = Array.isArray(input.manifest.capabilities)
-    && input.manifest.capabilities.includes("environment.drivers.register");
-  if (!canRegisterEnvironmentDrivers) return env;
-
-  for (const key of K8S_IN_CLUSTER_ENV_PASSTHROUGH) {
-    const value = processEnv[key];
-    if (value && value.trim().length > 0) {
-      env[key] = value;
-    }
-  }
-  return env;
 }
 
 // ---------------------------------------------------------------------------
-// Discovery result types
+// Resolved install package
 // ---------------------------------------------------------------------------
 
 /**
- * A plugin package found during discovery from any source.
+ * A requested plugin package after its manifest has been loaded and validated.
  */
-export interface DiscoveredPlugin {
+export interface ResolvedPluginPackage {
   /** Absolute path to the root of the npm package directory. */
   packagePath: string;
   /** The npm package name as declared in package.json. */
   packageName: string;
   /** Semver version from package.json. */
   version: string;
-  /** Source that found this package. */
-  source: PluginSource;
-  /** The parsed and validated manifest if available, null if discovery-only. */
-  manifest: PaperclipPluginManifestV1 | null;
+  /** How the explicit install request resolved this package. */
+  source: PluginInstallSource;
+  /** The parsed and validated manifest. */
+  manifest: PaperclipPluginManifestV1;
 }
 
-/**
- * Sources from which plugins can be discovered.
- *
- * @see PLUGIN_SPEC.md §8.1 — On-Disk Layout
- */
-export type PluginSource =
+export type PluginInstallSource =
   | "local-filesystem"  // ~/.paperclip/plugins/ local directory
-  | "npm"               // npm packages matching paperclip-plugin-* convention
-  | "registry";         // future: remote plugin registry URL
+  | "npm";              // npm package installed into the managed plugin directory
 
 type ParsedSemver = {
   major: number;
   minor: number;
   patch: number;
   prerelease: string[];
-};
-
-/**
- * Result of a discovery scan.
- */
-export interface PluginDiscoveryResult {
-  /** Plugins successfully discovered and validated. */
-  discovered: DiscoveredPlugin[];
-  /** Packages found but with validation errors. */
-  errors: Array<{ packagePath: string; packageName: string; error: string }>;
-  /** Source(s) that were scanned. */
-  sources: PluginSource[];
-}
-
-type PluginEntrypointKey = "manifest" | "worker" | "ui";
-
-type PluginEntrypointPath = {
-  key: PluginEntrypointKey;
-  absolutePath: string;
-};
-
-type LocalPluginBuildCommand = {
-  file: string;
-  args: string[];
-  cwd: string;
 };
 
 function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[] {
@@ -199,33 +118,13 @@ function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[
  */
 export interface PluginLoaderOptions {
   /**
-   * Path to the local plugin directory to scan.
+   * Path where npm plugin packages are installed and managed.
    * Defaults to ~/.paperclip/plugins/
    */
   localPluginDir?: string;
 
   /** Optional direct Postgres connection used for plugin DDL migrations. */
   migrationDb?: Db;
-
-  /**
-   * Whether to scan the local filesystem directory for plugins.
-   * Defaults to true.
-   */
-  enableLocalFilesystem?: boolean;
-
-  /**
-   * Whether to discover installed npm packages matching the paperclip-plugin-*
-   * naming convention.
-   * Defaults to true.
-   */
-  enableNpmDiscovery?: boolean;
-
-  /**
-   * Future: URL of the remote plugin registry to query.
-   * When set, the loader will also fetch available plugins from this endpoint.
-   * Registry support is not yet implemented; this field is reserved.
-   */
-  registryUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +170,7 @@ export interface PluginInstallOptions {
  *
  * When these are provided, the loader can fully activate plugins (spawn
  * workers, register event subscriptions, sync jobs, register tools).
- * When omitted, the loader operates in discovery/install-only mode.
+ * When omitted, the loader can install packages but cannot activate them.
  *
  * @see PLUGIN_SPEC.md §8.3 — Install Process
  * @see PLUGIN_SPEC.md §12 — Process Model
@@ -372,55 +271,6 @@ export interface PluginUiContributionMetadata {
 
 export interface PluginLoader {
   /**
-   * Discover all available plugins from configured sources.
-   *
-   * This performs a non-destructive scan of all enabled sources and returns
-   * the discovered plugins with their parsed manifests.  No installs or DB
-   * writes happen during discovery.
-   *
-   * @param npmSearchDirs - Optional override for node_modules directories to search.
-   *   Passed through to discoverFromNpm. When omitted the defaults are used.
-   *
-   * @see PLUGIN_SPEC.md §8.1 — On-Disk Layout
-   * @see PLUGIN_SPEC.md §8.3 — Install Process
-   */
-  discoverAll(npmSearchDirs?: string[]): Promise<PluginDiscoveryResult>;
-
-  /**
-   * Scan the local filesystem plugin directory for installed plugin packages.
-   *
-   * Reads the plugin directory, attempts to load each subdirectory as an npm
-   * package, and validates the plugin manifest.
-   *
-   * @param dir - Directory to scan (defaults to configured localPluginDir).
-   */
-  discoverFromLocalFilesystem(dir?: string): Promise<PluginDiscoveryResult>;
-
-  /**
-   * Discover Paperclip plugins installed as npm packages in the current
-   * Node.js environment matching the "paperclip-plugin-*" naming convention.
-   *
-   * Looks for packages in node_modules that match the naming convention.
-   *
-   * @param searchDirs - node_modules directories to search (defaults to process cwd resolution).
-   */
-  discoverFromNpm(searchDirs?: string[]): Promise<PluginDiscoveryResult>;
-
-  /**
-   * Load and parse the plugin manifest from a package directory.
-   *
-   * Reads the package.json, finds the manifest entrypoint declared under
-   * the "paperclipPlugin.manifest" key, loads the manifest module, and
-   * validates it against the plugin manifest schema.
-   *
-   * Returns null if the package is not a Paperclip plugin.
-   * Throws if the package is a Paperclip plugin but the manifest is invalid.
-   *
-   * @see PLUGIN_SPEC.md §10 — Package Contract
-   */
-  loadManifest(packagePath: string): Promise<PaperclipPluginManifestV1 | null>;
-
-  /**
    * Install a plugin package and register it in the database.
    *
    * Follows the install process described in PLUGIN_SPEC.md §8.3:
@@ -430,14 +280,14 @@ export interface PluginLoader {
    * 4. Reject incompatible plugin API versions.
    * 5. Validate manifest capabilities.
    * 6. Persist install record in Postgres.
-   * 7. Return the discovered plugin for the caller to use.
+   * 7. Return the resolved plugin package for the caller to use.
    *
    * Worker spawning and lifecycle management are handled by the caller
    * (pluginLifecycleManager and the server startup orchestration).
    *
    * @see PLUGIN_SPEC.md §8.3 — Install Process
    */
-  installPlugin(options: PluginInstallOptions): Promise<DiscoveredPlugin>;
+  installPlugin(options: PluginInstallOptions): Promise<ResolvedPluginPackage>;
 
   /**
    * Upgrade an already-installed plugin to a newer version.
@@ -453,7 +303,7 @@ export interface PluginLoader {
   upgradePlugin(pluginId: string, options: Omit<PluginInstallOptions, "installDir">): Promise<{
     oldManifest: PaperclipPluginManifestV1;
     newManifest: PaperclipPluginManifestV1;
-    discovered: DiscoveredPlugin;
+    resolved: ResolvedPluginPackage;
   }>;
 
   /**
@@ -483,8 +333,8 @@ export interface PluginLoader {
    *
    * The server creates the loader first so the lifecycle manager can own that
    * exact instance, then completes the lifecycle/dispatcher graph and binds it
-   * here before exposing runtime plugin operations. Discovery-only loaders do
-   * not call this method.
+   * here before exposing runtime plugin operations. Callers that only install
+   * or validate packages do not call this method.
    */
   bindRuntimeServices(services: PluginRuntimeServices): void;
 
@@ -571,22 +421,6 @@ export interface PluginLoader {
 // ---------------------------------------------------------------------------
 
 /**
- * Check whether a package name matches the Paperclip plugin naming convention.
- * Accepts both the "paperclip-plugin-" prefix and scoped "@scope/plugin-" packages.
- *
- * @see PLUGIN_SPEC.md §10 — Package Contract
- */
-export function isPluginPackageName(name: string): boolean {
-  if (name.startsWith(NPM_PLUGIN_PACKAGE_PREFIX)) return true;
-  // Also accept scoped packages like @acme/plugin-linear or @paperclipai/plugin-*
-  if (name.includes("/")) {
-    const localPart = name.split("/")[1] ?? "";
-    return localPart.startsWith("plugin-");
-  }
-  return false;
-}
-
-/**
  * Read and parse a package.json from a directory path.
  * Returns null if no package.json exists.
  */
@@ -601,263 +435,6 @@ async function readPackageJson(
     return JSON.parse(raw) as Record<string, unknown>;
   } catch {
     return null;
-  }
-}
-
-function buildLocalPluginBuildCommand(pkgJson: Record<string, unknown>): string | null {
-  const packageName = pkgJson["name"];
-  if (typeof packageName !== "string" || packageName.trim().length === 0) return null;
-  return `pnpm --filter ${packageName} build`;
-}
-
-function readPackageDependencyNames(
-  pkgJson: Record<string, unknown>,
-  field: "dependencies" | "optionalDependencies",
-): string[] {
-  const deps = pkgJson[field];
-  if (deps === null || typeof deps !== "object" || Array.isArray(deps)) return [];
-  return Object.keys(deps as Record<string, unknown>);
-}
-
-function resolvePackageInstallPath(packageRoot: string, packageName: string): string {
-  return path.join(packageRoot, "node_modules", ...packageName.split("/"));
-}
-
-function isPathWithin(root: string, target: string): boolean {
-  const relativePath = path.relative(root, target);
-  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
-}
-
-export function isRepoBundledPluginPath(
-  packageRoot: string,
-  options: { repoRoot?: string } = {},
-): boolean {
-  const repoPluginsRoot = path.join(options.repoRoot ?? REPO_ROOT, "packages", "plugins");
-  return isPathWithin(repoPluginsRoot, packageRoot);
-}
-
-export function isStandaloneBundledPluginPath(
-  packageRoot: string,
-  options: { repoRoot?: string } = {},
-): boolean {
-  const repoRoot = options.repoRoot ?? REPO_ROOT;
-  return isPathWithin(path.join(repoRoot, "packages", "plugins", "sandbox-providers"), packageRoot);
-}
-
-export function resolveDeclaredPluginEntrypoints(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-): PluginEntrypointPath[] {
-  const paperclipPlugin = pkgJson["paperclipPlugin"];
-  if (
-    paperclipPlugin === null
-    || typeof paperclipPlugin !== "object"
-    || Array.isArray(paperclipPlugin)
-  ) {
-    return [];
-  }
-
-  const entrypoints: PluginEntrypointPath[] = [];
-  for (const key of ["manifest", "worker", "ui"] as const) {
-    const relativePath = (paperclipPlugin as Record<string, unknown>)[key];
-    if (typeof relativePath === "string" && relativePath.length > 0) {
-      entrypoints.push({
-        key,
-        absolutePath: path.resolve(packageRoot, relativePath),
-      });
-    }
-  }
-
-  return entrypoints;
-}
-
-export function listMissingDeclaredPluginEntrypoints(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-): PluginEntrypointPath[] {
-  return resolveDeclaredPluginEntrypoints(packageRoot, pkgJson).filter(
-    (entrypoint) => !existsSync(entrypoint.absolutePath),
-  );
-}
-
-function listMissingStandaloneBundledPluginRuntimeDependencies(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-): string[] {
-  // optionalDependencies are intentionally allowed to be absent (e.g.
-  // platform-specific packages), so they must not be treated as required here —
-  // otherwise post-build verification fails even when install/build succeeded.
-  const dependencyNames = new Set<string>([
-    STANDALONE_BUNDLED_PLUGIN_SDK_PACKAGE,
-    ...readPackageDependencyNames(pkgJson, "dependencies"),
-  ]);
-
-  return [...dependencyNames].filter(
-    (packageName) => !existsSync(resolvePackageInstallPath(packageRoot, packageName)),
-  );
-}
-
-function formatLocalPluginManualBuildHint(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-  options: { processEnv?: NodeJS.ProcessEnv; repoRoot?: string } = {},
-): string {
-  if (!isRepoBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })) return "";
-
-  const manualBuildCommand = buildLocalPluginRecoveryCommand(packageRoot, pkgJson, { repoRoot: options.repoRoot });
-  if (!manualBuildCommand) return "";
-
-  const autoBuildDisabled = (options.processEnv ?? process.env)["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"] === "1"
-    ? " Auto-build is disabled by PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD=1."
-    : "";
-
-  return `${autoBuildDisabled} Run \`${manualBuildCommand}\` from the repo root and retry.`;
-}
-
-function buildStandaloneBundledPluginInstallArgs(
-  packageRoot: string,
-): string[] {
-  const packageLockfilePath = path.join(packageRoot, "pnpm-lock.yaml");
-  return existsSync(packageLockfilePath)
-    ? ["install", "--ignore-workspace", "--frozen-lockfile"]
-    : ["install", "--ignore-workspace", "--no-lockfile"];
-}
-
-function buildStandaloneBundledPluginInstallCommand(
-  packageRoot: string,
-): string {
-  return `pnpm ${buildStandaloneBundledPluginInstallArgs(packageRoot).join(" ")}`;
-}
-
-function buildLocalPluginRecoveryCommand(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-  options: { repoRoot?: string } = {},
-): string | null {
-  if (isStandaloneBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })) {
-    const repoRoot = options.repoRoot ?? REPO_ROOT;
-    const relativePath = path.relative(repoRoot, packageRoot) || ".";
-    const installCommand = buildStandaloneBundledPluginInstallCommand(packageRoot);
-    return `cd ${relativePath} && ${installCommand} && pnpm build`;
-  }
-
-  return buildLocalPluginBuildCommand(pkgJson);
-}
-
-function buildLocalPluginBuildCommands(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-  options: {
-    repoRoot?: string;
-    needsBuild?: boolean;
-    needsStandaloneRuntimeBootstrap?: boolean;
-  } = {},
-): LocalPluginBuildCommand[] {
-  if (isStandaloneBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })) {
-    const commands: LocalPluginBuildCommand[] = [];
-    const shouldInstallStandaloneRuntime =
-      options.needsStandaloneRuntimeBootstrap === true
-      || (!existsSync(path.join(packageRoot, "node_modules")) && options.needsBuild !== false);
-
-    if (shouldInstallStandaloneRuntime) {
-      commands.push({
-        file: "pnpm",
-        args: buildStandaloneBundledPluginInstallArgs(packageRoot),
-        cwd: packageRoot,
-      });
-    }
-
-    if (options.needsBuild !== false) {
-      commands.push({
-        file: "pnpm",
-        args: ["build"],
-        cwd: packageRoot,
-      });
-    }
-    return commands;
-  }
-
-  const packageName = pkgJson["name"];
-  if (typeof packageName !== "string" || packageName.trim().length === 0) return [];
-  return [{
-    file: "pnpm",
-    args: ["--filter", packageName, "build"],
-    cwd: options.repoRoot ?? REPO_ROOT,
-  }];
-}
-
-export async function ensureLocalPluginBuilt(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-  options: {
-    processEnv?: NodeJS.ProcessEnv;
-    repoRoot?: string;
-    execFileAsyncImpl?: (
-      file: string,
-      args: readonly string[],
-      options: { cwd: string; timeout: number },
-    ) => Promise<{ stdout: string; stderr: string }>;
-  } = {},
-): Promise<void> {
-  const processEnv = options.processEnv ?? process.env;
-  if (processEnv["PAPERCLIP_DISABLE_PLUGIN_AUTOBUILD"] === "1") return;
-  if (!isRepoBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })) return;
-
-  const missingEntrypoints = listMissingDeclaredPluginEntrypoints(packageRoot, pkgJson);
-  const missingStandaloneRuntimeDeps = isStandaloneBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })
-    ? listMissingStandaloneBundledPluginRuntimeDependencies(packageRoot, pkgJson)
-    : [];
-  if (missingEntrypoints.length === 0 && missingStandaloneRuntimeDeps.length === 0) return;
-
-  const packageName = pkgJson["name"];
-  const manualBuildCommand = buildLocalPluginRecoveryCommand(packageRoot, pkgJson, { repoRoot: options.repoRoot });
-  if (typeof packageName !== "string" || packageName.trim().length === 0 || !manualBuildCommand) return;
-
-  const runExecFileAsync = options.execFileAsyncImpl ?? execFileAsync;
-  const buildCommands = buildLocalPluginBuildCommands(packageRoot, pkgJson, {
-    repoRoot: options.repoRoot,
-    needsBuild: missingEntrypoints.length > 0,
-    needsStandaloneRuntimeBootstrap: missingStandaloneRuntimeDeps.length > 0,
-  });
-
-  try {
-    for (const command of buildCommands) {
-      await runExecFileAsync(
-        command.file,
-        command.args,
-        { cwd: command.cwd, timeout: LOCAL_PLUGIN_AUTOBUILD_TIMEOUT_MS },
-      );
-    }
-  } catch (error) {
-    const stderr = typeof (error as { stderr?: unknown }).stderr === "string"
-      ? (error as { stderr: string }).stderr.trim()
-      : "";
-    const timeoutMessage = (error as { killed?: unknown }).killed === true
-      ? ` after timing out at ${LOCAL_PLUGIN_AUTOBUILD_TIMEOUT_MS}ms`
-      : "";
-    const stderrMessage = stderr.length > 0 ? ` stderr: ${stderr}` : "";
-    throw new Error(
-      `Failed to auto-build bundled local plugin ${packageName}${timeoutMessage}. ` +
-        `Run \`${manualBuildCommand}\` from the repo root and retry.${stderrMessage}`,
-    );
-  }
-
-  const stillMissingEntrypoints = listMissingDeclaredPluginEntrypoints(packageRoot, pkgJson);
-  const stillMissingStandaloneRuntimeDeps = isStandaloneBundledPluginPath(packageRoot, { repoRoot: options.repoRoot })
-    ? listMissingStandaloneBundledPluginRuntimeDependencies(packageRoot, pkgJson)
-    : [];
-  if (stillMissingEntrypoints.length > 0 || stillMissingStandaloneRuntimeDeps.length > 0) {
-    const missingDetails: string[] = [];
-    if (stillMissingEntrypoints.length > 0) {
-      missingDetails.push(`built entrypoints: ${stillMissingEntrypoints.map((entrypoint) => entrypoint.key).join(", ")}`);
-    }
-    if (stillMissingStandaloneRuntimeDeps.length > 0) {
-      missingDetails.push(`runtime dependencies: ${stillMissingStandaloneRuntimeDeps.join(", ")}`);
-    }
-    throw new Error(
-      `Bundled local plugin ${packageName} is still missing ${missingDetails.join("; ")} after auto-build. ` +
-        `Run \`${manualBuildCommand}\` from the repo root and retry.`,
-    );
   }
 }
 
@@ -1005,24 +582,18 @@ export function getPluginUiContributionMetadata(
 /**
  * Create a PluginLoader service.
  *
- * The loader is responsible for plugin discovery, installation, and runtime
- * activation.  It reads plugin packages from the local filesystem and npm,
- * validates their manifests, registers them in the database, and — when
- * runtime services are bound — initialises worker processes, event
+ * The loader is responsible for explicit plugin installation and runtime
+ * activation. It reads the requested package from a local path or npm,
+ * validates its manifest, registers it in the database, and — when runtime
+ * services are bound — initialises worker processes, event
  * subscriptions, job schedules, webhook endpoints, and agent tools.
  *
- * Usage (discovery & install only):
+ * Usage (install only):
  * ```ts
- * const loader = pluginLoader(db, { enableLocalFilesystem: true });
- *
- * // Discover all available plugins
- * const result = await loader.discoverAll();
- * for (const plugin of result.discovered) {
- *   console.log(plugin.packageName, plugin.manifest?.id);
- * }
+ * const loader = pluginLoader(db);
  *
  * // Install a specific plugin
- * const discovered = await loader.installPlugin({
+ * const resolved = await loader.installPlugin({
  *   packageName: "paperclip-plugin-linear",
  *   version: "^1.0.0",
  * });
@@ -1064,8 +635,6 @@ export function pluginLoader(
   const {
     localPluginDir = DEFAULT_LOCAL_PLUGIN_DIR,
     migrationDb = db,
-    enableLocalFilesystem = true,
-    enableNpmDiscovery = true,
   } = options;
 
   const registry = pluginRegistryService(db);
@@ -1114,11 +683,11 @@ export function pluginLoader(
    * 5. Validating manifest capabilities.
    *
    * @param installOptions - Options specifying the package to fetch.
-   * @returns A `DiscoveredPlugin` object containing the validated manifest.
+   * @returns The resolved package and validated manifest.
    */
   async function fetchAndValidate(
     installOptions: PluginInstallOptions,
-  ): Promise<DiscoveredPlugin> {
+  ): Promise<ResolvedPluginPackage> {
     const { packageName, localPath, version, installDir } = installOptions;
 
     if (!packageName && !localPath) {
@@ -1194,17 +763,10 @@ export function pluginLoader(
     const pkgJson = await readPackageJson(resolvedPackagePath);
     if (!pkgJson) throw new Error(`Missing package.json at ${resolvedPackagePath}`);
 
-    if (localPath) {
-      await ensureLocalPluginBuilt(resolvedPackagePath, pkgJson);
-    }
-
     const manifestPath = resolveManifestPath(resolvedPackagePath, pkgJson);
     if (!manifestPath || !existsSync(manifestPath)) {
-      const manualBuildHint = localPath
-        ? formatLocalPluginManualBuildHint(resolvedPackagePath, pkgJson)
-        : "";
       throw new Error(
-        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a Paperclip plugin (no manifest found).${manualBuildHint}`,
+        `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a Paperclip plugin (no manifest found). Build the package before installing it.`,
       );
     }
 
@@ -1324,319 +886,18 @@ export function pluginLoader(
     };
   }
 
-  /**
-   * Build a DiscoveredPlugin from a resolved package directory, or null
-   * if the package is not a Paperclip plugin.
-   */
-  async function buildDiscoveredPlugin(
-    packagePath: string,
-    source: PluginSource,
-  ): Promise<DiscoveredPlugin | null> {
-    const pkgJson = await readPackageJson(packagePath);
-    if (!pkgJson) return null;
-
-    const packageName = typeof pkgJson["name"] === "string" ? pkgJson["name"] : "";
-    const version = typeof pkgJson["version"] === "string" ? pkgJson["version"] : "0.0.0";
-
-    // Determine if this is a plugin package at all
-    const hasPaperclipPlugin = "paperclipPlugin" in pkgJson;
-    const nameMatchesConvention = isPluginPackageName(packageName);
-
-    if (!hasPaperclipPlugin && !nameMatchesConvention) {
-      return null;
-    }
-
-    const manifestPath = resolveManifestPath(packagePath, pkgJson);
-    if (!manifestPath || !existsSync(manifestPath)) {
-      // Found a potential plugin package but no manifest entry point — treat
-      // as a discovery-only result with no manifest
-      return {
-        packagePath,
-        packageName,
-        version,
-        source,
-        manifest: null,
-      };
-    }
-
-    try {
-      const manifest = await loadManifestFromPath(manifestPath);
-      return {
-        packagePath,
-        packageName,
-        version,
-        source,
-        manifest,
-      };
-    } catch (err) {
-      // Rethrow with context — callers catch and route to the errors array
-      throw new Error(
-        `Plugin ${packageName}: ${String(err)}`,
-      );
-    }
-  }
-
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
 
   return {
     // -----------------------------------------------------------------------
-    // discoverAll
-    // -----------------------------------------------------------------------
-
-    async discoverAll(npmSearchDirs?: string[]): Promise<PluginDiscoveryResult> {
-      const allDiscovered: DiscoveredPlugin[] = [];
-      const allErrors: Array<{ packagePath: string; packageName: string; error: string }> = [];
-      const sources: PluginSource[] = [];
-
-      if (enableLocalFilesystem) {
-        sources.push("local-filesystem");
-        const fsResult = await this.discoverFromLocalFilesystem();
-        allDiscovered.push(...fsResult.discovered);
-        allErrors.push(...fsResult.errors);
-      }
-
-      if (enableNpmDiscovery) {
-        sources.push("npm");
-        const npmResult = await this.discoverFromNpm(npmSearchDirs);
-        // Deduplicate against already-discovered packages (same package path)
-        const existingPaths = new Set(allDiscovered.map((d) => d.packagePath));
-        for (const plugin of npmResult.discovered) {
-          if (!existingPaths.has(plugin.packagePath)) {
-            allDiscovered.push(plugin);
-          }
-        }
-        allErrors.push(...npmResult.errors);
-      }
-
-      // Future: registry source (options.registryUrl)
-      if (options.registryUrl) {
-        sources.push("registry");
-        log.warn(
-          { registryUrl: options.registryUrl },
-          "plugin-loader: remote registry discovery is not yet implemented",
-        );
-      }
-
-      log.info(
-        {
-          discovered: allDiscovered.length,
-          errors: allErrors.length,
-          sources,
-        },
-        "plugin-loader: discovery complete",
-      );
-
-      return { discovered: allDiscovered, errors: allErrors, sources };
-    },
-
-    // -----------------------------------------------------------------------
-    // discoverFromLocalFilesystem
-    // -----------------------------------------------------------------------
-
-    async discoverFromLocalFilesystem(dir?: string): Promise<PluginDiscoveryResult> {
-      const scanDir = dir ?? localPluginDir;
-      const discovered: DiscoveredPlugin[] = [];
-      const errors: Array<{ packagePath: string; packageName: string; error: string }> = [];
-
-      if (!existsSync(scanDir)) {
-        log.debug(
-          { dir: scanDir },
-          "plugin-loader: local plugin directory does not exist, skipping",
-        );
-        return { discovered, errors, sources: ["local-filesystem"] };
-      }
-
-      let entries: string[];
-      try {
-        entries = await readdir(scanDir);
-      } catch (err) {
-        log.warn({ dir: scanDir, err }, "plugin-loader: failed to read local plugin directory");
-        return { discovered, errors, sources: ["local-filesystem"] };
-      }
-
-      for (const entry of entries) {
-        const entryPath = path.join(scanDir, entry);
-
-        // Check if entry is a directory
-        let entryStat;
-        try {
-          entryStat = await stat(entryPath);
-        } catch {
-          continue;
-        }
-        if (!entryStat.isDirectory()) continue;
-
-        // Handle scoped packages: @scope/plugin-name is a subdirectory
-        if (entry.startsWith("@")) {
-          let scopedEntries: string[];
-          try {
-            scopedEntries = await readdir(entryPath);
-          } catch {
-            continue;
-          }
-          for (const scopedEntry of scopedEntries) {
-            const scopedPath = path.join(entryPath, scopedEntry);
-            try {
-              const scopedStat = await stat(scopedPath);
-              if (!scopedStat.isDirectory()) continue;
-              const plugin = await buildDiscoveredPlugin(scopedPath, "local-filesystem");
-              if (plugin) discovered.push(plugin);
-            } catch (err) {
-              errors.push({
-                packagePath: scopedPath,
-                packageName: `${entry}/${scopedEntry}`,
-                error: String(err),
-              });
-            }
-          }
-          continue;
-        }
-
-        try {
-          const plugin = await buildDiscoveredPlugin(entryPath, "local-filesystem");
-          if (plugin) discovered.push(plugin);
-        } catch (err) {
-          const pkgJson = await readPackageJson(entryPath);
-          const packageName =
-            typeof pkgJson?.["name"] === "string" ? pkgJson["name"] : entry;
-          errors.push({ packagePath: entryPath, packageName, error: String(err) });
-        }
-      }
-
-      log.debug(
-        { dir: scanDir, discovered: discovered.length, errors: errors.length },
-        "plugin-loader: local filesystem scan complete",
-      );
-
-      return { discovered, errors, sources: ["local-filesystem"] };
-    },
-
-    // -----------------------------------------------------------------------
-    // discoverFromNpm
-    // -----------------------------------------------------------------------
-
-    async discoverFromNpm(searchDirs?: string[]): Promise<PluginDiscoveryResult> {
-      const discovered: DiscoveredPlugin[] = [];
-      const errors: Array<{ packagePath: string; packageName: string; error: string }> = [];
-
-      // Determine the node_modules directories to search.
-      // When searchDirs is undefined OR empty, fall back to the conventional
-      // defaults (cwd/node_modules and localPluginDir/node_modules).
-      // To search nowhere explicitly, pass a non-empty array of non-existent paths.
-      const dirsToSearch: string[] = searchDirs && searchDirs.length > 0 ? searchDirs : [];
-
-      if (dirsToSearch.length === 0) {
-        // Default: search node_modules relative to the process working directory
-        // and also the local plugin dir's node_modules
-        const cwdNodeModules = path.join(process.cwd(), "node_modules");
-        const localNodeModules = path.join(localPluginDir, "node_modules");
-
-        if (existsSync(cwdNodeModules)) dirsToSearch.push(cwdNodeModules);
-        if (existsSync(localNodeModules)) dirsToSearch.push(localNodeModules);
-      }
-
-      for (const nodeModulesDir of dirsToSearch) {
-        if (!existsSync(nodeModulesDir)) continue;
-
-        let entries: string[];
-        try {
-          entries = await readdir(nodeModulesDir);
-        } catch {
-          continue;
-        }
-
-        for (const entry of entries) {
-          const entryPath = path.join(nodeModulesDir, entry);
-
-          // Handle scoped packages (@scope/*)
-          if (entry.startsWith("@")) {
-            let scopedEntries: string[];
-            try {
-              scopedEntries = await readdir(entryPath);
-            } catch {
-              continue;
-            }
-            for (const scopedEntry of scopedEntries) {
-              const fullName = `${entry}/${scopedEntry}`;
-              if (!isPluginPackageName(fullName)) continue;
-
-              const scopedPath = path.join(entryPath, scopedEntry);
-              try {
-                const plugin = await buildDiscoveredPlugin(scopedPath, "npm");
-                if (plugin) discovered.push(plugin);
-              } catch (err) {
-                errors.push({
-                  packagePath: scopedPath,
-                  packageName: fullName,
-                  error: String(err),
-                });
-              }
-            }
-            continue;
-          }
-
-          // Non-scoped packages: check naming convention
-          if (!isPluginPackageName(entry)) continue;
-
-          let entryStat;
-          try {
-            entryStat = await stat(entryPath);
-          } catch {
-            continue;
-          }
-          if (!entryStat.isDirectory()) continue;
-
-          try {
-            const plugin = await buildDiscoveredPlugin(entryPath, "npm");
-            if (plugin) discovered.push(plugin);
-          } catch (err) {
-            const pkgJson = await readPackageJson(entryPath);
-            const packageName =
-              typeof pkgJson?.["name"] === "string" ? pkgJson["name"] : entry;
-            errors.push({ packagePath: entryPath, packageName, error: String(err) });
-          }
-        }
-      }
-
-      log.debug(
-        { searchDirs: dirsToSearch, discovered: discovered.length, errors: errors.length },
-        "plugin-loader: npm discovery scan complete",
-      );
-
-      return { discovered, errors, sources: ["npm"] };
-    },
-
-    // -----------------------------------------------------------------------
-    // loadManifest
-    // -----------------------------------------------------------------------
-
-    async loadManifest(packagePath: string): Promise<PaperclipPluginManifestV1 | null> {
-      const pkgJson = await readPackageJson(packagePath);
-      if (!pkgJson) return null;
-
-      const hasPaperclipPlugin = "paperclipPlugin" in pkgJson;
-      const packageName = typeof pkgJson["name"] === "string" ? pkgJson["name"] : "";
-      const nameMatchesConvention = isPluginPackageName(packageName);
-
-      if (!hasPaperclipPlugin && !nameMatchesConvention) {
-        return null;
-      }
-
-      const manifestPath = resolveManifestPath(packagePath, pkgJson);
-      if (!manifestPath || !existsSync(manifestPath)) return null;
-
-      return loadManifestFromPath(manifestPath);
-    },
-
-    // -----------------------------------------------------------------------
     // installPlugin
     // -----------------------------------------------------------------------
 
-    async installPlugin(installOptions: PluginInstallOptions): Promise<DiscoveredPlugin> {
-      const discovered = await fetchAndValidate(installOptions);
-      const manifest = discovered.manifest!;
+    async installPlugin(installOptions: PluginInstallOptions): Promise<ResolvedPluginPackage> {
+      const resolved = await fetchAndValidate(installOptions);
+      const manifest = resolved.manifest;
 
       // Step 6: Persist install record and apply plugin-owned schema migrations
       // in one database transaction. If migration validation fails, the plugin
@@ -1647,8 +908,8 @@ export function pluginLoader(
         const txRegistry = pluginRegistryService(txDb);
         const installed = await txRegistry.install(
           {
-            packageName: discovered.packageName,
-            packagePath: discovered.source === "local-filesystem" ? discovered.packagePath : undefined,
+            packageName: resolved.packageName,
+            packagePath: resolved.source === "local-filesystem" ? resolved.packagePath : undefined,
           },
           manifest,
         );
@@ -1661,7 +922,7 @@ export function pluginLoader(
           await pluginDatabaseService(txDb).applyMigrations(
             installed.id,
             manifest,
-            discovered.packagePath,
+            resolved.packagePath,
             { persistFailure: false },
           );
         }
@@ -1670,14 +931,14 @@ export function pluginLoader(
       log.info(
         {
           pluginId: manifest.id,
-          packageName: discovered.packageName,
-          version: discovered.version,
+          packageName: resolved.packageName,
+          version: resolved.version,
           capabilities: manifest.capabilities,
         },
         "plugin-loader: plugin installed successfully",
       );
 
-      return discovered;
+      return resolved;
     },
 
     // -----------------------------------------------------------------------
@@ -1694,7 +955,7 @@ export function pluginLoader(
      *
      * @param pluginId - The UUID of the plugin to upgrade.
      * @param upgradeOptions - Options for the upgrade (packageName, localPath, version).
-     * @returns The old and new manifests, along with the discovery metadata.
+     * @returns The old and new manifests, along with the resolved package.
      * @throws {Error} If the plugin is not found or if the new manifest ID differs.
      */
     async upgradePlugin(
@@ -1703,7 +964,7 @@ export function pluginLoader(
     ): Promise<{
       oldManifest: PaperclipPluginManifestV1;
       newManifest: PaperclipPluginManifestV1;
-      discovered: DiscoveredPlugin;
+      resolved: ResolvedPluginPackage;
     }> {
       const plugin = (await registry.getById(pluginId)) as {
         id: string;
@@ -1729,14 +990,14 @@ export function pluginLoader(
       );
 
       // 1. Fetch/Install the new version
-      const discovered = await fetchAndValidate({
+      const resolved = await fetchAndValidate({
         packageName,
         localPath,
         version,
         installDir: localPluginDir,
       });
 
-      const newManifest = discovered.manifest!;
+      const newManifest = resolved.manifest;
 
       // 2. Validate it's the same plugin ID
       if (newManifest.id !== oldManifest.id) {
@@ -1764,15 +1025,15 @@ export function pluginLoader(
 
       // 4. Update the existing record
       await registry.update(pluginId, {
-        packageName: discovered.packageName,
-        version: discovered.version,
+        packageName: resolved.packageName,
+        version: resolved.version,
         manifest: newManifest,
       });
 
       return {
         oldManifest,
         newManifest,
-        discovered,
+        resolved,
       };
     },
 
@@ -2153,12 +1414,12 @@ export function pluginLoader(
         databaseNamespace,
         hostHandlers,
         autoRestart: true,
-        env: buildPluginWorkerEnv({ manifest, instanceInfo }),
+        env: buildPluginWorkerEnv({ instanceInfo }),
       };
 
       // Repo-local plugin installs can resolve workspace TS sources at runtime
       // (for example @paperclipai/shared exports). Run those workers through
-      // the tsx loader so first-party example plugins work in development.
+      // the tsx loader so local plugin packages work in development.
       if (activePlugin.packagePath && existsSync(DEV_TSX_LOADER_PATH)) {
         workerOptions.execArgv = ["--import", DEV_TSX_LOADER_PATH];
       }

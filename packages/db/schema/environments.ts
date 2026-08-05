@@ -20,11 +20,6 @@ export const environments = pgTable(
     localDriverIdx: uniqueIndex("environments_local_driver_idx")
       .on(table.driver)
       .where(sql`${table.driver} = 'local'`),
-    managedSandboxIdx: uniqueIndex("environments_managed_sandbox_idx")
-      .on(table.driver)
-      .where(
-        sql`${table.driver} = 'sandbox' AND (${table.metadata} ->> 'managedByPaperclip')::boolean = true`,
-      ),
     nameIdx: uniqueIndex("environments_name_idx").on(table.name),
   }),
 );

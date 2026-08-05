@@ -63,22 +63,22 @@ async function flushReact() {
 function basePlugin(overrides: Record<string, unknown> = {}) {
   return {
     id: "plugin-1",
-    pluginKey: "paperclip.e2b-sandbox-provider",
-    packageName: "@paperclipai/plugin-e2b",
+    pluginKey: "acme.remote-sandbox-provider",
+    packageName: "@acme/remote-sandbox-provider",
     version: "0.1.0",
     status: "error",
     categories: ["automation"],
     manifestJson: {
-      displayName: "E2B Sandbox Provider",
+      displayName: "Remote Sandbox Provider",
       version: "0.1.0",
-      description: "E2B environments for Paperclip.",
+      description: "Remote sandbox environments for Paperclip.",
       author: "Paperclip",
       capabilities: ["environment.drivers.register"],
       environmentDrivers: [
         {
-          driverKey: "e2b",
+          driverKey: "remote-sandbox",
           kind: "sandbox_provider",
-          displayName: "E2B Cloud Sandbox",
+          displayName: "Remote Cloud Sandbox",
         },
       ],
     },
@@ -87,30 +87,30 @@ function basePlugin(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function wikiFolderDeclaration() {
+function contentFolderDeclaration() {
   return {
-    folderKey: "wiki-root",
-    displayName: "Wiki root",
-    description: "Company-scoped local folder that stores wiki files.",
+    folderKey: "content-root",
+    displayName: "Content root",
+    description: "Company-scoped local folder that stores content files.",
     access: "readWrite" as const,
-    requiredDirectories: ["raw", "wiki"],
-    requiredFiles: ["WIKI.md", "index.md"],
+    requiredDirectories: ["raw", "content"],
+    requiredFiles: ["CONTENT.md", "index.md"],
   };
 }
 
 function folderStatus(overrides: Record<string, unknown> = {}) {
   return {
-    folderKey: "wiki-root",
+    folderKey: "content-root",
     configured: false,
     path: null,
     realPath: null,
     access: "readWrite",
     readable: false,
     writable: false,
-    requiredDirectories: ["raw", "wiki"],
-    requiredFiles: ["WIKI.md", "index.md"],
-    missingDirectories: ["raw", "wiki"],
-    missingFiles: ["WIKI.md", "index.md"],
+    requiredDirectories: ["raw", "content"],
+    requiredFiles: ["CONTENT.md", "index.md"],
+    missingDirectories: ["raw", "content"],
+    missingFiles: ["CONTENT.md", "index.md"],
     healthy: false,
     problems: [{ code: "not_configured", message: "No local folder path is configured." }],
     checkedAt: "2026-05-02T16:00:00.000Z",
@@ -175,15 +175,15 @@ describe("PluginSettings", () => {
   });
 
   it("renders unconfigured manifest local folders with required paths", async () => {
-    const declaration = wikiFolderDeclaration();
+    const declaration = contentFolderDeclaration();
     mockPluginsApi.get.mockResolvedValue(basePlugin({
-      pluginKey: "paperclipai.plugin-llm-wiki",
-      packageName: "@paperclipai/plugin-llm-wiki",
+      pluginKey: "acme.knowledge-base",
+      packageName: "@acme/knowledge-base-plugin",
       status: "ready",
       manifestJson: {
-        displayName: "LLM Wiki",
+        displayName: "Knowledge Base",
         version: "0.1.0",
-        description: "Local-file LLM Wiki plugin.",
+        description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
         capabilities: ["local.folders"],
         localFolders: [declaration],
@@ -199,11 +199,11 @@ describe("PluginSettings", () => {
     const root = await renderSettings(container);
 
     expect(container.textContent).toContain("Local folders");
-    expect(container.textContent).toContain("Wiki root");
+    expect(container.textContent).toContain("Content root");
     expect(container.textContent).toContain("Needs attention");
     expect(container.textContent).toContain("No local folder path is configured.");
-    expect(container.textContent).toContain("Missing directories: raw, wiki");
-    expect(container.textContent).toContain("Missing files: WIKI.md, index.md");
+    expect(container.textContent).toContain("Missing directories: raw, content");
+    expect(container.textContent).toContain("Missing files: CONTENT.md, index.md");
 
     await act(async () => {
       root.unmount();
@@ -211,12 +211,12 @@ describe("PluginSettings", () => {
   });
 
   it("renders invalid configured folders with validation problems", async () => {
-    const declaration = wikiFolderDeclaration();
+    const declaration = contentFolderDeclaration();
     mockPluginsApi.get.mockResolvedValue(basePlugin({
       manifestJson: {
-        displayName: "LLM Wiki",
+        displayName: "Knowledge Base",
         version: "0.1.0",
-        description: "Local-file LLM Wiki plugin.",
+        description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
         capabilities: ["local.folders"],
         localFolders: [declaration],
@@ -228,24 +228,24 @@ describe("PluginSettings", () => {
       declarations: [declaration],
       folders: [folderStatus({
         configured: true,
-        path: "/tmp/wiki",
-        realPath: "/tmp/wiki",
+        path: "/tmp/content",
+        realPath: "/tmp/content",
         readable: true,
         writable: true,
         missingDirectories: [],
-        missingFiles: ["WIKI.md"],
-        problems: [{ code: "missing_file", message: "Required file is missing.", path: "WIKI.md" }],
+        missingFiles: ["CONTENT.md"],
+        problems: [{ code: "missing_file", message: "Required file is missing.", path: "CONTENT.md" }],
       })],
     });
 
     const root = await renderSettings(container);
 
-    expect(container.textContent).toContain("/tmp/wiki");
+    expect(container.textContent).toContain("/tmp/content");
     expect(container.textContent).toContain("ReadableYes");
     expect(container.textContent).toContain("WritableYes");
     expect(container.textContent).toContain("Validation problems");
     expect(container.textContent).toContain("Required file is missing.");
-    expect(container.textContent).toContain("Missing files: WIKI.md");
+    expect(container.textContent).toContain("Missing files: CONTENT.md");
 
     await act(async () => {
       root.unmount();
@@ -253,12 +253,12 @@ describe("PluginSettings", () => {
   });
 
   it("does not render required paths as present when the configured root cannot be inspected", async () => {
-    const declaration = wikiFolderDeclaration();
+    const declaration = contentFolderDeclaration();
     mockPluginsApi.get.mockResolvedValue(basePlugin({
       manifestJson: {
-        displayName: "LLM Wiki",
+        displayName: "Knowledge Base",
         version: "0.1.0",
-        description: "Local-file LLM Wiki plugin.",
+        description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
         capabilities: ["local.folders"],
         localFolders: [declaration],
@@ -270,12 +270,12 @@ describe("PluginSettings", () => {
       declarations: [declaration],
       folders: [folderStatus({
         configured: true,
-        path: "/tmp/wiki-missing",
+        path: "/tmp/content-missing",
         readable: false,
         writable: false,
         missingDirectories: [],
         missingFiles: [],
-        problems: [{ code: "missing", message: "Configured local folder cannot be inspected.", path: "/tmp/wiki-missing" }],
+        problems: [{ code: "missing", message: "Configured local folder cannot be inspected.", path: "/tmp/content-missing" }],
       })],
     });
 
@@ -292,12 +292,12 @@ describe("PluginSettings", () => {
   });
 
   it("renders healthy folders without validation problems", async () => {
-    const declaration = wikiFolderDeclaration();
+    const declaration = contentFolderDeclaration();
     mockPluginsApi.get.mockResolvedValue(basePlugin({
       manifestJson: {
-        displayName: "LLM Wiki",
+        displayName: "Knowledge Base",
         version: "0.1.0",
-        description: "Local-file LLM Wiki plugin.",
+        description: "Local-file knowledge-base plugin.",
         author: "Paperclip",
         capabilities: ["local.folders"],
         localFolders: [declaration],
@@ -309,8 +309,8 @@ describe("PluginSettings", () => {
       declarations: [declaration],
       folders: [folderStatus({
         configured: true,
-        path: "/tmp/wiki",
-        realPath: "/private/tmp/wiki",
+        path: "/tmp/content",
+        realPath: "/private/tmp/content",
         readable: true,
         writable: true,
         missingDirectories: [],
@@ -324,7 +324,7 @@ describe("PluginSettings", () => {
 
     expect(container.textContent).toContain("Healthy");
     expect(container.textContent).toContain("Configured path");
-    expect(container.textContent).toContain("/tmp/wiki");
+    expect(container.textContent).toContain("/tmp/content");
     expect(container.textContent).toContain("ReadableYes");
     expect(container.textContent).toContain("WritableYes");
     expect(container.textContent).toContain("Present");

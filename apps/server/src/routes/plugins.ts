@@ -9,20 +9,16 @@
  * - Running health diagnostics
  * - Upgrading plugins
  * - Retrieving UI slot contributions for frontend rendering
- * - Discovering plugin-contributed company tools for board administration
  *
  * Most routes require board-level authentication, and sensitive instance-wide
  * mutations such as install/upgrade require instance-admin privileges.
- * Provider execution is available only through the compiler-owned run interface.
+ * Agent tool execution is available only through the compiler-owned run interface.
  *
  * @module apps/server/routes/plugins
  * @see doc/plugins/PLUGIN_SPEC.md for the full plugin specification
  */
 
-import { access, readdir, readFile } from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { and, desc, eq, gte } from "drizzle-orm";
@@ -46,9 +42,7 @@ import { pluginRegistryService } from "../services/plugin-registry.js";
 import type { PluginLifecycleManager } from "../services/plugin-lifecycle.js";
 import {
   getPluginUiContributionMetadata,
-  listMissingDeclaredPluginEntrypoints,
   pluginLoader,
-  REPO_ROOT,
 } from "../services/plugin-loader.js";
 import { logActivity } from "../services/activity-log.js";
 import { publishGlobalLiveEvent } from "../services/live-events.js";
@@ -57,7 +51,6 @@ import type { PluginJobScheduler } from "../services/plugin-job-scheduler.js";
 import type { PluginJobStore } from "../services/plugin-job-store.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { PluginStreamBus } from "../services/plugin-stream-bus.js";
-import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import {
   JsonRpcCallError,
   PLUGIN_RPC_ERROR_CODES,
@@ -119,17 +112,6 @@ interface PluginInstallRequest {
   isLocalPath?: boolean;
 }
 
-interface AvailableBundledPlugin {
-  packageName: string;
-  pluginKey: string;
-  displayName: string;
-  description: string;
-  localPath: string;
-  tag: "example" | "first-party";
-  experimental: boolean;
-  hasBuiltEntrypoints: boolean;
-}
-
 /** Response body for GET /api/plugins/:pluginId/health */
 interface PluginHealthCheckResult {
   pluginId: string;
@@ -154,189 +136,6 @@ const PLUGIN_SCOPED_API_RESPONSE_HEADER_ALLOWLIST = new Set([
   "last-modified",
   "x-request-id",
 ]);
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const EXPERIMENTAL_BUNDLED_PLUGIN_PACKAGE_NAMES = new Set([
-  "@paperclipai/plugin-llm-wiki",
-  "@paperclipai/plugin-modal",
-  "@paperclipai/plugin-workspace-diff",
-]);
-/**
- * Cached bundled-plugin discovery. Static metadata (name, key, display, paths)
- * is expensive to compute and never changes at runtime, so it is cached. The
- * `hasBuiltEntrypoints` flag is filesystem state that flips when a plugin is
- * auto-built on install, so it is recomputed per request in `listBundledPlugins`
- * rather than cached.
- */
-type DiscoveredBundledPlugin = {
-  entry: Omit<AvailableBundledPlugin, "hasBuiltEntrypoints">;
-  packageRoot: string;
-  pkgJson: Record<string, unknown>;
-};
-let bundledPluginsCache: Promise<DiscoveredBundledPlugin[]> | null = null;
-
-function titleCasePluginName(packageName: string): string {
-  const localName = packageName.split("/").pop() ?? packageName;
-  return localName
-    .replace(/^paperclip-plugin-/, "")
-    .replace(/^plugin-/, "")
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-  return access(filePath).then(() => true, () => false);
-}
-
-async function readJsonFile(filePath: string): Promise<Record<string, unknown> | null> {
-  try {
-    return JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-async function findPackageJsonFiles(root: string, maxDepth = 4): Promise<string[]> {
-  if (!(await fileExists(root))) return [];
-
-  const packageJsonFiles: string[] = [];
-  const walk = async (dir: string, depth: number): Promise<void> => {
-    if (depth > maxDepth) return;
-
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (entry.name === "node_modules" || entry.name === "dist") continue;
-      const entryPath = path.join(dir, entry.name);
-
-      if (entry.isFile() && entry.name === "package.json") {
-        packageJsonFiles.push(entryPath);
-      } else if (entry.isDirectory()) {
-        await walk(entryPath, depth + 1);
-      }
-    }
-  };
-
-  await walk(root, 0);
-  return packageJsonFiles;
-}
-
-function manifestSourcePath(packageRoot: string, pkgJson: Record<string, unknown>): string | null {
-  const paperclipPlugin = pkgJson.paperclipPlugin;
-  if (
-    !paperclipPlugin
-    || typeof paperclipPlugin !== "object"
-    || Array.isArray(paperclipPlugin)
-  ) {
-    return null;
-  }
-
-  const manifestPath = (paperclipPlugin as Record<string, unknown>).manifest;
-  if (typeof manifestPath !== "string") return null;
-
-  const sourcePath = manifestPath
-    .replace(/^\.\/dist\//, "./src/")
-    .replace(/\.js$/, ".ts");
-  return path.resolve(packageRoot, sourcePath);
-}
-
-function firstStringLiteral(source: string, key: string): string | null {
-  const match = source.match(
-    new RegExp(`${key}:\\s*(?:"([^"]*)"|'([^']*)'|\`([^\`]*)\`)`, "s"),
-  );
-  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
-}
-
-async function bundledPluginMetadata(
-  packageRoot: string,
-  pkgJson: Record<string, unknown>,
-): Promise<{ pluginKey?: string; displayName?: string; description?: string }> {
-  const sourcePath = manifestSourcePath(packageRoot, pkgJson);
-  if (!sourcePath || !(await fileExists(sourcePath))) return {};
-
-  try {
-    const source = await readFile(sourcePath, "utf8");
-    const pluginId = source
-      .match(/(?:export\s+)?const\s+PLUGIN_ID\s*=\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/)
-      ?.slice(1)
-      .find(Boolean)
-      ?? firstStringLiteral(source, "id")
-      ?? null;
-    return {
-      pluginKey: pluginId ?? undefined,
-      displayName: firstStringLiteral(source, "displayName") ?? undefined,
-      description: firstStringLiteral(source, "description") ?? undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
-function isExperimentalBundledPlugin(packageRoot: string, packageName: string): boolean {
-  return (
-    EXPERIMENTAL_BUNDLED_PLUGIN_PACKAGE_NAMES.has(packageName)
-    || packageRoot.includes(`${path.sep}sandbox-providers${path.sep}`)
-    || packageName.includes("sandbox")
-  );
-}
-
-async function discoverBundledPlugins(): Promise<DiscoveredBundledPlugin[]> {
-  const pluginRoot = path.resolve(REPO_ROOT, "packages/plugins");
-  const bundledPlugins: DiscoveredBundledPlugin[] = [];
-  for (const packageJsonPath of await findPackageJsonFiles(pluginRoot)) {
-    const packageRoot = path.dirname(packageJsonPath);
-    const pkgJson = await readJsonFile(packageJsonPath);
-    const paperclipPlugin = pkgJson?.paperclipPlugin;
-    if (
-      !pkgJson
-      || !paperclipPlugin
-      || typeof paperclipPlugin !== "object"
-      || Array.isArray(paperclipPlugin)
-    ) {
-      continue;
-    }
-
-    const packageName = pkgJson.name;
-    if (typeof packageName !== "string" || packageName.length === 0) continue;
-
-    const metadata = await bundledPluginMetadata(packageRoot, pkgJson);
-    const tag = packageRoot.includes(`${path.sep}examples${path.sep}`) ? "example" : "first-party";
-    bundledPlugins.push({
-      entry: {
-        packageName,
-        pluginKey: metadata.pluginKey ?? packageName,
-        displayName: metadata.displayName ?? titleCasePluginName(packageName),
-        description: metadata.description
-          ?? `Bundled Paperclip plugin from ${path.relative(REPO_ROOT, packageRoot)}.`,
-        localPath: packageRoot,
-        tag,
-        experimental: isExperimentalBundledPlugin(packageRoot, packageName),
-      },
-      packageRoot,
-      pkgJson,
-    });
-  }
-
-  return bundledPlugins.sort((left, right) => {
-    if (left.entry.tag !== right.entry.tag) return left.entry.tag === "first-party" ? -1 : 1;
-    return left.entry.displayName.localeCompare(right.entry.displayName);
-  });
-}
-
-async function listBundledPlugins(): Promise<AvailableBundledPlugin[]> {
-  bundledPluginsCache ??= discoverBundledPlugins().catch((error: unknown) => {
-    bundledPluginsCache = null;
-    throw error;
-  });
-  const discovered = await bundledPluginsCache;
-  // Recompute the filesystem-dependent flag per request so a plugin auto-built
-  // during install is no longer reported as missing its entrypoints.
-  return discovered.map(({ entry, packageRoot, pkgJson }) => ({
-    ...entry,
-    hasBuiltEntrypoints: listMissingDeclaredPluginEntrypoints(packageRoot, pkgJson).length === 0,
-  }));
-}
 
 /**
  * Resolve a plugin by either database ID or plugin key.
@@ -439,17 +238,6 @@ export interface PluginRouteWebhookDeps {
 }
 
 /**
- * Optional dependencies for plugin tool routes.
- *
- * When provided, tool discovery and execution routes are enabled.
- * When omitted, the tool routes return 501 Not Implemented.
- */
-export interface PluginRouteToolDeps {
-  /** The tool dispatcher for listing and executing plugin tools. */
-  toolDispatcher: PluginToolDispatcher;
-}
-
-/**
  * Optional dependencies for plugin UI bridge routes.
  *
  * When provided, the getData and performAction bridge proxy routes are enabled,
@@ -493,8 +281,6 @@ interface PluginScopedApiResponse {
  * | GET | /plugins/:pluginId/jobs/:jobId/runs | List runs for a job |
  * | POST | /plugins/:pluginId/jobs/:jobId/trigger | Manually trigger a job |
  * | POST | /plugins/:pluginId/webhooks/:endpointKey | Receive inbound webhook |
- * | GET | /plugins/tools | List all available plugin tools |
- * | GET | /plugins/tools?pluginId=... | List tools for a specific plugin |
  * | GET | /plugins/:pluginId/config | Get current plugin config |
  * | POST | /plugins/:pluginId/config | Save (upsert) plugin config |
  * | POST | /plugins/:pluginId/config/test | Test config via validateConfig RPC |
@@ -505,7 +291,7 @@ interface PluginScopedApiResponse {
  * | GET | /plugins/:pluginId/bridge/stream/:channel | SSE stream from worker to UI |
  * | GET | /plugins/:pluginId/dashboard | Aggregated health dashboard data |
  *
- * **Route Ordering Note:** Static routes (like /ui-contributions, /tools) must be
+ * **Route Ordering Note:** Static routes (like /ui-contributions) must be
  * registered before parameterized routes (like /:pluginId) to prevent Express from
  * matching them as a plugin ID.
  *
@@ -513,7 +299,6 @@ interface PluginScopedApiResponse {
  * @param lifecycle - The app-owned plugin lifecycle paired with this loader
  * @param jobDeps - Optional job scheduling dependencies
  * @param webhookDeps - Optional webhook ingestion dependencies
- * @param toolDeps - Optional tool dispatcher dependencies
  * @param bridgeDeps - Optional bridge proxy dependencies for getData/performAction
  * @returns Express router with plugin routes mounted
  */
@@ -523,7 +308,6 @@ export function pluginRoutes(
   lifecycle: PluginLifecycleManager,
   jobDeps?: PluginRouteJobDeps,
   webhookDeps?: PluginRouteWebhookDeps,
-  toolDeps?: PluginRouteToolDeps,
   bridgeDeps?: PluginRouteBridgeDeps,
 ) {
   const router = Router();
@@ -754,17 +538,6 @@ export function pluginRoutes(
     res.json(plugins);
   });
 
-  /**
-   * GET /api/plugins/examples
-   *
-   * Return plugin packages bundled in this repo, if present.
-   * These can be installed through the normal local-path install flow.
-   */
-  router.get("/plugins/examples", async (req, res) => {
-    assertBoardOrgAccess(req);
-    res.json(await listBundledPlugins());
-  });
-
   // IMPORTANT: Static routes must come before parameterized routes
   // to avoid Express matching "ui-contributions" as a :pluginId
 
@@ -833,35 +606,6 @@ export function pluginRoutes(
     res.json(contributions);
   });
 
-  // ===========================================================================
-  // Tool discovery and execution routes
-  // ===========================================================================
-
-  /**
-   * GET /api/plugins/tools
-   *
-   * List all available plugin-contributed tools for board configuration.
-   *
-   * Query params:
-   * - `pluginId` (optional): Filter to tools from a specific plugin
-   *
-   * Response: `AgentToolDescriptor[]`
-   * Errors: 501 if tool dispatcher is not configured
-   */
-  router.get("/plugins/tools", async (req, res) => {
-    assertBoardOrgAccess(req);
-
-    if (!toolDeps) {
-      res.status(501).json({ error: "Plugin tool dispatch is not enabled" });
-      return;
-    }
-
-    const pluginId = req.query.pluginId as string | undefined;
-    const filter = pluginId ? { pluginId } : undefined;
-    const tools = toolDeps.toolDispatcher.listToolsForAgent(filter);
-    res.json(tools);
-  });
-
   /**
    * POST /api/plugins/install
    *
@@ -925,15 +669,10 @@ export function pluginRoutes(
         ? { localPath: trimmedPackage }
         : { packageName: trimmedPackage, version: version?.trim() };
 
-      const discovered = await loader.installPlugin(installOptions);
-
-      if (!discovered.manifest) {
-        res.status(500).json({ error: "Plugin installed but manifest is missing" });
-        return;
-      }
+      const resolved = await loader.installPlugin(installOptions);
 
       // Transition to ready state
-      const existingPlugin = await registry.getByKey(discovered.manifest.id);
+      const existingPlugin = await registry.getByKey(resolved.manifest.id);
       if (existingPlugin) {
         await lifecycle.load(existingPlugin.id);
         const updated = await registry.getById(existingPlugin.id);

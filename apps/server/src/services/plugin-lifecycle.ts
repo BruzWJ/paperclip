@@ -769,7 +769,7 @@ export function pluginLifecycleManager(
       await deactivatePluginRuntime(pluginId, plugin.pluginKey);
 
       // 1. Download and validate new package via loader
-      const { oldManifest, newManifest, discovered } =
+      const { oldManifest, newManifest, resolved } =
         await pluginLoaderInstance.upgradePlugin(pluginId, { version });
 
       log.info(
@@ -804,7 +804,7 @@ export function pluginLifecycleManager(
       } else {
         const result = await transition(pluginId, "ready", null, {
           ...plugin,
-          version: discovered.version,
+          version: resolved.version,
           manifestJson: newManifest,
         } as PluginRecord);
         await activateReadyPlugin(pluginId);

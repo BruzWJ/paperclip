@@ -25,7 +25,6 @@ const mockEnvironmentsApi = vi.hoisted(() => ({
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   get: vi.fn(),
   getExperimental: vi.fn(),
-  getGeneral: vi.fn(),
 }));
 
 const mockSecretsApi = vi.hoisted(() => ({
@@ -302,7 +301,6 @@ describe("AgentConfigForm environment selector", () => {
     });
     mockInstanceSettingsApi.get.mockResolvedValue({ defaultEnvironmentId: null });
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableEnvironments: true });
-    mockInstanceSettingsApi.getGeneral.mockResolvedValue({ executionMode: "any" });
     mockSecretsApi.list.mockResolvedValue([]);
   });
 

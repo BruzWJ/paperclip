@@ -138,17 +138,6 @@ export interface PluginDashboardData {
   checkedAt: string;
 }
 
-export interface AvailableBundledPlugin {
-  packageName: string;
-  pluginKey: string;
-  displayName: string;
-  description: string;
-  localPath: string;
-  tag: "example" | "first-party";
-  experimental: boolean;
-  hasBuiltEntrypoints: boolean;
-}
-
 export interface PluginLocalFoldersResponse {
   pluginId: string;
   companyId: string;
@@ -187,12 +176,6 @@ export const pluginsApi = {
    */
   list: (status?: PluginStatus) =>
     api.get<PluginRecord[]>(`/plugins${status ? `?status=${status}` : ""}`),
-
-  /**
-   * List bundled plugin packages available from the current repo checkout.
-   */
-  listBundled: () =>
-    api.get<AvailableBundledPlugin[]>("/plugins/examples"),
 
   /**
    * Fetch a single plugin record by its UUID or plugin key.

@@ -292,30 +292,30 @@ describe("plugin orchestration APIs without a database process", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-folder-"));
     tempRoots.push(root);
     const declaration = {
-      folderKey: "wiki-root",
-      displayName: "Wiki root",
+      folderKey: "content-root",
+      displayName: "Content root",
       access: "readWrite",
-      requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
-      requiredFiles: ["WIKI.md", "AGENTS.md"],
+      requiredDirectories: ["raw", "content", "content/topics", ".paperclip"],
+      requiredFiles: ["CONTENT.md", "AGENTS.md"],
     };
     const manifest = {
-      id: llmWikiPluginKey,
+      id: localFolderPluginKey,
       apiVersion: 1,
       version: "0.1.0",
-      displayName: "LLM Wiki",
-      description: "Local-file LLM Wiki plugin",
+      displayName: "Content Store",
+      description: "Local-file content store plugin",
       author: "Paperclip",
       categories: ["automation"],
       capabilities: ["local.folders"],
       entrypoints: { worker: "./dist/worker.js" },
       localFolders: [declaration],
     };
-    const host = services({ pluginKey: llmWikiPluginKey, manifest });
+    const host = services({ pluginKey: localFolderPluginKey, manifest });
     hostMocks.getCompanySettings.mockResolvedValueOnce(null);
 
     const configured = await host.localFolders.configure({
       companyId,
-      folderKey: "wiki-root",
+      folderKey: "content-root",
       path: root,
       access: "readWrite",
       requiredDirectories: declaration.requiredDirectories,
@@ -324,7 +324,7 @@ describe("plugin orchestration APIs without a database process", () => {
     expect(configured).toMatchObject({
       healthy: false,
       missingDirectories: [],
-      missingFiles: ["WIKI.md", "AGENTS.md"],
+      missingFiles: ["CONTENT.md", "AGENTS.md"],
     });
 
     const persistedSettings = hostMocks.upsertCompanySettings.mock.calls[0]?.[2];
@@ -334,31 +334,31 @@ describe("plugin orchestration APIs without a database process", () => {
         .settingsJson,
     });
     await fs.rm(path.join(root, "raw"), { recursive: true, force: true });
-    await fs.rm(path.join(root, "wiki"), { recursive: true, force: true });
+    await fs.rm(path.join(root, "content"), { recursive: true, force: true });
     await expect(host.localFolders.readText({
       companyId,
-      folderKey: "wiki-root",
-      relativePath: "WIKI.md",
+      folderKey: "content-root",
+      relativePath: "CONTENT.md",
     })).rejects.toThrow("Local folder is not healthy");
 
     await host.localFolders.writeTextAtomic({
       companyId,
-      folderKey: "wiki-root",
-      relativePath: "WIKI.md",
-      contents: "# Wiki\n",
+      folderKey: "content-root",
+      relativePath: "CONTENT.md",
+      contents: "# Content\n",
     });
     await host.localFolders.writeTextAtomic({
       companyId,
-      folderKey: "wiki-root",
+      folderKey: "content-root",
       relativePath: "AGENTS.md",
       contents: "# Agents\n",
     });
 
-    await expect(host.localFolders.status({ companyId, folderKey: "wiki-root" }))
+    await expect(host.localFolders.status({ companyId, folderKey: "content-root" }))
       .resolves.toMatchObject({ healthy: true });
-    await expect(fs.stat(path.join(root, "wiki/concepts"))).resolves.toMatchObject({});
-    await expect(fs.readFile(path.join(root, "WIKI.md"), "utf8"))
-      .resolves.toBe("# Wiki\n");
+    await expect(fs.stat(path.join(root, "content/topics"))).resolves.toMatchObject({});
+    await expect(fs.readFile(path.join(root, "CONTENT.md"), "utf8"))
+      .resolves.toBe("# Content\n");
   });
 
   it("rejects local-folder access for undeclared manifest keys", async () => {
@@ -455,4 +455,4 @@ describe("plugin orchestration APIs without a database process", () => {
   });
 });
 
-const llmWikiPluginKey = "paperclipai.plugin-llm-wiki";
+const localFolderPluginKey = "paperclip.local-folder-fixture";

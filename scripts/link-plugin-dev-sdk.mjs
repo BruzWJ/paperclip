@@ -8,7 +8,7 @@
 // plugin's own package.json so the published tarballs cannot carry a lifecycle
 // script that escapes their package directory at install time.
 
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,7 +20,6 @@ const sdkDir = join(repoRoot, "packages", "plugins", "sdk");
 // linked in for local dev. Keep in sync with pnpm-workspace.yaml exclusions.
 function excludedPluginDirs() {
   return [
-    ...readPluginsUnder(join(repoRoot, "packages", "plugins", "sandbox-providers")),
     join(repoRoot, "packages", "plugins", "examples", "plugin-orchestration-smoke-example"),
   ];
 }
@@ -45,27 +44,6 @@ export function linkExcludedPlugins() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { linked, skipped } = linkExcludedPlugins();
   console.log(`  ✓ Linked @paperclipai/plugin-sdk into ${linked} excluded plugin(s) (skipped ${skipped})`);
-}
-
-// Recursively collect package directories (those containing a package.json)
-// under parentDir. The matching pnpm-workspace.yaml exclusion uses a recursive
-// glob (e.g. "!packages/plugins/sandbox-providers/**"), so a provider nested
-// deeper than one level must still be discovered here.
-export function readPluginsUnder(parentDir) {
-  if (!existsSync(parentDir)) return [];
-  const found = [];
-  for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
-    // Skip symlinked directories so discovery can't be steered outside the
-    // intended plugin subtree, and skip node_modules.
-    if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name === "node_modules") continue;
-    const childDir = join(parentDir, entry.name);
-    if (existsSync(join(childDir, "package.json"))) {
-      found.push(childDir);
-    } else {
-      found.push(...readPluginsUnder(childDir));
-    }
-  }
-  return found;
 }
 
 export function linkSdkInto(packageDir) {

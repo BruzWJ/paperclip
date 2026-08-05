@@ -804,7 +804,6 @@ export type {
   CatalogTeamImportPreviewResult,
   CatalogTeamInstallResult,
   InstalledCatalogTeam,
-  InstanceExecutionMode,
   InstanceExperimentalSettings,
   InstanceGeneralSettings,
   InstanceSettings,

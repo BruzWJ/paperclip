@@ -94,7 +94,6 @@ export type {
   FeedbackTraceBundle,
 } from "./feedback.js";
 export type {
-  InstanceExecutionMode,
   InstanceExperimentalSettings,
   InstanceGeneralSettings,
   InstanceSettings,

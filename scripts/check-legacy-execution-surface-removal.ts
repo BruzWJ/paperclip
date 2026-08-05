@@ -73,7 +73,6 @@ const SUMMARY_TYPES = "packages/shared/src/types/summary-slot.ts";
 const SUMMARY_VALIDATOR =
   "packages/shared/src/validators/summary-slot.ts";
 const SUMMARY_UI_API = "apps/ui/src/api/summarySlots.ts";
-const WIKI_CORE = "packages/plugins/plugin-llm-wiki/src/wiki/core.ts";
 const DISPATCHER = "apps/server/src/services/issue-execution-dispatcher.ts";
 const POSTGRES_DISPATCHER =
   "apps/server/src/services/issue-execution-dispatcher-postgres.ts";
@@ -372,12 +371,6 @@ function canonicalOwnerViolations(repositoryRoot: string): string[] {
       "RefreshSummarySlotResponse",
       "refresh:",
       'summarySlotPath(selector, "/refresh")',
-    ]),
-    ...requireFileTokens(repositoryRoot, WIKI_CORE, [
-      "createOperationIssue",
-      "ctx.issues.create",
-      "ctx.issues.registerCreatorCallback",
-      "callbackKey: WIKI_CREATOR_CALLBACK_KEY",
     ]),
     ...requireFileTokens(repositoryRoot, DISPATCHER, [
       "Dispatcher accepts only a persisted IssueExecutionRef",

@@ -68,9 +68,9 @@ async function flushReact() {
 
 function pageContribution(overrides: Partial<{ slots: unknown[] }> = {}) {
   return {
-    pluginId: "plugin-wiki",
-    pluginKey: "paperclipai.plugin-llm-wiki",
-    displayName: "LLM Wiki",
+    pluginId: "plugin-knowledge-base",
+    pluginKey: "acme.knowledge-base",
+    displayName: "Knowledge Base",
     version: "0.1.0",
     uiEntryFile: "ui.js",
     slots: [
@@ -131,7 +131,7 @@ describe("PluginPage", () => {
 
     expect(mockSetBreadcrumbs).toHaveBeenCalledWith([
       { label: "Plugins", href: "/company/settings/instance/plugins" },
-      { label: "LLM Wiki" },
+      { label: "Knowledge Base" },
     ]);
     expect(container.textContent).toContain("Back");
     expect(container.querySelector('a[href="/PAP/dashboard"]')).not.toBeNull();

@@ -4,9 +4,9 @@ import test from "node:test";
 import { buildPublishArgs, parseArgs, resolveTargetPackage } from "./bootstrap-npm-package.mjs";
 
 test("parseArgs recognizes publish and skip-build flags", () => {
-  assert.deepEqual(parseArgs(["@paperclipai/plugin-workspace-diff", "--publish", "--skip-build"]), {
+  assert.deepEqual(parseArgs(["@paperclipai/plugin-sdk", "--publish", "--skip-build"]), {
     help: false,
-    selector: "@paperclipai/plugin-workspace-diff",
+    selector: "@paperclipai/plugin-sdk",
     publish: true,
     skipBuild: true,
     otp: null,
@@ -14,9 +14,9 @@ test("parseArgs recognizes publish and skip-build flags", () => {
 });
 
 test("parseArgs accepts an explicit otp value", () => {
-  assert.deepEqual(parseArgs(["packages/plugins/plugin-workspace-diff", "--publish", "--otp", "123456"]), {
+  assert.deepEqual(parseArgs(["packages/plugins/sdk", "--publish", "--otp", "123456"]), {
     help: false,
-    selector: "packages/plugins/plugin-workspace-diff",
+    selector: "packages/plugins/sdk",
     publish: true,
     skipBuild: false,
     otp: "123456",
@@ -24,9 +24,9 @@ test("parseArgs accepts an explicit otp value", () => {
 });
 
 test("parseArgs leaves otp null when omitted", () => {
-  assert.deepEqual(parseArgs(["packages/plugins/plugin-workspace-diff", "--publish"]), {
+  assert.deepEqual(parseArgs(["packages/plugins/sdk", "--publish"]), {
     help: false,
-    selector: "packages/plugins/plugin-workspace-diff",
+    selector: "packages/plugins/sdk",
     publish: true,
     skipBuild: false,
     otp: null,
@@ -53,18 +53,18 @@ test("resolveTargetPackage matches by package name or dir", () => {
   assert.equal(resolveTargetPackage("./packages/b", packages).name, "@paperclipai/b");
 });
 
-test("resolveTargetPackage includes the workspace diff plugin bootstrap package", () => {
-  const pkg = resolveTargetPackage("@paperclipai/plugin-workspace-diff");
+test("resolveTargetPackage includes the plugin SDK bootstrap package", () => {
+  const pkg = resolveTargetPackage("@paperclipai/plugin-sdk");
 
-  assert.equal(pkg.dir, "packages/plugins/plugin-workspace-diff");
+  assert.equal(pkg.dir, "packages/plugins/sdk");
 });
 
 test("buildPublishArgs publishes from the repo root through pnpm", () => {
-  const pkg = { dir: "packages/plugins/plugin-workspace-diff", name: "@paperclipai/plugin-workspace-diff" };
+  const pkg = { dir: "packages/plugins/sdk", name: "@paperclipai/plugin-sdk" };
 
   assert.deepEqual(buildPublishArgs(pkg), [
     "publish",
-    "packages/plugins/plugin-workspace-diff",
+    "packages/plugins/sdk",
     "--no-git-checks",
     "--access",
     "public",
@@ -72,11 +72,11 @@ test("buildPublishArgs publishes from the repo root through pnpm", () => {
 });
 
 test("buildPublishArgs includes dry-run and otp flags when requested", () => {
-  const pkg = { dir: "packages/plugins/plugin-workspace-diff", name: "@paperclipai/plugin-workspace-diff" };
+  const pkg = { dir: "packages/plugins/sdk", name: "@paperclipai/plugin-sdk" };
 
   assert.deepEqual(buildPublishArgs(pkg, { dryRun: true, otp: "123456" }), [
     "publish",
-    "packages/plugins/plugin-workspace-diff",
+    "packages/plugins/sdk",
     "--no-git-checks",
     "--access",
     "public",

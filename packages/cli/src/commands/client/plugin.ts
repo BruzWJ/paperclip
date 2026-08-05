@@ -629,54 +629,7 @@ export function registerPluginCommands(program: Command): void {
       }),
   );
 
-  // -------------------------------------------------------------------------
-  // plugin examples
-  // -------------------------------------------------------------------------
-  addCommonClientOptions(
-    plugin
-      .command("examples")
-      .description("List bundled example plugins available for local install")
-      .action(async (opts: BaseClientOptions) => {
-        try {
-          const ctx = resolveCommandContext(opts);
-          const examples = await ctx.api.get<
-            Array<{
-              packageName: string;
-              pluginKey: string;
-              displayName: string;
-              description: string;
-              localPath: string;
-              tag: string;
-            }>
-          >("/api/plugins/examples");
-
-          if (ctx.json) {
-            printOutput(examples, { json: true });
-            return;
-          }
-
-          const rows = examples ?? [];
-          if (rows.length === 0) {
-            console.log(pc.dim("No bundled examples available."));
-            return;
-          }
-
-          for (const ex of rows) {
-            console.log(
-              `${pc.bold(ex.displayName)}  ${pc.dim(ex.pluginKey)}\n` +
-                `  ${ex.description}\n` +
-                `  ${pc.cyan(`paperclipai plugin install ${ex.localPath}`)}`,
-            );
-          }
-        } catch (err) {
-          handleCommandError(err);
-        }
-      }),
-  );
-
   addPluginGet(plugin, "ui-contributions", "List plugin UI contributions", "/api/plugins/ui-contributions");
-  addPluginGet(plugin, "tools", "List plugin tools", "/api/plugins/tools");
-  addPluginPost(plugin, "tool:execute", "Execute a plugin tool", "/api/plugins/tools/execute");
   addPluginSubGet(plugin, "health", "Get plugin health", "health");
   addPluginSubGet(plugin, "logs", "Get plugin logs", "logs");
   addPluginSubPost(plugin, "upgrade", "Upgrade a plugin", "upgrade");

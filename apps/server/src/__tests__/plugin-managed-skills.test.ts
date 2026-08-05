@@ -20,18 +20,18 @@ const companyId = "11111111-1111-4111-8111-111111111111";
 const pluginId = "22222222-2222-4222-8222-222222222222";
 const skillId = "33333333-3333-4333-8333-333333333333";
 const pluginKey = "paperclip.managed-skills-test";
-const canonicalKey = "plugin/paperclip-managed-skills-test/wiki-maintainer";
-const referenceContent = "# Wiki style\n\nKeep pages cited and terse.\n";
+const canonicalKey = "plugin/paperclip-managed-skills-test/documentation-maintainer";
+const referenceContent = "# Documentation style\n\nKeep pages cited and terse.\n";
 const defaultMarkdown = [
   "---",
-  'name: "Wiki Maintainer Skill"',
-  'description: "Use LLM Wiki tools to maintain company knowledge."',
+  'name: "Documentation Maintainer Skill"',
+  'description: "Use documentation tools to maintain company knowledge."',
   `key: "${canonicalKey}"`,
   "---",
   "",
-  "# Wiki Maintainer Skill",
+  "# Documentation Maintainer Skill",
   "",
-  "Use LLM Wiki tools to maintain company knowledge.",
+  "Use documentation tools to maintain company knowledge.",
   "",
 ].join("\n");
 
@@ -47,11 +47,11 @@ function manifest(): PaperclipPluginManifestV1 {
     capabilities: ["skills.managed"],
     entrypoints: { worker: "./dist/worker.js" },
     skills: [{
-      skillKey: "wiki-maintainer",
-      displayName: "Wiki Maintainer Skill",
-      description: "Use LLM Wiki tools to maintain company knowledge.",
+      skillKey: "documentation-maintainer",
+      displayName: "Documentation Maintainer Skill",
+      description: "Use documentation tools to maintain company knowledge.",
       files: [{
-        path: "references/wiki-style.md",
+        path: "references/documentation-style.md",
         content: referenceContent,
       }],
     }],
@@ -63,13 +63,13 @@ function skill(overrides: Record<string, unknown> = {}) {
     id: skillId,
     companyId,
     key: canonicalKey,
-    name: "Wiki Maintainer Skill",
-    description: "Use LLM Wiki tools to maintain company knowledge.",
+    name: "Documentation Maintainer Skill",
+    description: "Use documentation tools to maintain company knowledge.",
     sourceType: "catalog",
     markdown: defaultMarkdown,
     fileInventory: [
       { path: "SKILL.md", kind: "skill" },
-      { path: "references/wiki-style.md", kind: "reference" },
+      { path: "references/documentation-style.md", kind: "reference" },
     ],
     createdAt: new Date("2026-08-01T10:00:00.000Z"),
     updatedAt: new Date("2026-08-01T10:00:00.000Z"),
@@ -79,12 +79,12 @@ function skill(overrides: Record<string, unknown> = {}) {
 
 function defaultsJson() {
   return {
-    skillKey: "wiki-maintainer",
-    displayName: "Wiki Maintainer Skill",
-    slug: "wiki-maintainer",
-    description: "Use LLM Wiki tools to maintain company knowledge.",
+    skillKey: "documentation-maintainer",
+    displayName: "Documentation Maintainer Skill",
+    slug: "documentation-maintainer",
+    description: "Use documentation tools to maintain company knowledge.",
     canonicalKey,
-    files: ["SKILL.md", "references/wiki-style.md"],
+    files: ["SKILL.md", "references/documentation-style.md"],
   };
 }
 
@@ -95,7 +95,7 @@ function binding(resourceId = skillId) {
     pluginId,
     pluginKey,
     resourceKind: "skill",
-    resourceKey: "wiki-maintainer",
+    resourceKey: "documentation-maintainer",
     resourceId,
     defaultsJson: defaultsJson(),
     createdAt: new Date("2026-08-01T10:00:00.000Z"),
@@ -119,11 +119,11 @@ beforeEach(() => {
   skills.getById.mockResolvedValue(skill());
   skills.getByKey.mockResolvedValue(null);
   skills.importPackageFiles.mockResolvedValue([
-    { skill: skill(), originalSlug: "wiki-maintainer" },
+    { skill: skill(), originalSlug: "documentation-maintainer" },
   ]);
   skills.readFile.mockImplementation(
     async (_companyId: string, _skillId: string, filePath: string) =>
-      filePath === "references/wiki-style.md"
+      filePath === "references/documentation-style.md"
         ? { content: referenceContent }
         : null,
   );
@@ -137,7 +137,7 @@ describe("plugin-managed skills", () => {
     });
 
     await expect(
-      service(harness.db).reconcile("wiki-maintainer", companyId),
+      service(harness.db).reconcile("documentation-maintainer", companyId),
     ).resolves.toMatchObject({
       status: "created",
       skillId,
@@ -147,7 +147,7 @@ describe("plugin-managed skills", () => {
         fileInventory: expect.arrayContaining([
           expect.objectContaining({ path: "SKILL.md", kind: "skill" }),
           expect.objectContaining({
-            path: "references/wiki-style.md",
+            path: "references/documentation-style.md",
             kind: "reference",
           }),
         ]),
@@ -157,8 +157,8 @@ describe("plugin-managed skills", () => {
     expect(skills.importPackageFiles).toHaveBeenCalledWith(
       companyId,
       {
-        "wiki-maintainer/SKILL.md": defaultMarkdown,
-        "wiki-maintainer/references/wiki-style.md": referenceContent,
+        "documentation-maintainer/SKILL.md": defaultMarkdown,
+        "documentation-maintainer/references/documentation-style.md": referenceContent,
       },
       { onConflict: "replace" },
     );
@@ -170,7 +170,7 @@ describe("plugin-managed skills", () => {
       pluginId,
       pluginKey,
       resourceKind: "skill",
-      resourceKey: "wiki-maintainer",
+      resourceKey: "documentation-maintainer",
       resourceId: skillId,
       defaultsJson: defaultsJson(),
     });
@@ -186,7 +186,7 @@ describe("plugin-managed skills", () => {
     });
 
     await expect(
-      service(harness.db).reconcile("wiki-maintainer", companyId),
+      service(harness.db).reconcile("documentation-maintainer", companyId),
     ).resolves.toMatchObject({
       status: "resolved",
       skillId,
@@ -201,18 +201,18 @@ describe("plugin-managed skills", () => {
 
   it("preserves operator edits and reports their drift during reconcile", async () => {
     const edited = skill({
-      name: "Custom Wiki Skill",
+      name: "Custom Documentation Skill",
       markdown: "# Custom instructions\n",
     });
     skills.getById.mockResolvedValue(edited);
     const harness = createMockDb({ select: [[binding()], [binding()]] });
 
     await expect(
-      service(harness.db).reconcile("wiki-maintainer", companyId),
+      service(harness.db).reconcile("documentation-maintainer", companyId),
     ).resolves.toMatchObject({
       status: "resolved",
       skill: {
-        name: "Custom Wiki Skill",
+        name: "Custom Documentation Skill",
         markdown: "# Custom instructions\n",
       },
       defaultDrift: { changedFiles: ["SKILL.md"] },
@@ -226,7 +226,7 @@ describe("plugin-managed skills", () => {
     const harness = createMockDb({ select: [[binding()]] });
 
     await expect(
-      service(harness.db).reset("wiki-maintainer", companyId),
+      service(harness.db).reset("documentation-maintainer", companyId),
     ).resolves.toMatchObject({
       status: "reset",
       skillId,

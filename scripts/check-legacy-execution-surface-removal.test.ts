@@ -126,18 +126,6 @@ function fixtureRoot(): string {
   );
   write(
     root,
-    "packages/plugins/plugin-llm-wiki/src/wiki/core.ts",
-    [
-      "declare const WIKI_CREATOR_CALLBACK_KEY: string;",
-      "declare const ctx: any;",
-      "export async function createOperationIssue() {",
-      "  return ctx.issues.create({ callbackKey: WIKI_CREATOR_CALLBACK_KEY });",
-      "}",
-      "export function register() { return ctx.issues.registerCreatorCallback({}, () => null); }",
-    ].join("\n"),
-  );
-  write(
-    root,
     "apps/server/src/services/issue-execution-dispatcher.ts",
     [
       "// Dispatcher accepts only a persisted IssueExecutionRef",
@@ -405,7 +393,6 @@ for (const [path, token] of [
   ["packages/shared/src/types/summary-slot.ts", "RefreshSummarySlotResponse"],
   ["packages/shared/src/validators/summary-slot.ts", "refreshSummarySlotSchema"],
   ["apps/ui/src/api/summarySlots.ts", "refresh:"],
-  ["packages/plugins/plugin-llm-wiki/src/wiki/core.ts", "ctx.issues.registerCreatorCallback"],
   ["apps/server/src/services/issue-execution-dispatcher.ts", "notifyPersistedRef"],
   ["apps/server/src/services/issue-execution-dispatcher-postgres.ts", "releaseAttempt"],
   ["apps/server/src/services/issue-execution-postgres.ts", "dispatcher.notifyPersistedRef(input.refId)"],

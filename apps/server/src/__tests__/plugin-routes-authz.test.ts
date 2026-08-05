@@ -47,7 +47,6 @@ async function createApp(
   routeOverrides: {
     db?: unknown;
     jobDeps?: unknown;
-    toolDeps?: unknown;
     bridgeDeps?: unknown;
     captureJsonContext?: (context: unknown, body: unknown) => void;
   } = {},
@@ -85,7 +84,6 @@ async function createApp(
     mockLifecycle as never,
     routeOverrides.jobDeps as never,
     undefined,
-    routeOverrides.toolDeps as never,
     routeOverrides.bridgeDeps as never,
   ));
   app.use(errorHandler);
@@ -97,7 +95,6 @@ const companyA = "22222222-2222-4222-8222-222222222222";
 const companyB = "33333333-3333-4333-8333-333333333333";
 const agentA = "44444444-4444-4444-8444-444444444444";
 const runA = "55555555-5555-4555-8555-555555555555";
-const projectA = "66666666-6666-4666-8666-666666666666";
 const pluginId = "11111111-1111-4111-8111-111111111111";
 const secretId = "77777777-7777-4777-8777-777777777777";
 
@@ -139,28 +136,6 @@ describe.sequential("plugin install and upgrade authz", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
-  it("lists bundled monorepo plugin packages", async () => {
-    const { app } = await createApp(boardActor());
-
-    const res = await request(app).get("/api/plugins/examples");
-
-    expect(res.status).toBe(200);
-    const packageNames = res.body.map((plugin: { packageName: string }) => plugin.packageName);
-    const byPackageName = new Map(
-      res.body.map((plugin: { packageName: string; experimental: boolean; hasBuiltEntrypoints: boolean }) => [plugin.packageName, plugin]),
-    );
-    expect(packageNames).toContain("@paperclipai/plugin-workspace-diff");
-    expect(packageNames).toContain("@paperclipai/plugin-llm-wiki");
-    expect(packageNames).toContain("@paperclipai/plugin-modal");
-    expect(packageNames).toContain("@paperclipai/plugin-authoring-smoke-example");
-    expect(packageNames).not.toContain("@paperclipai/plugin-sdk");
-    expect(byPackageName.get("@paperclipai/plugin-workspace-diff")?.experimental).toBe(true);
-    expect(byPackageName.get("@paperclipai/plugin-llm-wiki")?.experimental).toBe(true);
-    expect(byPackageName.get("@paperclipai/plugin-modal")?.experimental).toBe(true);
-    expect(byPackageName.get("@paperclipai/plugin-authoring-smoke-example")?.experimental).toBe(false);
-    expect(typeof byPackageName.get("@paperclipai/plugin-workspace-diff")?.hasBuiltEntrypoints).toBe("boolean");
-  }, 20_000);
 
   it("rejects plugin installation for non-admin board users", async () => {
     const { app, loader } = await createApp(boardActor({
@@ -527,110 +502,9 @@ describe.sequential("plugin local folder routes", () => {
   });
 });
 
-describe.sequential("plugin tool and bridge authz", () => {
+describe.sequential("plugin bridge authz", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("keeps the retired public tool-execution route absent before board scope resolution", async () => {
-    const executeTool = vi.fn();
-    const getTool = vi.fn();
-    const { app } = await createApp(boardActor(), {}, {
-      toolDeps: {
-        toolDispatcher: {
-          listToolsForAgent: vi.fn(),
-          getTool,
-          executeTool,
-        },
-      },
-    });
-
-    const res = await request(app)
-      .post("/api/plugins/tools/execute")
-      .send({
-        tool: "paperclip.example:search",
-        parameters: {},
-        runContext: {
-          agentId: agentA,
-          runId: runA,
-          companyId: companyB,
-          projectId: projectA,
-        },
-      });
-
-    expect(res.status).toBe(404);
-    expect(getTool).not.toHaveBeenCalled();
-    expect(executeTool).not.toHaveBeenCalled();
-  });
-
-  it("does not restore public dispatch for any caller-supplied run-context reference", async () => {
-    const cases = [
-      { agentId: agentA, runId: runA, companyId: companyA, projectId: projectA },
-      { agentId: agentA, runId: runA, companyId: companyB, projectId: projectA },
-      {
-        agentId: "77777777-7777-4777-8777-777777777777",
-        runId: runA,
-        companyId: companyA,
-        projectId: projectA,
-      },
-    ];
-
-    for (const runContext of cases) {
-      const executeTool = vi.fn();
-      const getTool = vi.fn();
-      const { app } = await createApp(boardActor(), {}, {
-        toolDeps: {
-          toolDispatcher: {
-            listToolsForAgent: vi.fn(),
-            getTool,
-            executeTool,
-          },
-        },
-      });
-
-      const res = await request(app)
-        .post("/api/plugins/tools/execute")
-        .send({
-          tool: "paperclip.example:search",
-          parameters: {},
-          runContext,
-        });
-
-      expect(res.status).toBe(404);
-      expect(getTool).not.toHaveBeenCalled();
-      expect(executeTool).not.toHaveBeenCalled();
-    }
-  });
-
-  it("keeps tool execution inside the compiled gateway even for a coherent run context", async () => {
-    const executeTool = vi.fn().mockResolvedValue({ content: "ok" });
-    const getTool = vi.fn(() => ({ name: "paperclip.example:search" }));
-    const { app } = await createApp(boardActor(), {}, {
-      toolDeps: {
-        toolDispatcher: {
-          listToolsForAgent: vi.fn(),
-          getTool,
-          executeTool,
-        },
-      },
-    });
-
-    const res = await request(app)
-      .post("/api/plugins/tools/execute")
-      .send({
-        tool: "paperclip.example:search",
-        parameters: { q: "test" },
-        runContext: {
-          agentId: agentA,
-          runId: runA,
-          companyId: companyA,
-          projectId: projectA,
-        },
-      });
-
-    expect(res.status).toBe(404);
-    expect(getTool).not.toHaveBeenCalled();
-    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -906,28 +780,6 @@ describe.sequential("plugin tool and bridge authz", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ runId: "run-1", jobId: "job-1" });
     expect(scheduler.triggerJob).toHaveBeenCalledWith("job-1", "manual");
-  });
-
-  it("rejects board users with no company memberships from listing plugin tools", async () => {
-    const listToolsForAgent = vi.fn(() => []);
-    const { app } = await createApp(
-      boardActor({ companyIds: [], isInstanceAdmin: false }),
-      {},
-      {
-        toolDeps: {
-          toolDispatcher: {
-            listToolsForAgent,
-            getTool: vi.fn(),
-            executeTool: vi.fn(),
-          },
-        },
-      },
-    );
-
-    const res = await request(app).get("/api/plugins/tools");
-
-    expect(res.status).toBe(403);
-    expect(listToolsForAgent).not.toHaveBeenCalled();
   });
 
 });
