@@ -1,4 +1,4 @@
-const CACHE_NAME = "paperclip-v2";
+const CACHE_NAME = "paperclip-v3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -19,6 +19,14 @@ self.addEventListener("fetch", (event) => {
 
   // Skip non-GET requests and API calls
   if (request.method !== "GET" || url.pathname.startsWith("/api")) {
+    return;
+  }
+
+  // Hashed build assets are served with Cache-Control: immutable, so the
+  // browser HTTP cache handles them strictly better than a network-first SW
+  // (which would re-fetch and re-write every asset into Cache Storage on
+  // every load). Deliberately leave them to the HTTP cache.
+  if (url.pathname.startsWith("/assets/")) {
     return;
   }
 

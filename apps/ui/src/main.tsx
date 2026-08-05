@@ -18,7 +18,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { initPluginBridge } from "./plugins/bridge-init";
 import { PluginLauncherProvider } from "./plugins/launchers";
 import { startPerfMeasureReaper } from "./lib/perf-measure-reaper";
-import "@mdxeditor/editor/style.css";
 import "./index.css";
 
 initPluginBridge(React, ReactDOM);
@@ -28,9 +27,17 @@ initPluginBridge(React, ReactDOM);
 // accumulate into millions of native objects (GBs). Reap them periodically.
 startPerfMeasureReaper();
 
-if ("serviceWorker" in navigator) {
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js");
+  });
+} else if ("serviceWorker" in navigator) {
+  // Dev: clean up any service worker left installed by a previous prod-mode
+  // visit so it can't interfere with the Vite dev server.
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      registrations.forEach((registration) => registration.unregister());
+    });
   });
 }
 

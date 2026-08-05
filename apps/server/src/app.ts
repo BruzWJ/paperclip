@@ -10,6 +10,7 @@ import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { applyTrustProxy, parseTrustProxyEnv } from "./middleware/trust-proxy.js";
+import { staticPrecompressed } from "./middleware/static-precompressed.js";
 import {
   createRequestAuthorityBoundary,
   createRequestAuthorityPolicy,
@@ -497,12 +498,21 @@ export async function createApp(
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
       // Hashed asset files (Vite emits them under /assets/<name>.<hash>.<ext>)
-      // never change once built, so they can be cached aggressively.
+      // never change once built, so they can be cached aggressively. The UI
+      // build also emits precompressed <asset>.br / <asset>.gz sidecars;
+      // serve those when the client accepts the encoding, falling through to
+      // the plain express.static otherwise. Both paths send
+      // Vary: Accept-Encoding so a shared cache never mixes encoded and
+      // identity bodies for one URL.
+      app.use("/assets", staticPrecompressed(path.join(uiDist, "assets")));
       app.use(
         "/assets",
         express.static(path.join(uiDist, "assets"), {
           maxAge: "1y",
           immutable: true,
+          setHeaders(res) {
+            res.setHeader("Vary", "Accept-Encoding");
+          },
         }),
       );
       // Non-hashed static files (favicon.ico, manifest, robots.txt, etc.):

@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { promisify } from "node:util";
 import { deflate, gzip } from "node:zlib";
+import { parseAcceptEncoding } from "./accept-encoding.js";
 
 export const API_COMPRESSION_THRESHOLD_BYTES = 1024;
 
@@ -12,30 +13,6 @@ type SupportedEncoding = "gzip" | "deflate";
 type ApiCompressionOptions = {
   thresholdBytes?: number;
 };
-
-type EncodingPreference = {
-  encoding: string;
-  q: number;
-};
-
-function parseAcceptEncoding(value: string | string[] | undefined): EncodingPreference[] {
-  const raw = Array.isArray(value) ? value.join(",") : value;
-  if (!raw) return [];
-
-  return raw
-    .split(",")
-    .map((part) => {
-      const [encodingPart, ...paramParts] = part.trim().split(";");
-      const encoding = encodingPart?.trim().toLowerCase() ?? "";
-      const qParam = paramParts
-        .map((param) => param.trim())
-        .find((param) => param.toLowerCase().startsWith("q="));
-      const parsedQ = qParam ? Number(qParam.slice(2)) : 1;
-      const q = Number.isFinite(parsedQ) ? parsedQ : 0;
-      return { encoding, q };
-    })
-    .filter((entry) => entry.encoding.length > 0);
-}
 
 function selectEncoding(value: string | string[] | undefined): SupportedEncoding | null {
   const preferences = parseAcceptEncoding(value).filter((entry) => entry.q > 0);
