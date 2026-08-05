@@ -179,7 +179,8 @@ atomically commits its terminal acknowledgement with that request and ends the
 caller's turn. It does not change issue lifecycle or create an approval, review,
 or execution reference. A later typed Board comment mention to that exact owner
 and ownership epoch supplies the response in a fresh run and removes the request
-from Board Attention.
+from Board Attention. A terminal issue hides the request, and a later reopen
+does not revive it.
 
 Provider-producing sources—creation, reassignment, the invokable-agent branch
 of audited reopen, typed mention/update, routine/plugin creation, and typed

@@ -23,6 +23,8 @@ The canonical lifecycle is:
 
 Only the current owner may submit owner-form lifecycle/disposition updates through a compiled `issue_update`. Terminal updates require a disposition, are ordered after any earlier same-run updates, and reject later updates.
 
+`blocked` is nonterminal: it records that the owner cannot currently complete the issue, but it does not freeze the issue execution graph. Existing or newly admitted handoffs may run while the issue remains blocked, and a handoff never changes it back to `open` implicitly. `cancelled` is terminal: the transition atomically fences pending refs and requests cancellation of every active run in the ownership epoch. Reopening never revives those fenced refs.
+
 The immutable creator may send message-only creator updates. Those cannot alter request, title, owner, lifecycle, dependencies, or metadata.
 
 Board reopen is a separate audited command. Under the issue lock it changes a terminal issue to `open`, clears disposition, preserves request/owner/epoch/session/workspace, re-applies the native-continuity fence, and materializes or re-evaluates the current epoch's creator edge. A preserved invokable agent commits and dispatches exactly one new ref. A named-user or collective-board-owned system escalation commits the provider-free `board_only` branch with no ref or run. Every other owner is rejected. Reopen never revives an old terminal edge or acts as a fresh-session reset.
@@ -55,6 +57,8 @@ Only after commit may the internal dispatcher lease the ref. Immediately before 
 
 Failure is terminal or held according to the typed source policy; the dispatcher never fabricates a replacement prompt or wake.
 
+An issue-tree pause is not an issue status. It is a board execution control checked at capability revalidation and immediately before lease. The active control and interruption intents for running attempts commit atomically. Queued refs and retries remain durable and become leaseable again only after the control is released; transmitted prompts are never replayed.
+
 ## Input ordering and continuity
 
 The issue-session input inbox preserves causal admission order. Eligible
@@ -85,6 +89,9 @@ the collective Board; this records a comment but creates no execution ref,
 approval, review, or lifecycle transition. Delegation uses a direct child
 issue. Owner reports and creator follow-ups use the two forms of `issue_update`;
 no generic comment tool exists for providers.
+
+A terminal transition suppresses unresolved Board mentions. Reopen does not
+revive a Board request or execution reference from the prior terminal lifetime.
 
 ## Workspace
 
